@@ -14,6 +14,110 @@
         "kind": "maintainer",
         "note": "maintainer: extremely slow"
       }
+    },
+    "doubao-seed-2-1-pro-260628": {
+      "coding": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "divergence": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.image_recognition": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.responsiveness": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
+    },
+    "flint-40b-free": {
+      "aesthetics": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "coding": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "divergence": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.image_recognition": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.responsiveness": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
+    },
+    "grok-bot": {
+      "tool_operation.image_recognition": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.responsiveness": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
+    },
+    "qwen3-flash-2025-07-28": {
+      "aesthetics": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "coding": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "divergence": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.image_recognition": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.responsiveness": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
     }
   }
 }
