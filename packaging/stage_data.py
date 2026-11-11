@@ -71,7 +71,7 @@ def copy_skills(src: Path, dest: Path) -> None:
         relative = path.relative_to(src)
         if any(part in SKIP_DIRS for part in relative.parts):
             continue
-        if path.suffix == ".pyc":
+        if path.suffix in {".pyc", ".lock", ".tmp"}:
             continue
         _copy_file(path, dest / relative)
 

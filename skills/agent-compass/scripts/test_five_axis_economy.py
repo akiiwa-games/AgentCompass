@@ -91,8 +91,13 @@ class Fleet:
         if usage_hook:
             usage_hook(usage)
         profile = {**PROFILE, 'axis_demand': dict(zip(allocator.FIVE_AXES, axes)), 'expected_hours': hours, 'local_only': local_only}
-        return allocator.plan({'objective': 't', 'hours': hours, 'profile': profile, **task}, usage, NOW, accounts=acc,
-                              overrides=[], records=[], host_policy_config={'allowed_accounts': list(allowed)})
+        pub = copy.deepcopy(allocator.load_public_user_scores())
+        pub.setdefault('scores', {}).setdefault('claude-haiku-5-5', {})['coding.faithfulness'] = {
+            'level': 1.0, 'as_of': '2026-11-11', 'kind': 'maintainer',
+        }
+        with patch.object(allocator, 'load_public_user_scores', return_value=pub):
+            return allocator.plan({'objective': 't', 'hours': hours, 'profile': profile, **task}, usage, NOW, accounts=acc,
+                                  overrides=[], records=[], host_policy_config={'allowed_accounts': list(allowed)})
 
 
 def eligible(decision):
@@ -265,11 +270,11 @@ class FleetEconomyTests(unittest.TestCase):
             for c in eligible(d):
                 if c['bundle']['account'] == 'codex' and c['components']['fit'] > 0.55:
                     self.assertGreater(c['components']['opportunity_cost'], 0.0, c['id'])
-            self.assertNotEqual(d['selected_bundle']['bundle_id'].split('_')[0], 'sol', used)
-            # On the shipped data, with every candidate's hours at its Artificial Analysis Time/Task: with Claude at 60% the
-            # Sonnet line (over its line a little) beats the cheap Codex lines; with both at 90% the cheap Codex Terra line
-            # wins. Neither is the over-line Sol.
-            self.assertEqual(d['choice'], {(0.6, 0.9): 'sonnet55_high', (0.9, 0.9): 'terra_high'}[used], used)
+            self.assertNotIn(d['choice'], ('sol_high', 'sol_xhigh', 'sol_max', 'astra_high', 'astra_xhigh'), used)
+            # On the shipped data, with every candidate's hours at its Artificial Analysis Time/Task and without fake
+            # anchor-tier / rejected-fit boosts on Terra: the over-line Sol High/xHigh/Max and Astra lines are priced out
+            # on Codex's tight 90% pool and the cheap Sol Medium rung ($4.93, 0.8% of pool) wins.
+            self.assertEqual(d['choice'], 'sol_medium', used)
         self.assertEqual(self.fleet.plan(0.5, 0.9, axes=FRONTIER, hours=6.0)['selected_bundle']['model'], 'claude-opus-5-5')   # the frontier task still reaches Opus
 
     def test_a_substitute_only_helps_as_much_as_it_is_likely_to_have_room(self):
@@ -339,17 +344,23 @@ class FleetEconomyTests(unittest.TestCase):
         self.assertEqual(order, [True, False])
         self.assertEqual(quick['components']['decided_by'], 'completion_hours')
 
-    def test_the_order_is_n_then_wait_then_earliest_expiring_quota_then_speed_then_usd(self):
-        def cand(score, wait=0.0, reset=None, hours=1.0, usd=1.0):
+    def test_the_order_is_n_then_wait_then_speed_then_usd_with_no_earliest_reset_tiebreak(self):
+        def cand(score, wait=0.0, reset=None, hours=1.0, usd=1.0, level=0.5, place=0):
             return {'score': score, 'available_in_hours': wait, 'expected_hours': hours, 'duration_hours': hours, 'expected_usd': usd,
-                    'components': {'earliest_reset_hours': reset, 'five_axis_level': 0.5, 'harness_place': 0}}
+                    'components': {'earliest_reset_hours': reset, 'five_axis_level': level, 'harness_place': place}}
         base = cand(0.5, reset=10.0)
-        for better, worse in ((cand(0.5001, reset=99.0), base), (cand(0.5, wait=0.0, reset=99.0), cand(0.5, wait=2.0, reset=1.0)),
-                              (cand(0.5, reset=5.0, hours=9.0), base), (cand(0.5, reset=10.0, hours=0.5, usd=9.0), base),
-                              (cand(0.5, reset=10.0, usd=0.5), base), (base, cand(0.5, reset=None))):
+        for better, worse in ((cand(0.5001, reset=99.0), base),
+                              (cand(0.5, wait=0.0, reset=99.0), cand(0.5, wait=2.0, reset=1.0)),
+                              (cand(0.5, reset=99.0, hours=0.5, usd=9.0), base),
+                              (cand(0.5, reset=99.0, usd=0.5), base),
+                              (cand(0.5, level=0.8), base),
+                              (cand(0.5, place=0), cand(0.5, place=1))):
             self.assertLess(allocator.five_axis_order(better), allocator.five_axis_order(worse))
-        self.assertEqual(allocator.five_axis_deciding_key(cand(0.5, reset=5.0), base), 'earliest_reset_hours')
+        # R2-F4: earliest_reset_hours never separates two candidates; reset proximity acts only through C inside N.
+        self.assertEqual(allocator.five_axis_order(cand(0.5, reset=1.0)), allocator.five_axis_order(cand(0.5, reset=99.0)))
+        self.assertEqual(allocator.five_axis_order(base), allocator.five_axis_order(cand(0.5, reset=None)))
         self.assertEqual(allocator.five_axis_deciding_key(cand(0.5, reset=10.0, hours=0.5), base), 'completion_hours')
+        self.assertNotIn('earliest_reset_hours', allocator.FIVE_AXIS_ORDER_KEYS)
 
     def test_fable_5_1_cannot_beat_opus_5_5(self):
         """Advisor test 8, without the speed rule: at equal fit Fable 5.1 trails Opus 5.5 on N, and in the creative task, where
@@ -1276,6 +1287,7 @@ class DurationUnknownTests(unittest.TestCase):
     def grok_bundles(acc):
         cx = acc['accounts']['codex']['bundles']
         cx['oss_high'] = {**cx['sol_high'], 'model': 'gpt-oss-120b', 'effort': 'high'}
+        cx['flash_low'] = {**cx['sol_high'], 'model': 'gemini-3.8-flash-high', 'effort': 'low'}
         cx['grok_max'] = {**cx['sol_high'], 'model': 'grok-4.7', 'effort': 'max'}
 
     def test_automatic_routing_leaves_the_effort_with_no_time_and_keeps_the_effort_that_has_one(self):
@@ -1284,9 +1296,13 @@ class DurationUnknownTests(unittest.TestCase):
         self.assertIn('no Time/Task for gpt-oss-120b at high', ' '.join(ranking['oss_high']['excluded']))
         self.assertIsNone(ranking['oss_high']['score'])
         self.assertNotIn('oss_high', [c['id'] for c in eligible(d)])
-        # Grok 4.7 lists no Max on Artificial Analysis: it routes there on the fleet's max/xhigh ratio, cited
-        self.assertIsNotNone(ranking['grok_max']['score'])
+        # Gemini 3.8 Flash lists High/Medium on Artificial Analysis: Low routes on the fleet's low/medium duration ratio, cited,
+        # and has its own measured Low capability scores.
+        self.assertIsNotNone(ranking['flash_low']['score'])
+        self.assertEqual(ranking['flash_low']['components']['duration_source'], 'fleet_effort_ratio')
+        # Grok 4.7 also gets its Max duration from fleet_effort_ratio, while Mode B excludes Max for missing Max capability data (R2-F5).
         self.assertEqual(ranking['grok_max']['components']['duration_source'], 'fleet_effort_ratio')
+        self.assertIsNone(ranking['grok_max']['score'])
 
     def test_a_named_dispatch_keeps_the_bundle_with_the_tasks_own_hours_and_the_data_error(self):
         d = self.fleet.plan(0.5, 0.5, mutate=self.grok_bundles, pinned_bundle='oss_high', hours=2.0)
@@ -1322,6 +1338,107 @@ class LaunchBlockersTests(unittest.TestCase):
             accounts['accounts']['codex'][flag] = True
             usage = {'accounts': {'codex': {'windows': [{'id': 'usage', 'remaining_pct_before_reset': 0.0, 'seconds_until_reset': 3600}]}}}
             self.assertEqual(allocator.launch_blockers({'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'high'}, accounts, usage, NOW), [], flag)
+
+
+class ChatGPTWebCadenceTests(unittest.TestCase):
+    """Owner decision (2026-11-11): ChatGPT Web's cadence window (5 per 12h in accounts.json) is priced like any other quota
+    window from the current-period used count and time left in the cadence period; Dot stays unmetered as-is."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.accounts = sim.fresh_accounts(shipped_template(), snapshot())
+
+    def _plan(self, *, claude_plan='pro', codex_plan='plus', claude_used=0.15, codex_used=0.15,
+              claude_reset_h=84.0, codex_reset_h=84.0, seats_used=0, cadence_reset_h=9.0,
+              divergence=1, hours=0.3, local_only=True, records=None):
+        acc = copy.deepcopy(self.accounts)
+        acc['accounts']['claude']['plan'] = claude_plan
+        acc['accounts']['codex']['plan'] = codex_plan
+        usage = sim.snapshot(sim.synthetic_document(acc, NOW, sim.STATES['ample']), acc, NOW)
+        usage['accounts']['claude']['windows'] = [
+            {'id': 'seven_day', 'remaining_pct_before_reset': 100.0 * (1.0 - claude_used), 'seconds_until_reset': claude_reset_h * 3600},
+            {'id': 'five_hour', 'remaining_pct_before_reset': 95.0, 'seconds_until_reset': 5 * 3600},
+        ]
+        if claude_plan == 'max_20x':
+            usage['accounts']['claude']['windows'].insert(
+                1, {'id': 'weekly_fable', 'remaining_pct_before_reset': 100.0 * (1.0 - claude_used), 'seconds_until_reset': claude_reset_h * 3600}
+            )
+        usage['accounts']['codex']['windows'] = [
+            {'id': 'usage', 'remaining_pct_before_reset': 100.0 * (1.0 - codex_used), 'seconds_until_reset': codex_reset_h * 3600},
+        ]
+        if records is None:
+            if seats_used == 0 and cadence_reset_h is not None:
+                usage['accounts'].setdefault('chatgpt-web', {})['windows'] = [
+                    {'id': 'cadence', 'used': 0, 'seconds_until_reset': cadence_reset_h * 3600},
+                ]
+                recs = []
+            else:
+                age_h = 12.0 - cadence_reset_h
+                recs = [
+                    {'stage': 'record', 'dispatch_id': f'cw-{i}', 'choice': 'pro_max',
+                     'bundle': {'account': 'chatgpt-web', 'model': 'gpt-6-pro'},
+                     'at': (NOW - timedelta(hours=age_h) + timedelta(minutes=5 * i)).isoformat()}
+                    for i in range(seats_used)
+                ]
+        else:
+            recs = records
+        profile = {
+            'reasoning_depth': divergence, 'code_complexity': 0,
+            'axis_demand': {'divergence': divergence, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0},
+            'needs_visual': False, 'needs_gui': False, 'local_only': local_only,
+            'wants_fast': False, 'read_only_review': True,
+            'interaction_style': 'advisory', 'multi_task': False, 'task_count': '1',
+            'expected_hours': hours,
+        }
+        return allocator.plan(
+            {'objective': 'research', 'hours': hours, 'profile': profile},
+            usage, NOW, accounts=acc, overrides=[], records=recs,
+            host_policy_config={'allowed_accounts': ['claude', 'codex', 'chatgpt-web', 'dot']},
+        )
+
+    def test_l1_local_research_with_4_of_5_seats_used_does_not_pick_pro_max_and_c_rises_with_used_seats(self):
+        costs = []
+        for seats in range(5):
+            d = self._plan(claude_plan='pro', codex_plan='plus', claude_used=0.35, codex_used=0.35,
+                           seats_used=seats, cadence_reset_h=9.0, divergence=1, hours=0.3, local_only=True)
+            cw = window_reports(d)['chatgpt-web/cadence']
+            self.assertEqual(cw['capacity_usd'], 5.0)
+            self.assertEqual(cw['used_usd'], float(seats))
+            pro = row(d, 'pro_max')
+            costs.append(pro['components']['opportunity_cost'])
+        self.assertLess(costs[0], 5e-3)
+        self.assertTrue(all(b > a for a, b in zip(costs, costs[1:])), costs)
+
+        # L1 local research with 4 of 5 seats used never picks pro_max when a near-free local candidate fits.
+        for cl_plan, cx_plan, used in (('pro', 'plus', 0.10), ('pro', 'plus', 0.35), ('max_20x', 'pro', 0.10)):
+            d4 = self._plan(claude_plan=cl_plan, codex_plan=cx_plan, claude_used=used, codex_used=used,
+                            seats_used=4, cadence_reset_h=9.0, divergence=1, hours=0.3, local_only=True)
+            self.assertNotEqual(d4['choice'], 'pro_max', (cl_plan, cx_plan, used))
+            self.assertIn(d4['selected_bundle']['account'], ('claude', 'codex'))
+
+        # Dot stays unmetered (no cadence window, zero opportunity cost).
+        d_remote = self._plan(claude_plan='pro', codex_plan='plus', claude_used=0.35, codex_used=0.35,
+                              seats_used=4, cadence_reset_h=9.0, divergence=1, hours=0.3, local_only=False)
+        dot_row = row(d_remote, 'dot_text')
+        self.assertEqual(dot_row['components']['opportunity_cost'], 0.0)
+        self.assertNotIn('dot/cadence', window_reports(d_remote))
+
+    def test_zero_of_five_used_near_end_of_cadence_period_follows_expiring_quota_speed_rule(self):
+        # 10 minutes left in the 12h cadence period with 0 of 5 seats used: C(pro_max) is near zero (~0).
+        # When local quota is also expiring (2h to weekly reset, C ≈ 0), candidates tie on N and the existing
+        # expiring-quota speed rule breaks the tie by completion_hours (AA Time/Task, +fast where available).
+        d_tie = self._plan(claude_plan='max_20x', codex_plan='pro', claude_used=0.50, codex_used=0.50,
+                           claude_reset_h=2.0, codex_reset_h=84.0,
+                           seats_used=0, cadence_reset_h=1 / 6, divergence=1, hours=0.3, local_only=True)
+        pro_tie = row(d_tie, 'pro_max')
+        opus_fast = row(d_tie, 'opus55_medium', fast=True)
+        self.assertLess(pro_tie['components']['opportunity_cost'], 5e-5)
+        self.assertLess(opus_fast['components']['opportunity_cost'], 5e-5)
+        self.assertEqual(round(pro_tie['score'], 4), round(opus_fast['score'], 4))
+        self.assertLess(opus_fast['duration_hours'], pro_tie['duration_hours'])
+        self.assertEqual(allocator.five_axis_deciding_key(opus_fast, pro_tie), 'completion_hours')
+        self.assertTrue(d_tie['selected_bundle'].get('fast'))
+        self.assertNotEqual(d_tie['choice'], 'pro_max')
 
 
 if __name__ == '__main__':

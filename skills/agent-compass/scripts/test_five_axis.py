@@ -249,9 +249,10 @@ class FiveAxisTests(unittest.TestCase):
         self.assertFalse(out['accounts']['opencode'].get('unlimited'))
         self.assertTrue(out['accounts']['opencode']['capacity_unknown'])
 
-    def test_tie_break_order_net_score_then_wait_then_reset_then_faster_then_fewer_usd_then_level(self):
-        """Quota economy v3 + F3: N = F - C is never rounded; C carries billed vs free, pool used share, and +fast burn.
-        `earliest_reset_hours` breaks only exact ties in N and wait, never overriding a strictly higher N."""
+    def test_tie_break_order_net_score_then_wait_then_faster_then_fewer_usd_then_level(self):
+        """Quota economy v3 + R2-F4: N = F - C is never rounded; C carries billed vs free, pool used share, and +fast burn.
+        `earliest_reset_hours` is NOT in `five_axis_order` — reset timing enters only through C inside N."""
+        self.assertNotIn('earliest_reset_hours', allocator.FIVE_AXIS_ORDER_KEYS)
         def cand(name, score=0.5, hours=1.0, usd=10.0, level=0.8, wait=0.0, place=0, reset=48.0):
             return {'id': name, 'score': score, 'available_in_hours': wait or None,
                     'expected_hours': hours, 'duration_hours': hours, 'expected_usd': usd,
@@ -267,11 +268,11 @@ class FiveAxisTests(unittest.TestCase):
             cand('faster_cheap_later_harness', hours=0.2, usd=5.0, level=0.9, place=1),
         ]
         self.assertEqual([c['id'] for c in sorted(pool, key=allocator.five_axis_order)],
-                         ['higher_n', 'sooner_reset_same_n', 'faster_cheap_higher_level',
+                         ['higher_n', 'faster_cheap_higher_level',
                           'faster_cheap_later_harness', 'faster_cheap',
-                          'faster_dear', 'slower_expensive', 'waits_but_quick'])
+                          'faster_dear', 'slower_expensive', 'sooner_reset_same_n', 'waits_but_quick'])
         self.assertEqual(allocator.five_axis_deciding_key(pool[3], pool[4]), 'net_score')
-        self.assertEqual(allocator.five_axis_deciding_key(pool[4], pool[2]), 'earliest_reset_hours')
+        self.assertEqual(allocator.five_axis_deciding_key(pool[2], pool[4]), 'completion_hours')
         self.assertEqual(allocator.five_axis_deciding_key(pool[2], pool[1]), 'usd')
         self.assertEqual(allocator.five_axis_deciding_key(pool[1], pool[0]), 'completion_hours')
         self.assertEqual(allocator.five_axis_deciding_key(pool[6], pool[2]), 'axis_level')
@@ -592,6 +593,7 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual((fable52['fast_mode']['price_multiplier'], fable52['fast_mode']['speed_multiplier']), (2.0, 2.5))
         self.assertEqual(fable52['image_input']['status'], 'unknown')
         fits = shipped['estimate_fits']
+        rejected = shipped['rejected_fits']
         t, tb = fable52['tier']['value'], fable51['tier']['value']
         estimated = 0
         for axis, ax in fable52['axes'].items():
@@ -601,12 +603,19 @@ class FiveAxisTests(unittest.TestCase):
                     continue
                 estimated += 1
                 est, base = row['estimate'], fable51['axes'][axis]['facets'][comp]
-                f = fits[f'{axis}.{comp}~tier']
+                fit_key = f'{axis}.{comp}~tier'
                 self.assertEqual((est['method'], est['base_model']), ('sibling_shift', 'claude-fable-5-1'))
-                self.assertEqual({k: est[k] for k in ('r', 'skill', 'loo_rmse', 'n')},
-                                 {'r': round(f['r'], 4), 'skill': round(f['skill'], 4), 'loo_rmse': round(f['loo_rmse'], 4),
-                                  'n': f['n']})
-                self.assertAlmostEqual(row['value'], base['value'] + f['b'] * (t - tb), places=3)
+                if fit_key in fits:
+                    f = fits[fit_key]
+                    self.assertEqual({k: est[k] for k in ('r', 'skill', 'loo_rmse', 'n')},
+                                     {'r': round(f['r'], 4), 'skill': round(f['skill'], 4), 'loo_rmse': round(f['loo_rmse'], 4),
+                                      'n': f['n']})
+                    self.assertAlmostEqual(row['value'], base['value'] + f['b'] * (t - tb), places=3)
+                else:
+                    # R2-F3: rejected fits (e.g. coding.faithfulness~tier with skill <= 0) never add noise slope (shift = 0)
+                    self.assertIn(fit_key, rejected)
+                    self.assertEqual(est['shift'], 0.0)
+                    self.assertAlmostEqual(row['value'], base['value'], places=4)
         self.assertTrue(estimated)
         # Design Arena lists it: its evidence is not Artificial Analysis alone.
         self.assertFalse(fable52['evidence']['aa_only'])
@@ -716,9 +725,36 @@ class FiveAxisTests(unittest.TestCase):
         ready_now = max((c for c in routine['ranking'] if not c.get('excluded') and not c.get('available_in_hours')),
                         key=lambda c: c['score'])
         self.assertEqual(routine['ranking'][0]['score'], max(c['score'] for c in routine['ranking'] if not c.get('excluded')))
-        self.assertGreater(routine['ranking'][0]['score'], ready_now['score'])
-        self.assertEqual(routine['decision']['action'], 'defer')
+        # Round 15 + R2-F11: with the v3.1 task-sized burst size at 10% weekly use, neither pool's quota costs above float64
+        # resolution, so waiting candidates do not beat ready-now N and the routine task starts now on codex:
+        self.assertEqual(round(routine['ranking'][0]['score'], 4), round(ready_now['score'], 4))
+        self.assertEqual(routine['decision']['action'], 'start')
         self.assertEqual(ready_now['bundle']['account'], 'codex')
+        # When codex is over its weekly line and claude's 7-day has moderate use (<100% slack so codex prices >0, while
+        # claude's 7-day is still well under its line behind its 5h wait), routine defers for claude's strictly higher N = F - C:
+        from unittest.mock import patch as _patch
+        tight_codex_usage = self.usage(self.accounts, '5h-only scarce')
+        for w in tight_codex_usage['accounts']['codex']['windows']:
+            if w['id'] == 'usage':
+                w['remaining_pct_before_reset'] = 8.0
+                w['observed_remaining_pct'] = 8.0
+                w['used_pct'] = 92.0
+        for w in tight_codex_usage['accounts']['claude']['windows']:
+            if w['id'] == 'seven_day':
+                w['remaining_pct_before_reset'] = 45.0
+                w['observed_remaining_pct'] = 45.0
+                w['used_pct'] = 55.0
+        with _patch.object(allocator, 'load_five_axis', return_value=doc):
+            routine_tight = allocator.plan(
+                {'objective': 't', 'can_wait_hours': 4.0,
+                 'profile': {**PROFILE, 'axis_demand': demand(0, 1, 0, 0)}},
+                tight_codex_usage, NOW, accounts=copy.deepcopy(self.accounts),
+                overrides=[], records=[], host_policy_config={'allowed_accounts': ['claude', 'codex']},
+            )
+        ready_tight = max((c for c in routine_tight['ranking'] if not c.get('excluded') and not c.get('available_in_hours')),
+                          key=lambda c: c['score'])
+        self.assertGreater(routine_tight['ranking'][0]['score'], ready_tight['score'])
+        self.assertEqual(routine_tight['decision']['action'], 'defer')
         self.assertEqual(routine_free['decision']['action'], 'start')
         self.assertEqual(routine_free['selected_bundle']['account'], 'dot')
         self.assertEqual(frontier['decision']['action'], 'defer')
@@ -1191,11 +1227,16 @@ class AnchorRelativeTests(unittest.TestCase):
 
     def test_shipped_grok_bot_category_scores_come_from_opus_5_5_through_same_model(self):
         refs = Path(self.fa.__file__).resolve().parents[1] / 'references'
-        declared = json.loads((refs / 'accounts.json').read_text(encoding='utf-8'))['same_model']['grok-bot']
+        accounts_doc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8'))
+        declared = accounts_doc['same_model']['grok-bot']
         self.assertEqual((declared['model'], declared['kind'], declared['as_of'], declared['statement']),
-                         ('claude-opus-5-5', 'user', '2026-11-11', 'user: grok-bot is Opus 5.5'))
+                         ('claude-opus-5-5', 'maintainer', '2026-11-11', 'maintainer: grok-bot is Opus 5.5'))
+        img_decl = accounts_doc['models']['grok-bot']['image_input_source']
+        self.assertEqual((img_decl['kind'], img_decl['as_of']), ('maintainer', '2026-11-11'))
         models = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8'))['models']
         bot, opus = models['grok-bot'], models['claude-opus-5-5']
+        self.assertEqual(bot['image_input']['status'], 'yes')
+        self.assertEqual(bot['image_input']['value'], True)
         self.assertEqual(sorted(declared['carries']), ['aesthetics', 'coding', 'divergence', 'duration'])
         for axis in ('divergence', 'coding', 'aesthetics'):
             mine, theirs = bot['axes'][axis], opus['axes'][axis]

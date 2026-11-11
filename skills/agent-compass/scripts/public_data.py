@@ -20,11 +20,43 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import threading
 import urllib.request
 import uuid
+
+_ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+def _valid_public_declaration(entry):
+    if not isinstance(entry, dict) or entry.get('kind') == 'user':
+        return False
+    url = str(entry.get('url') or '').strip()
+    if url.startswith('https://'):
+        return True
+    as_of = str(entry.get('as_of') or '').strip()
+    return entry.get('kind') == 'maintainer' and bool(_ISO_DATE.match(as_of))
+
+
+def validate_accounts_provenance(doc):
+    """Ensure every capability/equivalence declaration in accounts.json has a public https URL or dated maintainer kind."""
+    if not isinstance(doc, dict):
+        raise ValueError('accounts.json must be a JSON object')
+    for row, entry in (doc.get('same_model') or {}).items():
+        if not _valid_public_declaration(entry):
+            raise ValueError(f'same_model[{row!r}] requires an https url or dated kind="maintainer" (with as_of)')
+    for model, spec in (doc.get('models') or {}).items():
+        if not isinstance(spec, dict):
+            continue
+        if spec.get('text_only') and not _valid_public_declaration(spec.get('text_only_source')):
+            raise ValueError(f'models[{model!r}].text_only requires a cited or dated maintainer text_only_source (with as_of)')
+        if 'image_input' in spec and not _valid_public_declaration(spec.get('image_input_source')):
+            raise ValueError(f'models[{model!r}].image_input requires a cited or dated maintainer image_input_source (with as_of)')
+        for field in ('text_only_source', 'image_input_source'):
+            if field in spec and not _valid_public_declaration(spec.get(field)):
+                raise ValueError(f'models[{model!r}].{field} requires an https url or dated kind="maintainer" (with as_of)')
 
 SCHEMA_VERSION = 3              # the newest data schema this code reads; bump with any breaking data change
 # Schema 3 (2026-11-11) switches to the four-category taxonomy (`divergence`, `coding`, `aesthetics`, `tool_operation`),
@@ -152,6 +184,11 @@ def check_set(directory, manifest):
             return 'incomplete', f'{name} is missing'
         if sha256_bytes(data) != want:
             return 'modified', f'{name} does not match its sha256'
+        if name == 'accounts.json':
+            try:
+                validate_accounts_provenance(json.loads(data.decode('utf-8-sig')))
+            except Exception as exc:
+                return 'incomplete', f'accounts.json is invalid: {exc}'
         if name == 'user-scores.json':
             try:
                 import user_scores

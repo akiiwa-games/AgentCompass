@@ -11,11 +11,21 @@ Scale (demand-level scale, mapped dynamically to panel z-scores from `anchor.tar
   - `2` = panel median (`t2`)
   - `3` = anchor Opus 5.5 (`t3`)
   - Decimals in `[1, 3]` interpolate piecewise linearly through `(1, t1), (2, t2), (3, t3)`.
-  - Values `> 3` extrapolate by `t3 - t2` (or `t2 - t1` when `t3 == t2`, as on `tool_operation.responsiveness`).
+  - On `tool_operation.responsiveness`, the Opus 5.5 anchor is at or below the panel median, so `t3` is raised to `t2`
+    (`t2 == t3`): levels `>= 2` mean "at least the panel median" (`[2, 3]` maps to `t2`, and `> 3` extrapolates above
+    `t2` by `t2 - t1`).
+  - Values `> 3` extrapolate by `t3 - t2` (or `t2 - t1` when `t3 == t2`). Because `t3 - t2` can be narrow when the
+    anchor sits close to the panel median (for example `coding.faithfulness`), `z_to_level` can exceed `3.0` steeply on
+    measured models above the anchor; UI displays should cap the primary `1..3` scale indicator at `3+` (or show the raw
+    `+Δz SD` above anchor alongside) rather than rendering unbounded extrapolated level numbers.
   - Values `< 1` extrapolate by `t2 - t1`.
+  - Manual capability scores never alter `image_input` modality; modality requires a cited benchmark, vendor source, or
+    dated `kind: "maintainer"` declaration in `accounts.json`.
 
-Tray UI Python API contract (for the upcoming Tray Manual Scores panel):
+Tray UI Python API contract:
   - `user_scores.VALID_TARGETS`: tuple of valid `<category>` and `<category>.<facet>` strings.
+  - `user_scores.z_to_level(z, t1, t2, t3)` / `user_scores.level_for_target_z(target, z, targets_table)`: inverse map
+    from panel z-score onto the `1..3` demand-level scale for displaying current model values.
   - `user_scores.list_scores(model=None, *, scope="all")` -> `{"local": {...}, "public": {...}, "effective": {...}}`
     with each entry annotated with its current mapped `z` against `five-axis-scores.json` `anchor.targets`.
   - `user_scores.set_score(model, target, level, *, public=False, note=None, as_of=None)` -> saved entry + path.
@@ -26,6 +36,7 @@ from __future__ import annotations
 import argparse
 import copy
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 import os
@@ -50,7 +61,7 @@ CATEGORY_FACETS = {
     'tool_operation': ('responsiveness', 'image_recognition'),
 }
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
-EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
+EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 VALID_TARGETS = tuple(
     [cat for cat in CATEGORIES]
     + [f'{cat}.{facet}' for cat in CATEGORIES for facet in CATEGORY_FACETS[cat]]
@@ -75,6 +86,31 @@ def local_scores_path(path=None, environ=None) -> Path:
 def public_scores_path(path=None, *, effective: bool = True, environ=None) -> Path:
     base = Path(path) if path is not None else PUBLIC_SCORES_FILE
     return public_data.effective(base, environ) if effective and path is None else base
+
+
+def _public_lock_path(public_path: Path, environ=None) -> Path:
+    """Return a sidecar lock path inside `<ROUTER_STATE_DIR>`, never inside `references/`."""
+    digest = hashlib.sha256(str(Path(public_path).resolve()).encode('utf-8')).hexdigest()[:12]
+    return public_data.state_dir(environ) / f'public-scores-{digest}.lock'
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Atomically write UTF-8 LF text via a sibling `.tmp` file and `os.replace`."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+    try:
+        with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def is_repo_checkout(references_dir: Path | None = None) -> bool:
@@ -157,17 +193,18 @@ def validate_document(doc, *, expected_kind: str | None = None) -> dict:
 
 
 def load_local(path=None, environ=None) -> dict:
+    """Load and validate `<ROUTER_STATE_DIR>/user-scores.json`; raises `ValueError` if an existing file is corrupt."""
     target = local_scores_path(path, environ)
     if not target.is_file():
         return empty_document()
     try:
         raw = json.loads(target.read_text(encoding='utf-8-sig'))
-    except (OSError, ValueError):
-        return empty_document()
+    except (OSError, ValueError) as exc:
+        raise ValueError(f'Corrupt local user-scores file {target}: {exc}') from exc
     try:
         return validate_document(raw, expected_kind='user')
-    except ValueError:
-        return empty_document()
+    except ValueError as exc:
+        raise ValueError(f'Invalid local user-scores file {target}: {exc}') from exc
 
 
 def load_public(path=None, *, effective: bool = True, environ=None) -> dict:
@@ -223,7 +260,8 @@ def level_to_z(level: float, t1: float, t2: float, t3: float) -> float:
     """Map demand-level `level` (`1 -> t1`, `2 -> t2`, `3 -> t3`) onto panel z-scores.
 
     Decimals in `[1, 3]` interpolate piecewise linearly; `> 3` extrapolates by `t3 - t2` (falling back to `t2 - t1`
-    only when `t3 == t2`, as on raised `tool_operation.responsiveness`); `< 1` extrapolates by `t2 - t1`.
+    when `t3 == t2`, as on `tool_operation.responsiveness`, where levels `>= 2` mean "at least the panel median");
+    `< 1` extrapolates by `t2 - t1`.
     """
     lv = normalize_level(level)
     t1_f, t2_f, t3_f = float(t1), float(t2), float(t3)
@@ -239,25 +277,62 @@ def level_to_z(level: float, t1: float, t2: float, t3: float) -> float:
     return t3_f + (lv - 3.0) * extrap
 
 
-def mapped_z_for_target(target: str, level: float, targets_table: dict) -> float:
+def z_to_level(z: float, t1: float, t2: float, t3: float) -> float:
+    """Inverse of `level_to_z`: map panel z-score `z` onto the `1..3` demand-level scale (`t1 -> 1`, `t2 -> 2`, `t3 -> 3`).
+
+    - Below `t2`, interpolates/extrapolates with slope `1 / (t2 - t1)`.
+    - When `t3 > t2`, `[t2, t3]` maps linearly onto `[2, 3]` and `z > t3` extrapolates by `1 / (t3 - t2)` (which can be
+      steep when `t3 - t2` is narrow; UI displays should clamp/badge above `3` as `3+`).
+    - When `t3 == t2` (`tool_operation.responsiveness`, where levels `>= 2` mean "at least the panel median"), `z == t2`
+      maps to `2.0` and `z > t3` extrapolates above `3.0` by `1 / (t2 - t1)`, matching `level_to_z`.
+    """
+    if isinstance(z, bool):
+        raise ValueError('Panel z-score must be a finite float, not a boolean.')
+    z_f = float(z)
+    if not math.isfinite(z_f):
+        raise ValueError('Panel z-score must be finite.')
+    t1_f, t2_f, t3_f = float(t1), float(t2), float(t3)
+    step_lo = t2_f - t1_f
+    step_hi = t3_f - t2_f
+    if z_f <= t2_f:
+        if step_lo <= 0.0:
+            return 2.0 if z_f >= t2_f else 1.0
+        return round(1.0 + (z_f - t1_f) / step_lo, 4)
+    if step_hi > 0.0:
+        if z_f <= t3_f:
+            return round(2.0 + (z_f - t2_f) / step_hi, 4)
+        return round(3.0 + (z_f - t3_f) / step_hi, 4)
+    if step_lo <= 0.0:
+        return 3.0
+    return round(3.0 + (z_f - t3_f) / step_lo, 4)
+
+
+def level_for_target_z(target: str, z: float | None, targets_table: dict) -> float | None:
+    """Convert a panel `z` score on `target` (`<category>` or `<category>.<facet>`) onto the `1..3` scale, or None."""
+    if z is None:
+        return None
     cat, facet = parse_target(target)
     if cat == 'tool_operation' and facet is None:
-        zs = [level_to_z(level, *target_triad(targets_table, 'tool_operation', f))
-              for f in CATEGORY_FACETS['tool_operation']]
+        facet = 'image_recognition'
+    return z_to_level(z, *target_triad(targets_table, cat, facet))
+
+
+def mapped_z_for_target(target: str, level: float, targets_table: dict) -> float:
+    cat, facet = parse_target(target)
+    if facet is None:
+        zs = [level_to_z(level, *target_triad(targets_table, cat, f)) for f in CATEGORY_FACETS[cat]]
         return round(min(zs), 4)
     return round(level_to_z(level, *target_triad(targets_table, cat, facet)), 4)
 
 
 def _write_public_and_manifest(public_path: Path, document: dict) -> None:
-    public_path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(document, ensure_ascii=False, indent=2) + '\n'
-    public_path.write_text(text, encoding='utf-8', newline='\n')
+    _atomic_write_text(public_path, text)
     manifest_path = public_path.parent / public_data.MANIFEST
     if manifest_path.parent == REFERENCES or manifest_path.is_file():
         previous = json.loads(manifest_path.read_text(encoding='utf-8-sig')) if manifest_path.is_file() else None
         manifest = public_data.build_manifest(public_path.parent, previous)
-        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n',
-                                 encoding='utf-8', newline='\n')
+        _atomic_write_text(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
         public_data.unpin()
 
 
@@ -277,7 +352,7 @@ def set_score(model: str, target: str, level: float, *, public: bool = False, no
         p_path = public_scores_path(public_path, effective=False)
         if not allow_non_repo and not is_repo_checkout(p_path.parent):
             raise ValueError('--public writes references/user-scores.json and is only supported inside a git checkout.')
-        with override_store.locked(p_path):
+        with override_store.locked(_public_lock_path(p_path)):
             doc = load_public(p_path, effective=False)
             doc['scores'].setdefault(model_key, {})[target] = entry
             doc['scores'] = dict(sorted((m, dict(sorted(ts.items()))) for m, ts in doc['scores'].items() if ts))
@@ -325,7 +400,7 @@ def clear_score(model: str | None = None, target: str | None = None, *, clear_al
         p_path = public_scores_path(public_path, effective=False)
         if not allow_non_repo and not is_repo_checkout(p_path.parent):
             raise ValueError('--public modifies references/user-scores.json and is only supported inside a git checkout.')
-        with override_store.locked(p_path):
+        with override_store.locked(_public_lock_path(p_path)):
             doc = load_public(p_path, effective=False)
             removed = _remove(doc)
             _write_public_and_manifest(p_path, doc)
@@ -379,34 +454,52 @@ def list_scores(model: str | None = None, *, scope: str = 'all', accounts: dict 
     return out
 
 
+def _facet_has_any_score(f_cell) -> bool:
+    if not isinstance(f_cell, dict):
+        return False
+    if f_cell.get('value') is not None:
+        return True
+    return any(v is not None for v in (f_cell.get('by_effort') or {}).values())
+
+
 def _recompute_category_from_facets(category: str, cat_cell: dict, status: str) -> dict:
     facets = cat_cell.get('facets') or {}
     req = CATEGORY_FACETS[category]
     if category != 'tool_operation':
-        missing_f = [f for f in req if not isinstance(facets.get(f), dict) or facets[f].get('value') is None]
+        missing_f = [f for f in req if not _facet_has_any_score(facets.get(f))]
         if missing_f:
             return {
                 'value': None, 'by_effort': {}, 'facets': facets,
                 'missing_facets': missing_f, 'status': 'partial', 'flag': 'partial',
             }
-        shared = [e for e in EFFORTS if all(e in (facets[f].get('by_effort') or {}) for f in req)]
-        by_eff = {e: round(min(facets[f]['by_effort'][e] for f in req), 4) for e in shared}
-        val = round(min(facets[f]['value'] for f in req), 4)
-        res = {'value': val, 'by_effort': by_eff, 'facets': facets, 'status': status}
-        if not by_eff:
+        shared = [
+            e for e in EFFORTS
+            if all((facets[f].get('by_effort') or {}).get(e) is not None for f in req)
+        ]
+        by_eff = {e: round(min(float(facets[f]['by_effort'][e]) for f in req), 4) for e in shared}
+        val = by_eff.get('high')
+        if val is None and all(facets[f].get('value') is not None for f in req):
+            val = round(min(float(facets[f]['value']) for f in req), 4)
+        res = {'value': val, 'by_effort': by_eff, 'facets': facets, 'status': status if val is not None else 'partial'}
+        if val is None or not by_eff:
             res['flag'] = 'partial'
         return res
     # tool_operation: recompute by_level for levels 1..3 + category level-3 summary
     by_level = {'1': {'facets': [], 'value': 0.0, 'by_effort': {e: 0.0 for e in EFFORTS}}}
     for lvl in (2, 3):
         need = TOOL_LEVEL_FACETS[lvl]
-        miss = [f for f in need if not isinstance(facets.get(f), dict) or facets[f].get('value') is None]
+        miss = [f for f in need if not _facet_has_any_score(facets.get(f))]
         if miss:
             by_level[str(lvl)] = {'facets': list(need), 'missing_facets': miss, 'value': None, 'by_effort': {}}
         else:
-            shared = [e for e in EFFORTS if all(e in (facets[f].get('by_effort') or {}) for f in need)]
-            by_eff = {e: round(min(facets[f]['by_effort'][e] for f in need), 4) for e in shared}
-            val = round(min(facets[f]['value'] for f in need), 4)
+            shared = [
+                e for e in EFFORTS
+                if all((facets[f].get('by_effort') or {}).get(e) is not None for f in need)
+            ]
+            by_eff = {e: round(min(float(facets[f]['by_effort'][e]) for f in need), 4) for e in shared}
+            val = by_eff.get('high')
+            if val is None and all(facets[f].get('value') is not None for f in need):
+                val = round(min(float(facets[f]['value']) for f in need), 4)
             by_level[str(lvl)] = {'facets': list(need), 'value': val, 'by_effort': by_eff}
     l3 = by_level['3']
     res = {
@@ -414,16 +507,18 @@ def _recompute_category_from_facets(category: str, cat_cell: dict, status: str) 
         'by_effort': dict(l3['by_effort']),
         'by_level': by_level,
         'facets': facets,
-        'status': status,
+        'status': status if l3['value'] is not None else 'partial',
     }
     if l3.get('missing_facets'):
         res['missing_facets'] = list(l3['missing_facets'])
         res['flag'] = 'partial' if facets else 'missing'
+    elif l3['value'] is None or not l3['by_effort']:
+        res['flag'] = 'partial'
     return res
 
 
 def _reference_effort_deltas(five_state: dict, own_cell: dict | None = None) -> dict[str, float] | None:
-    """Return `{effort: delta_from_high}` from `own_cell` or another non-flat capability curve on the same model."""
+    """Return `{effort: delta_from_high}` from `own_cell` or another non-flat capability curve containing `high`."""
     candidates = []
     if isinstance(own_cell, dict):
         candidates.append(own_cell)
@@ -437,17 +532,11 @@ def _reference_effort_deltas(five_state: dict, own_cell: dict | None = None) -> 
                     candidates.append(f_cell)
     for cell in candidates:
         by = cell.get('by_effort') or {}
-        if len(by) >= 2 and 'high' in by:
+        if len(by) >= 2 and by.get('high') is not None:
             vals = [float(v) for v in by.values() if v is not None]
             if vals and max(vals) - min(vals) > 1e-9:
                 base = float(by['high'])
-                return {e: float(v) - base for e, v in by.items() if v is not None}
-    # Check whether the model only has single-effort `measured_partial` cells
-    for cell in candidates:
-        by = cell.get('by_effort') or {}
-        if len(by) == 1 and cell.get('status') == 'measured_partial':
-            only_eff = next(iter(by))
-            return {only_eff: 0.0}
+                return {e: float(v) - base for e, v in by.items() if v is not None and e in EFFORTS}
     return None
 
 
@@ -473,32 +562,24 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict) -> No
         facets = copy.deepcopy(cat_cell.get('facets')) if isinstance(cat_cell.get('facets'), dict) else {}
         cat_cell['facets'] = facets
         if facet is None:
-            if cat == 'tool_operation':
-                z_map = {}
-                for f in CATEGORY_FACETS['tool_operation']:
-                    zf = round(level_to_z(rec['level'], *target_triad(targets_table, 'tool_operation', f)), 4)
-                    z_map[f] = zf
-                    deltas = _reference_effort_deltas(five_state, facets.get(f)) if f != 'responsiveness' else None
-                    facets[f] = {'value': zf, 'by_effort': _manual_by_effort(zf, deltas), 'status': status,
-                                 'manual': {**rec, 'target': target, 'z': zf}}
-                    estimates.pop(f'tool_operation.{f}', None)
-                z_val = round(min(z_map.values()), 4)
-                cat_cell = _recompute_category_from_facets('tool_operation', cat_cell, status)
-            else:
-                z_val = round(level_to_z(rec['level'], *target_triad(targets_table, cat, None)), 4)
-                deltas = _reference_effort_deltas(five_state, cat_cell)
-                by_eff = _manual_by_effort(z_val, deltas)
-                for f in CATEGORY_FACETS[cat]:
-                    facets[f] = {'value': z_val, 'by_effort': dict(by_eff), 'status': status,
-                                 'manual': {**rec, 'target': target, 'z': z_val}}
-                    estimates.pop(f'{cat}.{f}', None)
-                cat_cell = {
-                    'value': z_val,
-                    'by_effort': by_eff,
-                    'facets': facets,
+            z_map = {}
+            for f in CATEGORY_FACETS[cat]:
+                zf = round(level_to_z(rec['level'], *target_triad(targets_table, cat, f)), 4)
+                z_map[f] = zf
+                deltas = (
+                    None if (cat == 'tool_operation' and f == 'responsiveness')
+                    else _reference_effort_deltas(five_state, facets.get(f))
+                )
+                facets[f] = {
+                    'value': zf,
+                    'by_effort': _manual_by_effort(zf, deltas),
                     'status': status,
-                    'manual': {**rec, 'target': target, 'z': z_val},
+                    'manual': {**rec, 'target': target, 'z': zf},
                 }
+                estimates.pop(f'{cat}.{f}', None)
+            z_val = round(min(z_map.values()), 4)
+            cat_cell = _recompute_category_from_facets(cat, cat_cell, status)
+            cat_cell['manual'] = {**rec, 'target': target, 'z': z_val}
             # Remove any lower-layer facet manual tags under this category that whole-category just superseded
             for sub in list(manual):
                 if sub == cat or sub.startswith(cat + '.'):
@@ -506,7 +587,10 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict) -> No
             manual[target] = {**rec, 'z': z_val}
         else:
             z_val = round(level_to_z(rec['level'], *target_triad(targets_table, cat, facet)), 4)
-            deltas = None if (cat == 'tool_operation' and facet == 'responsiveness') else _reference_effort_deltas(five_state, facets.get(facet))
+            deltas = (
+                None if (cat == 'tool_operation' and facet == 'responsiveness')
+                else _reference_effort_deltas(five_state, facets.get(facet))
+            )
             facets[facet] = {
                 'value': z_val,
                 'by_effort': _manual_by_effort(z_val, deltas),
@@ -519,16 +603,13 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict) -> No
         cats[cat] = cat_cell
         five_state.setdefault('scores', {})[cat] = cat_cell.get('value')
         five_state.setdefault('axis_status', {})[cat] = cat_cell.get('status', status)
-        if cat_cell.get('value') is not None and cat in five_state.get('missing', ()):
+        if (cat_cell.get('value') is not None or cat_cell.get('by_effort')) and cat in five_state.get('missing', ()):
             five_state['missing'] = [m for m in five_state['missing'] if m != cat]
-        if (target in ('tool_operation', 'tool_operation.image_recognition')
-                and (five_state.get('image_input') or {}).get('status') not in ('yes', 'no')):
-            five_state['image_input'] = {'value': True, 'status': 'yes', 'source': status}
     five_state['user_scores'] = {k: v for k, v in manual.items() if v.get('kind') == 'user'}
 
 
 def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dict | None = None,
-                  local_scores: dict | None = None) -> None:
+                  local_scores: dict | None = None, aliases: dict | None = None) -> None:
     """Apply `public_scores` (`maintainer`) then `local_scores` (`user`) onto `accounts['models'][m]['five_axis']`."""
     pub = (public_scores or {}).get('scores') if isinstance(public_scores, dict) and 'scores' in public_scores else (public_scores or {})
     loc = (local_scores or {}).get('scores') if isinstance(local_scores, dict) and 'scores' in local_scores else (local_scores or {})
@@ -540,13 +621,25 @@ def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dic
             alias_to_canonical[name] = name
             for al in info.get('aliases') or ():
                 alias_to_canonical[str(al)] = name
+    for al, target in (aliases or {}).items():
+        if isinstance(target, str) and target in (models_table or {}):
+            alias_to_canonical[str(al)] = target
+
+    def _canonical(raw_model: str) -> str:
+        raw = str(raw_model or '').strip()
+        if raw in alias_to_canonical:
+            return alias_to_canonical[raw]
+        leaf = raw.rsplit('/', 1)[-1]
+        if leaf in alias_to_canonical:
+            return alias_to_canonical[leaf]
+        return raw
 
     for layer in (pub, loc):
         grouped: dict[str, dict] = {}
         for raw_model, entries in (layer or {}).items():
             if not isinstance(entries, dict) or not entries:
                 continue
-            canon = alias_to_canonical.get(raw_model, raw_model)
+            canon = _canonical(raw_model)
             grouped.setdefault(canon, {}).update(entries)
         for canon, entries in grouped.items():
             info = models_table.setdefault(canon, {})

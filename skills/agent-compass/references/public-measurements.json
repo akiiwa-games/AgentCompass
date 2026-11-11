@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-11T09:58:20+00:00",
+ "generated_at": "2026-11-11T14:53:22+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [
@@ -120,17 +120,6 @@
   }
  ],
  "sources": {
-  "user.anchor_tier": {
-   "file": "text_style_control.parquet",
-   "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-   "fetched_at": "2026-11-09T07:38:39+00:00",
-   "sha256": "499918d223d132ee8f14aea7b562a55f3700474b2ff9f1a79b895b52a1aec0fa",
-   "as_of": "2026-11-04",
-   "as_of_kind": "data date",
-   "method": "the user's judgment of the six anchor rows (calibration/README.md): the tier scale itself",
-   "models_listed": 6,
-   "kind": "user"
-  },
   "tier.arena_overall": {
    "file": "text_style_control.parquet",
    "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
@@ -138,8 +127,8 @@
    "sha256": "499918d223d132ee8f14aea7b562a55f3700474b2ff9f1a79b895b52a1aec0fa",
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
-   "method": "tiers.py: arena.ai Overall (Text, style control) mapped through the six anchor rows at their best listed variant, piecewise linear, floor 1.0",
-   "models_listed": 365,
+   "method": "tiers.py: arena.ai Overall (Text, style control) at High standardized relative to Claude Opus 5.5 (anchor = 0, continuous z-score)",
+   "models_listed": 339,
    "kind": "benchmark"
   },
   "tier.aa_index": {
@@ -149,8 +138,8 @@
    "sha256": "6c2541f91db29b9250f04fe0baaf16fed2272845bc38ff697cf907effdc59c11",
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
-   "method": "tiers.py: Artificial Analysis Intelligence Index position interpolated onto the tier scale through the models listed on both it and arena.ai Overall; only for a model arena Overall does not list",
-   "models_listed": 50,
+   "method": "tiers.py: Artificial Analysis Intelligence Index at High interpolated onto the continuous arena.ai Overall High scale through the models listed at High on both boards",
+   "models_listed": 44,
    "kind": "benchmark"
   },
   "lmarena.creative_writing": {
@@ -1029,15 +1018,32 @@
   "deepseek-v4.1-flash-free": {
    "tier": [
     {
-     "source": "tier.arena_overall",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 3.675,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 DeepSeek-V4.1-Flash-20260910 (Max) 1475 [1469,1481] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
-     "listed_as": "DeepSeek-V4.1-Flash-20260910 (Max)",
-     "arena_value": 1474.9
+     "value": -0.4688,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 28.6437 at High interpolated onto the arena.ai Overall High scale between ['Step 5 Preview'] and ['Claude Haiku 5.5'] of the 20 models listed at High on both boards",
+     "listed_as": "DeepSeek V4.1 Flash 1017",
+     "board_value": 28.6437391540402,
+     "neighbours": {
+      "below": {
+       "x": 28.5283090216016,
+       "tier": -0.4688,
+       "models": [
+        "Step 5 Preview"
+       ]
+      },
+      "above": {
+       "x": 29.874315467743,
+       "tier": -0.4688,
+       "models": [
+        "Claude Haiku 5.5"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "divergence": [
@@ -1487,15 +1493,32 @@
   "claude-fable-5-1": {
    "tier": [
     {
-     "source": "tier.arena_overall",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 4.3,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Claude Fable 5.1 (Max) 1503 [1497,1509] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.30",
-     "listed_as": "Claude Fable 5.1 (Max)",
-     "arena_value": 1503.1
+     "value": 0.0298,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 47.175 at High interpolated onto the arena.ai Overall High scale between ['Qwen3.8 Max'] and ['Gemini 4 Argon'] of the 20 models listed at High on both boards",
+     "listed_as": "Claude Fable 5.1",
+     "board_value": 47.174988245604,
+     "neighbours": {
+      "below": {
+       "x": 33.6545627367888,
+       "tier": -0.1195,
+       "models": [
+        "Qwen3.8 Max"
+       ]
+      },
+      "above": {
+       "x": 50.4121935905389,
+       "tier": 0.0656,
+       "models": [
+        "Gemini 4 Argon"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "divergence": [
@@ -2073,13 +2096,15 @@
   "claude-opus-5-5": {
    "tier": [
     {
-     "source": "user.anchor_tier",
-     "kind": "user",
-     "value": 4.6,
-     "as_of": "2026-11-04",
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": 0.0,
+     "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "anchor tier (calibration/README.md)"
+     "method": "arena.ai Overall 2026-11-08 Claude Opus 5.5 (High) 1505.7 [1499.6,1511.8] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier 0.0000",
+     "listed_as": "Claude Opus 5.5 (High)",
+     "arena_value": 1505.7
     }
    ],
    "divergence": [
@@ -2657,13 +2682,32 @@
   "gpt-6.1-sol": {
    "tier": [
     {
-     "source": "user.anchor_tier",
-     "kind": "user",
-     "value": 3.6,
-     "as_of": "2026-11-04",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "anchor tier (calibration/README.md)"
+     "source": "tier.aa_index",
+     "kind": "benchmark",
+     "value": 0.0646,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 50.3291 at High interpolated onto the arena.ai Overall High scale between ['Qwen3.8 Max'] and ['Gemini 4 Argon'] of the 20 models listed at High on both boards",
+     "listed_as": "GPT-6.1 Sol",
+     "board_value": 50.3291231936536,
+     "neighbours": {
+      "below": {
+       "x": 33.6545627367888,
+       "tier": -0.1195,
+       "models": [
+        "Qwen3.8 Max"
+       ]
+      },
+      "above": {
+       "x": 50.4121935905389,
+       "tier": 0.0656,
+       "models": [
+        "Gemini 4 Argon"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "divergence": [
@@ -3187,13 +3231,32 @@
   "gpt-6-astra": {
    "tier": [
     {
-     "source": "user.anchor_tier",
-     "kind": "user",
-     "value": 4.2,
-     "as_of": "2026-11-04",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "anchor tier (calibration/README.md)"
+     "source": "tier.aa_index",
+     "kind": "benchmark",
+     "value": 0.1034,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 54.8498 at High interpolated onto the arena.ai Overall High scale between ['Claude Opus 5.5'] and ['Gemini 4 Carbon'] of the 20 models listed at High on both boards",
+     "listed_as": "GPT-6 Astra",
+     "board_value": 54.849838322506,
+     "neighbours": {
+      "below": {
+       "x": 51.8359958227294,
+       "tier": 0.0656,
+       "models": [
+        "Claude Opus 5.5"
+       ]
+      },
+      "above": {
+       "x": 60.025738829526,
+       "tier": 0.1685,
+       "models": [
+        "Gemini 4 Carbon"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "divergence": [
@@ -3758,11 +3821,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 4.905,
+     "value": 0.1311,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Gemini 4 Argon (High) 1522 [1516,1527] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.91",
+     "method": "arena.ai Overall 2026-11-08 Gemini 4 Argon (High) 1522.0 [1516.5,1527.5] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier 0.1311",
      "listed_as": "Gemini 4 Argon (High)",
      "arena_value": 1522.0
     }
@@ -4074,13 +4137,32 @@
   "claude-sonnet-5-5": {
    "tier": [
     {
-     "source": "user.anchor_tier",
-     "kind": "user",
-     "value": 3.9,
-     "as_of": "2026-11-04",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "anchor tier (calibration/README.md)"
+     "source": "tier.aa_index",
+     "kind": "benchmark",
+     "value": -0.0327,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 41.5151 at High interpolated onto the arena.ai Overall High scale between ['Qwen3.8 Max'] and ['Gemini 4 Argon'] of the 20 models listed at High on both boards",
+     "listed_as": "Claude Sonnet 5.5",
+     "board_value": 41.515109087048,
+     "neighbours": {
+      "below": {
+       "x": 33.6545627367888,
+       "tier": -0.1195,
+       "models": [
+        "Qwen3.8 Max"
+       ]
+      },
+      "above": {
+       "x": 50.4121935905389,
+       "tier": 0.0656,
+       "models": [
+        "Gemini 4 Argon"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "divergence": [
@@ -4591,13 +4673,32 @@
   "grok-4.7": {
    "tier": [
     {
-     "source": "user.anchor_tier",
-     "kind": "user",
-     "value": 3.4,
-     "as_of": "2026-11-04",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "anchor tier (calibration/README.md)"
+     "source": "tier.aa_index",
+     "kind": "benchmark",
+     "value": -0.1023,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 35.2123 at High interpolated onto the arena.ai Overall High scale between ['Qwen3.8 Max'] and ['Gemini 4 Argon'] of the 20 models listed at High on both boards",
+     "listed_as": "Grok 4.7",
+     "board_value": 35.2122962959703,
+     "neighbours": {
+      "below": {
+       "x": 33.6545627367888,
+       "tier": -0.1195,
+       "models": [
+        "Qwen3.8 Max"
+       ]
+      },
+      "above": {
+       "x": 50.4121935905389,
+       "tier": 0.0656,
+       "models": [
+        "Gemini 4 Argon"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "divergence": [
@@ -5044,13 +5145,15 @@
   "gemini-3.8-flash-high": {
    "tier": [
     {
-     "source": "user.anchor_tier",
-     "kind": "user",
-     "value": 3.0,
-     "as_of": "2026-11-04",
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.0659,
+     "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "anchor tier (calibration/README.md)"
+     "method": "arena.ai Overall 2026-11-08 Gemini 3.8 Flash (High) 1497.5 [1493.3,1501.8] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.0659",
+     "listed_as": "Gemini 3.8 Flash (High)",
+     "arena_value": 1497.5
     }
    ],
    "divergence": [
@@ -5500,7 +5603,20 @@
     }
    ]
   },
-  "grok-bot": {},
+  "grok-bot": {
+   "image_input": [
+    {
+     "source": "maintainer.image_input",
+     "kind": "maintainer",
+     "value": true,
+     "as_of": "2026-11-11",
+     "fetched_at": null,
+     "url": null,
+     "statement": "maintainer: grok-bot accepts image input",
+     "method": "maintainer declaration of image-input modality"
+    }
+   ]
+  },
   "dot": {},
   "gpt-6-pro": {},
   "claude-haiku-5-5": {
@@ -5508,11 +5624,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.042,
+     "value": -0.6696,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Claude Haiku 5.5 (High) 1423 [1416,1429] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.04",
+     "method": "arena.ai Overall 2026-11-08 Claude Haiku 5.5 (High) 1422.6 [1416.3,1428.9] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.6696",
      "listed_as": "Claude Haiku 5.5 (High)",
      "arena_value": 1422.6
     }
@@ -5979,32 +6095,30 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 4.158,
+     "value": -0.0225,
      "as_of": "2026-11-09",
      "fetched_at": "2026-11-09T03:43:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis Intelligence Index 51 interpolated onto the tier scale between ['Gemini 4 Argon', 'Claude Fable 5.1'] and ['GPT-6.1 Sol', 'Claude Sonnet 5.5'] of the 31 models listed on both it and arena.ai Overall",
+     "method": "Artificial Analysis Intelligence Index 42.4345 at High interpolated onto the arena.ai Overall High scale between ['Qwen3.8 Max'] and ['Gemini 4 Argon'] of the 20 models listed at High on both boards",
      "listed_as": "GPT-6.1 Terra",
-     "board_value": 51.0,
+     "board_value": 42.4344508712563,
      "neighbours": {
       "below": {
-       "x": 50.0,
-       "tier": 4.158,
+       "x": 33.6545627367888,
+       "tier": -0.1195,
        "models": [
-        "Gemini 4 Argon",
-        "Claude Fable 5.1"
+        "Qwen3.8 Max"
        ]
       },
       "above": {
-       "x": 55.0,
-       "tier": 4.158,
+       "x": 50.4121935905389,
+       "tier": 0.0656,
        "models": [
-        "GPT-6.1 Sol",
-        "Claude Sonnet 5.5"
+        "Gemini 4 Argon"
        ]
       }
      },
-     "n": 31
+     "n": 20
     }
    ],
    "aesthetics": [
@@ -6511,19 +6625,6 @@
    ]
   },
   "gpt-6-sol": {
-   "tier": [
-    {
-     "source": "tier.arena_overall",
-     "kind": "benchmark",
-     "value": 3.535,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 GPT-6 Sol (Max) 1457 [1451,1462] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.53",
-     "listed_as": "GPT-6 Sol (Max)",
-     "arena_value": 1456.6
-    }
-   ],
    "divergence": [
     {
      "source": "lmarena.creative_writing",
@@ -6735,15 +6836,32 @@
   "gpt-6-luna": {
    "tier": [
     {
-     "source": "tier.arena_overall",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 3.377,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 GPT-6 Luna (Max) 1440 [1436,1445] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.38",
-     "listed_as": "GPT-6 Luna (Max)",
-     "arena_value": 1440.5
+     "value": -0.621,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 21.429 at High interpolated onto the arena.ai Overall High scale between ['MiniMax-M3'] and ['Mistral Large 4'] of the 20 models listed at High on both boards",
+     "listed_as": "GPT-6 Luna",
+     "board_value": 21.4290170864582,
+     "neighbours": {
+      "below": {
+       "x": 18.8789083859255,
+       "tier": -0.621,
+       "models": [
+        "MiniMax-M3"
+       ]
+      },
+      "above": {
+       "x": 26.1249946754784,
+       "tier": -0.621,
+       "models": [
+        "Mistral Large 4"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "divergence": [
@@ -7394,19 +7512,6 @@
    ]
   },
   "gpt-5.6-sol": {
-   "tier": [
-    {
-     "source": "tier.arena_overall",
-     "kind": "benchmark",
-     "value": 3.675,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 GPT-5.6 Sol (xHigh) 1485 [1481,1489] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
-     "listed_as": "GPT-5.6 Sol (xHigh)",
-     "arena_value": 1485.0
-    }
-   ],
    "divergence": [
     {
      "source": "lmarena.creative_writing",
@@ -7623,19 +7728,6 @@
    ]
   },
   "gpt-5.6-terra": {
-   "tier": [
-    {
-     "source": "tier.arena_overall",
-     "kind": "benchmark",
-     "value": 3.638,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 GPT-5.6 Terra (xHigh) 1468 [1464,1472] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.64",
-     "listed_as": "GPT-5.6 Terra (xHigh)",
-     "arena_value": 1467.9
-    }
-   ],
    "divergence": [
     {
      "source": "lmarena.creative_writing",
@@ -7815,19 +7907,6 @@
    ]
   },
   "gpt-5.6-luna": {
-   "tier": [
-    {
-     "source": "tier.arena_overall",
-     "kind": "benchmark",
-     "value": 3.505,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 GPT-5.6 Luna (xHigh) 1453 [1449,1458] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.50",
-     "listed_as": "GPT-5.6 Luna (xHigh)",
-     "arena_value": 1453.2
-    }
-   ],
    "divergence": [
     {
      "source": "lmarena.creative_writing",
@@ -7963,11 +8042,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.602,
+     "value": -0.3367,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 DeepSeek-V4-Pro (High, 20260813) 1464 [1457,1471] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.60",
+     "method": "arena.ai Overall 2026-11-08 DeepSeek-V4-Pro (High, 20260813) 1463.9 [1457.3,1470.6] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.3367",
      "listed_as": "DeepSeek-V4-Pro (High, 20260813)",
      "arena_value": 1463.9
     }
@@ -8259,19 +8338,6 @@
    ]
   },
   "glm-5.3": {
-   "tier": [
-    {
-     "source": "tier.arena_overall",
-     "kind": "benchmark",
-     "value": 3.675,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 GLM-5.3 (Max) 1483 [1478,1487] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
-     "listed_as": "GLM-5.3 (Max)",
-     "arena_value": 1482.6
-    }
-   ],
    "divergence": [
     {
      "source": "lmarena.creative_writing",
@@ -8619,11 +8685,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.675,
+     "value": -0.2506,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 GLM-5.3-Flash 1475 [1470,1479] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "method": "arena.ai Overall 2026-11-08 GLM-5.3-Flash 1474.6 [1470.1,1479.1] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.2506",
      "listed_as": "GLM-5.3-Flash",
      "arena_value": 1474.6
     }
@@ -9074,11 +9140,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.675,
+     "value": -0.1731,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Qwen3.8-Max 1484 [1480,1489] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "method": "arena.ai Overall 2026-11-08 Qwen3.8-Max 1484.2 [1479.6,1488.9] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.1731",
      "listed_as": "Qwen3.8-Max",
      "arena_value": 1484.2
     }
@@ -9430,31 +9496,30 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 4.158,
+     "value": 0.0218,
      "as_of": "2026-11-09",
      "fetched_at": "2026-11-09T03:43:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis Intelligence Index 46 interpolated onto the tier scale between ['Muse Wonder'] and ['Gemini 4 Argon', 'Claude Fable 5.1'] of the 31 models listed on both it and arena.ai Overall",
+     "method": "Artificial Analysis Intelligence Index 46.4526 at High interpolated onto the arena.ai Overall High scale between ['Qwen3.8 Max'] and ['Gemini 4 Argon'] of the 20 models listed at High on both boards",
      "listed_as": "Kimi K3.1 Pro",
-     "board_value": 46.0,
+     "board_value": 46.4526236744189,
      "neighbours": {
       "below": {
-       "x": 44.0,
-       "tier": 4.158,
+       "x": 33.6545627367888,
+       "tier": -0.1195,
        "models": [
-        "Muse Wonder"
+        "Qwen3.8 Max"
        ]
       },
       "above": {
-       "x": 50.0,
-       "tier": 4.158,
+       "x": 50.4121935905389,
+       "tier": 0.0656,
        "models": [
-        "Gemini 4 Argon",
-        "Claude Fable 5.1"
+        "Gemini 4 Argon"
        ]
       }
      },
-     "n": 31
+     "n": 20
     }
    ],
    "aesthetics": [
@@ -9756,19 +9821,6 @@
    ]
   },
   "kimi-k3": {
-   "tier": [
-    {
-     "source": "tier.arena_overall",
-     "kind": "benchmark",
-     "value": 3.675,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Kimi K3 (Max) 1487 [1483,1492] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
-     "listed_as": "Kimi K3 (Max)",
-     "arena_value": 1487.3
-    }
-   ],
    "divergence": [
     {
      "source": "lmarena.creative_writing",
@@ -9953,11 +10005,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.294,
+     "value": -0.5613,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 MiniMax-M3 1436 [1432,1440] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.29",
+     "method": "arena.ai Overall 2026-11-08 MiniMax-M3 1436.1 [1432.4,1439.8] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.5613",
      "listed_as": "MiniMax-M3",
      "arena_value": 1436.1
     }
@@ -10324,30 +10376,30 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 3.45,
+     "value": -0.4688,
      "as_of": "2026-11-09",
      "fetched_at": "2026-11-09T03:43:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis Intelligence Index 29 interpolated onto the tier scale between ['Step 5 Preview'] and ['MiMo-V2.6-Pro'] of the 31 models listed on both it and arena.ai Overall",
+     "method": "Artificial Analysis Intelligence Index 29.0595 at High interpolated onto the arena.ai Overall High scale between ['Step 5 Preview'] and ['Claude Haiku 5.5'] of the 20 models listed at High on both boards",
      "listed_as": "MiniMax-M3.1-Flash",
-     "board_value": 29.0,
+     "board_value": 29.0595214290458,
      "neighbours": {
       "below": {
-       "x": 29.0,
-       "tier": 3.45,
+       "x": 28.5283090216016,
+       "tier": -0.4688,
        "models": [
         "Step 5 Preview"
        ]
       },
       "above": {
-       "x": 30.0,
-       "tier": 3.45,
+       "x": 29.874315467743,
+       "tier": -0.4688,
        "models": [
-        "MiMo-V2.6-Pro"
+        "Claude Haiku 5.5"
        ]
       }
      },
-     "n": 31
+     "n": 20
     }
    ],
    "aesthetics": [
@@ -10674,11 +10726,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.675,
+     "value": -0.2067,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 MiMo-V2.6-Pro 1480 [1471,1490] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "method": "arena.ai Overall 2026-11-08 MiMo-V2.6-Pro 1480.1 [1470.6,1489.5] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.2067",
      "listed_as": "MiMo-V2.6-Pro",
      "arena_value": 1480.1
     }
@@ -11018,11 +11070,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.457,
+     "value": -0.4653,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 MiMo-V2.6-Flash 1448 [1443,1453] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.46",
+     "method": "arena.ai Overall 2026-11-08 MiMo-V2.6-Flash 1448.0 [1442.7,1453.2] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.4653",
      "listed_as": "MiMo-V2.6-Flash",
      "arena_value": 1448.0
     }
@@ -11332,31 +11384,30 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 3.191,
+     "value": -0.621,
      "as_of": "2026-11-09",
      "fetched_at": "2026-11-09T03:43:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis Intelligence Index 12 interpolated onto the tier scale between ['Inkling', 'Gemini 3.5 Flash-Lite'] and ['Inkling Small'] of the 31 models listed on both it and arena.ai Overall",
-     "listed_as": "Nemotron 3 Ultra",
-     "board_value": 12.0,
+     "method": "Artificial Analysis Intelligence Index 11.7593 at High interpolated onto the arena.ai Overall High scale between ['Gemini 3.5 Flash-Lite'] and ['Inkling Small'] of the 20 models listed at High on both boards",
+     "listed_as": "Nemotron 3 Ultra 550B A55B",
+     "board_value": 11.7592726308177,
      "neighbours": {
       "below": {
-       "x": 12.0,
-       "tier": 3.191,
+       "x": 11.6563462044212,
+       "tier": -0.621,
        "models": [
-        "Inkling",
         "Gemini 3.5 Flash-Lite"
        ]
       },
       "above": {
-       "x": 13.0,
-       "tier": 3.191,
+       "x": 12.9101620926084,
+       "tier": -0.621,
        "models": [
         "Inkling Small"
        ]
       }
      },
-     "n": 31
+     "n": 20
     }
    ],
    "coding": [
@@ -11459,15 +11510,32 @@
   "nemotron-3.5-super-vl-free": {
    "tier": [
     {
-     "source": "tier.arena_overall",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 2.896,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4) 1415 [1405,1424] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 2.90",
-     "listed_as": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)",
-     "arena_value": 1414.8
+     "value": -0.621,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 13.6203 at High interpolated onto the arena.ai Overall High scale between ['Inkling Small'] and ['MiniMax-M3'] of the 20 models listed at High on both boards",
+     "listed_as": "Nemotron 3.5 Super VL",
+     "board_value": 13.6203422723141,
+     "neighbours": {
+      "below": {
+       "x": 12.9101620926084,
+       "tier": -0.621,
+       "models": [
+        "Inkling Small"
+       ]
+      },
+      "above": {
+       "x": 18.8789083859255,
+       "tier": -0.621,
+       "models": [
+        "MiniMax-M3"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "aesthetics": [
@@ -11682,15 +11750,32 @@
   "nemotron-3.5-lightning-free": {
    "tier": [
     {
-     "source": "tier.arena_overall",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 1.708,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 NVIDIA-Nemotron-3.5-Lightning-30B-A3B (NVFP4) 1352 [1346,1357] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 1.71",
-     "listed_as": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B (NVFP4)",
-     "arena_value": 1351.5
+     "value": -0.9694,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 5.53467 at High interpolated onto the arena.ai Overall High scale between ['Granite 4.2 8B'] and ['Muse Glimmer'] of the 20 models listed at High on both boards",
+     "listed_as": "Nemotron 3.5 Lightning",
+     "board_value": 5.5346663903388,
+     "neighbours": {
+      "below": {
+       "x": 5.09826495217051,
+       "tier": -1.1402,
+       "models": [
+        "Granite 4.2 8B"
+       ]
+      },
+      "above": {
+       "x": 6.34128724913462,
+       "tier": -0.6537,
+       "models": [
+        "Muse Glimmer"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "coding": [
@@ -11858,11 +11943,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.967,
+     "value": -0.7018,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Mistral Large 4 1419 [1409,1428] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 2.97",
+     "method": "arena.ai Overall 2026-11-08 Mistral Large 4 1418.6 [1409.4,1427.8] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.7018",
      "listed_as": "Mistral Large 4",
      "arena_value": 1418.6
     }
@@ -12199,15 +12284,32 @@
   "muse-wonder-1.0": {
    "tier": [
     {
-     "source": "tier.arena_overall",
+     "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 4.721,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Muse Wonder (Max) 1512 [1506,1519] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.72",
-     "listed_as": "Muse Wonder (Max)",
-     "arena_value": 1512.1
+     "value": -0.0436,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-09T03:43:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 40.5266 at High interpolated onto the arena.ai Overall High scale between ['Qwen3.8 Max'] and ['Gemini 4 Argon'] of the 20 models listed at High on both boards",
+     "listed_as": "Muse Wonder",
+     "board_value": 40.5266079185604,
+     "neighbours": {
+      "below": {
+       "x": 33.6545627367888,
+       "tier": -0.1195,
+       "models": [
+        "Qwen3.8 Max"
+       ]
+      },
+      "above": {
+       "x": 50.4121935905389,
+       "tier": 0.0656,
+       "models": [
+        "Gemini 4 Argon"
+       ]
+      }
+     },
+     "n": 20
     }
    ],
    "divergence": [
@@ -12574,11 +12676,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.269,
+     "value": -0.572,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Beam 1.0 501B A23B 1435 [1425,1444] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.27",
+     "method": "arena.ai Overall 2026-11-08 Beam 1.0 501B A23B 1434.7 [1425.1,1444.4] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.5720",
      "listed_as": "Beam 1.0 501B A23B",
      "arena_value": 1434.7
     }
@@ -12673,11 +12775,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 2.88,
+     "value": -0.7391,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Claude Haiku 4.5 (20251001) 1414 [1412,1416] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 2.88",
+     "method": "arena.ai Overall 2026-11-08 Claude Haiku 4.5 (20251001) 1414.0 [1411.6,1416.4] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.7391",
      "listed_as": "Claude Haiku 4.5 (20251001)",
      "arena_value": 1414.0
     }
@@ -12804,11 +12906,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 4.287,
+     "value": -0.0223,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Claude Opus 4.6 (High) 1503 [1500,1506] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.29",
+     "method": "arena.ai Overall 2026-11-08 Claude Opus 4.6 (High) 1502.9 [1499.7,1506.2] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.0223",
      "listed_as": "Claude Opus 4.6 (High)",
      "arena_value": 1502.9
     }
@@ -12964,11 +13066,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.675,
+     "value": -0.2716,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Claude Sonnet 4.6 1472 [1468,1476] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "method": "arena.ai Overall 2026-11-08 Claude Sonnet 4.6 1472.0 [1468.5,1475.5] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.2716",
      "listed_as": "Claude Sonnet 4.6",
      "arena_value": 1472.0
     }
@@ -13120,19 +13222,6 @@
    ]
   },
   "glm-5.2": {
-   "tier": [
-    {
-     "source": "tier.arena_overall",
-     "kind": "benchmark",
-     "value": 3.675,
-     "as_of": "2026-11-08",
-     "fetched_at": "2026-11-09T07:38:39+00:00",
-     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 GLM-5.2 (Max) 1475 [1471,1479] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
-     "listed_as": "GLM-5.2 (Max)",
-     "arena_value": 1475.0
-    }
-   ],
    "divergence": [
     {
      "source": "lmarena.creative_writing",
@@ -13302,11 +13391,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 1.711,
+     "value": -1.2415,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 gpt-oss-120b 1352 [1347,1356] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 1.71",
+     "method": "arena.ai Overall 2026-11-08 gpt-oss-120b 1351.6 [1347.3,1356.0] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -1.2415",
      "listed_as": "gpt-oss-120b",
      "arena_value": 1351.6
     }
@@ -13545,11 +13634,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.238,
+     "value": -0.5851,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Gemini 3.1 Flash-Lite Preview 1433 [1429,1437] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.24",
+     "method": "arena.ai Overall 2026-11-08 Gemini 3.1 Flash-Lite Preview 1433.1 [1429.5,1436.7] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.5851",
      "listed_as": "Gemini 3.1 Flash-Lite Preview",
      "arena_value": 1433.1
     }
@@ -13852,11 +13941,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.411,
+     "value": -0.5063,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Qwen3.6-Plus 1443 [1439,1447] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.41",
+     "method": "arena.ai Overall 2026-11-08 Qwen3.6-Plus 1442.9 [1438.7,1447.0] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.5063",
      "listed_as": "Qwen3.6-Plus",
      "arena_value": 1442.9
     }
@@ -13982,11 +14071,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 4.066,
+     "value": -0.038,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Claude Opus 4.7 (High) 1501 [1497,1505] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.07",
+     "method": "arena.ai Overall 2026-11-08 Claude Opus 4.7 (High) 1501.0 [1497.2,1504.8] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.0380",
      "listed_as": "Claude Opus 4.7 (High)",
      "arena_value": 1501.0
     }
@@ -14097,11 +14186,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.675,
+     "value": -0.1914,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Claude Opus 4.8 (High) 1482 [1478,1486] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "method": "arena.ai Overall 2026-11-08 Claude Opus 4.8 (High) 1482.0 [1478.1,1485.8] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.1914",
      "listed_as": "Claude Opus 4.8 (High)",
      "arena_value": 1482.0
     }
@@ -14272,11 +14361,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.619,
+     "value": -0.3216,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Grok 4.5 1466 [1461,1470] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.62",
+     "method": "arena.ai Overall 2026-11-08 Grok 4.5 1465.8 [1461.4,1470.2] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.3216",
      "listed_as": "Grok 4.5",
      "arena_value": 1465.8
     }
@@ -14432,11 +14521,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.534,
+     "value": -0.3974,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Grok 4.6 (High) 1456 [1452,1461] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.53",
+     "method": "arena.ai Overall 2026-11-08 Grok 4.6 (High) 1456.4 [1451.8,1461.0] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.3974",
      "listed_as": "Grok 4.6 (High)",
      "arena_value": 1456.4
     }
@@ -14654,11 +14743,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.675,
+     "value": -0.1521,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Gemini 3.1 Pro Preview 1487 [1484,1490] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "method": "arena.ai Overall 2026-11-08 Gemini 3.1 Pro Preview 1486.8 [1483.9,1489.8] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.1521",
      "listed_as": "Gemini 3.1 Pro Preview",
      "arena_value": 1486.8
     }
@@ -14977,11 +15066,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.675,
+     "value": -0.1323,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Gemini 3.7 Flash (High) 1489 [1485,1494] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.68",
+     "method": "arena.ai Overall 2026-11-08 Gemini 3.7 Flash (High) 1489.3 [1484.6,1494.0] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.1323",
      "listed_as": "Gemini 3.7 Flash (High)",
      "arena_value": 1489.3
     }
@@ -15201,11 +15290,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.574,
+     "value": -0.3613,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Kimi K2.6 1461 [1456,1465] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.57",
+     "method": "arena.ai Overall 2026-11-08 Kimi K2.6 1460.9 [1456.4,1465.3] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.3613",
      "listed_as": "Kimi K2.6",
      "arena_value": 1460.9
     }
@@ -15360,11 +15449,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 3.057,
+     "value": -0.6632,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Qwen3-Max (2025-09-23) 1423 [1417,1430] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 3.06",
+     "method": "arena.ai Overall 2026-11-08 Qwen3-Max (2025-09-23) 1423.4 [1416.9,1429.9] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier -0.6632",
      "listed_as": "Qwen3-Max (2025-09-23)",
      "arena_value": 1423.4
     }
@@ -15588,11 +15677,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": 4.992,
+     "value": 0.1685,
      "as_of": "2026-11-08",
      "fetched_at": "2026-11-09T07:38:39+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-08 Gemini 4 Carbon (High) 1527 [1517,1536] mapped through the six anchor rows at their best listed variant (piecewise linear, calibration/tiers.py): tier 4.99",
+     "method": "arena.ai Overall 2026-11-08 Gemini 4 Carbon (High) 1526.6 [1517.0,1536.2] at High standardized against Claude Opus 5.5 (1505.7, sd 124.10): tier 0.1685",
      "listed_as": "Gemini 4 Carbon (High)",
      "arena_value": 1526.6
     }

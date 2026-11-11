@@ -180,10 +180,10 @@
         "aesthetics",
         "duration"
       ],
-      "kind": "user",
-      "statement": "user: grok-bot is Opus 5.5",
+      "kind": "maintainer",
+      "statement": "maintainer: grok-bot is Opus 5.5",
       "as_of": "2026-11-11",
-      "not_carried": "tool_operation: grok-bot is a text-only channel (models.grok-bot.text_only) whose per-turn speed is the web channel's, so tool operation is the channel's own and stays missing, not Opus 5.5's."
+      "not_carried": "tool_operation: grok-bot's per-turn speed and image recognition are the web channel's own, so tool operation stays channel-specific rather than Opus 5.5's."
     }
   },
   "models": {
@@ -216,7 +216,11 @@
     "grok-bot": {
       "fixed_effort": "medium",
       "excluded_when": "local_only",
-      "text_only": true
+      "image_input_source": {
+        "kind": "maintainer",
+        "statement": "maintainer: grok-bot accepts image input",
+        "as_of": "2026-11-11"
+      }
     },
     "dot": {
       "excluded_when": "local_only"
@@ -783,7 +787,12 @@
       "billing": "subscription",
       "verified": false,
       "expires_at": null,
+      "unmetered": true,
       "windows": {},
+      "cadence": {
+        "window_seconds": 43200,
+        "limit": 5
+      },
       "bundles": {
         "pro_max": {
           "model": "gpt-6-pro",

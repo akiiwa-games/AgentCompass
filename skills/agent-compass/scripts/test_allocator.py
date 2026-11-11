@@ -999,12 +999,19 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         # Slow-but-measured models (e.g. argon_high) are scored continuously, never hard-floor excluded
         self.assertEqual(by_id['argon_high']['excluded'], [])
         self.assertIsNotNone(by_id['argon_high']['score'])
-        # Channels with no responsiveness measurement (dot_text, grok_bot) leave automatic routing via rule B
+        # With shipped maintainer scores in references/user-scores.json, dot_text carries maintainer responsiveness;
+        # when public manual scores are empty, channels with no responsiveness measurement leave automatic routing via Mode B.
+        self.assertEqual(by_id['dot_text']['excluded'], [])
+        with patch.object(allocator, 'load_public_user_scores', return_value={'schema_version': 1, 'scores': {}}):
+            res_unscored = allocator.plan(live_cli_task, usage, now=self.now, accounts=copy.deepcopy(base_accounts),
+                                          capabilities=capabilities, overrides=[])
+        by_id_unscored = {c['id']: c for c in res_unscored['ranking']}
         for unmeasured_id in ('dot_text', 'grok_bot'):
-            if unmeasured_id in by_id:
+            if unmeasured_id in by_id_unscored:
                 self.assertTrue(
-                    any('no trusted data for the demanded category tool_operation' in r for r in by_id[unmeasured_id]['excluded']),
-                    by_id[unmeasured_id]['excluded'],
+                    any('no trusted data for the demanded category tool_operation' in r
+                        for r in by_id_unscored[unmeasured_id]['excluded']),
+                    by_id_unscored[unmeasured_id]['excluded'],
                 )
 
     def test_tool_operation_level_3_requires_image_input_and_scores_min_of_responsiveness_and_vision(self):

@@ -128,13 +128,24 @@ class ModelResolutionTests(unittest.TestCase):
 
     def test_current_frontier_tiers_and_context_windows(self):
         shipped = allocator.load_five_axis()['models']
-        for name, tier in {
-            # The six anchors are the user's; every other tier is read off the arena.ai Overall board (or interpolated).
-            'claude-opus-5-5': 4.6, 'claude-sonnet-5-5': 3.9, 'gpt-6-astra': 4.2, 'gpt-6.1-sol': 3.6, 'grok-4.7': 3.4,
-            'gemini-3.8-flash-high': 3.0,
-        }.items():
-            self.assertEqual(shipped[name]['tier']['value'], tier, name)
-            self.assertEqual(shipped[name]['tier']['method'], 'anchor', name)
+        self.assertEqual(shipped['claude-opus-5-5']['tier']['value'], 0.0)
+        sentinels = {
+            'claude-opus-5-5': 'arena_overall',
+            'gemini-3.8-flash-high': 'arena_overall',
+            # Listed only at xHigh/Max on arena.ai Overall, so R2-F2 @High-only tier reads aa.index at High:
+            'claude-sonnet-5-5': 'other_overall',
+            'gpt-6-astra': 'other_overall',
+            'gpt-6.1-sol': 'other_overall',
+            'grok-4.7': 'other_overall',
+        }
+        for name, expected_method in sentinels.items():
+            self.assertEqual(shipped[name]['tier']['method'], expected_method, name)
+            self.assertIsInstance(shipped[name]['tier']['value'], (int, float), name)
+        # Distinct Arena Overall @High models never collapse to the old 3.675 PAV anchor plateau or 'anchor' method
+        self.assertEqual(len({shipped[n]['tier']['value'] for n in sentinels}), len(sentinels))
+        for name, row in shipped.items():
+            self.assertNotEqual((row.get('tier') or {}).get('method'), 'anchor', name)
+            self.assertNotEqual((row.get('tier') or {}).get('value'), 3.675, name)
         for name in self.accounts['models']:
             if isinstance(self.accounts['models'][name], dict):
                 self.assertIn(name, shipped, name)

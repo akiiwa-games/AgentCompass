@@ -107,21 +107,31 @@ class CleanInstallParityTests(unittest.TestCase):
         self.assertEqual(self.specs['grok-bot']['quota_source'], 'grok')
         self.assertIsNone(accounts_override.manual_only_billing('grok-bot', self.accounts))
         now = datetime(2026, 11, 11, tzinfo=timezone.utc)
-        decision = allocator.plan(
-            {'objective': 'Interactive multi-step tool loop', 'hours': 0.5,
-             'profile': {'work_kind': 'tool_execution', 'reasoning_depth': 1, 'code_complexity': 0,
-                         'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
-                         'read_only_review': False, 'access': 'read-only', 'expected_hours': 0.5,
-                         'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'exploration',
-                         'multi_task': False, 'task_count': '1',
-                         'axis_demand': {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}}},
-            {'accounts': {}}, now, accounts=self.accounts, overrides=[], host_policy_config=None, read_local_state=False,
-        )
+        task_doc = {
+            'objective': 'Interactive multi-step tool loop', 'hours': 0.5,
+            'profile': {'work_kind': 'tool_execution', 'reasoning_depth': 1, 'code_complexity': 0,
+                        'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
+                        'read_only_review': False, 'access': 'read-only', 'expected_hours': 0.5,
+                        'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'exploration',
+                        'multi_task': False, 'task_count': '1',
+                        'axis_demand': {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}},
+        }
+        # Without manual scores, unmeasured tool_operation.responsiveness enters Mode B with actionable CLI hint:
+        with unittest.mock.patch.object(allocator, 'load_public_user_scores',
+                                        return_value={'schema_version': 1, 'scores': {}}):
+            unscored = allocator.plan(task_doc, {'accounts': {}}, now, accounts=self.accounts, overrides=[],
+                                      host_policy_config=None, read_local_state=False)
+        for row in [r for r in unscored['ranking'] if r['bundle']['account'] == 'grok-bot']:
+            self.assertTrue(any('tool_operation.responsiveness' in ex and 'agentcompass score set ' in ex
+                                for ex in row['excluded']), row['excluded'])
+        # With shipped maintainer scores in references/user-scores.json, responsiveness is filled while grok meter remains Mode B:
+        decision = allocator.plan(task_doc, {'accounts': {}}, now, accounts=self.accounts, overrides=[],
+                                  host_policy_config=None, read_local_state=False)
         grok_bot_rows = [r for r in decision['ranking'] if r['bundle']['account'] == 'grok-bot']
         self.assertTrue(grok_bot_rows)
         for row in grok_bot_rows:
-            self.assertTrue(any('tool_operation.responsiveness' in ex and 'agentcompass score set ' in ex
-                                for ex in row['excluded']), row['excluded'])
+            self.assertFalse(any('tool_operation.responsiveness' in ex for ex in row['excluded']), row['excluded'])
+            self.assertTrue(any('capacity_unknown' in ex for ex in row['excluded']), row['excluded'])
 
     def test_scoring_and_route_policy_are_the_public_defaults(self):
         scoring = self.accounts['scoring']

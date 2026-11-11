@@ -80,9 +80,11 @@ class PooledAndInterpolationTests(unittest.TestCase):
         self.assertAlmostEqual(f(50), 5.0 + slope * 10)
         self.assertAlmostEqual(f(5), 2.0 - slope * 5)
 
-    def test_the_floor_is_one_and_one_point_is_no_map(self):
-        f = tiers.Interpolation([10, 20], [1.2, 2.0])
-        self.assertEqual(f(-1000), 1.0)
+    def test_optional_floor_and_one_point_is_no_map(self):
+        unfloored = tiers.Interpolation([10, 20], [-0.5, 0.5])
+        self.assertAlmostEqual(unfloored(0), -1.5)
+        floored = tiers.Interpolation([10, 20], [1.2, 2.0], floor=1.0)
+        self.assertEqual(floored(-1000), 1.0)
         with self.assertRaises(ValueError):
             tiers.Interpolation([5, 5], [2.0, 2.0])(5)
 
@@ -102,33 +104,52 @@ class PooledAndInterpolationTests(unittest.TestCase):
 class FitterTests(unittest.TestCase):
     @staticmethod
     def board():
-        """An arena Overall board that orders the six anchors as the user scale does: value = 1000 + 100 x (tier - 3)."""
-        return {name: (1000 + 100 * (tiers.ANCHOR_TIERS[k] - 3.0),) for k, name in tiers.ANCHORS.items()}
+        """An arena Overall @High board centered on Claude Opus 5.5, with distinct Elo values."""
+        return {
+            'Claude Opus 5.5': (1500.0, 1495.0, 1505.0, 'Claude Opus 5.5 (High)', '2026-11-09'),
+            'GPT-6.1 Sol': (1480.0, 1475.0, 1485.0, 'GPT-6.1 Sol (High)', '2026-11-09'),
+            'Claude Sonnet 5.5': (1470.0, 1465.0, 1475.0, 'Claude Sonnet 5.5 (High)', '2026-11-09'),
+            'GPT-6 Astra': (1460.0, 1455.0, 1465.0, 'GPT-6 Astra (High)', '2026-11-09'),
+            'Grok 4.7': (1440.0, 1435.0, 1445.0, 'Grok 4.7 (High)', '2026-11-09'),
+        }
 
     def fitter(self):
         f = tiers.Fitter.__new__(tiers.Fitter)
         f.aa_read = '2026-11-09'
         f.overall = self.board()
-        f.overall.update({'Model A': (1010.0,), 'Model B': (1060.0,), 'Model C': (1130.0,), 'Model D': (1150.0,)})
-        f.overall_map = f.anchor_map(f.overall)
+        f.overall.update({
+            'Model A': (1410.0, 1405.0, 1415.0, 'Model A', '2026-11-09'),
+            'Model B': (1450.0, 1445.0, 1455.0, 'Model B', '2026-11-09'),
+            'Model C': (1490.0, 1485.0, 1495.0, 'Model C', '2026-11-09'),
+            'Model D': (1520.0, 1515.0, 1525.0, 'Model D', '2026-11-09'),
+        })
+        f.anchor_raw, f.sd = f.overall_scale(f.overall)
         f.aa = {'Model A': 40.0, 'Model B': 50.0, 'Model C': 60.0, 'Model D': 70.0, 'Only AA': 55.0}
         f.maps = {'aa.index': f.board_map(f.aa)}
         return f
 
-    def test_the_anchor_rows_map_to_their_own_tiers_and_nothing_else_is_an_input(self):
+    def test_arena_overall_is_centered_on_opus_at_high_with_no_hand_set_anchor_tiers(self):
+        self.assertFalse(hasattr(tiers, 'ANCHOR_TIERS'))
         f = self.fitter()
-        for k, name in tiers.ANCHORS.items():
-            self.assertAlmostEqual(f.overall_map(f.overall[name][0]), tiers.ANCHOR_TIERS[k], places=6)
-        self.assertAlmostEqual(f.arena_overall_tier('Model B'), 3.6, places=6)       # between Grok 4.7 and Sol 6.1 on this board
+        self.assertEqual(f.arena_overall_tier('Claude Opus 5.5'), 0.0)
+        # Distinct Elo rows keep strictly distinct continuous standard-score tiers (never flattened into a PAV plateau)
+        ordered = ['Grok 4.7', 'GPT-6 Astra', 'Claude Sonnet 5.5', 'GPT-6.1 Sol', 'Claude Opus 5.5', 'Model D']
+        vals = [f.arena_overall_tier(name) for name in ordered]
+        self.assertEqual(vals, sorted(vals))
+        self.assertEqual(len(set(round(v, 6) for v in vals)), len(vals))
         self.assertIsNone(f.arena_overall_tier('Unlisted'))
 
-    def test_anchors_that_the_board_orders_against_the_scale_are_pooled_to_one_tier(self):
-        board = self.board()
-        board[tiers.ANCHORS['claude-opus-5-5']] = (1000.0 + 100 * (3.9 - 3.0) - 5,)      # Opus listed below Sonnet
-        f = tiers.Fitter.anchor_map(board)
-        self.assertEqual(f.y, sorted(f.y))
-        opus, sonnet = (f(board[tiers.ANCHORS[k]][0]) for k in ('claude-opus-5-5', 'claude-sonnet-5-5'))
-        self.assertAlmostEqual(opus, sonnet, places=6)           # tied after pooling: one tier for the two
+    def test_arena_high_rows_rejects_max_and_xhigh_substitutes(self):
+        rows = [
+            (1510.0, 1500.0, 1520.0, 'GPT-6 Sol (Max)', '2026-11-09'),
+            (1495.0, 1490.0, 1500.0, 'Claude Opus 5.5 (High)', '2026-11-09'),
+            (1525.0, 1520.0, 1530.0, 'Claude Opus 5.5 (Max)', '2026-11-09'),
+            (1430.0, 1425.0, 1435.0, 'Single Config Model', '2026-11-09'),
+        ]
+        picked = tiers.arena_high_rows(rows)
+        self.assertNotIn('GPT-6 Sol', picked)
+        self.assertEqual(picked['Claude Opus 5.5'][0], 1495.0)
+        self.assertEqual(picked['Single Config Model'][0], 1430.0)
 
     def test_a_board_map_is_the_listed_models_common_with_arena_overall_and_needs_three(self):
         f = self.fitter()

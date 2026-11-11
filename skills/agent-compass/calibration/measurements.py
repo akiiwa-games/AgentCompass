@@ -7,12 +7,11 @@ does not list a model, adds nothing: there are no defaults here. The file is the
 does not read it.
 
 Fields
-- `tier`: the model's overall level on the user's scale (`tiers.py`), never a score. One entry per source: the six
-  anchor rows' own tiers (`user.anchor_tier`); the arena.ai Overall board mapped through the anchors
-  (`tier.arena_overall`); and, only for a model arena Overall does not list, its relative position on another
-  non-arena overall board interpolated onto the tier scale through the models both list (`tier.aa_index`, the
-  Artificial Analysis Intelligence Index), with the two neighbours and the overlap n. five_axis.py combines them and
-  uses the tier for one thing: estimating a type score the model lacks.
+- `tier`: the model's overall level at High relative to the anchor (`tiers.py`), never a score. One entry per source:
+  arena.ai Overall at High (`tier.arena_overall`); and, only for a model arena Overall does not list at High, its High
+  reading on `aa.index` aligned onto that continuous `arena_overall` scale (`tier.aa_index`), with the two neighbours
+  and the overlap n. `five_axis.py` uses the tier for one thing: estimating a capability facet the model lacks through a
+  validated `facet~tier` fit.
 - `usd_per_hour`, one entry per (source, effort), every entry with its `kind` (`community` / `derived`):
   - `arena.agent_sessions` (community): arena.ai Agent / Overall real sessions, Cost/Task P50 / Time/Task P50 x 60.
   - `derived.community_mix` (derived, round 4 option B): AA's measured output speed per hour priced at the community
@@ -126,8 +125,9 @@ RAW_RANGE = {**dict.fromkeys(AA_SCORE, (0.0, 1.0)), 'arena.agent_code': (-100.0,
 # The kind of each source (decision 2, 2026-11-09): vendor = the vendor's own statement or price list, benchmark = a
 # third-party measurement, community = a community or packaged estimate with a stated basis.
 SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'derived.community_mix': 'derived',
-               'tier.arena_overall': 'benchmark', 'tier.aa_index': 'benchmark', 'user.anchor_tier': 'user', 'vendor.text_only': 'vendor', 'aa.cost_time': 'benchmark',
-               'arena.agent_sessions': 'community',
+               'tier.arena_overall': 'benchmark', 'tier.aa_index': 'benchmark', 'vendor.text_only': 'vendor',
+               'vendor.image_input': 'vendor', 'maintainer.image_input': 'maintainer', 'maintainer.text_only': 'maintainer',
+               'aa.cost_time': 'benchmark', 'arena.agent_sessions': 'community',
                'aa.price': 'vendor', 'openrouter.price': 'vendor', 'vendor.price': 'vendor', 'openrouter.modality': 'vendor',
                'vendor.fast_mode': 'vendor', 'aa.index': 'benchmark'}
 IMAGE_BENCHMARKS = ('lmarena.vision', 'aa.mmmu_pro')
@@ -370,14 +370,6 @@ class Builder:
             out.setdefault(sources.base_name(rec['name']), {})[sources.aa_effort(rec['name'])] = rec
         return out
 
-    def aa_by_base(self):
-        """{base name: (record at High, else the effort-less listing, else the highest index; effort)}"""
-        out = {}
-        for base, by_eff in self.aa_variants().items():
-            eff = 'high' if 'high' in by_eff else ('' if '' in by_eff else max(by_eff, key=lambda e: by_eff[e].get('intelligenceIndex') or 0))
-            out[base] = (by_eff[eff], eff)
-        return out
-
     def capabilities(self):
         boards, raw, names = self.boards(), {}, {}
         for src, b in boards.items():
@@ -419,20 +411,46 @@ class Builder:
                 if src in IMAGE_BENCHMARKS:
                     self.add(model, 'image_input', src, True, f"{b['method']}: measured on image input", listed_as=listed)
         self.conflicts = []
+        iso_date = re.compile(r'^\d{4}-\d{2}-\d{2}$')
         for model, info in self.models.items():
+            img_decl = info.get('image_input_source')
+            if isinstance(img_decl, dict) and (
+                img_decl.get('url') or (img_decl.get('kind') == 'maintainer' and iso_date.match(str(img_decl.get('as_of') or '')))
+            ):
+                is_maint = img_decl.get('kind') == 'maintainer'
+                val = bool(img_decl.get('value', True))
+                bench_img = [e['source'] for e in self.out[model].get('image_input', []) if e.get('kind') == 'benchmark']
+                if not val and bench_img:
+                    self.conflicts.append({'model': model, 'field': 'image_input', 'reason': 'sources_disagree',
+                                           'detail': f'image_input_source says False, but {", ".join(bench_img)} list the model',
+                                           'resolution': 'the public leaderboard wins (user, 2026-11-09)'})
+                else:
+                    self.out[model].setdefault('image_input', []).append(
+                        {'source': 'maintainer.image_input' if is_maint else 'vendor.image_input',
+                         'kind': 'maintainer' if is_maint else 'vendor', 'value': val,
+                         'as_of': img_decl.get('as_of'), 'fetched_at': None, 'url': img_decl.get('url'),
+                         'statement': img_decl.get('statement'),
+                         'method': 'maintainer declaration of image-input modality' if is_maint
+                                   else 'vendor statement of image-input modality'})
             stated = info.get('text_only_source')
-            if not (isinstance(stated, dict) and stated.get('url')):
+            if not (isinstance(stated, dict) and (
+                stated.get('url') or (stated.get('kind') == 'maintainer' and iso_date.match(str(stated.get('as_of') or '')))
+            )):
                 continue        # the local visual / text_only flags are routing data, not a source (review F1)
+            is_maint = stated.get('kind') == 'maintainer'
             bench_img = [e['source'] for e in self.out[model].get('image_input', []) if e.get('kind') == 'benchmark']
-            if bench_img:       # a board measured image input on a model a vendor statement calls text-only
+            if bench_img:       # a board measured image input on a model a statement calls text-only
                 self.conflicts.append({'model': model, 'field': 'image_input', 'reason': 'sources_disagree',
-                                       'detail': f'vendor statement says text-only, but {", ".join(bench_img)} list the model',
+                                       'detail': f'text_only_source says text-only, but {", ".join(bench_img)} list the model',
                                        'resolution': 'the public leaderboard wins (user, 2026-11-09)'})
                 continue
             self.out[model].setdefault('image_input', []).append(
-                {'source': 'vendor.text_only', 'kind': 'vendor', 'value': False,
-                 'as_of': stated.get('as_of'), 'fetched_at': None, 'url': stated['url'],
-                 'statement': stated.get('statement'), 'method': 'vendor statement that the model takes no image input'})
+                {'source': 'maintainer.text_only' if is_maint else 'vendor.text_only',
+                 'kind': 'maintainer' if is_maint else 'vendor', 'value': False,
+                 'as_of': stated.get('as_of'), 'fetched_at': None, 'url': stated.get('url'),
+                 'statement': stated.get('statement'),
+                 'method': 'maintainer declaration that the model takes no image input' if is_maint
+                           else 'vendor statement that the model takes no image input'})
         if self.ok('openrouter-models.json'):
             mods_table = sources.openrouter_modalities(self.target)
             self.register('openrouter.modality', 'openrouter-models.json', None,
@@ -521,41 +539,38 @@ class Builder:
 
     # --- tier -------------------------------------------------------------------------------------
     def tier(self):
-        """The tier entries (module docstring)."""
+        """The tier entries (module docstring): arena.ai Overall at High, else AA Intelligence Index at High."""
         fitter = tiers.Fitter(self.target)
         overall = fitter.overall
         as_of = max(r[4] for r in overall.values())
-        self.register('user.anchor_tier', 'text_style_control.parquet', tiers.ANCHOR_TIER_DATE,
-                      "the user's judgment of the six anchor rows (calibration/README.md): the tier scale itself", len(tiers.ANCHORS))
         self.register('tier.arena_overall', 'text_style_control.parquet', as_of,
-                      'tiers.py: arena.ai Overall (Text, style control) mapped through the six anchor rows at their best listed '
-                      'variant, piecewise linear, floor 1.0', len(overall))
+                      'tiers.py: arena.ai Overall (Text, style control) at High standardized relative to '
+                      f'{tiers.ANCHORS[tiers.ANCHOR_MODEL]} (anchor = 0, continuous z-score)', len(overall))
         self.register('tier.aa_index', 'aa-models.html', None,
-                      'tiers.py: Artificial Analysis Intelligence Index position interpolated onto the tier scale through the '
-                      'models listed on both it and arena.ai Overall; only for a model arena Overall does not list',
+                      'tiers.py: Artificial Analysis Intelligence Index at High interpolated onto the continuous '
+                      'arena.ai Overall High scale through the models listed at High on both boards',
                       len(fitter.aa))
         arena, aa = Matcher(overall), Matcher(fitter.aa)
         for model in self.models:
             extra_names = EXTRA_NAMES.get(model) or {}
             names = tiers.NAMES.get(model) or {}
-            if model in tiers.ANCHORS:
-                self.add(model, 'tier', 'user.anchor_tier', tiers.ANCHOR_TIERS[model], 'anchor tier (calibration/README.md)')
             explicit = extra_names.get('arena') or names.get('arena') or tiers.ANCHORS.get(model)
             found = arena.find(model, explicit) or (arena.find(model) if explicit else None)
             if found:
                 row = overall[found]
-                if model not in tiers.ANCHORS:
-                    t = fitter.arena_overall_tier(found)
-                    self.add(model, 'tier', 'tier.arena_overall', round(t, 3), tiers.basis_arena(row, t), listed_as=row[3],
-                             arena_value=round(row[0], 1))
+                t = fitter.arena_overall_tier(found)
+                self.add(model, 'tier', 'tier.arena_overall', round(t, 4),
+                         tiers.basis_arena(row, t, fitter.anchor_raw, fitter.sd),
+                         listed_as=row[3], arena_value=round(row[0], 1))
             else:
-                explicit = extra_names.get('aa') or names.get('aa')
+                explicit = extra_names.get('aa') or names.get('aa') or tiers.ANCHORS.get(model)
                 aa_found = aa.find(model, explicit) or (aa.find(model) if explicit else None)
                 if aa_found:
                     for board, r in fitter.other_overall({'aa.index': aa_found}).items():
                         self.add(model, 'tier', 'tier.aa_index', r['tier'],
-                                 f"{r['board']} {r['value']:g} interpolated onto the tier scale between {r['neighbours']['below']['models']} "
-                                 f"and {r['neighbours']['above']['models']} of the {r['n']} models listed on both it and arena.ai Overall",
+                                 f"{r['board']} {r['value']:g} at High interpolated onto the arena.ai Overall High scale "
+                                 f"between {r['neighbours']['below']['models']} and {r['neighbours']['above']['models']} "
+                                 f"of the {r['n']} models listed at High on both boards",
                                  listed_as=r['listed_as'], board_value=r['value'], neighbours=r['neighbours'], n=r['n'])
 
     # --- price and usd per hour ------------------------------------------------------------------

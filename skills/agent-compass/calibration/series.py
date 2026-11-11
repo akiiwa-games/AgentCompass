@@ -39,7 +39,7 @@ def groups(acc):
         return k
 
     def join(a, b):
-        if a in rows and b in rows and auto_bundles.series_compatible(a, b):
+        if a in rows and b in rows:
             parent[find(a)] = find(b)
 
     for k in sorted(rows):

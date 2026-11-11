@@ -208,21 +208,6 @@ def read(target, kind):
     return json.loads(path.read_text(encoding='utf-8'))
 
 
-def best_variant(rows, value):
-    """{base model name: (value, row)} at the model's best listed variant, as sources.arena reads the dataset."""
-    out = {}
-    for r in rows:
-        if not r.get('name'):
-            continue
-        v = value(r)
-        if v is None:
-            continue
-        b = sources.base_name(r['name'])
-        if b not in out or v > out[b][0]:
-            out[b] = (v, r)
-    return out
-
-
 def usd_per_hour(rows):
     """{listed name: community usd per active hour} from the median cost and time per task of real sessions."""
     return {r['name']: round(r['cost_per_task_usd'] / (r['time_per_task_min'] / 60.0), 2) for r in rows

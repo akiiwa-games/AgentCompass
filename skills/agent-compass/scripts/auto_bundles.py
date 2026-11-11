@@ -11,8 +11,7 @@ A discovered name resolves, most specific first, to:
                     enters the public data, so until then it is out of automatic routing (rule B) and a named dispatch
                     carries the data error.
   3. unmeasured   - no row and no same-series row: the same, with no series to convert from.
-A small-size name (flash/lite/mini/...) is not in the series of a non-small target. No default row, score or price is
-supplied here.
+No default row, score or price is supplied here.
 """
 import copy
 import hashlib
@@ -28,13 +27,34 @@ STALE_LIMIT_SECONDS = 7 * 24 * 3600
 EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
 EFFORT_SUFFIX = re.compile(r'^(?P<base>.+?)-(?P<effort>' + '|'.join(EFFORTS) + r')$')
 NON_CHAT = re.compile(r'embed|image|imagen|dall-?e|tts|speech|audio|whisper|transcri|rerank|moderation|veo|video', re.I)
-SMALL_NAME = re.compile(r'(?:^|[-_.])(flash|lite|mini|nano|air|small|tiny|haiku|luna)(?:$|[-_.])', re.I)
 HARNESS_DEFAULT_EFFORT = {'codex': 'high', 'pi': 'high', 'claude': 'high', 'opencode': None,
                           'antigravity-resilient': None, 'grok': 'high'}
 HARNESS_MODE = {'codex': 'full-access', 'claude': 'bypassPermissions',
                 'opencode': 'build', 'antigravity-resilient': 'full-access'}
-OPENAI_NATIVE = re.compile(r'^(gpt|o\d|codex)', re.I)
-ANTHROPIC_NATIVE = re.compile(r'^claude', re.I)
+_PUBLIC_CATALOG_CACHE = None
+
+
+def _public_catalog():
+    global _PUBLIC_CATALOG_CACHE
+    if _PUBLIC_CATALOG_CACHE is None:
+        ref = Path(__file__).resolve().parents[1] / 'references' / 'accounts.json'
+        try:
+            doc = json.loads(ref.read_text(encoding='utf-8-sig'))
+        except (OSError, ValueError):
+            doc = {}
+        _PUBLIC_CATALOG_CACHE = {
+            'models': doc.get('models') if isinstance(doc.get('models'), dict) else {},
+            'aliases': doc.get('aliases') if isinstance(doc.get('aliases'), dict) else {},
+        }
+    return _PUBLIC_CATALOG_CACHE
+
+
+def _model_api_family(model, accounts=None):
+    src = accounts if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict) else _public_catalog()
+    models = src.get('models') or {}
+    aliases = src.get('aliases') if isinstance(src.get('aliases'), dict) else {}
+    canon = resolve_canonical_model(model, models, aliases) or str(model or '')
+    return str((models.get(canon) or {}).get('api_family') or '').strip().lower()
 
 
 def split_effort(raw, accounts=None):
@@ -57,11 +77,6 @@ def is_chat_model(raw):
     return not NON_CHAT.search(str(raw or ''))
 
 
-def series_compatible(name, target):
-    """False when one side is a small-size name and the other is not: not the same series."""
-    return bool(SMALL_NAME.search(str(name))) == bool(SMALL_NAME.search(str(target)))
-
-
 def series_target(raw_model, accounts):
     """The same-series row model_resolution's family resolution gives this name (a name that is itself a row resolves
     exactly and has none), or None."""
@@ -70,9 +85,7 @@ def series_target(raw_model, accounts):
     known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict)}
     aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
     resolved = resolve_model(raw_model, known, aliases)
-    target = resolved['key'] if resolved['source'] == 'family' else None
-    base = _name_candidates(raw_model, accounts)[0]
-    return target if target and series_compatible(base, target) else None
+    return resolved['key'] if resolved['source'] == 'family' and resolved['key'] else None
 
 
 def _name_candidates(raw_model, accounts):
@@ -131,7 +144,7 @@ def default_profile(raw_model, accounts):
             'basis': 'No row and no same-series row: no scores (out of automatic routing).'}
 
 
-def harness_compatibility(harness, model, account_spec):
+def harness_compatibility(harness, model, account_spec, accounts=None):
     """('ok'|'unverified'|'excluded', reason). Read-only rules; no endpoint is called here.
 
     Metered proxies (LiteLLM) are driven by Codex CLI over the Responses API. LiteLLM translates
@@ -143,15 +156,16 @@ def harness_compatibility(harness, model, account_spec):
     spec = account_spec or {}
     if not is_chat_model(model):
         return 'excluded', 'non-chat model (embedding/image/audio)'
+    api_family = _model_api_family(model, accounts)
     proxy = spec.get('billing') == 'metered' or spec.get('backend_kind') == 'litellm'
     if harness in ('codex', 'pi'):
-        if OPENAI_NATIVE.match(model) or not proxy:
+        if api_family == 'codex' or not proxy:
             return 'ok', ''
         if spec.get('responses_api_verified') is True:
             return 'ok', 'proxy declares responses_api_verified'
         return 'unverified', 'non-OpenAI model through proxy Responses API bridge (not verified)'
     if harness == 'claude':
-        if ANTHROPIC_NATIVE.match(model) or spec.get('anthropic_compatible') is True:
+        if api_family == 'claude' or spec.get('anthropic_compatible') is True:
             return 'ok', ''
         return 'excluded', 'Claude Code requires an Anthropic Messages endpoint'
     return 'ok', ''
@@ -244,7 +258,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                     proxy_harness((families or {}).get(account) or spec.get('family'),
                                   default_profile(raw, accounts)['model'], accounts)
                 profile = default_profile(raw, accounts)
-                status, reason = harness_compatibility(harness, profile['model'], spec)
+                status, reason = harness_compatibility(harness, profile['model'], spec, accounts)
                 if status != 'excluded' and not is_chat_model(raw):
                     status, reason = 'excluded', 'non-chat model (embedding/image/audio)'
                 key = base_key(raw)

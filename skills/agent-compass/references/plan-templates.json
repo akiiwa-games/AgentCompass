@@ -204,7 +204,7 @@
     "pro": {
       "provenance": "empirical_prior",
       "price_usd_per_month": 200,
-      "basis": "The ChatGPT web bridge is only ready when its config reports proAvailable, so a ready bridge is a Pro web seat. Pro consultations draw no API-priced quota (unmetered); the cadence is a pacing alert of 5 consultations per 12 hours, not a hard limit.",
+      "basis": "The ChatGPT web bridge is only ready when its config reports proAvailable, so a ready bridge is a Pro web seat. Pro consultations draw no API-priced quota (unmetered); the 5-per-12h cadence window is priced from current-period consultations used against the 5-seat capacity and remaining period time.",
       "windows": {},
       "cadence": {
         "window_seconds": 43200,

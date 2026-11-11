@@ -46,6 +46,7 @@
 **/*.log
 **/*.tmp
 **/*.bak
+**/*.lock
 **/*endpoint.txt
 **/*discovered*
 **/out/

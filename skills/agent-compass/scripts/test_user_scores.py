@@ -47,10 +47,14 @@ class ManualScoreLayerTests(unittest.TestCase):
         self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
         self.now = datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc)
 
-    def test_shipped_public_user_scores_file_is_empty_and_valid(self):
+    def test_shipped_public_user_scores_file_is_valid_maintainer_only(self):
         doc = json.loads((REFERENCES_DIR / 'user-scores.json').read_text(encoding='utf-8'))
-        self.assertEqual(doc, {'schema_version': 1, 'scores': {}})
-        user_scores.validate_document(doc, expected_kind='maintainer')
+        validated = user_scores.validate_document(doc, expected_kind='maintainer')
+        self.assertGreater(len(validated['scores']), 0)
+        for model, targets in validated['scores'].items():
+            for target, entry in targets.items():
+                self.assertEqual(entry['kind'], 'maintainer', (model, target))
+                self.assertNotIn('url', entry)
 
     def test_level_to_z_mapping_exact_interpolation_and_extrapolation(self):
         targets = self.five['anchor']['targets']
@@ -131,7 +135,9 @@ class ManualScoreLayerTests(unittest.TestCase):
                 'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2},
             },
         }
-        before = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts))
+        empty_pub = {'schema_version': 1, 'scores': {}}
+        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+            before = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts))
         gb_before = next(c for c in before['ranking'] if c['id'] == 'grok_bot')
         self.assertTrue(gb_before['excluded'])
         msg = gb_before['excluded'][0]
@@ -338,8 +344,8 @@ class FixRoundRegressionTests(unittest.TestCase):
         acc_max20['accounts']['claude']['windows'] = {'five_hour': {'hours': 5}, 'seven_day': {'hours': 168},
                                                       'weekly_fable': {'hours': 168, 'models': ['fable']}}
         usage_max20 = usage_windows(now, {
-            'claude': [('five_hour', 90.0, 4.0), ('seven_day', 90.0, 84.0), ('weekly_fable', 90.0, 84.0)],
-            'codex': [('usage', 90.0, 84.0)],
+            'claude': [('five_hour', 90.0, 4.0), ('seven_day', 50.0, 84.0), ('weekly_fable', 50.0, 84.0)],
+            'codex': [('usage', 50.0, 84.0)],
         })
         plan_max20 = allocator.plan(task, usage_max20, now, accounts=acc_max20,
                                     host_policy_config={'allowed_accounts': ['claude', 'codex']}, read_local_state=False)
@@ -447,6 +453,248 @@ class FixRoundRegressionTests(unittest.TestCase):
             expected_kind='maintainer',
         )
         self.assertEqual(doc['scores']['grok-bot']['tool_operation.responsiveness']['as_of'], '2026-11-10')
+
+
+class TaxonomyR2Round2FixTests(unittest.TestCase):
+    """Regression coverage for Taxonomy R2 review-2 findings (R2-F1, R2-F6, R2-F7, R2-F8, R2-F9)."""
+
+    def setUp(self):
+        isolated_router_state(self.addCleanup)
+        self.now = datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc)
+        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        self.five = copy.deepcopy(allocator.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json'))
+
+    def test_r2_f1_end_to_end_decision_snapshot_and_plan_stage_with_non_empty_user_scores(self):
+        # Populate local user scores so both eligible (selected) and excluded rows carry manual_scores.
+        user_scores.set_score('claude-opus-5-5', 'divergence', 3.0, public=False, accounts=self.accounts)
+        user_scores.set_score('dot', 'tool_operation.responsiveness', 2.5, public=False, accounts=self.accounts)
+        usage = usage_windows(self.now, {'claude': [('five_hour', 10, 3), ('seven_day', 10, 84), ('weekly_fable', 10, 84)],
+                                         'codex': [('five_hour', 10, 3), ('usage', 10, 84)]})
+        accounts = copy.deepcopy(self.accounts)
+        accounts['accounts']['claude']['plan'] = 'max_20x'
+        accounts['accounts']['claude']['verified'] = True
+        accounts['accounts']['codex']['plan'] = 'pro'
+        accounts['accounts']['codex']['verified'] = True
+        task = {
+            'objective': 'Local implementation step',
+            'expected_hours': 0.5,
+            'needs': {'local_only': True},
+            'profile': {
+                'work_kind': 'general_implementation', 'reasoning_depth': 3, 'code_complexity': 2,
+                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
+                'read_only_review': False, 'access': 'write', 'expected_hours': 0.5, 'hours_confidence': 'medium',
+                'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                'axis_demand': {'divergence': 3, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1},
+            },
+        }
+        decision = allocator.plan(task, usage, self.now, accounts=accounts, read_local_state=True)
+        snap = allocator.decision_snapshot(decision)
+        json.dumps(snap, allow_nan=False)
+        selected_rows = [r for r in snap['ranking'] if not r['excluded'] and r.get('manual_scores')]
+        excluded_rows = [r for r in snap['ranking'] if r['excluded'] and r.get('manual_scores')]
+        self.assertTrue(selected_rows)
+        self.assertTrue(excluded_rows)
+
+        # End-to-end route_judge.plan_stage with non-empty shipped + local user-scores.
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / 'usage.json'
+            now_live = datetime.now(timezone.utc)
+            live_usage = usage_windows(now_live, {
+                'claude': [('five_hour', 80, 3), ('seven_day', 80, 84), ('weekly_fable', 80, 84)],
+                'codex': [('five_hour', 80, 3), ('usage', 80, 84)],
+            })
+            import argparse
+            import route_simulation as sim
+            accounts['accounts']['claude']['plan'] = 'max20'
+            accounts['accounts']['claude']['windows'] = {
+                'five_hour': {'hours': 5}, 'seven_day': {'hours': 168}, 'weekly_fable': {'hours': 168},
+            }
+            accounts['accounts']['codex']['windows'] = {'five_hour': {'hours': 5}, 'usage': {'hours': 168}}
+            cache_doc = sim.synthetic_document(accounts, now_live, sim.STATES['ample'])
+            cache_path.write_text(json.dumps(cache_doc), encoding='utf-8')
+            args = argparse.Namespace(
+                stage='plan', dry_run=True, demo=False, score=False, no_score=True,
+                hours=0.5, can_wait_hours=None, fast=False, usage_cache=cache_path,
+                keep_whole=None, score_timeout=30,
+            )
+            with patch.object(allocator, 'load_accounts', return_value=accounts):
+                result, rc = route_judge.plan_stage({'task': task}, args)
+            self.assertEqual(rc, 0)
+            self.assertNotEqual(result['choice'], 'none')
+            self.assertTrue(any(r.get('manual_scores') for r in result['ranking']))
+
+    def test_r2_f6_mode_b_score_set_makes_partial_and_max_only_models_routable(self):
+        accounts = copy.deepcopy(self.accounts)
+        accounts['accounts']['codex']['plan'] = 'pro'
+        accounts['accounts']['codex']['verified'] = True
+        accounts['accounts']['codex']['windows'] = {'usage': {'hours': 168}}
+        cx = accounts['accounts']['codex']['bundles']
+        cx['gpt6_sol_high'] = {**cx['sol_high'], 'model': 'gpt-6-sol', 'effort': 'high'}
+        cx['gpt6_sol_max'] = {**cx['sol_high'], 'model': 'gpt-6-sol', 'effort': 'max'}
+        cx['gpt56_sol_high'] = {**cx['sol_high'], 'model': 'gpt-5.6-sol', 'effort': 'high'}
+        cx['ds_v4_high'] = {**cx['sol_high'], 'model': 'deepseek-v4-pro', 'effort': 'high'}
+        cx['ds_v4_max'] = {**cx['sol_high'], 'model': 'deepseek-v4-pro', 'effort': 'max'}
+        usage = usage_windows(self.now, {'codex': [('usage', 90, 84)]})
+
+        code_task = {
+            'objective': 'Code refactor',
+            'expected_hours': 0.5,
+            'needs': {'local_only': True},
+            'profile': {
+                'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
+                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
+                'read_only_review': False, 'access': 'write', 'expected_hours': 0.5, 'hours_confidence': 'medium',
+                'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                'axis_demand': {'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0},
+            },
+        }
+        empty_pub = {'schema_version': 1, 'scores': {}}
+        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+            before = allocator.plan(code_task, usage, self.now, accounts=copy.deepcopy(accounts),
+                                    host_policy_config={'allowed_accounts': ['codex']})
+        rows_before = {c['id']: c for c in before['ranking']}
+        for bid in ('gpt6_sol_high', 'gpt6_sol_max', 'gpt56_sol_high', 'ds_v4_high', 'ds_v4_max'):
+            self.assertTrue(rows_before[bid]['excluded'], bid)
+            self.assertIn('agentcompass score set', rows_before[bid]['excluded'][0])
+
+        # Setting the missing targets per the Mode-B error lifts the capability exclusion at both High and Max:
+        user_scores.set_score('gpt-6-sol', 'coding.faithfulness', 3.0, public=False, accounts=accounts)
+        user_scores.set_score('gpt-6-sol', 'coding.execution', 2.4, public=False, accounts=accounts)
+        user_scores.set_score('gpt-5.6-sol', 'coding.execution', 2.0, public=False, accounts=accounts)
+        user_scores.set_score('deepseek-v4-pro', 'coding.faithfulness', 2.5, public=False, accounts=accounts)
+        user_scores.set_score('deepseek-v4-pro', 'coding.execution', 2.2, public=False, accounts=accounts)
+        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+            after = allocator.plan(code_task, usage, self.now, accounts=copy.deepcopy(accounts),
+                                   host_policy_config={'allowed_accounts': ['codex']})
+        rows_after = {c['id']: c for c in after['ranking']}
+        self.assertEqual(rows_after['gpt6_sol_high']['excluded'], [])
+        self.assertEqual(rows_after['gpt6_sol_max']['excluded'], [])
+        self.assertEqual(rows_after['gpt56_sol_high']['excluded'], [])
+        self.assertEqual(rows_after['ds_v4_max']['excluded'], [])
+        for bid in ('ds_v4_high', 'ds_v4_max'):
+            self.assertFalse(any('no trusted data' in e for e in rows_after[bid]['excluded']), rows_after[bid]['excluded'])
+
+    def test_r2_f7_named_model_without_effort_never_lets_unscored_effort_beat_scored_effort(self):
+        accounts = copy.deepcopy(self.accounts)
+        accounts['accounts']['codex']['plan'] = 'pro'
+        accounts['accounts']['codex']['verified'] = True
+        accounts['accounts']['codex']['windows'] = {'usage': {'hours': 168}}
+        cx = accounts['accounts']['codex']['bundles']
+        cx['luna56_medium'] = {**cx['sol_medium'], 'model': 'gpt-5.6-luna', 'effort': 'medium'}
+        cx['luna56_high'] = {**cx['sol_high'], 'model': 'gpt-5.6-luna', 'effort': 'high'}
+        cx['unscored_high'] = {**cx['sol_high'], 'model': 'gpt-oss-120b', 'effort': 'high'}
+        usage = usage_windows(self.now, {'codex': [('usage', 90, 84)]})
+        empty_pub = {'schema_version': 1, 'scores': {}}
+        # On aesthetics, gpt-5.6-luna has High = -3.0273 < t1 = -2.8934 (negative fit term) and no Medium score:
+        # unscored Medium must be excluded rather than standing at 0.0 and beating scored High!
+        task = {
+            'objective': 'Named model without effort',
+            'expected_hours': 0.5,
+            'constraints': {'model': 'gpt-5.6-luna'},
+            'needs': {'local_only': True},
+            'profile': {
+                'work_kind': 'frontend_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
+                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
+                'read_only_review': False, 'access': 'write', 'expected_hours': 0.5, 'hours_confidence': 'medium',
+                'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                'axis_demand': {'divergence': 0, 'coding': 0, 'aesthetics': 2, 'tool_operation': 0},
+            },
+        }
+        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+            d = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts),
+                               host_policy_config={'allowed_accounts': ['codex']})
+        self.assertEqual(d['choice'], 'luna56_high')
+        rows = {c['id']: c for c in d['ranking']}
+        self.assertTrue(rows['luna56_medium']['excluded'])
+        self.assertIn('excluded because another effort of gpt-5.6-luna has trusted data', rows['luna56_medium']['excluded'][0])
+
+        # Naming a model whose efforts are ALL unscored dispatches with fit=None and unscored_named_dispatch=True.
+        task_unscored = {
+            **task, 'constraints': {'model': 'gpt-oss-120b'},
+            'profile': {**task['profile'], 'axis_demand': {'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}},
+        }
+        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+            d_un = allocator.plan(task_unscored, usage, self.now, accounts=copy.deepcopy(accounts),
+                                  host_policy_config={'allowed_accounts': ['codex']})
+        self.assertEqual(d_un['choice'], 'unscored_high')
+        un_row = next(c for c in d_un['ranking'] if c['id'] == 'unscored_high')
+        self.assertIsNone(un_row['components']['fit'])
+        self.assertTrue(un_row['unscored_named_dispatch'])
+
+    def test_r2_f8_and_r2_f9_manual_score_invariants(self):
+        targets = self.five['anchor']['targets']
+        # 1) Manual tool_operation score never overwrites text_only / missing image_input modality to 'yes'.
+        pub_doc = {
+            'schema_version': 1,
+            'scores': {
+                'gpt-oss-120b': {
+                    'tool_operation': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'},
+                },
+                'flint-40b-free': {
+                    'tool_operation.image_recognition': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'},
+                },
+            },
+        }
+        overlaid = allocator.five_axis_overlay(
+            copy.deepcopy(self.accounts), data=self.five, public_scores=pub_doc, read_local_state=False
+        )
+        self.assertEqual(overlaid['models']['gpt-oss-120b']['five_axis']['image_input']['status'], 'no')
+        self.assertNotEqual(overlaid['models']['flint-40b-free']['five_axis']['image_input']['status'], 'yes')
+
+        # 2) Whole-category coding maps per facet through each facet's own triad.
+        code_doc = {
+            'schema_version': 1,
+            'scores': {
+                'gpt-oss-120b': {
+                    'coding': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'maintainer'},
+                },
+            },
+        }
+        over_code = allocator.five_axis_overlay(
+            copy.deepcopy(self.accounts), data=self.five, public_scores=code_doc, read_local_state=False
+        )
+        facets = over_code['models']['gpt-oss-120b']['five_axis']['categories']['coding']['facets']
+        z_faith = user_scores.mapped_z_for_target('coding.faithfulness', 2.0, targets)
+        z_exec = user_scores.mapped_z_for_target('coding.execution', 2.0, targets)
+        self.assertNotEqual(z_faith, z_exec)
+        self.assertAlmostEqual(facets['faithfulness']['value'], z_faith, places=4)
+        self.assertAlmostEqual(facets['execution']['value'], z_exec, places=4)
+
+        # 3) Top-level aliases resolve cleanly.
+        res_alias = user_scores.set_score('fable', 'divergence', 2.9, public=False, accounts=self.accounts)
+        self.assertEqual(res_alias['model'], 'claude-fable-5-2')
+        self.assertTrue(user_scores.clear_score('fable', 'divergence', public=False, accounts=self.accounts)['removed'])
+
+        # 4) Corrupt local JSON raises ValueError rather than silently returning empty.
+        local_path = user_scores.local_scores_path()
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_text('{corrupt json', encoding='utf-8')
+        with self.assertRaises(ValueError):
+            user_scores.load_local()
+        local_path.unlink()
+
+        # 5) z_to_level round-trips [1, 3] and documents responsiveness >= 2.
+        t1, t2, t3 = user_scores.target_triad(targets, 'divergence')
+        for lvl in (1.0, 1.4, 2.0, 2.6, 3.0, 3.4):
+            z = user_scores.level_to_z(lvl, t1, t2, t3)
+            self.assertAlmostEqual(user_scores.z_to_level(z, t1, t2, t3), lvl, places=6)
+        r1, r2, r3 = user_scores.target_triad(targets, 'tool_operation', 'responsiveness')
+        self.assertEqual(r2, r3)
+        self.assertEqual(user_scores.z_to_level(r2, r1, r2, r3), 2.0)
+        self.assertGreater(user_scores.z_to_level(r2 + 0.2, r1, r2, r3), 3.0)
+
+        # 6) R2-F9: --public writes atomically with zero .lock files inside references/.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / '.git').mkdir()
+            refs = repo / 'skills' / 'agent-compass' / 'references'
+            refs.mkdir(parents=True)
+            for name in (*public_data.FILES, public_data.MANIFEST):
+                shutil.copy2(REFERENCES_DIR / name, refs / name)
+            user_scores.set_score('grok-bot', 'divergence', 2.8, public=True,
+                                  public_path=refs / 'user-scores.json', accounts=self.accounts)
+            locks = list(refs.glob('*.lock'))
+            self.assertEqual(locks, [])
 
 
 if __name__ == '__main__':

@@ -269,5 +269,45 @@ class LoaderPrecedenceTests(ChannelCase):
                          {'schema_version': 2, 'scoring': {'safety_margin_pct': 0.9}})
 
 
+class ProvenanceTests(unittest.TestCase):
+    """R2-F2: public reference files accept cited https:// URLs or dated kind='maintainer' declarations, and reject
+    uncited kind='user' or undated declarations."""
+
+    def test_accounts_provenance_accepts_dated_maintainer_and_rejects_uncited_user(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            for name in public_data.FILES:
+                shutil.copyfile(public_data.BUNDLED / name, folder / name)
+            manifest = public_data.build_manifest(folder, now=T0)
+            self.assertEqual(public_data.check_set(folder, manifest), ('ok', ''))
+
+            # Uncited kind='user' in same_model fails check_set:
+            accounts = json.loads((folder / 'accounts.json').read_text(encoding='utf-8'))
+            accounts['same_model']['grok-bot']['kind'] = 'user'
+            write_json(folder / 'accounts.json', accounts)
+            bad_manifest = public_data.build_manifest(folder, now=T0)
+            state, reason = public_data.check_set(folder, bad_manifest)
+            self.assertEqual(state, 'incomplete')
+            self.assertIn('grok-bot', reason)
+
+            # Undated kind='maintainer' fails check_set:
+            accounts['same_model']['grok-bot']['kind'] = 'maintainer'
+            accounts['same_model']['grok-bot'].pop('as_of', None)
+            write_json(folder / 'accounts.json', accounts)
+            undated_manifest = public_data.build_manifest(folder, now=T0)
+            state2, reason2 = public_data.check_set(folder, undated_manifest)
+            self.assertEqual(state2, 'incomplete')
+            self.assertIn('as_of', reason2)
+
+            # Uncited image_input without image_input_source fails check_set:
+            accounts['same_model']['grok-bot']['as_of'] = '2026-11-11'
+            accounts['models']['grok-bot'] = {'image_input': True}
+            write_json(folder / 'accounts.json', accounts)
+            uncited_mod = public_data.build_manifest(folder, now=T0)
+            state3, reason3 = public_data.check_set(folder, uncited_mod)
+            self.assertEqual(state3, 'incomplete')
+            self.assertIn('image_input', reason3)
+
+
 if __name__ == '__main__':
     unittest.main()

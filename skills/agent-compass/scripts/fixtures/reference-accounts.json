@@ -172,6 +172,19 @@
       "url": "https://openai.com/index/introducing-dots/",
       "as_of": "2026-09-29",
       "not_carried": "tool_operation: Dot takes no image or screenshot input through its packet channel (owner, 2026-10-09) and its per-turn speed is the packet channel's, so tool operation is the channel's own and stays missing, not Astra's."
+    },
+    "grok-bot": {
+      "model": "claude-opus-5-5",
+      "carries": [
+        "divergence",
+        "coding",
+        "aesthetics",
+        "duration"
+      ],
+      "kind": "maintainer",
+      "statement": "maintainer: grok-bot is Opus 5.5",
+      "as_of": "2026-11-11",
+      "not_carried": "tool_operation: grok-bot's per-turn speed and image recognition are the web channel's own, so tool operation stays channel-specific rather than Opus 5.5's."
     }
   },
   "models": {
@@ -204,7 +217,11 @@
     "grok-bot": {
       "fixed_effort": "medium",
       "excluded_when": "local_only",
-      "text_only": true
+      "image_input_source": {
+        "kind": "maintainer",
+        "statement": "maintainer: grok-bot accepts image input",
+        "as_of": "2026-11-11"
+      }
     },
     "dot": {
       "excluded_when": "local_only"

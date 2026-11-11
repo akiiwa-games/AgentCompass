@@ -410,10 +410,13 @@ class GrokBotTests(unittest.TestCase):
         self.assertIsNone(candidate['expected_pct'])
         self.assertIn('capacity_unknown', ' '.join(candidate['notes']))
         for needs, reason in [({'local_only': True}, 'local-only'), ({'file_transfer': True}, 'local files'),
-                              ({'visual': True}, 'image_input modality'), ({'outbound_ok': False}, 'outbound')]:
+                              ({'outbound_ok': False}, 'outbound')]:
             with self.subTest(needs=needs):
                 rejected = next(c for c in plan(needs)['ranking'] if c['id'] == 'grok_bot')
                 self.assertTrue(any(reason in r for r in rejected['excluded']), rejected['excluded'])
+        # grok-bot carries a dated maintainer declaration that it reads images: visual tasks are not excluded on modality
+        visual_row = next(c for c in plan({'visual': True})['ranking'] if c['id'] == 'grok_bot')
+        self.assertFalse(any('image_input' in r for r in visual_row['excluded']), visual_row['excluded'])
         self.assertTrue(any('host policy' in r for c in plan(allowed=False)['ranking']
                             if c['id'] == 'grok_bot' for r in c['excluded']))
         applied['accounts']['grok-bot']['bundles']['grok_bot']['disabled'] = 'user disabled'

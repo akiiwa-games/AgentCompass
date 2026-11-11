@@ -1,28 +1,29 @@
-"""Tier: a model's overall level, read off the arena.ai Overall board and mapped onto the user's tier scale.
+"""Tier: a model's overall level at High, read off the arena.ai Overall board relative to the anchor.
 
 `python -X utf8 tiers.py [--data DIR] [--json OUT] [model-id ...]`
 
-The tier is not a score. It equals the arena.ai Overall position of the model (the Text Arena overall leaderboard,
-`lmarena.text_overall`, the vote-based dataset: not the WebDev or Agent boards), and it has one use: estimating a type
-score a model lacks (`five_axis.py`, through the fitted line of that type score on tier). Nothing routes on it.
+The tier is not a score. It is the continuous standard score of the model's High (or effort-less single-configuration)
+row on the arena.ai Overall leaderboard (`lmarena.text_overall`, `text_style_control` / `overall`, centered on
+`claude-opus-5-5` at High = 0.0), and it has one use: estimating a capability facet a model lacks (`five_axis.py`,
+through a validated `facet~tier` linear fit). Nothing routes on it.
 
-Sources, in order (user decisions of 2026-11-11):
+Sources, in order:
 
-1. arena.ai Overall. The board is mapped onto the tier scale by piecewise-linear interpolation through the user's six
-   anchor rows at their best listed variant (anchors a board orders against the user scale are pooled to one tier);
-   outside the anchor range the Flash-Opus slope applies, floor 1.0. The anchors are inputs, never outputs.
-2. A model that arena Overall does not list takes its relative position on another, non-arena overall (aggregate)
-   leaderboard, interpolated onto the tier scale through the models listed on both that board and arena Overall:
-   piecewise-linearly between the neighbouring common models (tied or inverted neighbours pooled, as the anchors are),
-   beyond the ends along the map's end-to-end slope, floor 1.0. The board used is the Artificial Analysis
-   Intelligence Index (`AA_INDEX`); a board enters only if it is a cited public aggregate board, never a single-skill
-   benchmark. When several such boards list a model its tier is the mean of the interpolated tiers. Each reading records
-   its board, date, the two neighbours used and the overlap n.
-3. A model on no overall board at all takes the tier of its nearest same-series sibling (`five_axis.py`, calibration/
-   series.py); with none it has no tier, and a type score it lacks is a data error (mode B), never a default.
+1. arena.ai Overall at High (`tier.arena_overall`). Only a model's High row (or its effort-less single-configuration
+   listing when no effort variant is named) enters; `Max`, `xHigh`, `Medium`, `Low`, and non-effort quantized tags are
+   never substituted for High. Values are standardized directly as `(rating - rating_anchor) / sd_board` with no
+   hand-set anchor tiers and no PAV plateau across distinct Elo ratings.
+2. Artificial Analysis Intelligence Index at High (`tier.aa_index`). A model that arena Overall does not list at High
+   takes its High (or effort-less single-configuration) reading on `aa.index`, aligned onto the continuous
+   `arena_overall` scale over the models listed at High on both boards (monotone pooled piecewise-linear interpolation,
+   end-to-end slope beyond the ends, no floor).
+3. Same-series sibling (`five_axis.py`, `calibration/series.py`). A model on neither overall board at High takes the
+   tier of its nearest same-series sibling; with none it has no tier, and any unmeasured facet stays missing (mode B).
 """
 import argparse
 import json
+import re
+import statistics
 import sys
 from datetime import datetime, timezone
 
@@ -30,12 +31,15 @@ import numpy as np
 
 import sources
 
+ANCHOR_MODEL = 'claude-opus-5-5'
+# Sentinel fleet models whose shared board coverage defines the calibration panel (measurements.py).
 ANCHORS = {'claude-opus-5-5': 'Claude Opus 5.5', 'gpt-6-astra': 'GPT-6 Astra', 'claude-sonnet-5-5': 'Claude Sonnet 5.5',
            'gpt-6.1-sol': 'GPT-6.1 Sol', 'grok-4.7': 'Grok 4.7', 'gemini-3.8-flash-high': 'Gemini 3.8 Flash'}
-# The user's judgment of the six anchor rows: the tier scale itself (calibration/README.md).
-ANCHOR_TIERS = {'claude-opus-5-5': 4.6, 'gpt-6-astra': 4.2, 'claude-sonnet-5-5': 3.9, 'gpt-6.1-sol': 3.6,
-                'grok-4.7': 3.4, 'gemini-3.8-flash-high': 3.0}
-ANCHOR_TIER_DATE = '2026-11-04'
+EFFORT_TAG = re.compile(
+    r'^(max|xhigh|high|medium|low|minimal|non-reasoning|none|default|default fallback|with fallback|'
+    r'thinking|non-thinking|reasoning|instant|thinking\s+\d+k|\d+k|\d{2,4}|\d{6}|\d{8}|'
+    r'\d{2,4}-\d{2}(?:-\d{2})?|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4})$'
+)
 # accounts.json model id -> the name each public source lists it under (None: not listed there).
 NAMES = {
     'gpt-oss-120b': {'arena': 'gpt-oss-120b', 'swe': 'GPT OSS 120B', 'tb2': 'GPT OSS 120B', 'aa': 'gpt-oss-120b'},
@@ -93,13 +97,69 @@ def pooled(xs, ys):
     return [p[0] for p in pts], flat
 
 
+def _valid_variant_tag(listed_name):
+    tag = sources.variant(listed_name)
+    return not [p for p in (q.strip().lower() for q in tag.split(',')) if p and not EFFORT_TAG.match(p)]
+
+
+def _variant_rank_key(listed_name, value):
+    tag = sources.variant(listed_name)
+    date_m = re.search(r'(\d{8}|\d{6}|\d{4}-\d{2}-\d{2}|\d{4})', tag)
+    date_key = date_m.group(1).replace('-', '') if date_m else ''
+    thinking = 1 if re.search(r'\b(thinking|reasoning)\b', tag, re.I) and not re.search(r'\bnon-thinking\b', tag, re.I) else 0
+    return (thinking, len(date_key), date_key, float(value))
+
+
+def arena_high_rows(rows):
+    """{base model name: (value, lower, upper, listed name, publish date)} restricted to High or effort-less rows."""
+    grouped = {}
+    for row in rows:
+        listed = row[3]
+        if not listed or not _valid_variant_tag(listed):
+            continue
+        eff = sources.aa_effort(listed) or ''
+        if eff not in ('high', ''):
+            continue
+        grouped.setdefault(sources.base_name(listed), {}).setdefault(eff, []).append(row)
+    out = {}
+    for base, by_eff in grouped.items():
+        chosen = by_eff.get('high') or by_eff.get('')
+        if chosen:
+            out[base] = max(chosen, key=lambda r: _variant_rank_key(r[3], r[0]))
+    return out
+
+
+def aa_high_index(records):
+    """{base model name: intelligenceIndex} restricted strictly to High or effort-less single-configuration rows."""
+    grouped = {}
+    for rec in records:
+        name = rec.get('name')
+        idx = rec.get('intelligenceIndex')
+        if not name or not isinstance(idx, (int, float)) or isinstance(idx, bool) or idx <= 0:
+            continue
+        if not _valid_variant_tag(name):
+            continue
+        eff = sources.aa_effort(name) or ''
+        if eff not in ('high', ''):
+            continue
+        grouped.setdefault(sources.base_name(name), {})[eff] = float(idx)
+    out = {}
+    for base, by_eff in grouped.items():
+        if 'high' in by_eff:
+            out[base] = by_eff['high']
+        elif '' in by_eff:
+            out[base] = by_eff['']
+    return out
+
+
 class Interpolation:
     """x -> tier by piecewise-linear interpolation through (x, tier) points; beyond the ends the map's end-to-end slope
-    applies, floor 1.0. `neighbours(x)` names the two points a reading lies between (or the end segment it lies beyond)."""
+    applies. `neighbours(x)` names the two points a reading lies between (or the end segment it lies beyond)."""
 
-    def __init__(self, xs, ys, names=None):
+    def __init__(self, xs, ys, names=None, floor=None):
         order = sorted(range(len(xs)), key=lambda i: (xs[i], i))
         self.names = [names[i] for i in order] if names else None
+        self.floor = floor
         raw_x = [float(xs[i]) for i in order]
         raw_y = [float(ys[i]) for i in order]
         # Tied x keep one point (their mean); inverted neighbours are pooled so the map never decreases.
@@ -117,16 +177,16 @@ class Interpolation:
         if len(xs) < 2:
             raise ValueError('an interpolation needs at least two distinct points')
         if x <= xs[0]:
-            return max(1.0, ys[0] + self.slope * (x - xs[0]))
-        if x >= xs[-1]:
-            return max(1.0, ys[-1] + self.slope * (x - xs[-1]))
-        return max(1.0, float(np.interp(x, xs, ys)))
+            val = ys[0] + self.slope * (x - xs[0])
+        elif x >= xs[-1]:
+            val = ys[-1] + self.slope * (x - xs[-1])
+        else:
+            val = float(np.interp(x, xs, ys))
+        return max(self.floor, val) if self.floor is not None else val
 
     @property
     def slope(self):
-        """End-to-end slope of the map (lowest to highest point), applied beyond the ends. The slope of the end segment
-        alone is not used: after pooling it can be a single steep step (Artificial Analysis 59 -> 60 is 2.4 tier per
-        point, which put a model five points above the top at tier 18.8)."""
+        """End-to-end slope of the map (lowest to highest point), applied beyond the ends."""
         return (self.y[-1] - self.y[0]) / (self.x[-1] - self.x[0])
 
     def neighbours(self, x):
@@ -136,7 +196,7 @@ class Interpolation:
         j = min(max(j, 1), len(xs) - 1)
         out = []
         for k in (j - 1, j):
-            point = {'x': xs[k], 'tier': round(self.y[k], 3)}
+            point = {'x': xs[k], 'tier': round(self.y[k], 4)}
             if self.who:
                 point['models'] = self.who[k]
             out.append(point)
@@ -148,23 +208,28 @@ class Fitter:
         read = datetime.fromtimestamp((target / 'aa-models.html').stat().st_mtime, timezone.utc).date().isoformat() \
             if (target / 'aa-models.html').exists() else None
         self.aa_read = read
-        self.overall = sources.arena(target, 'text_style_control')
-        self.overall_map = self.anchor_map(self.overall)
-        aa = sources.artificial_analysis(target)
-        self.aa = {k: max(v.values()) for k, v in aa.items()}
+        self.overall = arena_high_rows(sources.arena_rows(target, 'text_style_control', 'overall'))
+        self.anchor_raw, self.sd = self.overall_scale(self.overall)
+        self.aa = aa_high_index(sources.aa_records(target))
         self.maps = {'aa.index': self.board_map(self.aa)}
 
     @staticmethod
-    def anchor_map(board):
-        pts = [(board[name][0], ANCHOR_TIERS[k], k) for k, name in ANCHORS.items()]
-        return Interpolation([p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts])
+    def overall_scale(board):
+        anchor_name = ANCHORS[ANCHOR_MODEL]
+        if anchor_name not in board:
+            raise ValueError(f'anchor {anchor_name!r} has no High row on arena.ai Overall')
+        vals = [float(r[0]) for r in board.values()]
+        sd = statistics.stdev(vals) if len(vals) >= 2 else 1.0
+        if sd <= 0:
+            raise ValueError('arena.ai Overall High rows have zero standard deviation')
+        return float(board[anchor_name][0]), float(sd)
 
     def arena_overall_tier(self, arena_name):
         row = self.overall.get(arena_name)
-        return None if row is None else float(self.overall_map(row[0]))
+        return None if row is None else (float(row[0]) - self.anchor_raw) / self.sd
 
     def common(self, board):
-        """[(board value, arena Overall tier, model name)] for the models listed on `board` and on arena Overall."""
+        """[(board value, arena Overall tier, model name)] for the models listed at High on `board` and on arena Overall."""
         arena = {norm(sources.base_name(n)): n for n in self.overall}
         out = []
         for name, value in board.items():
@@ -187,15 +252,15 @@ class Fitter:
             x = self.aa[name]
             low, high = mapping.neighbours(x)
             out[board] = {'board': OVERALL_BOARDS[board][0], 'source': board, 'url': OVERALL_BOARDS[board][1],
-                          'as_of': self.aa_read, 'listed_as': name, 'value': x, 'tier': round(float(mapping(x)), 3),
+                          'as_of': self.aa_read, 'listed_as': name, 'value': x, 'tier': round(float(mapping(x)), 4),
                           'neighbours': {'below': low, 'above': high}, 'n': mapping.n}
         return out
 
 
-def basis_arena(row, tier):
+def basis_arena(row, tier, anchor_raw, sd):
     value, lo, hi, listed, date = row
-    return (f'arena.ai Overall {date} {listed} {value:.0f} [{lo:.0f},{hi:.0f}] mapped through the six anchor rows at their '
-            f'best listed variant (piecewise linear, calibration/tiers.py): tier {tier:.2f}')
+    return (f'arena.ai Overall {date} {listed} {value:.1f} [{lo:.1f},{hi:.1f}] at High standardized against '
+            f'{ANCHORS[ANCHOR_MODEL]} ({anchor_raw:.1f}, sd {sd:.2f}): tier {tier:.4f}')
 
 
 def main():
@@ -206,24 +271,25 @@ def main():
     args = ap.parse_args()
     fitter = Fitter(sources.data_dir(args.data))
     for board, mapping in fitter.maps.items():
-        print(f'{board}: {mapping.n if mapping else 0} models common with arena Overall')
+        print(f'{board}: {mapping.n if mapping else 0} models common with arena Overall at High')
     result = {}
     for key in args.models or list(NAMES):
         names = NAMES.get(key, {})
-        arena = fitter.overall.get(names.get('arena'))
+        explicit = names.get('arena') or ANCHORS.get(key)
+        arena = fitter.overall.get(explicit) if explicit else None
         entry = {'id': key}
-        if key in ANCHOR_TIERS:
-            entry.update(method='anchor', tier=ANCHOR_TIERS[key])
-        elif arena:
-            entry.update(method='arena_overall', tier=round(fitter.arena_overall_tier(names['arena']), 2))
+        if arena:
+            entry.update(method='arena_overall', tier=round(fitter.arena_overall_tier(explicit), 4))
         else:
-            others = fitter.other_overall({'aa.index': names.get('aa')})
+            others = fitter.other_overall({'aa.index': names.get('aa') or ANCHORS.get(key)})
             entry.update(method='other_overall' if others else 'none', boards=others,
-                         tier=round(float(np.mean([o['tier'] for o in others.values()])), 2) if others else None)
+                         tier=round(float(np.mean([o['tier'] for o in others.values()])), 4) if others else None)
         result[key] = entry
         print(f"{key:30s} {entry['method']:14s} tier {entry['tier']}")
     if args.json:
-        json.dump(result, open(args.json, 'w', encoding='utf-8'), indent=1, default=str)
+        Path_out = open(args.json, 'w', encoding='utf-8', newline='\n')
+        with Path_out as fh:
+            json.dump(result, fh, indent=1, default=str)
 
 
 if __name__ == '__main__':

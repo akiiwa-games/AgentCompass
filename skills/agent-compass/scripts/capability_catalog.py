@@ -21,6 +21,19 @@ def compose(accounts):
 def markdown(accounts, five=None):
     if five is None:
         five = json.loads((REFERENCES / 'five-axis-scores.json').read_text(encoding='utf-8'))
+        import allocator
+        import user_scores
+        pub_scores = user_scores.load_public(REFERENCES / 'user-scores.json', effective=False)
+        overlaid = allocator.five_axis_overlay(
+            deepcopy(accounts), five, public_scores=pub_scores, local_scores={'scores': {}}, read_local_state=False
+        )
+        scored_over = {}
+        for m, raw_row in (five.get('models') or {}).items():
+            st = ((overlaid.get('models') or {}).get(m) or {}).get('five_axis') or {}
+            cats = st.get('categories') or raw_row.get('categories') or raw_row.get('axes') or {}
+            scored_over[m] = {**raw_row, 'axes': cats, 'categories': cats,
+                              'image_input': st.get('image_input') or raw_row.get('image_input') or {}}
+        five = dict(five, models=scored_over)
     rows = ['# Model capability catalogue', '',
             'Generated from `accounts.json` and `five-axis-scores.json` by `scripts/capability_catalog.py`; do not edit this view.', '',
             'Each model is scored on four categories (divergence, coding, aesthetics, tool operation) that gather '
@@ -52,13 +65,15 @@ def markdown(accounts, five=None):
         image = (row.get('image_input') or {}).get('status', 'unknown')
         rows.append(f'| `{name}` | {"-" if tier is None else f"{tier:.2f}"} | ' + ' | '.join(cells)
                     + f' | {"-" if usd is None else usd} | {image} |')
-    rows += ['', 'Tier is the arena.ai Overall position on the user scale (or its interpolation from another overall board, or '
-             'its same-series sibling tier); it is not a score and only estimates facets a model lacks. A value marked `~` '
-             'holds such an estimate (a same-series sibling, else the fit of that facet on the tier); `u` marks a manual '
-             'score (`user-scores.json`); `!` marks a category with one or more missing facets (`tool_operation` keeps its '
-             'level-2 responsiveness when `image_recognition` is missing; `coding` stays `missing!` so a missing facet is '
-             'never silently skipped); `missing` excludes the model under mode B when a demanded level requires that facet. '
-             'The record of each estimate is in `five-axis-scores.json` (`estimate`).', '',
+    rows += ['', 'Tier is the arena.ai Overall position at High relative to the anchor (or its linear alignment from '
+             'the Artificial Analysis Intelligence Index at High, or its same-series sibling tier); it is not a score '
+             'and only estimates facets a model lacks when the panel regression has positive leave-one-out skill. '
+             'A value marked `~` holds such an estimate (a same-series sibling, else an accepted fit of that facet on '
+             'the tier); `u` marks a manual score (`user-scores.json`); `!` marks a category with one or more missing '
+             'facets (`tool_operation` keeps its level-2 responsiveness when `image_recognition` is missing; `coding` '
+             'stays `missing!` so a missing facet is never silently skipped); `missing` excludes the model under mode B '
+             'when a demanded level requires that facet. The record of each estimate is in `five-axis-scores.json` '
+             '(`estimate`).', '',
              '## Effective policy', '',
              'Routes describe task scope and modality requirements and ship a calibrated harness order. '
              'A route can fix the harness order or imply a modality flag; it does not rank models. '

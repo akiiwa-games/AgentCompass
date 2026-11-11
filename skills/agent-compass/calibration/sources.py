@@ -133,16 +133,6 @@ def arena_rows(target, board, category='overall'):
             for _, r in d.iterrows()]
 
 
-def arena(target, board, category='overall'):
-    """{base model name: (value, lower, upper, listed name, publish date)} at the model's best listed variant."""
-    out = {}
-    for row in arena_rows(target, board, category):
-        b = base_name(row[3])
-        if b not in out or row[0] > out[b][0]:
-            out[b] = row
-    return out
-
-
 def _text(raw):
     t = re.sub(r'<script.*?</script>|<style.*?</style>', ' ', raw, flags=re.S)
     return re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', t)))

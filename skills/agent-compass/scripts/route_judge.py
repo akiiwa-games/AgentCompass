@@ -2173,8 +2173,13 @@ def record_constraint(args, task=None, classified=None):
     elif task:
         try:
             plan_task = {**task, 'force_fast': True} if fast_requested else task
+            has_cadence = any(
+                isinstance((spec or {}).get('cadence'), dict)
+                for spec in (allocator.load_accounts().get('accounts') or {}).values()
+            )
             plan_records = (records if records is not None else
-                            dispatch_flow.reservation_records(read_only=not LEDGER_WRITES) if not (task.get('chain') or {}).get('id') else
+                            dispatch_flow.reservation_records(read_only=not LEDGER_WRITES)
+                            if not ((task.get('chain') or {}).get('id') or has_cadence) else
                             read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES))
             plan = allocator.plan(plan_task, usage, now, records=plan_records)
         except (ValueError, KeyError, TypeError) as exc:
@@ -2615,7 +2620,12 @@ def plan_stage(document, args):
     loaded_accounts = allocator.load_accounts()
     policy = loaded_accounts['scoring']
     guard_cfg = capabilities.get('remote_reroute_guard') or {}
-    need_ledger = (bool((task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else False)
+    has_cadence = any(
+        isinstance((spec or {}).get('cadence'), dict)
+        for spec in (loaded_accounts.get('accounts') or {}).values()
+    )
+    need_ledger = (has_cadence
+                   or bool((task.get('chain') or {}).get('id') if isinstance(task.get('chain'), dict) else False)
                    or bool(guard_cfg.get('enabled') is True and isinstance(guard_cfg.get('bundle_id'), str)
                            and guard_cfg.get('bundle_id') in unavailable))
     records = ((read_ledger() if need_ledger else [])

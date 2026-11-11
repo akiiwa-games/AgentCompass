@@ -20,7 +20,18 @@ import provider_inventory as inventory
 from router_test_support import isolated_router_state, temporary_root, usage_windows
 
 BUNDLE = 'venice_glm52_high'
-TASK = {'objective': 'Reply with exactly OK', 'hours': 0.1}
+TASK = {
+    'objective': 'Reply with exactly OK',
+    'hours': 0.1,
+    'profile': {
+        'work_kind': 'text_in_text_out', 'reasoning_depth': 1, 'code_complexity': 0,
+        'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
+        'read_only_review': False, 'access': 'read-only', 'expected_hours': 0.1,
+        'hours_confidence': 'high', 'urgency': 'normal', 'interaction_style': 'exploration',
+        'multi_task': False, 'task_count': '1',
+        'axis_demand': {'divergence': 1, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0},
+    },
+}
 NOW = datetime(2026, 11, 11, tzinfo=timezone.utc)
 # One current reading per window that can price spend: the subscription's own and the metered account's prepaid budget.
 USAGE = usage_windows(NOW, {'codex': [('usage', 90, 100)], 'omp': [('weekly', 90, 100)]})
@@ -79,7 +90,8 @@ class AutomaticRoutingTests(unittest.TestCase):
                 bundle = accounts['accounts']['omp']['bundles'][BUNDLE]
                 self.assertEqual({k for k in bundle if 'enabled' in k}, set())  # the checkbox writes only `disabled`
                 decision = self.plan(accounts)
-                self.assertTrue(decision['choice'].startswith(('sol_', 'astra_')))
+                self.assertEqual(decision['selected_bundle']['account'], 'codex')
+                self.assertTrue(decision['choice'].startswith(('sol_', 'astra_', 'pi_sol_', 'pi_astra_')))
                 self.assertIn(reason, omp_row(decision)['excluded'])
                 self.assertNotIn('metered_fallback', decision['decision']['task'])
 

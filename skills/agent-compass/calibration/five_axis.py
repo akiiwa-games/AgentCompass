@@ -1,6 +1,6 @@
 """Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.
 
-`python -X utf8 five_axis.py [--distrust SOURCE ...] [--user-overrides PATH] [--measurements PATH] [--out PATH]`
+`python -X utf8 five_axis.py [--distrust SOURCE ...] [--measurements PATH] [--out PATH]`
 
 Writes `references/five-axis-scores.json`, the only model scoring the router reads (allocator.five_axis_overlay). The
 user's taxonomy (2026-11-11): four categories, each made of facets, each facet read from public boards; the router
@@ -16,57 +16,48 @@ scores on the four categories and the quota economy together. Nothing else score
 - Scale (measurements.py): every board is a panel standard score, z = (x - x_anchor) / sd_panel, the anchor (Opus 5.5)
   at High 0 and one unit one standard deviation over the panel (the fleet models on every scoring board that lists all six
   anchor rows; its n is written to `anchor.panel_n`). No bridging, no kind conversion, no cap.
-- Parallel boards of one facet are linked (`link`): each board is centred on the anchor's High value, then mean-mean
-  linked over the panel members it shares with the full-panel boards, then the facet is re-centred on the anchor; the
-  facet is the mean of its linked boards. The offsets are written to `links`.
-- Efforts (`board_curves`, `listed_shift`): an Artificial Analysis board reads the candidate's own effort row; a missing
-  row takes the same-series sibling's step, else the fleet median step (n >= 3), else holds the nearest listed value. An
-  arena or LMArena board lists one variant, so it shifts by the same model's (or series') z(effort) - z(listed effort) on
-  the same facet's AA board; with no AA board for the facet it does not shift and the facet is `measured_partial`.
+- Linking and effort shifting (`board_curves`, `link`): Artificial Analysis capability boards are linked onto the panel
+  scale first and kept strictly to each model's own listed efforts (never imputed from siblings or fleet medians). Each
+  non-AA board chooses one fixed AA reference board by Pearson correlation over the panel, links its High values across
+  parallel boards (full-panel SD at High = 1, anchor at High = 0; partial-panel boards mean-sigma linked onto the full
+  panel core), and then expands other efforts using the model's own linked AA deltas without scale distortion.
+- No cross-board effort stitching (`facet_value`): multi-board facets combine common efforts shared by every board of
+  the facet; when no effort is common to all boards, at most one effort (High if present) is kept and marked
+  `measured_partial`. Ability facets are pooled isotonically (PAV) so ability never decreases with effort;
+  `tool_operation.responsiveness` decreases naturally with thinking effort and is left unpooled.
 - tool_operation by level (TOOL_LEVEL_FACETS): level 1 asks no ability (the router's image-input check sits at level 3),
   level 2 responsiveness, level 3 min(responsiveness, image recognition); `by_level` holds both per effort.
 - A facet a model lacks is estimated: the nearest same-series sibling's value moved along the facet's fit on the tier by
-  the tier difference (calibration/series.py), else the fit at the model's tier. The fit is kept without a skill gate
-  (user, 2026-11-11: fit plus periodic recalibration) and its record keeps r, skill, loo_rmse, n and the slope
-  (`estimate_fits`). Estimates score at their value, status `estimated`; a direct measurement replaces one at the next
-  refresh. A category computes from the facets that have a value; one with a facet that has none is partial (a yellow
-  `facet_unmeasured_no_estimate`), and one with no value at all is `missing` (mode B when a task demands it).
+  the tier difference (calibration/series.py), else the fit at the model's tier. An estimate fit is accepted only when
+  its slope is positive (`b > 0`) and its leave-one-out skill beats the panel mean (`skill > 0`); failing fits go to
+  `rejected_fits`, leaving models without a measured sibling `missing` (mode B) and setting sibling shift to `0`.
 - Targets (`anchor.targets`, `targets`): per category and level, level 1 the panel's weakest value at High, level 2 the
   panel median, level 3 the anchor; `zero` is the level-1 target, the fit's zero point. tool_operation asks per facet,
-  and a level never asks less of a facet than the level below (user, 2026-11-11: the anchor's responsiveness, 0, is
-  below the panel median, so level 3 asks the median of it). `continuity` is t3 - t2 (tool_operation: the smallest over
-  the facets both levels ask for); the router counts the largest positive one among the task's highest demands.
+  and a level never asks less of a facet than the level below (the anchor's responsiveness, 0, is below the panel
+  median, so levels 2 and 3 both ask the panel median). `continuity` is t3 - t2 (tool_operation: the largest positive
+  t3 - t2 across its level-3 facets).
 - Checks: structural ones drop a listing (a variant tag that is not an effort, a raw value out of range, one listing
   matched to two models, a duplicate board); statistical ones only note (`checks`).
-- The tier (calibration/tiers.py) is the model's overall level: the arena.ai Overall board mapped onto the user's scale
-  through the six anchor rows, else another overall board interpolated onto it (`tier.aa_index`), else the nearest
-  same-series sibling's tier. Its one use is estimating a facet a model lacks.
-- A row that `accounts.json` `same_model` declares to be the very model another row names (a vendor statement with its
-  url, or a dated user statement, kind `user`) takes that model's facets as they stand, measured or estimated (method
-  `same_model`), for the categories the row `carries`, and its Time/Task. The other categories are the channel's own.
-- A dated user override (`--user-overrides`, source `user`) replaces a public axis value; none is shipped.
+- The tier (calibration/tiers.py) is the model's overall level at High relative to the anchor (`tier.arena_overall`,
+  else `tier.aa_index`, else same-series sibling). Its one use is estimating a facet a model lacks.
+- A row that `accounts.json` `same_model` declares to be the very model another row names (a cited vendor statement with
+  its `url`, or a dated `kind: "maintainer"` declaration) takes that model's facets as they stand, measured or
+  estimated (method `same_model`), for the categories the row `carries`, and its Time/Task.
 - usd_per_hour has one basis (rounds 8-9, user 2026-11-09 "全部都用arena"): `arena.agent_sessions` (arena.ai Agent / Overall
   real sessions, Cost/Task P50 / Time/Task P50 x 60, kind `community`), each source's value at High (else its effort-less
   listing, else the median of its listed efforts). For a model arena does not list with cost and time, the labelled
   option B (`derived.community_mix`, `fallback: True`: AA's measured output speed per hour priced at the community token
   mix at list prices); a model with a same-series sibling that has a direct value takes that sibling's times the ratio
-  of the two cited API list prices over the full community token mix (`convert_usd`, `converted`). A model with none of
-  these has no usd: out of automatic routing on a metered account (billed or quota windows), and a named dispatch runs
-  with its cost unpriced. `--distrust` removes a source from every field.
+  of the two cited API list prices over the full community token mix (`convert_usd`, `converted`).
 - Plan capacity comes down a ladder (rounds 4-5, user 2026-11-09: "都用社区真实使用量 且保持最新"; capacity is never
-  left unknown), per window of each plan in plan-templates.json, recording the rung: 1 the median of the cited community
-  observations (`community.py`), or a window ratio a community source states (Fable weekly = half the weekly limit);
-  2 a community time-to-exhaust report x the reported model's usd; 3 a vendor-published plan multiplier x the sibling
-  plan's value (also kept as a cross-check where a lower rung won). All three empty is a red data error surfaced in
-  routing notes (the live percentage still prices scarcity); the packaged template figure is never a fallback. A source
-  older than STALE_DAYS (data date, else fetch date) is a yellow note; a source not fetched, or whose sentence is gone,
-  contributes nothing (red).
+  left unknown), per window of each plan in plan-templates.json, recording the rung.
 - Each window's reference-model hours are its capacity over that model's usd_per_hour.
 - economy is priced by the router at run time from usd_per_hour, the duration and the window's capacity and recovery.
 """
 import argparse
 import hashlib
 import json
+import re
 import statistics
 import sys
 from datetime import datetime, timezone
@@ -77,12 +68,14 @@ import numpy as np
 import measurements
 import series
 import sources
+import tiers
 
 OUT = sources.REPO / 'references' / 'five-axis-scores.json'
 PLANS = sources.REPO / 'references' / 'plan-templates.json'
 SCHEMA = 'agent-compass.five-axis-scores/2'
 AXES = measurements.AXES
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 # The facets each tool_operation level asks for (user, 2026-11-11): level 1 no ability beyond the image-input check of
 # level 3, level 2 responsiveness, level 3 responsiveness and image recognition; their `min`.
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
@@ -94,13 +87,34 @@ REFERENCE_MODELS = {
     'antigravity': {'gemini-weekly': 'gemini-4-argon-high', 'gemini-5h': 'gemini-4-argon-high',
                     '3p-weekly': 'claude-opus-5-5', '3p-5h': 'claude-opus-5-5'},
 }
-TIER_DIRECT = ('user.anchor_tier', 'tier.arena_overall')    # a tier read off arena.ai Overall (the anchors are rows of it)
+TIER_DIRECT = ('tier.arena_overall',)
 TIER_OTHER = ('tier.aa_index',)     # a non-arena overall board interpolated onto that scale; no other source is a tier
 MIN_FIT_POINTS = 8      # models a type-score-on-tier fit needs (review F1: one public point is not a fit)
 
 
 def mean(xs):
     return round(float(np.mean(xs)), 4) if xs else None
+
+
+def pool_effort_curve(by_effort):
+    """Return `by_effort` made non-decreasing across EFFORTS by adjacent-violators pooling (PAV)."""
+    ordered = [e for e in EFFORTS if e in by_effort]
+    if len(ordered) < 2:
+        return dict(by_effort)
+    xs = [EFFORTS.index(e) for e in ordered]
+    ys = [float(by_effort[e]) for e in ordered]
+    _, pooled_ys = tiers.pooled(xs, ys)
+    return {e: round(float(v), 4) for e, v in zip(ordered, pooled_ys)}
+
+
+def valid_public_declaration(entry):
+    """True when `entry` carries an https URL or is a dated `kind: "maintainer"` declaration."""
+    if not isinstance(entry, dict):
+        return False
+    url = entry.get('url')
+    if isinstance(url, str) and url.startswith('https://'):
+        return True
+    return entry.get('kind') == 'maintainer' and bool(ISO_DATE.match(str(entry.get('as_of') or '')))
 
 
 def source_value(entries):
@@ -131,8 +145,9 @@ def pick_usd(entries):
 
 
 def pick_image_input(entries):
-    """Image-input modality from cited public sources (round 11, user 2026-11-10): a public vision/GUI benchmark listing
-    wins over a vendor/OpenRouter modality flag; without any source, status is `unknown` (mode B when tool_operation is 3)."""
+    """Image-input modality from cited public sources or dated maintainer declarations: a public vision benchmark listing
+    wins first, then an explicit maintainer/vendor modality declaration, then OpenRouter modality metadata; without any
+    source, status is `unknown` (mode B when tool_operation is 3)."""
     if not entries:
         return {'value': None, 'status': 'unknown', 'source': None, 'kind': None, 'sources': [],
                 'reason': 'no cited public modality source'}
@@ -142,6 +157,15 @@ def pick_image_input(entries):
         return {'value': True, 'status': 'yes', 'source': e0['source'], 'kind': 'benchmark',
                 'as_of': e0.get('as_of'), 'url': e0.get('url'), 'method': e0.get('method'),
                 'sources': [e['source'] for e in bench_yes]}
+    declared = [e for e in entries if e.get('source') in (
+        'maintainer.image_input', 'vendor.image_input', 'maintainer.text_only', 'vendor.text_only'
+    ) and isinstance(e.get('value'), bool)]
+    if declared:
+        e0 = declared[0]
+        val = bool(e0['value'])
+        return {'value': val, 'status': 'yes' if val else 'no', 'source': e0['source'], 'kind': e0.get('kind'),
+                'as_of': e0.get('as_of'), 'url': e0.get('url'), 'statement': e0.get('statement'),
+                'method': e0.get('method'), 'sources': [e['source'] for e in declared]}
     yes = [e for e in entries if e.get('value') is True]
     if yes:
         e0 = yes[0]
@@ -187,29 +211,27 @@ def pick_price(entries):
 
 
 class Scorer:
-    def __init__(self, meas, acc, distrust=(), overrides=()):
+    def __init__(self, meas, acc, distrust=()):
         self.meas, self.acc = meas, acc
         self.distrust = set(distrust)
-        self.overrides = list(overrides)
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
 
     def trusted(self, entries):
         return [e for e in entries or () if e['source'] not in self.distrust]
 
     def tier_records(self, rows, index, board):
-        """{model: {'value', 'method', 'sources', ...}}: arena Overall, else the mean of the other overall boards'
-        interpolated tiers, else the nearest same-series sibling's tier, else value None."""
+        """{model: {'value', 'method', 'sources', ...}}: arena Overall at High, else non-arena overall board aligned onto
+        that scale at High, else the nearest same-series sibling's tier, else value None."""
         out = {}
         for m, r in rows.items():
             entries = self.trusted(r['fields'].get('tier'))
             direct = [e for e in entries if e['source'] in TIER_DIRECT]
             other = [e for e in entries if e['source'] in TIER_OTHER]
-            chosen, method = (direct, 'anchor' if direct and direct[0]['source'] == 'user.anchor_tier' else 'arena_overall') \
-                if direct else (other, 'other_overall')
+            chosen, method = (direct, 'arena_overall') if direct else (other, 'other_overall')
             if chosen:
                 cite = [{k: e.get(k) for k in ('source', 'value', 'as_of', 'url', 'listed_as', 'neighbours', 'n') if e.get(k) is not None}
                         for e in chosen]
-                out[m] = {'value': round(float(np.mean([e['value'] for e in chosen])), 3), 'method': method, 'sources': cite}
+                out[m] = {'value': round(float(np.mean([e['value'] for e in chosen])), 4), 'method': method, 'sources': cite}
         direct_tier = {m: t['value'] for m, t in out.items()}
         sibs, same = series.groups(self.acc), series.same_model(self.acc)
         for m in rows:
@@ -223,10 +245,8 @@ class Scorer:
     @staticmethod
     def fit(points, require_skill=False):
         """Linear fit of y on x with its leave-one-out record, or (None, why) under MIN_FIT_POINTS models, with one x
-        for all, or (when `require_skill` is true, as for the AA-on-arena duration fit) without a positive slope and
-        out-of-sample skill. Facet-on-tier fits have no skill gate (user, 2026-11-11: sibling conversion, else the
-        Overall fit, recalibrated as measurements arrive): the record carries r, the out-of-sample skill and the
-        leave-one-out RMSE so a weak fit shows."""
+        for all, or (when `require_skill` is true) without a positive slope (`b > 0`) and positive leave-one-out skill
+        (`skill > 0`, beating the leave-one-out mean predictor)."""
         if len(points) < MIN_FIT_POINTS:
             return None, f'{len(points)} models with both (a fit needs {MIN_FIT_POINTS})'
         x, y = np.array([p[0] for p in points]), np.array([p[1] for p in points])
@@ -281,59 +301,81 @@ class Scorer:
             rows.setdefault('high', rows.pop('default'))
         return {k: v for k, v in rows.items() if k in EFFORTS}
 
-    def fill_efforts(self, rows, model, src, aa_all, sibs):
-        """({effort: z} over EFFORTS, {effort: basis}) of one AA board for `model`: its listed efforts as listed; a missing
-        effort from the nearest listed one by the nearest same-series sibling's step on this board, else the fleet median
-        step (z(e) - z(e0) over the models listing both, at least MIN_FLEET_RATIO_N); never held flat."""
-        out, basis = dict(rows), {e: {'method': 'listed'} for e in rows}
-        board = aa_all.get(src) or {}
-        for e in EFFORTS:
-            if e in out or not rows:
-                continue
-            e0 = nearest_effort(rows, e)
-            sib = next((b for b in sibs if e in (board.get(b) or {}) and e0 in board[b]
-                        and float(np.ptp(list(board[b].values()))) > 0), None)
-            if sib:
-                step = board[sib][e] - board[sib][e0]
-                out[e], basis[e] = round(rows[e0] + step, 4), {'method': 'series_effort', 'base_model': sib, 'from_effort': e0,
-                                                               'step': round(step, 4)}
-                continue
-            steps = [r[e] - r[e0] for r in board.values() if e in r and e0 in r and float(np.ptp(list(r.values()))) > 0]
-            if len(steps) >= MIN_FLEET_RATIO_N:
-                step = float(np.median(steps))
-                out[e], basis[e] = round(rows[e0] + step, 4), {'method': 'fleet_effort_step', 'from_effort': e0,
-                                                               'step': round(step, 4), 'n': len(steps)}
-        return out, basis
-
     @staticmethod
     def _has_effort_curve(aa_map):
         return bool(aa_map and len(aa_map) >= 2 and float(np.ptp(list(aa_map.values()))) > 0)
 
-    def aa_capability_boards(self, rows):
-        """({aa_source: {model: {effort: z}}}, {aa_source: {model: high_z}}) for AA capability boards (excluding aa.ttfa)."""
-        aa_own, aa_high = {}, {}
+    def _linked_aa_capability_boards(self, rows, panel):
+        """({aa_source: {model: {effort: z_linked_isotonic}}}, {aa_source: {model: high_z}}) linked on `panel` BEFORE
+        shifting any non-AA board (R2-F5: strictly each model's own listed efforts; R2-F10: link before shifting)."""
+        anchor = measurements.ANCHOR
+        meas_sources = self.meas.get('sources') or {}
+        aa_raw = {}
         for m, r in rows.items():
             for e in self.trusted(r['fields'].get('intelligence_index')):
                 if e.get('source') == 'aa.index' and isinstance(e.get('z_by_effort'), dict):
                     mapped = self.aa_rows(e)
                     if mapped:
-                        aa_own.setdefault('aa.index', {})[m] = mapped
-                        if 'high' in mapped:
-                            aa_high.setdefault('aa.index', {})[m] = mapped['high']
+                        aa_raw.setdefault('aa.index', {})[m] = mapped
             for (a, f), srcs in r['boards'].items():
                 for src, e in srcs.items():
                     if src.startswith('aa.') and src != measurements.AA_TTFA:
                         mapped = self.aa_rows(e)
                         if mapped:
-                            aa_own.setdefault(src, {})[m] = mapped
-                            if 'high' in mapped:
-                                aa_high.setdefault(src, {})[m] = mapped['high']
+                            aa_raw.setdefault(src, {})[m] = mapped
                         elif isinstance(e.get('value'), (int, float)) and e.get('listed_effort') in (None, 'high'):
-                            aa_high.setdefault(src, {})[m] = float(e['value'])
-        return aa_own, aa_high
+                            aa_raw.setdefault(src, {})[m] = {'high': float(e['value'])}
+        # Center on anchor @ High and scale each AA board to panel SD = 1 (or shared-panel core SD for partial AA boards).
+        aa_centered = {}
+        for src, per_m in aa_raw.items():
+            a0 = (per_m.get(anchor) or {}).get('high')
+            aa_centered[src] = {
+                m: {e: (v - a0 if a0 is not None else v) for e, v in curve.items()}
+                for m, curve in per_m.items()
+            }
+        # Group AA capability boards by facet (or standalone for aa.index) so partial-panel AA boards get their exact link_scale.
+        aa_scales = {}
+        for src, per_m in aa_centered.items():
+            high = {m: curve['high'] for m, curve in per_m.items() if 'high' in curve}
+            if len(panel) >= 2 and all(m in high for m in panel) and (src in meas_sources or src == 'aa.index'):
+                sd_h = statistics.stdev(high[m] for m in panel)
+                aa_scales[src] = (1.0 / sd_h) if sd_h > 0 else 1.0
+            else:
+                # Partial-panel AA board (e.g. aa.mmmu_pro): scale against native full-panel sibling board in same facet if present.
+                key = measurements.CAPABILITY_SOURCES.get(src)
+                sib_vals = {}
+                if key:
+                    for m, r in rows.items():
+                        for s2, e2 in (r['boards'].get(key) or {}).items():
+                            if s2 != src and isinstance(e2.get('value'), (int, float)):
+                                sib_vals.setdefault(s2, {})[m] = float(e2['value'])
+                full_sibs = [s2 for s2, hm in sib_vals.items() if len(panel) >= 2 and all(m in hm for m in panel)]
+                shared = [m for m in panel if m in high]
+                if full_sibs and len(shared) >= 2:
+                    core = {m: float(np.mean([sib_vals[s2][m] for s2 in full_sibs])) for m in shared}
+                    sd_c = statistics.stdev(core[m] for m in shared)
+                    sd_s = statistics.stdev(high[m] for m in shared)
+                    aa_scales[src] = (sd_c / sd_s) if sd_s > 0 else 1.0
+                elif len(shared) >= 2 and (src in meas_sources or src == 'aa.index'):
+                    sd_s = statistics.stdev(high[m] for m in shared)
+                    aa_scales[src] = (1.0 / sd_s) if sd_s > 0 else 1.0
+                else:
+                    aa_scales[src] = 1.0
+        aa_linked, aa_high = {}, {}
+        for src, per_m in aa_centered.items():
+            sc = aa_scales[src]
+            aa_linked[src] = {}
+            for m, curve in per_m.items():
+                scaled = {e: round(v * sc, 4) for e, v in curve.items()}
+                pooled_curve = pool_effort_curve(scaled)
+                aa_linked[src][m] = pooled_curve
+                if 'high' in pooled_curve:
+                    aa_high.setdefault(src, {})[m] = pooled_curve['high']
+        return aa_linked, aa_high
 
-    def compute_effort_correlations(self, rows, aa_high):
-        """{non_aa_source: {'board', 'r', 'n', 'candidates'}} ranking AA capability boards by Pearson r over shared models."""
+    def compute_effort_correlations(self, rows, aa_high, panel):
+        """{non_aa_source: {'board', 'r', 'n', 'panel_n', 'candidates'}} choosing ONE fixed AA reference board per
+        non-AA board by Pearson r over the panel (full-panel AA boards preferred over partial-panel subsets)."""
         non_aa = {}
         for m, r in rows.items():
             for (a, f), srcs in r['boards'].items():
@@ -342,9 +384,12 @@ class Scorer:
                         non_aa.setdefault(src, {})[m] = float(e['value'])
         corrs = {}
         for src, vals in sorted(non_aa.items()):
-            cands = []
+            board_panel = [m for m in panel if m in vals]
+            use_panel = len(board_panel) >= MIN_FIT_POINTS
+            pool = board_panel if use_panel else list(vals)
+            raw_cands = []
             for aa_src, avals in sorted(aa_high.items()):
-                shared = [m for m in vals if m in avals]
+                shared = [m for m in pool if m in avals]
                 if len(shared) < MIN_FIT_POINTS:
                     continue
                 x = np.array([vals[m] for m in shared], dtype=float)
@@ -353,94 +398,133 @@ class Scorer:
                     continue
                 r_val = float(np.corrcoef(x, y)[0, 1])
                 if r_val > 0:
-                    cands.append({'board': aa_src, 'r': round(r_val, 4), 'n': len(shared)})
+                    raw_cands.append({
+                        'board': aa_src,
+                        'r': round(r_val, 4),
+                        'n': len(shared),
+                        'full_panel': use_panel and len(shared) == len(board_panel),
+                    })
+            if any(c['full_panel'] for c in raw_cands):
+                cands = [c for c in raw_cands if c['full_panel']]
+            else:
+                cands = raw_cands
             cands.sort(key=lambda c: (-c['r'], -c['n'], c['board']))
             if cands:
-                corrs[src] = {'board': cands[0]['board'], 'r': cands[0]['r'], 'n': cands[0]['n'], 'candidates': cands}
+                corrs[src] = {
+                    'board': cands[0]['board'],
+                    'r': cands[0]['r'],
+                    'n': cands[0]['n'],
+                    'panel_n': len(board_panel),
+                    'candidates': cands,
+                }
         return corrs
 
-    def board_curves(self, rows):
-        """{model: {(category, facet): {source: {'by_effort', 'effort_shift', 'listed_as'}}}} before linking."""
-        aa_all = {}
-        for m, r in rows.items():
-            for (a, f), srcs in r['boards'].items():
-                for src, e in srcs.items():
-                    if e['source'].startswith('aa.'):
-                        aa_all.setdefault(src, {})[m] = self.aa_rows(e)
-        aa_cap_own, aa_cap_high = self.aa_capability_boards(rows)
-        for aa_src, per_m in aa_cap_own.items():
-            aa_all.setdefault(aa_src, {}).update(per_m)
-        self.effort_correlations = self.compute_effort_correlations(rows, aa_cap_high)
-        self._aa_cap_own = aa_cap_own
-        self._aa_all = aa_all
-        sib_order = {m: series.nearest(m, self.sibs.get(m, ()), self.index, self.board, self.direct_tier, self.same)
-                     for m in rows}
+    def board_curves_and_link(self, rows, panel):
+        """Link AA capability boards first, pick one fixed AA reference board per non-AA board over the panel, link all
+        boards at High (full-panel SD at High = 1, anchor at High = 0), and shift non-AA efforts using the linked AA
+        deltas without scale distortion."""
+        aa_linked, aa_high = self._linked_aa_capability_boards(rows, panel)
+        self.effort_correlations = self.compute_effort_correlations(rows, aa_high, panel)
+        self._aa_cap_linked = aa_linked
+
         curves = {}
+        pending_shifts = []
         for m, r in rows.items():
             out = curves.setdefault(m, {})
-            filled = {}
             for (a, f), srcs in r['boards'].items():
                 for src, e in srcs.items():
                     if src.startswith('aa.'):
                         own_aa = self.aa_rows(e)
-                        if self._has_effort_curve(own_aa) or any(self._has_effort_curve((aa_cap_own.get(s) or {}).get(m)) for s in aa_cap_own):
-                            filled[src] = self.fill_efforts(own_aa, m, src, aa_all, sib_order[m])
-                        else:
-                            filled[src] = (dict(own_aa), {k: {'method': 'listed'} for k in own_aa})
-            for (a, f), srcs in r['boards'].items():
-                for src, e in srcs.items():
-                    if src in filled:
-                        by, basis = filled[src]
-                        has_multi = len(by) >= 2 and float(np.ptp(list(by.values()))) > 0
-                        out.setdefault((a, f), {})[src] = {'by_effort': by, 'effort_basis': basis,
-                                                           'effort_shift': 'measured' if has_multi else 'single_aa',
-                                                           'listed_as': e.get('listed_as')}
+                        basis = {k: {'method': 'listed'} for k in own_aa}
+                        has_multi = len(own_aa) >= 2 and float(np.ptp(list(own_aa.values()))) > 0
+                        out.setdefault((a, f), {})[src] = {
+                            'by_effort': dict(own_aa),
+                            'effort_basis': basis,
+                            'effort_shift': 'measured' if has_multi else 'single_aa',
+                            'listed_as': e.get('listed_as'),
+                        }
                         continue
                     listed = e.get('listed_effort')
                     native = self.aa_rows(e) if isinstance(e.get('z_by_effort'), dict) else {}
                     ref_eff = listed if listed in EFFORTS else 'high'
                     if not native:
                         native = {ref_eff: round(float(e['value']), 4)}
-                    by, shifted, how = self.listed_shift(m, a, f, src, native, ref_eff, aa_cap_own, aa_all)
-                    out.setdefault((a, f), {})[src] = {'by_effort': by, 'effort_shift': 'aa' if shifted else 'none',
-                                                       'effort_shift_basis': how, 'listed_as': e.get('listed_as'),
-                                                       'listed_effort': listed}
-        return curves
+                    ref_info = self._fixed_reference_board(a, f, src)
+                    own_ref = (aa_linked.get(ref_info['board']) or {}).get(m) if ref_info else None
+                    shared_anchors = [k for k in native if own_ref and k in own_ref]
+                    if ref_info and self._has_effort_curve(own_ref) and shared_anchors:
+                        pre_by = dict(native)
+                        if 'high' not in pre_by and 'high' in own_ref:
+                            e0 = min(shared_anchors, key=lambda k: (abs(EFFORTS.index(k) - EFFORTS.index('high')), EFFORTS.index(k)))
+                            pre_by['high'] = round(native[e0] + (own_ref['high'] - own_ref[e0]), 4)
+                        how = {
+                            'board': ref_info['board'],
+                            'r': ref_info['r'],
+                            'n': ref_info['n'],
+                            'model': m,
+                            'from_effort': ref_eff,
+                            **({'same_facet': True} if ref_info.get('same_facet') else {}),
+                        }
+                        rec = {
+                            'by_effort': pre_by,
+                            'effort_shift': 'aa',
+                            'effort_shift_basis': how,
+                            'listed_as': e.get('listed_as'),
+                            'listed_effort': listed,
+                        }
+                        out.setdefault((a, f), {})[src] = rec
+                        pending_shifts.append((rec, dict(native), own_ref, shared_anchors))
+                    else:
+                        if not ref_info:
+                            why = f'no correlated Artificial Analysis board with >= {MIN_FIT_POINTS} shared models'
+                        elif not self._has_effort_curve(own_ref):
+                            why = f"model {m} has no multi-effort Artificial Analysis curve on {ref_info['board']}"
+                        else:
+                            why = f"model {m} AA curve on {ref_info['board']} lacks reference effort {ref_eff}"
+                        out.setdefault((a, f), {})[src] = {
+                            'by_effort': dict(native),
+                            'effort_shift': 'none',
+                            'effort_shift_basis': why,
+                            'listed_as': e.get('listed_as'),
+                            'listed_effort': listed,
+                        }
 
-    def listed_shift(self, m, a, f, src, native, ref_eff, aa_cap_own, aa_all):
-        """({effort: z}, shifted_bool, basis) for a non-AA board `src`. Uses ONLY `m`'s own per-effort AA data on the most
-        correlated AA board (recording board, r, n); if none exists, keeps only `native` and flags `measured_partial`."""
+        links = self.link(curves, panel)
+
+        # Expand non-AA efforts from the linked anchor effort using uncompressed linked AA deltas, and enforce isotonicity
+        # on ability boards.
+        for rec, native, own_ref, shared_anchors in pending_shifts:
+            by = dict(rec['by_effort'])
+            base_effs = [k for k in ('high', *shared_anchors) if k in by and k in own_ref]
+            if base_effs:
+                for x in EFFORTS:
+                    if x in own_ref and x not in native and x != 'high':
+                        e0 = 'high' if 'high' in base_effs else min(
+                            base_effs, key=lambda k: (abs(EFFORTS.index(k) - EFFORTS.index(x)), EFFORTS.index(k))
+                        )
+                        by[x] = round(by[e0] + (own_ref[x] - own_ref[e0]), 4)
+            rec['by_effort'] = pool_effort_curve(by)
+
+        for c in curves.values():
+            for key, srcs in c.items():
+                if key == ('tool_operation', 'responsiveness'):
+                    continue
+                for rec in srcs.values():
+                    if len(rec['by_effort']) >= 2:
+                        rec['by_effort'] = pool_effort_curve(rec['by_effort'])
+        return curves, links
+
+    def _fixed_reference_board(self, a, f, src):
         corr_entry = self.effort_correlations.get(src)
-        candidates = list((corr_entry or {}).get('candidates') or ())
-        if not candidates:
-            # Small synthetic sets (< MIN_FIT_POINTS models) fall back only to same-facet AA boards where `m` has >=2 efforts.
-            same_facet = [s for s in measurements.CAPABILITY_SOURCES
-                          if s.startswith('aa.') and s != measurements.AA_TTFA and measurements.CAPABILITY_SOURCES[s] == (a, f)]
-            candidates = [{'board': s, 'r': None, 'n': len(aa_all.get(s) or {}), 'same_facet': True} for s in same_facet]
-        chosen = None
-        for cand in candidates:
-            own = (aa_cap_own.get(cand['board']) or {}).get(m)
-            if self._has_effort_curve(own):
-                chosen = (cand, own)
-                break
-        if chosen is None:
-            why = (f"model {m} has no multi-effort Artificial Analysis curve on correlated boards"
-                   if candidates else f"no correlated Artificial Analysis board with >= {MIN_FIT_POINTS} shared models")
-            return dict(native), False, why
-        cand, own = chosen
-        aa_curve, _ = self.fill_efforts(own, m, cand['board'], aa_all, [])
-        shared_anchors = [e for e in native if e in aa_curve]
-        if not shared_anchors:
-            return dict(native), False, f"model {m} AA curve on {cand['board']} lacks reference effort {ref_eff}"
-        by = dict(native)
-        for x in EFFORTS:
-            if x in by or x not in aa_curve:
-                continue
-            e0 = min(shared_anchors, key=lambda k: (abs(EFFORTS.index(k) - EFFORTS.index(x)), EFFORTS.index(k)))
-            by[x] = round(native[e0] + (aa_curve[x] - aa_curve[e0]), 4)
-        basis = {'board': cand['board'], 'r': cand['r'], 'n': cand['n'], 'model': m, 'from_effort': ref_eff,
-                 **({'same_facet': True} if cand.get('same_facet') else {})}
-        return by, True, basis
+        if corr_entry:
+            return corr_entry
+        same_facet = [s for s in sorted(measurements.CAPABILITY_SOURCES)
+                      if s.startswith('aa.') and s != measurements.AA_TTFA and measurements.CAPABILITY_SOURCES[s] == (a, f)
+                      and s in (getattr(self, '_aa_cap_linked', None) or {})]
+        if same_facet:
+            s0 = same_facet[0]
+            return {'board': s0, 'r': None, 'n': len(self._aa_cap_linked.get(s0) or {}), 'same_facet': True}
+        return None
 
     def link(self, curves, panel):
         """Standardise full-panel boards on the panel's High rows (anchor @ High = 0, sd_panel @ High = 1), mean-mean link
@@ -521,39 +605,63 @@ class Scorer:
             }
         return links
 
-    def facet_value(self, recs):
+    def facet_value(self, key, recs):
         common = [e for e in EFFORTS if all(e in r['by_effort'] for r in recs.values())]
-        effs = common or [e for e in EFFORTS if any(e in r['by_effort'] for r in recs.values())]
+        if common:
+            effs = common
+        elif any('high' in r['by_effort'] for r in recs.values()):
+            effs = ['high']
+        else:
+            present_effs = [e for e in EFFORTS if any(e in r['by_effort'] for r in recs.values())]
+            effs = [max(
+                present_effs,
+                key=lambda e: (sum(1 for r in recs.values() if e in r['by_effort']), -abs(EFFORTS.index(e) - EFFORTS.index('high'))),
+            )] if present_effs else []
         by = {e: round(float(np.mean([r['by_effort'][e] for r in recs.values() if e in r['by_effort']])), 4) for e in effs}
-        partial = [src for src, r in recs.items() if r.get('effort_shift') in ('none', 'single_aa')]
-        unshifted_non_aa = [src for src, r in recs.items() if r.get('effort_shift') == 'none']
-        return {'value': by.get('high'), 'by_effort': by, 'status': 'measured_partial' if unshifted_non_aa else 'measured',
-                'sources': {src: {'by_effort': r['by_effort'], 'listed_as': r.get('listed_as'),
-                                  'effort_shift': r.get('effort_shift'),
-                                  'link_scale': r.get('link_scale', 1.0), 'link_offset': r.get('link_offset'),
-                                  **({'effort_shift_basis': r['effort_shift_basis']} if r.get('effort_shift_basis') else {}),
-                                  **({'effort_basis': r['effort_basis']} if r.get('effort_basis') else {})}
-                            for src, r in recs.items()},
-                **({'measured_partial': {'no_effort_shift': partial}} if unshifted_non_aa else {})}
+        if key != ('tool_operation', 'responsiveness') and len(by) >= 2:
+            by = pool_effort_curve(by)
+        partial_shift = [src for src, r in recs.items() if r.get('effort_shift') in ('none', 'single_aa')]
+        disjoint = [src for src, r in recs.items() if not common and effs and effs[0] not in r['by_effort']]
+        is_partial = bool(partial_shift or disjoint or by.get('high') is None)
+        out = {
+            'value': by.get('high'),
+            'by_effort': by,
+            'status': 'measured_partial' if is_partial else 'measured',
+            'sources': {src: {'by_effort': r['by_effort'], 'listed_as': r.get('listed_as'),
+                              'effort_shift': r.get('effort_shift'),
+                              'link_scale': r.get('link_scale', 1.0), 'link_offset': r.get('link_offset'),
+                              **({'effort_shift_basis': r['effort_shift_basis']} if r.get('effort_shift_basis') else {}),
+                              **({'effort_basis': r['effort_basis']} if r.get('effort_basis') else {})}
+                        for src, r in recs.items()},
+        }
+        if is_partial:
+            detail = {}
+            if partial_shift:
+                detail['no_effort_shift'] = partial_shift
+            if disjoint:
+                detail['disjoint_effort_boards'] = disjoint
+            out['measured_partial'] = detail
+        if by.get('high') is None:
+            out['flag'] = 'partial'
+        return out
 
     def _model_aa_curve_for_tier_fit(self, m):
-        """Return `(aa_board, {effort: z})` for `m` when `m` has its own multi-effort AA curve containing High, else None."""
-        aa_cap_own = getattr(self, '_aa_cap_own', None) or {}
-        aa_all = getattr(self, '_aa_all', None) or {}
+        """Return `(aa_board, {effort: z_linked})` for `m` when `m` has its own multi-effort AA curve containing High."""
+        aa_linked = getattr(self, '_aa_cap_linked', None) or {}
         for aa_src in ('aa.index', 'aa.terminalbench_4', 'aa.frontiercode_2', 'aa.mmmu_pro'):
-            own = (aa_cap_own.get(aa_src) or {}).get(m)
-            if self._has_effort_curve(own):
-                filled, _ = self.fill_efforts(own, m, aa_src, aa_all, [])
-                if 'high' in filled and self._has_effort_curve(filled):
-                    return aa_src, filled
+            own = (aa_linked.get(aa_src) or {}).get(m)
+            if own and 'high' in own and self._has_effort_curve(own):
+                return aa_src, own
         return None
 
     def estimate(self, m, base, key, facets, fits, rejected, tier):
         """Facet `key` of model `m` (module docstring): the nearest same-series sibling's curve moved along the facet's
-        tier fit by the two tiers' difference, else the fit at the model's tier shifted only where `m` has its own AA curve."""
+        validated tier fit by the two tiers' difference (shift 0 when the fit was rejected), else the validated fit at
+        the model's tier shifted only where `m` has its own AA curve."""
         fid = f'{key[0]}.{key[1]}~tier'
         f = fits.get(key)
         t = tier[m]['value']
+        is_resp = key == ('tool_operation', 'responsiveness')
         if base is not None:
             vb = facets[base][key]
             shift = f['b'] * (t - tier[base]['value']) if f and tier[base]['value'] is not None else 0.0
@@ -561,7 +669,7 @@ class Scorer:
             est = {'method': 'sibling_shift', 'base_model': base, 'base_value': vb['value'], 'base_tier': tier[base]['value'],
                    'tier': t, 'tier_source': tier[m]['method'], 'shift': round(shift, 4),
                    **(self.fit_record(fid, f) if f else {'shift_basis': f"shift 0: no fit, {rejected.get(fid)}"})}
-            if len(by) == 1 and 'high' in by:
+            if not is_resp and len(by) == 1 and 'high' in by:
                 aa_pair = self._model_aa_curve_for_tier_fit(m)
                 if aa_pair is not None:
                     aa_src, own = aa_pair
@@ -570,7 +678,7 @@ class Scorer:
                     est['effort'] = f'shifted from High along {m} on {aa_src}'
         else:
             v = self.predict(f, t)
-            aa_pair = self._model_aa_curve_for_tier_fit(m)
+            aa_pair = None if is_resp else self._model_aa_curve_for_tier_fit(m)
             if aa_pair is not None:
                 aa_src, own = aa_pair
                 by = {e: round(v + (own[e] - own['high']), 4) for e in EFFORTS if e in own}
@@ -582,6 +690,8 @@ class Scorer:
                    'effort': effort_note}
             if not f['x_min'] <= t <= f['x_max']:
                 est['tier_clamped_to'] = f['x_min'] if t < f['x_min'] else f['x_max']
+        if not is_resp and len(by) >= 2:
+            by = pool_effort_curve(by)
         return {'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {}, 'estimate': est}
 
     @staticmethod
@@ -615,12 +725,23 @@ class Scorer:
             by = levels['3']['by_effort']
         else:
             by, _, _ = combine(names)
-            if missing:
-                out['flag'] = 'partial'
+            if len(by) >= 2:
+                by = pool_effort_curve(by)
         statuses = {facets[f]['status'] for f in present}
-        out.update(value=by.get('high'), by_effort=by,
-                   status='partial' if missing else 'estimated' if 'estimated' in statuses
-                   else 'measured_partial' if 'measured_partial' in statuses else 'measured')
+        val_high = by.get('high')
+        if missing:
+            status = 'partial'
+            out['flag'] = 'partial'
+        elif val_high is None:
+            status = 'measured_partial' if all(s.startswith('measured') for s in statuses) else 'partial'
+            out['flag'] = 'partial'
+        elif 'estimated' in statuses:
+            status = 'estimated'
+        elif 'measured_partial' in statuses:
+            status = 'measured_partial'
+        else:
+            status = 'measured'
+        out.update(value=val_high, by_effort=by, status=status)
         return out
 
     def score(self):
@@ -630,21 +751,22 @@ class Scorer:
             rows[m] = {'fields': fields, 'boards': self.board_entries(fields)}
         self.index = {m: ((self.trusted(r['fields'].get('intelligence_index')) or [{}])[0]).get('value') for m, r in rows.items()}
         self.board = series.boards(self.meas)
-        self.sibs, self.same = series.groups(self.acc), series.same_model(self.acc)
+        raw_same = series.same_model(self.acc)
+        self.same = {k: v for k, v in raw_same.items() if valid_public_declaration(v)}
+        self.sibs = series.groups({**self.acc, 'same_model': self.same})
         tier = self.tier_records(rows, self.index, self.board)
-        self.direct_tier = {m: t['value'] for m, t in tier.items() if t['method'] in ('anchor', 'arena_overall', 'other_overall')}
+        self.direct_tier = {m: t['value'] for m, t in tier.items() if t['method'] in ('arena_overall', 'other_overall')}
         panel = [m for m in (self.meas.get('panel') or {}).get('models') or () if m in rows]
         self.effort_correlations = {}
-        self._aa_cap_own = {}
-        curves = self.board_curves(rows)
-        links = self.link(curves, panel)
-        facets = {m: {key: self.facet_value(recs) for key, recs in c.items()} for m, c in curves.items()}
+        self._aa_cap_linked = {}
+        curves, links = self.board_curves_and_link(rows, panel)
+        facets = {m: {key: self.facet_value(key, recs) for key, recs in c.items()} for m, c in curves.items()}
         keys = [(a, f) for a, fs in AXES.items() for f in fs]
         fits, rejected = {}, {}
         for key in keys:
             pts = [(self.direct_tier[m], facets[m][key]['value']) for m in rows
                    if key in facets[m] and facets[m][key].get('value') is not None and m in self.direct_tier]
-            fits[key], why = self.fit(pts)
+            fits[key], why = self.fit(pts, require_skill=True)
             if why:
                 rejected[f'{key[0]}.{key[1]}~tier'] = why
         declared = [m for m in rows if (self.same.get(m) or {}).get('model') in rows]
@@ -678,7 +800,6 @@ class Scorer:
                 if carries is not None and a not in carries and m in declared:
                     own = {f: rec for f, rec in own.items() if rec.get('status', '').startswith('measured')}
                 r['axes'][a] = self.category(a, own)
-        self.apply_overrides(rows)
         fit_doc = {f'{a}.{c}~tier': {k: round(v, 4) for k, v in f.items()} for (a, c), f in fits.items() if f}
         return rows, tier, fit_doc, rejected, links, self.targets(rows, panel)
 
@@ -687,9 +808,8 @@ class Scorer:
         the panel's weakest, level 2 its median, level 3 the anchor; the fit's zero is the panel weakest. divergence, coding
         and aesthetics read the category value. tool_operation reads its facets one by one (`by_facet`): each level asks
         for the facets TOOL_LEVEL_FACETS selects, its level 1 for nothing, and a level never asks less of a facet than the
-        level below it (user, 2026-11-11: the anchor's responsiveness at High, 0, is below the panel median, so level 3
-        asks max(level 2, anchor) of it). `continuity` is t3 - t2 (tool_operation: the smallest over the facets both
-        levels ask for, none when they share none)."""
+        level below it (the anchor's responsiveness at High, 0, is below the panel median, so level 3 asks max(level 2,
+        anchor) of it). `continuity` is t3 - t2 (tool_operation: the largest positive t3 - t2 across its level-3 facets)."""
         anchor = rows.get(measurements.ANCHOR, {}).get('axes') or {}
 
         def stats(pick):
@@ -742,19 +862,16 @@ class Scorer:
                              **({'raised_to_level_below': prev[f]} if f in prev and own is not None and prev[f] > own else {})}
                 levels[str(level)] = {'by_facet': by}
                 prev = {f: r['target'] for f, r in by.items()}
-            shared = [f for f in levels['2']['by_facet'] if f in levels['3']['by_facet']]
-            gap = min(levels['3']['by_facet'][f]['target'] - levels['2']['by_facet'][f]['target'] for f in shared) if shared else None
+            l3_facets = levels['3']['by_facet']
+            facet_gaps = [
+                l3_facets[f]['target'] - facet_targets[f]['levels']['2']['target']
+                for f in l3_facets
+                if f in facet_targets and l3_facets[f].get('target') is not None
+                and facet_targets[f]['levels']['2'].get('target') is not None
+            ]
+            gap = max((g for g in facet_gaps if g > 0), default=(max(facet_gaps) if facet_gaps else None))
             out[a] = {'levels': levels, 'facets': facet_targets, 'continuity': None if gap is None else round(gap, 4)}
         return out
-
-    def apply_overrides(self, rows):
-        for o in self.overrides:
-            if o.get('model') in rows and o.get('axis') in AXES and o.get('as_of') and isinstance(o.get('value'), (int, float)):
-                ax = rows[o['model']]['axes'][o['axis']]
-                ax.update(public_value=ax.get('value'), value=float(o['value']),
-                          by_effort=dict.fromkeys(EFFORTS, float(o['value'])), status='user_override',
-                          override={'source': 'user', 'as_of': o['as_of'], 'note': o.get('note')})
-                ax.pop('flag', None)
 
 
 PAIR_EFFORTS = ('high', 'medium', 'xhigh', 'low', 'max')    # the effort a model's arena/AA pair is read at: nearest High first
@@ -820,22 +937,23 @@ def durations(scorer, rows, acc, index, board, tier):
                 minutes[m][e] = round(Scorer.predict(fit, x), 3)
                 basis[m][e] = {'method': 'arena_fit', 'source': ARENA_TIME, 'arena_minutes': x, **fit_rec,
                                'listed_as': row.get('listed_as'), 'as_of': row.get('as_of'), 'url': row.get('url')}
-    same = series.same_model(acc)
+    same = {k: v for k, v in series.same_model(acc).items() if valid_public_declaration(v)}
     for m, entry in same.items():
         base = entry.get('model')
         if m in rows and 'duration' in (entry.get('carries') or ()) and base in rows:
             for e, t in list(minutes[base].items()):
                 if e not in minutes[m]:
                     minutes[m][e] = t
-                    basis[m][e] = {'method': 'same_model', 'base_model': base, 'url': entry.get('url'), 'as_of': entry.get('as_of'),
+                    basis[m][e] = {'method': 'same_model', 'base_model': base, 'kind': entry.get('kind'),
+                                   'url': entry.get('url'), 'as_of': entry.get('as_of'),
                                    'statement': entry.get('statement')}
-    sibs = series.groups(acc)
-    tiers = {m: t['value'] for m, t in tier.items()}
+    sibs = series.groups({**acc, 'same_model': same})
+    tiers_map = {m: t['value'] for m, t in tier.items()}
     measured = {m for m in rows if minutes[m]}
     for m in rows:
         if minutes[m] or (m in same and 'duration' not in (same[m].get('carries') or ())):
             continue        # a row declared to be another model's channel that does not carry its time keeps the channel's own
-        for b in series.nearest(m, [b for b in sibs.get(m, ()) if b in measured], index, board, tiers, same):
+        for b in series.nearest(m, [b for b in sibs.get(m, ()) if b in measured], index, board, tiers_map, same):
             for e, t in minutes[b].items():
                 minutes[m][e] = t
                 basis[m][e] = {'method': 'series', 'base_model': b, 'source': basis[b][e].get('source'),
@@ -869,7 +987,7 @@ def durations(scorer, rows, acc, index, board, tier):
     for m, r in rows.items():
         direct = dict(minutes[m])
         if direct:
-            bases = series.nearest(m, sibs.get(m, ()), index, board, tiers, same)
+            bases = series.nearest(m, sibs.get(m, ()), index, board, tiers_map, same)
             known = dict(direct)
 
             def side(effort, pool):
@@ -881,7 +999,7 @@ def durations(scorer, rows, acc, index, board, tier):
                 one): held at that time, and marked, when the estimate would be."""
                 below, above = side(effort, pool)
                 if below:
-                    bound, label, hit = max(pool[k] for k in below), 'a lower listed effort', None
+                    bound, label = max(pool[k] for k in below), 'a lower listed effort'
                     hit = t < bound
                 else:
                     bound, label = min(pool[k] for k in above), 'a higher listed effort'
@@ -912,8 +1030,6 @@ def durations(scorer, rows, acc, index, board, tier):
                     continue
                 below, above = side(e, anchors)
                 if below and above:
-                    # between two efforts of its own: both endpoints are honoured, and the fleet says where on the log-time
-                    # scale between them the missing effort sits
                     lo, up = max(below, key=EFFORTS.index), min(above, key=EFFORTS.index)
                     got = fleet_position(e, lo, up)
                     if got:
@@ -1083,9 +1199,7 @@ def source_ages(meas, now=None):
 
 
 def source_errors(ages):
-    """Yellow `stale_source` errors for every capability source (measurements.CAPABILITY_SOURCES) older than STALE_DAYS,
-    the same shape as the capacity ones: a stale benchmark still feeds the category scores, so it is surfaced, not only
-    a stale capacity reading. A source not anchored is already a missing source (`source_ages`)."""
+    """Yellow `stale_source` errors for every capability source (measurements.CAPABILITY_SOURCES) older than STALE_DAYS."""
     return [{'field': 'capability', 'source': src, 'level': 'yellow', 'reason': 'stale_source',
              'component': '.'.join(measurements.CAPABILITY_SOURCES[src][:2]), 'age_days': row['age_days'],
              'as_of': row['as_of'], 'threshold_days': STALE_DAYS, 'effect': 'still used; refresh the source'}
@@ -1117,8 +1231,7 @@ def usd_community_mix(scorer, rows, meas):
     """The one usd_per_hour basis (rounds 8-9, user 2026-11-09): `arena.agent_sessions` (arena.ai Agent / Overall real
     sessions, Cost/Task P50 / Time/Task P50 x 60, kind `community`), else the labelled option B (`derived.community_mix`,
     AA throughput x community token mix x list price; `fallback: True`) for a model arena does not list with cost and
-    time; `convert_usd` then replaces that for a model with a same-series sibling that has a direct value. No median is
-    taken across sources on different scales."""
+    time; `convert_usd` then replaces that for a model with a same-series sibling that has a direct value."""
     out = {}
     for m, r in rows.items():
         raw = r['fields'].get('usd_per_hour') or ()
@@ -1143,7 +1256,7 @@ def axis_evidence(axes):
     source); `aa_only` when no axis has any, though some axis has a value."""
     indep = {a: sorted({s for c in (ax.get('facets') or {}).values() if str(c.get('status', '')).startswith('measured')
                         for s in (c.get('sources') or {}) if not s.startswith('aa.')}) for a, ax in axes.items()}
-    valued = any(ax.get('status') in ('measured', 'partial', 'estimated') for ax in axes.values())
+    valued = any(ax.get('status') in ('measured', 'measured_partial', 'partial', 'estimated') for ax in axes.values())
     return {'independent_sources': indep, 'aa_only': valued and not any(indep.values())}
 
 
@@ -1169,15 +1282,16 @@ def convert_usd(usd, rows, scorer, meas, acc, tier):
     sibling that has one takes the nearest such sibling's value times the ratio of the two cited API list prices over
     the full community token mix."""
     direct = {m for m, u in usd.items() if u.get('value') is not None and u.get('kind') not in ('derived', 'converted')}
-    sibs = series.groups(acc)
+    same = {k: v for k, v in series.same_model(acc).items() if valid_public_declaration(v)}
+    sibs = series.groups({**acc, 'same_model': same})
     index = {m: ((scorer.trusted(r['fields'].get('intelligence_index')) or [{}])[0]).get('value') for m, r in rows.items()}
-    tier = {m: t['value'] for m, t in tier.items()}
+    tier_map = {m: t['value'] for m, t in tier.items()}
     mix = token_mix(meas)
     for m in rows:
         if m in direct:
             continue
-        for b in series.nearest(m, [b for b in sibs.get(m, ()) if b in direct], index, series.boards(meas), tier,
-                                series.same_model(acc)):
+        for b in series.nearest(m, [b for b in sibs.get(m, ()) if b in direct], index, series.boards(meas), tier_map,
+                                same):
             prices = {k: pick_price(scorer.trusted(rows[k]['fields'].get('price'))) for k in (m, b)}
             ratio = list_price_ratio(prices[m], prices[b], mix)
             if ratio is None:
@@ -1189,8 +1303,8 @@ def convert_usd(usd, rows, scorer, meas, acc, tier):
             break
 
 
-def build(meas, acc, plans, distrust=(), meas_bytes=b'', overrides=(), now=None):
-    scorer = Scorer(meas, acc, distrust, overrides)
+def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None):
+    scorer = Scorer(meas, acc, distrust)
     rows, tier, fits, rejected, links, targets = scorer.score()
     usd = usd_community_mix(scorer, rows, meas)
     convert_usd(usd, rows, scorer, meas, acc, tier)
@@ -1234,6 +1348,10 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', overrides=(), now=None)
                 model_errors.append({'model': m, 'field': f"{a}.{','.join(ax['missing_facets'])}",
                                      'reason': 'facet_unmeasured_no_estimate', 'level': 'red_if_demanded',
                                      'effect': 'missing facet with no estimate: excluded under mode B at levels requiring this facet'})
+            elif ax.get('flag') == 'partial':
+                model_errors.append({'model': m, 'field': a, 'reason': 'no_high_measurement', 'level': 'yellow',
+                                     'effect': 'measured only at non-High or disjoint efforts across facets: excluded under mode B '
+                                               'at unmeasured efforts until filled via user-scores.json'})
         evidence = axis_evidence(r['axes'])
         if evidence['aa_only']:
             model_errors.append({'model': m, 'field': 'axes', 'reason': 'aa_only', 'level': 'yellow',
@@ -1255,12 +1373,11 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', overrides=(), now=None)
     doc = {'schema': SCHEMA, 'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
            'measurements_sha256': hashlib.sha256(meas_bytes).hexdigest() if meas_bytes else None,
            'distrusted_sources': sorted(distrust),
-           'user_overrides': list(overrides),
            'method': __doc__.strip().splitlines()[0],
            'estimate_fits': fits, 'rejected_fits': rejected,
            'duration_fit': dur_fit, 'duration_fit_rejected': dur_rejected,
            'tier_sources': {k: sum(1 for t in tier.values() if t['method'] == k)
-                            for k in ('anchor', 'arena_overall', 'other_overall', 'sibling', 'none')},
+                            for k in ('arena_overall', 'other_overall', 'sibling', 'none')},
            'capacity': caps, 'capacity_stale_days': STALE_DAYS,
            'capacity_not_found': (meas.get('capacity') or {}).get('not_found') or {},
            'capacity_errors': cap_errors, 'source_ages': ages, 'source_errors': source_errors(ages),
@@ -1280,23 +1397,20 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--measurements', default=str(measurements.OUT))
     ap.add_argument('--distrust', action='append', default=[], help='a source id to leave out of every field (repeatable)')
-    ap.add_argument('--user-overrides', help='JSON list of dated {model, axis, value, as_of, note} overrides (source `user`)')
     ap.add_argument('--out', default=str(OUT))
     args = ap.parse_args()
     raw = Path(args.measurements).read_bytes()
-    overrides = json.loads(Path(args.user_overrides).read_text(encoding='utf-8')) if args.user_overrides else []
-    doc = build(json.loads(raw), sources.accounts(), json.loads(PLANS.read_text(encoding='utf-8')), args.distrust, raw,
-                overrides=overrides)
+    doc = build(json.loads(raw), sources.accounts(), json.loads(PLANS.read_text(encoding='utf-8')), args.distrust, raw)
     Path(args.out).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(doc["models"])} models -> {args.out}')
     print(f'{"model":28s} {"usd/h":>7}  ' + ' '.join(f'{a[:10]:>10}' for a in AXES))
     for m, r in doc['models'].items():
         u = r['usd_per_hour']['value']
-        mark = {'estimated': '~', 'user_override': 'u'}
+        mark = {'estimated': '~'}
         cells = ' '.join((f"{r['scores'][a]:>9.2f}" if r['scores'][a] is not None else f"{'-':>9}")
                          + mark.get(r['axes'][a]['status'], '!' if r['axes'][a].get('flag') else ' ') for a in AXES)
         print(f"{m:28s} {u if u is not None else '-':>7}  {cells}")
-    print('~ estimated (sibling or tier fit)  u user override  ! missing')
+    print('~ estimated (sibling or tier fit)  ! missing or partial')
     print('tier sources:', doc['tier_sources'])
     for fam, plans in doc['capacity'].items():
         for plan, wins in plans.items():

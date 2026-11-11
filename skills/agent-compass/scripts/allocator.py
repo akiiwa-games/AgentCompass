@@ -10,6 +10,7 @@ adds extra credit, and economy outside alternatives require positive fit above z
 lives in `references/accounts.json` or `references/five-axis-scores.json` and is returned in the per-candidate breakdown.
 """
 
+import copy
 from datetime import datetime, timedelta, timezone
 import json
 import math
@@ -1353,7 +1354,6 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     data's community real-usage figure for its plan and window (round 4), replacing the packaged figure and any dated
     change; a window without one is marked unknown, with no template fallback. Free pools are ordinary quota pools with
     C/U/t0/T (round 11): when capacity is unreadable, they enter mode B (`capacity_unknown`), out of automatic routing."""
-    import copy
     explicit_data = data is not None
     cfg_path = five_axis_config(accounts.get('scoring')).get('path')
     data = data if explicit_data else (load_five_axis(cfg_path) if read_local_state
@@ -1471,7 +1471,10 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
                                     else load_public_user_scores(use_effective=False))
     )
     loc_manual = local_scores if local_scores is not None else (user_scores.load_local() if read_local_state else None)
-    user_scores.apply_overlay(out.setdefault('models', {}), targets, public_scores=pub_manual, local_scores=loc_manual)
+    user_scores.apply_overlay(
+        out.setdefault('models', {}), targets,
+        public_scores=pub_manual, local_scores=loc_manual, aliases=out.get('aliases'),
+    )
     for info in (out.get('models') or {}).values():
         if isinstance(info, dict) and isinstance(info.get('five_axis'), dict):
             info['five_axis']['shares'] = five_axis_shares(five_axis_values(info['five_axis'], 'high'), targets)
@@ -1712,21 +1715,15 @@ def five_axis_need_probability(rec, level_usd):
 
 
 def five_axis_substitute_slack(rec, spend_usd):
-    """a_v: the effective availability of window `rec` for a displaced task of `spend_usd`: `(1 - (1 - e)^2 (U + spend)/C)`
-    times `1 - need_tail(room)`, where `(1 - e)^2` is the remaining-period arrival share times remaining horizon fraction
-    and `(U + spend) / C` is the committed share. Any finite billed window with period time still to run stays strictly
-    below `1.0` (so another pool's value ladder never collapses to zero when a substitute shares its top model), while
-    vanishing quadratically near the reset (`e -> 1`). Reads only this window's own state."""
+    """a_v: posterior survival probability under window `rec`'s negative-binomial arrival model that a displaced task of
+    `spend_usd` finds room before `rec`'s reset (`1 - need_tail(C - U - spend)`). Derived from the conjugate
+    Gamma(1, q/C)-Poisson arrival process updated by U/q observed lumps over elapsed fraction e; reads only this window's
+    own state and no price, keeping the price graph acyclic with zero hand-shaped factors."""
     cap = float(rec['capacity_usd'])
-    used_after = float(rec['used_usd']) + float(spend_usd)
-    room = cap - used_after
+    room = cap - float(rec['used_usd']) - float(spend_usd)
     if cap <= 0 or room <= 0:
         return 0.0
-    e = float(rec.get('elapsed_frac') or 0.0)
-    rem_time = max(0.0, 1.0 - e)
-    committed = min(1.0, max(0.0, used_after / cap))
-    p_rec = rec if 'price_lump_usd' not in rec else {**rec, 'lump_usd': rec['price_lump_usd']}
-    return (1.0 - (rem_time ** 2) * committed) * (1.0 - five_axis_need_tail(p_rec, room))
+    return 1.0 - five_axis_need_tail(rec, room)
 
 
 def five_axis_outside_value(alternatives, own_best_fit):
@@ -1743,14 +1740,15 @@ def five_axis_outside_value(alternatives, own_best_fit):
 def five_axis_upper_hull(points, outside_fit):
     """Upper concave envelope, ascending in spend, of (spend, fit) points above the outside option (0, outside_fit) up to
     the cheapest highest-fit point. Each edge is a step of the account's value ladder; [] when no point beats the outside."""
-    best = [(s, f) for s, f in points if s > 0 and f > outside_fit + 1e-12]
+    best = [(s, f) for s, f in points if s > 0 and f > outside_fit + 1e-15]
     if not best:
         return []
     fmax = max(f for _, f in best)
     top = min(s for s, f in best if f >= fmax - 1e-9)
     chosen, running = [], outside_fit
     for s, f in sorted((p for p in best if p[0] <= top + 1e-12), key=lambda p: (p[0], -p[1])):
-        if f > running + 1e-12:         # dominated points (dearer and no better) cannot be on the envelope
+        eps = 1e-15 if running == outside_fit else 1e-12
+        if f > running + eps:           # dominated points (dearer and no better) cannot be on the envelope
             chosen.append((s, f))
             running = f
     hull = [(0.0, outside_fit)]
@@ -1788,43 +1786,18 @@ def five_axis_value_ladder(hulls):
     return {'steps': ladder, 'full_usd': full}
 
 
-_CLASSIFIER_HORIZON_CACHE = {}
-
-
-def classifier_cases_horizon_hours():
-    """Longest calibrated task duration (hours) in `references/classifier-cases.json`, read via `public_data.effective`."""
-    target = public_data.effective(REFERENCES / 'classifier-cases.json')
-    try:
-        stamp = target.stat().st_mtime_ns
-    except OSError:
-        return 0.0
-    cached = _CLASSIFIER_HORIZON_CACHE.get(target)
-    if cached and cached[0] == stamp:
-        return cached[1]
-    doc = json.loads(target.read_text(encoding='utf-8-sig'))
-    hrs = [float(ep['expected_hours']) for c in (doc.get('calibration_cases') or ())
-           for ep in [c.get('expected_profile') or {}] if isinstance(ep.get('expected_hours'), (int, float))]
-    val = max(hrs, default=0.0)
-    _CLASSIFIER_HORIZON_CACHE[target] = (stamp, val)
-    return val
-
-
 def five_axis_quota_price(rec, ladder, level_usd):
-    """lambda_w(y): fit lost elsewhere per USD at cumulative use y, integrated over the account's value ladder via the
+    """lambda_w(y): fit lost elsewhere per unit at cumulative use y, integrated over the account's value ladder via the
     negative-binomial depletion tail `need_tail((C - y) / rho_j)`. Rises strictly with used share `y / C` and vanishes
-    at the reset (`e -> 1`), while remaining exact-unit invariant (`$ * k` scales `lambda` by `1/k`). When built by
-    `FiveAxisEconomy`, `rec['price_lump_usd']` prices future arrivals at `max(task_hours, calibrated_horizon_hours)`
-    cut at `reset_hours`, so short tasks at mid-week still reflect billed vs free, pool used share, and `+fast` burn."""
+    at the reset (`e -> 1`), while remaining exact-unit invariant (`$ * k` scales `lambda` by `1/k`)."""
     cap = float(rec['capacity_usd'])
     e = float(rec.get('elapsed_frac') or 0.0)
     if cap <= 0 or e >= 1.0:
         return 0.0
     room = cap - float(level_usd)
-    p_rec = rec if 'price_lump_usd' not in rec else {**rec, 'lump_usd': rec['price_lump_usd']}
     price, prev = 0.0, 0.0
     for rho, slope in ladder['steps']:
-        tail = five_axis_need_tail(p_rec, room / rho)
-        price += (slope - prev) * tail
+        price += (slope - prev) * five_axis_need_tail(rec, room / rho)
         prev = slope
     return price
 
@@ -1868,8 +1841,7 @@ def five_axis_table_integral(table, spend_usd):
     return table['cum'][k] + _quadratic_integral(table['lam'], k, x - k) * table['step']
 
 
-def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tables=None, fresh_lump=None,
-                         fresh_price_lump=None):
+def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tables=None, fresh_lump=None):
     """cost_i = integral over [U, U + S] of lambda_w(y) dy: the fit the rest of the period loses because this candidate
     takes `spend_usd` of window `rec` (same unit as the fit, so N = F - cost needs no weight). A task that crosses the
     reset is split by time: the part before it is priced on the current period, the part after it on a fresh period
@@ -1880,9 +1852,10 @@ def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tab
     tables = {} if tables is None else tables
     spend = max(0.0, float(spend_usd))
     spend_max = max(spend, float(spend_max or 0.0))
-    hours = max(1e-9, float(task_hours or 0.0))
+    raw_hours = float(task_hours or 0.0)
+    hours = max(1e-9, raw_hours)
     tau = rec.get('reset_hours')
-    crossing = tau is not None and tau != float('inf') and float(tau) < hours - 1e-12
+    crossing = raw_hours > 0 and tau is not None and tau != float('inf') and float(tau) < hours - 1e-12
     before = spend * (float(tau) / hours) if crossing else spend
     after = spend - before
     if 'now' not in tables:
@@ -1895,14 +1868,13 @@ def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tab
     if crossing and after > 0:
         cap = float(rec['capacity_usd'])
         fresh = {'capacity_usd': cap, 'used_usd': 0.0, 'elapsed_frac': 0.0,
-                 'lump_usd': rec['lump_usd'] if fresh_lump is None else fresh_lump,
-                 **({'price_lump_usd': fresh_price_lump} if fresh_price_lump is not None else {})}
+                 'lump_usd': rec['lump_usd'] if fresh_lump is None else fresh_lump}
         if 'fresh' not in tables:
             tables['fresh'] = five_axis_price_table(fresh, ladder, spend_max)
         cost += five_axis_table_integral(tables['fresh'], after)
         need_end = five_axis_need_probability(fresh, min(after, cap))
     return {'cost': cost, 'lambda_start': lam0, 'need_start': need_start, 'need_end': need_end,
-             'spend_before': before, 'spend_after': after}
+            'spend_before': before, 'spend_after': after}
 
 
 # The demands a window's value ladder is read over: every mix of the three thinking categories (tool_operation 0, so a
@@ -1914,7 +1886,7 @@ FIVE_AXIS_DEMAND_GRID = tuple(
 
 
 class FiveAxisEconomy:
-    """Quota economy v3 for one plan (advisor report v3, owner decisions D1-D3 of round 13).
+    """Quota economy v3 for one plan (advisor report v3, owner decisions D1-D3 of round 13, burst size v3.1 option A).
 
     `pool` is the account's own candidates, evaluated with the current task's flags neutralised (`rank`'s economy pool), so
     a window's price does not move with local_only, vision, a named model or whether a candidate fits the
@@ -1930,15 +1902,13 @@ class FiveAxisEconomy:
         self.grid = FIVE_AXIS_DEMAND_GRID
         targets = [five_axis_targets(d, accounts['_five_axis']['targets']) for d in self.grid]
         self.task_gi = len(self.grid)           # the extra fit slot: the task's own demand (diagnostics only)
-        self._task_hours = float(task.get('hours') or task.get('expected_hours') or 0.0)
-        self._horizon_hours = classifier_cases_horizon_hours()
         fit_cache = {}
         self.entries = []
         self.spend_max = {}
         self.units = {}
         self.unit_wkeys = {}
         self.points = {}
-        self._tables, self._ladders, self._alts, self._recs, self._lumps, self._price_lumps = {}, {}, {}, {}, {}, {}
+        self._tables, self._ladders, self._alts, self._recs, self._lumps = {}, {}, {}, {}, {}
         for c in [*pool, *extra]:
             qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
             states = {wid: (st, cap) for wid, (_, st, cap, _) in (c.get('_five_window_states') or {}).items()
@@ -1952,10 +1922,12 @@ class FiveAxisEconomy:
                     five_axis_fit(values, d, t)[0] if all(values.get(a) is not None for a, w in d.items() if w > 0) else -1.0
                     for d, t in zip(self.grid, targets)
                 )
+            w_spend = c.get('_five_window_spend')
+            spend = float(w_spend) if w_spend is not None else float(c.get('expected_usd') or 0.0)
+            hours = 0.0 if c.get('_five_cadence_instant') else float(c.get('_five_econ_hours') or c.get('expected_hours') or 0.0)
             entry = {'cand': c, 'qsrc': qsrc, 'startable': not c.get('_five_long_wait'),
                      'unmetered': bool(c.get('_five_unmetered')), 'metered': bool(c.get('_five_metered')),
-                     'spend': float(c.get('expected_usd') or 0.0), 'states': states,
-                     'hours': float(c.get('_five_econ_hours') or c.get('expected_hours') or 0.0),
+                     'spend': spend, 'states': states, 'hours': hours,
                      'fits': fit_cache[key] + (float(c['components'].get('fit') or 0.0),),
                      'unit': (qsrc, frozenset(states))}
             self.entries.append(entry)
@@ -1983,7 +1955,6 @@ class FiveAxisEconomy:
         rec = five_axis_window_recovery(st, cap)
         if rec is not None:
             rec['lump_usd'] = self.lump(wkey, rec['reset_hours'])
-            rec['price_lump_usd'] = self.price_lump(wkey, rec['reset_hours'])
         return rec
 
     def lump(self, wkey, reset_hours=None):
@@ -1992,7 +1963,7 @@ class FiveAxisEconomy:
         of the highest fit), cut at the window's own reset: a task longer than the hours to the reset spends only the
         share `reset_hours / hours` of its dollars before it. `reset_hours` None means the untruncated size (a fresh
         period). Capped by the window's capacity. It reads only this account's candidates, their public `usd_per_hour` and
-        durations, and the weekly clock: no 5-hour window, no outside point, no constant."""
+        durations, and the reset clock: no 5-hour window, no outside point, no constant."""
         tau = float('inf') if reset_hours is None else float(reset_hours)
         key = (wkey, tau)
         got = self._lumps.get(key)
@@ -2006,32 +1977,6 @@ class FiveAxisEconomy:
                     total += top['spend'] * share
             cap = max((float(e['states'][wkey[1]][1]) for e in own), default=0.0)
             got = self._lumps[key] = min(cap, total / len(self.grid)) if own else 0.0
-        return got
-
-    def price_lump(self, wkey, reset_hours=None):
-        """Burst size used in `five_axis_quota_price`: `max(lump_usd, horizon_lump_usd)` where `horizon_lump_usd` prices
-        future arrivals at `max(task_hours, classifier_cases_horizon_hours())`, cut at `reset_hours`."""
-        base_q = self.lump(wkey, reset_hours)
-        if self._task_hours <= 0 or self._horizon_hours <= self._task_hours:
-            return base_q
-        tau = float('inf') if reset_hours is None else float(reset_hours)
-        key = (wkey, tau)
-        got = self._price_lumps.get(key)
-        if got is None:
-            own = [e for e in (self.points.get(wkey) or []) if e['spend'] > 0 and e['hours'] > 0]
-            if not own:
-                got = base_q
-            else:
-                scale = self._horizon_hours / self._task_hours
-                total = 0.0
-                for gi in range(len(self.grid)):
-                    top = max(own, key=lambda e: (round(e['fits'][gi], 9), -e['spend']))
-                    h_ref = top['hours'] * scale
-                    share = 1.0 if h_ref <= 0 or tau == float('inf') else min(1.0, tau / h_ref)
-                    total += (top['spend'] * scale) * share
-                cap = max((float(e['states'][wkey[1]][1]) for e in own), default=0.0)
-                got = max(base_q, min(cap, total / len(self.grid)))
-            self._price_lumps[key] = got
         return got
 
     def _alt(self, unit, gi):
@@ -2078,10 +2023,9 @@ class FiveAxisEconomy:
 
     def window_cost(self, wkey, rec, spend, econ_hours):
         tables = self._tables.setdefault((wkey, round(rec['used_usd'], 6), round(rec['elapsed_frac'], 9),
-                                          round(rec['capacity_usd'], 6), round(rec['lump_usd'], 6),
-                                          round(rec.get('price_lump_usd', rec['lump_usd']), 6)), {})
+                                          round(rec['capacity_usd'], 6), round(rec['lump_usd'], 6)), {})
         return five_axis_spend_cost(rec, self.ladder(wkey), spend, econ_hours, self.spend_max.get(wkey, spend), tables,
-                                    fresh_lump=self.lump(wkey), fresh_price_lump=self.price_lump(wkey))
+                                    fresh_lump=self.lump(wkey))
 
     def report(self):
         """One block per priced window for the plan's `system.quota_windows` (and the README page): its state and its
@@ -2112,26 +2056,21 @@ class FiveAxisEconomy:
 
 
 def five_axis_order(candidate):
-    """Lexicographic order on the five-axis path (quota economy v3, owner decision of round 13b + F3), in the order of the tuple:
+    """Lexicographic order on the five-axis path (quota economy v3, owner decision of round 13b + R2-F4), in tuple order:
     1. Net score N = F - cost descending (exact float, never rounded: the quota economy C is a term of N, never a tie-break)
-    2. Wait before the start ascending (round 10: a candidate that waits for a reset trails one that starts now; the design
-       has no such key, it keeps `--can-wait-hours` candidates behind immediate ones at equal N)
-    3. Earliest-expiring quota ascending: breaks ONLY exact ties on N after C is fully in N
-    4. Faster completion time (wait_hours + expected_hours) ascending; speed only breaks exact ties on N
-    5. Fewer list-price USD spent ascending
-    6. Demand-weighted category level descending (five_axis_level), then sibling harness place ascending."""
+    2. Wait before the start ascending (a candidate that waits for a reset trails one that starts now at equal N)
+    3. Faster completion time (wait_hours + expected_hours) ascending; speed breaks exact ties on N (including C ≈ 0 near reset)
+    4. Fewer list-price USD spent ascending
+    5. Demand-weighted category level descending (five_axis_level), then sibling harness place ascending."""
     k = candidate['components']
-    reset = k.get('earliest_reset_hours')
-    reset_key = float('inf') if reset is None else round(float(reset), 4)
     wait_h = float(candidate.get('available_in_hours') or 0.0)
     done_key = round(wait_h + float(candidate['duration_hours']), 4)
     usd = float(candidate.get('expected_usd') if candidate.get('expected_usd') is not None else float('inf'))
-    return (-float(candidate['score']), round(wait_h, 4), reset_key, done_key,
+    return (-float(candidate['score']), round(wait_h, 4), done_key,
             round(usd, 4), -round(float(k.get('five_axis_level', 0.0)), 4), k.get('harness_place', 0))
 
 
-FIVE_AXIS_ORDER_KEYS = ('net_score', 'wait_hours', 'earliest_reset_hours', 'completion_hours', 'usd', 'axis_level',
-                        'harness_place')
+FIVE_AXIS_ORDER_KEYS = ('net_score', 'wait_hours', 'completion_hours', 'usd', 'axis_level', 'harness_place')
 
 
 def five_axis_deciding_key(first, second):
@@ -2148,7 +2087,18 @@ HARNESS_CAPABILITIES = {
         'accepts_image_input': False,
         'reads_image_files': True,
     },
+    'grok-bot': {
+        # Remote web bot transport takes prompt text and images on the web channel, but cannot transfer or apply local files.
+        'transfers_local_files': False,
+    },
 }
+
+
+def harness_transfers_files(harness):
+    """True when the execution harness can transfer or apply local files for `--file` / `--apply-to` work."""
+    key = 'antigravity-resilient' if harness == 'antigravity' else harness
+    cap = HARNESS_CAPABILITIES.get(key)
+    return True if not cap else bool(cap.get('transfers_local_files', True))
 
 
 def harness_accepts_visual(harness, model, needs_attachment=False):
@@ -2549,6 +2499,120 @@ def account_cwd_allowed(spec, cwd=None):
     return False
 
 
+def cadence_window_state(account, spec, acct_usage, records, now):
+    """(wspec, state, limit_count) for an account-configured dispatch cadence window (e.g. ChatGPT Web 5 per 12h),
+    or None when the account declares no `cadence`. Priced on current-period used dispatches and remaining period hours."""
+    cad = (spec or {}).get('cadence')
+    if not isinstance(cad, dict):
+        return None
+    win_sec, cap_raw = cad.get('window_seconds'), cad.get('limit')
+    if (isinstance(win_sec, bool) or not isinstance(win_sec, (int, float)) or win_sec <= 0
+            or isinstance(cap_raw, bool) or not isinstance(cap_raw, (int, float)) or cap_raw <= 0):
+        return None
+    win_sec, cap = float(win_sec), float(cap_raw)
+    period_h = win_sec / 3600.0
+    wspec = {'hours': period_h}
+    usage_row = acct_usage if isinstance(acct_usage, dict) else {}
+    acct_stale = usage_row.get('status') == 'stale' or usage_row.get('stale') is True
+    raw_windows = usage_row.get('windows')
+    raw_obs = None
+    if isinstance(raw_windows, list):
+        raw_obs = next((w for w in raw_windows if isinstance(w, dict) and w.get('id') == 'cadence'), None)
+    elif isinstance(raw_windows, dict) and isinstance(raw_windows.get('cadence'), dict):
+        raw_obs = raw_windows['cadence']
+    obs = cycle_observation(wspec, raw_obs, usage_row, now, read_failed_ok=True) if raw_obs is not None else None
+    if obs is not None:
+        rem_pct = None
+        if obs.get('used') is not None and not isinstance(obs.get('used'), bool):
+            rem_pct = clamp(100.0 * (cap - float(obs['used'])) / cap, 0.0, 100.0)
+        elif obs.get('used_count') is not None and not isinstance(obs.get('used_count'), bool):
+            rem_pct = clamp(100.0 * (cap - float(obs['used_count'])) / cap, 0.0, 100.0)
+        elif obs.get('remaining_count') is not None and not isinstance(obs.get('remaining_count'), bool):
+            rem_pct = clamp(100.0 * float(obs['remaining_count']) / cap, 0.0, 100.0)
+        else:
+            rem_pct = obs.get('remaining_pct_before_reset')
+            if rem_pct is None:
+                rem_pct = obs.get('observed_remaining_pct')
+            if rem_pct is None and obs.get('used_pct') is not None:
+                rem_pct = clamp(100.0 - float(obs['used_pct']), 0.0, 100.0)
+        seconds = obs.get('seconds_until_reset')
+        if seconds is None and (natural_reset := parse_time(obs.get('resets_at'))) is not None:
+            seconds = (natural_reset - now).total_seconds()
+        unstarted = bool(obs.get('unstarted'))
+        if seconds is None and rem_pct is not None:
+            seconds = win_sec
+            if rem_pct >= 100.0 - 1e-9:
+                unstarted = True
+        if rem_pct is not None and seconds is not None and float(seconds) > 0:
+            fetched = parse_time(usage_row.get('fetched_at'))
+            active_ids = set()
+            for r in records or ():
+                if not isinstance(r, dict) or r.get('stage') != 'dispatch' or not r.get('dispatch_id'):
+                    continue
+                if (r.get('bundle') or {}).get('account') != account:
+                    continue
+                exp = parse_time(r.get('lease_until'))
+                if r.get('state') not in ('prepared', 'launching', 'launched', 'started') or exp is None or exp <= now:
+                    continue
+                t_rec = parse_time(r.get('at') or r.get('created_at') or r.get('updated_at'))
+                if fetched is not None and t_rec is not None and t_rec <= fetched:
+                    continue
+                active_ids.add(r['dispatch_id'])
+            if active_ids:
+                rem_pct = max(0.0, float(rem_pct) - 100.0 * len(active_ids) / cap)
+            reset_h = float(seconds) / 3600.0
+            state = {
+                'id': 'cadence', 'hours': period_h, 'short': False, 'known': True, 'stale': acct_stale,
+                'full': 100.0, 'remaining': float(rem_pct), 'reset_hours': reset_h, 'end_hours': reset_h,
+                'expiry_hours': None, 'target_remaining': 100.0 * min(1.0, reset_h / period_h),
+                'reset_at': obs.get('resets_at'), 'unstarted': unstarted and float(rem_pct) >= 100.0 - 1e-9,
+            }
+            return wspec, state, cap
+    by_dispatch = {}
+    anon_times = []
+    for r in records or ():
+        if not isinstance(r, dict) or (r.get('bundle') or {}).get('account') != account:
+            continue
+        stage = r.get('stage')
+        t = None
+        if stage in ('select', 'record') and r.get('choice') not in (None, 'none'):
+            cand_t = parse_time(r.get('at'))
+            if cand_t is not None and 0.0 <= (now - cand_t).total_seconds() < win_sec:
+                t = cand_t
+        elif stage == 'dispatch' and r.get('state') in ('prepared', 'launching', 'launched', 'started'):
+            exp = parse_time(r.get('lease_until'))
+            if exp is not None and exp > now:
+                cand_t = parse_time(r.get('at') or r.get('created_at') or r.get('updated_at')) or now
+                if (now - cand_t).total_seconds() < win_sec:
+                    t = cand_t if cand_t <= now else now
+        if t is None:
+            continue
+        did = r.get('dispatch_id')
+        if isinstance(did, str) and did:
+            prev = by_dispatch.get(did)
+            by_dispatch[did] = t if prev is None or t < prev else prev
+        else:
+            anon_times.append(t)
+    events = [*by_dispatch.values(), *anon_times]
+    used = float(len(events))
+    rem_pct = clamp(100.0 * (cap - used) / cap, 0.0, 100.0)
+    if events:
+        oldest = min(events)
+        seconds = max(1e-6, win_sec - max(0.0, (now - oldest).total_seconds()))
+        unstarted = False
+    else:
+        seconds = win_sec
+        unstarted = True
+    reset_h = seconds / 3600.0
+    state = {
+        'id': 'cadence', 'hours': period_h, 'short': False, 'known': True, 'stale': False,
+        'full': 100.0, 'remaining': rem_pct, 'reset_hours': reset_h, 'end_hours': reset_h,
+        'expiry_hours': None, 'target_remaining': 100.0 * min(1.0, reset_h / period_h),
+        'reset_at': None, 'unstarted': unstarted,
+    }
+    return wspec, state, cap
+
+
 def evaluate_bundle(bundle, task, ctx):
     policy, accounts = ctx['policy'], ctx['accounts']
     spec = accounts['accounts'][bundle['account']]
@@ -2635,10 +2699,11 @@ def evaluate_bundle(bundle, task, ctx):
         task_exclude("the parent marked this work local-only (it must run on this machine: in-place edits, local tools, secrets or live accounts); this worker runs remotely")
     if info.get('excluded_when') == 'local_only' and task.get('outbound_ok') is False:
         task_exclude('the parent disallowed outbound work; this worker runs remotely')
-    if info.get('text_only') and task.get('file_transfer'):
-        task_exclude('this text-only runner cannot transfer or apply local files')
     # Harness input limits apply to every bundle on the harness, manual or auto (HARNESS_CAPABILITIES).
     harness = bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
+    if (info.get('text_only') or not harness_transfers_files(harness)) and task.get('file_transfer'):
+        task_exclude('this text-only runner cannot transfer or apply local files' if info.get('text_only')
+                     else 'this runner cannot transfer or apply local files')
     if task['needs_visual'] and not harness_accepts_visual(harness, model):
         task_exclude(f'{harness} cannot accept image attachments for {model}, so it cannot take visual or GUI work')
     if task['constraint_model'] and not model_pin_matches(task, bundle, own_model):
@@ -2696,6 +2761,8 @@ def evaluate_bundle(bundle, task, ctx):
         )
     else:
         blind_msg = None
+    if blind_msg and not pool:
+        result['_five_blind_msg'] = blind_msg
     errors = (
         ([blind_msg] if blind_msg else [])
         + (['usd_per_hour has no cited source on a metered account'] if billed and state.get('usd_status') != 'ok' else [])
@@ -2742,11 +2809,17 @@ def evaluate_bundle(bundle, task, ctx):
         task_exclude('subscription ends before the work would finish')
 
     worker = task['worker']
-    resumes = (
+    worker_bundle = worker.get('bundle') if worker else None
+    worker_is_fast = bool(worker and (worker.get('fast') or (isinstance(worker_bundle, str) and worker_bundle.endswith(fast_modes.ID_SUFFIX))))
+    worker_base = (worker_bundle[:-len(fast_modes.ID_SUFFIX)]
+                   if isinstance(worker_bundle, str) and worker_bundle.endswith(fast_modes.ID_SUFFIX)
+                   else worker_bundle)
+    same_worker_base = (
         bool(worker)
-        and worker.get('bundle') == bundle['id']
+        and worker_base == bundle['id']
         and not (task.get('read_only_review') and worker.get('read_only_review') is False)
     )
+    resumes = same_worker_base and not worker_is_fast
     worn = worker_worn(worker, policy)
     context_extra = 0.0
     if resumes:
@@ -2935,6 +3008,33 @@ def evaluate_bundle(bundle, task, ctx):
         result['_five_context_burn'] = context_burn
         if not five_window_states and not result['excluded'] and not result.get('data_errors'):
             result['notes'].append('no current capacity observation; unknown is not exhausted')
+    elif not spec.get('unlimited'):
+        acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
+        cad_got = cadence_window_state(bundle['account'], spec, acct_usage, ctx.get('records'), now)
+        if cad_got is not None:
+            wspec, state, cap_count = cad_got
+            result.setdefault('_five_axis_windows', []).append('cadence')
+            need_pct = 100.0 / cap_count
+            if not pool and state['remaining'] + 1e-9 < need_pct:
+                if state['reset_hours'] <= policy['defer_if_reset_within_hours']:
+                    renewed = after_reset(state, wspec['hours'])
+                    if renewed is not None:
+                        state = renewed
+                        available_at = max(available_at or 0, renewed['deferred_hours'])
+                        result['_five_long_wait'] = True
+                        result['notes'].append(
+                            f'cadence renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)'
+                        )
+                if state['remaining'] + 1e-9 < need_pct:
+                    task_exclude(f'cadence has 0 of {cap_count:g} dispatches left and resets in {state["reset_hours"]:.1f}h')
+                    result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
+            five_window_states['cadence'] = (wspec, state, cap_count, None)
+            result['_five_window_states'] = five_window_states
+            result['_five_window_spend'] = 1.0
+            result['_five_cadence_instant'] = True
+            result['_five_econ_hours'] = econ_hours
+            result['_five_chain_hours'] = econ_chain_hours
+            result['_five_context_burn'] = context_burn
     if (pool or (not task.get('disable_fast') and available_at is None)) and not result['excluded'] and not result.get('_five_long_wait'):
         fast_info = ((info.get('five_axis') or {}).get('fast_mode')) or {}
         if fast_info.get('status') == 'ok' and fast_modes.supported(harness, model, info):
@@ -3102,7 +3202,8 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
             }
             if not row['short'] and spend > 0:
                 got = econ.window_cost((own_qsrc, wid), rec, spend, econ_h)
-                row.update(priced=True, cost=float(got['cost']), opportunity_cost=float(got['cost']),
+                unit_cost = float((1.0 + float(got['cost'])) - 1.0)
+                row.update(priced=True, cost=unit_cost, opportunity_cost=unit_cost,
                            quota_price=round(got['lambda_start'], 6), need_start=round(got['need_start'], 4),
                            need_end=round(got['need_end'], 4), spend_before_reset=round(got['spend_before'], 2),
                            spend_after_reset=round(got['spend_after'], 2))
@@ -3149,12 +3250,22 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
     for c in list(eligible):
         w_states = c.get('_five_window_states') or {}
         own_qsrc = provider_inventory.quota_source(c['bundle']['account'], accounts)
-        econ_h = float(c.get('_five_econ_hours') or base_hours)
-        step_usd = float(c.get('expected_usd') or 0.0)
-        chain_usd = float(c.get('chain_usd') or step_usd)
+        w_spend_override = c.get('_five_window_spend')
+        cad_instant = bool(c.get('_five_cadence_instant'))
+        econ_h = 0.0 if cad_instant else float(c.get('_five_econ_hours') or base_hours)
+        step_usd = float(w_spend_override) if w_spend_override is not None else float(c.get('expected_usd') or 0.0)
+        chain_usd = float(w_spend_override) if w_spend_override is not None else float(c.get('chain_usd') or step_usd)
         fast_cand = c.get('_five_fast_candidate') if w_states else None
         if fast_cand and task.get('force_fast'):
             five_axis_make_fast(c, fast_cand, 'user_override')
+            if task.get('worker') and not worker_worn(task['worker'], policy):
+                wb = task['worker'].get('bundle')
+                w_ok = not (task.get('read_only_review') and task['worker'].get('read_only_review') is False)
+                f_resumes = w_ok and (wb == c['id'] or (wb == c.get('base_id') and bool(task['worker'].get('fast'))))
+                c['action'] = 'resume' if f_resumes else 'switch'
+                c['components']['continuity'] = (
+                    round(task['five_axis_continuity'], 4) if f_resumes and task['coupling'] in ('medium', 'high') else 0.0
+                )
             price(c, w_states, own_qsrc, fast_cand['step_usd'], fast_cand['chain_usd'], fast_cand['econ_hours'])
             continue
         if fast_cand:
@@ -3162,6 +3273,14 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
                     'excluded': list(c['excluded']),
                     'five_axis_price': dict(c['five_axis_price']) if isinstance(c.get('five_axis_price'), dict) else None}
             five_axis_make_fast(twin, fast_cand, 'net_score')
+            if task.get('worker') and not worker_worn(task['worker'], policy):
+                wb = task['worker'].get('bundle')
+                w_ok = not (task.get('read_only_review') and task['worker'].get('read_only_review') is False)
+                f_resumes = w_ok and (wb == twin['id'] or (wb == twin.get('base_id') and bool(task['worker'].get('fast'))))
+                twin['action'] = 'resume' if f_resumes else 'switch'
+                twin['components']['continuity'] = (
+                    round(task['five_axis_continuity'], 4) if f_resumes and task['coupling'] in ('medium', 'high') else 0.0
+                )
             price(twin, w_states, own_qsrc, fast_cand['step_usd'], fast_cand['chain_usd'], fast_cand['econ_hours'])
             variants.append(twin)
         price(c, w_states, own_qsrc, step_usd, chain_usd, econ_h)
@@ -3171,7 +3290,8 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
     for c in candidates:
         for priv in ('_five_axis_windows', '_five_window_states', '_five_econ_hours', '_five_chain_hours',
                      '_five_context_burn', '_five_fast_candidate', '_five_values', '_five_short_reasons',
-                     '_five_long_wait', '_five_unmetered', '_five_metered'):
+                     '_five_long_wait', '_five_unmetered', '_five_metered',
+                     '_five_window_spend', '_five_cadence_instant', '_five_blind_msg'):
             c.pop(priv, None)
     return report
 
@@ -3199,6 +3319,29 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     task = {**task, 'five_axis_demand': demand, 'five_axis_targets': five_axis_targets(demand, panel_targets),
             'five_axis_continuity': five_axis_continuity_value(demand, panel_targets)}
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values()]
+    # R2-F7: when `--model` is named without `--effort` (and no bundle is pinned), never let an unscored effort beat a
+    # scored effort of the same model via a silent 0.0 default. Only when ALL eligible candidates lack trusted scores
+    # do they proceed together as an explicit `unscored_named_dispatch` with `fit = None`.
+    if task.get('constraint_model') and not task.get('constraint_effort') and not task.get('pinned_bundle'):
+        elig_now = [c for c in candidates if not c['excluded']]
+        if any(not c.get('_five_blind_msg') for c in elig_now):
+            for c in elig_now:
+                msg = c.get('_five_blind_msg')
+                if msg:
+                    blind_note = f'data error: {msg}; dispatched because it was named'
+                    c['notes'] = [n for n in c['notes'] if n != blind_note]
+                    if 'data_errors' in c:
+                        c['data_errors'] = [e for e in c['data_errors'] if e != msg]
+                        if not c['data_errors']:
+                            c.pop('data_errors', None)
+                    c['excluded'].append(
+                        f'data error: {msg} (excluded because another effort of {task["constraint_model"]} has trusted data)'
+                    )
+    for c in candidates:
+        if not c['excluded'] and c.get('_five_blind_msg'):
+            c['components']['fit'] = None
+            c['components']['unscored_named_dispatch'] = True
+            c['unscored_named_dispatch'] = True
     eligible = [c for c in candidates if not c['excluded']]
     pool_task = {**task, 'local_only': False, 'outbound_ok': None, 'file_transfer': False,
                  'needs_visual': False, 'needs_gui': False, 'wants_fast': False,
@@ -3212,11 +3355,12 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     weights = dict(five['weights'])
     kind = task['kind']
     for c in eligible:
-        raw_score = (sum(weights[k] * c['components'][k] for k in weights) + c['components'].get('boost', 0)
+        raw_score = (sum(weights[k] * (0.0 if c['components'].get(k) is None else c['components'][k]) for k in weights)
+                     + c['components'].get('boost', 0)
                      - c['components']['opportunity_cost'])
         # Evaluate at IEEE-754 unit scale so F = 0 has the same ~2.2e-16 float64 resolution as F > 0 (shift invariance).
         c['score'] = float((1.0 + raw_score) - 1.0)
-    # Equal scores go to the candidate drawing on the earliest-expiring quota, then faster completion, then fewer USD,
+    # Equal scores go to the candidate with no wait, then faster completion, then fewer USD,
     # then higher level; the harness order only separates siblings of one model, account and effort.
     harness_places(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'))
     eligible.sort(key=five_axis_order)
@@ -3513,7 +3657,10 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     result = {'stage': 'plan', 'source': 'deterministic_allocator', 'observed_at': now.isoformat(), 'decision': decision,
               'ranking': ranked_candidates, 'usage': usage}
     if not eligible:
-        closest = sorted((c for c in candidates if c['excluded']), key=lambda c: (len(c['excluded']), -c['components']['fit']))[:2]
+        closest = sorted(
+            (c for c in candidates if c['excluded']),
+            key=lambda c: (len(c['excluded']), -(c['components']['fit'] if c['components'].get('fit') is not None else float('-inf'))),
+        )[:2]
         named_block = named_pin_block(task, candidates)
         decision.update({'action': 'none', 'needs_user_decision': True,
                          'reason': 'No eligible bundle. Closest: ' + ' | '.join(
@@ -3625,6 +3772,8 @@ def _snapshot_row(candidate, detail):
         row['estimated_axes'] = list(candidate['estimated_axes'])
     if candidate.get('manual_scores'):
         row['manual_scores'] = copy.deepcopy(candidate['manual_scores'])
+    if candidate.get('unscored_named_dispatch'):
+        row['unscored_named_dispatch'] = True
     if detail:
         row['components'] = {k: _round(v) for k, v in comps.items()}
         row.update({k: _round(candidate.get(k)) for k in ('expected_pct', 'chain_pct', 'expected_usd', 'chain_usd',
@@ -3775,4 +3924,6 @@ def explain(top, system):
         parts.append(f"includes a temporary user-override boost of {top['components']['boost']:+.2f}")
     if top['components'].get('continuity'):
         parts.append(f"continuing its related worker adds {top['components']['continuity']:.2f} (one demand level)")
+    if top.get('unscored_named_dispatch'):
+        parts.append('unscored named dispatch (fit unmeasured)')
     return '; '.join(parts)
