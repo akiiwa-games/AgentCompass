@@ -118,6 +118,18 @@ CAPACITY = {'claude': {'max20': {'seven_day': window(1700.0, ref='claude-opus-5-
             'codex': {'pro': {'usage': window(615.0)}}}
 
 
+def _synthetic_doc_ctx(doc):
+    import contextlib
+    from unittest.mock import patch
+
+    @contextlib.contextmanager
+    def _ctx():
+        with patch.object(allocator, 'load_five_axis', lambda path=None, use_effective=True: doc), \
+                patch.object(allocator, 'load_public_user_scores', lambda path=None, use_effective=True: {'schema_version': 1, 'scores': {}}):
+            yield
+    return _ctx()
+
+
 class FiveAxisTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -129,14 +141,10 @@ class FiveAxisTests(unittest.TestCase):
 
     def plan(self, accounts, doc, state='ample', **task):
         acc = copy.deepcopy(accounts)
-        original = allocator.load_five_axis
-        allocator.load_five_axis = lambda path=None: doc
-        try:
+        with _synthetic_doc_ctx(doc):
             profile = {**PROFILE, **task.pop('profile', {})}
             return allocator.plan({'objective': 't', 'profile': profile, **task}, self.usage(acc, state), NOW,
                                   accounts=acc, overrides=[], records=[], host_policy_config=self.policy)
-        finally:
-            allocator.load_five_axis = original
 
     def rows_for(self, decision, model):
         return [c for c in decision['ranking'] if allocator.canonical(c['bundle']['model'], self.accounts) == model]
@@ -339,13 +347,9 @@ class FiveAxisTests(unittest.TestCase):
                 w['seconds_until_reset'] = 84 * 3600
         # Claude alone: with no other account to take displaced work the windows price (round 15: the burst size is small, so a
         # window that another account could cover is nearly free; both weekly windows are tight here so that none of them can)
-        original = allocator.load_five_axis
-        allocator.load_five_axis = lambda path=None: doc
-        try:
+        with _synthetic_doc_ctx(doc):
             d = allocator.plan({'objective': 't', 'hours': 1.0, 'profile': {**PROFILE, 'axis_demand': demand(2, 2, 0, 0)}},
                                usage, NOW, accounts=acc, overrides=[], records=[], host_policy_config={'allowed_accounts': ['claude']})
-        finally:
-            allocator.load_five_axis = original
         fable_high = next(c for c in d['ranking'] if c['id'] == 'fable51_high')
         opus_high = next(c for c in d['ranking'] if c['id'] == 'opus55_high')
         fable_windows = {w['window']: w for w in fable_high['economy']['windows']}
@@ -409,17 +413,13 @@ class FiveAxisTests(unittest.TestCase):
         }
 
         def run_case(hours):
-            original = allocator.load_five_axis
-            allocator.load_five_axis = lambda path=None: doc
-            try:
+            with _synthetic_doc_ctx(doc):
                 return allocator.plan(
                     {'objective': 'frontier rewrite', 'expected_hours': hours,
                      'profile': {**PROFILE, 'axis_demand': demand(2, 3, 0, 0), 'expected_hours': hours}},
                     copy.deepcopy(usage), NOW, accounts=copy.deepcopy(acc),
                     overrides=[], records=[], host_policy_config={'allowed_accounts': ['claude', 'claude-2']},
                 )
-            finally:
-                allocator.load_five_axis = original
 
         def pools(d):
             plain = lambda i: next(c for c in d['ranking'] if c['id'] == i)
@@ -639,18 +639,13 @@ class FiveAxisTests(unittest.TestCase):
              'bundle': {'account': 'claude', 'model': 'claude-opus-5-5', 'effort': 'high', 'bundle_id': 'opus55_high'},
              'expected_usd': 500.0, 'expected_hours': 10.0}
         ]
-        original = allocator.load_five_axis
-        allocator.load_five_axis = lambda path=None: doc
-        try:
-            if True:
-                clean = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'axis_demand': demand(2, 3, 0, 0)}},
-                                       usage, NOW, accounts=copy.deepcopy(acc), overrides=[], records=[],
-                                       host_policy_config=self.policy)
-                poisoned = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'axis_demand': demand(2, 3, 0, 0)}},
-                                          usage_poisoned, NOW, accounts=copy.deepcopy(acc), overrides=[],
-                                          records=completed_history, host_policy_config=self.policy)
-        finally:
-            allocator.load_five_axis = original
+        with _synthetic_doc_ctx(doc):
+            clean = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'axis_demand': demand(2, 3, 0, 0)}},
+                                   usage, NOW, accounts=copy.deepcopy(acc), overrides=[], records=[],
+                                   host_policy_config=self.policy)
+            poisoned = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'axis_demand': demand(2, 3, 0, 0)}},
+                                      usage_poisoned, NOW, accounts=copy.deepcopy(acc), overrides=[],
+                                      records=completed_history, host_policy_config=self.policy)
         self.assertEqual(clean['choice'], poisoned['choice'])
         self.assertEqual({c['id']: c['score'] for c in clean['ranking']},
                          {c['id']: c['score'] for c in poisoned['ranking']})
@@ -744,7 +739,7 @@ class FiveAxisTests(unittest.TestCase):
                 w['remaining_pct_before_reset'] = 45.0
                 w['observed_remaining_pct'] = 45.0
                 w['used_pct'] = 55.0
-        with _patch.object(allocator, 'load_five_axis', return_value=doc):
+        with _synthetic_doc_ctx(doc):
             routine_tight = allocator.plan(
                 {'objective': 't', 'can_wait_hours': 4.0,
                  'profile': {**PROFILE, 'axis_demand': demand(0, 1, 0, 0)}},
@@ -786,13 +781,9 @@ class FiveAxisTests(unittest.TestCase):
                 t = dict(payload['task'], profile=profile)
                 if getattr(cli_args, 'can_wait_hours', None) is not None and t.get('can_wait_hours') is None:
                     t['can_wait_hours'] = cli_args.can_wait_hours
-                original = allocator.load_five_axis
-                allocator.load_five_axis = lambda path=None: doc
-                try:
+                with _synthetic_doc_ctx(doc):
                     d = allocator.plan(t, usage, NOW, accounts=acc,
                                        overrides=[], records=[], host_policy_config=self.policy)
-                finally:
-                    allocator.load_five_axis = original
                 return d, 0
 
             argv = ['route_judge.py', 'roll', '--task', 'frontier proof', '--task-id', 't-f1', '--hours', '2.0',

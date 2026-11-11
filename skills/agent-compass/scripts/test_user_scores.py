@@ -307,12 +307,12 @@ class FixRoundRegressionTests(unittest.TestCase):
                 'provider': 'claude-2', 'account': 'claude-2',
             }
         }
-        # usage_windows takes (id, remaining_pct, reset_hours): claude has 90% remaining (10% used, 84h reset);
+        # usage_windows takes (id, remaining_pct, reset_hours): claude has 75% remaining (25% used at 84h, half of pace -> C ~ 1e-8 < 1e-4);
         # claude-2 has 30% remaining (70% used, 83h reset — earlier reset must NOT let the 70%-used pool win).
         usage = usage_windows(now, {
-            'claude': [('five_hour', 90.0, 4.0), ('seven_day', 90.0, 84.0)],
+            'claude': [('five_hour', 90.0, 4.0), ('seven_day', 75.0, 84.0)],
             'claude-2': [('five_hour', 90.0, 4.0), ('seven_day', 30.0, 83.0)],
-            'codex': [('usage', 90.0, 84.0)],
+            'codex': [('usage', 75.0, 84.0)],
         })
         task = {
             'objective': 'Small coding fix',
@@ -695,6 +695,28 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
                                   public_path=refs / 'user-scores.json', accounts=self.accounts)
             locks = list(refs.glob('*.lock'))
             self.assertEqual(locks, [])
+
+        # 7) Facet overlay preserves sibling scores on minimal whole-category cells while keeping partial cells Mode-B.
+        minimal_models = {
+            'm-whole': {'five_axis': {'categories': {
+                'coding': {'value': -0.2, 'by_effort': dict.fromkeys(user_scores.EFFORTS, -0.2), 'status': 'measured', 'facets': {}},
+            }}},
+            'm-missing': {'five_axis': {'categories': {
+                'coding': {'value': None, 'by_effort': {}, 'status': 'missing', 'flag': 'missing',
+                           'facets': {}, 'missing_facets': ['execution', 'faithfulness']},
+            }}},
+        }
+        user_scores.apply_overlay(
+            minimal_models, targets,
+            public_scores={'schema_version': 1, 'scores': {
+                'm-whole': {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
+                'm-missing': {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
+            }},
+        )
+        self.assertEqual(minimal_models['m-whole']['five_axis']['categories']['coding']['value'], -0.2)
+        self.assertNotIn('missing_facets', minimal_models['m-whole']['five_axis']['categories']['coding'])
+        self.assertIsNone(minimal_models['m-missing']['five_axis']['categories']['coding']['value'])
+        self.assertEqual(minimal_models['m-missing']['five_axis']['categories']['coding']['missing_facets'], ['execution'])
 
 
 if __name__ == '__main__':

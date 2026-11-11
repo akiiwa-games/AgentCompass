@@ -586,6 +586,17 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict) -> No
                     manual.pop(sub, None)
             manual[target] = {**rec, 'z': z_val}
         else:
+            if (cat != 'tool_operation' and not facets and not cat_cell.get('missing_facets')
+                    and cat_cell.get('flag') not in ('missing', 'partial')
+                    and (cat_cell.get('value') is not None or cat_cell.get('by_effort'))):
+                # Minimal whole-category cell (no separate facet cells stored): preserve sibling facets' category score.
+                for sib in CATEGORY_FACETS[cat]:
+                    if sib != facet:
+                        facets[sib] = {
+                            'value': cat_cell.get('value'),
+                            'by_effort': copy.deepcopy(cat_cell.get('by_effort') or {}),
+                            'status': cat_cell.get('status', 'measured'),
+                        }
             z_val = round(level_to_z(rec['level'], *target_triad(targets_table, cat, facet)), 4)
             deltas = (
                 None if (cat == 'tool_operation' and facet == 'responsiveness')
