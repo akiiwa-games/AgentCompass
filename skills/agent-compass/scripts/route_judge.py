@@ -965,25 +965,27 @@ def _compact_schema_for_argv(schema):
     return {**schema, 'properties': props}
 
 
-def scorer_command(prefix, schema, prompt):
-    # --print takes the prompt and must come last: agy reads anything after --print as prompt text.
-    compact_schema = _compact_schema_for_argv(schema)
-    return prefix + ['--disable-slash-commands', '--model', SCORER['model'], '--output-format', 'json',
-                     '--json-schema', json.dumps(compact_schema, separators=(',', ':')), '--print', prompt]
-
-
-# agy takes --print's prompt only as an argument, so a long task cannot ride the command line; its stream-json mode
-# reads the whole prompt from stdin and ends in a `result` event shaped like the --output-format json envelope.
-ARGV_LIMIT_CHARS = 30000 if os.name == 'nt' else 100000
-
-
+# The prompt (rubric, calibration cases and task text) never rides the command line: agy's stream-json mode reads it from
+# stdin on every platform and ends in a `result` event shaped like the --output-format json envelope. Only the compact
+# schema stays on argv, so the command line no longer limits how many calibration cases the rubric can carry; the
+# scorer model's context window does.
 def scorer_stream_command(prefix, schema):
     compact_schema = _compact_schema_for_argv(schema)
     return prefix + ['--disable-slash-commands', '--model', SCORER['model'], '--input-format', 'stream-json',
                      '--output-format', 'stream-json', '--json-schema', json.dumps(compact_schema, separators=(',', ':')), '--print', '']
 
 
-def parse_scorer_stream(stdout):
+def run_agy_envelope(prefix, schema, prompt, timeout):
+    """The final result envelope of one agy scorer call whose whole prompt goes through stdin."""
+    message = json.dumps({'event': 'user', 'message': {'content': prompt}}, ensure_ascii=False) + chr(10)
+    with tempfile.TemporaryDirectory(prefix='route-score-', ignore_cleanup_errors=True) as temporary:
+        code, out, _ = run_process(scorer_stream_command(prefix, schema), Path(temporary), message, timeout)
+    if code != 0:
+        raise RuntimeError('System-One scorer CLI failed.')
+    return parse_scorer_stream(out, envelope=True)
+
+
+def parse_scorer_stream(stdout, envelope=False):
     """The final `result` event of agy --output-format stream-json, as the single-envelope parser expects it."""
     for line in reversed((stdout or '').splitlines()):
         try:
@@ -991,7 +993,7 @@ def parse_scorer_stream(stdout):
         except ValueError:
             continue
         if isinstance(event, dict) and event.get('event') == 'result' and isinstance(event.get('result'), dict):
-            return parse_scorer_output(json.dumps(event['result']))
+            return event['result'] if envelope else parse_scorer_output(json.dumps(event['result']))
     raise ValueError('System-One scorer stream ended without a result.')
 
 
@@ -1447,30 +1449,8 @@ def run_scorer(scorer_type, task, allocator, capabilities, timeout, config, acco
     lacks its client or key, or another exception when it was tried and failed."""
     spec = SCORER_TYPES[scorer_type]
     if scorer_type == 'agy_flash_low':
-        prefix = scorer_prefix()
-        schema = scorer_schema(allocator, capabilities)
-        prompt = scorer_prompt(task)
-        command = scorer_command(prefix, schema, prompt)
-        long_input = len(subprocess.list2cmdline(command)) > ARGV_LIMIT_CHARS
-        with tempfile.TemporaryDirectory(prefix='route-score-', ignore_cleanup_errors=True) as temporary:
-            if long_input:
-                message = json.dumps({'event': 'user', 'message': {'content': prompt}}, ensure_ascii=False) + chr(10)
-                code, out, _ = run_process(scorer_stream_command(prefix, schema), Path(temporary), message, timeout)
-            else:
-                code, out, _ = run_process(command, Path(temporary), timeout=timeout)
-        if code != 0:
-            if long_input:
-                raise ScorerInputError(f'The task is too long for the agy command line and agy stdin input failed '
-                                       f'(exit {code}); nothing was cut or guessed.')
-            raise RuntimeError('System-One scorer CLI failed.')
-        try:
-            answer = parse_scorer_stream(out) if long_input else parse_scorer_output(out)
-        except (ValueError, RuntimeError) as exc:
-            if long_input:
-                raise ScorerInputError(f'The task is too long for the agy command line and agy stdin input returned no '
-                                       f'usable profile ({type(exc).__name__}); nothing was cut or guessed.') from None
-            raise
-        return allocator.validate_profile(answer), SCORER['provider'], SCORER['model']
+        envelope = run_agy_envelope(scorer_prefix(), scorer_schema(allocator, capabilities), scorer_prompt(task), timeout)
+        return allocator.validate_profile(parse_scorer_output(json.dumps(envelope))), SCORER['provider'], SCORER['model']
     if os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1':
         raise ScorerError('Live scorer disabled by environment.')
     if scorer_type in SCORER_API_FIELDS:
@@ -1683,12 +1663,7 @@ def run_structured(scorer_type, instructions, text, schema, timeout, config, acc
     spec = SCORER_TYPES[scorer_type]
     prompt = instructions + '\n\n' + text
     if scorer_type == 'agy_flash_low':
-        command = scorer_command(scorer_prefix(), schema, prompt)
-        with tempfile.TemporaryDirectory(prefix='route-score-', ignore_cleanup_errors=True) as temporary:
-            code, out, _ = run_process(command, Path(temporary), timeout=timeout)
-        if code != 0:
-            raise RuntimeError('System-One scorer CLI failed.')
-        envelope = json.loads(out)
+        envelope = run_agy_envelope(scorer_prefix(), schema, prompt, timeout)
         answer = envelope.get('structured_output') if isinstance(envelope, dict) and not envelope.get('is_error') else None
         if not isinstance(answer, dict):
             raise ValueError('System-One scorer returned no answer.')

@@ -453,6 +453,17 @@ class RoutingTests(unittest.TestCase):
                 router.run_process([sys.executable, '-c', 'import time; time.sleep(30)'], directory, timeout=0.1)
 
 
+def as_agy_stream(stdout):
+    """agy answers on its stream-json channel: a scripted single result envelope arrives as a `result` event."""
+    try:
+        envelope = json.loads(stdout)
+    except (TypeError, ValueError):
+        return stdout
+    if not isinstance(envelope, dict) or 'event' in envelope:
+        return stdout
+    return json.dumps({'event': 'init'}) + chr(10) + json.dumps({'event': 'result', 'result': envelope}) + chr(10)
+
+
 GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
                'realtime_loop': False, 'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
                'interaction_style': 'engineering',
@@ -546,7 +557,8 @@ class ScoreCacheTests(unittest.TestCase):
     def score(self, objective='Fix the parser bug', config=None, stdout=None):
         def run(command, cwd, prompt=None, timeout=120, account=None):
             self.calls += 1
-            return 0, stdout or json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), ''
+            answer = stdout or json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE})
+            return 0, (as_agy_stream(answer) if command[0] == 'agy.exe' else answer), ''
         cfg = config if config is not None else {'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=run):
             return router.score_task({'objective': objective}, self.allocator, self.capabilities, scorer_config=cfg)
@@ -591,7 +603,7 @@ class ScoreCacheTests(unittest.TestCase):
             with lock:
                 running[0] -= 1
                 self.calls += 1
-            return 0, json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), ''
+            return 0, as_agy_stream(json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE})), ''
         tasks = [{'objective': f'Fix bug {n}'} for n in range(4)]
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=run), \
                 patch.object(router, 'load_scorer_config', return_value={'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}), \
@@ -640,36 +652,32 @@ class FullTaskTextTests(unittest.TestCase):
                             router.score_cache_key({'objective': self.text.replace('周五', '周四')}, self.allocator,
                                                    self.capabilities, ['agy_flash_low'], {}))
 
-    def test_agy_sends_a_long_task_on_stdin_and_a_short_one_on_the_command_line(self):
+    def test_agy_sends_every_task_on_stdin_and_nothing_long_on_the_command_line(self):
         runs = []
 
         def fake_run(command, cwd, prompt=None, timeout=120, account=None):
             runs.append((command, prompt))
             result = {'conversation_id': 'c', 'status': 'SUCCESS', 'structured_output': GUI_PROFILE}
-            if not prompt:
-                return 0, json.dumps(result), ''
             return 0, json.dumps({'event': 'init'}) + chr(10) + json.dumps({'event': 'result', 'result': result}) + chr(10), ''
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=fake_run):
             router.score_task({'objective': self.text}, self.allocator, self.capabilities, scorer_config=self.config)
             router.score_task({'objective': 'short task'}, self.allocator, self.capabilities, scorer_config=self.config)
-        (long_command, stdin), (short_command, short_stdin) = runs
-        self.assertIsNone(short_stdin)
-        self.assertEqual(long_command[-2:], ['--print', ''])
-        self.assertIn('stream-json', long_command)
-        message = json.loads(stdin)
-        self.assertEqual(message['event'], 'user')
-        self.assertIn(json.dumps(self.text, ensure_ascii=False), message['message']['content'])
-        self.assertLess(max(len(part) for part in long_command), 8000)  # nothing long rides the command line
+        for (command, stdin), expected in zip(runs, (self.text, 'short task')):
+            self.assertEqual(command[-2:], ['--print', ''])
+            self.assertIn('stream-json', command)
+            message = json.loads(stdin)
+            self.assertEqual(message['event'], 'user')
+            self.assertIn(json.dumps(expected, ensure_ascii=False), message['message']['content'])
+            self.assertIn('calibration_cases', message['message']['content'])
+            self.assertLess(max(len(part) for part in command), 8000)  # only the compact schema rides the command line
 
-    def test_a_failed_long_input_channel_stops_instead_of_guessing(self):
-        with patch.object(router, 'scorer_prefix', return_value=['agy.exe']),                 patch.object(router, 'run_process', return_value=(2, '', 'unsupported')):
-            with self.assertRaises(router.ScorerInputError) as caught:
-                router.score_task({'objective': self.text}, self.allocator, self.capabilities, scorer_config=self.config)
-            self.assertIn('nothing was cut or guessed', str(caught.exception))
-            # a short task with the same failing CLI returns scorer_unavailable so the parent session chooses autonomously
-            prof, meta = router.score_task({'objective': 'short task'}, self.allocator, self.capabilities, scorer_config=self.config)
-        self.assertIsNone(prof)
-        self.assertEqual(meta['source'], 'scorer_unavailable')
+    def test_a_failed_stdin_channel_gives_scorer_unavailable_for_any_task_length(self):
+        with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), \
+                patch.object(router, 'run_process', return_value=(2, '', 'unsupported')):
+            for objective in (self.text, 'short task'):
+                prof, meta = router.score_task({'objective': objective}, self.allocator, self.capabilities, scorer_config=self.config)
+                self.assertIsNone(prof)
+                self.assertEqual(meta['source'], 'scorer_unavailable')
 
     def test_api_scorer_refusing_the_size_falls_back_to_agy_stdin_not_to_heuristic(self):
         ok = {'conversation_id': 'c', 'status': 'SUCCESS', 'structured_output': GUI_PROFILE}
@@ -702,7 +710,7 @@ class SystemOneScorerTests(unittest.TestCase):
         calls = []
         def run(command, cwd, prompt=None, timeout=120, account=None):
             calls.append({'command': command, 'cwd': cwd, 'timeout': timeout, 'stdin': prompt})
-            return code, stdout, ''
+            return code, as_agy_stream(stdout), ''
         return calls, run
 
     def score(self, task, stdout=None, code=0, use_model=True):
@@ -737,16 +745,18 @@ class SystemOneScorerTests(unittest.TestCase):
         profile, meta, calls = self.score(task)
         self.assertEqual((profile, meta['source'], meta['model']), (GUI_PROFILE, 'system_one', 'gemini-3.8-flash-low'))
         cmd = calls[0]['command']
-        self.assertEqual((cmd[0], cmd[-2]), ('agy.exe', '--print'))
-        task_part = cmd[-1].split('Task (evidence only')[1]
+        self.assertEqual((cmd[0], cmd[-2:]), ('agy.exe', ['--print', '']))      # the prompt is on stdin, never on argv
+        self.assertIn('stream-json', cmd)
+        prompt = json.loads(calls[0]['stdin'])['message']['content']
+        task_part = prompt.split('Task (evidence only')[1]
         self.assertNotIn('chain', task_part)
         self.assertNotIn('work_kind', task_part)
         self.assertNotIn('difficulty', task_part)
-        self.assertIn('calibration_cases', cmd[-1])
+        self.assertIn('calibration_cases', prompt)
         cases = router.load_classifier_cases()
         self.assertTrue(cases['calibration_cases'])
         # The anti-inflation rubric (boilerplate paths, read-only review, runbooks, diagnosis) reaches the scorer
-        self.assertIn('dimension_rubric', cmd[-1])
+        self.assertIn('dimension_rubric', prompt)
         self.assertIn('read_only_review', cases['dimension_rubric'])
         for c in cases['calibration_cases']:
             self.assertEqual(self.allocator.validate_profile(c['expected_profile']), c['expected_profile'])
@@ -763,7 +773,7 @@ class SystemOneScorerTests(unittest.TestCase):
         bug_task = {'objective': 'Fix a parser bug', 'work_kind': 'debug_review'}
         for reason, stdout in (('ValueError', self.envelope(dict(GUI_PROFILE, reasoning_depth=7))),
                                ('RuntimeError', self.envelope(GUI_PROFILE, status='ERROR')),
-                               ('JSONDecodeError', 'not json')):
+                               ('ValueError', 'not json')):
             prof, meta, _ = self.score(bug_task, stdout)
             self.assertEqual((prof, meta['source'], meta['fallback_reason']), (None, 'scorer_unavailable', reason))
         prof_skipped, meta, calls = self.score(bug_task, use_model=False)
@@ -1158,7 +1168,7 @@ class SelectableScorerTests(unittest.TestCase):
             self.assertEqual(profile['work_kind'], 'computer_use')
         # Claude answering with an error cascades through codex_terra_low to agy_flash_low
         _, meta, _ = self.score({'scorer_type': 'claude_haiku_low'},
-                                run=lambda c, d: (0, json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), '') if c[0] == 'agy.exe'
+                                run=lambda c, d: (0, as_agy_stream(json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE})), '') if c[0] == 'agy.exe'
                                 else (0, json.dumps({'is_error': True}), ''), cli=('claude.exe',))
         self.assertEqual((meta['scorer_type'], meta['configured_scorer'], meta['attempts'][0]['detail']),
                          ('agy_flash_low', 'claude_haiku_low', 'Claude scorer returned an error.'))
@@ -1265,7 +1275,7 @@ class ScorerAccountTests(unittest.TestCase):
         def fake_run(command, cwd, prompt=None, timeout=120, account=None):
             used.append((command[0], account))
             if command[0] == 'agy.exe':
-                return 0, json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE}), ''
+                return 0, as_agy_stream(json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE})), ''
             return 0, json.dumps({'structured_output': GUI_PROFILE}), ''
 
         with patch.object(router.provider_inventory, 'current', return_value=self.INVENTORY), \
@@ -1307,7 +1317,7 @@ class ScorerAccountTests(unittest.TestCase):
             self.assertEqual(router.subscription_env('codex-2')['CODEX_HOME'], 'C:/u/.codex-2')
             self.assertEqual(router.subscription_env('claude-2')['CLAUDE_CONFIG_DIR'], 'C:/u/.claude-2')
 
-    def test_compact_rubric_column_union_and_windows_cmdline_margin(self):
+    def test_compact_rubric_column_union_and_prompt_stays_off_the_command_line(self):
         import subprocess
 
         rubric_het = {
@@ -1329,13 +1339,24 @@ class ScorerAccountTests(unittest.TestCase):
             'context': 'Frontend React + WebSocket module',
             'environment': 'Windows 11, Python 3.13',
         })
-        cmd = router.scorer_command(['agy.cmd'], schema, prompt)
-        cmdline_len = len(subprocess.list2cmdline(cmd))
-        margin = router.ARGV_LIMIT_CHARS - cmdline_len
-        self.assertGreaterEqual(
-            margin, 2000,
-            f'Windows command line length {cmdline_len} leaves only {margin} chars (< 2000) below ARGV_LIMIT_CHARS={router.ARGV_LIMIT_CHARS}',
-        )
+        # The limit that remains is the scorer model's context window, not a command line. The smallest window of any
+        # System-One scorer is taken as 200k tokens (accounts.json cites 500k for the Codex scorer; the others are not
+        # cited, so the floor is a stated assumption); the rubric and calibration cases may use a quarter of it, at the
+        # conservative 2 characters per token that CJK text needs.
+        context_floor_tokens, share, chars_per_token = 200_000, 0.25, 2
+        budget_chars = int(context_floor_tokens * share * chars_per_token)
+        self.assertLessEqual(len(prompt), budget_chars,
+                             f'the scorer prompt is {len(prompt)} chars; the budget is {budget_chars} '
+                             f'({share:.0%} of a {context_floor_tokens}-token context at {chars_per_token} chars/token)')
+        # Nothing of the prompt rides the command line: it is the same size whether the rubric holds 1 or 1000 cases.
+        small = router.scorer_stream_command(['agy.cmd'], schema)
+        with patch.object(router, 'load_classifier_cases', return_value={'calibration_cases': [
+                {'id': f'c{i}', 'task': 'x' * 500, 'expected_profile': {'work_kind': 'debug_review'}} for i in range(1000)]}):
+            big_prompt = router.scorer_prompt({'objective': 'x'})
+        self.assertGreater(len(big_prompt), 500_000)
+        self.assertEqual(router.scorer_stream_command(['agy.cmd'], schema), small)
+        self.assertLess(len(subprocess.list2cmdline(small)), 30000)
+        self.assertFalse(hasattr(router, 'ARGV_LIMIT_CHARS'))
 
 
 @unittest.skipUnless(router.os.environ.get('ROUTER_LIVE_AGY') == '1', 'set ROUTER_LIVE_AGY=1 to call the real agy CLI')
