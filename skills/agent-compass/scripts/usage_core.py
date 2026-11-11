@@ -126,6 +126,9 @@ def _tr(zh: str, en: str, lang: str | None = None) -> str:
 
 CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+# The account's live plan: organization.organization_type and rate_limit_tier (e.g. claude_max +
+# default_claude_max_20x). Read with each usage refresh, with the same token and headers.
+CLAUDE_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
 
 
 # "cedar-ember" is Claude Code's internal name for the weekly /limit-reset
@@ -590,6 +593,8 @@ class ProviderUsage:
     provider_id: str
     display_name: str
     plan_label: str | None = None
+    # Where plan_label was read: "profile_api" for Claude's live OAuth profile; None when not stated.
+    plan_source: str | None = None
     windows: list[UsageWindow] = field(default_factory=list)
     error: str | None = None
     available: bool = True
@@ -665,6 +670,7 @@ def _provider_to_dict(p: ProviderUsage) -> dict[str, Any]:
         "provider_id": p.provider_id,
         "display_name": p.display_name,
         "plan_label": p.plan_label,
+        **({"plan_source": p.plan_source} if p.plan_source else {}),
         "windows": [
             {
                 "id": w.id,
@@ -729,6 +735,7 @@ def _provider_from_dict(d: dict[str, Any]) -> ProviderUsage:
         provider_id=str(d.get("provider_id") or ""),
         display_name=str(d.get("display_name") or "?"),
         plan_label=d.get("plan_label"),
+        plan_source=d.get("plan_source"),
         windows=windows,
         error=d.get("error"),
         available=bool(d.get("available", True)),
@@ -1162,6 +1169,22 @@ def fetch_magpie_claude_usage(source, provider_id: str, *, probe_only: bool = Fa
     return result
 
 
+def claude_profile_plan(profile: Any) -> str | None:
+    """The plan label of a live OAuth profile, or None when it does not say. organization_type claude_max with
+    rate_limit_tier ..._20x / ..._5x is "max20" / "max5" (the plan-template names); another claude_<plan> is "<plan>"."""
+    org = profile.get("organization") if isinstance(profile, dict) else None
+    if not isinstance(org, dict):
+        return None
+    kind = str(org.get("organization_type") or "").strip().lower()
+    if not kind.startswith("claude_") or kind == "claude_":
+        return None
+    plan = kind.removeprefix("claude_")
+    if plan == "max":
+        tier = str(org.get("rate_limit_tier") or "").lower()
+        plan = "max20" if "20x" in tier else "max5" if "5x" in tier else "max"
+    return plan
+
+
 def fetch_claude_usage(*, force: bool = False, provider_id: str = "claude") -> ProviderUsage:
     remote = claude_magpie_source(provider_id)
     if remote is not None:
@@ -1184,7 +1207,8 @@ def fetch_claude_usage(*, force: bool = False, provider_id: str = "claude") -> P
         )
 
     source_key = provider_credential_key(provider_id)
-    plan = oauth.get("subscriptionType")
+    # Not oauth["subscriptionType"]: the login file's plan is frozen at the CLI's last login and goes stale when the
+    # subscription changes. The plan is the live profile's, read below with the usage reading.
     status, payload = (claude_authorized_json(CLAUDE_USAGE_RESET_URL, home=home)
                        if home is not None else claude_authorized_json(CLAUDE_USAGE_RESET_URL))
 
@@ -1256,10 +1280,14 @@ def fetch_claude_usage(*, force: bool = False, provider_id: str = "claude") -> P
     if not windows or any(w.used_pct is None or not math.isfinite(w.used_pct) for w in windows):
         return stale_provider_usage(provider_id, _tr('用量响应缺少有效窗口', 'Usage response has no valid windows'))
     reset_block = payload.get("cedar_ember")
+    profile_status, profile = (claude_authorized_json(CLAUDE_PROFILE_URL, home=home)
+                               if home is not None else claude_authorized_json(CLAUDE_PROFILE_URL))
+    plan = claude_profile_plan(profile) if profile_status == 200 else None
     result = ProviderUsage(
         provider_id=provider_id,
         display_name=provider_id,
-        plan_label=str(plan) if plan else None,
+        plan_label=plan,
+        plan_source="profile_api" if plan else None,
         windows=windows,
         available=True,
         fetched_at=datetime.now(timezone.utc).isoformat(),

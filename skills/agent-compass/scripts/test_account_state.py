@@ -49,15 +49,30 @@ class Machine(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(document), encoding='utf-8')
 
-    def codex_login(self, claim='plus', slot='codex', account='fake-account'):
+    def codex_login(self, claim='plus', slot='codex', account='fake-account', live=True):
+        """A Codex login whose id_token claims `claim`. The claim never sets the plan: with `live`, the usage API's
+        reading of the same plan is cached too, which is where the plan comes from."""
         claims = {'https://api.openai.com/auth': {'chatgpt_plan_type': claim}} if claim else {}
         self.write(f'.{slot}/auth.json', {'tokens': {'access_token': 'fake-access', 'account_id': account, 'id_token': jwt(claims)}})
+        if live and claim:
+            self.live_plan(slot, claim)
 
-    def claude_login(self, subscription='max', tier='default_claude_max_20x', slot='claude'):
+    def claude_login(self, subscription='max', tier='default_claude_max_20x', slot='claude', live=True):
+        """A Claude login file naming `subscription`/`tier`. That never sets the plan: with `live`, the OAuth profile's
+        reading of the same plan is cached with the usage reading (plan_source profile_api)."""
         oauth = {'accessToken': f'fake-{slot}', 'refreshToken': 'fake-refresh', 'subscriptionType': subscription}
         if tier:
             oauth['rateLimitTier'] = tier
         self.write(f'.{slot}/.credentials.json', {'claudeAiOauth': oauth})
+        if live and subscription:
+            label = usage_core.claude_profile_plan({'organization': {'organization_type': f'claude_{subscription}',
+                                                                     'rate_limit_tier': tier or ''}})
+            self.live_plan(slot, label, 'profile_api')
+
+    def live_plan(self, slot, label, source=None):
+        """The plan a live reading reports for `slot`; every later cache() keeps it unless a row names another."""
+        self.__dict__.setdefault('live', {})[slot] = {'plan_label': label, **({'plan_source': source} if source else {})}
+        self.cache()
 
     def windows(self, used=40.0, window='usage'):
         return [{'id': window, 'label': window, 'used_pct': used, 'resets_at': (self.now + timedelta(hours=72)).isoformat()}]
@@ -66,6 +81,9 @@ class Machine(unittest.TestCase):
         """Rows bound to the current fake credential, the way the collector stores them."""
         bound = inventory.discover(now=self.now)['accounts']
         fetched = (self.now - timedelta(hours=age_hours)).isoformat()
+        live = self.__dict__.get('live') or {}
+        rows = {**{name: dict(plan) for name, plan in live.items() if name in bound},
+                **{name: {**live.get(name, {}), **row} for name, row in rows.items()}}
         self.write('.agent-compass/usage-cache.json', {'providers': {name: {
             'provider_id': name, 'display_name': name, 'available': True, 'stale': bool(row.get('error')),
             'fetched_at': fetched, 'credential_key': (bound.get(name) or {}).get('credential_key'),
@@ -165,28 +183,44 @@ class AccountIdentityTests(Machine):
 
 
 class PlanSourceTests(Machine):
-    """Q2: the usage API's plan_type outranks the id_token claim."""
+    """Q2: the plan comes only from a live reading (Codex: the usage API's plan_type; Claude: the OAuth profile). A
+    login-token claim is never a plan source, so a stale one can neither set the plan nor raise a warning."""
 
-    def test_usage_api_plan_beats_the_claim_and_warns(self):
-        self.codex_login('pro')
+    def test_a_stale_claim_never_sets_the_plan(self):
+        # The 2026-11-11 report: auth.json still claims pro after the subscription moved to plus.
+        self.codex_login('pro', live=False)
         self.cache(codex={'plan_label': 'plus'})
         row = self.row()
         self.assertEqual((row['plan'], row['plan_source']), ('plus', 'usage_api'))
-        self.assertEqual(row['plan_conflict'], {'online': 'plus', 'credential': 'pro'})
+        self.assertNotIn('plan_conflict', row)
+        self.assertNotIn('credential_plan', row)
         self.assertEqual(self.spec()['capacity_usd']['usage'], self.community('codex', 'plus', 'usage'))
         _, warnings = self.route()
-        self.assertTrue(any('usage API reports plan plus' in text for text in warnings), warnings)
+        self.assertFalse(any('credential says' in text for text in warnings), warnings)
 
-    def test_the_claim_is_the_fallback_without_an_online_plan(self):
-        self.codex_login('pro')
+    def test_without_a_reading_the_plan_is_unknown_never_the_claim(self):
+        self.codex_login('pro', live=False)
         self.cache(codex={})
         row = self.row()
-        self.assertEqual((row['plan'], row['plan_source']), ('pro', 'credential'))
-        self.assertNotIn('plan_conflict', row)
+        self.assertEqual((row['plan'], row.get('plan_source')), (None, None))
+        self.assertEqual(self.spec()['plan'], 'unknown')
+        self.codex_login('pro', live=False)       # no reading at all: still unknown
+        self.write('.agent-compass/usage-cache.json', {'providers': {}})
+        self.assertIsNone(self.row()['plan'])
+
+    def test_a_stale_claude_login_file_never_sets_the_plan(self):
+        self.claude_login('max', 'default_claude_max_20x', live=False)
+        self.assertIsNone(self.row('claude')['plan'])
+        # A legacy cache row whose plan_label came from the login file (no plan_source) is not a live reading either.
+        self.cache(claude={'plan_label': 'max'})
+        self.assertIsNone(self.row('claude')['plan'])
+        self.cache(claude={'plan_label': 'pro', 'plan_source': 'profile_api'})
+        row = self.row('claude')
+        self.assertEqual((row['plan'], row['plan_source']), ('pro', 'profile_api'))
 
     def test_a_second_login_on_the_subscription_follows_the_online_plan(self):
         self.codex_login('plus')
-        self.codex_login('pro', 'codex-2')
+        self.codex_login('pro', 'codex-2', live=False)      # its stale claim says pro; it has no reading of its own
         self.cache(codex={'plan_label': 'plus'})
         rows = inventory.discover(now=self.now)['accounts']
         self.assertEqual(rows['codex-2']['quota_account'], 'codex')
@@ -263,7 +297,7 @@ class StateTests(Machine):
         self.assertEqual([k for k in ('reason', 'failing_since', 'usage_excluded') if k in row], [])
 
     def test_no_good_reading_ever_starts_the_clock_at_the_first_failure(self):
-        self.codex_login('pro')
+        self.codex_login('pro', live=False)
         self.cache(claude={})  # a collector has run, but not for this account
         first = self.row()
         self.assertEqual((first['status'], first['reason'], first['usage_excluded']), (account_state.USAGE_FAILING, 'no_reading', False))

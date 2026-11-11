@@ -430,7 +430,9 @@ class DetectionTests(HomeCase):
         self.write(".claude/.credentials.json", CLAUDE_CREDENTIALS)
         result = self.detect("agy", "opencode")
         rows = {r["name"]: r for r in result["accounts"]}
-        self.assertEqual((rows["claude"]["signed_in"], rows["claude"]["plan"]), (True, "pro"))
+        # Signed in from the login file; its subscriptionType is not a plan source, so the plan is unknown until the
+        # first usage refresh reads the live OAuth profile.
+        self.assertEqual((rows["claude"]["signed_in"], rows["claude"]["plan"]), (True, None))
         self.assertIsNone(rows["antigravity"]["signed_in"])
         self.assertIsNone(rows["opencode"]["signed_in"])
         self.assertFalse(rows["codex"]["signed_in"])

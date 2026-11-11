@@ -229,23 +229,20 @@ def auth_facts(family, auth, home, profile=None):
                 'credential_identity': digest('claude', token) if token else None,
                 'credential_version': digest(token, oauth.get('refreshToken')) if token else None,
                 'credential_key': digest(_resolved(home), token) if token else None,
-                'plan': plan_name(family, oauth.get('subscriptionType'), oauth.get('rateLimitTier', ''))}
+                # No plan from the login file: subscriptionType/rateLimitTier are frozen at the CLI's last login. The
+                # plan is the live OAuth profile's, read with the usage reading (plan_source 'profile_api').
+                'plan': None}
     tokens = auth.get('tokens') or {}
     tokens = tokens if isinstance(tokens, dict) else {}
     token = tokens.get('access_token') if isinstance(tokens.get('access_token'), str) else None
     account = tokens.get('account_id') if isinstance(tokens.get('account_id'), str) else None
-    claims = {}
-    try:
-        encoded = str(tokens.get('id_token') or '').split('.')[1]
-        claims = json.loads(base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4)))
-        claims = claims.get('https://api.openai.com/auth') or {}
-        claims = claims if isinstance(claims, dict) else {}
-    except (ValueError, IndexError, UnicodeError, AttributeError):
-        claims = {}
+    # No plan from the login: the id_token's chatgpt_plan_type is frozen when the Codex CLI last wrote auth.json and goes
+    # stale when the subscription changes. The plan comes only from the live usage API's plan_type (this account's
+    # reading, or the shared reading of the same subscription); with no reading it is unknown.
     return {'present': bool(token), 'identity': digest('codex', account or token) if token else None,
             'credential_identity': digest('codex', token, account or '') if token else None,
             'credential_key': digest(_resolved(home), str(token) + ':' + str(account or '')) if token else None,
-            'plan': plan_name(family, claims.get('chatgpt_plan_type'))}
+            'plan': None}
 
 
 def _extract_grok_auth_token(auth):
@@ -855,8 +852,8 @@ def _discover(home=None, environ=None, now=None):
                'sources': ['native'] + (['paseo'] if name in definitions else []) + (['orca'] if is_orca else []),
                'status': 'ready' if bound and enabled and (facts['present'] or is_api) else
                          'disabled' if not enabled else 'saved' if not bound else 'missing_credentials',
-               'plan': facts['plan'], 'plan_source': 'credential' if facts['plan'] else None,
-               'credential_plan': configured_plan(family, facts['plan']) if facts['plan'] else None,
+               # No plan from the login: a live reading sets it below (usage_api / profile_api), else it is unknown.
+               'plan': None, 'plan_source': None,
                'credential_key': facts['credential_key'],
                'identity': facts['identity'], 'billing': ('metered' if base in ('https://api.anthropic.com', 'https://api.openai.com')
                                                          else 'unknown') if is_api else 'subscription'}
@@ -864,7 +861,7 @@ def _discover(home=None, environ=None, now=None):
         bindings[name]['credential_identity'] = facts.get('credential_identity')
         bindings[name]['credential_version'] = facts.get('credential_version')
         if is_api:
-            row.update(plan=None, plan_source=None, credential_plan=None,
+            row.update(plan=None, plan_source=None,
                        credential_key=digest('api', _resolved(account_home), base, token),
                        identity=digest(base, token))
             bindings[name].update(identity=row['identity'], credential_identity=None, credential_version=None)
@@ -905,13 +902,12 @@ def _discover(home=None, environ=None, now=None):
             label = cached.get('plan_label') if isinstance(cached.get('plan_label'), str) else ''
             online = configured_plan(family, label) if label.strip() else None
             if online and family == 'codex' and not is_api:
-                # This reading was taken with the current credential, so the usage API's plan_type is newer than the
-                # id_token's claim, which only changes when the Codex CLI rewrites auth.json.
-                claim = configured_plan(family, row.get('plan')) if row.get('plan') else None
-                if claim and claim != online:
-                    row['plan_conflict'] = {'online': online, 'credential': claim}
+                # The usage API's plan_type of a reading taken with the current credential: the only Codex plan source.
                 row.update(plan=online, plan_source='usage_api', plan_read_at=cached.get('fetched_at'))
-            elif not row.get('plan') and online:
+            elif online and family == 'claude' and not is_api and cached.get('plan_source') == 'profile_api':
+                # The live OAuth profile read with this credential's usage reading: the only Claude plan source.
+                row.update(plan=online, plan_source='profile_api', plan_read_at=cached.get('fetched_at'))
+            elif not row.get('plan') and online and not (family == 'claude' and not is_api):
                 row.update(plan=online, plan_source='collector', plan_read_at=cached.get('fetched_at'))
         elif cached:
             row['usage_binding'] = 'changed'
@@ -1303,22 +1299,22 @@ def _assign_quota_owners(accounts):
             row['quota_account'] = owners[(qfam, ident)]
 
 
+LIVE_PLAN_SOURCES = ('usage_api', 'profile_api')     # a plan read live with this account's own credential
+
+
 def _share_online_plan(rows):
-    """Accounts on one subscription have one plan: the newest usage-API plan_type among them beats an older claim."""
+    """Accounts on one subscription have one plan: the newest usage-API plan_type among them."""
     online = {}
     for row in rows.values():
         owner = row.get('quota_account')
-        if owner and row.get('plan_source') == 'usage_api' and str(row.get('plan_read_at') or '') >= online.get(owner, ('', ''))[0]:
+        if owner and row.get('plan_source') in LIVE_PLAN_SOURCES and str(row.get('plan_read_at') or '') >= online.get(owner, ('', ''))[0]:
             online[owner] = (str(row.get('plan_read_at') or ''), row['plan'])
     for row in rows.values():
         owner = row.get('quota_account')
         if owner in online and row.get('billing') == 'subscription':
             read_at, plan = online[owner]
-            if row.get('plan_source') == 'usage_api' and str(row.get('plan_read_at') or '') >= read_at:
+            if row.get('plan_source') in LIVE_PLAN_SOURCES and str(row.get('plan_read_at') or '') >= read_at:
                 continue
-            claim = row.get('plan')
-            if claim and row.get('plan_source') == 'credential' and configured_plan('codex', claim) != plan:
-                row['plan_conflict'] = {'online': plan, 'credential': claim}
             row.update(plan=plan, plan_source='usage_api_shared', plan_read_at=read_at)
 
 

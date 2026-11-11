@@ -106,7 +106,9 @@ class DispatchTests(unittest.TestCase):
         # The router prices a claude-lab launch only from a current quota observation, so the cache the CLI reads has one.
         # It is bound to the fixture's credential, as the collector writes it.
         key = registry.provider_inventory.discover(home=self.root)['accounts']['claude-lab']['credential_key']
+        # The plan is the live OAuth profile's, cached with the reading (plan_source profile_api), never the login file's.
         reading = {'fetched_at': self.now.isoformat(), 'stale': False, 'available': True, 'credential_key': key,
+                   'plan_label': 'pro', 'plan_source': 'profile_api',
                    'windows': self.usage['accounts']['claude-lab']['windows']}
         (self.root / 'usage.json').write_text(json.dumps({'providers': {'claude-lab': reading}}))
         self.bundle = dict(allocator.bundles(self.accounts)['lab_sonnet55_high'], bundle_id='lab_sonnet55_high')

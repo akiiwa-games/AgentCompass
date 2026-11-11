@@ -86,6 +86,19 @@ class DiscoveryTests(unittest.TestCase):
         accounts = allocator.load_accounts(allocator.reference_fleet_path())
         return inventory.apply(accounts, snapshot)
 
+    def live_plan(self, **plans):
+        """A live reading's plan per account, bound to its current credential the way the collector caches it: the
+        usage API's plan_type (Codex) or the OAuth profile (Claude, plan_source profile_api). A login file never sets
+        the plan."""
+        bound = self.discover()['accounts']
+        window = lambda wid: [{'id': wid, 'label': wid, 'used_pct': 10.0, 'resets_at': '2026-10-28T00:00:00+00:00'}]
+        self.write('.usage-float/usage-cache.json', {'providers': {name: {
+            'provider_id': name, 'display_name': name, 'available': True, 'stale': False,
+            'fetched_at': self.now.isoformat(), 'credential_key': bound[name]['credential_key'], 'plan_label': label,
+            **({'plan_source': 'profile_api'} if bound[name]['family'] == 'claude' else {}),
+            'windows': window('seven_day' if bound[name]['family'] == 'claude' else 'usage')}
+            for name, label in plans.items()}})
+
     def test_new_launcher_later_signin_enrolls_via_real_account_loading(self):
         policy = self.write('host-policy.json', {'allowed_accounts': ['codex']})
         env = {'ROUTER_PROVIDER_HOME': str(self.home), 'ROUTER_STATE_DIR': str(self.home / '.agent-compass'),
@@ -517,6 +530,7 @@ class DiscoveryTests(unittest.TestCase):
         self.paseo({'claude-work': {'extends': 'claude', 'enabled': True,
                     'env': {'CLAUDE_CONFIG_DIR': str(self.home / '.claude-work')}}})
         auth = self.native_claude('claude-work')
+        self.live_plan(**{'claude-work': 'pro'})
         snapshot = self.discover()
         accounts = self.apply(snapshot)
         spec = accounts['accounts']['claude-work']
@@ -563,9 +577,10 @@ class DiscoveryTests(unittest.TestCase):
         accounts = self.apply(snapshot)
         merged = inventory.merge_usage({'accounts': {'codex': {'status': 'fresh', 'windows': [1]}}}, accounts, self.now)
         self.assertEqual(merged['accounts']['codex']['windows'], [])
-        # An unknown plan has no cited capacity: unknown, not what the old credential's plan allowed.
+        # An unknown plan has no cited capacity: unknown, not what the old credential's plan allowed. The new
+        # login's id_token claim is not a plan, so with no reading of its own the plan is not reported.
         self.assertEqual(overlaid_capacity(accounts, 'codex'), {})
-        self.assertEqual(accounts['accounts']['codex']['plan_unknown'], 'unknown-plan')
+        self.assertEqual(accounts['accounts']['codex']['plan_unknown'], 'not reported')
         self.assertIsNone(accounts['accounts']['codex']['expires_at'])
 
     def test_corrupt_cc_db_and_magpie_config_do_not_remove_native_account(self):
@@ -626,6 +641,9 @@ class DiscoveryTests(unittest.TestCase):
                             'CLAUDE_SECURESTORAGE_CONFIG_DIR': str(self.home / '.claude')}}})
         snapshot = self.discover()
         self.assertEqual(snapshot['accounts']['claude-lab']['status'], 'ready')
+        self.assertIsNone(snapshot['accounts']['claude-lab']['plan'])       # the login file names a plan; that is no source
+        self.live_plan(**{'claude-lab': 'max20'})      # bound to the effective (.claude) credential
+        snapshot = self.discover()
         self.assertEqual(snapshot['accounts']['claude-lab']['plan'], 'max20')
         self.assertEqual(snapshot['accounts']['claude']['status'], 'disabled')
         # A custom API key is usable configuration, but does not inherit OAuth quota.
@@ -974,6 +992,7 @@ class DiscoveryTests(unittest.TestCase):
         self.native_codex('codex', 'shared-acct')
         self.omp_installed()
         self.omp_db([('openai-codex', 'oauth', self.omp_codex_login('shared-acct'), None)])
+        self.live_plan(codex='pro')
         accounts = self.apply(self.discover())
         accounts['accounts']['codex']['verified'] = True
         omp_id = next(bid for bid, b in allocator.bundles(accounts).items() if b.get('harness') == 'omp')

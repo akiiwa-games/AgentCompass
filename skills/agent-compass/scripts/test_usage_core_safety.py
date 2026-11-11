@@ -123,6 +123,41 @@ class UsageSafetyTests(unittest.TestCase):
         with patch.object(usage, 'claude_authorized_json', return_value=(200, {})):
             self.assertFalse(usage.fetch_claude_usage().available)
 
+    def test_the_claude_plan_is_the_live_profiles_never_the_login_files(self):
+        """The login file's subscriptionType is frozen at the last login: it says max while the live profile says pro."""
+        (self.first / '.credentials.json').write_text(json.dumps({'claudeAiOauth': {
+            'accessToken': 'fixture', 'subscriptionType': 'max', 'rateLimitTier': 'default_claude_max_20x'}}))
+        week = {'seven_day': {'utilization': 12}}
+        profiles = {
+            'pro': (200, {'organization': {'organization_type': 'claude_pro', 'rate_limit_tier': 'default_claude_ai'}}),
+            'max20': (200, {'organization': {'organization_type': 'claude_max', 'rate_limit_tier': 'default_claude_max_20x'}}),
+            'max5': (200, {'organization': {'organization_type': 'claude_max', 'rate_limit_tier': 'default_claude_max_5x'}}),
+            None: (403, {'error': {'type': 'permission_error'}}),
+        }
+        for expected, profile in profiles.items():
+            with self.subTest(expected=expected):
+                seen = []
+
+                def answer(url, **kwargs):
+                    seen.append(url)
+                    return profile if url == usage.CLAUDE_PROFILE_URL else (200, week)
+                with patch.object(usage, 'claude_authorized_json', side_effect=answer):
+                    result = usage.fetch_claude_usage(force=True)
+                self.assertTrue(result.available)
+                self.assertIn(usage.CLAUDE_PROFILE_URL, seen)       # read with the usage refresh
+                self.assertEqual((result.plan_label, result.plan_source),
+                                 (expected, 'profile_api' if expected else None))
+                cached = usage.load_usage_cache()['providers']['claude']
+                self.assertEqual((cached.get('plan_label'), cached.get('plan_source')),
+                                 (expected, 'profile_api' if expected else None))
+
+    def test_a_profile_that_does_not_say_its_plan_gives_none(self):
+        for profile in ({}, {'organization': None}, {'organization': {'organization_type': ''}},
+                        {'organization': {'organization_type': 'api_individual'}}, 'not a dict'):
+            with self.subTest(profile=profile):
+                self.assertIsNone(usage.claude_profile_plan(profile))
+        self.assertEqual(usage.claude_profile_plan({'organization': {'organization_type': 'claude_max'}}), 'max')
+
 
     def test_hub_name_is_not_an_account_binding(self):
         with patch.object(usage, 'fetch_all', return_value={'claude': self.good()}) as hub, patch.object(

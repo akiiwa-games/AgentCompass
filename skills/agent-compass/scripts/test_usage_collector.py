@@ -173,22 +173,22 @@ class CollectorTests(CollectorBase):
     def test_cli_force_flag_skips_poll_throttle_but_obeys_claude_429_backoff(self):
         self.sign_in('codex', 'claude')
         collector.collect()
-        initial_claude_calls = sum(1 for u in self.requests if 'anthropic.com' in u)
+        initial_claude_calls = sum(1 for u in self.requests if 'anthropic.com/api/oauth/usage' in u)
         self.assertEqual(initial_claude_calls, 1)
         self.codex_used = 88.0
         with redirect_stdout(io.StringIO()):
             self.assertEqual(collector.main(['--once', '--force']), 0)
         providers = json.loads(self.cache.read_text())['providers']
         self.assertEqual(providers['codex']['windows'][0]['used_pct'], 88.0)
-        self.assertEqual(sum(1 for u in self.requests if 'anthropic.com' in u), 2)
+        self.assertEqual(sum(1 for u in self.requests if 'anthropic.com/api/oauth/usage' in u), 2)
 
         # Put claude in 429 rate-limit backoff and verify `--once --force` still obeys it without hitting Claude API
         usage_core.set_claude_backoff(provider_id='claude')
-        before_claude_calls = sum(1 for u in self.requests if 'anthropic.com' in u)
+        before_claude_calls = sum(1 for u in self.requests if 'anthropic.com/api/oauth/usage' in u)
         self.codex_used = 92.0
         with redirect_stdout(io.StringIO()):
             self.assertEqual(collector.main(['--once', '--force']), 0)
-        after_claude_calls = sum(1 for u in self.requests if 'anthropic.com' in u)
+        after_claude_calls = sum(1 for u in self.requests if 'anthropic.com/api/oauth/usage' in u)
         self.assertEqual(after_claude_calls, before_claude_calls)
         providers_after = json.loads(self.cache.read_text())['providers']
         self.assertEqual(providers_after['codex']['windows'][0]['used_pct'], 92.0)

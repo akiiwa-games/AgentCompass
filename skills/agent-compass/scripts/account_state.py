@@ -48,7 +48,7 @@ _LAUNCH_ERROR = re.compile(
     r'订阅(?:已)?(?:过期|到期|失效|取消)', re.I)
 
 
-ONLINE_PLAN_SOURCES = ('usage_api', 'usage_api_shared', 'account-tier')
+ONLINE_PLAN_SOURCES = ('usage_api', 'usage_api_shared', 'profile_api', 'account-tier')
 _POOL_SUFFIX = re.compile(r'\s*×\s*\d+\s*$')
 
 
@@ -161,10 +161,6 @@ def warning(name, row):
         lines.append(f"{name}: plan_inactive ({row.get('reason')}); excluded from dispatch")
     elif status == AUTH_FAILED:
         lines.append(f"{name}: auth_failed ({row.get('reason')}); excluded from dispatch")
-    conflict = row.get('plan_conflict')
-    if isinstance(conflict, dict):
-        lines.append(f"{name}: usage API reports plan {conflict.get('online')} but the credential says "
-                     f"{conflict.get('credential')}; using {conflict.get('online')}")
     return lines
 
 
@@ -414,7 +410,7 @@ def latch_outlived(latch, last_good, row=None, now=None):
     family = row.get('quota_family') or row.get('family')
     plan = row.get('plan')
     plan_read = _time(row.get('plan_read_at'))
-    prior_plan = (latch or {}).get('online_plan') or row.get('credential_plan')
+    prior_plan = (latch or {}).get('online_plan')
     return bool(row.get('plan_source') in ONLINE_PLAN_SOURCES and plan
                 and not plan_is_inactive(family, plan) and plan_read and plan_read > observed
                 and (not prior_plan or plan_without_vendor(plan) != plan_without_vendor(prior_plan)))
