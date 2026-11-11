@@ -111,10 +111,10 @@ class ModelResolutionTests(unittest.TestCase):
             'qwen3-235b-a22b', 'kimi-k2', 'glm-4.6', 'minimax-m2',
             'doubao-seed-1.6', 'llama-4-maverick',
         }
+        self.assertNotIn('effort_curves', self.accounts)
         for name in obsolete:
             with self.subTest(name=name):
                 self.assertNotIn(name, self.accounts['models'])
-                self.assertNotIn(name, self.accounts['effort_curves'])
                 self.assertNotIn(name, self.accounts['aliases'])
                 self.assertNotIn(name, self.accounts['aliases'].values())
                 for rows in self.accounts['dispatch_efforts'].values():

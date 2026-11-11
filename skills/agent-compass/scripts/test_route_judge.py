@@ -465,9 +465,9 @@ def as_agy_stream(stdout):
 
 
 GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
-               'realtime_loop': False, 'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
+               'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
                'interaction_style': 'engineering',
-               'axis_demand': {'divergence': 0, 'global_rigor': 1, 'module_precision': 0, 'vision_tools': 3}}
+               'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3}}
 
 
 class ReadinessGapTests(unittest.TestCase):
@@ -870,7 +870,7 @@ class SystemOneScorerTests(unittest.TestCase):
     def test_profile_local_only_is_trusted_and_caller_values_win(self):
         profile = dict(GUI_PROFILE, work_kind='general_implementation', needs_visual=False,
                        needs_gui=False, code_complexity=2, reasoning_depth=2,
-                       axis_demand={'divergence': 1, 'global_rigor': 1, 'module_precision': 2, 'vision_tools': 0})
+                       axis_demand={'divergence': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0})
         with tempfile.TemporaryDirectory() as directory:
             unavail_code, unavail_res, _ = self.run_cli(directory, 'plan', {'objective': 'Explore local logs'}, stdout='not json')
             self.assertEqual((unavail_code, unavail_res['choice'], unavail_res['error'], unavail_res['caller_action']),
@@ -922,13 +922,12 @@ JEV_RESPONSE = {
         'reasoning_depth': {'type': 'score', 'score': 1.4, 'confidence': 0.5, 'probabilities': {'0': 0.2, '1': 0.3, '2': 0.4, '3': 0.1}},
         'code_complexity': {'type': 'score', 'score': 0.2, 'confidence': 0.8, 'probabilities': {'0': 0.85, '1': 0.1, '2': 0.05, '3': 0.0}},
         'demand_divergence': {'type': 'score', 'score': 0.1, 'confidence': 0.7, 'probabilities': {'0': 0.9, '1': 0.1, '2': 0.0, '3': 0.0}},
-        'demand_global_rigor': {'type': 'score', 'score': 1.2, 'confidence': 0.6, 'probabilities': {'0': 0.1, '1': 0.7, '2': 0.2, '3': 0.0}},
-        'demand_module_precision': {'type': 'score', 'score': 0.3, 'confidence': 0.8, 'probabilities': {'0': 0.8, '1': 0.2, '2': 0.0, '3': 0.0}},
-        'demand_vision_tools': {'type': 'score', 'score': 2.8, 'confidence': 0.8, 'probabilities': {'0': 0.0, '1': 0.0, '2': 0.2, '3': 0.8}},
+        'demand_coding': {'type': 'score', 'score': 1.2, 'confidence': 0.6, 'probabilities': {'0': 0.1, '1': 0.7, '2': 0.2, '3': 0.0}},
+        'demand_aesthetics': {'type': 'score', 'score': 0.3, 'confidence': 0.8, 'probabilities': {'0': 0.8, '1': 0.2, '2': 0.0, '3': 0.0}},
+        'demand_tool_operation': {'type': 'score', 'score': 2.8, 'confidence': 0.8, 'probabilities': {'0': 0.0, '1': 0.0, '2': 0.2, '3': 0.8}},
         'needs_visual': {'type': 'noul', 'noul': 0.1},
         'needs_gui': {'type': 'noul', 'noul': 0.8},
         'local_only': {'type': 'noul', 'noul': 0.7},
-        'realtime_loop': {'type': 'noul', 'noul': 0.05},
         'wants_fast': {'type': 'noul', 'noul': 0.05},
         'read_only_review': {'type': 'noul', 'noul': 0.05},
         'multi_task': {'type': 'noul', 'noul': 0.1},
@@ -938,9 +937,8 @@ JEV_RESPONSE = {
 }
 JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
                'reasoning_depth': 2, 'code_complexity': 0,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': False,
-               'wants_fast': False, 'read_only_review': False,
-               'axis_demand': {'divergence': 0, 'global_rigor': 1, 'module_precision': 0, 'vision_tools': 3}}
+               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
+               'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3}}
 SECRET = 'test-key-0000000000000000'
 
 
@@ -1039,9 +1037,9 @@ class SelectableScorerTests(unittest.TestCase):
         self.assertIn('read_only_review', request['state']['rubric_notes'])
         questions = request['questions']
         self.assertEqual(set(questions), {'work_kind', 'interaction_style', 'reasoning_depth', 'code_complexity', 'needs_visual',
-                                          'needs_gui', 'local_only', 'realtime_loop', 'wants_fast', 'read_only_review', 'access',
+                                          'needs_gui', 'local_only', 'wants_fast', 'read_only_review', 'access',
                                           'effort_band', 'urgency', 'multi_task', 'task_count',
-                                          'demand_divergence', 'demand_global_rigor', 'demand_module_precision', 'demand_vision_tools'})
+                                          'demand_divergence', 'demand_coding', 'demand_aesthetics', 'demand_tool_operation'})
         routes = set(self.capabilities['routes']) - {'other_or_mixed'}
         self.assertEqual((questions['work_kind']['type'], set(questions['work_kind']['criteria'])), ('choice', routes))
         self.assertTrue(all(isinstance(v, str) and v for v in questions['work_kind']['criteria'].values()))
@@ -1051,7 +1049,7 @@ class SelectableScorerTests(unittest.TestCase):
             q = questions[name]
             self.assertEqual((q['type'], len(q['criteria']), isinstance(q['criteria'], list)), ('score', high - low + 1, True), name)
             self.assertLessEqual(len(q['criteria']), 10)
-        for name in ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop', 'wants_fast', 'read_only_review'):
+        for name in ('needs_visual', 'needs_gui', 'local_only', 'wants_fast', 'read_only_review'):
             self.assertEqual(questions[name]['type'], 'noul')
             self.assertNotIn('criteria', questions[name])
 
@@ -1076,8 +1074,8 @@ class SelectableScorerTests(unittest.TestCase):
                        {'answers': {**answers, 'interaction_style': {'choice': 'vibes'}}},
                        {'answers': {**answers, 'access': {'choice': 'sudo'}}},
                        {'answers': {**answers, 'access': {'choice': 'read-only'}, 'code_complexity': {'score': 2.0}}},
-                       {'answers': {k: v for k, v in answers.items() if k != 'demand_global_rigor'}},
-                       {'answers': {k: v for k, v in answers.items() if k != 'realtime_loop'}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'demand_coding'}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'demand_tool_operation'}},
                        {'answers': {k: v for k, v in answers.items() if k != 'wants_fast'}},
                        {'answers': {k: v for k, v in answers.items() if k != 'read_only_review'}},
                        {'answers': {**answers, 'read_only_review': {'noul': 0.9}, 'code_complexity': {'score': 2.0}}},

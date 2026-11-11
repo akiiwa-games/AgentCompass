@@ -238,12 +238,13 @@ def demand_task(demand, local, hours=2.0):
     """A task whose classifier profile asks `demand` (one point of the category demand space) of the four categories.
     The grid sweeps the whole space; no work kind or difficulty is assumed. `reasoning_depth` follows the strongest
     reasoning demand so the profile is complete."""
-    reasoning = max(demand['global_rigor'], demand['divergence'])
+    reasoning = max(demand['coding'], demand['divergence'])
     return {'objective': 'demand ' + ' '.join(f'{a}={demand[a]}' for a in allocator.FIVE_AXES), 'expected_hours': hours,
             'needs': {'local_only': local},
             'profile': {'work_kind': 'general_implementation', 'reasoning_depth': min(4, 1 + reasoning),
-                        'code_complexity': 2 if demand['module_precision'] else 0, 'needs_visual': demand['vision_tools'] >= 2,
-                        'needs_gui': False, 'local_only': local, 'realtime_loop': False, 'wants_fast': False,
+                        'code_complexity': 2 if demand['coding'] else 0,
+                        'needs_visual': demand['tool_operation'] >= allocator.IMAGE_INPUT_LEVEL,
+                        'needs_gui': False, 'local_only': local, 'wants_fast': False,
                         'read_only_review': False, 'access': 'write', 'expected_hours': hours, 'hours_confidence': 'medium',
                         'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
                         'axis_demand': dict(demand)}}
@@ -349,6 +350,7 @@ def ledger_records(path=None, last=None):
 
 def replay_task(row):
     task = dict(row['decision_snapshot']['task'])
+    task['profile'] = allocator.ledger_profile(task.get('profile'))      # records written before the four categories
     if row.get('hours'):
         task.setdefault('hours', row['hours'])
     return task

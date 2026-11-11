@@ -26,8 +26,7 @@ def setUpModule():
 NOW = datetime(2026, 11, 4, 12, tzinfo=timezone.utc)
 WEEK = 168.0
 PROFILE = {'reasoning_depth': 2, 'code_complexity': 2, 
-           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
-           'wants_fast': False, 'read_only_review': False, 'interaction_style': 'engineering', 'multi_task': False,
+           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False, 'interaction_style': 'engineering', 'multi_task': False,
            'task_count': '1', 'expected_hours': 1.0}
 MID, FRONTIER, CREATIVE = (2, 3, 2, 0), (2, 3, 3, 0), (3, 1, 0, 0)
 
@@ -41,14 +40,15 @@ def rec_of(capacity=1000.0, used_frac=0.5, elapsed=0.5, reset_hours=None, period
 
 
 def ladder_for(spend_scale=1.0, with_outside=0.0):
-    """A realistic ladder: three models (cheap weak, middle, dear strong) over the real demand grid and their real shape."""
-    models = [(0.29 * spend_scale, {'divergence': 0.5, 'global_rigor': 0.5, 'module_precision': 0.45, 'vision_tools': 0.5}),
-              (12.59 * spend_scale, {'divergence': 0.6, 'global_rigor': 0.65, 'module_precision': 0.6, 'vision_tools': 0.7}),
-              (22.86 * spend_scale, {'divergence': 0.73, 'global_rigor': 0.8, 'module_precision': 0.8, 'vision_tools': 0.8})]
+    """A realistic ladder: three models (cheap weak, middle, dear strong) over the real demand grid and panel z-score targets."""
+    anchor_targets = allocator.load_five_axis()['anchor']['targets']
+    models = [(0.29 * spend_scale, {'divergence': -2.2, 'coding': -1.8, 'aesthetics': -1.9, 'tool_operation': {'responsiveness': 1.0, 'image_recognition': -1.5}}),
+              (12.59 * spend_scale, {'divergence': -0.8, 'coding': -0.6, 'aesthetics': -0.6, 'tool_operation': {'responsiveness': 0.2, 'image_recognition': -0.5}}),
+              (22.86 * spend_scale, {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0, 'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}})]
     hulls = []
     for d in allocator.FIVE_AXIS_DEMAND_GRID:
-        targets = allocator.five_axis_targets(d, 0.8)
-        pts = [(s, allocator.five_axis_fit(sc, d, targets, 1.0)[0]) for s, sc in models]
+        targets = allocator.five_axis_targets(d, anchor_targets)
+        pts = [(s, allocator.five_axis_fit(sc, d, targets)[0]) for s, sc in models]
         hulls.append(allocator.five_axis_upper_hull(pts, with_outside * max(f for _, f in pts)))
     return allocator.five_axis_value_ladder(hulls)
 
@@ -267,10 +267,10 @@ class FleetEconomyTests(unittest.TestCase):
                     self.assertGreater(c['components']['opportunity_cost'], 0.0, c['id'])
             self.assertNotEqual(d['selected_bundle']['bundle_id'].split('_')[0], 'sol', used)
             # On the shipped data, with every candidate's hours at its Artificial Analysis Time/Task: with Claude at 60% the
-            # Sonnet line (fit 0.58, over its line a little) beats the cheap Codex Luna (fit 0.48); with both at 90% the
-            # cheap Luna wins. Neither is the over-line Sol.
-            self.assertEqual(d['choice'], {(0.6, 0.9): 'sonnet55_high', (0.9, 0.9): 'luna_high'}[used], used)
-        self.assertEqual(self.fleet.plan(0.5, 0.9, axes=FRONTIER, hours=6.0)['choice'], 'opus55_high')   # the frontier task still reaches Opus
+            # Sonnet line (over its line a little) beats the cheap Codex lines; with both at 90% the cheap Codex Terra line
+            # wins. Neither is the over-line Sol.
+            self.assertEqual(d['choice'], {(0.6, 0.9): 'sonnet55_high', (0.9, 0.9): 'terra_high'}[used], used)
+        self.assertEqual(self.fleet.plan(0.5, 0.9, axes=FRONTIER, hours=6.0)['selected_bundle']['model'], 'claude-opus-5-5')   # the frontier task still reaches Opus
 
     def test_a_substitute_only_helps_as_much_as_it_is_likely_to_have_room(self):
         """Advisor test 2: Codex fixed at 90%, Claude swept; Codex's price never falls as Claude fills and at 100% equals
@@ -318,10 +318,10 @@ class FleetEconomyTests(unittest.TestCase):
         self.assertLess(fast['expected_hours'], opus['expected_hours'])
         self.assertEqual(fast['components']['decided_by'], 'completion_hours')
         self.assertEqual(sprint['choice'], fast['id'])
-        # (2) well under the line (30% used at half time) the week is not likely to be needed either (v3.1: the line is
+        # (2) well under the line (20% used at half time) the week is not likely to be needed either (v3.1: the line is
         # where pi is about one half, the curve is narrow), so the best candidate costs less than the resolution of N; on
         # the line (50% used) the quota has a price again and a plain variant stays above Opus+fast
-        under = self.fleet.plan(0.3, 0.5, ec=0.5)
+        under = self.fleet.plan(0.2, 0.5, ec=0.5)
         self.assertLess(eligible(under)[0]['components']['opportunity_cost'], 5e-5)
         mid_week = self.fleet.plan(0.5, 0.5, ec=0.5)
         top = mid_week['ranking'][0]
@@ -360,7 +360,7 @@ class FleetEconomyTests(unittest.TestCase):
         self.assertGreater(opus['score'], fable['score'])
         ids = [c['id'] for c in eligible(d)]
         self.assertLess(ids.index('opus55_high'), ids.index('fable51_high'))
-        creative = self.fleet.plan(0.3, 0.5, axes=CREATIVE, hours=0.3)
+        creative = self.fleet.plan(0.3, 0.5, axes=(2, 1, 0, 0), hours=0.3)
         o, f = row(creative, 'opus55_high'), row(creative, 'fable51_high')
         self.assertAlmostEqual(o['components']['fit'], f['components']['fit'])
         ids = [c['id'] for c in eligible(creative) if not c['bundle'].get('fast')]
@@ -976,7 +976,6 @@ class PoolIndependenceTests(unittest.TestCase):
         return out
 
     FLAGS = {
-        'realtime_loop': {'needs': {'realtime_loop': True}},
         'visual': {'needs': {'visual': True}},
         'critical': {'needs': {'critical': True}},
         'outbound_denied': {'needs': {'outbound_ok': False}},
@@ -1004,20 +1003,34 @@ class PoolIndependenceTests(unittest.TestCase):
                     self.assertEqual(w[key], reports[w['label']][key], (name, w['label'], key))
             sets[name] = {c['id'] for c in eligible(d)}
         # the flags do change who may run (otherwise the check would be vacuous), they just do not change a price
-        self.assertNotEqual(sets['realtime_loop'], {c['id'] for c in eligible(d0)})
+        self.assertNotEqual(sets['disable_fast'], {c['id'] for c in eligible(d0)})
         self.assertNotEqual(sets['named_model'], {c['id'] for c in eligible(d0)})
 
     def test_a_flag_that_holds_candidates_back_does_not_move_a_candidates_own_cost(self):
         """The candidates that stay eligible are priced against the same ladder, so with the same spend their cost is the
-        same: realtime_loop alone used to move codex lambda 0.0158 -> 0.00185."""
+        same when a constraint or task flag holds other candidates back."""
         d0 = self.plan(0.5, 0.5)
-        d1 = self.plan(0.5, 0.5, needs={'realtime_loop': True})
+        d1 = self.plan(0.5, 0.5, constraints={'effort': 'high'})
         both = {c['id']: c for c in eligible(d0)}
         shared = [c for c in eligible(d1) if c['id'] in both and c['bundle'].get('effort') == both[c['id']]['bundle'].get('effort')]
         self.assertTrue(shared)
         for c in shared:
             self.assertEqual(c['components']['quota_price'], both[c['id']]['components']['quota_price'], c['id'])
             self.assertEqual(c['components']['need_probability'], both[c['id']]['components']['need_probability'], c['id'])
+
+    def test_real_data_economy_ladders_and_outside_alternatives_are_non_empty(self):
+        """Q7 (2026-11-11): with fit zeroed at each category's panel weakest (t1), real public data produces non-empty
+        value ladders and positive outside alternatives across priced windows."""
+        d, econ = self.economies(0.5, 0.5)
+        windows = d['decision']['system']['quota_windows']
+        self.assertGreaterEqual(len(windows), 3)
+        for w in windows:
+            self.assertGreater(w['ladder_steps'], 0, w['label'])
+            self.assertGreater(w['outside_fit'], 0.0, w['label'])
+            self.assertGreater(w['best_fit'], 0.0, w['label'])
+        for wkey in econ.points:
+            self.assertTrue(econ.ladder(wkey)['steps'], wkey)
+            self.assertTrue(econ._outside(wkey, 0), wkey)
 
     def test_the_usage_sweep_through_the_old_safety_margin_boundary_moves_the_lump_and_cost_smoothly(self):
         """Review R2(b): Claude at 93 % -> 94 % used changed the lump 21.87 -> 0.59 and Haiku cost 43 times, because the
@@ -1164,9 +1177,12 @@ class WeeklyWindowTests(unittest.TestCase):
     def test_the_economy_never_builds_an_entry_for_a_candidate_with_no_long_window_state(self):
         """Defence in depth: even if some path lets a stateless candidate through, the economy skips it, so it cannot become an
         outside point whatever the data error says."""
+        overlaid = allocator.five_axis_overlay(copy.deepcopy(self.fleet.accounts))
         stateless = {'bundle': {'account': 'claude', 'id': 'x'}, 'components': {'fit': 0.9}, 'expected_usd': 5.0,
-                     '_five_window_states': {}, '_five_scaled': {a: 0.9 for a in allocator.FIVE_AXES}}
-        econ = allocator.FiveAxisEconomy([stateless], {**self.fleet.accounts, '_five_axis': {'anchor_value': 0.8}}, {}, {'hours': 2.0})
+                     '_five_window_states': {},
+                     '_five_values': {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0,
+                                      'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}}}
+        econ = allocator.FiveAxisEconomy([stateless], overlaid, {}, {'hours': 2.0})
         self.assertEqual(econ.entries, [])
         self.assertEqual(econ.units, {})
 

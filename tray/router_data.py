@@ -205,7 +205,7 @@ def profile_invalid(profile) -> bool:
     """True when a recorded profile fails the classifier's current schema (a missing or invalid field of any kind)."""
     allocator, _ = modules()
     try:
-        allocator.validate_profile(profile)
+        allocator.validate_profile(allocator.ledger_profile(profile))
         return False
     except ValueError:
         return True
@@ -258,7 +258,7 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
     if profile is not None:
         if profile_invalid(profile):
             raise UnreplayableProfile(_tr(UNREPLAYABLE_NOTE))
-        task["profile"] = allocator.validate_profile(profile)
+        task["profile"] = allocator.validate_profile(allocator.ledger_profile(profile))
     return task
 
 

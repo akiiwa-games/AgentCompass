@@ -1159,7 +1159,8 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
             self.make_profile(work_kind='debug_review', reasoning_depth=2, code_complexity=2, wants_fast=True),
             self.make_profile(work_kind='web_research', reasoning_depth=2, code_complexity=0, local_only=False, interaction_style='exploration'),
             self.make_profile(work_kind='computer_use', reasoning_depth=1, code_complexity=0,
-                              needs_visual=True, needs_gui=True, realtime_loop=True),
+                              needs_visual=True, needs_gui=True,
+                              axis_demand={'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3}),
             self.make_profile(work_kind='direction_reasoning', reasoning_depth=4, code_complexity=0,
                               local_only=False, interaction_style='advisory'),
         ]
@@ -1181,7 +1182,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                 norm_key = (
                     norm['kind'], norm['difficulty'], norm['profile']['axis_demand'], norm['wants_fast'],
                     norm['read_only_review'], norm['local_only'], norm['needs_gui'],
-                    norm['needs_visual'], norm['realtime_loop'],
+                    norm['needs_visual'],
                 )
                 if baseline_norm is None:
                     baseline_norm = norm_key
@@ -1388,7 +1389,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
             return (
                 norm['kind'], norm['difficulty'], norm['profile']['axis_demand'], norm['wants_fast'],
                 norm['read_only_review'], norm['local_only'], norm['needs_gui'],
-                norm['needs_visual'], norm['realtime_loop'],
+                norm['needs_visual'],
             )
 
         base_norm = snap_norm(corpus[0])

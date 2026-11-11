@@ -1,4 +1,7 @@
-"""One five-axis radar: four capabilities and quota economy, from decisions or model settings.
+"""One five-axis radar: four capability categories and quota economy, from decisions or model settings.
+
+A category's spoke is its share (allocator.five_axis_shares): 0 at the panel's weakest model, 1 at the level-3 target
+(the anchor), from the panel standard scores of five-axis-scores.json.
 
 The maths (dimension values, polygon geometry) is plain Python so it is unit-tested without a display;
 RadarChartCanvas draws it on a tk.Canvas.
@@ -28,19 +31,19 @@ def clamp(value, low=0.0, high=1.0) -> float:
 
 # (key, label, formula shown on hover)
 SCORE_AXES = (
-    ("divergence", "发散创新", "divergence：该模型在发散创新类型分上的类别分（公开榜单类型分的均值）"),
-    ("global_rigor", "全局严密", "global_rigor：该模型在全局严密类型分上的类别分（公开榜单类型分的均值）"),
-    ("module_precision", "模块精准", "module_precision：该模型在模块精准类型分上的类别分（公开榜单类型分的均值）"),
-    ("vision_tools", "视觉与工具", "vision_tools：该模型在视觉与工具类型分上的类别分（公开榜单类型分的均值）"),
+    ("divergence", "发散创新", "divergence：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
+    ("coding", "编码能力", "coding：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
+    ("aesthetics", "审美能力", "aesthetics：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
+    ("tool_operation", "工具操作", "tool_operation：响应速度与读图中较弱者，在面板最弱（0）到三级目标（1）之间的位置"),
     ("economy", "额度经济", "clamp(1 − opportunity_cost + boost)：本次额度成本（额度价格 × 消耗）与临时加成"),
 )
 SCORE_AXES = LocalizedSequence(SCORE_AXES)
 
 DNA_AXES = (
-    ("divergence", "发散创新", "divergence：公开榜单类型分的均值；带 ~ 表示该类别含按档位估算的类型分"),
-    ("global_rigor", "全局严密", "global_rigor：公开榜单类型分的均值；带 ~ 表示该类别含按档位估算的类型分"),
-    ("module_precision", "模块精准", "module_precision：公开榜单类型分的均值；带 ~ 表示该类别含按档位估算的类型分"),
-    ("vision_tools", "视觉与工具", "vision_tools：公开榜单类型分的均值；带 ~ 表示该类别含按档位估算的类型分"),
+    ("divergence", "发散创新", "divergence：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
+    ("coding", "编码能力", "coding：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
+    ("aesthetics", "审美能力", "aesthetics：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
+    ("tool_operation", "工具操作", "tool_operation：High 档响应速度与读图中较弱者的位置；带 ~ 表示含估算值"),
     ("economy", "额度经济", "1 − usd_per_hour / 模型表中最高的 usd_per_hour：静态价格经济性，免费为 1，未知为 0；不代表实时剩余额度"),
 )
 DNA_AXES = LocalizedSequence(DNA_AXES)
@@ -50,14 +53,14 @@ def axis_title(mode: str = "score") -> str:
     return tr("能力与额度五维", "Capabilities & Quota")
 
 
-ABILITY_AXES = ("divergence", "global_rigor", "module_precision", "vision_tools")
+ABILITY_AXES = ("divergence", "coding", "aesthetics", "tool_operation")
 
 
 def score_dimensions(components: dict) -> dict:
-    """Five 0..1 values from an allocator candidate's `components`: the four category scores and the economy."""
+    """Five 0..1 values from an allocator candidate's `components`: the four category shares and the economy."""
     c = components or {}
     return {
-        **{key: clamp(c.get(key, 0)) for key in ABILITY_AXES},
+        **{key: clamp(c.get(f"share_{key}") or 0) for key in ABILITY_AXES},
         "economy": clamp(1.0 - (c.get("opportunity_cost") or 0) + (c.get("boost") or 0)),
     }
 
@@ -65,12 +68,12 @@ def score_dimensions(components: dict) -> dict:
 def score_raw(components: dict) -> dict:
     """The raw component values each score axis is built from, for the hover text."""
     c = components or {}
-    return {**{key: ({key: c[key]} if key in c else {}) for key in ABILITY_AXES},
+    return {**{key: {k: c[k] for k in (key, f"share_{key}") if k in c} for key in ABILITY_AXES},
             "economy": {k: c[k] for k in ("opportunity_cost", "boost") if k in c}}
 
 
 def estimate_note(estimates: dict, axis: str) -> str:
-    """The hover line for an axis with estimated type scores: `{'axis.type': provenance}` of the model's record."""
+    """The hover line for a category with estimated facets: `{'category.facet': provenance}` of the model's record."""
     parts = []
     for name, est in sorted((estimates or {}).items()):
         if not name.startswith(axis + "."):
@@ -86,13 +89,14 @@ def estimate_note(estimates: dict, axis: str) -> str:
 
 
 def dna_dimensions(info: dict, ceiling: float | None = None) -> dict:
-    """Five 0..1 values from a model row of the router's model table (`five_axis` scores and usd_per_hour); the economy is
-    1 - usd_per_hour / `ceiling`, the highest usd_per_hour of the table (0 when the price or the ceiling is unknown)."""
+    """Five 0..1 values from a model row of the router's model table (`five_axis` shares at High and usd_per_hour); the
+    economy is 1 - usd_per_hour / `ceiling`, the highest usd_per_hour of the table (0 when the price or the ceiling is
+    unknown)."""
     info = info or {}
-    scores = (info.get("five_axis") or {}).get("scores") or {}
+    shares = (info.get("five_axis") or {}).get("shares") or {}
     price = info.get("usd_per_hour")
     return {
-        **{key: clamp(scores.get(key, 0)) for key in ABILITY_AXES},
+        **{key: clamp(shares.get(key) or 0) for key in ABILITY_AXES},
         "economy": clamp(1 - float(price) / ceiling) if price is not None and ceiling else 0.0,
     }
 
@@ -101,13 +105,14 @@ def dna_raw(info: dict) -> dict:
     info = info or {}
     five = info.get("five_axis") or {}
     tier = (five.get("tier") or {}).get("value")
-    return {**{key: {key: (five.get("scores") or {}).get(key), **({"tier": tier} if tier is not None else {})}
+    return {**{key: {key: (five.get("scores") or {}).get(key), f"share_{key}": (five.get("shares") or {}).get(key),
+                     **({"tier": tier} if tier is not None else {})}
                for key in ABILITY_AXES},
             "economy": {"usd_per_hour": info.get("usd_per_hour")}}
 
 
 def dna_estimated(info: dict) -> dict:
-    """{axis: provenance text} for the categories that contain a type score estimated through the tier."""
+    """{category: provenance text} for the categories that contain an estimated facet (sibling or tier fit)."""
     five = (info or {}).get("five_axis") or {}
     estimates = five.get("estimates") or {}
     return {axis: estimate_note(estimates, axis) for axis in ABILITY_AXES if any(k.startswith(axis + ".") for k in estimates)}

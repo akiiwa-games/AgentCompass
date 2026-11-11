@@ -38,12 +38,12 @@ agentcompass roll --task "<what the worker should do>"
 
 ### How a task is routed
 
-1. **Profile.** The classifier returns the task's expected hours and a need level (0–3) on four category axes: divergence, global rigor, module precision, vision & tools. Single-thread work is handed back to the main session, and a brief that holds several independent tasks is returned to be split.
-2. **Candidates.** Every model, effort and account that can start the task now. Each leaderboard gives a model a type score, and the type scores make up the four category scores; all of them come from cited public sources. A type score a model has no board for is estimated from the model's overall level (its arena.ai Overall position) and its same-series sibling, marked as estimated everywhere it is shown, and replaced by a direct measurement at the next data refresh. A category some of whose type scores are missing is yellow: it averages them as 0 and the model stays in routing. A category with no score at all keeps the model out of automatic routing for tasks that need it. Nothing routes on the overall level itself.
+1. **Profile.** The classifier returns the task's expected hours and a need level (0–3) on four capability categories: **divergence** (creative writing, brainstorming, research synthesis, data analysis, first-principles decomposition), **coding** (`min(execution, faithfulness)` for code, tests, reviews and audits), **aesthetics** (web/GUI design, layout, 3D and SVG), and **tool operation** (level 1 no ability requirement; level 2 per-turn responsiveness; level 3 responsiveness and image recognition). Single-thread work is handed back to the main session, and a brief that holds several independent tasks is returned to be split.
+2. **Candidates.** Every model, effort and account that can start the task now. Every public leaderboard is put on one panel standard-score scale (`z = (x − x_anchor) / sd_panel` over the `n = 12` fleet panel, so `claude-opus-5-5` at High sits at `0.0` and one unit is one panel standard deviation); facets of a category combine by `min`. A facet a model has no board for is estimated from its same-series sibling (shifted along the facet-on-tier line) or its `arena.ai` Overall tier fit, marked as estimated everywhere it is shown, and replaced by a direct measurement at the next data refresh. A category with some facets missing is yellow: it takes its value from the facets that have data and stays in routing. Only a demanded category with no data at all keeps the model out of automatic routing for that task. Nothing routes on the overall tier itself.
 3. **Score.** `N = F + continuity + boost − C`
-   - `F`, the fit: the need-weighted average, over the categories the task needs, of the model's score capped at what the task needs, minus the shortfall (a score below the need loses its gap again). Ability above the need does not count, so a rename is not sent to the strongest model at maximum effort.
-   - `C`: the quota economy, the part of this task's spend that lands over the recovery line of the account's quota window (next section), priced in score units. The spend is the model's USD per hour times the hours the task takes at that effort (Artificial Analysis Time/Task at the same effort).
-   - Continuity (resuming a worker that already holds the task's context) and a temporary boost from a user override add to `N`.
+   - `F`, the fit (in panel standard deviations): `sum_a w_a × (min(z_a, t_a) − t1_a) / sum_a w_a` over the demanded categories that ask for ability. Panel targets set `t1_a` at the panel's weakest model, `t2_a` at the panel median, and `t3_a` at the anchor (`0.0`). Each category's `t1_a` is the **zero point** of the fit: a model at the panel's weakest scores `0`, a model below it can score below `0`, and scores above `t_a` earn nothing extra, so a routine change is not sent to the strongest model at maximum effort.
+   - `C`: the quota economy, the part of this task's spend that lands over the recovery line of the account's quota window (next section), priced in panel-SD score units. The spend is the model's USD per hour times the hours the task takes at that effort (Artificial Analysis Time/Task at the same effort).
+   - `continuity` (resuming a worker on `coupling == "high"` / `--resume` within its context rotation limit, worth one demand step: the largest positive `t3 − t2` among the task's highest-demanded categories, else `0`) and a temporary `boost` from a user override add to `N`.
 4. **Ties.** Equal `N` goes to the candidate that uses the under-line quota expiring earliest, then to the one that finishes sooner, then to the cheaper one.
 5. **Launch.** The winner starts as a worker, and the ledger keeps every candidate's score.
 
@@ -62,7 +62,7 @@ Treat a window's quota as recovering evenly over its period. A window with capac
 
 This is how to read it. Each small chart is one quota window on its own clock: left to right is this period, ending at the reset on the right edge; bottom to top is quota, with the whole period's quota at the top. The pale straight line is the quota line: where usage would stand now if the subscription were spent at an even pace. The thick line is actual usage, rising up to now. It is solid where usage readings were recorded and dotted where there are none and the line is fitted from the period's start to the current usage. While usage is under the quota line it is green and the window is marked **Used first**: that quota has recovered and is lost at the reset if nobody spends it. Once usage crosses the line it turns red and the window is marked **Held back**. The window the task runs on lights up, and the task's own spend continues its usage line in indigo. Last, a dotted line runs from now to the top right corner: the pace that uses up what is left exactly at the reset, where the lines close.
 
-The animation replays one 2-hour refactor at two moments. The task needs global rigor and module precision; Opus 5.5 meets the need, so its `F` is 0.667.
+The animation replays one synthetic 2-hour refactor (`coding` demand) at two moments; Opus 5.5 meets the target, with an illustrative `F` of 0.667.
 
 **A window ahead of its line is spared.** Five days before Claude A resets, 45% of it is used and its line stands at 29%. Opus 5.5 on Claude A would put $46 over the line: `N = 0.667 − 0.0075 × 46 / 2 = 0.495`. Claude B is under its line, so the same model and the same $46 cost nothing there: `N = 0.667`. The task runs on Claude B.
 
@@ -135,11 +135,12 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 
 ### 一个任务如何被路由
 
-1. **画像。** 分类器给出任务的预计工时，以及四个能力轴上的需求等级（0–3）：发散创新、全局严密、模块精准、视觉与工具。单线任务交还主会话自己做；一份任务书里有多个独立任务时，退回给主会话拆分。
-2. **候选。** 所有现在就能开工的模型、档位与账号组合。各轴的模型分数来自注明出处的公开数据。
-3. **打分。** `N = F − β × X / h`
-   - `F` 是契合度：模型各轴分数按需求加权平均，每个轴只算到任务需要的高度。超出需求的能力不计分，所以改个名字不会被派给最强的模型开最高档。
-   - `X` 是这次花费中越过该账号额度窗口恢复线的部分，单位 USD（见下一节）。`h` 是任务工时，`β` 是该窗口越线花费与契合度之间的汇率。这一项就是第五个轴：额度经济。
+1. **画像。** 分类器给出任务的预计工时，以及四个能力类别上的需求等级（0–3）：**发散创新**（`divergence`，创意写作、头脑风暴、调研综合、数据分析与第一性原理拆解）、**编码能力**（`coding = min(execution, faithfulness)`，代码读写修改、测试与审查审计）、**审美设计**（`aesthetics`，界面交互、排版图表、3D 与 SVG）与**工具操作**（`tool_operation`，等级 1 无能力门槛，等级 2 考察单轮响应速度，等级 3 同时考察响应速度与图像识别）。单线任务交还主会话自己做；一份任务书里有多个独立任务时，退回给主会话拆分。
+2. **候选。** 所有现在就能开工的模型、档位与账号组合。各榜单统一折算为固定面板（`n = 12`）的标准分 `z = (x − x_anchor) / sd_panel`（锚点 `claude-opus-5-5` High 为 `0.0`），同一类别下的子维度取短板 `min`；缺榜单的子维度由同系列近亲转换或 `arena.ai` Overall 等级线性拟合估算并显式标为估算值，只有需求类别完全无数据时才移出该任务的自动路由。
+3. **打分。** `N = F + continuity + boost − C`
+   - `F` 是契合度（单位为面板标准差）：对所有有能力要求的类别计算 `sum_a w_a × (min(z_a, t_a) − t1_a) / sum_a w_a`。目标值由面板分位数决定：等级 1（`t1_a`）取面板最低值并作为契合度的**零点**（低于 `t1_a` 可为负分），等级 2（`t2_a`）取面板中位数，等级 3（`t3_a`）取锚点 `0.0`；超出任务需求目标 `t_a` 的能力不额外加分，所以简单改动不会被派给最强模型开最高档。
+   - `continuity` 是上下文连续性收益：在未达上下文轮换上限且强耦合续接（`coupling == "high"` / `--resume`）时，等于本次任务最高需求等级类别中最大的正档差 `t3 − t2`（否则为 `0`）。
+   - `C`（即 `β × X / h`）是第五个轴“额度经济”：`X` 是本次花费中越过该账号额度窗口恢复线的部分（单位 USD，见下一节），`h` 是任务工时，`β` 是窗口越线花费与契合度之间的汇率。
 4. **平分时。** `N` 相等，先选所用线下额度最早到期的候选，再选完成更快的，最后选更便宜的。
 5. **启动。** 胜出的候选作为 worker 启动，台账里保留每个候选的分数。
 
@@ -158,7 +159,7 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 
 读法如下。每张小图是一个额度窗口，各走各的时钟：从左到右是本周期，右端是重置；从下到上是额度，顶端是本周期的全部额度。浅色直线是额度线：按订阅的节奏匀速使用，此刻应该用到哪里。粗线是实际用量，一直涨到现在；有用量读数的地方是实线，没有读数时按期初到当前用量拟合，画成点线。用量在额度线下面时是绿色，窗口标着**优先使用**：这部分额度已经恢复，到重置不花就没了。用量越过额度线就变红，窗口标着**降权**。本次任务用的窗口会亮起来，任务自己的花费用靛蓝色接在它的用量线后面。最后，一条点线从现在连到右上角：按这个节奏用，剩余额度正好在重置时用完，线在那里闭合。
 
-动画把同一个 2 小时的重构任务放在两个时刻各重放一次。任务需要全局严密和模块精准；Opus 5.5 满足需求，`F` 为 0.667。
+动画把同一个合成的 2 小时重构任务（`coding` 需求）放在两个时刻各重放一次；Opus 5.5 满足需求，示意 `F` 为 0.667。
 
 **超前于恢复线的窗口先留着。** 距 Claude A 重置还有五天时，它已经用了 45%，而恢复线只到 29%。在 Claude A 上用 Opus 5.5 会有 $46 越线：`N = 0.667 − 0.0075 × 46 / 2 = 0.495`。Claude B 在线下，同一个模型、同样的 $46 在那里不计成本：`N = 0.667`。任务派到 Claude B。
 

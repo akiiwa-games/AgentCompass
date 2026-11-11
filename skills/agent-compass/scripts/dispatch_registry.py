@@ -131,7 +131,7 @@ def expire(connection, now):
             save(connection, row)
 
 
-def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_stepdown=False):
+def resolve_bundle(bundle, accounts, explicit_override=False):
     """Catalog defaults are not the complete supported explicit-effort contract."""
     import allocator
     import auto_bundles
@@ -158,54 +158,6 @@ def resolve_bundle(bundle, accounts, explicit_override=False, allow_realtime_ste
             return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
     # A named level with no row of its own arrives without the row's list, so every row of the model speaks for what it offers.
     contract = {eff for row in (bundle, *siblings) for eff in allocator.dispatch_allowed_efforts(row, accounts, model) or ()}
-    model_curves = allocator.model_curves(accounts, bundle.get('model') or model)
-    resp_curves = model_curves.get('responsiveness') or {}
-    ability_curve = model_curves.get('ability') if isinstance(model_curves.get('ability'), dict) else {}
-    stepped_from = bundle.get('realtime_stepped_from')
-    if (by_id and allow_realtime_stepdown and stepped_from and stepped_from == by_id.get('effort')
-            and bundle.get('effort') in contract
-            and provider_inventory.launcher_family(bundle.get('provider')) not in ('antigravity', 'antigravity-resilient')
-            and auto_bundles.split_effort(str(by_id.get('launch_model') or by_id.get('model') or ''), accounts)[1] is None
-            and isinstance(resp_curves, dict) and bundle.get('effort') in resp_curves
-            and allocator._effort_rank(bundle.get('effort')) < allocator._effort_rank(by_id.get('effort'))):
-        policy = accounts.get('scoring') or {}
-        info = allocator.model_spec(accounts, by_id.get('model') or model)
-        eff_harness = by_id.get('harness') or allocator.bundle_harness(by_id, by_id.get('account'), by_id.get('id'))
-        resp_floor = float(allocator.responsiveness_config(policy)['floor'])
-        orig_resp, orig_src = allocator.bundle_responsiveness(
-            by_id, info, policy, model_curves, effort=by_id.get('effort'), harness=eff_harness, accounts=accounts)
-        new_resp, new_src = allocator.bundle_responsiveness(
-            by_id, info, policy, model_curves, effort=bundle.get('effort'), harness=eff_harness, accounts=accounts)
-        orig_rank = allocator._effort_rank(by_id.get('effort'))
-        # The plan chose this level by score, which needs the task; here only its admissibility can be checked again.
-        qualifying = []
-        unchecked = {b.get('effort') for b in siblings
-                     if b.get('disabled') and not b.get('disabled_by_default') and b.get('harness') == eff_harness}
-        own_efforts = by_id.get('efforts') if isinstance(by_id.get('efforts'), (list, tuple)) else None
-        for eff in allocator.REALTIME_EFFORT_ORDER:
-            if (eff not in resp_curves
-                    or eff not in contract
-                    or eff in unchecked
-                    or (own_efforts is not None and eff not in own_efforts)
-                    or (ability_curve and eff not in ability_curve)
-                    or allocator._effort_rank(eff) >= orig_rank):
-                continue
-            eff_resp, eff_src = allocator.bundle_responsiveness(
-                by_id, info, policy, model_curves, effort=eff, harness=eff_harness, accounts=accounts)
-            if eff_src != 'not_applicable' and isinstance(eff_resp, (int, float)) and eff_resp >= resp_floor:
-                qualifying.append(eff)
-        if (orig_src != 'not_applicable' and new_src != 'not_applicable'
-                and isinstance(orig_resp, (int, float)) and isinstance(new_resp, (int, float))
-                and orig_resp < resp_floor <= new_resp
-                and bundle.get('effort') in qualifying):
-            return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'],
-                        realtime_stepped_from=by_id.get('effort'),
-                        **({'fast': True} if bundle.get('fast') else {}))
-    if (by_id and allow_realtime_stepdown and bundle.get('named_fastest') and stepped_from == by_id.get('effort')
-            and bundle.get('effort') in contract):
-        # Nothing clears the floor on the model the user named; the plan chose its fastest level and warned.
-        return dict(by_id, bundle_id=by_id['id'], effort=bundle['effort'], realtime_stepped_from=stepped_from,
-                    named_fastest=True, **({'fast': True} if bundle.get('fast') else {}))
     if not explicit_override:
         return None
     exact = (next((b for b in siblings if b.get('effort') == bundle.get('effort') and not b.get('disabled')), None)
@@ -259,18 +211,7 @@ def issue(result, task, now=None, path=None, allocation_task=None):
     import allocator
     accounts = allocator.load_accounts()
     explicit = result.get('stage') == 'record' and result.get('constraint') == 'user_override' and bool(result.get('basis'))
-    dec_task = (result.get('decision') or {}).get('task')
-    raw_t = allocation_task if isinstance(allocation_task, dict) else (task if isinstance(task, dict) else {})
-    raw_needs = raw_t.get('needs') if isinstance(raw_t.get('needs'), dict) else {}
-    if 'realtime_loop' in raw_needs and raw_needs.get('realtime_loop') is not None:
-        is_realtime = bool(raw_needs.get('realtime_loop'))
-    elif 'realtime_loop' in raw_t and raw_t.get('realtime_loop') is not None:
-        is_realtime = bool(raw_t.get('realtime_loop'))
-    elif isinstance(dec_task, dict) and 'realtime_loop' in dec_task:
-        is_realtime = bool(dec_task.get('realtime_loop'))
-    else:
-        is_realtime = bool((result.get('task_profile') or raw_t.get('profile') or {}).get('realtime_loop'))
-    resolved = resolve_bundle(bundle, accounts, explicit, allow_realtime_stepdown=is_realtime)
+    resolved = resolve_bundle(bundle, accounts, explicit)
     if resolved:
         bundle = {**bundle, **resolved}
     parent = task.get('parent_agent_id')
@@ -634,6 +575,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             accounts['accounts'][bundle['account']]['bundles'][bundle['bundle_id']] = resolved
         # Capacity check and insertion share the same transaction across concurrent parents.
         alloc_task = dict(decision['allocation_task'])
+        if isinstance(alloc_task.get('profile'), dict):     # a decision recorded before the four categories
+            alloc_task['profile'] = allocator.ledger_profile(alloc_task['profile'])
         profile = (
             alloc_task.get('profile')
             if isinstance(alloc_task.get('profile'), dict)
@@ -663,8 +606,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             import provider_retry
             # A named model on a held account or model is the probe that can lift the hold (provider_retry).
             exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint',
-                                                                     provider_retry.EXCLUSION_PREFIX))
-                          and ': responsiveness ' not in e]
+                                                                     provider_retry.EXCLUSION_PREFIX))]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
         if exclusions or candidate.get('available_in_hours'):

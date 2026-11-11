@@ -496,8 +496,7 @@ def accept(text, parent, task):
             'delivery': 'accepted', 'message_id': 'fixture-message', 'mocked_send': True}
 from router_test_support import profile
 fixture_profile = profile(work_kind='web_research', reasoning_depth=2, code_complexity=0, interaction_style='exploration',
-                          reason='fixture', access='read-only', axis_demand={'divergence': 1, 'global_rigor': 1,
-                          'module_precision': 0, 'vision_tools': 0})
+                          reason='fixture', access='read-only', axis_demand={'divergence': 1, 'coding': 1, 'aesthetics': 0, 'tool_operation': 0})
 with patch.object(runner, 'submit', side_effect=accept), patch.object(
         inventory, 'GROK_BOT_CLI', fake_cli), patch.object(runner.shutil, 'which', side_effect=fixture_which), patch.object(
         route_judge, 'score_task', return_value=(fixture_profile, {'source': 'system_one', 'model': 'fixture-scorer'})), patch.object(

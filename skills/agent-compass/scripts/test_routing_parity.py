@@ -20,7 +20,8 @@ import window_scope
 
 NOW = datetime(2026, 10, 29, 3, 0, tzinfo=timezone.utc)
 PROFILE = profile(code_complexity=1, local_only=True, reason='test profile')
-LIVE = dict(PROFILE, realtime_loop=True)
+LIVE = profile(code_complexity=1, local_only=True,
+               axis_demand={'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2}, reason='test profile')
 FULL_QUOTA = {
     'claude': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
     'claude-lab': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
@@ -91,50 +92,22 @@ class ModelResolverTests(RouterCase):
         found = allocator.resolve_model('qwen/Qwen3-Coder-Next:free', self.accounts)
         self.assertEqual((found['key'], found['effort']), ('qwen3-coder-next', None))
 
-    def test_family_names_take_the_series_scores_at_the_default_speed(self):
-        """1.1: an unmeasured older model takes its same-series row's scores (round 058 round 4 series conversion),
-        never that row's speed curve."""
-        for raw, target in (('gemini-2.5-pro', 'gemini-4-argon-high'), ('deepseek-r1', 'deepseek-v4-pro'),
-                            ('claude-opus-4-20250514', 'claude-opus-5-5')):
+    def test_family_names_have_no_scores_of_their_own_and_leave_automatic_routing(self):
+        """1.1: an unmeasured family name does not borrow the flagship's scores or invent a default speed: rule B."""
+        for raw in ('gemini-2.5-pro', 'deepseek-r1', 'claude-opus-4-20250514'):
             with self.subTest(raw=raw):
                 accounts = self.only('claude', x={'model': raw, 'effort': 'high', 'provider': 'claude'})
                 row = self.plan(self.task(LIVE), accounts)['ranking'][0]
-                comps = row['components']
-                self.assertEqual(comps['responsiveness_source'], 'default')
-                self.assertEqual(comps['responsiveness'], 0.52)
-                self.assertEqual(row['bundle']['effort'], 'high')        # nothing measured to step down along
-                self.assertFalse(any('responsiveness' in r for r in row['excluded']), row['excluded'])
+                self.assertEqual(row['bundle']['effort'], 'high')
+                self.assertTrue(any('no trusted data for the demanded category' in r for r in row['excluded']), row['excluded'])
 
-    def test_a_date_spelling_keeps_the_measured_curve(self):
+    def test_a_date_spelling_keeps_the_measured_scores(self):
         accounts = self.only('claude', x={'model': 'claude-opus-5-5-20261001', 'effort': 'high', 'provider': 'claude'})
         exact = self.only('claude', x={'model': 'claude-opus-5-5', 'effort': 'high', 'provider': 'claude'})
         dated, plain = self.plan(self.task(LIVE), accounts)['ranking'][0], self.plan(self.task(LIVE), exact)['ranking'][0]
-        self.assertEqual(dated['components']['responsiveness'], plain['components']['responsiveness'])
+        self.assertEqual(dated['components']['tool_operation'], plain['components']['tool_operation'])
+        self.assertEqual(dated['components']['fit'], plain['components']['fit'])
         self.assertEqual(dated['bundle']['effort'], plain['bundle']['effort'])
-
-    def test_local_telemetry_is_read_by_key_and_never_by_a_guess(self):
-        """1.2: a spelling missed telemetry recorded under the key; a family guess must not take the flagship's samples."""
-        state = Path(self.root) / 'speed'
-        state.mkdir()
-        (state / 'speed-telemetry.json').write_text(json.dumps(
-            {'models': {'claude-opus-5-5': {'samples': 40, 'responsiveness': 0.2}}}), encoding='utf-8')
-        info, policy = self.accounts['models']['claude-opus-5-5'], self.accounts['scoring']
-        curves = self.accounts['effort_curves']['claude-opus-5-5']
-
-        def speed(model):
-            return allocator.bundle_responsiveness({'model': model, 'effort': 'low'}, info, policy, curves,
-                                                   state_dir=state, accounts=self.accounts)
-        self.assertEqual(speed('claude-opus-5')[1], 'local_blended')
-        self.assertEqual(speed('claude-opus-5'), speed('claude-opus-5-5'))
-        self.assertEqual(speed('claude-opus-4-20250514')[1], 'measured')
-
-    def test_three_argument_responsiveness_reads_the_curve_by_key(self):
-        """1.2: `bundle_responsiveness(bundle, info, accounts)` looked the raw name up in effort_curves."""
-        info = self.accounts['models']['claude-opus-5-5']
-        for effort in ('low', 'medium'):
-            with self.subTest(effort=effort):
-                self.assertEqual(allocator.bundle_responsiveness({'model': 'claude-opus-5', 'effort': effort}, info, self.accounts),
-                                 allocator.bundle_responsiveness({'model': 'claude-opus-5-5', 'effort': effort}, info, self.accounts))
 
     def test_one_model_under_two_spellings_is_no_rival_of_itself(self):
         """1.2: a second spelling counted as the best other model, so the margin collapsed and asked for a judge."""
@@ -173,26 +146,24 @@ class ModelResolverTests(RouterCase):
 
 
 class StepDownRangeTests(RouterCase):
-    """R2: step-down lands only in dispatch_efforts(provider) intersected with what is offered, minus what the user unchecked."""
+    """R2: dispatch_efforts(provider) intersected with what is offered, minus what the user unchecked."""
 
-    def test_a_step_down_never_lands_on_an_unchecked_effort(self):
-        """2.1: Astra High stepped into Medium the user had unchecked."""
+    def test_an_unchecked_effort_is_excluded_from_named_efforts(self):
         accounts = self.only('codex',
                              astra_medium={'model': 'gpt-6-astra', 'effort': 'medium', 'provider': 'codex', 'disabled': True},
                              astra_high={'model': 'gpt-6-astra', 'effort': 'high', 'provider': 'codex'})
-        high = self.row(self.plan(self.task(LIVE), accounts), 'astra_high')
-        self.assertNotEqual(high['bundle']['effort'], 'medium')
-        self.assertEqual(high['bundle']['effort'], 'low')
+        plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'medium'}), accounts)
+        self.assertEqual(plan['choice'], 'none')
 
-    def test_a_row_listing_its_efforts_steps_only_inside_them(self):
+    def test_a_row_listing_its_efforts_offers_only_them_when_unlisted_in_table(self):
         accounts = self.only('codex', astra={'model': 'gpt-6-astra', 'effort': 'high', 'provider': 'codex', 'efforts': ['high']})
-        row = self.row(self.plan(self.task(LIVE), accounts), 'astra')
-        self.assertEqual(row['bundle']['effort'], 'high')
-        self.assertIn('gpt-6-astra@high: responsiveness', ' '.join(row['excluded']))
-        self.assertIn('below the realtime_loop floor 0.5', ' '.join(row['excluded']))
+        accounts['dispatch_efforts']['codex'].pop('gpt-6-astra', None)
+        self.assertEqual(allocator.dispatch_allowed_efforts(accounts['accounts']['codex']['bundles']['astra'], accounts), ('high',))
+        plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'medium'}), accounts)
+        self.assertEqual(plan['choice'], 'none')
 
     def test_a_second_account_reads_its_family_dispatch_table(self):
-        """2.2: claude-2 and opencode-2 skipped dispatch_efforts and stepped into levels the CLI does not offer."""
+        """2.2: claude-2 and opencode-2 read their family's dispatch_efforts table."""
         cases = (('claude-haiku-5-5', 'claude', 'claude-2'), ('claude-haiku-5-5', 'claude', 'claude_2'),
                  ('deepseek-v4.1-flash-free', 'opencode', 'opencode-2'))
         for model, account, provider in cases:
@@ -210,26 +181,23 @@ class StepDownRangeTests(RouterCase):
         self.assertEqual(allocator.dispatch_allowed_efforts({'provider': 'work', 'model': 'claude-haiku-5-5'}, accounts), ('high',))
 
     def test_pi_has_its_own_table(self):
-        """2.2: `pi` had no table, so it stepped along the raw curve."""
         self.assertIn('pi', self.accounts['dispatch_efforts'])
-        accounts = self.only('codex', x={'model': 'gpt-6-astra', 'effort': 'high', 'provider': 'pi'})
-        self.assertEqual(self.row(self.plan(self.task(LIVE), accounts), 'x')['bundle']['effort'], 'medium')
+        row = {'model': 'gpt-6-astra', 'effort': 'high', 'provider': 'pi'}
+        self.assertEqual(allocator.dispatch_allowed_efforts(row, self.accounts),
+                         tuple(self.accounts['dispatch_efforts']['pi']['gpt-6-astra']))
         unlisted = self.only('codex', x={'model': 'deepseek-v4.1-flash-free', 'effort': 'high', 'provider': 'pi'})
         self.assertEqual(self.row(self.plan(self.task(LIVE), unlisted), 'x')['bundle']['effort'], 'high')
 
-    def test_a_table_that_does_not_list_the_model_offers_no_step_down(self):
+    def test_a_table_that_does_not_list_the_model_offers_no_unlisted_effort(self):
         accounts = self.only('codex', x={'model': 'gpt-6-astra', 'effort': 'high', 'provider': 'codex'})
         del accounts['dispatch_efforts']['codex']['gpt-6-astra']
-        row = self.row(self.plan(self.task(LIVE), accounts), 'x')
-        self.assertEqual(row['bundle']['effort'], 'high')
-        self.assertTrue(row['excluded'])
+        self.assertEqual(allocator.dispatch_allowed_efforts(accounts['accounts']['codex']['bundles']['x'], accounts), ())
+        self.assertEqual(self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'medium'}), accounts)['choice'], 'none')
 
     def test_model_colon_effort_is_a_fixed_level(self):
         accounts = self.only('codex', x={'model': 'gpt-6-astra:high', 'provider': 'codex'})
         row = self.row(self.plan(self.task(LIVE), accounts), 'x')
         self.assertEqual((row['bundle']['model'], row['bundle']['effort']), ('gpt-6-astra', 'high'))
-        self.assertIsNone(row['bundle'].get('realtime_stepped_from'))
-        self.assertIn('gpt-6-astra@high: responsiveness', ' '.join(row['excluded']))
 
     def test_antigravity_does_not_step_down(self):
         accounts = self.only('antigravity', x={'model': 'claude-opus-5-5', 'effort': 'high', 'provider': 'antigravity-resilient'})
@@ -285,26 +253,15 @@ class UserPinTests(RouterCase):
         self.assertEqual(plan['decision']['blocked'], 'named_model_unavailable')
         self.assertTrue(plan['decision']['warnings'])
 
-    def test_a_named_model_alone_steps_down_to_a_level_that_clears_the_floor(self):
-        """3.3: naming only a model exempted its High and XHigh from the floor, at responsiveness 0."""
+    def test_a_named_model_alone_scores_its_written_rows_by_tool_operation(self):
         plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra'}))
-        self.assertEqual(plan['selected_bundle']['effort'], 'low')       # the best score among the levels that clear
-        self.assertFalse(any('responsiveness' in w for w in plan['decision'].get('warnings') or []))
-        xhigh = self.row(plan, 'astra_xhigh')
-        self.assertTrue(xhigh['excluded'], 'xhigh is not exempt from the floor for being named')
+        high, xhigh = self.row(plan, 'astra_high'), self.row(plan, 'astra_xhigh')
+        self.assertGreater(high['components']['fit'], xhigh['components']['fit'])
+        self.assertEqual(plan['selected_bundle']['effort'], 'high')
 
-    def test_a_named_model_too_slow_at_every_level_runs_at_its_fastest_with_a_warning(self):
-        accounts = copy.deepcopy(self.accounts)
-        accounts['effort_curves']['gpt-6-astra']['responsiveness'] = {'low': 0.3, 'medium': 0.2, 'high': 0.1, 'xhigh': 0.0}
-        plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra'}), accounts)
-        self.assertEqual(plan['selected_bundle']['effort'], 'low')
-        self.assertTrue(plan['selected_bundle']['named_fastest'])
-        self.assertTrue(any('responsiveness 0.30' in w for w in plan['decision']['warnings']), plan['decision'])
-
-    def test_model_and_effort_named_keep_their_level_and_only_warn(self):
+    def test_model_and_effort_named_keep_their_level(self):
         plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'high'}))
         self.assertEqual(plan['selected_bundle']['effort'], 'high')
-        self.assertTrue(any('responsiveness' in w for w in plan['decision']['warnings']))
 
     def test_a_family_name_never_launches_the_flagship(self):
         plan = self.plan(self.task(constraints={'model': 'gemini-2.5-pro'}))
@@ -415,16 +372,11 @@ class RecordConstraintTests(RouterCase):
                 self.assertRaisesRegex(ValueError, 'cooling down'):
             self.record(effort='high')
 
-    def test_a_slow_named_route_on_live_work_warns(self):
-        """3C-3: the plan's slow-pin warning never reached the record result."""
+    def test_a_named_route_on_live_work_keeps_its_level(self):
         result = self.record(task=self.task(LIVE), effort='xhigh')
-        self.assertTrue(any('responsiveness' in w for w in result.get('warnings', [])), result.get('warnings'))
         self.assertEqual(result['selected_bundle']['effort'], 'xhigh')
-
-    def test_a_named_model_on_live_work_steps_to_a_level_that_clears(self):
-        result = self.record(task=self.task(LIVE), model='gpt-6-astra', account='codex', provider='codex')
-        self.assertEqual(result['selected_bundle']['effort'], 'low')
-        self.assertEqual(result.get('warnings', []), [])
+        result_default = self.record(task=self.task(LIVE), model='gpt-6-astra', account='codex', provider='codex')
+        self.assertEqual(result_default['selected_bundle']['effort'], 'high')
 
     def test_the_router_comparison_stays_a_free_choice(self):
         result = self.record(task=self.task(), model='gpt-6-astra', account='codex', provider='codex', effort='high')

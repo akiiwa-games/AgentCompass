@@ -1794,7 +1794,7 @@ class RollTests(unittest.TestCase):
         review_task = dict(self.task, task_id='t-review', chain={'id': 'chain-impl-1', 'worker': {'agent_id': 'agent-impl', 'bundle': 'lab_sonnet55_high', 'read_only_review': False}}, profile={
             'work_kind': 'debug_review', 'reasoning_depth': 2, 'code_complexity': 0, 
             'needs_visual': False, 'needs_gui': False,
-            'local_only': True, 'realtime_loop': False, 'wants_fast': False, 'read_only_review': True,
+            'local_only': True, 'wants_fast': False, 'read_only_review': True,
             'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'reason': 'review'})
         review_dec = registry.issue({'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': self.bundle,
                                      'decision': {'action': 'start'}}, review_task, self.now)
@@ -3443,7 +3443,7 @@ class LiveModelCheckTests(unittest.TestCase):
             'needs': {'local_only': True},
             'profile': profile(work_kind='exploration_analysis', interaction_style='exploration', code_complexity=0,
                                access='read-only', local_only=True, expected_hours=0.5,
-                               axis_demand={'divergence': 3, 'global_rigor': 0, 'module_precision': 0, 'vision_tools': 0}),
+                               axis_demand={'divergence': 3, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0}),
         }
         self.live_providers = {
             'antigravity-resilient': {

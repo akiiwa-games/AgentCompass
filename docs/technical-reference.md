@@ -28,15 +28,18 @@ flowchart LR
 ```
 
 ```text
-fit     = demand-weighted mean over the demanded categories of min(score, target) - shortfall x max(0, target - score)
-target  = 0.8 x demand / 3                      (0.8 is the anchor model's score; demand is the classifier's 0..3)
-score N = fit + w_continuity x continuity + boost - quota_cost
+fit        = sum_a w_a * (min(z_a, t_a) - t1_a) / sum_a w_a   (in panel standard deviations; zero point t1_a = panel weakest)
+targets    = t1: panel minimum, t2: panel median, t3: anchor (claude-opus-5-5 at High = 0.0)
+continuity = max positive (t3 - t2) among highest-demand categories when coupling == "high", else 0
+score N    = fit + continuity + boost - quota_cost
 ```
 
-The classifier states how much the task needs (0-3) of divergence, global rigor, module precision and vision & tools. A
-model's four category scores come from public cited boards; a type score a model lacks is estimated through its tier (see
+The classifier states how much the task needs (0–3) of `divergence`, `coding`, `aesthetics` and `tool_operation` (`tool_operation`
+level 1 imposes no ability requirement; level 2 evaluates per-effort `responsiveness`; level 3 evaluates
+`min(responsiveness, image_recognition)` and requires image input). A model's category scores are panel standard scores (`z`)
+from public cited boards; a facet a model lacks is estimated from its same-series sibling or its `arena.ai` Overall tier fit (see
 [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). `quota_cost` is the quota economy: the part of the
-task's spend that lands over the recovery line of the account's quota window, priced in score units. Equal scores go to the
+task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. Equal scores go to the
 candidate on the earliest-expiring quota, then faster completion, then fewer USD.
 
 Hard gates run first: sign-in and credential health, host policy, modality (text-only models never get visual work),
@@ -186,7 +189,7 @@ The tray icon displays a status dot: **green** when core usage collection and al
   - **Ledger Replay**: Browse the last 30 router decisions and click any entry to replay its historical parameters against current live quota windows.
   - **Decision film**: A replayed decision plays as a short film (task → kind → routes → ranking → radar) that ends on the winner's name under the radar of the winner and the best-ranked other model (same-model routes share axis scores), with the five axis names on the radar. The radar's only backdrop is a hairline frame of full scale: the two shapes open from the centre, the winner last. Each model is a sheet of tinted glass: a vertical gradient of its hue, a denser rim, a highlight on the edges that face the light, and on the first sheet a few specks of light that twinkle until the film settles. The radar shows the two models' five values and nothing else; under it a strip names the two models and the task.
   - **Quota line** (third tab of the list card): for the replayed decision, each window is a small chart on its own clock: x is this period up to its reset, y is quota up to the period's capacity. The pale straight line is the quota line (the recovery line), and the thick line is actual usage rising up to now: green while it is under the quota line, red once it is over. The window's head says which: **Used first** under the line, **Held back** over it; it turns as the rising line crosses, and it ends as the state the decision saw, before this task. The line's colour, that word and the hover text read one and the same comparison. The usage line is solid where readings were recorded in this period and dotted when it is fitted from the period's start to the current usage; readings are display-only and the router's economics never read them. The window the chosen candidate draws from is lit and the task's spend continues its usage line in the accent colour; a task that runs past the reset is drawn up to the reset with the share of its spend that falls before it, and a mark on the reset edge says the rest belongs to the next period. Last, a dotted pace line runs from now to the reset corner, the pace that uses up what is left exactly at the reset. The snapshot is read field by field: a window whose usage or clock is not a number is left out, a capacity that is missing, zero or not a number is shown as unknown (plain usage line, no quota line, no state, no ratio), and a record the view cannot read at all never stops the rest of the decision from loading. At most four windows are shown: the chosen one always, then the other windows of its account, then the rest in recorded order; a note under the charts says how many are not shown or unreadable. The only words are window names, the two states and that note; hovering a chart gives the numbers, and a click replays. It plays on the film's clock and shows an empty state for decisions recorded without quota-line fields (`tray/quota_line.py` lists the snapshot fields it reads).
-  - **Radar Comparison**: Switch between **Decision Score (5D)** (the winner against the best-ranked other model on divergence, global rigor, module precision, vision & tools, and quota economy, as scored for this decision) and **Model DNA (5D)** (any two models on the same five axes from their static profiles; quota economy there is price economy `1 / (1 + usd_per_hour / 15)`, not live quota). Each model is a sheet of tinted glass inside a hairline frame of full scale, and the chart shows the two models' five values and nothing else. Hovering any vertex shows the formula and raw values.
+  - **Radar Comparison**: Switch between **Decision Score (5D)** (the winner against the best-ranked other model on divergence, coding, aesthetics, tool operation, and quota economy, mapped to `0..1` shares `(min(z, t3) - t1) / (t3 - t1)`) and **Model DNA (5D)** (any two models on the same five axes from their static profiles; quota economy there is price economy `1 − usd_per_hour / max_usd_per_hour`, not live quota). Each model is a sheet of tinted glass inside a hairline frame of full scale, and the chart shows the two models' five values and nothing else. Hovering any vertex shows the formula and raw values.
 - **Account Quotas & In-Flight Tasks**:
   - Live status badges (`Ready`, `Paused`, `Plugin Disabled`, `Blocked by Host Policy`), remaining percentage and API-equivalent USD per window, 3h/24h burn rates, reset countdowns, one-click quota refresh, and active worker sessions with their cumulative uncompressed context against the 2M-token rotation limit.
 - **Model Settings** — three tabs: **Models & Boost**, **Scoring & DNA**, and **System Options**.
@@ -291,10 +294,9 @@ python tray\updates.py update                      # Fast-forward pull, rebuild,
 ```
 
 ```powershell
-# Unit test suites
-python -m unittest discover -s skills/agent-compass/scripts -p "test_*.py"
-python -m unittest discover -s setup -p "test_*.py"
-python -m unittest discover -s skills/dot-subagent/scripts -p "test_*.py"
-python -m unittest discover -s tray -p "test_*.py"
-python -m unittest discover -s audit -p "test_*.py"
+# Hermetic pytest suites
+python -X utf8 -m pytest skills/agent-compass/scripts -q -p no:cacheprovider
+python -X utf8 -m pytest tray -q -p no:cacheprovider
+python -X utf8 -m pytest setup audit agentcompass -q -p no:cacheprovider
+python -X utf8 -m pytest skills/dot-subagent/scripts -q -p no:cacheprovider
 ```

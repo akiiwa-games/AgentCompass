@@ -504,10 +504,10 @@ def fitted(source, targets=(.3, .8, .8, .3)):
     """The same decision with the task's need recorded, and two models that differ on every axis."""
     source = copy.deepcopy(source)
     scores = {'alpha': (.7, .85, .9, .6), 'beta': (.95, .7, .75, .9), 'blocked': (.5, .5, .5, .5)}
-    keys = ('divergence', 'global_rigor', 'module_precision', 'vision_tools')
+    keys = ('divergence', 'coding', 'aesthetics', 'tool_operation')
     for item in source['ranking']:
         values = scores[item['bundle']['model']]
-        item['components'].update(dict(zip(('divergence', 'global_rigor', 'module_precision', 'vision_tools'), values)))
+        item['components'].update(dict(zip(keys, values)), **{f'share_{k}': v for k, v in zip(keys, values)})
         item['five_axis_fit'] = {key: dict(demand=1, score=value, target=target)
                                  for key, value, target in zip(keys, values, targets)}
     return source
@@ -542,8 +542,9 @@ def test_the_radar_is_two_sheets_of_glass_and_nothing_else():
     small = {'alpha': (.5, .6, .55, .4), 'beta': (.6, .45, .5, .6)}
     for item in source['ranking']:
         if item['bundle']['model'] in small:
-            item['components'].update(dict(zip(('divergence', 'global_rigor', 'module_precision', 'vision_tools'),
-                                               small[item['bundle']['model']])))
+            vals = small[item['bundle']['model']]
+            keys = ('divergence', 'coding', 'aesthetics', 'tool_operation')
+            item['components'].update(dict(zip(keys, vals)), **{f'share_{k}': v for k, v in zip(keys, vals)})
     scene = dt.scene_from_result(source)
     assert not hasattr(scene, 'need')
     renderer = dt.TheatreRenderer(scene, 630, 600, 1.5)

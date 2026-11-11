@@ -139,8 +139,9 @@ class FamilyRowTests(RecordCase):
     def test_a_family_level_unchecked_does_not_reach_the_flagship_in_prepare(self):
         fleet = self.only('claude', opus_high={'model': FLAGSHIP, 'effort': 'high', 'provider': 'claude'},
                           old={'model': FAMILY, 'effort': 'medium', 'provider': 'claude', 'disabled': True})
-        stepped = dict(allocator.bundles(fleet)['opus_high'], bundle_id='opus_high', effort='medium', realtime_stepped_from='high')
-        self.assertEqual(dispatch_registry.resolve_bundle(stepped, fleet, False, True)['effort'], 'medium')
+        pinned = dict(allocator.bundles(fleet)['opus_high'], id='opus_high@medium', bundle_id='opus_high@medium',
+                      effort='medium', pin_carrier='opus_high')
+        self.assertEqual(dispatch_registry.resolve_bundle(pinned, fleet)['effort'], 'medium')
 
     def test_a_worker_of_one_model_is_not_reused_for_the_other(self):
         same = roll.model_comparison(self.accounts)
@@ -204,39 +205,22 @@ class RecordPathTests(RecordCase):
 
 
 class BestLevelTests(RecordCase):
-    """M7, by the parent's ruling: the best level is the highest-scoring one that clears the floor, however the rows are written."""
+    """M7: a named effort carrier reaches prepare and resolves only within the launch contract."""
 
     def levels(self, model, *efforts, provider='codex', account='codex'):
         return self.only(account, **{e: {'model': model, 'effort': e, 'provider': provider} for e in efforts})
 
-    def test_the_same_model_gets_the_same_level_however_many_rows_it_has(self):
-        alone = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra'}), self.levels('gpt-6-astra', 'high'))
-        rows = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra'}), self.levels('gpt-6-astra', 'low', 'medium', 'high'))
-        self.assertEqual(alone['selected_bundle']['effort'], rows['selected_bundle']['effort'])
-
-    def test_the_winner_outscores_every_other_level_that_clears(self):
-        plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra'}), self.levels('gpt-6-astra', 'high'))
-        eligible = [c for c in plan['ranking'] if not c['excluded']]
-        self.assertGreater(len(eligible), 1)
-        self.assertEqual(plan['choice'], max(eligible, key=lambda c: c['score'])['id'])
-        floor = self.accounts['scoring']['responsiveness']['floor']
-        self.assertTrue(all(c['components']['responsiveness'] >= floor for c in eligible))
-
-    def test_prepare_accepts_any_level_that_clears_and_no_other(self):
+    def test_prepare_accepts_any_contract_level_via_pin_carrier_and_no_other(self):
         fleet = self.accounts
         row = allocator.bundles(fleet)['sol_high']
-        for effort, accepted in (('low', True), ('medium', True)):
+        for effort, accepted in (('low', True), ('medium', True), ('bogus', False)):
             with self.subTest(effort=effort):
-                stepped = dict(row, bundle_id='sol_high', effort=effort, realtime_stepped_from='high')
-                resolved = dispatch_registry.resolve_bundle(stepped, fleet, False, True)
+                pinned = dict(row, id=f'sol_high@{effort}', bundle_id=f'sol_high@{effort}', effort=effort, pin_carrier='sol_high')
+                resolved = dispatch_registry.resolve_bundle(pinned, fleet)
                 self.assertEqual(resolved is not None, accepted)
-        slow = copy.deepcopy(fleet)
-        slow['effort_curves'][row['model']]['responsiveness']['medium'] = 0.1
-        stepped = dict(row, bundle_id='sol_high', effort='medium', realtime_stepped_from='high')
-        self.assertIsNone(dispatch_registry.resolve_bundle(stepped, slow, False, True))
 
     def test_the_named_level_reaches_prepare(self):
-        task = self.task(LIVE, constraints={'model': 'gpt-6-astra'}, parent_agent_id='p', task_id='t')
+        task = self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'medium'}, parent_agent_id='p', task_id='t')
         fleet = self.levels('gpt-6-astra', 'high')
         plan = self.plan(task, fleet)
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory, \
@@ -245,30 +229,20 @@ class BestLevelTests(RecordCase):
             issued = dispatch_registry.issue(plan, task, now=NOW, path=db, allocation_task=task)
             prepared = dispatch_registry.prepare(issued['decision_id'], task, {'title': 'x', 'initialPrompt': 'go'},
                                                  self.usage, accounts=copy.deepcopy(fleet), now=NOW, path=db)
-        self.assertEqual(prepared['bundle']['effort'], plan['selected_bundle']['effort'])
-
-    def test_an_unnamed_row_still_takes_the_nearest_level_that_clears(self):
-        plan = self.plan(self.task(LIVE), self.levels('gpt-6-astra', 'high'))
-        self.assertEqual(self.row(plan, 'high')['bundle']['effort'], 'medium')
+        self.assertEqual(prepared['bundle']['effort'], 'medium')
 
 
 class MinorFindingTests(RecordCase):
-    def test_a_row_listing_its_efforts_passes_prepare(self):
-        """m1: the plan stepped to a listed level and prepare asked for a level the row does not offer."""
+    def test_a_row_listing_its_efforts_passes_prepare_only_for_listed_efforts(self):
+        """m1: prepare resolves a pin carrier only for efforts the row offers when unlisted in dispatch_efforts."""
         fleet = self.only('codex', astra={'model': 'gpt-6-astra', 'effort': 'high', 'provider': 'codex', 'efforts': ['low', 'high']})
-        plan = self.plan(self.task(LIVE), fleet)
+        fleet['dispatch_efforts']['codex'].pop('gpt-6-astra', None)
+        plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'low'}), fleet)
         self.assertEqual(plan['selected_bundle']['effort'], 'low')
-        self.assertEqual(dispatch_registry.resolve_bundle(dict(plan['selected_bundle']), fleet, False, True)['effort'], 'low')
-        stepped = dict(allocator.bundles(fleet)['astra'], bundle_id='astra', effort='medium', realtime_stepped_from='high')
-        self.assertIsNone(dispatch_registry.resolve_bundle(stepped, fleet, False, True))
-
-    def test_a_fixed_level_does_not_hold_back_its_siblings(self):
-        """m2: a row that cannot step sat below the other row and stopped it from stepping."""
-        fleet = self.only('codex', x={'model': 'gpt-6-astra:high', 'provider': 'codex'},
-                          y={'model': 'gpt-6-astra', 'effort': 'xhigh', 'provider': 'codex'})
-        plan = self.plan(self.task(LIVE), fleet)
-        self.assertEqual(plan['choice'], 'y')
-        self.assertEqual(plan['selected_bundle']['effort'], 'medium')
+        self.assertEqual(dispatch_registry.resolve_bundle(dict(plan['selected_bundle']), fleet)['effort'], 'low')
+        unlisted = dict(allocator.bundles(fleet)['astra'], id='astra@medium', bundle_id='astra@medium',
+                        effort='medium', pin_carrier='astra')
+        self.assertIsNone(dispatch_registry.resolve_bundle(unlisted, fleet))
 
     def test_validation_is_idempotent_for_any_reason(self):
         """m3: a cut at 300 characters could leave a trailing space, which the next pass removed."""
@@ -375,32 +349,24 @@ class PinIdentityTests(RecordCase):
 
 
 class ListedLevelTests(RecordCase):
-    """m7: a row listing its levels held back a sibling that could step, as a fixed level once did."""
+    """m7: a row listing its levels does not block a sibling from carrying a named effort."""
 
     X = {'model': 'gpt-6-astra', 'effort': 'high', 'efforts': ['high'], 'provider': 'codex'}
     Y = {'model': 'gpt-6-astra', 'effort': 'xhigh', 'provider': 'codex'}
 
-    def test_a_row_with_no_lower_level_does_not_hold_back_its_siblings(self):
-        for label, own in (('only its level', ['high']), ('one above', ['high', 'xhigh'])):
-            with self.subTest(label):
-                fleet = self.only('codex', x={**self.X, 'efforts': own}, y=self.Y)
-                plan = self.plan(self.task(LIVE), fleet)
-                self.assertEqual((plan['choice'], plan['selected_bundle']['effort']), ('y', 'medium'))
-                self.assertEqual(dispatch_registry.resolve_bundle(plan['selected_bundle'], fleet, False, True)['effort'], 'medium')
-
-    def test_a_row_with_a_lower_level_still_answers_for_the_model(self):
+    def test_a_row_with_a_lower_level_answers_for_that_named_level(self):
         fleet = self.only('codex', x={**self.X, 'efforts': ['medium', 'high']}, y=self.Y)
-        plan = self.plan(self.task(LIVE), fleet)
-        self.assertEqual((plan['choice'], plan['selected_bundle']['effort']), ('x', 'medium'))
+        plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'medium'}), fleet)
+        self.assertEqual((plan['choice'], plan['selected_bundle']['effort']), ('x@medium', 'medium'))
+        self.assertEqual(dispatch_registry.resolve_bundle(plan['selected_bundle'], fleet)['effort'], 'medium')
 
     def test_a_named_level_does_not_depend_on_the_order_of_the_rows(self):
-        for constraints, level in (({'model': 'gpt-6-astra'}, 'low'), ({'model': 'gpt-6-astra', 'effort': 'medium'}, 'medium')):
-            for order in (('x', 'y'), ('y', 'x')):
-                with self.subTest(constraints=constraints, order=order):
-                    fleet = self.only('codex', **{name: {'x': self.X, 'y': self.Y}[name] for name in order})
-                    plan = self.plan(self.task(LIVE, constraints=constraints), fleet)
-                    self.assertEqual(plan['choice'], f'y@{level}')
-                    self.assertEqual(dispatch_registry.resolve_bundle(plan['selected_bundle'], fleet, False, True)['effort'], level)
+        for order in (('x', 'y'), ('y', 'x')):
+            with self.subTest(order=order):
+                fleet = self.only('codex', **{name: {'x': self.X, 'y': self.Y}[name] for name in order})
+                plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'medium'}), fleet)
+                self.assertEqual(plan['choice'], 'y@medium')
+                self.assertEqual(dispatch_registry.resolve_bundle(plan['selected_bundle'], fleet)['effort'], 'medium')
 
 
 if __name__ == '__main__':

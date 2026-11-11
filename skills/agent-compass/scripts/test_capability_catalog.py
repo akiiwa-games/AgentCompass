@@ -19,8 +19,9 @@ class CatalogueTests(unittest.TestCase):
         self.five = {'models': {'custom-model': {
             'tier': {'value': 3.8, 'method': 'arena_overall'}, 'usd_per_hour': {'value': 12.5},
             'image_input': {'status': 'ok'},
-            'axes': {'divergence': {'value': 0.7, 'status': 'estimated'}, 'global_rigor': {'value': 0.8, 'status': 'measured'},
-                     'module_precision': {'value': 0.6, 'status': 'partial'}, 'vision_tools': {'status': 'missing'}}}}}
+            'axes': {'divergence': {'value': 0.7, 'status': 'estimated'}, 'coding': {'value': 0.8, 'status': 'measured'},
+                     'aesthetics': {'value': 0.6, 'status': 'partial', 'missing_facets': ['design']},
+                     'tool_operation': {'status': 'missing'}}}}}
 
     def test_the_route_policy_is_the_accounts_policy(self):
         before = deepcopy(self.accounts)

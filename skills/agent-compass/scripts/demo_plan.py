@@ -17,10 +17,10 @@ SAMPLE_DOCUMENT = {'task': {
     'profile': {
         'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
         'needs_visual': False, 'needs_gui': False,
-        'local_only': True, 'realtime_loop': False, 'wants_fast': False, 'read_only_review': False, 'access': 'write',
+        'local_only': True, 'wants_fast': False, 'read_only_review': False, 'access': 'write',
         'expected_hours': 1.5, 'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'engineering',
         'multi_task': False, 'task_count': '1',
-        'axis_demand': {'divergence': 1, 'global_rigor': 1, 'module_precision': 2, 'vision_tools': 0},
+        'axis_demand': {'divergence': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0},
     },
 }}
 

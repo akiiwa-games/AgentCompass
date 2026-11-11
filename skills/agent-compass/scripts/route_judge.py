@@ -84,12 +84,7 @@ SCORER_PROMPT = (
     '`complex_build_plan`), even if a local output path is named.\n'
     '2. `code_complexity`: 0 for ANY read-only code/diff/release review, audit, or diagnosis '
     '(even if saving a review report file to a specified path).\n'
-    '3. `realtime_loop`: `true` ONLY when the worker agent itself stays inside a live external system\'s continuous '
-    'observe-act loop across turns where turn latency hurts live results (personally playing/farming a game, live ticket/'
-    'flash-sale/course/appointment sniping, live order-book/API watching & trading, polling a live page/app/API to act '
-    'immediately, live-stream chat). `false` for ALL coding, UI design, bug fixing, optimization, diagnosis, or log '
-    'analysis—even on real-time/polling/game/dashboard/flash-sale features—and for one-off GUI clicks. Set `needs_gui` '
-    'by whether the worker operates a GUI (`true`) vs pure CLI/API/WebSocket (`false`).\n'
+    '3. `needs_gui`: `true` when the worker operates a GUI, `false` for pure CLI/API/WebSocket work.\n'
     '4. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a '
     'pre-reset quota sprint (`pre-reset sprint`, `before quota resets`, `重置前冲刺`) without negation (`do not use fast '
     'mode` -> `false`; runtime step adverbs like `click immediately` or ordinary quota mentions -> `false`).\n'
@@ -1315,7 +1310,6 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
                                        'criteria': [f'Level {i}: {text}.' for i, text in enumerate(levels)]}
     for name, instructions in JEV_NOUL_QUESTIONS.items():
         questions[name] = {'type': 'noul', 'instructions': instructions}
-    questions['realtime_loop'] = {'type': 'noul', 'instructions': allocator.REALTIME_LOOP_QUESTION}
     questions['wants_fast'] = {'type': 'noul', 'instructions': allocator.WANTS_FAST_QUESTION}
     questions['read_only_review'] = {'type': 'noul', 'instructions': allocator.READ_ONLY_REVIEW_QUESTION}
     questions['access'] = {'type': 'choice', 'instructions': allocator.ACCESS_QUESTION,
@@ -1367,7 +1361,7 @@ def parse_jev_response(response, allocator):
                 profile['expected_hours'] = table[choice][0]
             else:
                 profile['urgency'] = choice
-    for name in ('realtime_loop', 'wants_fast', 'read_only_review', 'multi_task'):
+    for name in ('wants_fast', 'read_only_review', 'multi_task'):
         profile[name] = float(field(name, 'noul')) >= 0.5
     profile['task_count'] = field('task_count', 'choice')
     access_ans = answers.get('access')
@@ -2015,21 +2009,6 @@ def match_bundle(allocator, accounts, args, include_disabled=False):
 NAMED_ROW_FIELDS = ('modeId', 'draws', 'launch_model', 'harness', 'billing')
 
 
-def named_effort_review(allocator, accounts, pin, task, usage, now, records):
-    """(effort, warnings) for a route the user named on realtime work: the plan on exactly that account and model,
-    so a named model chooses its level like any other candidate and a slow named effort is warned about."""
-    other = [bid for bid, b in allocator.bundles(accounts).items()
-             if b['account'] != pin.account or b['provider'] != pin.provider]
-    named = {'model': pin.model, **({'effort': pin.effort} if pin.effort else {})}
-    plan = allocator.plan({**task, 'constraints': named}, usage, now, unavailable=other, records=records)
-    decision = plan.get('decision') or {}
-    if plan.get('choice') == 'none':
-        return None, list(decision.get('warnings') or [])
-    row = next((c for c in plan['ranking'] if c['id'] == plan['choice']), {})
-    slow = (row.get('components') or {}).get('realtime_slow_pin_warning')
-    return (plan.get('selected_bundle') or {}).get('effort'), [slow] if slow else []
-
-
 def record_constraint(args, task=None, classified=None):
     """Log a route the caller is forcing. No judge is called; the allocator is run on the same task so the
     ledger shows whether the router would have chosen it and, if not, what the override cost.
@@ -2144,17 +2123,7 @@ def record_constraint(args, task=None, classified=None):
     if classified:
         # What is planned and reserved; the decision stays bound to the caller's task.
         task = {**classified['task'], **({'parent_agent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {})}
-    profile = task.get('profile') if isinstance(task.get('profile'), dict) else None
-    realtime = bool((task.get('needs') or {}).get('realtime_loop') or task.get('realtime_loop') or (profile or {}).get('realtime_loop'))
     records = None
-    if task and realtime:
-        records = read_ledger() + dispatch_flow.reservation_records(read_only=not LEDGER_WRITES)
-        try:
-            reviewed, warnings = named_effort_review(allocator, accounts, pin, task, usage, now, records)
-        except (ValueError, KeyError, TypeError):
-            reviewed, warnings = None, []
-        if reviewed and not pin.effort and reviewed != effort:
-            effort, chosen = reviewed, match_bundle(allocator, accounts, _with_effort(pin, reviewed))
     if effort is None and not sibling:
         effort = allocator.auto_bundles.HARNESS_DEFAULT_EFFORT.get(allocator.bundle_harness({'provider': args.provider, 'model': c_model}, args.account))
     base_b = allocator.bundles(accounts).get(chosen) or {}

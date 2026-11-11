@@ -32,14 +32,13 @@ Judging logic, consistency or correctness is `hard`. Wording, translation, summa
 | Run an agreed deployment or API sequence | `tool_execution` | `routine` |
 | Gather prices, versions or documentation from the web | `web_research` | `routine` |
 | Interpret a screenshot or chart | `visual_analysis` | `hard` |
-| Operate a live game, ticket/flash-sale page, order-book terminal, or App in a continuous observe-act loop | `computer_use` (`realtime_loop: true`) | `routine` / `hard` |
+| Operate a live game, ticket/flash-sale page, order-book terminal, or App in a continuous observe-act loop | `computer_use` / `tool_execution` (`tool_operation: 2..3`) | `routine` / `hard` |
 
 Work that changes kind midway is two tasks: an analysis followed by a fix is `exploration_analysis`, then
 `debug_review`.
 
-## `realtime_loop` Flag (Live Observe-Act Loops)
+## Live Observe-Act Loops (`tool_operation` Demand Levels 2–3)
 
-- **`realtime_loop: true`**: The worker itself must stay inside a running external system's observe-act loop across turns, where slow per-turn latency directly hurts the outcome.
-  - **Positive examples**: Operating a live game (dailies, dungeons, matches, AFK/auto-battle supervision); ticket/merchandise/course/appointment sniping or flash-sale grabbing; live order-book watching and order placement; polling a live webpage/App to click immediately when a target appears; live-stream bullet-chat interaction.
-  - **Counterexamples (`realtime_loop: false`)**: Writing, fixing, or debugging a ticket/game/automation script or bot (the script runs the fast loop, not the model); analyzing game/AFK/trading logs; fixing game automation code; a one-off GUI settings click.
-- **Interaction with `needs_gui` & `computer_use`**: The classifier determines `needs_gui`, `needs_visual`, and `local_only` independently from `realtime_loop` (`realtime_loop` does not auto-promote them, and explicit caller values always take precedence). When the live loop operates an interface (game, webpage, App, emulator, desktop window), the classifier sets `needs_gui: true` (`computer_use`); when the live loop runs over an API, CLI, or WebSocket without a GUI (e.g. API order-book watching), the classifier sets `realtime_loop: true, needs_gui: false` (`tool_execution`).
+- **`tool_operation = 2`**: Heavy tool or API orchestration, or the worker itself stays inside a running external system's observe-act loop across turns (an API order book, a CLI queue, a live text/chat feed) where slow per-turn latency (`responsiveness`) directly hurts the outcome.
+- **`tool_operation = 3`**: Must read images or screenshots inside the loop, or operate a desktop or browser GUI through screenshots (`responsiveness` and `image_recognition`, plus image-input modality).
+- **Counterexamples (`tool_operation <= 1`)**: Writing, fixing, or debugging a ticket/game/automation script or bot (the script runs the fast loop, not the model — this is `coding`); analyzing game/AFK/trading logs; fixing game automation code.

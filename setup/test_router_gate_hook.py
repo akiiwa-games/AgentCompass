@@ -1604,11 +1604,10 @@ class BoundDispatchGateTests(unittest.TestCase):
         self.task = {'parent_agent_id': 'parent-fixture', 'task_id': 'task-fixture',
                      'work_kind': 'general_implementation', 'expected_hours': 0.5, 'needs': {'local_only': True},
                      'profile': {'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 1,
-                                 'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
-                                 'wants_fast': False, 'read_only_review': False, 'access': 'write', 'expected_hours': 0.5,
+                                 'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False, 'access': 'write', 'expected_hours': 0.5,
                                  'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'engineering',
                                  'multi_task': False, 'task_count': '1',
-                                 'axis_demand': {'divergence': 0, 'global_rigor': 1, 'module_precision': 1, 'vision_tools': 0}}}
+                                 'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 0}}}
         self.now = dt.datetime.now(UTC)
         decision = dispatch_registry.issue({'choice': 'argon_high', 'selected_bundle': bundle}, self.task, self.now)
         self.row = dispatch_registry.prepare(decision['decision_id'], self.task,

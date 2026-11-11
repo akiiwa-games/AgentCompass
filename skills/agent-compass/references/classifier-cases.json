@@ -23,8 +23,7 @@
     "wants_fast": "CONTRAST RULE for `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a pre-reset quota sprint (`pre-reset sprint`, `before quota resets`, `重置前冲刺`) without negation. `false` when negated (`Do NOT use fast mode`, `no rush`, `不用开启fast`), when fast/immediate only describes an in-task runtime step (`click Save immediately`), when merely mentioning quota/reset without requesting fast execution, or when unmentioned.",
     "reasoning_depth": "`1` (Routine): explicit command/checklist/runbook, trivial config tweak, or mechanical bulk edit; `2` (Standard/Hard): single/multi-module feature, bug diagnosis/fix, read-only PR review, or structured research; `3` (Coupled): cross-module refactor with strict invariants, deep concurrency forensics, or migration plan in an existing system; `4` (Frontier): whole-product/system architecture or detailed game-system/economy/combat math from scratch, ultra-low-latency network design, or formal mathematical proof/critique.",
     "multi_task_vs_single_task": "`multi_task: true` ONLY when bundling 2+ independent deliverables assignable to separate workers in parallel. Sequential steps (`diagnose -> fix -> test -> report`) or one report covering sub-questions is ONE task (`multi_task: false, task_count: 1`).",
-    "realtime_loop": "`realtime_loop: true` ONLY when the worker agent itself stays inside a live external system continuous observe-act loop across turns where turn latency degrades live results (personally playing/farming a live game, live ticket/course/appointment/flash-sale sniping, live order-book/API watching & trading, polling a live page/App/API to act immediately, live-stream chat). Set `needs_gui` by whether the loop uses a GUI (`computer_use`) vs pure CLI/API (`tool_execution`). `realtime_loop: false` for ALL coding, frontend/backend work, bug fixes, UI design, optimization, diagnosis, log analysis, or one-shot GUI clicks—even on real-time/polling/game/dashboard/flash-sale features.",
-    "axis_demand": "Level 0..3 per category: how much THIS task needs it. divergence: 0 known spec or checklist, 1 small judgment calls, 2 several hypotheses or options to compare, 3 open-ended creative design. global_rigor: 0 trivial and mechanically checked, 1 one module or a test-verified result, 2 several coupled parts or claims no test checks (review, audit, metrics), 3 whole-system or long multi-stage work, or a costly irreversible defect. module_precision: production code the worker writes, 0 none .. 3 multi-module, concurrency, protocol. vision_tools: 0 text and code only, 1 heavy tool/API orchestration, 2 reads images or screenshots, 3 operates a GUI.",
+    "axis_demand": "Level 0..3 per category: how much THIS task needs it. divergence: 0 a known spec or checklist, 1 small judgment calls, 2 several options to compare or a research/data-analysis question to investigate and synthesize, 3 open-ended creative writing, open research synthesis, or a first-principles redesign. coding: 0 no code read or written, 1 a small script or config change or a test-verified result, 2 a production module with its tests or a review/audit of one, 3 coupled modules, concurrency, protocol or core-library work, a whole-system review, or a costly irreversible defect. aesthetics: 0 no visual output, 1 tidy formatting only, 2 a user-facing screen/page/chart/document whose look matters, 3 design-led work (a new interface or interaction, a visual identity, a 3D scene). tool_operation: 0 reads files and runs a few shell commands, 1 routine tool or API calls, 2 heavy tool/API orchestration or the worker itself stays inside a live external system (game, ticket queue, order book, live page or chat) where slow turns hurt, 3 reads images or screenshots inside the loop or operates a GUI. Writing or fixing software about real-time systems is coding, not a live loop.",
     "expected_hours": "Measured on this host: agents finish a review, investigation, multi-file fix or runbook brief in about 0.3h (middle half 0.2-0.6) and a feature across 8+ files in 1-3h. This overrides the schema's generic hour examples: a multi-file feature or investigation is 0.3-0.6h, not 1-3. Brief length, headings and boilerplate add nothing."
   },
   "calibration_cases": [
@@ -44,14 +43,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -71,14 +69,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 2
+          "coding": 0,
+          "aesthetics": 2,
+          "tool_operation": 3
         }
       }
     },
@@ -98,14 +95,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 3,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 1
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     },
@@ -125,14 +121,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
-          "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 1
+          "divergence": 2,
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     },
@@ -152,14 +147,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -179,14 +173,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 3,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -206,14 +199,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -233,14 +225,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 1,
-          "vision_tools": 0
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     },
@@ -260,14 +251,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": true,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -287,14 +277,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 2,
-          "global_rigor": 3,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -314,14 +303,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 3,
-          "module_precision": 3,
-          "vision_tools": 0
+          "coding": 3,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -341,14 +329,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 3,
-          "global_rigor": 3,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -368,14 +355,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 0,
-          "module_precision": 0,
-          "vision_tools": 1
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     },
@@ -395,14 +381,13 @@
         "urgency": "unknown",
         "multi_task": true,
         "task_count": "2",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -422,14 +407,13 @@
         "work_kind": "complex_build_plan",
         "reasoning_depth": 4,
         "expected_hours": 2.5,
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 3,
-          "global_rigor": 3,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -449,14 +433,13 @@
         "work_kind": "direction_reasoning",
         "reasoning_depth": 4,
         "expected_hours": 2.0,
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 3,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -476,14 +459,13 @@
         "work_kind": "complex_build_plan",
         "reasoning_depth": 4,
         "expected_hours": 2.0,
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 2,
-          "global_rigor": 3,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -498,7 +480,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 2.5,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -508,9 +489,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -525,7 +506,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 2.0,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -535,9 +515,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -552,7 +532,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 0.5,
         "hours_confidence": "high",
         "urgency": "high",
@@ -562,9 +541,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -579,7 +558,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 0.3,
         "hours_confidence": "high",
         "urgency": "high",
@@ -589,9 +567,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -606,7 +584,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 1.0,
         "hours_confidence": "medium",
         "urgency": "high",
@@ -616,9 +593,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 3,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -633,7 +610,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 0.5,
         "hours_confidence": "medium",
         "urgency": "high",
@@ -643,9 +619,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -660,7 +636,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 1.0,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -670,9 +645,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -687,7 +662,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 0.5,
         "hours_confidence": "high",
         "urgency": "high",
@@ -697,9 +671,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -714,7 +688,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.2,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -724,9 +697,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -741,7 +714,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -751,9 +723,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -768,7 +740,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -778,9 +749,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -795,7 +766,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.2,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -804,10 +774,10 @@
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
-          "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 0
+          "divergence": 2,
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -822,7 +792,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -832,9 +801,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 2,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -849,7 +818,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -859,9 +827,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -876,7 +844,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.15,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -886,9 +853,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -903,7 +870,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -913,9 +879,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -930,7 +896,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 0.7,
         "hours_confidence": "medium",
         "urgency": "high",
@@ -940,9 +905,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 3,
-          "module_precision": 0,
-          "vision_tools": 1
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 2
         }
       }
     },
@@ -957,7 +922,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": true,
         "expected_hours": 0.35,
         "hours_confidence": "high",
         "urgency": "high",
@@ -967,9 +931,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 1
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 2
         }
       }
     },
@@ -984,7 +948,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -994,9 +957,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1011,7 +974,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -1021,9 +983,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1038,7 +1000,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.4,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -1048,9 +1009,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 2,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 3,
+          "tool_operation": 0
         }
       }
     },
@@ -1065,7 +1026,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -1075,9 +1035,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 2,
+          "tool_operation": 0
         }
       }
     },
@@ -1092,7 +1052,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.35,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -1102,9 +1061,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 2,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1119,7 +1078,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -1129,9 +1087,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 2,
-          "global_rigor": 1,
-          "module_precision": 1,
-          "vision_tools": 0
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1146,7 +1104,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.1,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -1156,9 +1113,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -1173,7 +1130,6 @@
         "needs_visual": true,
         "needs_gui": true,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.1,
         "hours_confidence": "high",
         "urgency": "unknown",
@@ -1183,9 +1139,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 3
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 3
         }
       }
     },
@@ -1200,7 +1156,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -1210,9 +1165,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 2,
-          "global_rigor": 1,
-          "module_precision": 1,
-          "vision_tools": 0
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1227,7 +1182,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -1237,9 +1191,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 2,
+          "tool_operation": 0
         }
       }
     },
@@ -1254,7 +1208,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.3,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -1264,9 +1217,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 2,
+          "tool_operation": 0
         }
       }
     },
@@ -1281,7 +1234,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "expected_hours": 0.35,
         "hours_confidence": "medium",
         "urgency": "unknown",
@@ -1291,9 +1243,9 @@
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 2,
+          "tool_operation": 0
         }
       }
     },
@@ -1308,7 +1260,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "wants_fast": true,
         "read_only_review": false,
         "expected_hours": 0.3,
@@ -1318,9 +1269,9 @@
         "task_count": "1",
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1335,7 +1286,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "expected_hours": 0.3,
@@ -1345,9 +1295,9 @@
         "task_count": "1",
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1362,7 +1312,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": true,
         "expected_hours": 0.2,
@@ -1372,9 +1321,9 @@
         "task_count": "1",
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1389,7 +1338,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "expected_hours": 0.3,
@@ -1399,9 +1347,9 @@
         "task_count": "1",
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1416,7 +1364,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "wants_fast": true,
         "read_only_review": false,
         "expected_hours": 0.2,
@@ -1426,9 +1373,9 @@
         "task_count": "1",
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1443,7 +1390,6 @@
         "needs_visual": false,
         "needs_gui": false,
         "local_only": true,
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "expected_hours": 0.15,
@@ -1453,9 +1399,9 @@
         "task_count": "1",
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 0,
-          "module_precision": 1,
-          "vision_tools": 0
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1475,14 +1421,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": true,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1502,14 +1447,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1529,14 +1473,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 1
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     },
@@ -1556,14 +1499,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 3,
-          "vision_tools": 0
+          "coding": 3,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1583,14 +1525,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 2,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1610,14 +1551,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 1,
-          "module_precision": 2,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1637,14 +1577,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 0,
-          "vision_tools": 1
+          "coding": 0,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     },
@@ -1664,14 +1603,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": true,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 0
+          "coding": 2,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1691,14 +1629,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 1
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     },
@@ -1718,14 +1655,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 1,
-          "vision_tools": 0
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 0
         }
       }
     },
@@ -1745,14 +1681,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 1,
-          "vision_tools": 1
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     },
@@ -1772,14 +1707,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 0,
-          "global_rigor": 1,
-          "module_precision": 1,
-          "vision_tools": 1
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     },
@@ -1799,14 +1733,13 @@
         "urgency": "unknown",
         "multi_task": false,
         "task_count": "1",
-        "realtime_loop": false,
         "wants_fast": false,
         "read_only_review": false,
         "axis_demand": {
           "divergence": 1,
-          "global_rigor": 2,
-          "module_precision": 0,
-          "vision_tools": 1
+          "coding": 1,
+          "aesthetics": 0,
+          "tool_operation": 1
         }
       }
     }

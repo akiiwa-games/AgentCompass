@@ -95,9 +95,9 @@ class ScorerServer:
                 is_rt = "REALTIME-LOOP" in user
                 profile = {"multi_task": False, "task_count": "1", "work_kind": "computer_use" if is_rt else "general_implementation",
                            "reasoning_depth": 2, "code_complexity": 0 if is_rt else 1,
-                           "axis_demand": {"divergence": 1, "global_rigor": 1, "module_precision": 0 if is_rt else 2, "vision_tools": 3 if is_rt else 0},
+                           "axis_demand": {"divergence": 0 if is_rt else 1, "coding": 0 if is_rt else 2, "aesthetics": 0, "tool_operation": 3 if is_rt else 0},
                            "needs_visual": is_rt, "needs_gui": is_rt,
-                           "local_only": is_rt, "realtime_loop": is_rt, "wants_fast": False, "read_only_review": False,
+                           "local_only": is_rt, "wants_fast": False, "read_only_review": False,
                            "access": "read-only" if is_rt else "write", "expected_hours": 0.5, "hours_confidence": "medium",
                            "urgency": "normal", "interaction_style": "engineering",
                            "reason": "fixture classification of a small bounded edit"}
@@ -434,24 +434,23 @@ def step_accounts_and_usage(z: Zero):
     result = z.call(op, "scorer", "--action", "test")
     op.check("scorer test reaches the fixture model", result.returncode == 0 and len(z.scorer.requests) > before, result.stdout[-300:] + result.stderr[-300:])
 
-    op = run.operation("fresh install responsiveness", "from-zero install carries responsiveness policy/capabilities and scores realtime_loop tasks without local speed state")
+    op = run.operation("fresh install tool_operation", "from-zero install carries four-category scores/targets and scores live GUI loop tasks without local speed state")
     rt_input = z.work / "realtime_task.json"
     rt_input.write_text(json.dumps({
         "task": {
             "objective": "REALTIME-LOOP: Keep watching the live game emulator window in a continuous loop and click immediately when the match starts",
             "expected_hours": 0.5,
-            "realtime_loop": True,
         }
     }), encoding="utf-8")
     rt_res = z.call(op, "plan", "--dry-run", "--input", str(rt_input))
     rt_plan = parse(rt_res.stdout) or {}
     rt_dec = rt_plan.get("decision") or {}
     rt_ranking = rt_plan.get("ranking") or []
-    has_resp_comp = any(isinstance((c.get("components") or {}).get("responsiveness"), (int, float)) for c in rt_ranking)
-    op.check("from-zero plan on a realtime_loop task exposes responsiveness on candidates and decision",
-             rt_res.returncode == 0 and (rt_dec.get("task") or {}).get("realtime_loop") is True
-             and rt_dec.get("responsiveness") is not None and has_resp_comp,
-             {"choice": rt_plan.get("choice"), "responsiveness": rt_dec.get("responsiveness"), "task": rt_dec.get("task")})
+    has_tool_comp = any(isinstance((c.get("components") or {}).get("tool_operation"), (int, float)) for c in rt_ranking)
+    op.check("from-zero plan on a live GUI loop task exposes tool_operation on candidates and decision",
+             rt_res.returncode == 0 and ((rt_dec.get("task") or {}).get("axis_demand") or {}).get("tool_operation") == 3
+             and has_tool_comp,
+             {"choice": rt_plan.get("choice"), "task": rt_dec.get("task")})
 
 
 def check_cli_worker(z: Zero, op, tag: str, result, scenario: str, expect_exit: int | None):

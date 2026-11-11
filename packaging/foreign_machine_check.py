@@ -175,8 +175,7 @@ class ForeignFixtureServer:
                     profile = {
                         "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
-                        "axis_demand": {"divergence": 1, "global_rigor": 1, "module_precision": 2, "vision_tools": 0}, "realtime_loop": False,
-                        "needs_visual": False, "needs_gui": False, "local_only": True, "expected_hours": 0.5,
+                        "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False, "local_only": True, "expected_hours": 0.5,
                         "hours_confidence": "medium", "urgency": "normal", "interaction_style": "engineering",
                         "reason": "foreign machine fixture classification",
                     }
@@ -557,24 +556,21 @@ def verify_f02_fleet_parity(ctx: dict):
         ("bounded_coding", {
             "objective": "Fix off-by-one slice in parser.py and add a unit test.",
             "work_kind": "general_implementation", "expected_hours": 0.5,
-            "profile": {"reasoning_depth": 2, "code_complexity": 2, "axis_demand": {"divergence": 1, "global_rigor": 1, "module_precision": 2, "vision_tools": 0}, "realtime_loop": False,
-                        "needs_visual": False, "needs_gui": False,
+            "profile": {"reasoning_depth": 2, "code_complexity": 2, "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False,
                         "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "reason": "bounded coding"},
         }),
         ("deep_debugging", {
             "objective": "Diagnose race condition across worker pool shutdown and lock handoff.",
             "work_kind": "debug_review", "expected_hours": 1.5,
-            "profile": {"reasoning_depth": 4, "code_complexity": 3, "axis_demand": {"divergence": 2, "global_rigor": 1, "module_precision": 2, "vision_tools": 0}, "realtime_loop": False,
-                        "needs_visual": False, "needs_gui": False,
+            "profile": {"reasoning_depth": 4, "code_complexity": 3, "axis_demand": {"divergence": 2, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False,
                         "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "reason": "deep debugging"},
         }),
         ("frontend_visual", {
             "objective": "Design and implement responsive quota cards with hover breakdown.",
             "work_kind": "frontend_implementation", "expected_hours": 1.0,
-            "profile": {"reasoning_depth": 3, "code_complexity": 2, "axis_demand": {"divergence": 3, "global_rigor": 1, "module_precision": 2, "vision_tools": 2}, "realtime_loop": False,
-                        "needs_visual": True, "needs_gui": False,
+            "profile": {"reasoning_depth": 3, "code_complexity": 2, "axis_demand": {"divergence": 3, "coding": 2, "aesthetics": 0, "tool_operation": 3}, "needs_visual": True, "needs_gui": False,
                         "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                         "reason": "frontend UI"},
         }),
@@ -746,8 +742,7 @@ def verify_f04_quota_gate_scope_and_twins(ctx: dict):
     task_file.write_text(json.dumps({"task": {
         "objective": "Implement retry backoff in transport.py and verify edge cases.",
         "work_kind": "general_implementation", "expected_hours": 1.0,
-        "profile": {"reasoning_depth": 3, "code_complexity": 3, "axis_demand": {"divergence": 1, "global_rigor": 1, "module_precision": 2, "vision_tools": 0}, "realtime_loop": False,
-                    "needs_visual": False, "needs_gui": False,
+        "profile": {"reasoning_depth": 3, "code_complexity": 3, "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False,
                     "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
                     "reason": "verify no twin pi bundles and agy 3p capacity"},
     }}), encoding="utf-8")

@@ -1,15 +1,18 @@
-"""Deterministic worker allocation: capability, task fit, continuity with the chain's existing worker, and the
-opportunity cost of the quota the work would use.
+"""Deterministic worker allocation: capability gates, task fit across the four R2 capability categories
+(`divergence`, `coding`, `aesthetics`, `tool_operation`), continuity with a coupled chain's existing worker,
+and the opportunity cost of the quota the work would use.
 
-No model is involved. Every number that drives a choice is in references/accounts.json or
-references/model-capabilities.json and is returned in the per-candidate breakdown, so a surprising
-choice can be traced to the input that caused it.
+Scores are panel standard deviations (`z = (x - x_anchor) / sd_panel`, anchor `claude-opus-5-5` at High = 0) from
+`references/five-axis-scores.json`. In `five_axis_fit`, each demanded category's zero point is its level-1 target `t1`
+(the panel's weakest model), level 2 targets the panel median `t2`, and level 3 targets the anchor `t3`:
+`fit = sum_a w_a * (min(z_a, t_a) - t1_a) / sum_a w_a` (scores below `t1_a` may go below zero; nothing above `t_a`
+adds extra credit, and economy outside alternatives require positive fit above zero). Every number that drives a choice
+lives in `references/accounts.json` or `references/five-axis-scores.json` and is returned in the per-candidate breakdown.
 """
 
 from datetime import datetime, timedelta, timezone
 import json
 import math
-from math import isnan
 import os
 from pathlib import Path
 import re
@@ -696,14 +699,6 @@ def model_spec(accounts, model):
     return value if isinstance(value, dict) else {}
 
 
-def model_curves(accounts, model):
-    """This name's `effort_curves` row. A family guess has none: the flagship's speed and curve are not measured on it."""
-    resolved = resolve_model(model, accounts)
-    if resolved['source'] not in DIRECT_SOURCES:
-        return {}
-    return (accounts.get('effort_curves') or {}).get(resolved['key']) or {}
-
-
 def model_leaf(model):
     return split_model_effort(model)[0].rsplit('/', 1)[-1]
 
@@ -777,17 +772,7 @@ def bundles(accounts):
 
 INTERACTION_STYLES = ('engineering', 'exploration', 'text_only', 'advisory')
 PROFILE_INTEGERS = {'reasoning_depth': (1, 4), 'code_complexity': (0, 3)}
-PROFILE_FLAGS = ('needs_visual', 'needs_gui', 'local_only', 'realtime_loop', 'wants_fast', 'read_only_review')
-REALTIME_LOOP_QUESTION = (
-    'True ONLY when the worker agent itself must stay inside a running external system\'s continuous observe-act loop '
-    'across turns where slow per-turn model latency directly degrades the live outcome (e.g. personally playing a live '
-    'game / dailies / dungeons / AFK loop, sniping tickets / courses / appointments / flash sales live, watching a live '
-    'order book or API stream and placing orders in real time, polling a live page / app / API to act immediately when a '
-    'state appears, interacting with live-stream chat). False for ALL software engineering, design, debugging, or analysis '
-    'tasks—even when the subject matter is real-time, polling, games, dashboards, or flash sales (e.g. writing or fixing a '
-    'ticket/game/automation script or bot, implementing real-time page refresh or message push, fixing page polling logic, '
-    'designing a live trading dashboard frontend, diagnosing client loop waits or refresh latency, adding a countdown modal '
-    'or live chat component, fixing flash-sale page CSS, analyzing game/AFK logs, or a one-off GUI click/setting toggle).')
+PROFILE_FLAGS = ('needs_visual', 'needs_gui', 'local_only', 'wants_fast', 'read_only_review')
 WANTS_FAST_QUESTION = (
     'True ONLY when the assignment affirmatively requests fast mode, priority service tier, urgent/ASAP turnaround, '
     'or a pre-reset quota sprint (e.g. "pre-reset sprint", "before quota resets", "重置前冲刺") for the task itself, '
@@ -847,7 +832,6 @@ TASK_PROFILE_SCHEMA = {
             'environment. False when all required inputs are inlined in the prompt or fetched from the public web '
             '(web_research, self_contained_code, text_in_text_out, direction_reasoning, complex_build_plan)—even if the '
             'brief has a workspace header or names a local target path where the finished output will be saved.')},
-        'realtime_loop': {'type': 'boolean', 'description': REALTIME_LOOP_QUESTION},
         'wants_fast': {'type': 'boolean', 'description': WANTS_FAST_QUESTION},
         'read_only_review': {'type': 'boolean', 'description': READ_ONLY_REVIEW_QUESTION},
         'access': {'type': 'string', 'enum': list(ACCESS_LEVELS), 'description': ACCESS_QUESTION},
@@ -1027,153 +1011,6 @@ def task_kind(task, capabilities, policy=None):
     return 'other_or_mixed'
 
 
-RESPONSIVENESS_DEFAULTS = {
-    'floor': 0.50,
-    'default': 0.52,
-    'fast_turn_seconds': 4.0,
-    'slow_turn_seconds': 45.0,
-    'output_tokens_per_turn': 400,
-    'harness_overhead': {
-        'default': 1.0,
-        'antigravity': 1.0,
-        'antigravity-resilient': 1.0,
-        'codex': 1.0,
-        'claude': 1.0,
-        'pi': 1.0,
-        'opencode': 1.0,
-        'grok': 1.0,
-    },
-    'local_telemetry': {
-        'min_samples': 20,
-        'max_blend': 0.3,
-        'max_shift': 0.15,
-    },
-}
-
-REALTIME_EFFORT_ORDER = ('none', 'minimal', 'default', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
-
-
-def _effort_rank(effort):
-    eff = str(effort or 'high')
-    return REALTIME_EFFORT_ORDER.index(eff) if eff in REALTIME_EFFORT_ORDER else REALTIME_EFFORT_ORDER.index('high')
-
-
-def responsiveness_config(policy):
-    """Merged `scoring.responsiveness` policy with defaults."""
-    cfg = {
-        **RESPONSIVENESS_DEFAULTS,
-        'harness_overhead': dict(RESPONSIVENESS_DEFAULTS['harness_overhead']),
-        'local_telemetry': dict(RESPONSIVENESS_DEFAULTS['local_telemetry']),
-    }
-    own = (policy or {}).get('responsiveness') if isinstance((policy or {}).get('responsiveness'), dict) else {}
-    for key, value in own.items():
-        if key in ('harness_overhead', 'local_telemetry') and isinstance(value, dict):
-            cfg[key].update(value)
-        elif key in cfg or key in ('basis', 'reasoning_tokens_by_effort'):
-            cfg[key] = value
-    return cfg
-
-
-def harness_overhead_multiplier(harness, policy=None):
-    """Per-turn CLI harness overhead coefficient (e.g. antigravity/codex/claude wrapper & streaming overhead)."""
-    table = responsiveness_config(policy).get('harness_overhead') or {}
-    if harness and isinstance(table.get(harness), (int, float)) and not isinstance(table.get(harness), bool):
-        return max(0.1, float(table[harness]))
-    default = table.get('default', 1.0)
-    return max(0.1, float(default) if isinstance(default, (int, float)) and not isinstance(default, bool) else 1.0)
-
-
-def compute_turn_seconds(ttft_s, output_tps, effort='high', reasoning_tokens=None, output_tokens=None,
-                         harness=None, policy=None):
-    """Estimated seconds per live-loop turn: `T_turn = (ttft_s + output_tokens / output_tps) * harness_overhead`.
-
-    Artificial Analysis `ttft_s` (`headline.timeToFirstAnswerToken`) already includes single-turn thinking time;
-    `reasoning_tokens` is a multi-turn benchmark cumulative total and is never added to `ttft_s`."""
-    del effort, reasoning_tokens
-    cfg = responsiveness_config(policy)
-    if output_tokens is None:
-        output_tokens = float(cfg.get('output_tokens_per_turn', 400))
-    tps = max(1e-6, float(output_tps))
-    base_turn = max(0.0, float(ttft_s)) + max(0.0, float(output_tokens)) / tps
-    return base_turn * harness_overhead_multiplier(harness, policy)
-
-
-def turn_seconds_to_responsiveness(turn_seconds, policy=None):
-    """Map per-turn duration in seconds onto 0..1 using `[fast_turn_seconds -> 1.0, slow_turn_seconds -> 0.0]`."""
-    cfg = responsiveness_config(policy)
-    fast = float(cfg.get('fast_turn_seconds', 4.0))
-    slow = max(fast + 1e-6, float(cfg.get('slow_turn_seconds', 45.0)))
-    return round(clamp((slow - float(turn_seconds)) / (slow - fast), 0.0, 1.0), 4)
-
-
-def speed_telemetry_path(state_dir=None):
-    base = Path(state_dir).expanduser() if state_dir else public_data.state_dir()
-    return base / 'speed-telemetry.json'
-
-
-def local_speed_telemetry(model, effort, base_responsiveness, policy=None, state_dir=None):
-    """Optional local speed shrinkage once local samples reach `min_samples` (bounded by `max_blend` and `max_shift`).
-    Missing or low-sample local telemetry leaves `base_responsiveness` untouched."""
-    path = speed_telemetry_path(state_dir)
-    try:
-        if not path.is_file():
-            return base_responsiveness, False
-        doc = json.loads(path.read_text(encoding='utf-8-sig'))
-    except (OSError, ValueError):
-        return base_responsiveness, False
-    models = doc.get('models') if isinstance(doc, dict) else None
-    names = [model] if isinstance(model, str) else list(model or ())
-    row = next((models[name] for name in names if isinstance(models.get(name), dict)), None) if isinstance(models, dict) else None
-    if not isinstance(row, dict):
-        return base_responsiveness, False
-    by_effort = row.get('by_effort') if isinstance(row.get('by_effort'), dict) else {}
-    target = by_effort.get(effort) if isinstance(by_effort.get(effort), dict) else row
-    samples = target.get('samples', 0)
-    if isinstance(samples, bool) or not isinstance(samples, (int, float)):
-        return base_responsiveness, False
-    cfg = responsiveness_config(policy).get('local_telemetry') or {}
-    min_samples = max(1, int(cfg.get('min_samples', 20)))
-    if samples < min_samples:
-        return base_responsiveness, False
-    local_resp = target.get('responsiveness')
-    if isinstance(local_resp, bool) or not isinstance(local_resp, (int, float)):
-        turn_s = target.get('median_turn_seconds', target.get('turn_seconds'))
-        if isinstance(turn_s, bool) or not isinstance(turn_s, (int, float)):
-            return base_responsiveness, False
-        local_resp = turn_seconds_to_responsiveness(float(turn_s), policy)
-    local_resp = clamp(float(local_resp), 0.0, 1.0)
-    max_blend = clamp(float(cfg.get('max_blend', 0.3)), 0.0, 1.0)
-    max_shift = clamp(float(cfg.get('max_shift', 0.15)), 0.0, 1.0)
-    blend = min(max_blend, max_blend * min(1.0, float(samples) / float(min_samples * 2)))
-    delta = clamp(blend * (local_resp - base_responsiveness), -max_shift, max_shift)
-    return round(clamp(base_responsiveness + delta, 0.0, 1.0), 4), True
-
-
-def _lookup_curve_responsiveness(curves_resp, effort, default_effort='high'):
-    if not isinstance(curves_resp, dict) or not curves_resp:
-        return None
-    eff = str(effort or default_effort or 'high')
-    if eff in curves_resp:
-        val = curves_resp.get(eff)
-        if isinstance(val, (int, float)) and not isinstance(val, bool) and not isnan(float(val)):
-            return float(val)
-    if len(curves_resp) == 1:
-        only_val = next(iter(curves_resp.values()))
-        if isinstance(only_val, (int, float)) and not isinstance(only_val, bool) and not isnan(float(only_val)):
-            return float(only_val)
-    if eff in ('high', 'xhigh', 'max', 'ultra'):
-        fallbacks = ('high', 'default', 'max', 'xhigh')
-    elif eff in ('none', 'minimal', 'low', 'default'):
-        fallbacks = ('low', 'none', 'default', 'medium')
-    else:
-        fallbacks = ('medium', 'low', 'default', 'none', 'high')
-    for fb in fallbacks:
-        val = curves_resp.get(fb)
-        if isinstance(val, (int, float)) and not isinstance(val, bool) and not isnan(float(val)):
-            return float(val)
-    return None
-
-
 def dispatch_table(provider, accounts):
     """`dispatch_efforts` row for a launch provider. A second account reads its main family's row (claude-2 -> claude)."""
     tables = accounts.get('dispatch_efforts') if isinstance(accounts, dict) else None
@@ -1237,32 +1074,17 @@ def has_fixed_effort(bundle, accounts):
     return split_model_effort(launch_id)[1] is not None or auto_bundles.split_effort(launch_id, known)[1] is not None
 
 
-def can_step_down(bundle, info, accounts):
-    """A row fixed at its level, or listing no level below its own, has nowhere to step."""
-    if has_fixed_effort(bundle, accounts):
-        return False
-    own = bundle.get('efforts')
-    if not isinstance(own, (list, tuple)):
-        return True
-    rank = _effort_rank(scoring_effort(bundle, info))
-    return any(_effort_rank(level) < rank for level in own)
-
-
 def named_effort_bundles(task, ctx):
-    """Rows for levels the user's pin reaches on a model the account has no row at that level for: the effort they named,
-    or, for a model named alone on `realtime_loop` work, every level that clears the floor, so the score decides among
-    them exactly as it does among written rows. The launch contract is what offers a level; each row is the model's own
-    carrier with a distinct id, so it never passes for the carrier itself."""
+    """Rows for the effort the user's pin names on a model the account has no row at that level for, so the score decides
+    among them exactly as it does among written rows. The launch contract is what offers a level; each row is the
+    model's own carrier with a distinct id, so it never passes for the carrier itself."""
     effort = task.get('constraint_effort')
-    level_choice = not effort and bool(task.get('realtime_loop') and task.get('constraint_model'))
-    if (not effort and not level_choice) or task.get('constraint_bundle'):
+    if not effort or task.get('constraint_bundle'):
         return {}
     accounts, groups = ctx['accounts'], {}
     for bundle in ctx['bundles'].values():
         model = row_key(bundle['model'], accounts)
         if task.get('constraint_model') and not model_pin_matches(task, bundle, model):
-            continue
-        if level_choice and exact_pin(task, bundle, model):
             continue
         groups.setdefault((bundle['account'], bundle.get('harness'), model), []).append(bundle)
     found = {}
@@ -1273,12 +1095,9 @@ def named_effort_bundles(task, ctx):
         # Each level goes to the first row that offers it, so the answer does not depend on the order of the rows.
         for carrier in carriers:
             allowed = dispatch_allowed_efforts(carrier, accounts, model)
-            if effort:
-                levels = [effort]
-                if (effort not in allowed) if allowed is not None else not task.get('constraint_model'):
-                    levels = []
-            else:
-                levels = [e for e in clearing_levels(carrier, ctx) if allowed is None or e in allowed]
+            levels = [effort]
+            if (effort not in allowed) if allowed is not None else not task.get('constraint_model'):
+                levels = []
             for level in levels:
                 if level in written or (isinstance(carrier.get('efforts'), list) and level not in carrier['efforts']):
                     continue
@@ -1287,84 +1106,6 @@ def named_effort_bundles(task, ctx):
                 found[row_id] = {**{k: v for k, v in carrier.items()}, 'id': row_id, 'effort': level,
                                  'pin_carrier': carrier['id']}
     return found
-
-
-def clearing_levels(bundle, ctx):
-    """The levels in this model's speed curve at or above the realtime floor. A level has no curve to clear on a harness
-    that does not step, or on a name with no measured curve of its own."""
-    accounts, policy = ctx['accounts'], ctx['policy']
-    harness = bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
-    provider = bundle.get('provider') or bundle.get('account')
-    if harness in ('antigravity', 'antigravity-resilient') or provider in ('antigravity', 'antigravity-resilient'):
-        return []
-    curves, info = model_curves(accounts, bundle['model']), model_spec(accounts, bundle['model'])
-    speeds = curves.get('responsiveness')
-    if not isinstance(speeds, dict):
-        return []
-    floor = float(responsiveness_config(policy)['floor'])
-    ability = curves.get('ability_mult')
-    levels = []
-    for level in REALTIME_EFFORT_ORDER:
-        if level not in speeds or (isinstance(ability, dict) and ability and level not in ability):
-            continue
-        value, source = bundle_responsiveness(bundle, info, policy, curves, state_dir=ctx.get('state_dir'), effort=level,
-                                              harness=harness, accounts=accounts)
-        if source != 'not_applicable' and value is not None and value >= floor:
-            levels.append(level)
-    return levels
-
-
-def bundle_responsiveness(bundle, info, policy=None, curves=None, state_dir=None, effort=None, harness=None, accounts=None):
-    """`(responsiveness_0_to_1, source)` for `bundle` at `effort` (or its scoring effort).
-    `source` is `'measured'`, `'local_blended'`, `'default'` (when community speed data is absent),
-    or `'not_applicable'` (for special web/packet channels such as `grok-bot` and `dot`)."""
-    if isinstance(info, dict) and isinstance(info.get('spec'), dict):
-        info = info['spec']
-    if isinstance(policy, dict) and ('models' in policy or 'accounts' in policy) and 'scoring' in policy:
-        accounts = policy
-        policy = curves if isinstance(curves, dict) and 'responsiveness' in curves else accounts.get('scoring')
-        curves = model_curves(accounts, str((bundle or {}).get('model') or ''))
-    cfg = responsiveness_config(policy)
-    info = info if isinstance(info, dict) else {}
-    info_resp = info.get('responsiveness')
-    if info_resp == 'not_applicable' or info.get('responsiveness_status') == 'not_applicable':
-        return None, 'not_applicable'
-    eff = effort or scoring_effort(bundle or {}, info) or info.get('default_effort') or 'high'
-    harness = harness or (bundle or {}).get('harness') or bundle_harness(
-        bundle or {}, (bundle or {}).get('account'), (bundle or {}).get('id'))
-    curves_resp = (curves or {}).get('responsiveness') if isinstance(curves, dict) else None
-    default_eff = info.get('default_effort') or 'high'
-    measured = _lookup_curve_responsiveness(curves_resp, eff, default_eff)
-    if measured is None:
-        if isinstance(info_resp, dict):
-            measured = _lookup_curve_responsiveness(info_resp, eff, default_eff)
-        elif (isinstance(info_resp, (int, float)) and not isinstance(info_resp, bool)
-              and not isnan(float(info_resp))
-              and eff == default_eff):
-            measured = float(info_resp)
-    if measured is None and isinstance(info.get('speed_metrics'), dict) and eff == default_eff:
-        sm = info['speed_metrics']
-        ttft = sm.get('ttft_s')
-        tps = sm.get('output_tps')
-        if (isinstance(ttft, (int, float)) and not isinstance(ttft, bool)
-                and isinstance(tps, (int, float)) and not isinstance(tps, bool) and tps > 0):
-            turn_s = compute_turn_seconds(
-                ttft, tps, effort=eff,
-                output_tokens=sm.get('output_tokens_per_turn'),
-                harness=harness, policy=policy,
-            )
-            measured = turn_seconds_to_responsiveness(turn_s, policy)
-    if measured is None:
-        base_val = clamp(float(cfg.get('default', 0.52)), 0.0, 1.0)
-        source = 'default'
-    else:
-        base_val = clamp(measured, 0.0, 1.0)
-        source = 'measured'
-    names = lookup_names(str((bundle or {}).get('model') or ''), accounts)
-    adjusted, blended = local_speed_telemetry(names, eff, base_val, policy=policy, state_dir=state_dir)
-    if blended:
-        return adjusted, 'local_blended'
-    return round(base_val, 4), source
 
 
 def cooling_reason(bundle, entries, accounts, now=None):
@@ -1381,161 +1122,25 @@ def cooling_reason(bundle, entries, accounts, now=None):
     return None
 
 
-def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or_policy=None,
-                            info=None, policy=None, curves=None, *,
-                            harness=None, all_bundles=None, task=None):
-    """Evaluate `bundle` at its configured effort on a `realtime_loop` task, stepping down to a faster effort in
-    `curves['responsiveness']` when its configured effort is below `floor`, the bundle's provider/harness supports
-    that effort in `dispatch_efforts`, and no lower-effort sibling bundle on the same `(account, harness,
-    canonical_model)` already clears `floor`.
-
-    Returns `(effective_effort, resp_val, resp_source, stepped_from)`."""
-    if info is None and (
-        (isinstance(ctx_or_accounts, dict) and ('models' in ctx_or_accounts or 'accounts' in ctx_or_accounts))
-        or (isinstance(model_or_policy, dict) and ('models' in model_or_policy or 'accounts' in model_or_policy))
-    ):
-        if isinstance(ctx_or_accounts, dict) and ('models' in ctx_or_accounts or 'accounts' in ctx_or_accounts):
-            accounts = ctx_or_accounts
-            policy = model_or_policy if isinstance(model_or_policy, dict) else (accounts.get('scoring') or {})
-        else:
-            accounts = model_or_policy
-            policy = ctx_or_accounts if isinstance(ctx_or_accounts, dict) else (accounts.get('scoring') or {})
-        info = (task_or_info.get('spec') if isinstance(task_or_info, dict) and isinstance(task_or_info.get('spec'), dict)
-                else task_or_info)
-        model = canonical((bundle or {}).get('model') or '', accounts)
-        curves = model_curves(accounts, (bundle or {}).get('model') or '')
-        if isinstance(all_bundles, dict):
-            bundles_map = {bid: ({**b, 'id': b.get('id') or bid} if isinstance(b, dict) else b)
-                           for bid, b in all_bundles.items()}
-        elif isinstance(all_bundles, (list, tuple)):
-            bundles_map = {b.get('id', f'b{i}'): b for i, b in enumerate(all_bundles) if isinstance(b, dict)}
-        else:
-            bundles_map = bundles(accounts)
-        ctx = {'accounts': accounts, 'policy': policy, 'bundles': bundles_map}
-        task = task if isinstance(task, dict) else {'realtime_loop': True}
-    else:
-        task = task_or_info if isinstance(task_or_info, dict) else {}
-        ctx = ctx_or_accounts if isinstance(ctx_or_accounts, dict) else {}
-        accounts = ctx.get('accounts') or {}
-        model = model_or_policy
-
-    state_dir = ctx.get('state_dir')
-    raw_effort = scoring_effort(bundle, info)
-    eff_harness = harness or bundle.get('harness') or bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
-    resp_val, resp_source = bundle_responsiveness(
-        bundle, info, policy, curves, state_dir=state_dir, effort=raw_effort, harness=eff_harness, accounts=accounts)
-    if resp_source == 'not_applicable' or resp_val is None:
-        return raw_effort, resp_val, resp_source, None
-    resp_floor = float(responsiveness_config(policy)['floor'])
-    if resp_val >= resp_floor:
-        return raw_effort, resp_val, resp_source, None
-    curves_resp = (curves or {}).get('responsiveness') if isinstance(curves, dict) else None
-    if not isinstance(curves_resp, dict) or not curves_resp:
-        return raw_effort, resp_val, resp_source, None
-
-    provider = bundle.get('provider') or bundle.get('account')
-    if eff_harness in ('antigravity', 'antigravity-resilient') or provider in ('antigravity', 'antigravity-resilient'):
-        return raw_effort, resp_val, resp_source, None
-    if has_fixed_effort(bundle, accounts):
-        return raw_effort, resp_val, resp_source, None
-    own_model = row_key(bundle.get('model') or model or '', accounts)
-    # A named effort stays as named. A named model alone still chooses among its efforts like any other candidate.
-    if exact_pin(task, bundle, own_model):
-        return raw_effort, resp_val, resp_source, None
-    slowest_pass = bool(task.get('slow_pin_fallback')) and model_pin_matches(task, bundle, own_model)
-
-    unavailable_ids = set(ctx.get('unavailable') or ())
-    failures_map = ctx.get('launch_failures')
-    siblings = []
-    user_disabled = set()
-    for bid, b in (ctx.get('bundles') or {}).items():
-        if not isinstance(b, dict):
-            continue
-        sib_id = b.get('id') or bid
-        if b.get('account') != bundle.get('account'):
-            continue
-        if (b.get('harness') or bundle_harness(b, b.get('account'), sib_id)) != eff_harness:
-            continue
-        if row_key(b.get('model') or '', accounts) != own_model:
-            continue
-        if b.get('disabled') and not b.get('disabled_by_default'):
-            user_disabled.add(str(scoring_effort(b, info) or '').lower())
-        if sib_id in unavailable_ids:
-            continue
-        if b.get('disabled') or b.get('discovery_unavailable'):
-            continue
-        sib_bundle = {**b, 'id': sib_id}
-        if cooling_reason(sib_bundle, failures_map, accounts, now=ctx.get('now')) or \
-                model_latch.reason(sib_bundle, ctx.get('model_latches')) or \
-                provider_retry.reason(sib_bundle, ctx.get('provider_retries')):
-            continue
-        siblings.append(sib_bundle)
-    self_id = bundle.get('id')
-    if not slowest_pass:
-        for sib in siblings:
-            if (self_id and sib.get('id') == self_id) or (not self_id and sib.get('effort') == bundle.get('effort')):
-                continue
-            sib_eff = scoring_effort(sib, info)
-            sib_resp, sib_src = bundle_responsiveness(
-                sib, info, policy, curves, state_dir=state_dir, effort=sib_eff, harness=eff_harness, accounts=accounts)
-            if sib_src != 'not_applicable' and sib_resp is not None and sib_resp >= resp_floor:
-                return raw_effort, resp_val, resp_source, None
-        # A row that cannot step does not stand in for the rows that can.
-        steppable = [s for s in siblings if can_step_down(s, info, accounts)]
-        if steppable:
-            min_rank = min(_effort_rank(scoring_effort(s, info)) for s in steppable)
-            if _effort_rank(raw_effort) > min_rank:
-                return raw_effort, resp_val, resp_source, None
-
-    # The levels this candidate can run at: the launch contract, what the row itself offers, minus what the user unchecked.
-    allowed_efforts = dispatch_allowed_efforts(bundle, accounts, model)
-    own_efforts = bundle.get('efforts') if isinstance(bundle.get('efforts'), (list, tuple)) else None
-    ability_curve = (curves or {}).get('ability_mult') if isinstance(curves, dict) else None
-    raw_rank = _effort_rank(raw_effort)
-    faster = [
-        eff for eff in REALTIME_EFFORT_ORDER
-        if eff in curves_resp
-        and _effort_rank(eff) < raw_rank
-        and (not (isinstance(ability_curve, dict) and ability_curve) or eff in ability_curve)
-        and (allowed_efforts is None or eff in allowed_efforts)
-        and (own_efforts is None or eff in own_efforts)
-        and eff not in user_disabled
-    ]
-    faster.sort(key=_effort_rank, reverse=True)
-    best_clearing_resp = None
-    timed = []
-    for cand_eff in faster:
-        cand_resp, cand_src = bundle_responsiveness(
-            bundle, info, policy, curves, state_dir=state_dir, effort=cand_eff, harness=eff_harness, accounts=accounts)
-        if cand_src == 'not_applicable' or cand_resp is None:
-            continue
-        timed.append((cand_resp, cand_eff, cand_src))
-        if cand_resp < resp_floor:
-            continue
-        best_clearing_resp = (cand_eff, cand_resp, cand_src)
-        break
-    chosen = best_clearing_resp
-    if chosen is not None:
-        return chosen[0], chosen[1], chosen[2], raw_effort
-    if slowest_pass and timed:
-        # Nothing clears the floor on the model the user named: its fastest level, warned about by the caller.
-        best = max(timed, key=lambda row: row[0])
-        if best[0] > resp_val:
-            return best[1], best[0], best[2], raw_effort
-    return raw_effort, resp_val, resp_source, None
-
-
 # --- Scoring: the four category scores and the quota economy (the only scoring) -----------------------------------------
-# Model data comes from references/five-axis-scores.json (calibration/five_axis.py, cited sources only). Each public
-# board is one type score; the type scores map to four category scores (divergence, global_rigor, module_precision,
-# vision_tools); a type score a model lacks is estimated through its tier (the arena.ai Overall position; the tier is a
-# bridge, never a score input). User decisions of 2026-11-09 and 2026-11-11:
+# Model data comes from references/five-axis-scores.json (calibration/five_axis.py, cited public sources only). The four
+# categories (user, 2026-11-11): divergence, coding, aesthetics, tool_operation. Every board is read as a panel standard
+# score: z = (x - x_anchor) / sd_panel, the anchor (Opus 5.5) at High is 0 and one unit is one panel standard deviation;
+# parallel boards of one facet are linked and averaged, the facets of a category combine by `min`, and a facet a model
+# lacks is estimated (same-series sibling, else the fit on the arena.ai Overall tier) and marked estimated.
 # - A task demands levels 0..3 on the four categories (the classifier's `axis_demand`, always produced) and nothing
 #   else scores or gates on quality: no scalar tier, no route preference or restriction lists, no harness quality
 #   factors, no difficulty floors, no free-usage bonus.
-# - Quality is the continuous fit of the model's category scores (thinking categories scaled by its effort curve) to the
-#   demand (five_axis_fit): the demand-weighted mean of the scores, minus `shortfall_weight` x the shortfall below each
-#   demanded category's target (the anchor model's value x demand / 3). No floor excludes a model; the economy decides.
+# - Targets come from the panel (five-axis-scores.json `anchor.targets`): level 1 the panel's weakest, level 2 its median,
+#   level 3 the anchor. tool_operation asks per facet: level 1 nothing, level 2 responsiveness, level 3 responsiveness
+#   and image recognition, never less of a facet than the level below.
+# - Fit (five_axis_fit) = sum_a w_a x (min(z_a, t_a) - t1_a) / sum_a w_a over the demanded categories, w_a the demand
+#   level, t_a the level's target and t1_a the level-1 target (the panel's weakest). It is in panel standard deviations:
+#   0 is the panel's weakest model on every demanded category, the anchor scores t_a - t1_a, and no score above the
+#   target earns more. A candidate below the panel's weakest scores below 0. The economy reads the same fit, and 0 is
+#   its total loss (a candidate at or below it is never an outside alternative).
+# - Continuity: continuing a related worker (coupling high, the same bundle) is worth one demand level, the largest
+#   positive t3 - t2 among the task's highest-demand categories (else 0); the 2M continuation cap (worker_worn) stands.
 # - Missing data (rule B): a demanded category with no data at all, or no cited usd on a billed account, leaves
 #   automatic routing; a named model still runs, with the data error as a warning.
 # - Plan capacity is the cited figure of the capacity ladder (community, time-to-exhaust, vendor multiplier), priced at
@@ -1544,39 +1149,58 @@ def resolve_realtime_effort(bundle, task_or_info, ctx_or_accounts=None, model_or
 # - Economy: every long window charges the candidate's burn (usd over the window's capacity) times the window's quota
 #   price (FiveAxisEconomy), counted in hours of the window's reference model.
 FIVE_AXIS_FILE = REFERENCES / 'five-axis-scores.json'
-FIVE_AXES = ('divergence', 'global_rigor', 'module_precision', 'vision_tools')
-FIVE_AXIS_THINKING = ('divergence', 'global_rigor', 'module_precision')
+FIVE_AXES = ('divergence', 'coding', 'aesthetics', 'tool_operation')
 FIVE_AXIS_DEFAULTS = {
-    'weights': {'fit': 1.0, 'continuity': 0.25},
-    'demanded_level': 1,         # rule B: an axis demanded at this level or above must have data
-    'shortfall_weight': 1.0,     # extra fit lost per point of axis score below the demanded target (round 7)
+    # fit and continuity are both in panel standard deviations: one unit each, not a hand-set trade-off
+    'weights': {'fit': 1.0, 'continuity': 1.0},
+    'demanded_level': 1,         # rule B: a category demanded at this level or above must have data
 }
 # What each demand level 0..3 means per category: the one text both the schema of the JSON classifiers and the questions of
-# the System-One (Jev) classifier are built from.
+# the System-One (Jev) classifier are built from (user, 2026-11-11).
 FIVE_AXIS_DEMAND_LEVELS = {
-    'divergence': ('Divergent and exploratory thinking.', (
-        'execute a known spec or checklist', 'small judgment calls',
-        'several hypotheses or options to test or compare, open exploration of a codebase or data',
-        'open-ended creative or first-principles design, new schemes, ideation')),
-    'global_rigor': ('Rigor across the whole problem: long context, long horizon, no fabricated claims.', (
-        'trivial and mechanically checked', 'one module or a result a test verifies',
-        'several coupled parts, or claims no test checks (review, audit, metrics, research synthesis)',
-        'whole-system or long multi-stage work, or a missed defect is costly or irreversible')),
-    'module_precision': ('Precise code the worker itself writes (as code_complexity).', (
-        'writes no production code', 'a small script or config change', 'a production module with its tests',
-        'multi-module, concurrency, protocol or core-library changes')),
-    'vision_tools': ('Vision, GUI and tool use beyond reading files and running shell commands.', (
-        'text and code only', 'heavy tool or API orchestration, browser fetches', 'must read images or screenshots',
-        'must operate a desktop or browser GUI through screenshots')),
+    'divergence': ('Divergent work: creative writing, brainstorming, research synthesis and data analysis, and decomposing '
+                   'a problem from first principles outside the existing architecture.', (
+        'execute a known spec or checklist',
+        'small judgment calls or wording choices',
+        'several options or hypotheses to generate and compare, or a research or data-analysis question to investigate '
+        'and synthesize',
+        'open-ended creative writing, open research synthesis across many sources, or a first-principles redesign outside '
+        'the existing architecture')),
+    'coding': ('Coding ability: reading, writing, reviewing and changing code correctly, doing exactly what was asked and '
+               'reporting it honestly.', (
+        'no code read or written',
+        'a small script or config change, or a result a test verifies',
+        'a production module with its tests, or a review or audit of one',
+        'changes across coupled modules, concurrency, protocol or core-library work, a whole-system review or audit, or '
+        'a defect would be costly or irreversible')),
+    'aesthetics': ('Visual and design judgment: GUI and interaction design, layout and typesetting, tables and charts, '
+                   '2D or 3D modeling.', (
+        'no visual output',
+        'plain output where only tidy formatting matters',
+        'a user-facing screen, page, chart or document whose look matters',
+        'design-led work: a new interface or interaction, a visual identity, a 3D scene or model')),
+    'tool_operation': ('Operating tools fast: per-turn speed inside a tool loop, and reading images. Writing or fixing '
+                       'software about real-time systems is coding, not a live loop.', (
+        'reads files and runs a few shell commands',
+        'routine tool or API calls',
+        'heavy tool or API orchestration, or the worker itself stays inside a live external system (a game, a ticket '
+        'queue, an order book, a live page or chat) where slow turns degrade the outcome',
+        'must read images or screenshots inside the loop, or operate a desktop or browser GUI through screenshots')),
 }
 FIVE_AXIS_DEMAND_SCHEMA = {
     'type': 'object', 'additionalProperties': False, 'required': list(FIVE_AXES),
-    'description': ('How much the task needs each capability axis of the model, 0..3. Economy is not a task demand: '
+    'description': ('How much the task needs each capability category of the model, 0..3. Economy is not a task demand: '
                     'the router prices it from cost and live quota.'),
     'properties': {axis: {'type': 'integer', 'minimum': 0, 'maximum': 3,
                           'description': intro + ' ' + '; '.join(f'{i} = {text}' for i, text in enumerate(levels)) + '.'}
                    for axis, (intro, levels) in FIVE_AXIS_DEMAND_LEVELS.items()},
 }
+# tool_operation's facets per demand level (calibration/five_axis.TOOL_LEVEL_FACETS): level 1 imposes no ability requirement.
+TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
+IMAGE_INPUT_LEVEL = 3           # tool_operation at this level must read images: a text-only model leaves the task
+# The demand fields of the four-axis taxonomy before 2026-11-11, read only from in-flight ledger records.
+LEGACY_AXES = ('divergence', 'global_rigor', 'module_precision', 'vision_tools')
+LEGACY_VISION_TO_TOOL = {0: 0, 1: 2, 2: 3, 3: 3}
 
 
 def five_axis_config(policy):
@@ -1600,6 +1224,32 @@ def validate_axis_demand(raw):
         if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 3:
             raise ValueError(f'task.profile.axis_demand.{axis} must be an integer from 0 to 3')
         out[axis] = value
+    return out
+
+
+def ledger_profile(profile):
+    """A recorded profile in the current shape: the one read-side mapping for in-flight ledger records written before the
+    four categories (user, 2026-11-11). divergence as is; coding = max(global_rigor, module_precision); tool_operation
+    from vision_tools 0->0, 1->2, 2->3, 3->3, and at least 2 when the record marked `realtime_loop` (its live loop is
+    tool_operation level 2 now); aesthetics 0 (the old record carries nothing about it). A profile already in the current
+    shape, or not a dict, comes back unchanged; validation stays with validate_profile."""
+    if not isinstance(profile, dict):
+        return profile
+    old = profile.get('axis_demand')
+    if not (isinstance(old, dict) and set(old) == set(LEGACY_AXES)) and 'realtime_loop' not in profile:
+        return profile
+    out = {k: v for k, v in profile.items() if k != 'realtime_loop'}
+    if isinstance(old, dict) and set(old) == set(LEGACY_AXES):
+        try:
+            vision = LEGACY_VISION_TO_TOOL[int(old['vision_tools'])]
+            out['axis_demand'] = {'divergence': old['divergence'],
+                                  'coding': max(int(old['global_rigor']), int(old['module_precision'])),
+                                  'aesthetics': 0,
+                                  'tool_operation': max(vision, 2) if profile.get('realtime_loop') is True else vision}
+        except (KeyError, TypeError, ValueError):
+            return out
+    elif profile.get('realtime_loop') is True and isinstance(old, dict) and isinstance(old.get('tool_operation'), int):
+        out['axis_demand'] = {**old, 'tool_operation': max(old['tool_operation'], 2)}
     return out
 
 
@@ -1682,8 +1332,9 @@ def opencode_local_spend(models_table, discovery=None):
 def five_axis_overlay(accounts, data=None):
     """A copy of `accounts` carrying the scoring data of references/five-axis-scores.json.
 
-    Each model row gets `five_axis` {scores, missing, estimates, axis_status, tier, usd_status, image_input, fast_mode,
-    duration: {status, by_effort, basis_by_effort, efforts_without_time}}: the time a task takes per effort as a multiple of
+    Each model row gets `five_axis` {categories (the scores file's category cells: value, by_effort, facets), scores,
+    missing, estimates, axis_status, tier, usd_status, image_input, fast_mode, duration: {status, by_effort,
+    basis_by_effort, efforts_without_time}}: the time a task takes per effort as a multiple of
     the anchor's Artificial Analysis Time/Task at High, each with its cited basis (`duration_at`); usd_per_hour becomes the
     merged cited value (an unsourced usd is removed, not defaulted). Each windowed account's capacity is the
     data's community real-usage figure for its plan and window (round 4), replacing the packaged figure and any dated
@@ -1702,10 +1353,12 @@ def five_axis_overlay(accounts, data=None):
         fast = (row or {}).get('fast_mode') or {'status': 'not_offered'}
         dur_row = (row or {}).get('duration_multiplier') or {}
         price = (row or {}).get('price')       # public list price, USD per million tokens (aa.price, else openrouter.price)
-        info['five_axis'] = {'scores': {a: float(((row or {}).get('scores') or {}).get(a) or 0.0) for a in FIVE_AXES},
+        cats = (row or {}).get('axes') or {}
+        info['five_axis'] = {'categories': {a: cats[a] for a in FIVE_AXES if isinstance(cats.get(a), dict)},
+                             'scores': {a: (cats.get(a) or {}).get('value') for a in FIVE_AXES},
                              'missing': list(FIVE_AXES) if row is None else list(row.get('missing_axes') or ()),
                              'estimates': {} if row is None else estimate_summary(row),
-                             'axis_status': {a: ((row or {}).get('axes') or {}).get(a, {}).get('status', 'missing') for a in FIVE_AXES},
+                             'axis_status': {a: (cats.get(a) or {}).get('status', 'missing') for a in FIVE_AXES},
                              'tier': (row or {}).get('tier') or {'value': None, 'method': 'none'},
                              'usd_status': 'ok' if usd is not None else 'missing',
                              'image_input': img,
@@ -1790,66 +1443,146 @@ def five_axis_overlay(accounts, data=None):
         else:
             spec.pop('capacity_unknown', None)
     anchor = data.get('anchor') or {}
-    if not isinstance(anchor.get('value'), (int, float)) or isinstance(anchor.get('value'), bool) or not anchor.get('model'):
-        raise ValueError('five-axis-scores.json names no anchor model and value: the fit targets have nothing to stand on')
-    out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor['model'],
-                         'anchor_value': float(anchor['value'])}
+    targets = anchor.get('targets') or {}
+    if not anchor.get('model') or set(targets) != set(FIVE_AXES):
+        raise ValueError('five-axis-scores.json names no anchor model or no panel targets for the four categories: the fit '
+                         'has nothing to stand on')
+    out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor['model'], 'targets': targets,
+                         'panel_n': anchor.get('panel_n')}
+    for info in (out.get('models') or {}).values():
+        if isinstance(info, dict) and isinstance(info.get('five_axis'), dict):
+            info['five_axis']['shares'] = five_axis_shares(five_axis_values(info['five_axis'], 'high'), targets)
     return out
 
 
 def five_axis_demand(task):
-    """{axis: level 0..3}: the classifier's `axis_demand` as it stands (validated with the profile). An all-zero answer is a
-    task that asks nothing of the categories: every model fits it alike and the economy decides."""
+    """{category: level 0..3}: the classifier's `axis_demand` as it stands (validated with the profile). An all-zero answer
+    is a task that asks nothing of the categories: every model fits it alike and the economy decides."""
     return dict(task['profile']['axis_demand'])
 
 
 def estimate_summary(row):
-    """{'category.type': provenance} for the type scores of a five-axis-scores row that were estimated through the tier
-    (no board of their own for the model) rather than measured."""
-    return {f'{a}.{c}': dict(comp.get('estimate') or {})
-            for a, ax in (row.get('axes') or {}).items() for c, comp in (ax.get('components') or {}).items()
+    """{'category.facet': provenance} for the facets of a five-axis-scores row that were estimated (a same-series sibling
+    or the fit on the tier) rather than measured."""
+    return {f'{a}.{f}': dict(comp.get('estimate') or {})
+            for a, ax in (row.get('axes') or {}).items() for f, comp in (ax.get('facets') or {}).items()
             if comp.get('status') == 'estimated'}
 
 
-def five_axis_effort_ratio(curves, effort):
-    """How much the thinking categories scale at `effort` relative to High: the model's `effort_curves.ability_mult`
-    (Artificial Analysis Intelligence Index at that effort over its index at High, calibration/efforts.py). A model whose
-    index is not listed by effort has no measured response, so its categories are not scaled."""
-    mult = (curves or {}).get('ability_mult') or {}
-    return float(mult[effort]) / float(mult['high']) if effort in mult and mult.get('high') else 1.0
+def _at_effort(cell, effort):
+    """A score cell's value at `effort`: its per-effort value, else its value at High (a model or board without that
+    effort row), else None."""
+    if not isinstance(cell, dict):
+        return None
+    by = cell.get('by_effort') or {}
+    value = by.get(effort) if effort in by else cell.get('value')
+    return None if value is None else float(value)
 
 
-def five_axis_level(scores, demand, ratio=1.0):
-    """(demand-weighted mean of the axis scores, {axis: effort-scaled score}); thinking axes scale by `ratio`, capped at 1."""
-    total = sum(w for w in demand.values() if w > 0)
-    eff = {a: clamp(float(scores.get(a, 0.0)) * (ratio if a in FIVE_AXIS_THINKING else 1.0), 0.0, 1.0) for a in FIVE_AXES}
-    if not total:
-        return 0.0, eff
-    return sum(w * eff[a] for a, w in demand.items() if w > 0) / total, eff
+def five_axis_values(state, effort):
+    """{category: z}, with tool_operation as {facet: z}: this model's panel standard scores at `effort` (None where it has
+    no value). The thinking categories carry the model's own additive effort shift (five_axis.py); responsiveness is
+    measured per effort."""
+    cats = (state or {}).get('categories') or {}
+    out = {a: _at_effort(cats.get(a), effort) for a in FIVE_AXES if a != 'tool_operation'}
+    facets = ((cats.get('tool_operation') or {}).get('facets')) or {}
+    out['tool_operation'] = {f: _at_effort(facets.get(f), effort) for f in TOOL_LEVEL_FACETS[3]}
+    return out
 
 
-def five_axis_targets(demand, anchor_value):
-    """{axis: target score} for every demanded axis: the anchor model's value x demand / 3, so demand 3 asks for the
-    anchor's level and demand 1 a third of it. Scores are anchor-relative at the source, so the targets do not move
-    when a new model tops a board."""
-    return {a: round(anchor_value * w / 3.0, 4) for a, w in demand.items() if w > 0}
-
-
-def five_axis_fit(scaled, demand, targets, shortfall_weight=1.0):
-    """(fit, {axis: row}): the demand-weighted mean over the demanded axes of min(score, target) - shortfall_weight x
-    max(0, target - score). Capped at each axis's target (round 11): no bonus above the task's need, no
-    overqualification penalty."""
-    total = sum(w for w in demand.values() if w > 0)
-    rows, value = {}, 0.0
+def five_axis_targets(demand, targets):
+    """{category: the demanded level's target row} from five-axis-scores.json `anchor.targets`, for every demanded category
+    that asks for something (tool_operation level 1 asks for nothing)."""
+    out = {}
     for a, w in demand.items():
         if w <= 0:
             continue
-        short = max(0.0, targets[a] - scaled[a])
-        capped = min(scaled[a], targets[a])
-        rows[a] = {'demand': w, 'score': round(scaled[a], 4), 'capped_score': round(capped, 4),
-                   'target': targets[a], 'shortfall': round(short, 4)}
-        value += w * (capped - shortfall_weight * short)
+        row = ((targets.get(a) or {}).get('levels') or {}).get(str(w)) or {}
+        if a == 'tool_operation':
+            if row.get('by_facet'):
+                out[a] = {'by_facet': {f: {'target': r['target'], 'zero': r['zero']} for f, r in row['by_facet'].items()}}
+        elif row.get('target') is not None:
+            out[a] = {'target': row['target'], 'zero': row['zero']}
+    return out
+
+
+def five_axis_fit(values, demand, targets):
+    """(fit, {category: row}): sum_a w_a x (min(z_a, t_a) - t1_a) / sum_a w_a over the demanded categories that ask for
+    something, in panel standard deviations (module comment above). tool_operation reads min over its level's facets of
+    (min(z_f, t_f) - t1_f). A category or facet without a value stands at its zero (the panel's weakest): rule B keeps
+    such a model out of automatic routing, so this only prices a named dispatch."""
+    rows, value, total = {}, 0.0, 0
+    for a, w in demand.items():
+        tgt = targets.get(a)
+        if w <= 0 or not tgt:
+            continue
+        if 'by_facet' in tgt:
+            parts = {}
+            for f, t in tgt['by_facet'].items():
+                z = (values.get(a) or {}).get(f)
+                parts[f] = {'score': None if z is None else round(z, 4), 'target': t['target'], 'zero': t['zero'],
+                            'term': round((min(z, t['target']) - t['zero']) if z is not None else 0.0, 4)}
+            scored = [p for p in parts.values() if p['score'] is not None] or list(parts.values())
+            term = min(p['term'] for p in scored)
+            rows[a] = {'demand': w, 'facets': parts, 'term': term,
+                       'shortfall': round(max(max(0.0, p['target'] - p['score']) if p['score'] is not None
+                                              else p['target'] - p['zero'] for p in scored), 4)}
+        else:
+            z = values.get(a)
+            term = round((min(z, tgt['target']) - tgt['zero']) if z is not None else 0.0, 4)
+            rows[a] = {'demand': w, 'score': None if z is None else round(z, 4), 'target': tgt['target'],
+                       'zero': tgt['zero'], 'term': term,
+                       'shortfall': round(max(0.0, tgt['target'] - z) if z is not None else tgt['target'] - tgt['zero'], 4)}
+        value += w * term
+        total += w
     return (value / total if total else 0.0), rows
+
+
+def five_axis_shares(values, targets):
+    """{category: 0..1} for display (the tray radar): (min(z, t3) - t1) / (t3 - t1), where t1 is the level-1 target (the
+    panel's weakest) and t3 the level-3 target (the anchor): 0 at the panel's weakest, 1 at the level the hardest demand
+    asks, never more (the fit gives no credit above a target either). tool_operation takes the weakest of its level-3
+    facets that have a value. None where the model has no value."""
+    def share(z, row):
+        if z is None or not row or row.get('target') is None or row['target'] <= row['zero']:
+            return None
+        return round(max(0.0, (min(z, row['target']) - row['zero']) / (row['target'] - row['zero'])), 4)
+    out = {}
+    for a in FIVE_AXES:
+        level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
+        if a == 'tool_operation':
+            parts = [share((values.get(a) or {}).get(f), r) for f, r in (level3.get('by_facet') or {}).items()]
+            parts = [p for p in parts if p is not None]
+            out[a] = min(parts) if parts else None
+        else:
+            out[a] = share(values.get(a), level3)
+    return out
+
+
+def five_axis_level(rows):
+    """The demand-weighted mean of the candidate's scores over the demanded categories (tool_operation: the weakest of its
+    level's facets), uncapped: the last tie-break between equal net scores. A missing value stands at its zero."""
+    total, value = 0, 0.0
+    for r in rows.values():
+        if 'facets' in r:
+            scored = [p['score'] for p in r['facets'].values() if p['score'] is not None]
+            z = min(scored) if scored else min(p['zero'] for p in r['facets'].values())
+        else:
+            z = r['score'] if r['score'] is not None else r['zero']
+        value += r['demand'] * z
+        total += r['demand']
+    return value / total if total else 0.0
+
+
+def five_axis_continuity_value(demand, targets):
+    """The worth of continuing a related worker, in panel standard deviations (user, 2026-11-11): one demand level, the
+    largest positive t3 - t2 among the categories at the task's highest demand level (five-axis-scores.json
+    `anchor.targets.<category>.continuity`), else 0. A task that demands nothing has no level to be worth."""
+    top = max(demand.values(), default=0)
+    if top <= 0:
+        return 0.0
+    gaps = [(targets.get(a) or {}).get('continuity') for a, w in demand.items() if w == top]
+    return max([g for g in gaps if isinstance(g, (int, float)) and g > 0], default=0.0)
 
 
 def five_axis_window_recovery(state, cap_usd):
@@ -2110,8 +1843,10 @@ def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tab
             'spend_before': before, 'spend_after': after}
 
 
+# The demands a window's value ladder is read over: every mix of the three thinking categories (tool_operation 0, so a
+# window's price does not move with per-turn speed or image reading, which belong to the current task alone).
 FIVE_AXIS_DEMAND_GRID = tuple(
-    {'divergence': d1, 'global_rigor': d2, 'module_precision': d3, 'vision_tools': 0}
+    {'divergence': d1, 'coding': d2, 'aesthetics': d3, 'tool_operation': 0}
     for d1 in range(4) for d2 in range(4) for d3 in range(4) if (d1 or d2 or d3)
 )
 
@@ -2120,7 +1855,7 @@ class FiveAxisEconomy:
     """Quota economy v3 for one plan (advisor report v3, owner decisions D1-D3 of round 13).
 
     `pool` is the account's own candidates, evaluated with the current task's flags neutralised (`rank`'s economy pool), so
-    a window's price does not move with local_only, realtime_loop, vision, a named model or whether a candidate fits the
+    a window's price does not move with local_only, vision, a named model or whether a candidate fits the
     remaining capacity now. The remaining capacity enters only through the window's own state (room, used, reset clock).
 
     Every long reset-period window w = (quota source, window id) is priced on its own state and clock: its value ladder
@@ -2130,11 +1865,8 @@ class FiveAxisEconomy:
     `evaluate_bundle` and never enter a price, a tail or a ladder here."""
 
     def __init__(self, pool, accounts, policy, task, extra=()):
-        cfg = five_axis_config(policy)
-        anchor = accounts['_five_axis']['anchor_value']
-        shortfall = float(cfg['shortfall_weight'])
         self.grid = FIVE_AXIS_DEMAND_GRID
-        targets = [five_axis_targets(d, anchor) for d in self.grid]
+        targets = [five_axis_targets(d, accounts['_five_axis']['targets']) for d in self.grid]
         self.task_gi = len(self.grid)           # the extra fit slot: the task's own demand (diagnostics only)
         fit_cache = {}
         self.entries = []
@@ -2149,10 +1881,10 @@ class FiveAxisEconomy:
                       if not st.get('short')}
             if not states:
                 continue        # no long-window state: nothing to ladder and never an outside point (a data error upstream)
-            scaled = c.get('_five_scaled') or {}
-            key = tuple(sorted(scaled.items()))
+            values = c.get('_five_values') or {}
+            key = json.dumps(values, sort_keys=True)
             if key not in fit_cache:
-                fit_cache[key] = tuple(five_axis_fit(scaled, d, t, shortfall)[0] for d, t in zip(self.grid, targets))
+                fit_cache[key] = tuple(five_axis_fit(values, d, t)[0] for d, t in zip(self.grid, targets))
             entry = {'cand': c, 'qsrc': qsrc, 'startable': not c.get('_five_long_wait'),
                      'unmetered': bool(c.get('_five_unmetered')), 'metered': bool(c.get('_five_metered')),
                      'spend': float(c.get('expected_usd') or 0.0), 'states': states,
@@ -2298,7 +2030,7 @@ def five_axis_order(candidate):
        a fast variant and its base tie on N and the faster one wins; there is no rule that lets a faster candidate displace
        a higher-N one. (How close to zero the cost gets near a reset is the price model's business, not this order's.)
     5. Fewer list-price USD spent ascending
-    6. Demand-weighted axis level descending, then sibling harness place ascending."""
+    6. Demand-weighted category level descending (five_axis_level), then sibling harness place ascending."""
     k = candidate['components']
     reset = k.get('earliest_reset_hours')
     reset_key = float('inf') if reset is None else round(float(reset), 4)
@@ -2736,7 +2468,6 @@ def evaluate_bundle(bundle, task, ctx):
     model = canonical(bundle['model'], accounts)
     own_model = row_key(bundle['model'], accounts)
     info = model_spec(accounts, bundle['model'])
-    curves = model_curves(accounts, bundle['model'])
     kind = task['kind']
     base_hours = task['hours']
     base_chain_hours = task['chain_hours']
@@ -2744,19 +2475,13 @@ def evaluate_bundle(bundle, task, ctx):
                                               if bundle.get(k) is not None},
               'excluded': [], 'notes': [], 'components': {}, 'score': None}
     five = ctx['five_axis']
-    axes = (info.get('five_axis') or {}).get('scores') or {}
-    result['components'] = {a: axes.get(a, 0.0) for a in FIVE_AXES}
-    # This model's level on this task at each effort: the demand-weighted mean of its category scores, the thinking
-    # categories scaled by the effort curve. It decides nothing but the last tie-break and the effort step-down peers.
-    levels = {e: five_axis_level(axes, task['five_axis_demand'], five_axis_effort_ratio(curves, e))[0]
-              for e in set(EFFORT_ORDER) | {'none', 'default'} | set((curves or {}).get('ability_mult') or {})}
     now = ctx['now']
 
     # Economy pool mode (round 16, owner policy: a window's price must not depend on the current task's flags): the pool is
     # what an account can run at all, evaluated with the task's flags neutralised (`rank` builds that task). It keeps the
     # account-level exclusions (host policy, checkbox, discovery, holds, unverified, data errors, weekly window) and drops
     # the ones that belong to the task: local-only, outbound, file transfer, image input, a named constraint, the demanded
-    # axes, the realtime floor, whether the remaining capacity fits THIS task, and the 5-hour windows.
+    # categories, whether the remaining capacity fits THIS task, and the 5-hour windows.
     pool = bool(task.get('_economy_pool'))
 
     def exclude(reason):
@@ -2832,17 +2557,29 @@ def evaluate_bundle(bundle, task, ctx):
     if task.get('constraint_effort') and str(scoring_effort(bundle, info) or '').lower() != task['constraint_effort']:
         task_exclude('explicit effort constraint')
     # Rule B: a demanded category with no data at all, no cited usd on a metered account, or unknown image_input modality
-    # when the task demands image input (vision_tools >= 2), leaves automatic routing; naming the model (--model, or its
+    # when the task demands image input (tool_operation 3), leaves automatic routing; naming the model (--model, or its
     # bundle) still dispatches it, with the data error as a warning and its cost unpriced.
     state = info.get('five_axis') or {'missing': list(FIVE_AXES), 'usd_status': 'missing'}
     billed = not (spec.get('unmetered') or spec.get('unlimited'))
     named = not pool and (model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id'])
     img_info = state.get('image_input') or {'status': 'missing'}
-    needs_image_input = task['five_axis_demand'].get('vision_tools', 0) >= 2 and not pool
+    needs_image_input = task['five_axis_demand'].get('tool_operation', 0) >= IMAGE_INPUT_LEVEL and not pool
     if needs_image_input and img_info.get('status') == 'no':
         exclude(f"model does not accept image input ({img_info.get('source') or 'public data'})")
-    blind = [] if pool else [a for a, w in task['five_axis_demand'].items()
-                             if w >= five['demanded_level'] and a in state.get('missing', ())]
+    def _is_blind(axis, level):
+        if level < five['demanded_level']:
+            return False
+        if axis == 'tool_operation':
+            selected = TOOL_LEVEL_FACETS.get(level) or ()
+            if not selected:
+                return False
+            if axis in state.get('missing', ()):
+                return True
+            facets = ((state.get('categories') or {}).get(axis) or {}).get('facets')
+            return isinstance(facets, dict) and not any(f in facets for f in selected)
+        return axis in state.get('missing', ())
+
+    blind = [] if pool else [a for a, w in task['five_axis_demand'].items() if _is_blind(a, w)]
     errors = (
         ([f'no trusted data for the demanded category {", ".join(blind)}'] if blind else [])
         + (['usd_per_hour has no cited source on a metered account'] if billed and state.get('usd_status') != 'ok' else [])
@@ -2857,55 +2594,10 @@ def evaluate_bundle(bundle, task, ctx):
             exclude(f'data error: {error} (out of automatic routing; name the model to dispatch it)')
     estimated = state.get('estimates') or {}
     if estimated:
-        result['notes'].append('type scores estimated through the tier (no board of their own): ' + ', '.join(sorted(estimated)))
+        result['notes'].append('facets estimated (same-series sibling or the fit on the tier; no board of their own): '
+                               + ', '.join(sorted(estimated)))
         result['estimated_axes'] = sorted({name.split('.')[0] for name in estimated})
     eff = scoring_effort(bundle, info)
-    resp_val = resp_source = stepped_from = None
-    if task.get('realtime_loop'):
-        resp_cfg = responsiveness_config(policy)
-        eff, resp_val, resp_source, stepped_from = resolve_realtime_effort(
-            bundle, task, ctx, model, info, policy, curves)
-        if stepped_from is not None:
-            result['bundle']['effort'] = eff
-            result['bundle']['realtime_stepped_from'] = stepped_from
-            if task.get('slow_pin_fallback') and model_pin_matches(task, bundle, own_model):
-                result['bundle']['named_fastest'] = True
-            result['components']['effort_stepped_down_from'] = stepped_from
-            result['notes'].append(f'effort stepped down from {stepped_from} to {eff} for realtime_loop')
-    effective = levels.get(eff, levels['high'])       # this task's level at this effort (see `levels`)
-    if task.get('realtime_loop'):
-        resp_cfg = responsiveness_config(policy)
-        result['components']['responsiveness_source'] = resp_source
-        pinned_choice = exact_pin(task, bundle, own_model) or (
-            bool(task.get('slow_pin_fallback')) and model_pin_matches(task, bundle, own_model))
-        if resp_source == 'not_applicable' or resp_val is None:
-            result['components']['responsiveness'] = None
-            if pinned_choice:
-                warn = (f"pinned {bundle.get('id')} ({model}@{eff}) responsiveness is not_applicable "
-                        f"for realtime_loop (too slow per turn for a live loop); kept per explicit user selection")
-                result['components']['realtime_slow_pin_warning'] = warn
-                result['notes'].append(warn)
-            else:
-                result['below_floor'] = True
-                result['too_slow'] = True
-                exclude(f"{bundle['model']}@{eff}: responsiveness not_applicable for this channel (too slow per turn for a live loop)")
-        else:
-            result['components']['responsiveness'] = round(resp_val, 3)
-            if resp_source == 'default':
-                result['notes'].append('responsiveness: default')
-            resp_floor = float(resp_cfg['floor'])
-            if resp_val < resp_floor:
-                if pinned_choice:
-                    warn = (f"pinned {bundle.get('id')} ({model}@{eff}) responsiveness {resp_val:.2f} is below "
-                            f"the realtime_loop floor {resp_floor:g} (too slow per turn for a live loop); "
-                            f"kept per explicit user selection")
-                    result['components']['realtime_slow_pin_warning'] = warn
-                    result['notes'].append(warn)
-                else:
-                    result['below_floor'] = True
-                    result['too_slow'] = True
-                    exclude(f"{bundle['model']}@{eff}: responsiveness {resp_val:.2f} below the realtime_loop floor {resp_floor:g} "
-                            f'(too slow per turn for a live loop)')
     # One basis for the time a task takes, its spend and the window it needs (`duration_at`): Time/Task at this effort. Where
     # the data has none, the candidate leaves automatic routing; a named dispatch carries the task's own hours estimate
     # unscaled and the data error, and nothing stands in for the model's pace.
@@ -2929,12 +2621,12 @@ def evaluate_bundle(bundle, task, ctx):
         task_exclude('subscription ends before the work would finish')
 
     worker = task['worker']
-    worn = worker_worn(worker, policy)
     resumes = (
         bool(worker)
         and worker.get('bundle') == bundle['id']
         and not (task.get('read_only_review') and worker.get('read_only_review') is False)
     )
+    worn = worker_worn(worker, policy)
     context_extra = 0.0
     if resumes:
         carried = worker_historical_tokens(worker)
@@ -3122,7 +2814,7 @@ def evaluate_bundle(bundle, task, ctx):
         result['_five_context_burn'] = context_burn
         if not five_window_states and not result['excluded'] and not result.get('data_errors'):
             result['notes'].append('no current capacity observation; unknown is not exhausted')
-    if (pool or not task.get('disable_fast')) and not result['excluded'] and available_at is None:
+    if (pool or (not task.get('disable_fast') and available_at is None)) and not result['excluded'] and not result.get('_five_long_wait'):
         fast_info = ((info.get('five_axis') or {}).get('fast_mode')) or {}
         if fast_info.get('status') == 'ok' and fast_modes.supported(harness, model, info):
             f_price = float(fast_info.get('price_multiplier') or 2.0)
@@ -3134,6 +2826,8 @@ def evaluate_bundle(bundle, task, ctx):
             f_chain_usd = chain_usd * f_price
             fast_ok = bool(five_window_states)
             for wid, (wspec, st, cap_usd_w, unit) in five_window_states.items():
+                if pool and st.get('short'):
+                    continue
                 if unit is None:
                     fast_ok = False
                     break
@@ -3192,13 +2886,18 @@ def evaluate_bundle(bundle, task, ctx):
             action = 'resume' if resumes else 'switch'
     result['action'] = action
     # Quality is the continuous fit of the category scores at this effort to the demand, and nothing else (the effort's
-    # extra burn is priced in its usd and its gain in the effort-scaled thinking categories). The economy decides.
-    _, scaled = five_axis_level(axes, task['five_axis_demand'], five_axis_effort_ratio(curves, eff))
-    fit, axis_rows = five_axis_fit(scaled, task['five_axis_demand'], task['five_axis_targets'], float(five['shortfall_weight']))
-    result['_five_scaled'] = scaled         # the economy re-reads this candidate's effort-scaled categories over the demand grid
-    # The candidate's four category scores at this effort: what the radar and the explanation show.
-    result['components'].update({a: round(scaled[a], 4) for a in FIVE_AXES})
-    result['components'].update(five_axis_level=round(effective, 4),
+    # extra burn is priced in its usd and its gain in the categories' effort shift). The economy decides.
+    values = five_axis_values(info.get('five_axis'), eff)
+    fit, axis_rows = five_axis_fit(values, task['five_axis_demand'], task['five_axis_targets'])
+    result['_five_values'] = values         # the economy re-reads this candidate's scores at its effort over the demand grid
+    # The candidate's four category scores at this effort: what the radar and the explanation show (tool_operation: the
+    # weaker of its facets that have a value).
+    tool = [z for z in values['tool_operation'].values() if z is not None]
+    shown = {**{a: values[a] for a in FIVE_AXES if a != 'tool_operation'}, 'tool_operation': min(tool) if tool else None}
+    result['components'].update({a: None if v is None else round(v, 4) for a, v in shown.items()})
+    result['components'].update({f'share_{a}': v for a, v in
+                                 five_axis_shares(values, ctx['accounts']['_five_axis']['targets']).items()})
+    result['components'].update(five_axis_level=round(five_axis_level(axis_rows), 4),
                                 five_axis_shortfall=round(sum(r['demand'] * r['shortfall'] for r in axis_rows.values())
                                                           / max(1, sum(r['demand'] for r in axis_rows.values())), 4))
     result['five_axis_demand'] = task['five_axis_demand']
@@ -3206,8 +2905,9 @@ def evaluate_bundle(bundle, task, ctx):
     usd_rate = 0.0 if spec.get('unlimited') or spec.get('unmetered') or spec.get('billing') == 'unknown' else         model_usd_per_hour(model, info)       # dollars per hour of this candidate's own work; effort is in its duration
     result['five_axis_price'] = {'usd_per_hour': round(usd_rate, 4)}
     result['components'].update({'fit': round(fit, 3), 'continuity': 0.0})
-    if worker and not worn:
-        result['components']['continuity'] = 1.0 if action == 'resume' else 0.0
+    if action == 'resume' and task['coupling'] == 'high':
+        # a related task (the caller's --resume, coupling high) continues its worker: one demand level's worth
+        result['components']['continuity'] = round(task['five_axis_continuity'], 4)
     return result
 
 
@@ -3350,7 +3050,7 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
     report = econ.report()
     for c in candidates:
         for priv in ('_five_axis_windows', '_five_window_states', '_five_econ_hours', '_five_chain_hours',
-                     '_five_context_burn', '_five_fast_candidate', '_five_scaled', '_five_short_reasons',
+                     '_five_context_burn', '_five_fast_candidate', '_five_values', '_five_short_reasons',
                      '_five_long_wait', '_five_unmetered', '_five_metered'):
             c.pop(priv, None)
     return report
@@ -3374,21 +3074,21 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     ctx['bundles'].update(named_effort_bundles(task, ctx))
     five = ctx['five_axis'] = five_axis_config(policy)
     demand = five_axis_demand(task)
-    targets = five_axis_targets(demand, accounts['_five_axis']['anchor_value'])
-    task = {**task, 'five_axis_demand': demand, 'five_axis_targets': targets}
+    panel_targets = accounts['_five_axis']['targets']
+    task = {**task, 'five_axis_demand': demand, 'five_axis_targets': five_axis_targets(demand, panel_targets),
+            'five_axis_continuity': five_axis_continuity_value(demand, panel_targets)}
     candidates = [evaluate_bundle(b, task, ctx) for b in ctx['bundles'].values()]
     eligible = [c for c in candidates if not c['excluded']]
-    pool_task = {**task, 'realtime_loop': False, 'local_only': False, 'outbound_ok': None, 'file_transfer': False,
+    pool_task = {**task, 'local_only': False, 'outbound_ok': None, 'file_transfer': False,
                  'needs_visual': False, 'needs_gui': False, 'wants_fast': False,
                  'read_only_review': False, 'constraint_model': None, 'constraint_effort': None, 'pinned_bundle': None,
                  'metered_ok': True, 'metered_fallback': False, 'disable_fast': False, 'force_fast': False,
-                 'slow_pin_fallback': False, '_economy_pool': True}
+                 '_economy_pool': True}
     pool = [c for c in (evaluate_bundle(b, pool_task, ctx) for b in pool_bundles.values()) if not c['excluded']]
     quota_windows = apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=pool)
-    # Net score N = weighted fit and continuity + a temporary boost - the economy's cost (already in score units). No
-    # normalization over the candidate set.
+    # Net score N = fit + continuity (both in panel standard deviations) + a temporary boost - the economy's cost (already
+    # in score units). No normalization over the candidate set.
     weights = dict(five['weights'])
-    weights['continuity'] *= policy['coupling_continuity_multiplier'][task['coupling']] if task['worker'] else 0
     kind = task['kind']
     for c in eligible:
         c['score'] = round(sum(weights[k] * c['components'][k] for k in weights) + c['components'].get('boost', 0)
@@ -3494,6 +3194,9 @@ def named_pin(constraints, task, accounts):
     return name, effort or resolved['effort']
 
 
+COUPLINGS = ('low', 'medium', 'high')       # chain.coupling; high is a related task that continues its worker
+
+
 def normalize_task(raw, policy, capabilities, accounts):
     task = dict(raw or {})
     profile = validate_caller_profile(task['profile']) if task.get('profile') is not None else None
@@ -3504,14 +3207,6 @@ def normalize_task(raw, policy, capabilities, accounts):
         needs['visual'] = bool(task['needs_visual'])
     if not _flag_present(needs, 'local_only') and _flag_present(task, 'local_only'):
         needs['local_only'] = bool(task['local_only'])
-    if _flag_present(needs, 'realtime_loop'):
-        realtime_loop = bool(needs['realtime_loop'])
-    elif _flag_present(task, 'realtime_loop'):
-        realtime_loop = bool(task['realtime_loop'])
-    elif profile is not None and 'realtime_loop' in profile:
-        realtime_loop = bool(profile['realtime_loop'])
-    else:
-        realtime_loop = False
     if _flag_present(needs, 'fast'):
         wants_fast = bool(needs['fast'])
     elif _flag_present(task, 'fast'):
@@ -3533,7 +3228,6 @@ def normalize_task(raw, policy, capabilities, accounts):
     if profile is not None:
         profile = {
             **profile,
-            'realtime_loop': realtime_loop,
             'wants_fast': wants_fast,
             'read_only_review': read_only_review,
         }
@@ -3547,7 +3241,7 @@ def normalize_task(raw, policy, capabilities, accounts):
         raise ValueError('difficulty must be one of ' + ', '.join(DIFFICULTY_ORDER))
     chain = task.get('chain') if isinstance(task.get('chain'), dict) else {}
     coupling = chain.get('coupling') or 'low'
-    if coupling not in policy['coupling_continuity_multiplier']:
+    if coupling not in COUPLINGS:
         raise ValueError('chain.coupling must be low, medium or high')
     if not (task.get('expected_hours') or profile.get('expected_hours')):
         raise ValueError('expected_hours is required: the caller gives it (--hours) or the classifier estimates it in task.profile')
@@ -3575,7 +3269,7 @@ def normalize_task(raw, policy, capabilities, accounts):
         needs_gui = bool(kind == 'computer_use')
     return {'kind': kind, 'difficulty': difficulty, 'difficulty_source': source, 'hours': hours,
             'profile': profile, 'profile_difficulty': derived,
-            'realtime_loop': realtime_loop, 'needs_gui': needs_gui,
+            'needs_gui': needs_gui,
             'wants_fast': wants_fast,
             'read_only_review': read_only_review,
             'force_fast': bool(task.get('force_fast') or needs.get('force_fast')),
@@ -3641,18 +3335,6 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         task['metered_fallback'] = True
         candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied,
                                             records, host_policy_config)
-    # A model named without an effort, too slow at every level it can run: its fastest level, with a warning.
-    if (not eligible and task.get('realtime_loop') and task['constraint_model']
-            and not task.get('constraint_effort') and not task.get('constraint_bundle')
-            and any(c.get('too_slow') and len(c['excluded']) == 1 for c in candidates)):
-        task['slow_pin_fallback'] = True
-        candidates, eligible, system = rank(task, usage, policy, accounts, capabilities, now, unavailable, applied,
-                                            records, host_policy_config)
-        speeds = [c['components'].get('responsiveness') or 0.0 for c in eligible]
-        for c in list(eligible):
-            if (c['components'].get('responsiveness') or 0.0) < max(speeds):
-                c['excluded'].append('a faster effort of the named model is available')
-                eligible.remove(c)
     worker_id = (task['worker'] or {}).get('bundle')
     resume = next((c for c in candidates if c['id'] == worker_id), None)
     decision = {'task': {k: task[k] for k in ('kind', 'difficulty', 'hours', 'chain_hours', 'coupling')}, 'system': system,
@@ -3704,8 +3386,6 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         decision['task']['wants_fast'] = True
     if task.get('read_only_review'):
         decision['task']['read_only_review'] = True
-    if task.get('realtime_loop'):
-        decision['task']['realtime_loop'] = True
     if task.get('metered_fallback'):
         decision['task']['metered_fallback'] = True
     if task['profile']:
@@ -3750,15 +3430,15 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         decision['better_if_waiting'] = {'bundle': better['id'], 'hours': round(better['available_in_hours'], 1),
                                          'score_gain': round(better['score'] - top['score'], 4)}
     forced = pinned_cand is not None
-    if task['coupling'] == 'high' and resume is not None and not resume['excluded'] and resume['action'] == 'resume' and not forced:
-        top, forced = resume, True        # a coupled chain finishes on its owner while that owner is not worn
     decision.update({'action': top['action'], 'needs_user_decision': False,
-                     'continuity': 'high-coupling chain stays with its owner' if (forced and pinned_cand is None) else None})
+                     'continuity': ('high-coupling chain stays with its owner'
+                                    if (top is resume and top['action'] == 'resume' and not forced) else None)})
     if (top['available_in_hours'] or 0) > can_wait:
         # can_wait_hours is a limit, not a preference: say so instead of quietly starting later than allowed
         decision.update({'needs_user_decision': True, 'wait_hours': round(top['available_in_hours'], 1),
                          'reason': (f"The chain owner {top['id']} can resume in {top['available_in_hours']:.1f}h"
-                                    if forced else f"Nothing eligible can start within {can_wait:g}h; the best, {top['id']}, can start in {top['available_in_hours']:.1f}h")
+                                    if top is resume and top['action'] == 'resume'
+                                    else f"Nothing eligible can start within {can_wait:g}h; the best, {top['id']}, can start in {top['available_in_hours']:.1f}h")
                          + '. Wait, allow a longer wait, or mark it unavailable and replan.'})
     # A worker held only by the old route gives way when the user names something else.
     pin_moved = resume is not None and (
@@ -3785,17 +3465,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     if top['bundle'].get('fast'):
         decision['fast'] = True
         decision['fast_reason'] = top['components'].get('fast_reason')
-    if task.get('realtime_loop'):
-        decision['responsiveness'] = ('default' if top['components'].get('responsiveness_source') == 'default'
-                                      else top['components'].get('responsiveness'))
-        slow_pin_warn = top['components'].get('realtime_slow_pin_warning')
-        if slow_pin_warn:
-            decision.setdefault('warnings', []).append(slow_pin_warn)
     decision.setdefault('reason', explain(top, system))
-    if task.get('realtime_loop') and top['components'].get('realtime_slow_pin_warning'):
-        warn_msg = top['components']['realtime_slow_pin_warning']
-        if warn_msg not in (decision.get('reason') or ''):
-            decision['reason'] = f"{decision['reason']}; {warn_msg}"
     # No required ability: the fit and the economy chose this effort.
     chosen = top['bundle'].get('effort')
     decision['task']['max_recommended_effort'] = chosen if chosen in EFFORT_ORDER else None
@@ -3817,7 +3487,7 @@ SNAPSHOT_CAPACITY_KEYS = ('window', 'remaining', 'after', 'step_pct', 'chain_pct
                           'priced', 'cost', 'quota_price', 'need_start', 'need_end', 'spend_before_reset',
                           'spend_after_reset', 'stale')
 SNAPSHOT_DECISION_KEYS = ('action', 'needs_user_decision', 'margin', 'needs_judgment', 'reason', 'alternatives', 'continuity',
-                          'fast', 'fast_reason', 'responsiveness', 'wait_hours', 'start_after_hours', 'better_if_waiting', 'warnings')
+                          'fast', 'fast_reason', 'wait_hours', 'start_after_hours', 'better_if_waiting', 'warnings')
 
 
 def _round(value, places=4):
@@ -3849,12 +3519,14 @@ def _snapshot_row(candidate, detail):
     elif excluded:
         row['components'] = {}
     else:
-        keep = ('fit', 'opportunity_cost', 'vision_tools', 'divergence', 'global_rigor', 'module_precision',
-                'responsiveness', 'responsiveness_source',
+        shares = tuple(f'share_{a}' for a in FIVE_AXES)
+        keep = ('fit', 'opportunity_cost', *FIVE_AXES, *shares, 'continuity',
                 'boost',
                 'five_axis_level', 'quota_price', 'need_probability', 'need_probability_end', 'substitute_slack',
                 'decided_by', 'earliest_reset_hours', 'reading_at', 'duration_multiplier', 'duration_source')
-        row['components'] = {k: _round(comps[k]) for k in keep if k in comps and comps[k]}
+        # a category score or share of 0 is a real value (the anchor's score, the panel's weakest share), kept
+        row['components'] = {k: _round(comps[k]) for k in keep
+                             if comps.get(k) is not None and (k in FIVE_AXES or k in shares or comps[k])}
         for k in ('fit', 'opportunity_cost'):
             if k in comps:
                 row['components'][k] = _round(comps[k])
@@ -3982,8 +3654,6 @@ def explain(top, system):
         parts.append(f"fast mode enabled ({top['components'].get('fast_reason') or 'priced as its own candidate'})")
     if top['components'].get('boost'):
         parts.append(f"includes a temporary user-override boost of {top['components']['boost']:+.2f}")
-    if top['components'].get('responsiveness_source') == 'default':
-        parts.append('responsiveness: default')
-    elif top['components'].get('responsiveness') is not None:
-        parts.append(f"responsiveness {top['components']['responsiveness']:.2f}")
+    if top['components'].get('continuity'):
+        parts.append(f"continuing its related worker adds {top['components']['continuity']:.2f} (one demand level)")
     return '; '.join(parts)

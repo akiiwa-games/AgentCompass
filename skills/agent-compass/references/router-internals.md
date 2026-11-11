@@ -43,7 +43,7 @@ Standard `task.json`:
 
 **Classifier Authority Rule (No Manual Classification by Parent Agents)**:
 - **Do NOT manually fill `work_kind`, `difficulty`, or `profile` in `task.json`, and do NOT read classification examples or rubrics.**
-- `plan` (and `roll`) automatically invoke the System-One classifier (inspect `agentcompass scorer --action show` for the effective scorer and available choices; configure it with `scorer --action set` or AgentCompass settings) to determine the route category (`work_kind`), difficulty floor, and `TaskProfile` (including `divergence` `1..3` and boolean `realtime_loop`) directly from `task.objective` and `task.context`. If a parent agent supplies `work_kind` or `difficulty`, the classifier's judgment overrides them (`caller_classification_ignored`).
+- `plan` (and `roll`) automatically invoke the System-One classifier (inspect `agentcompass scorer --action show` for the effective scorer and available choices; configure it with `scorer --action set` or AgentCompass settings) to determine the route category (`work_kind`) and `TaskProfile` (including `axis_demand` `0..3` over `divergence`, `coding`, `aesthetics`, `tool_operation`) directly from `task.objective` and `task.context`. If a parent agent supplies `work_kind` or `difficulty`, the classifier's judgment overrides them (`caller_classification_ignored`).
 - When the caller leaves `needs.local_only` unset, a classifier profile with `local_only: true` is trusted: the router sets `needs.local_only: true`, copies the profile `reason` into `needs.local_only_reason`, and records `profile_local_only_applied`. This judgment is not rechecked by the caller-reason validator. Explicit caller values take precedence; `needs.local_only: false` in `plan` input keeps work Dot-eligible subject to route and modality constraints. `roll` has no separate negative flag.
 - Factual `task` fields the parent agent may provide:
   - `objective` (required): Concrete description of what the worker must accomplish and how it will be verified.
@@ -63,7 +63,7 @@ agentcompass record \
   --provider <provider> --account <account> --model <model> --effort <effort>
 ```
 
-`--effort` may be omitted (the account's row of that model keeps its level) or written as `--model <model>:<effort>` or `--model <model>-<effort>`. A level the account has no row for inherits the launch fields of its other rows of that model. The record is refused when a window that route draws is exhausted, when the route is cooling down, when the user unchecked that level, or when the user unchecked every level of the model, also for a level with no row of its own. A family name with no configured route is refused with `named_model_unavailable`, never folded to its target. A model that is off only by default (a superseded generation) can be named. On `realtime_loop` work a named model steps down like any candidate and a named model and effort stays as named; a slow route is recorded with `warnings`, never refused for speed.
+`--effort` may be omitted (the account's row of that model keeps its level) or written as `--model <model>:<effort>` or `--model <model>-<effort>`. A level the account has no row for inherits the launch fields of its other rows of that model. The record is refused when a window that route draws is exhausted, when the route is cooling down, when the user unchecked that level, or when the user unchecked every level of the model, also for a level with no row of its own. A family name with no configured route is refused with `named_model_unavailable`, never folded to its target. A model that is off only by default (a superseded generation) can be named.
 
 ### C. Dispatch lifecycle
 
@@ -97,20 +97,14 @@ There is no machine-local fleet document: a clean install reaches the same routi
 discovery plus public data alone. Keep explanations in `~/.agent-compass/host-rules/*.md`.
 
 The allocator first checks discovered availability, explicit disablement, host policy,
-expiry, required tools and modalities, configured route restrictions and whether the model has data for every
-category the task demands. It then scores eligible candidates: the fit of the model's four category scores to the task's
-demand, continuity, and the quota economy's price for the spend.
-On `realtime_loop: true` tasks (where the worker itself stays inside a live external
-system's observe-act loop across turns), the allocator also evaluates each bundle's
-per-turn `responsiveness` (`0..1`, per-effort in `effort_curves.<model>.responsiveness`,
-computed offline by `scripts/refresh_speed_data.py` from Artificial Analysis `ttft_s`
-(`headline.timeToFirstAnswerToken`, which already includes single-turn thinking time) and
-`output_tps` benchmarks — with OpenRouter `p50_latency`/`p50_throughput` as fallback only
-when AA speed is absent — via `T_turn = (ttft_s + 400 / output_tps) * harness_overhead`,
-mapped linearly from `[4.0s -> 1.0, 45.0s -> 0.0]` in `scoring.responsiveness`):
-- The floor `scoring.responsiveness.floor` (`0.50`, `T_turn <= 24.5s`) is evaluated per `(model, effort)`. If a bundle's configured effort is below `floor`, an unnamed row steps down to the nearest faster effort in `effort_curves.<model>.responsiveness` that clears `floor` (when no lower-effort sibling bundle on the same account/harness/model already clears `floor`), then competes with the other rows by score. A model named alone chooses its level by score instead; see [Pins](#model-names-efforts-and-pins). Models with no supported effort clearing `floor` (such as `gemini-4-argon-high` at `46.2s -> 0.000`) or marked `not_applicable` (`grok-bot`, `dot`) are excluded with `"too slow per turn for a live loop"`.
-- `responsiveness` is a gate and a step-down rule only; it adds nothing to the score.
-- Models without community speed benchmarks take `scoring.responsiveness.default` (`0.52`, above the floor so not excluded) and record `responsiveness: default` in the decision. Optional local telemetry (`speed-telemetry.json` in the state dir) shrinks toward observed local turn latency only after `min_samples` is reached, bounded by `max_blend` and `max_shift`. Non-`realtime_loop` tasks are completely unaffected.
+expiry, required modalities (`needs_visual`, `needs_gui`, or `tool_operation >= 3`), configured route restrictions and whether the model has data for every
+category the task demands (`>= 1`). It then scores eligible candidates: the fit of the model's four category scores
+(`divergence`, `coding`, `aesthetics`, `tool_operation`, in panel standard deviations at that effort, with each demanded
+category's level-1 panel-weakest target as zero point) to the task's demand, continuity (`t3 - t2` on `coupling == "high"`),
+and the quota economy's price for the spend.
+For `tool_operation`, level 1 imposes no ability requirement; level 2 evaluates per-effort `responsiveness` (`aa.ttfa`,
+`-ln(seconds)` from Artificial Analysis `timeToFirstAnswerToken`); and level 3 evaluates `min(responsiveness, image_recognition)`
+(`aa.mmmu_pro`, `lmarena.vision`) and requires image-input support.
 A dynamically discovered bundle starts checked unless public data lists
 its model in `superseded` (`{old id: {by: newer id, basis}}`); efforts and harnesses of one
 model share the entry, and a model unknown to the data starts checked. The user's
@@ -143,25 +137,23 @@ The same rules hold in the other repositories that port this router.
 
 **One resolver.** `model_resolution.resolve_model` is the only place a provider's spelling becomes a model. It returns `{key, source, effort, bare}`:
 
-| `source` | Meaning | Category scores | Responsiveness |
-|---|---|---|---|
-| `exact` | the calibrated id itself | its own row | its measured curve |
-| `alias` | another spelling of it: prefix, date, `-latest`, `-preview`, `[1m]`, letter case, a listed alias | its own row | its measured curve |
-| `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | the same-series target's scores and usd_per_hour (series conversion; a small-size name on a non-small target is not in its series and gets the small row), marked estimated | `0.52`, `source: default`; no local telemetry and no step-down |
-| `unknown` | no match | no scores: a demanded category is a data error and the model leaves automatic routing | `0.52`, `source: default` |
+| `source` | Meaning | Category scores |
+|---|---|---|
+| `exact` | the calibrated id itself | its own row |
+| `alias` | another spelling of it: prefix, date, `-latest`, `-preview`, `[1m]`, letter case, a listed alias | its own row |
+| `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | the same-series target's scores and usd_per_hour (series conversion; a small-size name on a non-small target is not in its series and gets the small row), marked estimated |
+| `unknown` | no match | no scores: a demanded category (`>= 1`, except `tool_operation = 1`) is a data error and the model leaves automatic routing |
 
-A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry or curve.
+A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry.
 
-`allocator.row_key` says which model a row runs: the key for `exact` and `alias`, the row's own name for `family` and `unknown`. A family guess folds to its target only for its estimated score. Wherever a row, a pin, a cooldown, a worker or a rival is matched, it is its own model, so naming the flagship never takes a family row, and unchecking a family level never touches the flagship's step-down. A cooldown recorded under any spelling of a model cools all its spellings.
+`allocator.row_key` says which model a row runs: the key for `exact` and `alias`, the row's own name for `family` and `unknown`. A family guess folds to its target only for its estimated score. Wherever a row, a pin, a cooldown, a worker or a rival is matched, it is its own model, so naming the flagship never takes a family row. A cooldown recorded under any spelling of a model cools all its spellings.
 
 **Behaviour change: fewer judge calls.** The rival for the margin used to be the best row with a different literal name, so `claude-opus-5-5` and `claude-opus-5-5-high` counted as rivals and could trigger a judge that "weighs models, not efforts, harnesses or accounts of one model". It is now the best row of a different model. A margin grows or disappears and `needs_judgment` can only go from true to false: on a grid of 6144 ordinary tasks, 890 rows (14.5%) on the public fleet and 38 rows on each of the reference and discovered fleets stop calling the judge. The allocator's own choice did not change on any of the 18432 rows; its choice could differ from what a judge would have changed it to, and that was not compared against a real judge.
 
-**Step-down range.** On `realtime_loop` work a bundle steps down only to efforts in `dispatch_efforts(provider)` that the row offers (`efforts`, when listed) and the user has not unchecked (`disabled: true` on another row of the same account, harness and model). A second account (`claude-2`, `opencode-2`) reads its family's table through discovery or `account_family`; `pi` has its own table. A table that does not list the model offers only the levels the row lists, and no step-down when it lists none; a provider with no table at all (a gateway) steps along the measured curve. `model:effort` is a fixed level. A row with no level below its own does not hold back a sibling that can step. A bundle left without a qualifying level is excluded with `<model>@<effort>: responsiveness X below the realtime_loop floor 0.5`; a step-down that leaves too little ability names both levels.
-
 **Pins.** `constraints.model`, `constraints.effort`, `pinned_model` and `pinned_effort` hold in every mode and through `issue` and `prepare`:
 
-- Model only: the plan picks among that model's levels by the rules above. On `realtime_loop` work the best level is the highest-scoring one that clears the floor, as everywhere else in the allocator: every level the launch contract offers competes as a candidate, so the answer does not depend on which rows are written. When none clears, the fastest runs with `decision.warnings`. `xhigh` and `max` have no exemption. `prepare` accepts any level that clears the floor, is in the contract, is offered by the row and is not unchecked; it does not rank levels again, since the score needs the task.
-- Model and effort: that level stays, and a slow one only warns. A level the model has no row for is carried as `<carrier>@<effort>` when `dispatch_efforts` or the row's own `efforts` offer it. Each level goes to the first row of the model that offers it, so the answer does not depend on the order of the rows.
+- Model only: the plan picks among that model's levels by score: every level the launch contract (`dispatch_efforts`, or the row's `efforts` when unlisted) offers competes as a candidate, so the answer does not depend on which rows are written. `prepare` accepts any level that is in the contract, is offered by the row and is not unchecked; it does not rank levels again, since the score needs the task.
+- Model and effort: that level stays. A level the model has no row for is carried as `<carrier>@<effort>` when `dispatch_efforts` or the row's own `efforts` offer it. Each level goes to the first row of the model that offers it, so the answer does not depend on the order of the rows.
 - A family name never launches the family target; unconfigured means blocked.
 - A pin on an exact or alias name matches that model's rows only. A family row is another model: it never stands in for the name, healthy or not, and a named model that is down is blocked. An unnamed task can still run the family row when its flagship is down.
 - A level the user unchecked belongs to that row's own model (`row_key`). Unchecking `claude-opus-9` at `high` leaves `claude-opus-5-5` at `high` reachable, and the other way round.
@@ -179,7 +171,7 @@ When nothing clears the gate, `plan` returns `choice: none` with `decision.actio
 
 ### Calibration data
 
-`calibration/` refits model scores and effort curves from LMArena, vals.ai and Artificial Analysis. See [`../calibration/README.md`](../calibration/README.md). Raw downloads stay outside git.
+`calibration/` builds panel standard scores and per-effort curves from LMArena, `arena.ai` Agent/Alignment, Design Arena and Artificial Analysis. See [`../calibration/README.md`](../calibration/README.md). Raw downloads stay outside git.
 
 ### Distribution simulation and ledger replay
 
@@ -188,7 +180,7 @@ When nothing clears the gate, `plan` returns `choice: none` with `decision.actio
 ```bash
 python -X utf8 scripts/route_simulation.py grid [--mode machine|fresh|both] [--state NAME ...] [--json out.json]
 python -X utf8 scripts/route_simulation.py grid --accounts "claude pro" --accounts "opencode free" [--state NAME ...]
-python -X utf8 scripts/route_simulation.py explain [--divergence N] [--global-rigor N] [--module-precision N] [--vision-tools N] [--local] [--state "claude scarce"] [--bundle grok47_high]
+python -X utf8 scripts/route_simulation.py explain [--divergence N] [--coding N] [--aesthetics N] [--tool-operation N] [--local] [--state "claude scarce"] [--bundle grok47_high]
 python -X utf8 scripts/route_simulation.py replay [--last N] [--json out.json]
 ```
 

@@ -24,10 +24,10 @@ CATALOG_JSON = Path(__file__).resolve().parents[1] / "skills" / "agent-compass" 
 
 class ScoreDimensionTests(unittest.TestCase):
     def test_four_categories_and_the_economy_axis(self):
-        values = radar_chart.score_dimensions({"divergence": 0.3, "global_rigor": 0.7, "module_precision": 0.0,
-                                               "vision_tools": 0.2, "opportunity_cost": 0.2, "boost": 0.05})
-        self.assertEqual((values["divergence"], values["global_rigor"], values["module_precision"],
-                          values["vision_tools"]), (0.3, 0.7, 0.0, 0.2))
+        values = radar_chart.score_dimensions({"share_divergence": 0.3, "share_coding": 0.7, "share_aesthetics": 0.0,
+                                               "share_tool_operation": 0.2, "opportunity_cost": 0.2, "boost": 0.05})
+        self.assertEqual((values["divergence"], values["coding"], values["aesthetics"],
+                          values["tool_operation"]), (0.3, 0.7, 0.0, 0.2))
         self.assertAlmostEqual(values["economy"], 1.0 - 0.2 + 0.05)
 
     def test_everything_is_clamped_and_a_missing_category_is_zero(self):
@@ -39,8 +39,9 @@ class ScoreDimensionTests(unittest.TestCase):
         self.assertEqual(radar_chart.clamp("x"), 0.0)
 
     def test_raw_terms_for_the_hover_text(self):
-        raw = radar_chart.score_raw({"vision_tools": 0.0, "opportunity_cost": 0.08, "boost": 0.35, "fit": 1.0})
-        self.assertEqual(raw["vision_tools"], {"vision_tools": 0.0})
+        raw = radar_chart.score_raw({"tool_operation": -0.5, "share_tool_operation": 0.8,
+                                     "opportunity_cost": 0.08, "boost": 0.35, "fit": 1.0})
+        self.assertEqual(raw["tool_operation"], {"tool_operation": -0.5, "share_tool_operation": 0.8})
         self.assertEqual(raw["divergence"], {})
         self.assertEqual(raw["economy"], {"opportunity_cost": 0.08, "boost": 0.35})
 
@@ -59,13 +60,14 @@ class DnaDimensionTests(unittest.TestCase):
         self.assertEqual([s['values']['economy'] for s in series], [.5, 0])
         self.assertEqual([radar_chart.dna_dimensions(table[name], 30)['economy'] for name in models], [.5, 1, 0, 0])
 
-    def test_model_dna_from_category_scores_and_price(self):
-        info = {"five_axis": {"scores": {"divergence": 0.62, "global_rigor": 0.98, "module_precision": 0.92,
-                                         "vision_tools": 0.55}, "tier": {"value": 3.2}}, "usd_per_hour": 15}
+    def test_model_dna_from_category_shares_and_price(self):
+        info = {"five_axis": {"scores": {"divergence": -1.2, "coding": -0.1, "aesthetics": -0.3, "tool_operation": -1.0},
+                              "shares": {"divergence": 0.62, "coding": 0.98, "aesthetics": 0.92, "tool_operation": 0.55},
+                              "tier": {"value": 3.2}}, "usd_per_hour": 15}
         self.assertEqual(radar_chart.dna_dimensions(info, 30), {
-            "divergence": 0.62, "global_rigor": 0.98, "module_precision": 0.92, "vision_tools": 0.55, "economy": .5})
+            "divergence": 0.62, "coding": 0.98, "aesthetics": 0.92, "tool_operation": 0.55, "economy": .5})
         raw = radar_chart.dna_raw(info)
-        self.assertEqual(raw["vision_tools"], {"vision_tools": .55, "tier": 3.2})
+        self.assertEqual(raw["tool_operation"], {"tool_operation": -1.0, "share_tool_operation": .55, "tier": 3.2})
         self.assertEqual(raw["economy"], {"usd_per_hour": 15})
 
     def test_a_model_without_data_has_zero_everywhere_never_a_neutral_default(self):
@@ -73,17 +75,17 @@ class DnaDimensionTests(unittest.TestCase):
         self.assertEqual(radar_chart.dna_dimensions({"usd_per_hour": 15}, None)["economy"], 0.0)
 
     def test_estimated_categories_carry_their_provenance(self):
-        estimates = {"divergence.arena_creative": {"method": "sibling_shift", "base_model": "claude-opus-5-5", "base_value": 0.8,
-                                                   "shift": 0.03, "tier": 4.1, "base_tier": 4.5},
-                     "vision_tools.vision": {"method": "tier_fit", "tier": 3.0, "r": 0.8, "n": 20}}
+        estimates = {"divergence.creative_writing": {"method": "sibling_shift", "base_model": "claude-opus-5-5",
+                                                     "base_value": 0.0, "shift": -0.2, "tier": 4.1, "base_tier": 4.6},
+                     "tool_operation.image_recognition": {"method": "tier_fit", "tier": 3.0, "r": 0.8, "n": 20}}
         notes = radar_chart.dna_estimated({"five_axis": {"estimates": estimates}})
-        self.assertEqual(set(notes), {"divergence", "vision_tools"})
+        self.assertEqual(set(notes), {"divergence", "tool_operation"})
         self.assertIn("claude-opus-5-5", notes["divergence"])
-        self.assertIn("fit on tier 3.0", notes["vision_tools"])
+        self.assertIn("fit on tier 3.0", notes["tool_operation"])
         self.assertEqual(radar_chart.dna_estimated({"five_axis": {"estimates": {}}}), {})
 
     def test_axis_keys_are_the_four_categories_and_the_economy(self):
-        expected = ["divergence", "global_rigor", "module_precision", "vision_tools", "economy"]
+        expected = ["divergence", "coding", "aesthetics", "tool_operation", "economy"]
         self.assertEqual([key for key, _, _ in radar_chart.SCORE_AXES], expected)
         self.assertEqual([key for key, _, _ in radar_chart.DNA_AXES], expected)
         for result in (radar_chart.score_dimensions({}), radar_chart.score_raw({}),
@@ -144,8 +146,10 @@ class GeometryTests(unittest.TestCase):
 
 def candidate(cid, model, score, excluded=(), **components):
     return {"id": cid, "bundle": {"model": model, "account": "a", "effort": "high"}, "score": score,
-            "excluded": list(excluded), "components": {"fit": 0.8, "divergence": 0.8, "global_rigor": 0.7, "module_precision": 0.6,
-                                                       "vision_tools": 0.5, "opportunity_cost": 0.01, **components}}
+            "excluded": list(excluded), "components": {"fit": 0.8, "divergence": 0.0, "coding": 0.0, "aesthetics": 0.0,
+                                                       "tool_operation": 0.0, "share_divergence": 0.8, "share_coding": 0.7,
+                                                       "share_aesthetics": 0.6, "share_tool_operation": 0.5,
+                                                       "opportunity_cost": 0.01, **components}}
 
 
 PLAN = {"choice": "opus", "decision": {"margin": 0.05},
@@ -256,7 +260,7 @@ class DecisionBindingTests(unittest.TestCase):
         import tk_test_support
         root = tk_test_support.shared_tk_root(self)
         root.withdraw()
-        fit = {"divergence": {"demand": 1, "score": .7, "target": .3}, "global_rigor": {"demand": 3, "score": .8, "target": .8}}
+        fit = {"divergence": {"demand": 1, "score": -.7, "target": -3.1}, "coding": {"demand": 3, "score": 0.0, "target": 0.0}}
         ranking = [{**row, "five_axis_fit": fit} if row["id"] == "opus" else row for row in PLAN["ranking"]]
         with mock.patch.object(router_window.Panel, 'run'), mock.patch.object(router_window.Panel, 'prefill'), \
                 mock.patch.object(router_window.theme, 'set_window_icon'):
@@ -311,7 +315,7 @@ class DecisionBindingTests(unittest.TestCase):
         self.assertEqual(router_data.decision_pair({"ranking": []}), [])
 
     def test_dna_series_for_two_models(self):
-        models = {"a": {"five_axis": {"scores": {"divergence": 1}}, "usd_per_hour": 0}, "b": {}}
+        models = {"a": {"five_axis": {"shares": {"divergence": 1}}, "usd_per_hour": 0}, "b": {}}
         series, raw = router_data.dna_series(models, "a", "b")
         self.assertEqual([s["label"] for s in series], ["a", "b"])
         self.assertEqual(series[0]["values"]["divergence"], 1.0)
@@ -342,6 +346,7 @@ class DecisionBindingTests(unittest.TestCase):
 
     def test_replay_reuses_the_recorded_profile_when_valid(self):
         allocator = mock.Mock()
+        allocator.ledger_profile.side_effect = lambda p: p
         allocator.validate_profile.side_effect = lambda p: p
         with mock.patch.object(router_data, "modules", return_value=(allocator, mock.Mock())), \
                 mock.patch.object(router_data, "plan_task", side_effect=lambda task: task):
@@ -728,7 +733,8 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual([p[1] for p in router_window.PAGES],
                          ["Decision Compass", "Quota Monitor", "Model Settings", "Integrations"])
         self.assertEqual(radar_chart.DNA_AXES[0][1], "Divergence")
-        self.assertEqual(radar_chart.DNA_AXES[3][1], "Vision & Tools")
+        self.assertEqual([a[1] for a in radar_chart.DNA_AXES[:4]],
+                         ["Divergence", "Coding", "Aesthetics", "Tool Operation"])
         self.assertEqual(radar_chart.axis_title(), "Capabilities & Quota")
         self.assertIn("divergence", radar_chart.SCORE_AXES[0][2])
         for axes in (radar_chart.SCORE_AXES, radar_chart.DNA_AXES):
@@ -1419,10 +1425,10 @@ class ScorerConfigTests(unittest.TestCase):
         response = {"model": "jev-latest", "answers": {
             "work_kind": {"choice": "general_implementation"}, "interaction_style": {"choice": "engineering"},
             "reasoning_depth": {"score": 1.2}, "code_complexity": {"score": 2.1},
-            "demand_divergence": {"score": 0.9}, "demand_global_rigor": {"score": 1.6}, "demand_module_precision": {"score": 2.2},
-            "demand_vision_tools": {"score": 0.0},
+            "demand_divergence": {"score": 0.9}, "demand_coding": {"score": 2.2}, "demand_aesthetics": {"score": 0.0},
+            "demand_tool_operation": {"score": 0.0},
             "needs_visual": {"noul": 0.02}, "needs_gui": {"noul": 0.01}, "local_only": {"noul": 0.9},
-            "realtime_loop": {"noul": 0.02}, "wants_fast": {"noul": 0.05}, "read_only_review": {"noul": 0.02},
+            "wants_fast": {"noul": 0.05}, "read_only_review": {"noul": 0.02},
             "access": {"choice": "write"}, "multi_task": {"noul": 0.05}, "task_count": {"choice": "1"}}}
         seen = []
         with mock.patch.object(self.router, "post_json", side_effect=lambda url, body, key, timeout: seen.append(key) or response):
@@ -1444,8 +1450,7 @@ class ScorerConfigTests(unittest.TestCase):
         profile = {
             "work_kind": "debug_review", "reasoning_depth": 3, "code_complexity": 2, 
             
-            "needs_visual": True, "needs_gui": False, "local_only": True, "realtime_loop": False,
-            "wants_fast": False, "read_only_review": False, "interaction_style": "engineering",
+            "needs_visual": True, "needs_gui": False, "local_only": True, "wants_fast": False, "read_only_review": False, "interaction_style": "engineering",
             "multi_task": False, "task_count": "1",
         }
         with mock.patch.object(router_data, "plan_task", side_effect=lambda task: {"task": task}), \

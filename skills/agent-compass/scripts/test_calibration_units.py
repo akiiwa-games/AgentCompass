@@ -36,10 +36,10 @@ class SeriesTests(unittest.TestCase):
         self.assertNotIn('not-a-row', series.groups(acc)['dot'])
 
     def test_boards_keep_the_first_numeric_reading_per_source_on_the_component_dimensions(self):
-        meas = {'axes': {'divergence': {}, 'module_precision': {}},
+        meas = {'axes': {'divergence': {}, 'coding': {}},
                 'models': {'m': {'divergence': [{'source': 'a.x', 'value': 0.5}, {'source': 'a.x', 'value': 0.9},
                                                 {'source': 'a.bad', 'value': True}, {'source': 'a.str', 'value': 'high'}],
-                                 'module_precision': [{'source': 'b.y', 'value': 0.3}],
+                                 'coding': [{'source': 'b.y', 'value': 0.3}],
                                  'other_field': [{'source': 'c.z', 'value': 1.0}]},
                            'n': {}}}
         self.assertEqual(series.boards(meas), {'m': {'a.x': 0.5, 'b.y': 0.3}, 'n': {}})

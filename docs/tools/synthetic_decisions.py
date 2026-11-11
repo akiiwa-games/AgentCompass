@@ -9,7 +9,7 @@ earliest-expiring under-line quota, then the faster completion, then the fewer U
 """
 from __future__ import annotations
 
-AXES = ("divergence", "global_rigor", "module_precision", "vision_tools")
+AXES = ("divergence", "coding", "aesthetics", "tool_operation")
 HEADLINE = "Refactor payment retries with integration tests"
 HEADLINE_KIND = "complex_build_plan"
 HOURS = 2.0
@@ -110,7 +110,7 @@ def ranking(specs=HEADLINE_SPECS, winner=None, hours=HOURS, windows=WINDOWS):
         _, capacity, used, reset_in, beta = windows[window]
         over = over_line(windows[window], spend, task_hours)
         cost = beta * over / hours
-        components = dict(zip(AXES, scores))
+        components = {**dict(zip(AXES, scores)), **{f"share_{a}": s for a, s in zip(AXES, scores)}}
         components.update(fit=round(fit, 4), opportunity_cost=round(cost, 4))
         rows.append({
             "id": bundle_id, "bundle": {"model": model, "effort": effort, "account": window, **({"fast": True} if fast else {})},

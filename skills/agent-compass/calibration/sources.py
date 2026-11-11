@@ -5,11 +5,11 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
 
 - LMArena leaderboard dataset (Hugging Face lmarena-ai/leaderboard-dataset, `latest` split): WebDev, Agent and its
   sub-boards, Text (style control), Vision.
-- vals.ai SWE-bench Verified (per fix-time bucket) and Terminal-Bench 2.0 leaderboards (HTML).
 - Artificial Analysis models leaderboard (HTML): Intelligence Index per model variant, including effort variants, and
-  the page's embedded model records (cost and time per task, prices, sub-benchmarks).
-- OpenRouter `/api/v1/models` (prices), EQ-Bench Creative Writing v3, METR time horizons v1.1 and the OSWorld-Verified
-  results sheet: the five-axis measurements (`measurements.py`).
+  the page's embedded model records (cost and time per task, time to first answer token, prices, sub-benchmarks).
+- Design Arena leaderboards (designarena.ai; blind human votes, Bradley-Terry ratings): Website, 3D Design and SVG.
+  The page embeds each board's rows (`modelId`, wins, losses, battles, rating) and the model list (id, display name).
+- OpenRouter `/api/v1/models` (prices and input modalities).
 - Community real-usage measurements of subscription window capacity (wokey.ai, finopsllm.com, inventivehq.com,
   the eneasf Antigravity telemetry findings):
   `community.py`. `refresh.py` re-runs fetch, measurements and five_axis on a schedule and reports source age.
@@ -32,13 +32,13 @@ from pathlib import Path
 HF = 'https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/{}/latest-00000-of-00001.parquet'
 ARENA_BOARDS = ('webdev', 'agent', 'agent_bash_reliability', 'agent_task_outcome_explicit', 'agent_steerability',
                 'text_style_control', 'vision')
-PAGES = {'swebench.html': 'https://www.vals.ai/benchmarks/swebench',
-         'terminal-bench-2.html': 'https://www.vals.ai/benchmarks/terminal-bench-2',
-         'aa-models.html': 'https://artificialanalysis.ai/leaderboards/models',
+# Design Arena boards: file -> (url, the board's `category` in the page's embedded `boards` list).
+DESIGN_ARENA = {'designarena-website.html': ('https://www.designarena.ai/leaderboard?section=website&board=website', 'website'),
+                'designarena-3d.html': ('https://www.designarena.ai/leaderboard?section=3d&board=3d-design', '3d'),
+                'designarena-svg.html': ('https://www.designarena.ai/leaderboard?section=art&board=svgs', 'svg')}
+PAGES = {'aa-models.html': 'https://artificialanalysis.ai/leaderboards/models',
          'openrouter-models.json': 'https://openrouter.ai/api/v1/models',
-         'eqbench-creative-writing.js': 'https://eqbench.com/creative_writing.js',
-         'metr-benchmark-results.yaml': 'https://metr.org/assets/benchmark_results_1_1.yaml',
-         'osworld-verified.xlsx': 'https://os-world.github.io/static/data/osworld_verified_results.xlsx'}
+         **{name: url for name, (url, _) in DESIGN_ARENA.items()}}
 # Window capacity pages read by community.py: community real-usage measurements (round 047, round 4) and the vendor
 # plan multipliers of the capacity ladder (round 5).
 COMMUNITY_PAGES = {'community-wokey-claude.html': 'https://wokey.ai/claude-usage-limits',
@@ -140,17 +140,6 @@ def _text(raw):
     return re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', t)))
 
 
-def vals(target, page):
-    """({model: overall %}, {model: {bucket: (resolved, total)}}) from a vals.ai benchmark page."""
-    raw = html.unescape((target / page).read_text(encoding='utf-8', errors='ignore'))
-    txt = re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', raw))
-    rows = {m: float(s) for _, m, _, s in re.findall(r' (\d{1,3}) ([A-Z][\w .\-()/]+?) (Mini-SWE-agent|Terminus 2) (\d+\.\d+)% \$', txt)}
-    buckets = defaultdict(dict)
-    for m, k, a, n, _ in re.findall(r'title="([^"]+?) · ([^:]+): (\d+)/(\d+) resolved \((\d+)%\)"', raw):
-        buckets[m][re.sub(r'[^\w<>–]', '', k)] = (int(a), int(n))
-    return rows, dict(buckets)
-
-
 EFFORT_WORDS = {'max': 'max', 'xhigh': 'xhigh', 'high': 'high', 'medium': 'medium', 'low': 'low',
                 'minimal': 'minimal', 'non-reasoning': 'none'}
 
@@ -194,7 +183,7 @@ def artificial_analysis(target, field='index'):
     return dict(out)
 
 
-AA_RSC_PUSH = re.compile(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)', re.S)   # as refresh_speed_data
+AA_RSC_PUSH = re.compile(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)', re.S)   # Next.js RSC push chunks
 
 
 def aa_records(target):
@@ -254,50 +243,20 @@ def openrouter_modalities(target):
     return out
 
 
-def eqbench(target):
-    """{model name: Elo} from EQ-Bench Creative Writing v3 (the CSV the leaderboard page embeds)."""
-    raw = (target / 'eqbench-creative-writing.js').read_text(encoding='utf-8', errors='ignore')
-    m = re.search(r'leaderboardDataCreativeWritingV3\s*=\s*`(.*?)`', raw, re.S)
-    out = {}
+def designarena(target, filename):
+    """{model id: {'rating', 'battles', 'wins', 'losses', 'name'}} of one Design Arena board page: the main (public) board
+    of the page's embedded `boards` list (not its `subcategoryBoards`), with each id's display name from the embedded
+    model list. The board publishes no standard error (`btStdErr` is null) and no data date."""
+    raw = (target / filename).read_text(encoding='utf-8', errors='ignore').replace('\\"', '"')
+    category = DESIGN_ARENA[filename][1]
+    m = re.search(r'"boards":\[\{"arenaType":"models","category":"' + re.escape(category) + r'"[^\[]*?"data":(\[)', raw)
     if not m:
-        return out
-    lines = [ln.strip() for ln in m.group(1).strip().splitlines() if ln.strip()]
-    head = lines[0].split(',')
-    for ln in lines[1:]:
-        cells = dict(zip(head, ln.split(',')))
-        try:
-            out[cells['model_name'].lstrip('*').strip()] = float(cells['elo_score'])
-        except (KeyError, ValueError):
-            continue
-    return out
-
-
-def metr(target):
-    """{METR run name: p50 time horizon in minutes} from METR's published time-horizon results (v1.1)."""
-    import yaml
-    doc = yaml.safe_load((target / 'metr-benchmark-results.yaml').read_text(encoding='utf-8'))
-    out = {}
-    for name, row in (doc.get('results') or {}).items():
-        est = (((row or {}).get('metrics') or {}).get('p50_horizon_length') or {}).get('estimate')
-        if isinstance(est, (int, float)):
-            out[name] = float(est)
-    return out
-
-
-def osworld(target):
-    """{model: success fraction} for OSWorld-Verified rows of a general model (no agent framework), best max-steps run."""
-    import openpyxl
-    ws = openpyxl.load_workbook(target / 'osworld-verified.xlsx', read_only=True).worksheets[0]
-    rows = list(ws.iter_rows(values_only=True))
-    head = list(rows[0])
-    col = {k: head.index(k) for k in ('Model', 'Approach type', 'Success rate')}
-    out = {}
-    for r in rows[1:]:
-        if r[col['Approach type']] != 'General model' or not isinstance(r[col['Success rate']], (int, float)):
-            continue
-        name, value = str(r[col['Model']]).strip(), float(r[col['Success rate']]) / 100
-        out[name] = max(value, out.get(name, 0.0))
-    return out
+        return {}
+    rows, _ = json.JSONDecoder().raw_decode(raw, m.start(1))
+    names = dict(re.findall(r'"id":"([^"]+)","displayName":"([^"]+)"', raw))
+    return {r['modelId']: {'rating': float(r['elo']), 'battles': r.get('battles'), 'wins': r.get('wins'),
+                           'losses': r.get('losses'), 'name': names.get(r['modelId'], r['modelId'])}
+            for r in rows if isinstance(r, dict) and r.get('modelId') and isinstance(r.get('elo'), (int, float))}
 
 
 def main():

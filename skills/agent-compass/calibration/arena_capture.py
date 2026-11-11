@@ -13,16 +13,11 @@ board), keeps the date the page shows (`as_of`), its session or vote count and e
 `arena-agent-categories.json` / `arena-agent-alignment.json` / `arena-webdev.json` / `arena-text.json` into the
 calibration data directory with a fetch-manifest row (`transcribed_by`, `captured_at`, sha256). measurements.py reads them:
 
-- arena.agent_code (Agent / Code, Net Improvement) -> global_rigor.agentic
-- arena.agent_work_tools (Agent / Work, Net Improvement) -> vision_tools.tools (the board has no GUI column, so one type)
-- arena.agent_alignment (Alignment Index) -> module_precision.alignment; its two fabrication rates go to global_rigor:
-  false attribution (misreporting what the user said) -> anti_hallucination, deceptive completion (reporting unfinished
-  work as done) -> long_horizon
-- Agent / Overall and Agent / Chat: cross-check columns only (`show`), not components.
+- arena.agent_code (Agent / Code, Net Improvement) -> coding.execution
+- arena.agent_alignment (Alignment Index) -> coding.faithfulness
+- Agent / Overall: real-session Cost/Task P50 and Time/Task P50 -> usd_per_hour and throughput (`arena.agent_sessions`).
+- Agent / Chat and Agent / Work: cross-check columns only (`show`), not scoring boards.
 - WebDev and Text are read from the Hugging Face dataset (sources.py); their captures are a cross-check of it.
-
-Each Agent row also carries the median cost and time per task of real sessions, a community usd-per-hour cross-check
-(`show`; not a usd source).
 """
 import argparse
 import hashlib

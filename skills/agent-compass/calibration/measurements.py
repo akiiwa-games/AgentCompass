@@ -19,51 +19,36 @@ Fields
     real-traffic token mix (wokey's fixed split, about 92% cache reads; community.py) and AA's list prices, so usd per
     worker-hour is on the scale the community capacities are valued on. Cites AA and the wokey mix.
 - `price`: input / output / cache-read USD per million tokens (OpenRouter, AA), for cross-checks only.
-- The four capability axes of the tray radar, one entry per (component, source). The user's mapping of 2026-11-09
-  (round 7): the arena.ai Agent boards measure the axes their category names, captured from the user's browser
-  (`arena_capture.py`; arena.ai is behind bot protection), the chat boards and the other public boards stay components:
-  - `divergence`: chat (LMArena Text overall), creative (LMArena Creative Writing, EQ-Bench Creative Writing v3).
-  - `global_rigor`: agentic (arena.ai Agent / Code, Net Improvement), long horizon (METR p50 time horizon, SWE-bench
-    Verified 1-4 h bucket, arena.ai Alignment deceptive completion), long context (AA-LCR), anti-hallucination
-    (AA Omniscience Index, arena.ai Alignment false attribution).
-  - `module_precision`: coding (SWE-bench Verified <15 min bucket), terminal (AA Terminal-Bench 4.0, vals.ai
-    Terminal-Bench 2.0), alignment (arena.ai Alignment Index: acting only as asked, reporting faithfully).
-  - `vision_tools`: vision (LMArena Vision, AA MMMU-Pro), GUI design (LMArena WebDev), GUI (OSWorld-Verified, general
-    models only), tools (AA tau2-bench, AA AutomationBench, arena.ai Agent / Work). The Agent / Work board has one ability
-    column (Net Improvement) and no GUI column, so it is one type: tools.
-  The Alignment Index is split by what it measures: the index itself (unauthorized actions, false attribution and
-  deceptive completion together) is module precision; of its rates, false attribution (misstating what the user said)
-  is a fabricated claim, anti-hallucination, and deceptive completion (reporting unfinished work as done) is the
-  long-horizon failure. arena.ai Agent / Overall and Agent / Chat are cross-checks only, not components. A model scores 0 on vision and GUI only from a cited vendor statement that it
-    takes no image input (accounts row `text_only_source` {url, as_of, statement}, source `vendor.text_only`); the
-    local `visual` / `text_only` routing flags are not a source (review F1, 2026-11-09), so without a statement and
-    without a board the component is missing. A public board that lists the model wins over a statement.
+- The four categories (user, 2026-11-11, Revision 2 of the taxonomy report), one entry per (facet, source); a facet is one
+  ability, its boards are parallel measurements of it (CAPABILITY_SOURCES):
+  - `divergence` creative_writing: LMArena Text, Creative Writing (style control).
+  - `coding` execution: arena.ai Agent / Code (Net Improvement), AA Terminal-Bench 4.0 and AA FrontierCode 2.0;
+    faithfulness: the arena.ai Agent Alignment Index (acting only as asked, reporting faithfully).
+  - `aesthetics` design: LMArena WebDev, and Design Arena Website, 3D Design and SVG (blind human votes; each correlates
+    0.81-0.89 with WebDev over the fleet models both list, as parallel as the execution boards are with each other).
+  - `tool_operation` responsiveness: AA time to first answer token per effort row, read as -ln(seconds) (a ratio scale:
+    halving the time is the same step anywhere); image_recognition: AA MMMU-Pro and LMArena Vision.
+  Image input: a model a vision board lists takes image input (`image_input`); a cited vendor statement that it takes
+  none (`vendor.text_only`), or OpenRouter's input modalities, otherwise. A public board that lists the model wins.
 
-High correction: LMArena and the arena.ai Agent tables list each model at its best variant ("GPT-6 Luna (Max)"), and
-that variant differs from board to board. The value a source gives a model is moved to High by the Artificial Analysis
-Intelligence Index at High over its index at the variant that source lists it at (efforts.high_ratio), over the same
-ratio of the anchor at the variant the same source lists the anchor at, so the anchor stays at its value on every board
-(value x r_model / r_anchor, both per source). The Alignment Index names no variant and is not corrected. The tier is read as listed (it is the arena.ai Overall
-position), not corrected.
+One conversion for every board, a panel standard score relative to the anchor model (ANCHOR, Opus 5.5):
+z = (x - x_anchor) / sd_panel(x), x the board's raw value (Elo, rating, success rate, index; -ln seconds for the time to
+first answer token). The panel is the fleet models listed on every scoring board that lists all six anchor rows
+(`tiers.ANCHORS`); sd_panel is the sample standard deviation of the board over the panel. A board that lists the
+anchor and at least MIN_PANEL panel members is a source; any other is recorded as missing with the reason. Nothing is
+capped or bridged: a new model at the top of a board moves no other model, and the anchor is 0 on every board.
+Artificial Analysis boards list every effort variant: each entry carries the score at High (else the effort-less
+listing) and `z_by_effort`, every listed effort on the same scale. Other boards list one variant per model (`listed_as`,
+its effort in `listed_effort` when the listing names one); five_axis.py moves it to other efforts on the same facet's AA
+board and links parallel boards.
 
-One conversion for every capability source, relative to the anchor model (ANCHOR, Opus 5.5) rather than to the board's
-best, so a new model at the top of a board moves no other model's value (review F3, 2026-11-09; round 2 divided by the
-board best, which an Elo board does not scale linearly): value = ANCHOR_VALUE x s / s_anchor, capped at 1. The anchor
-sits at ANCHOR_VALUE (0.8) on every component it is measured on, so 1.0 is 1.25 times the anchor.
-- Percent and fraction boards: s is the success rate (per difficulty bucket where the board has buckets).
-- Elo boards: s / s_anchor is twice the expected win rate against the anchor, 2 / (1 + 10^((anchor - rating) / 400)).
-- Net-difference boards (arena.ai Agent Net Improvement, -100..100 %; AA Omniscience Index: correct minus incorrect,
-  -100..100): s is the share of positive outcomes, (1 + d / bound) / 2, a fixed map with no board term.
-- arena.ai Alignment: the index is a 0-100 score (s = index / 100); its failure rates are percentages (s = 1 - rate).
-- METR: s is the p50 time horizon in minutes.
-- A board that does not list the anchor is bridged: its reference success is the median, over at least MIN_BRIDGE of
-  our models it lists, of s x ANCHOR_VALUE / the model's anchored value on the same component (type) from boards that do
-  list the anchor. Never the same axis: a board of another type is another construct. With fewer shared models on the
-  same component the board cannot be anchored and is recorded as missing, with the reason.
-- A reference success above 1 is impossible (a success rate is at most 1): the board is rejected, recorded as missing
-  with the reference it would have had, and never used.
-  A bridged board's reference moves only when a model listed both on it and on an anchored mate is added (it joins
-  the median); a model new to the anchored boards alone moves nothing.
+Checks (`checks`, round 059 section 5): structural failures leave the (model, source) out, recorded as missing; a
+statistical failure is a yellow note and the value is used.
+- structural: a listing whose variant tag names something other than an effort (another harness); one board listing
+  matched by two fleet rows that are neither the same model (`same_model`) nor a series; a raw value outside the
+  board's range (a fraction outside 0..1, a non-positive time); two boards with identical raw vectors (the second is
+  a duplicate and not used).
+- statistical: on an Artificial Analysis board, High outside the range of the model's adjacent listed efforts.
 
 `capacity`: community real-usage measurements of subscription window capacity (`community.py`, round 4): every
 observation with its source, url, data date and fetch time; stated ratios between windows (`rules`); `errors` (a page
@@ -75,23 +60,21 @@ figures (measured locally, no external citation) are not sources.
 """
 import argparse
 import json
+import math
 import re
+import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import numpy as np
-
 import arena_capture
 import community
-import efforts
+import series
 import sources
 import tiers
 
-ANCHOR = 'claude-opus-5-5'      # every capability value is relative to this model (the router's fit targets too)
-ANCHOR_VALUE = 0.8              # the anchor's value on each component; 1.0 = 1.25 x the anchor
-MIN_BRIDGE = 3                  # shared models needed to bridge a board that does not list the anchor
-NET_BOUND = {'arena.agent_code': 100.0, 'arena.agent_work_tools': 100.0, 'aa.omniscience_index': 100.0}
+ANCHOR = 'claude-opus-5-5'      # every capability score is relative to this model (0 on every board)
+MIN_PANEL = 8                   # panel members a board must list to be a source (as five_axis.MIN_FIT_POINTS)
 OUT = sources.REPO / 'references' / 'public-measurements.json'
 SCHEMA = 'agent-compass.public-measurements/1'
 
@@ -105,45 +88,41 @@ EXTRA_NAMES = {
     'nemotron-3.5-super-vl-free': {'arena': 'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B', 'aa': 'Nemotron 3.5 Super VL'},
     'qwen3.8-max': {'aa': 'Qwen3.8 Max'},
 }
-# Labels for the provenance `source` of each capability measurement: (axis, component, kind).
+# Every scoring board: source -> (category, facet). Parallel boards of one facet are linked and averaged (five_axis.py).
 CAPABILITY_SOURCES = {
-    'lmarena.text_overall': ('divergence', 'chat', 'elo'),
-    'lmarena.creative_writing': ('divergence', 'creative', 'elo'),
-    'eqbench.creative_writing_v3': ('divergence', 'creative', 'elo'),
-    'arena.agent_code': ('global_rigor', 'agentic', 'net'),
-    'metr.time_horizon_p50': ('global_rigor', 'long_horizon', 'ratio'),
-    'vals.swebench_1_4h': ('global_rigor', 'long_horizon', 'fraction'),
-    'arena.agent_alignment_deceptive_completion': ('global_rigor', 'long_horizon', 'fraction'),
-    'aa.lcr': ('global_rigor', 'long_context', 'fraction'),
-    'aa.omniscience_index': ('global_rigor', 'anti_hallucination', 'net'),
-    'arena.agent_alignment_false_attribution': ('global_rigor', 'anti_hallucination', 'fraction'),
-    'vals.swebench_lt15m': ('module_precision', 'coding', 'fraction'),
-    'aa.terminalbench_4': ('module_precision', 'terminal', 'fraction'),
-    'vals.terminal_bench_2': ('module_precision', 'terminal', 'fraction'),
-    'arena.agent_alignment': ('module_precision', 'alignment', 'fraction'),
-    'lmarena.vision': ('vision_tools', 'vision', 'elo'),
-    'aa.mmmu_pro': ('vision_tools', 'vision', 'fraction'),
-    'lmarena.webdev': ('vision_tools', 'gui_design', 'elo'),
-    'osworld.verified': ('vision_tools', 'gui', 'fraction'),
-    'aa.tau2_bench': ('vision_tools', 'tools', 'fraction'),
-    'aa.automationbench': ('vision_tools', 'tools', 'fraction'),
-    'arena.agent_work_tools': ('vision_tools', 'tools', 'net'),
+    'lmarena.creative_writing': ('divergence', 'creative_writing'),
+    'arena.agent_code': ('coding', 'execution'),
+    'aa.terminalbench_4': ('coding', 'execution'),
+    'aa.frontiercode_2': ('coding', 'execution'),
+    'arena.agent_alignment': ('coding', 'faithfulness'),
+    'lmarena.webdev': ('aesthetics', 'design'),
+    'designarena.website': ('aesthetics', 'design'),
+    'designarena.3d': ('aesthetics', 'design'),
+    'designarena.svg': ('aesthetics', 'design'),
+    'aa.ttfa': ('tool_operation', 'responsiveness'),
+    'aa.mmmu_pro': ('tool_operation', 'image_recognition'),
+    'lmarena.vision': ('tool_operation', 'image_recognition'),
 }
+AXES = {'divergence': ('creative_writing',), 'coding': ('execution', 'faithfulness'), 'aesthetics': ('design',),
+        'tool_operation': ('responsiveness', 'image_recognition')}
 # arena.ai boards transcribed from the user's browser (arena_capture.py): source -> (capture, category, value, method).
 ARENA_CAPTURES = {
     'arena.agent_code': ('agent', 'Code', lambda r: (r.get('net_improvement') or [None])[0],
                          'arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant'),
-    'arena.agent_work_tools': ('agent', 'Work', lambda r: (r.get('net_improvement') or [None])[0],
-                               'arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant'),
-    'arena.agent_alignment': ('alignment', None, lambda r: r['alignment_index'][0] / 100.0,
-                              'arena.ai Agent Alignment Index (Best Aligned Agents), index / 100'),
-    'arena.agent_alignment_false_attribution': ('alignment', None, lambda r: 1.0 - r['false_attribution'][0] / 100.0,
-                                                'arena.ai Agent Alignment, 1 - false attribution rate'),
-    'arena.agent_alignment_deceptive_completion': ('alignment', None, lambda r: 1.0 - r['deceptive_completion'][0] / 100.0,
-                                                   'arena.ai Agent Alignment, 1 - deceptive completion rate'),
+    'arena.agent_alignment': ('alignment', None, lambda r: r['alignment_index'][0],
+                              'arena.ai Agent Alignment Index (Best Aligned Agents), 0-100'),
 }
-# arena.ai sources listed at the model's best variant, read at High like LMArena (the Alignment Index names no variant).
-HIGH_CORRECTED = ('lmarena.', 'arena.agent_code', 'arena.agent_work_')
+# LMArena boards: source -> (dataset board, category).
+LMARENA = {'lmarena.creative_writing': ('text_style_control', 'creative_writing'), 'lmarena.webdev': ('webdev', 'overall'),
+           'lmarena.vision': ('vision', 'overall')}
+DESIGN_ARENA = {'designarena.website': 'designarena-website.html', 'designarena.3d': 'designarena-3d.html',
+                'designarena.svg': 'designarena-svg.html'}
+# Artificial Analysis boards read per effort: source -> sub-benchmark id of the record's `scores` (fractions).
+AA_SCORE = {'aa.terminalbench_4': 'terminalbench-4-0', 'aa.frontiercode_2': 'frontiercode-2-0', 'aa.mmmu_pro': 'mmmu-pro'}
+AA_TTFA = 'aa.ttfa'             # the record's `timeToFirstAnswerToken` (seconds), read as -ln(seconds)
+# Value ranges of the raw readings (structural check): fractions 0..1, the Net Improvement -100..100 %, the index 0..100.
+RAW_RANGE = {**dict.fromkeys(AA_SCORE, (0.0, 1.0)), 'arena.agent_code': (-100.0, 100.0),
+             'arena.agent_alignment': (0.0, 100.0)}
 # The kind of each source (decision 2, 2026-11-09): vendor = the vendor's own statement or price list, benchmark = a
 # third-party measurement, community = a community or packaged estimate with a stated basis.
 SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'derived.community_mix': 'derived',
@@ -151,7 +130,7 @@ SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'derived.commun
                'arena.agent_sessions': 'community',
                'aa.price': 'vendor', 'openrouter.price': 'vendor', 'openrouter.modality': 'vendor',
                'vendor.fast_mode': 'vendor', 'aa.index': 'benchmark'}
-IMAGE_BENCHMARKS = ('lmarena.vision', 'aa.mmmu_pro', 'osworld.verified')
+IMAGE_BENCHMARKS = ('lmarena.vision', 'aa.mmmu_pro')
 # Public vendor fast-mode specifications (round 11, user 2026-11-10): only models with a cited vendor price and speed
 # multiplier get a fast_mode measurement; other fast-capable models have no public multiplier (surfaced gap).
 VENDOR_FAST_MODE = {
@@ -172,22 +151,11 @@ VENDOR_FAST_MODE = {
                      '$16/$80 per MTok (2x standard $8/$40) with up to 2.5x output tokens per second.',
     },
 }
-AXES = {'divergence': ('chat', 'creative'),
-        'global_rigor': ('agentic', 'long_horizon', 'long_context', 'anti_hallucination'),
-        'module_precision': ('coding', 'terminal', 'alignment'),
-        'vision_tools': ('vision', 'gui_design', 'gui', 'tools')}
-# The Omniscience Index (correct minus incorrect answers; abstaining scores 0) is the record's top-level `omniscience`. Its
-# non-hallucination rate alone is not used: it rewards abstaining (Haiku 5.5, Grok 4.7 and Argon lead it, Opus 5.5 sits
-# at 0.50).
-AA_SCORE = {'aa.lcr': 'artificial-analysis-long-context-reasoning', 'aa.omniscience_index': 'omniscience',
-            'aa.terminalbench_4': 'terminalbench-4-0', 'aa.mmmu_pro': 'mmmu-pro', 'aa.tau2_bench': 'tau2-bench',
-            'aa.automationbench': 'automationbench-aa'}
-FILE_OF = {'lmarena': None, 'eqbench': 'eqbench-creative-writing.js', 'metr': 'metr-benchmark-results.yaml',
-           'osworld': 'osworld-verified.xlsx', 'aa': 'aa-models.html', 'openrouter': 'openrouter-models.json'}
-ARENA_FILE = {'lmarena.text_overall': 'text_style_control.parquet', 'lmarena.creative_writing': 'text_style_control.parquet',
-              'lmarena.webdev': 'webdev.parquet', 'lmarena.vision': 'vision.parquet',
-              **{src: arena_capture.FILES[spec[0]] for src, spec in ARENA_CAPTURES.items()}}
-VALS_FILE = {'vals.swebench_1_4h': 'swebench.html', 'vals.swebench_lt15m': 'swebench.html', 'vals.terminal_bench_2': 'terminal-bench-2.html'}
+ARENA_FILE = {**{src: f'{board}.parquet' for src, (board, _) in LMARENA.items()},
+              **{src: arena_capture.FILES[spec[0]] for src, spec in ARENA_CAPTURES.items()}, **DESIGN_ARENA,
+              **dict.fromkeys([*AA_SCORE, AA_TTFA], 'aa-models.html')}
+EFFORT_RANK = {e: i for i, e in enumerate(('low', 'medium', 'high', 'xhigh', 'max'))}
+EFFORT_TAG = re.compile(r'^(max|xhigh|high|medium|low|minimal|non-reasoning|default fallback|with fallback|thinking|\d{4}|\d{8}|\d{4}-\d{2}-\d{2})$')  # an effort, or a release date
 
 
 def key(name):
@@ -227,78 +195,6 @@ class Matcher:
         return next((self.by_key[k] for k in candidates(model) if k in self.by_key), None)
 
 
-def success(kind, value, bound=1.0):
-    """s on the source's own absolute scale (no board term); see the module docstring. Elo has no absolute s."""
-    if kind == 'net':
-        return (1 + value / bound) / 2
-    return value
-
-
-def relative(kind, value, ref, bound=1.0):
-    """s / s_ref: `ref` is the reference rating on an Elo board, else the reference success."""
-    if kind == 'elo':
-        return 2 / (1 + 10 ** ((ref - value) / 400))
-    return success(kind, value, bound) / ref if ref > 0 else 0.0
-
-
-def anchored_value(kind, value, ref, bound=1.0):
-    return round(min(1.0, max(0.0, ANCHOR_VALUE * relative(kind, value, ref, bound))), 4)
-
-
-def anchor_boards(raw, kinds, comps, anchor=ANCHOR):
-    """Anchor-relative values for every board (module docstring).
-
-    raw {source: {model: raw value}}, kinds {source: (kind, bound)}, comps {source: (axis, component)}. Returns
-    ({source: {model: value}}, {source: reference}, {source: why it could not be anchored})."""
-    values, refs, failed = {}, {}, {}
-    for src, board in raw.items():
-        kind, bound = kinds[src]
-        if anchor in board:
-            ref = board[anchor] if kind == 'elo' else success(kind, board[anchor], bound)
-            if kind != 'elo' and ref > 1.0:
-                failed[src] = f'reference success {ref:.4f} > 1 is impossible ({anchor} listed); rejected, not used'
-                continue
-            refs[src] = {'reference': round(ref, 4), 'how': f'{anchor} listed'}
-            values[src] = {m: anchored_value(kind, v, ref, bound) for m, v in board.items()}
-    anchored = dict(values)
-    for src, board in raw.items():
-        if src in anchored or src in failed:       # a listed anchor whose reference is impossible is not bridged
-            continue
-        kind, bound = kinds[src]
-        axis, comp = comps[src]
-        if kind == 'elo':
-            failed[src] = f'{anchor} is not listed, and an Elo board is not bridged'
-            continue
-        # The same component (type) only: a board of another type of the same axis measures another construct.
-        mates = [o for o in anchored if comps[o] == (axis, comp)]
-
-        def mate(m):
-            vals = [anchored[o][m] for o in mates if anchored[o].get(m, 0) > 0]
-            return sum(vals) / len(vals) if vals else None
-        shared = [m for m in board if mate(m) and success(kind, board[m], bound) > 0]
-        if len(shared) < MIN_BRIDGE:
-            failed[src] = (f'{anchor} is not listed, and only {len(shared)} listed models have an anchored value on the '
-                           f'same component {axis}.{comp} (a bridge needs {MIN_BRIDGE})')
-            continue
-        ref = float(np.median([success(kind, board[m], bound) * ANCHOR_VALUE / mate(m) for m in shared]))
-        if ref > 1.0:
-            failed[src] = (f'bridged reference success {ref:.4f} > 1 is impossible (through {", ".join(sorted(mates))} on '
-                           f'{len(shared)} shared models); rejected, not used')
-            continue
-        refs[src] = {'reference': round(ref, 4), 'shared': sorted(shared),
-                     'how': f'bridged through {", ".join(sorted(mates))} on {len(shared)} shared models (same component)'}
-        values[src] = {m: anchored_value(kind, v, ref, bound) for m, v in board.items()}
-    return values, refs, failed
-
-
-def vals_date(target, page):
-    m = re.search(r'Updated (\d+)/(\d+)/(\d+)', sources._text((target / page).read_text(encoding='utf-8', errors='ignore')))
-    if not m:
-        return None
-    mo, d, y = (int(g) for g in m.groups())
-    return f'{y + 2000 if y < 100 else y:04d}-{mo:02d}-{d:02d}'
-
-
 class Builder:
     def __init__(self, target, acc):
         self.target, self.acc = target, acc
@@ -306,6 +202,7 @@ class Builder:
         self.manifest = sources.manifest(target)
         self.source_rows, self.out, self.names = {}, {m: {} for m in self.models}, {m: {} for m in self.models}
         self.missing = {}
+        self.checks = []
 
     def ok(self, filename):
         return (self.manifest.get(filename) or {}).get('status') == 'ok' and (self.target / filename).exists()
@@ -330,17 +227,17 @@ class Builder:
 
     # --- capability boards ----------------------------------------------------------------------
     def boards(self):
-        """{source: (board {name: raw}, as_of, method text, name-strip function)}"""
+        """{source: {'board': {name: raw}, 'as_of', 'method', 'strip', 'listed': {name: listed variant}, 'extra': {name:
+        {...}}, and for Artificial Analysis 'by_effort': {name: {effort: raw}}}} of every scoring board fetched."""
         t, out = self.target, {}
-        arena_specs = {'lmarena.text_overall': ('text_style_control', 'overall'),
-                       'lmarena.creative_writing': ('text_style_control', 'creative_writing'),
-                       'lmarena.webdev': ('webdev', 'overall'), 'lmarena.vision': ('vision', 'overall')}
-        for src, (board, cat) in arena_specs.items():
+        for src, (board, cat) in LMARENA.items():
             if not self.ok(ARENA_FILE[src]):
                 self.miss(src, ARENA_FILE[src], 'not fetched'); continue
             rows = sources.arena(t, board, cat)
-            out[src] = ({n: r[0] for n, r in rows.items()}, next(iter(rows.values()))[4] if rows else None,
-                        f'LMArena {board}/{cat}, best listed variant', None, {n: r[3] for n, r in rows.items()})
+            out[src] = {'board': {n: r[0] for n, r in rows.items()}, 'as_of': next(iter(rows.values()))[4] if rows else None,
+                        'method': f'LMArena {board}/{cat} rating, best listed variant', 'strip': None,
+                        'listed': {n: r[3] for n, r in rows.items()},
+                        'extra': {n: {'ci': [round(r[1], 1), round(r[2], 1)]} for n, r in rows.items()}}
         for src, (kind, category, value, method) in ARENA_CAPTURES.items():
             doc = arena_capture.read(t, kind) if self.ok(arena_capture.FILES[kind]) else None
             page = ((doc or {}).get('categories') or {}).get(category) if category else doc
@@ -349,56 +246,57 @@ class Builder:
                           + (f' ({category})' if category else '') + ' in the browser and run arena_capture.py import')
                 continue
             rows = arena_capture.best_variant(page['rows'], value)
-            out[src] = ({n: v for n, (v, _) in rows.items()}, page['as_of'],
-                        f'{method}; transcribed {(doc or {}).get("captured_at", "")[:10]} by {(doc or {}).get("transcribed_by")}'
-                        + (f'; {page["sign_rule"]}' if page.get('sign_rule') else ''),
-                        (lambda n: re.sub(r'\s+(High|Max|xHigh|Medium|Low)$', '', n)) if kind == 'alignment' else None,
-                        {n: r['name'] for n, (_, r) in rows.items()})
-        if self.ok('eqbench-creative-writing.js'):
-            out['eqbench.creative_writing_v3'] = (sources.eqbench(t), None, 'EQ-Bench Creative Writing v3 Elo',
-                                                  lambda n: n.split('/')[-1], {})
-        else:
-            self.miss('eqbench.creative_writing_v3', 'eqbench-creative-writing.js', 'not fetched')
-        if self.ok('metr-benchmark-results.yaml'):
-            out['metr.time_horizon_p50'] = (sources.metr(t), None, 'METR Horizon v1.1 p50 time horizon (minutes)',
-                                            lambda n: re.sub(r'_inspect$', '', n), {})
-        else:
-            self.miss('metr.time_horizon_p50', 'metr-benchmark-results.yaml', 'not fetched')
-        if self.ok('swebench.html'):
-            _, buckets = sources.vals(t, 'swebench.html')
-            date = vals_date(t, 'swebench.html')
-            for src, bucket in (('vals.swebench_1_4h', '1–4hr'), ('vals.swebench_lt15m', '<15min')):
-                board = {m: b[bucket][0] / b[bucket][1] for m, b in buckets.items() if bucket in b and b[bucket][1]}
-                out[src] = (board, date, f'vals.ai SWE-bench Verified, {bucket} fix-time bucket, resolved share', None,
-                            {m: f'{buckets[m][bucket][0]}/{buckets[m][bucket][1]}' for m in board})
-        else:
-            for src in ('vals.swebench_1_4h', 'vals.swebench_lt15m'):
-                self.miss(src, 'swebench.html', 'not fetched')
-        if self.ok('terminal-bench-2.html'):
-            tb2, _ = sources.vals(t, 'terminal-bench-2.html')
-            out['vals.terminal_bench_2'] = ({m: v / 100 for m, v in tb2.items()}, vals_date(t, 'terminal-bench-2.html'),
-                                            'vals.ai Terminal-Bench 2.0 accuracy', None, {})
-        else:
-            self.miss('vals.terminal_bench_2', 'terminal-bench-2.html', 'not fetched')
-        if self.ok('osworld-verified.xlsx'):
-            out['osworld.verified'] = (sources.osworld(t), None,
-                                       'OSWorld-Verified success rate, general models without an agent framework, best max-steps run',
-                                       lambda n: re.sub(r'\[1m\]$', '', n), {})
-        else:
-            self.miss('osworld.verified', 'osworld-verified.xlsx', 'not fetched')
+            out[src] = {'board': {n: v for n, (v, _) in rows.items()}, 'as_of': page['as_of'],
+                        'method': f'{method}; transcribed {(doc or {}).get("captured_at", "")[:10]} by {(doc or {}).get("transcribed_by")}'
+                                  + (f'; {page["sign_rule"]}' if page.get('sign_rule') else ''),
+                        'strip': (lambda n: re.sub(r'\s+(High|Max|xHigh|Medium|Low)$', '', n)) if kind == 'alignment' else None,
+                        'listed': {n: r['name'] for n, (_, r) in rows.items()}, 'extra': {}}
+        for src, filename in DESIGN_ARENA.items():
+            if not self.ok(filename):
+                self.miss(src, filename, 'not fetched'); continue
+            rows = sources.designarena(t, filename)
+            if not rows:
+                self.miss(src, filename, 'the page carries no main board rows'); continue
+            out[src] = {'board': {r['name']: r['rating'] for r in rows.values()}, 'as_of': None,
+                        'method': (f'Design Arena {sources.DESIGN_ARENA[filename][1]} board (main public board): Bradley-Terry '
+                                   'rating of blind human pairwise votes; no standard error published'),
+                        'strip': None, 'listed': {r['name']: r['name'] for r in rows.values()},
+                        'extra': {r['name']: {'battles': r['battles'], 'designarena_id': mid} for mid, r in rows.items()}}
         if self.ok('aa-models.html'):
-            recs = self.aa_by_base()
-            for src, score in AA_SCORE.items():
-                board = {}
-                for base, (rec, eff) in recs.items():
-                    v = rec.get(score) if score == 'omniscience' else (rec.get('scores') or {}).get(score)
-                    if isinstance(v, (int, float)):
-                        board[base] = float(v)
-                out[src] = (board, None, f'Artificial Analysis `{score}` at the High variant (else the only listing)', None, {})
+            variants = self.aa_variants()
+            for src in [*AA_SCORE, AA_TTFA]:
+                board, by_effort, listed = {}, {}, {}
+                for base, recs in variants.items():
+                    vals = {(eff or 'default'): (v, rec['name']) for eff, rec in recs.items()
+                            if (v := self.aa_value(src, rec)) is not None}
+                    if not vals:
+                        continue
+                    pick = next((e for e in ('high', 'default') if e in vals), None) or \
+                        min(vals, key=lambda e: abs(EFFORT_RANK.get(e, 2) - EFFORT_RANK['high']))
+                    board[base], listed[base] = vals[pick][0], vals[pick][1]
+                    by_effort[base] = {e: round(v, 6) for e, (v, _) in vals.items()}
+                what = ('time to first answer token, read as -ln(seconds)' if src == AA_TTFA else f'`{AA_SCORE[src]}`')
+                out[src] = {'board': board, 'as_of': None, 'strip': None, 'listed': listed, 'extra': {},
+                            'by_effort': by_effort,
+                            'method': f'Artificial Analysis {what}, every listed effort; the score is the High row (else the only listing)'}
         else:
-            for src in AA_SCORE:
+            for src in [*AA_SCORE, AA_TTFA]:
                 self.miss(src, 'aa-models.html', 'not fetched')
         return out
+
+    def aa_value(self, src, rec):
+        """One AA record's raw reading on `src`, or None. A time that is not positive is out of range (a structural check)."""
+        if src == AA_TTFA:
+            t = rec.get('timeToFirstAnswerToken')
+            if not isinstance(t, (int, float)) or isinstance(t, bool):
+                return None
+            if t <= 0:
+                self.checks.append({'source': src, 'listed_as': rec.get('name'), 'check': 'raw_out_of_range',
+                                    'level': 'structural', 'evidence': f'time to first answer token {t} s is not positive'})
+                return None
+            return -math.log(float(t))
+        v = (rec.get('scores') or {}).get(AA_SCORE[src])
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
     def aa_variants(self):
         """{base name: {effort: record}} for AA listings whose variant tag is an effort or a date only."""
@@ -423,70 +321,59 @@ class Builder:
 
     def capabilities(self):
         boards, raw, names = self.boards(), {}, {}
-        for src, (board, as_of, method, strip, listed) in boards.items():
-            filename = ARENA_FILE.get(src) or VALS_FILE.get(src) or FILE_OF[src.split('.')[0]]
-            self.register(src, filename, as_of, method, len(board))
-            match = Matcher(board, strip)
+        for src, b in boards.items():
+            self.register(src, ARENA_FILE[src], b['as_of'], b['method'], len(b['board']))
+            match = Matcher(b['board'], b['strip'])
             family = src.split('.')[0]
-            explicit_key = {'lmarena': 'arena', 'arena': 'arena', 'aa': 'aa', 'vals': 'swe' if 'swebench' in src else 'tb2'}.get(family)
+            explicit_key = {'lmarena': 'arena', 'arena': 'arena', 'aa': 'aa'}.get(family)
             raw[src], names[src] = {}, {}
             for model in self.models:
-                exp = (EXTRA_NAMES.get(model) or {}).get(explicit_key) or (tiers.NAMES.get(model) or {}).get(explicit_key) \
-                    or (tiers.ANCHORS.get(model) if family in ('lmarena', 'arena', 'aa') else None)
+                exp = ((EXTRA_NAMES.get(model) or {}).get(explicit_key) or (tiers.NAMES.get(model) or {}).get(explicit_key)
+                       or (tiers.ANCHORS.get(model) if family in ('lmarena', 'arena', 'aa') else None)) if explicit_key else None
                 name = match.find(model, exp) or (match.find(model) if exp else None)
                 if name is not None:
-                    raw[src][model], names[src][model] = board[name], name
-        kinds = {src: (CAPABILITY_SOURCES[src][2], NET_BOUND.get(src, 1.0)) for src in raw}
-        values, refs, failed = anchor_boards(raw, kinds, {src: CAPABILITY_SOURCES[src][:2] for src in raw})
-        for src, why in failed.items():
-            self.source_rows[src]['not_anchored'] = why
-            self.miss(src, self.source_rows[src]['file'], f'not used: {why}')
-        for src, board_values in values.items():
-            axis, comp, _ = CAPABILITY_SOURCES[src]
-            method, listed = boards[src][2], boards[src][4]
-            self.source_rows[src]['anchor'] = refs[src]
-            anchor_name = names[src].get(ANCHOR)
-            for model, value in board_values.items():
-                extra = {}
+                    raw[src][model], names[src][model] = b['board'][name], name
+        self.structural(boards, raw, names)
+        panel, core, scale = self.panel(raw)
+        self.panel_doc = {'models': panel, 'n': len(panel), 'core_boards': core, 'min_panel': MIN_PANEL,
+                          'rule': 'the fleet models listed on every scoring board that lists all six anchor rows '
+                                  f'({", ".join(tiers.ANCHORS)}); sd_panel is the sample standard deviation over them'}
+        for src, sc in scale.items():
+            axis, facet = CAPABILITY_SOURCES[src]
+            b = boards[src]
+            self.source_rows[src]['scale'] = {'anchor': ANCHOR, 'anchor_raw': round(sc['anchor_raw'], 6),
+                                              'sd_panel': round(sc['sd'], 6), 'n_panel': sc['n'], 'core': src in core}
+            how = (f"z = (x - x_anchor) / sd_panel; x_anchor {sc['anchor_raw']:.6g} ({ANCHOR}), sd_panel {sc['sd']:.6g} "
+                   f"over {sc['n']} panel models")
+            for model, x in raw[src].items():
                 name = names[src][model]
-                ratio = (self.source_high_ratio(model, listed.get(name, name), listed.get(anchor_name, anchor_name)
-                                                if anchor_name else None)
-                         if src.startswith(HIGH_CORRECTED) else None)
-                if ratio is not None and ratio != 1.0:
-                    # This source lists the best variant; read it at High (efforts.high_ratio, per source, module docstring).
-                    extra = {'best_variant_value': value, 'high_ratio': ratio}
-                    value = round(min(1.0, value * ratio), 4)
+                listed = b['listed'].get(name, name)
+                extra = dict(b['extra'].get(name) or {})
+                if 'by_effort' in b:
+                    extra['z_by_effort'] = {e: round((v - sc['anchor_raw']) / sc['sd'], 4) for e, v in b['by_effort'][name].items()}
+                    extra['raw_by_effort'] = b['by_effort'][name]
+                else:
+                    extra['listed_effort'] = sources.aa_effort(listed) or None
                 self.names[model][src] = name
-                self.add(model, axis, src, value, f'{method}; {ANCHOR_VALUE:g} x s / s_anchor ({refs[src]["how"]}), capped at 1'
-                         + ("; x the High/listed-variant AA index ratio of this source's listing over the anchor's"
-                            if extra else ''), component=comp,
-                         listed_as=listed.get(name, name), raw=round(raw[src][model], 4), reference=refs[src]['reference'], **extra)
+                self.add(model, axis, src, round((x - sc['anchor_raw']) / sc['sd'], 4), f"{b['method']}; {how}",
+                         facet=facet, listed_as=listed, raw=round(x, 6), **extra)
                 if src in IMAGE_BENCHMARKS:
-                    self.add(model, 'image_input', src, True, f'{method}: measured on image/screenshot input',
-                             listed_as=listed.get(name, name))
+                    self.add(model, 'image_input', src, True, f"{b['method']}: measured on image input", listed_as=listed)
         self.conflicts = []
         for model, info in self.models.items():
             stated = info.get('text_only_source')
             if not (isinstance(stated, dict) and stated.get('url')):
                 continue        # the local visual / text_only flags are routing data, not a source (review F1)
             bench_img = [e['source'] for e in self.out[model].get('image_input', []) if e.get('kind') == 'benchmark']
-            if not bench_img:
-                self.out[model].setdefault('image_input', []).append(
-                    {'source': 'vendor.text_only', 'kind': 'vendor', 'value': False,
-                     'as_of': stated.get('as_of'), 'fetched_at': None, 'url': stated['url'],
-                     'statement': stated.get('statement'),
-                     'method': 'vendor statement that the model takes no image input'})
-            for comp in ('vision', 'gui'):
-                listed = [e['source'] for e in self.out[model].get('vision_tools', []) if e.get('component') == comp]
-                if listed:      # a board measured image input on a model a vendor statement calls text-only
-                    self.conflicts.append({'model': model, 'field': f'vision_tools.{comp}', 'reason': 'sources_disagree',
-                                           'detail': f'vendor statement says text-only, but {", ".join(listed)} list the model',
-                                           'resolution': 'the public leaderboard wins (user, 2026-11-09)'})
-                    continue
-                self.out[model].setdefault('vision_tools', []).append(
-                    {'source': 'vendor.text_only', 'kind': 'vendor', 'value': 0.0, 'component': comp,
-                     'as_of': stated.get('as_of'), 'fetched_at': None, 'url': stated['url'], 'statement': stated.get('statement'),
-                     'method': 'vendor statement that the model takes no image input: vision and GUI are 0, not unknown'})
+            if bench_img:       # a board measured image input on a model a vendor statement calls text-only
+                self.conflicts.append({'model': model, 'field': 'image_input', 'reason': 'sources_disagree',
+                                       'detail': f'vendor statement says text-only, but {", ".join(bench_img)} list the model',
+                                       'resolution': 'the public leaderboard wins (user, 2026-11-09)'})
+                continue
+            self.out[model].setdefault('image_input', []).append(
+                {'source': 'vendor.text_only', 'kind': 'vendor', 'value': False,
+                 'as_of': stated.get('as_of'), 'fetched_at': None, 'url': stated['url'],
+                 'statement': stated.get('statement'), 'method': 'vendor statement that the model takes no image input'})
         if self.ok('openrouter-models.json'):
             mods_table = sources.openrouter_modalities(self.target)
             self.register('openrouter.modality', 'openrouter-models.json', None,
@@ -507,21 +394,76 @@ class Builder:
                          f'OpenRouter architecture.input_modalities ({", ".join(mods)})',
                          listed_as=name, input_modalities=mods)
 
-    def source_high_ratio(self, model, listed, anchor_listed):
-        """r_model / r_anchor of one source (module docstring), each the AA index at High over the index at the variant
-        that source lists it at. None when the model's own ratio is unknown (no AA effort listing or no variant tag): the
-        value is then left as listed. A board without the anchor, or listing it with no variant, has r_anchor 1."""
-        own = efforts.high_ratio(self.aa_efforts.get(model) or {}, listed)
-        if own is None:
-            return None
-        anchor = efforts.high_ratio(self.aa_efforts.get(ANCHOR) or {}, anchor_listed) if anchor_listed else None
-        return round(own / (anchor or 1.0), 4)
+    def structural(self, boards, raw, names):
+        """The structural checks of the module docstring: a failing (model, source) leaves `raw`, recorded in `checks`."""
+        def drop(model, src, check, evidence):
+            self.checks.append({'model': model, 'source': src, 'check': check, 'level': 'structural', 'evidence': evidence})
+            raw[src].pop(model, None)
+            names[src].pop(model, None)
+        groups, same = series.groups(self.acc), series.same_model(self.acc)
+        for src, b in boards.items():
+            for model, name in list(names[src].items()):
+                listed = b['listed'].get(name, name)
+                bad = [p for p in (q.strip().lower() for q in sources.variant(listed).split(',')) if p and not EFFORT_TAG.match(p)]
+                if bad:
+                    drop(model, src, 'variant_not_effort', f'listed as {listed!r}: the tag names {", ".join(bad)}, not an effort')
+                    continue
+                lo_hi = RAW_RANGE.get(src)
+                if lo_hi and not lo_hi[0] <= raw[src][model] <= lo_hi[1]:
+                    drop(model, src, 'raw_out_of_range', f'{raw[src][model]} outside {lo_hi[0]:g}..{lo_hi[1]:g}')
+            by_name = {}
+            for model, name in names[src].items():
+                by_name.setdefault(name, []).append(model)
+            for name, models in by_name.items():
+                related = all(m2 in groups.get(m1, ()) or (same.get(m1) or {}).get('model') == m2
+                              or (same.get(m2) or {}).get('model') == m1 for m1 in models for m2 in models if m1 != m2)
+                if not related:
+                    for model in models:
+                        drop(model, src, 'listing_matched_twice', f'{name!r} matched {", ".join(sorted(models))}, neither the '
+                                                                   'same model nor one series')
+            if 'by_effort' in b:        # statistical: High between the adjacent listed efforts
+                for model, name in names[src].items():
+                    row = b['by_effort'].get(name) or {}
+                    if 'high' in row and 'medium' in row and 'xhigh' in row and \
+                            not min(row['medium'], row['xhigh']) - 1e-9 <= row['high'] <= max(row['medium'], row['xhigh']) + 1e-9:
+                        self.checks.append({'model': model, 'source': src, 'check': 'high_outside_adjacent_efforts',
+                                            'level': 'statistical', 'evidence': f"High {row['high']:.4g}, Medium {row['medium']:.4g}, "
+                                                                                  f"xHigh {row['xhigh']:.4g}"})
+        seen = {}
+        for src in sorted(raw):
+            vector = tuple(sorted((m, round(v, 9)) for m, v in raw[src].items()))
+            if len(vector) >= 3 and vector in seen:
+                self.checks.append({'source': src, 'check': 'duplicate_board', 'level': 'structural',
+                                    'evidence': f'raw values identical to {seen[vector]} on {len(vector)} models'})
+                self.miss(src, ARENA_FILE[src], f'not used: identical to {seen[vector]}')
+                raw[src], names[src] = {}, {}
+            else:
+                seen.setdefault(vector, src)
+
+    def panel(self, raw):
+        """(panel models, core boards, {source: {'anchor_raw', 'sd', 'n'}}) of the module docstring."""
+        core = [src for src, board in raw.items() if board and all(a in board for a in tiers.ANCHORS)]
+        panel = sorted(set.intersection(*(set(raw[src]) for src in core))) if core else []
+        scale = {}
+        for src, board in raw.items():
+            members = [m for m in panel if m in board]
+            if ANCHOR not in board:
+                why = f'{ANCHOR} is not listed: the board has no point the scale stands on'
+            elif len(members) < MIN_PANEL:
+                why = f'{len(members)} panel models listed (a source needs {MIN_PANEL})'
+            elif statistics.stdev(board[m] for m in members) == 0:
+                why = 'every panel model has the same value'
+            else:
+                scale[src] = {'anchor_raw': board[ANCHOR], 'sd': statistics.stdev(board[m] for m in members), 'n': len(members)}
+                continue
+            self.source_rows[src]['not_scaled'] = why
+            self.miss(src, self.source_rows[src]['file'], f'not used: {why}')
+        return panel, core, scale
 
     # --- tier -------------------------------------------------------------------------------------
     def tier(self):
-        """The tier entries (module docstring), and each model's AA index by effort for the per-source High correction."""
+        """The tier entries (module docstring)."""
         fitter = tiers.Fitter(self.target)
-        self.aa_efforts = {}
         overall = fitter.overall
         as_of = max(r[4] for r in overall.values())
         self.register('user.anchor_tier', 'text_style_control.parquet', tiers.ANCHOR_TIER_DATE,
@@ -534,8 +476,6 @@ class Builder:
                       'models listed on both it and arena.ai Overall; only for a model arena Overall does not list',
                       len(fitter.aa))
         arena, aa = Matcher(overall), Matcher(fitter.aa)
-        aa_by_effort = sources.artificial_analysis(self.target)
-        match_aa = Matcher(aa_by_effort)
         for model in self.models:
             extra_names = EXTRA_NAMES.get(model) or {}
             names = tiers.NAMES.get(model) or {}
@@ -558,11 +498,6 @@ class Builder:
                                  f"{r['board']} {r['value']:g} interpolated onto the tier scale between {r['neighbours']['below']['models']} "
                                  f"and {r['neighbours']['above']['models']} of the {r['n']} models listed on both it and arena.ai Overall",
                                  listed_as=r['listed_as'], board_value=r['value'], neighbours=r['neighbours'], n=r['n'])
-            # The AA index by effort, for the High correction of each source at the variant that source lists.
-            aa_explicit = extra_names.get('aa') or names.get('aa') or tiers.ANCHORS.get(model)
-            aa_name = match_aa.find(model, aa_explicit) or (match_aa.find(model) if aa_explicit else None)
-            if aa_name and aa_by_effort.get(aa_name):
-                self.aa_efforts[model] = aa_by_effort[aa_name]
 
     # --- price and usd per hour ------------------------------------------------------------------
     def usd(self):
@@ -754,7 +689,8 @@ class Builder:
             if row.get('status') != 'ok':
                 missing_sources.setdefault(name, {'file': name, 'url': row.get('url'), 'reason': row.get('error')})
         return {'schema': SCHEMA, 'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
-                'conversion': f'capability value = min(1, {ANCHOR_VALUE:g} x s / s_anchor), anchor {ANCHOR}; see calibration/measurements.py',
+                'conversion': f'z = (x - x_anchor) / sd_panel per board, anchor {ANCHOR}; see calibration/measurements.py',
+                'panel': self.panel_doc, 'checks': self.checks,
                 'sources': self.source_rows, 'missing_sources': missing_sources, 'conflicts': self.conflicts,
                 'axes': {a: list(c) for a, c in AXES.items()}, 'capacity': capacity,
                 'models': {m: f for m, f in self.out.items()}}
@@ -767,7 +703,7 @@ def main():
     args = ap.parse_args()
     doc = Builder(sources.data_dir(args.data), sources.accounts()).build()
     Path(args.out).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
-    fields = ('tier', 'usd_per_hour', 'divergence', 'global_rigor', 'module_precision', 'vision_tools')
+    fields = ('tier', 'usd_per_hour', *AXES)
     n = len(doc['models'])
     print(f"{n} models -> {args.out}")
     for f in fields:

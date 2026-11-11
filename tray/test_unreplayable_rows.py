@@ -13,9 +13,8 @@ from router_test_support import isolated_router_state
 OLD = {"reasoning_depth": 4, "code_complexity": 3, 
           "needs_visual": False, "needs_gui": False, "local_only": True, "interaction_style": "engineering",
           "work_kind": "debug_review"}
-CURRENT = dict(OLD, multi_task=False, task_count="1", wants_fast=False, read_only_review=False, realtime_loop=False,
-               access="write", expected_hours=1.0, hours_confidence="medium", urgency="normal",
-               axis_demand={"divergence": 1, "global_rigor": 3, "module_precision": 2, "vision_tools": 0})
+CURRENT = dict(OLD, multi_task=False, task_count="1", wants_fast=False, read_only_review=False, access="write", expected_hours=1.0, hours_confidence="medium", urgency="normal",
+               axis_demand={"divergence": 1, "coding": 3, "aesthetics": 0, "tool_operation": 0})
 MISSING_FLAGS = {k: v for k, v in CURRENT.items() if k not in ("wants_fast", "read_only_review")}
 MISSING_DEMAND = {k: v for k, v in CURRENT.items() if k != "axis_demand"}
 

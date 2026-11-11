@@ -14,7 +14,6 @@
       "needs_visual": false,
       "needs_gui": false,
       "local_only": true,
-      "realtime_loop": false,
       "wants_fast": false,
       "read_only_review": false,
       "access": "write",
@@ -26,9 +25,9 @@
       "task_count": "1",
       "axis_demand": {
         "divergence": 1,
-        "global_rigor": 1,
-        "module_precision": 2,
-        "vision_tools": 0
+        "coding": 2,
+        "aesthetics": 0,
+        "tool_operation": 0
       }
     }
   }

@@ -71,7 +71,7 @@ class DecisionLedgerTests(unittest.TestCase):
         self.assertEqual(winner['capacity']['window'], live['capacity']['window'])
         self.assertEqual((winner['expected_pct'], winner['expected_usd']), (round(live['expected_pct'], 4), round(live['expected_usd'], 4)))
         self.assertEqual(winner['action'], live['action'])
-        self.assertTrue({'divergence', 'global_rigor', 'module_precision', 'vision_tools'} <= set(winner['components']))
+        self.assertTrue({'divergence', 'coding', 'aesthetics', 'tool_operation'} <= set(winner['components']))
         self.assertTrue(all('capacity' in row or row['expected_pct'] is None for row in full if 'expected_pct' in row))
         # Blocked candidates keep their reasons; the scoring system and the task demand are recorded with the decision.
         blocked = [row for row in ranking if row['excluded']]

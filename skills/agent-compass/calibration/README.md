@@ -6,59 +6,43 @@ them, and they need `numpy`, `pandas` and `pyarrow`. Raw downloads stay out of g
 
 ## The scoring these files feed
 
-The router scores a model on **four categories** (divergence, global rigor, module precision, vision & tools) and on
+The router scores a model on **four capability categories** (`divergence`, `coding`, `aesthetics`, `tool_operation`) and on
 **quota economy**. Nothing else scores a model.
 
-- Every board gives a **type score** (a component such as `module_precision.coding`). Each type score belongs to one of the
-  four categories; a category is the mean of its type scores. Every source is converted the same way, relative to the anchor
-  model Opus 5.5 (`0.8 x s / s_anchor`), so a new top model moves no other value.
-- The **tier** is the model's overall level: its position on the arena.ai Overall board (`lmarena.text_overall`), mapped
-  onto the user's tier scale through six anchor rows (Opus 5.5 4.6, Astra 4.2, Sonnet 5.5 3.9, Sol 3.6, Grok 4.7 3.4,
-  Flash 3.0; the anchors are the user's judgment, inputs and never outputs). A model arena Overall does not list takes its
-  relative position on a non-arena overall board (the Artificial Analysis Intelligence Index, interpolated through the models
-  both list); a model on no overall board takes its nearest same-series sibling's tier; with none it has no tier.
-- The tier has **one use**: a type score a model lacks is estimated. With a same-series sibling that measures it, the estimate
-  is the sibling's value moved along the fitted line of that type score on tier by the two tiers' difference; without one, the
-  fit at the model's tier. A fit must have out-of-sample skill and enough points, and its value stays inside the measured
-  range. The record keeps the fit, the tier and its source, the base and the shift, and the score is marked `estimated`
-  (`~` in the catalog and the tray). A direct measurement replaces the estimate at the next refresh. With no tier or no fit
-  with skill the type score stays missing. Where the fit has no skill the tier does not predict that type score, so the shift is
-  0 and the sibling's value stands (`shift 0: fit rejected, ...`). A category with some type scores missing is yellow (the missing
-  ones count as 0, the model stays in routing); a category with none leaves automatic routing for a task that demands it (an
-  explicit `--model` still dispatches it). No default value stands in.
-- A row `accounts.json` `same_model` declares to be the model another row names (a vendor statement with its url, or a dated
-  user statement, kind `user`; today Dot is GPT-6 Astra, OpenAI's launch post, and grok-bot is Claude Opus 5.5, the user
-  2026-11-11) takes that model's type scores as they stand, measured or estimated, for the categories the row `carries`, and
-  its Time/Task; the channel's own categories (vision and GUI of both text-only channels) stay missing.
+- **Categories and facets.**
+  - `divergence` (`creative_writing`: `lmarena.creative_writing`) — creative writing, brainstorming, research synthesis, data analysis, and first-principles problem decomposition.
+  - `coding` = `min(execution, faithfulness)` (`execution`: `arena.agent_code`, `aa.terminalbench_4`, `aa.frontiercode_2`; `faithfulness`: `arena.agent_alignment`) — code execution, review/audit, and faithful completion without unrequested edits or deceptive reporting.
+  - `aesthetics` (`design`: `lmarena.webdev`, `designarena.website`, `designarena.3d`, `designarena.svg`) — web/GUI design, layout, 3D and SVG visuals.
+  - `tool_operation` — evaluated per demand level: level 1 imposes no ability requirement; level 2 evaluates `responsiveness` (`aa.ttfa`, `-ln(seconds)` per effort); level 3 evaluates `min(responsiveness, image_recognition)` (`aa.mmmu_pro`, `lmarena.vision`) plus image-input modality.
+- **Panel standard scores (`z`).** Every scoring board is scaled on the fixed panel of fleet models listed on every core board that carries all six anchor rows (`n = 12` today): `z = (x - x_anchor) / sd_panel`, putting `claude-opus-5-5` at High at `0.0` with one unit equal to one panel standard deviation. Adding a new non-panel model moves neither any panel score nor any demand target. Parallel boards of one facet are centered on the anchor at High, mean-mean linked on the panel, averaged, and re-centered on the anchor.
+- **Panel targets and fit zero point.** Demand targets come from the panel at High (`anchor.targets` in `five-axis-scores.json`): level 1 (`t1`) is the panel minimum, level 2 (`t2`) is the panel median, and level 3 (`t3`) is the anchor (`0.0`, raised to `max(t2, t3)` if `t3 < t2`, as on `tool_operation.responsiveness`). `t1` is the zero point of `allocator.five_axis_fit`.
+- **Tier and facet estimation.** The **tier** is read only from the `arena.ai` Overall board (`lmarena.text_overall`) through the six anchor rows (else `tier.aa_index`, else nearest same-series sibling). The tier is never a score input; its sole capability use is estimating a facet a model has no direct measurement for: same-series sibling shifted along `facet~tier` by `b * delta_tier`, else the `facet~tier` line at the model's tier (clamped to the measured range), recording `r`, `skill`, `loo_rmse` and `n` without gating on `skill`, marked `estimated` (`~` in the catalog and tray), and replaced automatically when a direct board measurement arrives. When a facet has no measurement, no sibling and no tier, the category takes its value from the facets that have values (`status: "partial"`, yellow); only a demanded category with no data at all leaves automatic routing.
+- **`same_model` declarations.** A row `accounts.json` `same_model` declares to be another row's underlying model (`dot` -> `gpt-6-astra`, `grok-bot` -> `claude-opus-5-5`) inherits that model's facet curves and `duration_multiplier` for the categories listed in `carries` (`divergence`, `coding`, `aesthetics`, `duration`), while channel-specific `tool_operation` stays `missing`.
 
 ## Scripts
 
 | Script | What it does |
 | :--- | :--- |
-| `sources.py fetch` | Downloads LMArena (Hugging Face `lmarena-ai/leaderboard-dataset`), vals.ai, the Artificial Analysis models leaderboard, the category boards and the community capacity pages (`community.py`), and writes `fetch-manifest.json` (url, fetch time, sha256 per file). A source it cannot fetch is recorded missing. `--only FILE` refetches single files. |
-| `tiers.py [ids]` | Reads each model's tier off the arena.ai Overall board through the six anchor rows; models that board does not list get the non-arena overall board reading (`tier.aa_index`). Prints the readings with their neighbours and overlap. |
-| `series.py` | Library: same-series siblings (the router's own family resolution plus the public data's `superseded` pairs) and the base a converted model takes: nearest on the AA Intelligence Index, else on the shared cited board readings, else on tier. |
-| `efforts.py [--apply]` | Effort curves from the AA effort variants: `ability_mult` (index at the effort over the index at High). The router scales a model's thinking categories by `ability_mult`. The time and spend of an effort come from `five_axis.py` (below), not from a curve. |
-| `measurements.py` | Writes `references/public-measurements.json`: per model, field and source, every public value with its provenance (source, kind vendor / benchmark / community, as_of, fetched_at, url, method): the type scores, usd_per_hour (arena.agent_sessions, derived.community_mix), prices, image input, fast-mode pricing. Arena.ai captures enter through `arena_capture.py`. |
-| `five_axis.py [--distrust SOURCE] [--user-overrides FILE]` | Writes `references/five-axis-scores.json`: type scores and categories per model (measured or estimated), the tier and its source, the fitted lines (`estimate_fits`, with the fits it rejected and why), usd_per_hour (arena.ai Agent sessions; else the labelled option B, AA throughput at the community token mix and list prices; else a same-series sibling's converted), the duration (`duration_multiplier`: per effort the Artificial Analysis Time/Task as a multiple of the anchor's at High, with each effort's basis; an arena.ai Agent time moved onto that scale by a fit with its r and n, a series conversion of the model's time or effort ratio, the fleet's median effort position or ratio with its n and IQR, or a `same_model` row's declared model), plan capacity per plan and window down a cited ladder, per-model `evidence` and data errors, and the anchor the router's fit targets use (`anchor value x demand / 3`). The only model scoring the router reads. |
-| `arena_capture.py import CAPTURE.json ...` / `show` | Imports the arena.ai boards the user captures from the browser (arena.ai is behind bot protection, so they are not fetched). Each page must parse whole; the page date is the data date; each import writes a manifest row that `sources.py fetch` keeps. |
-| `community.py` | Reads community real-usage measurements of subscription window capacity (wokey.ai, finopsllm.com, inventivehq.com, the eneasf Antigravity telemetry findings), the community token mix, the vendor plan multipliers and the community usd-per-hour check rows, each value with its sentence, data date and fetch time. A page not fetched or no longer carrying its sentence gives an error and no value. |
-| `refresh.py [--no-fetch] [--report FILE]` | Keeps the data current: fetch, `measurements.py`, `five_axis.py`, then the source-age report. Exit 0 fresh, 1 stale, 2 missing. Meant for a weekly schedule; installs nothing. |
+| `sources.py fetch` | Downloads LMArena (`lmarena-ai/leaderboard-dataset`), Design Arena (`website`, `3d`, `svg`), Artificial Analysis (`aa-models.html`), OpenRouter models, and the community capacity pages (`community.py`), writing `fetch-manifest.json` (url, fetch time, sha256 per file). `--only FILE` refetches single files. |
+| `tiers.py [ids]` | Reads each model's tier off the `arena.ai` Overall board through the six anchor rows; models that board does not list get `tier.aa_index`. |
+| `series.py` | Library: same-series siblings and `same_model` links; picks the nearest base on the AA Intelligence Index, shared board readings, or tier. |
+| `measurements.py` | Writes `references/public-measurements.json`: panel standard scores (`z` and AA `z_by_effort`), structural and statistical data-hygiene checks, `usd_per_hour`, list prices, image input, and fast-mode multipliers. |
+| `five_axis.py [--distrust SOURCE] [--user-overrides FILE]` | Writes `references/five-axis-scores.json`: per-effort facet curves, parallel-board link offsets, category scores, `estimate_fits` (`r`, `skill`, `loo_rmse`, `n`), `usd_per_hour`, `duration_multiplier`, community plan capacities, panel `anchor.targets` (`levels` 1..3 + `continuity = t3 - t2`), and surfaced data errors. |
+| `arena_capture.py import CAPTURE.json ...` / `show` | Imports browser-captured `arena.ai` Agent / Code and Alignment boards and preserves their manifest entries across `sources.py fetch`. |
+| `community.py` | Reads community real-usage measurements of subscription window capacity, token mix, vendor plan multipliers, and usd-per-hour check rows. |
+| `refresh.py [--no-fetch] [--report FILE]` | Runs fetch, `measurements.py`, `five_axis.py`, and the source-age report. Exit 0 fresh, 1 stale, 2 missing. |
 
 ## Refresh
 
 ```
 python -X utf8 refresh.py                     # fetch, measurements, five-axis scores, source-age report
-python -X utf8 efforts.py --apply             # effort curves for efforts.AA_NAMES
 python -X utf8 ../scripts/capability_catalog.py
 python -X utf8 ../scripts/public_data.py manifest --write
 ```
 
-Step by step: `sources.py fetch`, `measurements.py`, `arena_capture.py import <capture>.json ...` (when the arena.ai boards
-are refreshed), `five_axis.py` (`--distrust <source id>` leaves a source out), then the last two lines above.
+Step by step: `sources.py fetch`, `arena_capture.py import <capture>.json ...` (when refreshing `arena.ai` captures), `measurements.py`, `five_axis.py` (`--distrust <source id>` leaves a source out), then `capability_catalog.py` and `public_data.py manifest --write`.
 
-To add a model, put its source names in `tiers.NAMES` (and `efforts.AA_NAMES` when the Artificial Analysis lists its effort
-variants), then refresh. Every written value names its sources and dates.
+To add a model, put its source names in `tiers.NAMES` (or `measurements.EXTRA_NAMES`), then refresh. Every written value names its sources and dates.
 
 ## Rules the data follows
 

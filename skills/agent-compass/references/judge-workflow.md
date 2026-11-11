@@ -20,8 +20,8 @@ Produced automatically by `score_task` (via the System-One scorer cascade ground
 - `work_kind`: Canonical route (`computer_use`, `visual_analysis`, `frontend_implementation`, `tool_execution`, `bounded_bulk_work`, `debug_review`, `general_implementation`, `self_contained_code`, `exploration_analysis`, `research_packet`, `web_research`, `text_in_text_out`, `dot_execution`, `complex_build_plan`, `direction_reasoning`)
 - `reasoning_depth` (`1..4`): `1=routine`, `2=hard`, `3=coupled`, `4=frontier`
 - `code_complexity` (`0..3`): `0=no code`, `1=script/single-file`, `2=multi-file module`, `3=cross-cutting architecture`
-- `axis_demand` (object, every key required, each `0..3`): how much the task needs of `divergence`, `global_rigor`, `module_precision` and `vision_tools`. The levels are stated in `allocator.FIVE_AXIS_DEMAND_LEVELS`, which is the one text the JSON classifiers' schema and the System-One (Jev) questions are built from. Economy is not a task demand: the router prices it from cost and live quota. No other field is turned into a demand; a profile without `axis_demand` is rejected.
-- `needs_visual` (`bool`), `needs_gui` (`bool`), `local_only` (`bool`), `realtime_loop` (`bool`)
+- `axis_demand` (object, every key required, each `0..3`): how much the task needs of `divergence`, `coding`, `aesthetics` and `tool_operation`. The levels are stated in `allocator.FIVE_AXIS_DEMAND_LEVELS`, which is the one text the JSON classifiers' schema and the System-One (Jev) questions are built from. Economy is not a task demand: the router prices it from cost and live quota. No other field is turned into a demand; a profile without `axis_demand` is rejected.
+- `needs_visual` (`bool`), `needs_gui` (`bool`), `local_only` (`bool`)
 - `wants_fast` (`bool`): `true` only when the assignment affirmatively requests fast mode, priority tier, urgent/ASAP turnaround, or a pre-reset quota sprint (`"pre-reset sprint"`, `"before quota resets"`, `"重置前冲刺"`) for the task itself without negation (`"do not use fast mode"` or `"no rush"` -> `false`; runtime step adverbs such as `"click Save immediately"` -> `false`). Strictly required boolean in classifier outputs. Precedence in `normalize_task`: explicit caller `needs.fast` -> `task.fast` -> `task.wants_fast` -> `profile.wants_fast` -> `false`.
 - `read_only_review` (`bool`): `true` only when the assignment is a read-only code, diff, branch, security, or release review/audit that inspects existing material and reports findings without writing or modifying repository production/test code (`code_complexity = 0`, even if saving a review report file to a specified output path). `false` when the worker implements, fixes, or refactors code (including fixing issues found by a prior review), runs operational commands, or performs general exploration/research. Strictly required boolean in classifier outputs; `read_only_review = true` with `code_complexity != 0` is rejected as contradictory by `validate_profile`. Used by `roll` and `plan_stage` to enforce independent reviewer selection (preventing a worker that authored or modified code from reviewing its own work).
 - `multi_task` (`bool`) & `task_count` (`"1" | "2" | "3" | ">3"`): `multi_task: true` when the brief bundles 2+ separate deliverables that different workers could produce in parallel without waiting on each other; `false` (`task_count: "1"`) for a single deliverable with sequential steps.
@@ -52,15 +52,15 @@ Allocation has three layers. They do not mix.
 
 | Layer | What it decides | What it ignores |
 | :--- | :--- | :--- |
-| **Eligible set** | Model settings, account health, host policy, modality, a demanded category with no data, and per-window reserves. | Fit and quota price. |
-| **Fit** | How well the model's four category scores meet the task's demand, per demanded category: `min(score, target) - shortfall x max(0, target - score)`, averaged by demand. `target = 0.8 x demand / 3`, the anchor model's score scaled by the demand. Thinking categories scale by the model's measured effort curve. | Which pool pays. |
-| **Quota economy** | Which window pays, and what other work that spend displaces: the part of the spend over the window's recovery line, priced in score units. 5-hour windows are feasibility only; long reset-period windows carry the price. | Model quality, except through the value ladder of the candidates that draw the window. |
+| **Eligible set** | Model settings, account health, host policy, modality (`needs_visual`, `needs_gui`, or `tool_operation >= 3`), a demanded category (`>= 1`) with no data, and per-window reserves. | Fit and quota price. |
+| **Fit** | How well the model's four category scores (`divergence`, `coding`, `aesthetics`, `tool_operation`, in panel standard deviations at that effort) meet the task's demand: `sum_a w_a * (min(z_a, t_a) - t1_a) / sum_a w_a`, where `t1_a` (the panel's weakest) is the zero point, `t2_a` is the panel median, and `t3_a` is the anchor (`0.0`). `tool_operation` level 1 asks for nothing; level 2 evaluates `responsiveness`; level 3 evaluates `min(responsiveness, image_recognition)`. | Which pool pays. |
+| **Quota economy** | Which window pays, and what other work that spend displaces: the part of the spend over the window's recovery line, priced in panel-SD score units. 5-hour windows are feasibility only; long reset-period windows carry the price. | Model quality, except through the value ladder of the candidates that draw the window. |
 
 ```text
-score = fit + w_continuity x continuity + boost - quota_cost
+score = fit + continuity + boost - quota_cost
 ```
 
-A temporary `boost` comes only from a user override. The order after the score is: wait before the start, earliest-expiring
+`continuity` is the largest positive `t3 - t2` among the categories at the task's highest demand level when resuming a coupled (`coupling == "high"`, `--resume`) worker within its context rotation limit, else `0`. A temporary `boost` comes only from a user override. The order after the score is: wait before the start, earliest-expiring
 quota, completion time, fewer USD, demand-weighted category level, then the harness place among siblings (same account, model,
 effort and action; the best sibling keeps its score, a harness with no sibling is not penalized).
 

@@ -7,8 +7,8 @@
   manifest (url, fetched_at, sha256 per file). A source that fails is recorded missing and its old copy deleted, so a
   value is never carried over silently from an earlier download.
 - Rebuild: `measurements.py` then `five_axis.py` on that directory; every value keeps its data date (`as_of`) and the
-  fetch time of its file (`fetched_at`). A type score estimated through the tier is rebuilt each time: a direct
-  measurement that arrived replaces it, and a fit that lost its out-of-sample skill leaves the score missing.
+  fetch time of its file (`fetched_at`). A facet estimated from a sibling or the tier fit is rebuilt each time: a direct
+  measurement that arrived replaces it.
 - Report: the community usd-per-hour check rows against the usd_per_hour in use, then per source its
   kind, data date, age in days and status: `ok`; `stale` (older than five_axis.STALE_DAYS, a
   yellow note: still used); `missing` (not fetched, or a community sentence no longer on the page: red, no value).

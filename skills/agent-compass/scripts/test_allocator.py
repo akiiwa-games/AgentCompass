@@ -358,7 +358,8 @@ class AllocatorTests(unittest.TestCase):
                 self.assertEqual(normalized['difficulty'], difficulty or normalized['profile_difficulty'], task)
         good = self.profile()
         for bad in (dict(good, reasoning_depth=5), dict(good, code_complexity=True),
-                    {k: v for k, v in good.items() if k != 'axis_demand'}, {k: v for k, v in good.items() if k != 'realtime_loop'},
+                    {k: v for k, v in good.items() if k != 'axis_demand'}, {k: v for k, v in good.items() if k != 'wants_fast'},
+                    dict(good, axis_demand={'divergence': 1, 'global_rigor': 1, 'module_precision': 1, 'vision_tools': 0}),
                     dict(good, needs_gui='yes'), dict(good, wants_fast='yes'), dict(good, read_only_review=1),
                     dict(good, interaction_style='coding'), 'deep'):
             with self.assertRaises(ValueError):
@@ -861,9 +862,9 @@ class RouterIntegrationTests(unittest.TestCase):
             self.assertIn('needs_user_decision', [a['code'] for a in blocked['alerts']])
 
 
-class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
-    """Tests for `realtime_loop` task-profile flag, heuristic fallback, `responsiveness` scoring/floor,
-    fresh-install zero-local-data behavior, conservative default on unmeasured models, and `refresh_speed_data.py`."""
+class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
+    """Contract tests for Taxonomy R2 `tool_operation` levels, clean deletion of the legacy responsiveness /
+    realtime_loop path, continuity switching threshold, family vs alias resolution, and ledger read-side mapping."""
 
     def setUp(self):
         self.now = datetime(2026, 10, 9, 3, 0, tzinfo=timezone.utc)
@@ -878,991 +879,230 @@ class RealtimeLoopAndResponsivenessTests(unittest.TestCase):
         }
         return usage_windows(self.now, windows)
 
-    SPEED_FIXTURE = {
-        'schema_version': 1,
-        'fetched_at': '2026-11-06T09:16:00Z',
-        'sources': [
-            {
-                'id': 'artificial_analysis',
-                'url': 'https://artificialanalysis.ai/leaderboards/models',
-                'accessed_at': '2026-11-06',
-                'access': 'scrape',
-            },
-            {
-                'id': 'openrouter',
-                'url': 'https://openrouter.ai/api/v1/models/<author>/<slug>/endpoints',
-                'accessed_at': '2026-11-06',
-                'access': 'api',
-            },
-        ],
-        'models': {
-            'gemini-4-argon-high': {
-                'status': 'ok',
-                'entries': [
-                    {
-                        'router_model': 'gemini-4-argon-high',
-                        'effort': 'high',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Gemini 4 Argon (High)',
-                        'source_slug': 'gemini-4-argon',
-                        'match_kind': 'exact',
-                        'output_tps': 78.66,
-                        'ttft_s': 41.09,
-                        'reasoning_tokens_per_turn': 2888116,
-                    },
-                ],
-            },
-            'gemini-3.8-flash-high': {
-                'status': 'ok',
-                'entries': [
-                    {
-                        'router_model': 'gemini-3.8-flash-high',
-                        'effort': 'low',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Gemini 3.8 Flash (Low)',
-                        'source_slug': 'gemini-3-8-flash',
-                        'match_kind': 'exact',
-                        'output_tps': 68.54,
-                        'ttft_s': 1.80,
-                        'reasoning_tokens_per_turn': 570993,
-                    },
-                    {
-                        'router_model': 'gemini-3.8-flash-high',
-                        'effort': 'medium',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Gemini 3.8 Flash (Medium)',
-                        'source_slug': 'gemini-3-8-flash',
-                        'match_kind': 'exact',
-                        'output_tps': 67.35,
-                        'ttft_s': 5.74,
-                        'reasoning_tokens_per_turn': 1707038,
-                    },
-                    {
-                        'router_model': 'gemini-3.8-flash-high',
-                        'effort': 'high',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Gemini 3.8 Flash (High)',
-                        'source_slug': 'gemini-3-8-flash',
-                        'match_kind': 'exact',
-                        'output_tps': 73.12,
-                        'ttft_s': 19.62,
-                        'reasoning_tokens_per_turn': 5668404,
-                    },
-                ],
-            },
-            'gpt-6.1-sol': {
-                'status': 'ok',
-                'entries': [
-                    {
-                        'router_model': 'gpt-6.1-sol',
-                        'effort': 'low',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'GPT-6.1 Sol (Low)',
-                        'source_slug': 'gpt-6-1-sol',
-                        'match_kind': 'exact',
-                        'output_tps': 53.06,
-                        'ttft_s': 2.76,
-                        'reasoning_tokens_per_turn': 300000,
-                    },
-                    {
-                        'router_model': 'gpt-6.1-sol',
-                        'effort': 'medium',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'GPT-6.1 Sol (Medium)',
-                        'source_slug': 'gpt-6-1-sol',
-                        'match_kind': 'exact',
-                        'output_tps': 53.44,
-                        'ttft_s': 6.60,
-                        'reasoning_tokens_per_turn': 1000000,
-                    },
-                    {
-                        'router_model': 'gpt-6.1-sol',
-                        'effort': 'high',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'GPT-6.1 Sol (High)',
-                        'source_slug': 'gpt-6-1-sol',
-                        'match_kind': 'exact',
-                        'output_tps': 53.16,
-                        'ttft_s': 45.89,
-                        'reasoning_tokens_per_turn': 5000000,
-                    },
-                ],
-            },
-            'gpt-6-astra': {
-                'status': 'ok',
-                'entries': [
-                    {
-                        'router_model': 'gpt-6-astra',
-                        'effort': 'low',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'GPT-6 Astra (Low)',
-                        'source_slug': 'gpt-6-astra',
-                        'match_kind': 'exact',
-                        'output_tps': 43.58,
-                        'ttft_s': 3.97,
-                        'reasoning_tokens_per_turn': 400000,
-                    },
-                    {
-                        'router_model': 'gpt-6-astra',
-                        'effort': 'medium',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'GPT-6 Astra (Medium)',
-                        'source_slug': 'gpt-6-astra',
-                        'match_kind': 'exact',
-                        'output_tps': 46.64,
-                        'ttft_s': 6.95,
-                        'reasoning_tokens_per_turn': 1100000,
-                    },
-                    {
-                        'router_model': 'gpt-6-astra',
-                        'effort': 'high',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'GPT-6 Astra (High)',
-                        'source_slug': 'gpt-6-astra',
-                        'match_kind': 'exact',
-                        'output_tps': 43.85,
-                        'ttft_s': 55.88,
-                        'reasoning_tokens_per_turn': 6000000,
-                    },
-                ],
-            },
-            'claude-sonnet-5-5': {
-                'status': 'ok',
-                'entries': [
-                    {
-                        'router_model': 'claude-sonnet-5-5',
-                        'effort': 'low',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Claude Sonnet 5.5 (Low)',
-                        'source_slug': 'claude-sonnet-5-5',
-                        'match_kind': 'exact',
-                        'output_tps': 96.48,
-                        'ttft_s': 2.43,
-                    },
-                    {
-                        'router_model': 'claude-sonnet-5-5',
-                        'effort': 'medium',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Claude Sonnet 5.5 (Medium)',
-                        'source_slug': 'claude-sonnet-5-5',
-                        'match_kind': 'exact',
-                        'output_tps': 98.18,
-                        'ttft_s': 4.13,
-                    },
-                    {
-                        'router_model': 'claude-sonnet-5-5',
-                        'effort': 'high',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Claude Sonnet 5.5 (High)',
-                        'source_slug': 'claude-sonnet-5-5',
-                        'match_kind': 'exact',
-                        'output_tps': 97.68,
-                        'ttft_s': 12.16,
-                    },
-                ],
-            },
-            'claude-opus-5-5': {
-                'status': 'ok',
-                'entries': [
-                    {
-                        'router_model': 'claude-opus-5-5',
-                        'effort': 'low',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Claude Opus 5.5 (Low)',
-                        'source_slug': 'claude-opus-5-5',
-                        'match_kind': 'exact',
-                        'output_tps': 105.86,
-                        'ttft_s': 6.34,
-                    },
-                    {
-                        'router_model': 'claude-opus-5-5',
-                        'effort': 'medium',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Claude Opus 5.5 (Medium)',
-                        'source_slug': 'claude-opus-5-5',
-                        'match_kind': 'exact',
-                        'output_tps': 107.68,
-                        'ttft_s': 19.55,
-                    },
-                    {
-                        'router_model': 'claude-opus-5-5',
-                        'effort': 'high',
-                        'source_id': 'artificial_analysis',
-                        'source_name': 'Claude Opus 5.5 (High)',
-                        'source_slug': 'claude-opus-5-5',
-                        'match_kind': 'exact',
-                        'output_tps': 107.41,
-                        'ttft_s': 36.89,
-                    },
-                ],
-            },
-            'gemini-3.7-flash': {
-                'status': 'ok',
-                'entries': [
-                    {
-                        'router_model': 'gemini-3.7-flash',
-                        'effort': 'default',
-                        'source_id': 'openrouter',
-                        'source_name': 'Google | google/gemini-3.7-flash-20260813',
-                        'source_slug': 'google/gemini-3.7-flash-20260813',
-                        'match_kind': 'exact',
-                        'output_tps': 90.0,
-                        'ttft_s': 2.236,
-                    },
-                ],
-            },
-            'gpt-6-pro': {
-                'status': 'missing',
-                'entries': [],
-                'note': 'ChatGPT Pro web bridge; no public speed entry',
-            },
-            'grok-bot': {
-                'status': 'not_applicable',
-                'entries': [],
-                'note': 'Web session channel; not applicable for realtime_loop',
-            },
-            'dot': {
-                'status': 'not_applicable',
-                'entries': [],
-                'note': 'Async packet worker; not applicable for realtime_loop',
-            },
-        },
-    }
-
-    def test_schema_and_validation_require_boolean_realtime_loop(self):
-        self.assertIn('realtime_loop', allocator.PROFILE_FLAGS)
-        self.assertIn('realtime_loop', allocator.TASK_PROFILE_SCHEMA['properties'])
-        self.assertIn('realtime_loop', allocator.TASK_PROFILE_SCHEMA['required'])
-        desc = allocator.TASK_PROFILE_SCHEMA['properties']['realtime_loop']['description']
-        self.assertIn('observe-act loop', desc)
-        self.assertIn('False for ALL software engineering', desc)
-
-        good = {
-            'work_kind': 'computer_use', 'reasoning_depth': 1, 'code_complexity': 0, 'expected_hours': 0.5, 
-            
-            'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-            'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
-            'interaction_style': 'engineering', 'axis_demand': {'divergence': 1, 'global_rigor': 1, 'module_precision': 0, 'vision_tools': 3},
-        }
-        validated = allocator.validate_profile(good)
-        self.assertIs(validated['realtime_loop'], True)
-
-        for bad_val in ('yes', 1, 0, ['true']):
-            with self.assertRaises(ValueError) as ctx:
-                allocator.validate_profile({**good, 'realtime_loop': bad_val})
-            self.assertIn('task.profile.realtime_loop must be true or false', str(ctx.exception))
-
-        # Classifier calibration cases include >= 8 positive and >= 8 negative realtime_loop examples
-        cases_path = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
-        doc = json.loads(cases_path.read_text(encoding='utf-8-sig'))
-        self.assertIn('realtime_loop', doc.get('dimension_rubric') or {})
-        positives = [c for c in doc['calibration_cases'] if c['expected_profile'].get('realtime_loop') is True]
-        negatives = [c for c in doc['calibration_cases'] if c['expected_profile'].get('realtime_loop') is False]
-        self.assertGreaterEqual(len(positives), 8)
-        self.assertGreaterEqual(len(negatives), 8)
-        for case in doc['calibration_cases']:
-            self.assertIsInstance(allocator.validate_profile(case['expected_profile'])['realtime_loop'], bool)
-
-    def test_realtime_loop_is_classifier_and_caller_only_with_zero_keyword_heuristics(self):
-        # 1. No keyword heuristics or word lists exist on allocator
+    def test_legacy_realtime_and_responsiveness_defaults_are_deleted(self):
         for banned_attr in (
+            'RESPONSIVENESS_DEFAULTS',
+            'bundle_responsiveness',
+            'resolve_realtime_effort',
+            'clearing_levels',
+            'can_step_down',
+            'five_axis_effort_ratio',
+            'REALTIME_LOOP_QUESTION',
             'infer_realtime_loop',
-            'infer_realtime_gui',
-            'realtime_loop_needs_gui',
-            'REALTIME_LOOP_CONTINUOUS_WORDS',
-            'REALTIME_LOOP_TARGET_WORDS',
-            'REALTIME_LOOP_PRESSURE_WORDS',
-            'REALTIME_DIRECT_EXECUTION_PHRASES',
-            'REALTIME_ENGINEERING_ACTION_WORDS',
-            'REALTIME_ENGINEERING_ARTIFACT_WORDS',
-            'REALTIME_GUI_TARGET_WORDS',
         ):
-            self.assertFalse(hasattr(allocator, banned_attr), f'Banned heuristic symbol still present: {banned_attr}')
+            self.assertFalse(hasattr(allocator, banned_attr), f'{banned_attr} must be deleted')
+        self.assertNotIn('realtime_loop', allocator.PROFILE_FLAGS)
+        self.assertNotIn('realtime_loop', allocator.TASK_PROFILE_SCHEMA['properties'])
+        self.assertNotIn('realtime_loop', allocator.TASK_PROFILE_SCHEMA['required'])
+        self.assertFalse((Path(__file__).resolve().parent / 'refresh_speed_data.py').exists())
 
+    def test_all_calibrated_classifier_cases_validate_and_plan(self):
         base_accounts = copy.deepcopy(allocator.load_accounts())
         capabilities = allocator.load_capabilities(accounts=base_accounts)
-        policy = base_accounts['scoring']
-
-        # 2. All 11 review-report false-positive prompts + 4 brief engineering prompts default to realtime_loop=False
-        # when neither the classifier nor the caller sets realtime_loop=True.
-        engineering_prompts = [
-            '实现一个实时刷新页面的前端组件',
-            '修复客户端页面跳转时的卡死问题',
-            '给后台管理系统加上实时数据轮询',
-            '排查浏览器页面每隔几秒自动刷新的 bug',
-            '写一个盯盘看板前端页面，展示盘口深度',
-            '修复行情终端里的毫秒级时间戳格式化问题',
-            '打开浏览器页面立刻点击保存按钮',
-            '在客户端窗口里马上切换一下夜间模式',
-            '抓取网页上的实时票房数据并保存为 CSV',
-            '测试选课系统的并发抢课接口性能',
-            '优化直播弹幕渲染组件的内存占用',
-            '实现实时刷新页面',
-            '修复页面轮询逻辑',
-            '设计盯盘看板前端',
-            '排查客户端循环等待',
-        ]
-        for text in engineering_prompts:
-            with self.subTest(prompt=text):
-                norm = allocator.normalize_task({'objective': text}, policy, capabilities, base_accounts)
-                self.assertIs(norm['realtime_loop'], False, f'normalize_task guessed realtime_loop for: {text}')
-
-        # 3. Explicit caller / classifier values pass through; omitted defaults to False
-        self.assertIs(
-            allocator.normalize_task({'objective': 'task', 'realtime_loop': True}, policy, capabilities, base_accounts)['realtime_loop'],
-            True,
-        )
-        self.assertIs(
-            allocator.normalize_task({'objective': 'task', 'needs': {'realtime_loop': True}}, policy, capabilities, base_accounts)['realtime_loop'],
-            True,
-        )
-        self.assertIs(
-            allocator.normalize_task(
-                {'objective': 'task', 'profile': {
-                    'work_kind': 'computer_use', 'reasoning_depth': 1, 'code_complexity': 0, 'expected_hours': 0.5, 
-                    
-                    'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
-                    'interaction_style': 'engineering',
-                }},
-                policy, capabilities, base_accounts,
-            )['realtime_loop'],
-            True,
-        )
-
-        # 4. The classifier always answers realtime_loop: a profile without it is refused, and every non-realtime
-        # classifier case plans with it set to False.
+        usage = self.healthy_usage()
         cases_path = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
         doc = json.loads(cases_path.read_text(encoding='utf-8-sig'))
-        usage = self.healthy_usage()
+        rubric_axis = (doc.get('dimension_rubric') or {}).get('axis_demand', '')
+        for cat in allocator.FIVE_AXES:
+            self.assertIn(cat, rubric_axis)
         for case in doc['calibration_cases']:
-            prof = dict(case['expected_profile'])
-            if prof.get('realtime_loop') is True:
-                continue
-            prof_without = {k: v for k, v in prof.items() if k != 'realtime_loop'}
+            prof = allocator.validate_profile(dict(case['expected_profile']))
+            self.assertEqual(set(prof['axis_demand']), set(allocator.FIVE_AXES), case['id'])
+            self.assertNotIn('realtime_loop', prof, case['id'])
             task_obj = case.get('task') if isinstance(case.get('task'), dict) else case
-            task_base = {
-                'objective': task_obj.get('objective', ''),
-                'context': task_obj.get('context', ''),
-                'expected_hours': 0.5,
-            }
-            plan_false = allocator.plan(
-                {**task_base, 'profile': {**prof_without, 'realtime_loop': False}},
+            res = allocator.plan(
+                {
+                    'objective': task_obj.get('objective', ''),
+                    'context': task_obj.get('context', ''),
+                    'expected_hours': prof['expected_hours'],
+                    'profile': prof,
+                },
                 usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
             )
-            self.assertIn('choice', plan_false, case['id'])
-            with self.assertRaises(ValueError):
-                allocator.plan({**task_base, 'profile': prof_without}, usage, now=self.now, accounts=base_accounts,
-                               capabilities=capabilities, overrides=[])
+            self.assertIn('choice', res, case['id'])
 
-    def test_parse_aa_rsc_html_offline_fixture(self):
-        import refresh_speed_data
+    def test_tool_operation_levels_0_and_1_ask_for_no_ability_target(self):
+        base_accounts = allocator.five_axis_overlay(copy.deepcopy(allocator.load_accounts()))
+        targets = base_accounts['_five_axis']['targets']
+        self.assertEqual(allocator.five_axis_targets({'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}, targets).get('tool_operation'), None)
+        self.assertEqual(allocator.five_axis_targets({'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1}, targets).get('tool_operation'), None)
 
-        # Offline Next.js RSC stream fixture testing both initialModels array and $hex dereferenced model objects
-        rsc_html = (
-            '<html><body>'
-            '<script>self.__next_f.push([1,"1a:{\\"outputSpeed\\":78.66,\\"timeToFirstAnswerToken\\":41.09,\\"outputTokens\\":2888116}\\n"])</script>'
-            '<script>self.__next_f.push([1,"1b:{\\"name\\":\\"Gemini 4 Argon (High)\\",\\"slug\\":\\"gemini-4-argon\\",\\"effort\\":{\\"slug\\":\\"high\\"},\\"headline\\":\\"$1a\\"}\\n"])</script>'
-            '<script>self.__next_f.push([1,"1c:{\\"initialModels\\":[{\\"name\\":\\"Claude Sonnet 5.5 (Low, Default Fallback)\\",\\"slug\\":\\"claude-sonnet-5-5\\",\\"outputSpeed\\":96.48,\\"timeToFirstAnswerToken\\":2.43,\\"reasoning_output_tokens\\":119402}]}\\n"])</script>'
-            '</body></html>'
-        )
-        rows = refresh_speed_data.parse_aa_rsc_html(rsc_html)
-        self.assertIn('gemini-4-argon', rows)
-        argon = rows['gemini-4-argon']
-        self.assertEqual(argon['effort'], 'high')
-        self.assertAlmostEqual(argon['output_tps'], 78.66)
-        self.assertAlmostEqual(argon['ttft_s'], 41.09)
-        self.assertEqual(argon['reasoning_tokens_per_turn'], 2888116)
-
-        self.assertIn('claude-sonnet-5-5', rows)
-        sonnet_low = rows['claude-sonnet-5-5']
-        self.assertEqual(sonnet_low['effort'], 'low')
-        self.assertAlmostEqual(sonnet_low['output_tps'], 96.48)
-        self.assertAlmostEqual(sonnet_low['ttft_s'], 2.43)
-        self.assertEqual(sonnet_low['reasoning_tokens_per_turn'], 119402)
-
-    def test_refresh_speed_data_and_floor_excludes_slow_argon_while_keeping_fast_models(self):
-        import dispatch_registry
-        import refresh_speed_data
-
-        base_accounts = copy.deepcopy(allocator.load_accounts())
+        # Stripping tool_operation facet scores completely does not change choice, fit, or net score at tool_operation <= 1
+        stripped = copy.deepcopy(base_accounts)
+        for spec in stripped['models'].values():
+            if isinstance(spec, dict) and isinstance(spec.get('five_axis'), dict):
+                cats = spec['five_axis'].get('categories') or {}
+                if 'tool_operation' in cats:
+                    cats['tool_operation'] = {'value': None, 'by_effort': {}, 'by_level': {'2': {}, '3': {}},
+                                              'status': 'missing', 'facets': {}, 'missing_facets': ['responsiveness', 'image_recognition']}
         capabilities = allocator.load_capabilities(accounts=base_accounts)
         usage = self.healthy_usage()
-
-        # 1. Refresh script computes T_turn = ttft_s + 400 / output_tps (never adding reasoning_tokens_per_turn)
-        updated_accounts, report = refresh_speed_data.apply_speed_data(base_accounts, self.SPEED_FIXTURE)
-        self.assertEqual(report['updated_count'], 7)
-        self.assertIn('gpt-6-pro', report['default_models'])
-        self.assertEqual(sorted(report['not_applicable_models']), ['dot', 'grok-bot'])
-
-        # Argon High: T_turn = 41.09 + 400 / 78.66 = 46.18s -> responsiveness 0.000 (< floor 0.50)
-        argon_spec = updated_accounts['models']['gemini-4-argon-high']
-        self.assertEqual(argon_spec['responsiveness'], 0.0)
-        self.assertIn('46.18s->0.000', argon_spec['responsiveness_basis'])
-        # OpenRouter fallback explicitly notes metric difference in basis
-        g37_spec = updated_accounts['models']['gemini-3.7-flash']
-        self.assertIn('openrouter fallback', g37_spec['responsiveness_basis'])
-        self.assertIn('p50_latency', g37_spec['responsiveness_basis'])
-
-        # Per-effort curves on multi-effort models (Sol: low 0.846 / medium 0.754 / high 0.0; Astra: low 0.777 / medium 0.719 / high 0.0)
-        sol_curve = updated_accounts['effort_curves']['gpt-6.1-sol']['responsiveness']
-        self.assertAlmostEqual(sol_curve['low'], 0.846, places=2)
-        self.assertAlmostEqual(sol_curve['medium'], 0.754, places=2)
-        self.assertEqual(sol_curve['high'], 0.0)
-
-        # 2. Test on shipped references/accounts.json (which carries full speed-data.json numbers):
-        # On a realtime_loop GUI game task (classified as computer_use + needs_gui=True, realtime_loop=True),
-        # Argon High (only high) and grok-bot/dot (not_applicable) are excluded, multi-effort bundles whose configured
-        # effort is high (e.g. astra_high, flash_high, grok47_high) step down to a faster supported effort that clears
-        # floor=0.50, and a fast GUI-capable model wins.
-        lajishouyou_profile = {
-            'work_kind': 'computer_use',
-            'reasoning_depth': 2, 'code_complexity': 0, 'expected_hours': 0.5, 
-            'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-            'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
-            'interaction_style': 'engineering',
-        }
-        rt_plan = allocator.plan(
-            {
-                'objective': '你是该游戏的唯一执行子 Agent，持续在模拟器窗口里操作游戏完成日常挂机刷本',
-                'expected_hours': 1.0,
-                'profile': lajishouyou_profile,
-            },
-            usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
-        )
-        by_id = {c['id']: c for c in rt_plan['ranking']}
-        self.assertTrue(rt_plan['decision']['task']['realtime_loop'])
-        self.assertTrue(rt_plan['decision']['task']['profile']['needs_gui'])
-        self.assertTrue(rt_plan['decision']['task']['profile']['needs_visual'])
-
-        # Argon High only offers `high` (46.18s -> 0.000) -> excluded
-        self.assertTrue(any('too slow per turn for a live loop' in r for r in by_id['argon_high']['excluded']),
-                        by_id['argon_high']['excluded'])
-        self.assertTrue(by_id['argon_high'].get('below_floor'))
-
-        # Multi-effort bundles step down to an effort clearing both floor=0.50 and the hard ability gate (3.1):
-        # - astra_high steps down from high (0.0) to medium (0.719, ability 4.05 >= 3.1)
-        self.assertEqual(by_id['astra_high']['excluded'], [])
-        self.assertEqual(by_id['astra_high']['bundle']['effort'], 'medium')
-        self.assertEqual(by_id['astra_high']['components']['effort_stepped_down_from'], 'high')
-        # - sol_medium (0.754, ability 3.40 >= 3.1), sonnet55_medium (0.898), sonnet55_high (0.701), opus55_medium (0.530) pass directly
-        self.assertEqual(by_id['sol_medium']['excluded'], [])
-        self.assertEqual(by_id['sonnet55_medium']['excluded'], [])
-        self.assertEqual(by_id['sonnet55_high']['excluded'], [])
-        self.assertEqual(by_id['opus55_medium']['excluded'], [])
-        self.assertNotEqual(rt_plan['choice'], 'argon_high')
-
-        # A stepped-down bundle resolves cleanly in dispatch_registry when allow_realtime_stepdown=True
-        stepped_bundle = dispatch_registry.resolve_bundle(
-            dict(by_id['astra_high']['bundle'], bundle_id='astra_high'),
-            accounts=base_accounts,
-            allow_realtime_stepdown=True,
-        )
-        self.assertEqual(stepped_bundle['effort'], 'medium')
-
-        # On a routine non-GUI realtime_loop task:
-        # - flash38_medium (0.813 >= 0.50) passes directly, while flash_high (antigravity-resilient, effort fixed in
-        #   model ID `gemini-3.8-flash-high`, responsiveness 0.49 < 0.50) is NOT allowed to step down and is excluded;
-        # - grok47_high (CLI harness accepts effort) steps down to low (0.744);
-        # - grok-bot / dot (not_applicable) are excluded.
-        routine_rt = allocator.plan(
-            {
-                'objective': '持续轮询命令行行情接口，价差触及阈值时立刻调用下单命令',
-                'expected_hours': 0.5,
-                'needs': {'local_only': False, 'outbound_ok': True},
-                'profile': {
-                    'work_kind': 'tool_execution',
-                    'reasoning_depth': 1, 'code_complexity': 0, 'expected_hours': 0.5, 
-                    'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
-                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
-                    'interaction_style': 'engineering',
-                },
-            },
-            usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
-        )
-        routine_by_id = {c['id']: c for c in routine_rt['ranking']}
-        self.assertTrue(
-            any('below the realtime_loop floor' in r for r in routine_by_id['flash_high']['excluded']),
-            routine_by_id['flash_high']['excluded'],
-        )
-        # Grok's credit window has no cited capacity, so it is out of automatic routing for that data error, not for speed.
-        self.assertFalse(any('too slow' in r or 'realtime_loop floor' in r for r in routine_by_id['grok47_high']['excluded']))
-        self.assertEqual(routine_by_id['grok47_high']['bundle']['effort'], 'low')
-        for na_id in ('grok_bot', 'dot_text'):
-            if na_id in routine_by_id:
-                self.assertTrue(
-                    any('not_applicable' in r and 'too slow per turn for a live loop' in r
-                        for r in routine_by_id[na_id]['excluded']),
-                    routine_by_id[na_id]['excluded'],
-                )
-
-    def test_non_realtime_tasks_are_completely_unaffected_by_responsiveness(self):
-        base_accounts = copy.deepcopy(allocator.load_accounts())
-        stripped_accounts = copy.deepcopy(base_accounts)
-        for spec in stripped_accounts['models'].values():
-            if isinstance(spec, dict):
-                spec.pop('responsiveness', None)
-                spec.pop('responsiveness_basis', None)
-                spec.pop('responsiveness_status', None)
-        for curve in stripped_accounts.get('effort_curves', {}).values():
-            if isinstance(curve, dict):
-                curve.pop('responsiveness', None)
-        capabilities = allocator.load_capabilities(accounts=base_accounts)
-        usage = self.healthy_usage()
-
-        non_rt_tasks = [
-            {
+        for tool_level in (0, 1):
+            task = {
                 'objective': 'Implement the retry backoff module and unit tests',
                 'expected_hours': 0.5,
-                'profile': {
-                    'work_kind': 'general_implementation',
-                    'reasoning_depth': 2, 'code_complexity': 2, 'expected_hours': 0.5, 
-                    'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
-                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
-                    'interaction_style': 'engineering',
-                },
-            },
-            {
-                'objective': '修复游戏挂机脚本 `auto_farm.py` 里轮询窗口卡死的 bug',
-                'expected_hours': 0.5,
-                'profile': {
-                    'work_kind': 'debug_review',
-                    'reasoning_depth': 2, 'code_complexity': 2, 'expected_hours': 0.5, 
-                    'needs_visual': False, 'needs_gui': False, 'local_only': True, 'realtime_loop': False,
-                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
-                    'interaction_style': 'engineering',
-                },
-            },
-        ]
-        for task in non_rt_tasks:
-            before = allocator.plan(task, usage, now=self.now, accounts=stripped_accounts, capabilities=capabilities, overrides=[])
+                'profile': profile(work_kind='general_implementation', local_only=True, expected_hours=0.5,
+                                   axis_demand={'divergence': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': tool_level}),
+            }
+            before = allocator.plan(task, usage, now=self.now, accounts=stripped, capabilities=capabilities, overrides=[])
             after = allocator.plan(task, usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[])
             self.assertEqual(before['choice'], after['choice'])
             before_scores = {c['id']: (c['score'], c['excluded'], c['components'].get('fit')) for c in before['ranking']}
             after_scores = {c['id']: (c['score'], c['excluded'], c['components'].get('fit')) for c in after['ranking']}
             self.assertEqual(before_scores, after_scores)
-            for c in after['ranking']:
-                self.assertNotIn('responsiveness', c['components'])
 
-    def test_zero_local_data_fresh_install_scores_realtime_with_the_default_responsiveness(self):
-        with tempfile.TemporaryDirectory() as empty_state:
-            with patch.dict(os.environ, {'ROUTER_STATE_DIR': empty_state}):
-                fresh_accounts = copy.deepcopy(allocator.load_accounts())
-                # Simulate an unmeasured model on codex (`astra_high` without speed data) to test conservative default
-                del fresh_accounts['models']['gpt-6-astra']['responsiveness']
-                del fresh_accounts['effort_curves']['gpt-6-astra']['responsiveness']
-                capabilities = allocator.load_capabilities(accounts=fresh_accounts)
-                usage = self.healthy_usage()
+        # Outbound models whose tool_operation is missing (dot_text, grok_bot) are NOT excluded by tool_operation at level 0 or 1
+        for tool_level in (0, 1):
+            outbound_task = {
+                'objective': 'Gather release dates from three public SDK changelogs',
+                'expected_hours': 0.3,
+                'needs': {'local_only': False, 'outbound_ok': True},
+                'profile': profile(work_kind='web_research', reasoning_depth=1, code_complexity=0,
+                                   local_only=False, expected_hours=0.3,
+                                   axis_demand={'divergence': 1, 'coding': 0, 'aesthetics': 0, 'tool_operation': tool_level}),
+            }
+            planned_out = allocator.plan(outbound_task, usage, now=self.now, accounts=base_accounts,
+                                         capabilities=capabilities, overrides=[])
+            by_id = {c['id']: c for c in planned_out['ranking']}
+            self.assertEqual(by_id['dot_text']['excluded'], [])
+            self.assertIsNotNone(by_id['dot_text']['score'])
+            if 'grok_bot' in by_id:
+                self.assertFalse(any('tool_operation' in r for r in by_id['grok_bot']['excluded']), by_id['grok_bot']['excluded'])
 
-                # `gpt-6-astra` without speed data gets conservative default (0.52 >= floor 0.50):
-                # not excluded, marked `responsiveness: default`, and ranked behind measured fast models.
-                rt_task = {
-                    'objective': '守着票务网页等放票立即点击抢票',
-                    'expected_hours': 0.5,
-                    'profile': {
-                        'work_kind': 'computer_use',
-                        'reasoning_depth': 1, 'code_complexity': 0, 'expected_hours': 0.5, 
-                        'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-                        'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
-                        'interaction_style': 'engineering',
-                    },
-                }
-                res = allocator.plan(rt_task, usage, now=self.now, accounts=fresh_accounts, capabilities=capabilities, overrides=[])
-                by_id = {c['id']: c for c in res['ranking']}
-                self.assertEqual(by_id['astra_high']['excluded'], [])
-                self.assertEqual(by_id['astra_high']['components']['responsiveness_source'], 'default')
-                self.assertAlmostEqual(by_id['astra_high']['components']['responsiveness'],
-                                       fresh_accounts['scoring']['responsiveness']['default'])
-                self.assertIn('responsiveness: default', by_id['astra_high']['notes'])
-
-                # When an unmeasured model is selected (e.g. only eligible candidate), decision marks `responsiveness: default`
-                other_ids = [cid for cid in by_id if cid != 'astra_high']
-                pinned = allocator.plan(
-                    rt_task, usage, now=self.now, accounts=fresh_accounts, capabilities=capabilities,
-                    unavailable=other_ids, overrides=[],
-                )
-                self.assertEqual(pinned['choice'], 'astra_high')
-                self.assertEqual(pinned['decision'].get('responsiveness'), 'default')
-                self.assertIn('responsiveness: default', pinned['decision'].get('reason', ''))
-
-                # Optional local speed telemetry shrinkage only activates at >= min_samples (20) and is bounded
-                telem_path = Path(empty_state) / 'speed-telemetry.json'
-                telem_path.write_text(json.dumps({
-                    'models': {'gpt-6.1-sol': {'samples': 5, 'median_turn_seconds': 35.0}}
-                }), encoding='utf-8')
-                low_sample_val, low_src = allocator.bundle_responsiveness(
-                    {'id': 'sol_medium', 'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'medium'},
-                    fresh_accounts['models']['gpt-6.1-sol'],
-                    fresh_accounts['scoring'],
-                    fresh_accounts['effort_curves']['gpt-6.1-sol'],
-                    state_dir=empty_state,
-                )
-                self.assertEqual(low_src, 'measured')
-
-                telem_path.write_text(json.dumps({
-                    'models': {'gpt-6.1-sol': {'samples': 40, 'median_turn_seconds': 35.0}}
-                }), encoding='utf-8')
-                blended_val, blended_src = allocator.bundle_responsiveness(
-                    {'id': 'sol_medium', 'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'medium'},
-                    fresh_accounts['models']['gpt-6.1-sol'],
-                    fresh_accounts['scoring'],
-                    fresh_accounts['effort_curves']['gpt-6.1-sol'],
-                    state_dir=empty_state,
-                )
-                self.assertEqual(blended_src, 'local_blended')
-                self.assertLess(blended_val, low_sample_val)
-                self.assertGreaterEqual(low_sample_val - blended_val, 0.01)
-                self.assertLessEqual(low_sample_val - blended_val,
-                                     fresh_accounts['scoring']['responsiveness']['local_telemetry']['max_shift'] + 1e-6)
-
-    def test_realtime_effort_step_down_respects_dispatch_efforts_and_fixed_effort_harnesses(self):
-        import dispatch_registry
-
-        accounts = copy.deepcopy(allocator.load_accounts())
-        policy = accounts['scoring']
-        bundles_map = allocator.bundles(accounts)
-
-        # 1. antigravity-resilient bundle (`flash_high`, model `gemini-3.8-flash-high` with effort in model ID,
-        # responsiveness 0.49 < floor 0.50) does not accept an effort flag at launch and must NEVER step down.
-        b_flash_high = dict(bundles_map['flash_high'], id='flash_high')
-        eff, val, src, stepped_from = allocator.resolve_realtime_effort(
-            b_flash_high, accounts['models']['gemini-3.8-flash-high'], policy, accounts,
-            all_bundles=bundles_map,
-        )
-        self.assertEqual((eff, stepped_from), ('high', None))
-        self.assertAlmostEqual(val, 0.486, places=2)
-
-        # 2. Step-down only considers efforts present in dispatch_efforts[provider][model] and effort_curves[model]['ability']
-        accounts_restricted = copy.deepcopy(accounts)
-        accounts_restricted['dispatch_efforts']['codex']['gpt-6-astra'] = ['high']
-        b_astra = dict(bundles_map['astra_high'], id='astra_high')
-        eff_r, _, _, stepped_r = allocator.resolve_realtime_effort(
-            b_astra, accounts_restricted['models']['gpt-6-astra'], policy, accounts_restricted,
-            all_bundles={'astra_high': b_astra},
-        )
-        self.assertEqual((eff_r, stepped_r), ('high', None))
-
-        # 3. dispatch_registry.resolve_bundle rejects tampered non-realtime effort changes, rejects unsupported
-        # dispatch_efforts, rejects antigravity-resilient step-down, and permits valid realtime step-down.
-        tampered = dict(bundles_map['astra_high'], bundle_id='astra_high', effort='medium')
-        self.assertIsNone(dispatch_registry.resolve_bundle(tampered, accounts=accounts, explicit_override=False))
-        self.assertIsNone(dispatch_registry.resolve_bundle(
-            dict(bundles_map['astra_high'], bundle_id='astra_high', effort='minimal', realtime_stepped_from='high'),
-            accounts=accounts, explicit_override=False, allow_realtime_stepdown=True,
-        ))
-        self.assertIsNone(dispatch_registry.resolve_bundle(
-            dict(bundles_map['flash_high'], bundle_id='flash_high', effort='medium', realtime_stepped_from='high'),
-            accounts=accounts, explicit_override=False, allow_realtime_stepdown=True,
-        ))
-        valid_stepdown = dispatch_registry.resolve_bundle(
-            dict(bundles_map['astra_high'], bundle_id='astra_high', effort='medium', realtime_stepped_from='high'),
-            accounts=accounts, explicit_override=False, allow_realtime_stepdown=True,
-        )
-        self.assertIsNotNone(valid_stepdown)
-        self.assertEqual(valid_stepdown['effort'], 'medium')
-
-    def test_realtime_sibling_deference_requires_sibling_to_clear_the_responsiveness_floor(self):
-        accounts = copy.deepcopy(allocator.load_accounts())
-        bundles_map = allocator.bundles(accounts)
-        non_astra_ids = [bid for bid in bundles_map if not bid.startswith('astra_')]
-        capabilities = allocator.load_capabilities(accounts=accounts)
+    def test_tool_operation_level_2_scores_per_effort_responsiveness_and_excludes_unmeasured(self):
+        base_accounts = copy.deepcopy(allocator.load_accounts())
+        capabilities = allocator.load_capabilities(accounts=base_accounts)
         usage = self.healthy_usage()
 
-        # On a coupled + critical realtime_loop task (gate = 3.6 + 0.3 = 3.9):
-        # - `astra_low` has responsiveness 0.777 >= 0.50, but ability 3.61 < 3.9 (fails ability gate)
-        # - `astra_high` has high responsiveness 0.0 < 0.50, and must NOT defer to `astra_low`;
-        #   instead it steps down to `medium` (ability 4.05 >= 3.9, responsiveness 0.719 >= 0.50).
-        res = allocator.plan(
-            {
-                'objective': '实时循环任务',
-                'difficulty': 'coupled',
-                'needs': {'critical': True},
-                'realtime_loop': True,
-            },
-            usage, now=self.now, unavailable=non_astra_ids, accounts=accounts, capabilities=capabilities, overrides=[],
-        )
-        self.assertEqual(res['choice'], 'astra_high')
+        live_cli_task = {
+            'objective': '持续轮询命令行行情接口，价差触及阈值时立刻调用下单命令',
+            'expected_hours': 0.5,
+            'needs': {'local_only': False, 'outbound_ok': True},
+            'profile': profile(
+                work_kind='tool_execution', reasoning_depth=1, code_complexity=0, expected_hours=0.5,
+                needs_visual=False, needs_gui=False, local_only=False,
+                axis_demand={'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2},
+            ),
+        }
+        res = allocator.plan(live_cli_task, usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[])
         by_id = {c['id']: c for c in res['ranking']}
-        self.assertEqual(by_id['astra_high']['excluded'], [])
-        self.assertEqual(by_id['astra_high']['bundle']['effort'], 'medium')
-        self.assertEqual(by_id['astra_high']['components']['effort_stepped_down_from'], 'high')
 
-    def test_realtime_loop_does_not_auto_promote_gui_visual_or_local_only(self):
-        accounts = copy.deepcopy(allocator.load_accounts())
-        capabilities = allocator.load_capabilities(accounts=accounts)
-        policy = accounts['scoring']
-
-        norm_top = allocator.normalize_task(
-            {
-                'objective': '连接本地交易所 WebSocket 行情流持续盯盘，价差触发时用 REST API 下单',
-                'work_kind': 'tool_execution',
-                'realtime_loop': True,
-                'needs_gui': False,
-                'needs_visual': False,
-                'local_only': False,
-            },
-            policy, capabilities, accounts,
+        # Lower/medium effort rows on multi-effort models have higher responsiveness (and level-2 fit) than high
+        self.assertGreater(
+            by_id['sol_medium']['five_axis_fit']['tool_operation']['facets']['responsiveness']['score'],
+            by_id['sol_high']['five_axis_fit']['tool_operation']['facets']['responsiveness']['score'],
         )
-        self.assertTrue(norm_top['realtime_loop'])
-        self.assertFalse(norm_top['needs_gui'])
-        self.assertFalse(norm_top['needs_visual'])
-        self.assertFalse(norm_top['local_only'])
-
-        norm_prof = allocator.normalize_task(
-            {
-                'objective': '连接交易所 WebSocket 行情流持续盯盘，价差触发时用 REST API 下单',
-                'profile': {
-                    'work_kind': 'tool_execution',
-                    'reasoning_depth': 2, 'code_complexity': 0, 'expected_hours': 0.5, 
-                    'needs_visual': False, 'needs_gui': False, 'local_only': False, 'realtime_loop': True,
-                    'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
-                    'interaction_style': 'engineering',
-                },
-            },
-            policy, capabilities, accounts,
+        self.assertGreater(
+            by_id['opus55_medium']['five_axis_fit']['tool_operation']['facets']['responsiveness']['score'],
+            by_id['opus55_high']['five_axis_fit']['tool_operation']['facets']['responsiveness']['score'],
         )
-        self.assertTrue(norm_prof['realtime_loop'])
-        self.assertFalse(norm_prof['needs_gui'])
-        self.assertFalse(norm_prof['needs_visual'])
-        self.assertFalse(norm_prof['local_only'])
+        # Slow-but-measured models (e.g. argon_high) are scored continuously, never hard-floor excluded
+        self.assertEqual(by_id['argon_high']['excluded'], [])
+        self.assertIsNotNone(by_id['argon_high']['score'])
+        # Channels with no responsiveness measurement (dot_text, grok_bot) leave automatic routing via rule B
+        for unmeasured_id in ('dot_text', 'grok_bot'):
+            if unmeasured_id in by_id:
+                self.assertTrue(
+                    any('no trusted data for the demanded category tool_operation' in r for r in by_id[unmeasured_id]['excluded']),
+                    by_id[unmeasured_id]['excluded'],
+                )
 
-    def test_discovered_family_and_date_variants_do_not_inherit_single_effort_measured_responsiveness(self):
+    def test_tool_operation_level_3_requires_image_input_and_scores_min_of_responsiveness_and_vision(self):
+        base_accounts = copy.deepcopy(allocator.load_accounts())
+        capabilities = allocator.load_capabilities(accounts=base_accounts)
+        usage = self.healthy_usage()
+
+        gui_task = {
+            'objective': '持续在模拟器窗口里根据画面点击完成日常任务',
+            'expected_hours': 0.5,
+            'profile': profile(
+                work_kind='computer_use', reasoning_depth=2, code_complexity=0, expected_hours=0.5,
+                needs_visual=True, needs_gui=True, local_only=False,
+                axis_demand={'divergence': 1, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3},
+            ),
+        }
+        base_accounts['accounts']['codex']['bundles']['deepseek_test'] = {
+            'model': 'deepseek-v4-pro', 'effort': 'high', 'provider': 'codex',
+        }
+        res = allocator.plan(gui_task, usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[])
+        by_id = {c['id']: c for c in res['ranking']}
+        # Models with image_input == 'no' (deepseek-v4-pro) and 'unknown' (dot_text) are excluded when tool_operation >= 3
+        self.assertTrue(any('does not accept image input' in r for r in by_id['deepseek_test']['excluded']),
+                        by_id['deepseek_test']['excluded'])
+        self.assertTrue(any('image_input modality has no cited source' in r for r in by_id['dot_text']['excluded']),
+                        by_id['dot_text']['excluded'])
+        # Named constraint overrides the exclusion with a surfaced note/decision alert
+        pinned = allocator.plan(
+            {**gui_task, 'constraints': {'model': 'claude-opus-5-5'}},
+            usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
+        )
+        self.assertTrue(pinned['selected_bundle']['model'].startswith('claude-opus-5-5'))
+
+    def test_family_guesses_have_no_scores_while_date_aliases_resolve_to_calibrated_model(self):
         import auto_bundles
-
         accounts = copy.deepcopy(allocator.load_accounts())
-        policy = accounts['scoring']
-        # A family guess has no measured speed of its own.
         for variant_id in ('claude-opus-5-6', 'gpt-6-experimental', 'gemini-2.5-pro'):
             with self.subTest(variant=variant_id):
                 prof = auto_bundles.default_profile(variant_id, accounts)
-                self.assertEqual(prof['source'], 'family')    # no row of its own, so no measured speed
-                b = {'id': f'auto_{variant_id}', 'account': 'claude', 'model': variant_id, 'effort': 'medium'}
-                val, src = allocator.bundle_responsiveness(b, prof, accounts)
-                self.assertEqual(src, 'default')
-                self.assertAlmostEqual(val, policy['responsiveness']['default'])
-                self.assertGreaterEqual(val, policy['responsiveness']['floor'])
-        # A date or -latest/-preview spelling is the model itself, so its measured curve answers (R1 `alias`).
+                self.assertEqual(prof['source'], 'family')
+                self.assertEqual(allocator.model_spec(accounts, variant_id), {})
         for variant_id, exact_id in (('claude-opus-5-5-20260901', 'claude-opus-5-5'), ('gpt-6.1-sol-20260901', 'gpt-6.1-sol'),
                                      ('gpt-6-astra-preview', 'gpt-6-astra'), ('grok-4.7-latest', 'grok-4.7')):
             with self.subTest(variant=variant_id):
                 prof = auto_bundles.default_profile(variant_id, accounts)
                 self.assertEqual(prof['source'], 'calibrated')
-                self.assertEqual(
-                    allocator.bundle_responsiveness({'model': variant_id, 'effort': 'medium'}, prof, accounts),
-                    allocator.bundle_responsiveness({'model': exact_id, 'effort': 'medium'}, prof, accounts))
+                self.assertEqual(allocator.model_spec(accounts, variant_id), allocator.model_spec(accounts, exact_id))
 
-    def test_issue1_resolve_bundle_requires_realtime_flag_a_qualifying_effort_and_survives_disabled_sibling(self):
-        import dispatch_registry
-        import router_test_support
-
+    def test_high_coupling_continuity_keeps_close_worker_and_switches_past_one_demand_level(self):
         accounts = copy.deepcopy(allocator.load_accounts())
-        bundles_map = allocator.bundles(accounts)
-
-        # 1a. Forged `realtime_stepped_from` on a non-realtime call (`allow_realtime_stepdown=False`) is rejected.
-        forged_non_rt = dict(bundles_map['astra_high'], id='astra_high', bundle_id='astra_high',
-                             effort='medium', realtime_stepped_from='high')
-        self.assertIsNone(dispatch_registry.resolve_bundle(
-            forged_non_rt, accounts, explicit_override=False, allow_realtime_stepdown=False,
-        ))
-
-        # 1b. The plan chooses among qualifying efforts by score, so a lower qualifying one stands; one below the floor does not.
-        lower_qualifying = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
-                                effort='low', realtime_stepped_from='high')
-        self.assertEqual(dispatch_registry.resolve_bundle(
-            lower_qualifying, accounts, explicit_override=False, allow_realtime_stepdown=True,
-        )['effort'], 'low')
-        too_slow = copy.deepcopy(accounts)
-        too_slow['effort_curves'][bundles_map['sol_high']['model']]['responsiveness']['low'] = 0.1
-        self.assertIsNone(dispatch_registry.resolve_bundle(
-            lower_qualifying, too_slow, explicit_override=False, allow_realtime_stepdown=True,
-        ))
-        valid_sol = dict(bundles_map['sol_high'], id='sol_high', bundle_id='sol_high',
-                         effort='medium', realtime_stepped_from='high')
-        resolved_sol = dispatch_registry.resolve_bundle(
-            valid_sol, accounts, explicit_override=False, allow_realtime_stepdown=True,
-        )
-        self.assertIsNotNone(resolved_sol)
-        self.assertEqual(resolved_sol['bundle_id'], 'sol_high')
-        self.assertEqual(resolved_sol['effort'], 'medium')
-
-        # 1c. Explicit caller `realtime_loop=False` overrides `profile['realtime_loop']=True` in `normalize_task`.
-        prof_rt = {
-            'work_kind': 'computer_use', 'reasoning_depth': 2, 'code_complexity': 0, 'expected_hours': 0.5, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
-            'realtime_loop': True, 'wants_fast': False, 'read_only_review': False,
-            'multi_task': False, 'task_count': '1', 'interaction_style': 'engineering',
-        }
-        norm = allocator.normalize_task(
-            {'objective': 'implement polling', 'realtime_loop': False, 'profile': prof_rt},
-            accounts['scoring'], allocator.load_capabilities(accounts=accounts), accounts,
-        )
-        self.assertFalse(norm['realtime_loop'])
-        self.assertFalse(norm['profile']['realtime_loop'])
-
-        # 1d. When `opus55_medium` is disabled in model management, `opus55_high` steps past it to `low`, and
-        # `resolve_bundle`, `issue()`, and `prepare()` keep that effort on `bundle_id='opus55_high'`.
-        acc_disabled_sib = copy.deepcopy(accounts)
-        for k, v in acc_disabled_sib['accounts'].items():
-            if isinstance(v, dict):
-                v['verified'] = (k == 'claude')
-        for bid, b in acc_disabled_sib['accounts']['claude']['bundles'].items():
-            if bid != 'opus55_high':
-                b['disabled'] = True
-        caps = allocator.load_capabilities(accounts=acc_disabled_sib)
-        usage = router_test_support.usage_windows(
-            self.now, {'claude': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)]}
-        )
-        task = {
-            'objective': 'Play game live', 'parent_agent_id': 'p1', 'task_id': 't_opus_stepdown',
-            'difficulty': 'hard', 'realtime_loop': True,
-        }
-        orig_hp = allocator.host_policy.load_policy
-        orig_la = allocator.load_accounts
-        try:
-            allocator.host_policy.load_policy = lambda *a, **kw: None
-            allocator.load_accounts = lambda *a, **kw: acc_disabled_sib
-            plan_res = allocator.plan({**task, 'disable_fast': True}, usage, now=self.now, accounts=acc_disabled_sib, capabilities=caps, overrides=[])
-            self.assertEqual(plan_res['choice'], 'opus55_high')
-            self.assertEqual(plan_res['selected_bundle']['effort'], 'low')
-            with tempfile.TemporaryDirectory() as td:
-                db = os.path.join(td, 'reg.sqlite')
-                issued = dispatch_registry.issue(plan_res, task, now=self.now, path=db, allocation_task=task)
-                prepared = dispatch_registry.prepare(
-                    issued['decision_id'], task, {'title': 'rt', 'initialPrompt': 'go'},
-                    usage, accounts=acc_disabled_sib, now=self.now, path=db,
-                )
-                self.assertEqual(prepared['bundle']['bundle_id'], 'opus55_high')
-                self.assertEqual(prepared['bundle']['effort'], 'low')
-                self.assertFalse(prepared['bundle'].get('disabled'))
-        finally:
-            allocator.host_policy.load_policy = orig_hp
-            allocator.load_accounts = orig_la
-
-    def test_issue2_pinned_and_user_override_preserve_chosen_model_and_effort_with_warning(self):
-        import dispatch_registry
-        import router_test_support
-
-        accounts = copy.deepcopy(allocator.load_accounts())
-        for k, v in accounts['accounts'].items():
-            if isinstance(v, dict):
-                v['verified'] = True
-        caps = allocator.load_capabilities(accounts=accounts)
-        bundles_map = allocator.bundles(accounts)
+        capabilities = allocator.load_capabilities(accounts=accounts)
         usage = self.healthy_usage()
+        # High-divergence task (divergence=3, continuity = t3 - t2 = 1.8903 SD):
+        # 1. `sonnet55_high` (divergence -0.78, within 1.89 SD of Opus 0.0) stays when continuing (`coupling='high'`).
+        close_chain = {'id': 'c-close', 'coupling': 'high', 'total_hours': 2,
+                       'worker': {'bundle': 'sonnet55_high', 'context_tokens': 100000}}
+        div_task = {
+            'objective': 'Continue deep research synthesis',
+            'expected_hours': 0.5,
+            'profile': profile(work_kind='exploration_analysis', reasoning_depth=3, code_complexity=0,
+                               access='read-only', interaction_style='exploration', local_only=True, expected_hours=0.5,
+                               axis_demand={'divergence': 3, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0}),
+        }
+        kept = allocator.plan({**div_task, 'chain': close_chain}, usage, now=self.now,
+                              accounts=accounts, capabilities=capabilities, overrides=[])
+        self.assertEqual((kept['choice'], kept['decision']['action']), ('sonnet55_high', 'resume'))
 
-        # 2a. `pinned_bundle='opus55_high'` on a `realtime_loop=True` task keeps `effort='high'` and records a warning.
-        pinned_plan = allocator.plan(
-            {'objective': 'Play game live', 'difficulty': 'routine', 'realtime_loop': True, 'pinned_bundle': 'opus55_high'},
-            usage, now=self.now, accounts=accounts, capabilities=caps, overrides=[],
+        # 2. A worker whose deficit exceeds continuity + rival cost (e.g. `sol_medium` with divergence ~ -2.1 vs `argon_high` +0.25)
+        # switches to the stronger candidate instead of forcing a bad continuation.
+        far_chain = {'id': 'c-far', 'coupling': 'high', 'total_hours': 2,
+                     'worker': {'bundle': 'sol_medium', 'context_tokens': 100000}}
+        switched = allocator.plan({**div_task, 'chain': far_chain}, usage, now=self.now,
+                                  accounts=accounts, capabilities=capabilities, overrides=[])
+        self.assertNotEqual(switched['choice'], 'sol_medium')
+        self.assertGreater(
+            next(c for c in switched['ranking'] if c['id'] == switched['choice'])['score'],
+            next(c for c in switched['ranking'] if c['id'] == 'sol_medium')['score'],
         )
-        self.assertEqual(pinned_plan['choice'], 'opus55_high')
-        self.assertEqual(pinned_plan['selected_bundle']['effort'], 'high')
-        self.assertTrue(any('responsiveness' in w for w in pinned_plan['decision'].get('warnings', [])),
-                        pinned_plan['decision'].get('warnings'))
 
-        # 2b. Explicit model constraint on a slow-only model (`gemini-4-argon-high`) is not excluded by responsiveness floor.
-        constrained_plan = allocator.plan(
-            {'objective': 'Play game live', 'difficulty': 'routine', 'realtime_loop': True,
-             'constraints': {'model': 'gemini-4-argon-high'}},
-            usage, now=self.now, accounts=accounts, capabilities=caps, overrides=[],
-        )
-        self.assertEqual(constrained_plan['choice'], 'argon_high')
-        self.assertEqual(constrained_plan['selected_bundle']['effort'], 'high')
-        self.assertTrue(any('responsiveness' in w for w in constrained_plan['decision'].get('warnings', [])),
-                        constrained_plan['decision'].get('warnings'))
+    def test_ledger_profile_maps_legacy_records_cleanly_on_read(self):
+        legacy = {
+            'work_kind': 'computer_use', 'reasoning_depth': 2, 'code_complexity': 1,
+            'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
+            'wants_fast': False, 'read_only_review': False, 'access': 'write',
+            'expected_hours': 0.5, 'hours_confidence': 'medium', 'urgency': 'normal',
+            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+            'axis_demand': {'divergence': 1, 'global_rigor': 2, 'module_precision': 3, 'vision_tools': 2},
+        }
+        mapped = allocator.ledger_profile(legacy)
+        self.assertEqual(mapped['axis_demand'], {'divergence': 1, 'coding': 3, 'aesthetics': 0, 'tool_operation': 3})
+        self.assertNotIn('realtime_loop', mapped)
 
-        # 2c. `record --constraint user_override` with `astra_high` (`effort='high'`) or `argon_high` (`effort='high'`)
-        # succeeds through `dispatch_registry.issue()` + `prepare()` without crashing.
-        usage_prep = router_test_support.usage_windows(self.now, {
-            'codex': [('usage', 80, 100)],
-            'antigravity': [('gemini-5h', 90, 3), ('gemini-weekly', 80, 100), ('3p-5h', 90, 3), ('3p-weekly', 80, 100)],
-        })
-        orig_hp = allocator.host_policy.load_policy
-        orig_la = allocator.load_accounts
-        try:
-            allocator.host_policy.load_policy = lambda *a, **kw: None
-            allocator.load_accounts = lambda *a, **kw: accounts
-            for bid in ('astra_high', 'argon_high'):
-                with self.subTest(bundle_id=bid), tempfile.TemporaryDirectory() as td:
-                    db = os.path.join(td, 'reg.sqlite')
-                    task = {'objective': 'Play game live', 'parent_agent_id': 'p1', 'task_id': f't_{bid}', 'realtime_loop': True}
-                    rec = {
-                        'stage': 'record', 'choice': 'constraint', 'constraint': 'user_override',
-                        'basis': f'User explicitly requested {bid}',
-                        'selected_bundle': dict(bundles_map[bid], id=bid, bundle_id=bid, effort='high'),
-                        'decision': {'action': 'dispatch', 'needs_user_decision': False, 'task': {'realtime_loop': True}},
-                    }
-                    issued = dispatch_registry.issue(rec, task, now=self.now, path=db, allocation_task=task)
-                    prepared = dispatch_registry.prepare(
-                        issued['decision_id'], task, {'title': 'rt', 'initialPrompt': 'go'},
-                        usage_prep, accounts=accounts, now=self.now, path=db,
-                    )
-                    self.assertEqual(prepared['bundle']['bundle_id'], bid)
-                    self.assertEqual(prepared['bundle']['effort'], 'high')
-        finally:
-            allocator.host_policy.load_policy = orig_hp
-            allocator.load_accounts = orig_la
+        legacy_rt_only = dict(legacy, needs_visual=False, needs_gui=False,
+                              axis_demand={'divergence': 0, 'global_rigor': 1, 'module_precision': 1, 'vision_tools': 0})
+        mapped_rt = allocator.ledger_profile(legacy_rt_only)
+        self.assertEqual(mapped_rt['axis_demand'], {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2})
 
-    def test_issue3_realtime_sibling_deference_ignores_unavailable_and_cooling_down_siblings(self):
-        accounts = copy.deepcopy(allocator.load_accounts())
-        for v in accounts['accounts'].values():
-            if isinstance(v, dict):
-                v['verified'] = True
-        caps = allocator.load_capabilities(accounts=accounts)
-        bundles_map = allocator.bundles(accounts)
-        usage = self.healthy_usage()
-
-        orig_hp = allocator.host_policy.load_policy
-        try:
-            allocator.host_policy.load_policy = lambda *a, **kw: None
-            # When all lower-effort siblings are in `unavailable`, the high/xhigh bundle steps down instead of deferring.
-            for target_id in ('sol_high', 'opus55_high', 'opus55_xhigh', 'astra_xhigh'):
-                with self.subTest(target_id=target_id):
-                    unavail = [bid for bid in bundles_map if bid != target_id]
-                    res = allocator.plan(
-                        {'objective': 'Play game live', 'difficulty': 'hard', 'realtime_loop': True},
-                        usage, now=self.now, unavailable=unavail, accounts=accounts, capabilities=caps, overrides=[],
-                    )
-                    cand = next(c for c in res['ranking'] if c['id'] == target_id)
-                    self.assertEqual(res['choice'], target_id)
-                    self.assertEqual(cand['excluded'], [])
-                    self.assertEqual(cand['bundle']['effort'], 'medium')
-
-            # When a lower-effort sibling is in `launch_failures` cooldown, `resolve_realtime_effort` ignores it and steps down.
-            custom_bundles = {
-                'opus55_medium': dict(bundles_map['opus55_medium'], id='opus55_medium', model='claude-opus-5-5-medium'),
-                'opus55_high': dict(bundles_map['opus55_high'], id='opus55_high', model='claude-opus-5-5'),
-            }
-            accounts_alias = copy.deepcopy(accounts)
-            accounts_alias.setdefault('aliases', {})['claude-opus-5-5-medium'] = 'claude-opus-5-5'
-            rt_ctx = {
-                'accounts': accounts_alias,
-                'policy': accounts_alias['scoring'],
-                'bundles': custom_bundles,
-                'unavailable': set(),
-                'now': self.now,
-                'launch_failures': {
-                    'claude/claude-opus-5-5-medium': {
-                        'failure_class': 'host_creation_failed',
-                        'streak': 1,
-                        'until': '2099-01-01T00:00:00Z',
-                    }
-                },
-            }
-            eff, resp_val, resp_src, stepped_from = allocator.resolve_realtime_effort(
-                custom_bundles['opus55_high'],
-                {'realtime_loop': True},
-                rt_ctx,
-                'claude-opus-5-5',
-                info=accounts_alias['models']['claude-opus-5-5'],
-                policy=accounts_alias['scoring'],
-                curves=accounts_alias['effort_curves']['claude-opus-5-5'],
-            )
-            self.assertEqual((eff, stepped_from), ('medium', 'high'))
-            self.assertGreaterEqual(resp_val, 0.5)
-        finally:
-            allocator.host_policy.load_policy = orig_hp
-
-    def test_issue4_infer_task_profile_local_only_matches_origin_main_without_gui_expansion(self):
+    def test_normalize_task_local_only_matches_origin_main_without_gui_expansion(self):
         caps = allocator.load_capabilities()
         accounts = allocator.load_accounts()
         policy = accounts['scoring']
