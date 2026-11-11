@@ -171,6 +171,8 @@ def warning(name, row):
     elif status == AGY_ACCOUNT_FLAPPING:
         lines.append(f"{name}: agy_account_flapping ({row.get('reason')}); excluded from dispatch until one account "
                      f"stays signed in. Fix: {AGY_FLAPPING_FIX}")
+    if row.get('data_error'):
+        lines.append(f"{name}: data error: {row['data_error']}")
     return lines
 
 

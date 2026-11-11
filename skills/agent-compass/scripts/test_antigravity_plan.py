@@ -8,16 +8,24 @@ import antigravity_plan as plan
 from router_test_support import temporary_root
 
 
-def signed_in(email):
-    """A keyring blob for `email` whose token is fresh by the wall clock (read_token checks expiry against it)."""
-    return lambda: blob(datetime.now(timezone.utc) + timedelta(minutes=40), email)
+# Token expiries must be in the future by the wall clock (read_token checks them against it).
+TOKEN_BASE = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=2)
+LIFETIME = 3600
 
 
-def blob(expiry, email=None):
+def signed_in(email, generation=0, lifetime=LIFETIME, iat_exp=True):
+    """agy's keyring blob for `email`'s token number `generation`: every renewal moves `expiry` on by one lifetime, and
+    the id_token carries `iat`/`exp` one lifetime apart unless `iat_exp` is False."""
+    expiry = TOKEN_BASE + timedelta(seconds=generation * lifetime)
+    claims = {'email': email, **({'iat': int(expiry.timestamp()) - lifetime, 'exp': int(expiry.timestamp())} if iat_exp else {})}
+    return lambda: blob(expiry, claims)
+
+
+def blob(expiry, claims=None):
     token = {'access_token': 'SECRET', 'expiry': expiry.isoformat()}
-    if email:
-        claims = base64.urlsafe_b64encode(json.dumps({'email': email}).encode()).decode().rstrip('=')
-        token['id_token'] = f'e30.{claims}.sig'
+    if claims:
+        encoded = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip('=')
+        token['id_token'] = f'e30.{encoded}.sig'
     return json.dumps({'token': token, 'auth_method': 'consumer'})
 
 
@@ -83,22 +91,27 @@ class AntigravityPlanTests(unittest.TestCase):
         now = plan._now()
         (self.state / plan.CACHE_FILE).write_text(json.dumps({
             'plan': 'Antigravity', 'tier_id': 'free-tier', 'source': 'currentTier', 'read_at': plan._stamp(now),
-            'free_since': plan._stamp(now - timedelta(minutes=plan.CONFIRM_MINUTES))}), encoding='utf-8')
+            'free_confirmed': True}), encoding='utf-8')
         self.assertEqual(plan.cached_plan(self.state), 'Free')
 
     def test_a_free_tier_reported_as_the_paid_tier_still_reads_as_free(self):
         # 2026-11-10: loadCodeAssist returned `paidTier: {id: free-tier, name: Antigravity Starter Quota}`.
         now = datetime(2026, 11, 10, tzinfo=timezone.utc)
         response = {'paidTier': {'id': 'free-tier', 'name': 'Antigravity Starter Quota'}}
-        plan.refresh(self.state, read_blob=self.fresh, fetch=lambda *_: response, now=now)
+        token, renewed = signed_in('only@example.com'), signed_in('only@example.com', generation=1)
+        plan.refresh(self.state, read_blob=token, fetch=lambda *_: response, now=now)
         self.assertEqual(plan.read_cache(self.state)['source'], 'paidTier')
         self.assertIsNone(plan.cached_plan(self.state, now))      # one free answer is not yet a lapse
-        later = now + timedelta(minutes=plan.CONFIRM_MINUTES)
-        plan.refresh(self.state, read_blob=self.fresh, fetch=lambda *_: response, now=later)
+        later = now + timedelta(minutes=5)
+        plan.refresh(self.state, read_blob=token, fetch=lambda *_: response, now=later)
+        self.assertIsNone(plan.cached_plan(self.state, later))    # the same token again confirms nothing
+        self.assertFalse(plan.due(plan.read_cache(self.state), later, reading=plan.reading_of(token())))
+        self.assertTrue(plan.due(plan.read_cache(self.state), later, reading=plan.reading_of(renewed())))
+        plan.refresh(self.state, read_blob=renewed, fetch=lambda *_: response, now=later)
         self.assertEqual(plan.cached_plan(self.state, later), 'Free')
         # standard-tier can be a paid Code Assist plan: it keeps the name Google gives it.
         response = {'paidTier': {'id': 'standard-tier', 'name': 'Gemini Code Assist Standard'}}
-        plan.refresh(self.state, read_blob=self.fresh, fetch=lambda *_: response, now=later)
+        plan.refresh(self.state, read_blob=renewed, fetch=lambda *_: response, now=later)
         self.assertEqual(plan.cached_plan(self.state, later), 'Gemini Code Assist Standard')
 
     def test_the_cache_records_a_digest_of_the_keyring_account_never_the_address(self):
@@ -106,7 +119,7 @@ class AntigravityPlanTests(unittest.TestCase):
         plan.refresh(self.state, read_blob=signed_in('Paid@Example.com'), fetch=lambda *_: ULTRA, now=now)
         text = (self.state / plan.CACHE_FILE).read_text(encoding='utf-8')
         document = json.loads(text)
-        self.assertEqual(document['identity'], plan.identity_of(blob(now, 'paid@example.com')))
+        self.assertEqual(document['identity'], plan.identity_of(signed_in('paid@example.com')()))
         self.assertTrue(document['identity'].startswith('sha256:'))
         for secret in ('SECRET', 'example.com', 'Paid'):
             self.assertNotIn(secret, text)
@@ -117,13 +130,14 @@ class AntigravityPlanTests(unittest.TestCase):
         plan.refresh(self.state, read_blob=paid, fetch=lambda *_: ULTRA, now=now)
         document = plan.read_cache(self.state)
         later = now + timedelta(minutes=1)
-        self.assertFalse(plan.due(document, later, identity=plan.identity_of(paid())))
-        self.assertTrue(plan.due(document, later, identity=plan.identity_of(blob(now, 'free@example.com'))))
-        # Outside the flap window the new account's own tier replaces the old one; the old account's plan never carries over.
-        after = now + timedelta(minutes=plan.FLAP_WINDOW_MINUTES + 1)
+        self.assertFalse(plan.due(document, later, reading=plan.reading_of(paid())))
+        self.assertTrue(plan.due(document, later, reading=plan.reading_of(signed_in('free@example.com')())))
+        # One token lifetime later the new account's own tier replaces the old one; the old account's plan never carries over.
+        after = now + timedelta(seconds=LIFETIME + 60)
         plan.refresh(self.state, read_blob=signed_in('free@example.com'), fetch=lambda *_: FREE, now=after)
         document = plan.read_cache(self.state)
-        self.assertEqual((document['tier_id'], document['identity']), ('free-tier', plan.identity_of(blob(now, 'free@example.com'))))
+        self.assertEqual((document['tier_id'], document['identity']),
+                         ('free-tier', plan.identity_of(signed_in('free@example.com')())))
         self.assertIsNone(plan.flapping(document, after))
         self.assertIsNone(plan.cached_plan(self.state, after))     # unconfirmed free answer
 
@@ -137,18 +151,31 @@ class AntigravityPlanTests(unittest.TestCase):
         plan.refresh(self.state, read_blob=paid, fetch=lambda *_: ULTRA, now=flip)
         state = plan.cached_state(self.state, flip)
         self.assertEqual(state['plan'], None)
-        self.assertEqual((state['flapping']['accounts'], state['flapping']['window_minutes']), (2, plan.FLAP_WINDOW_MINUTES))
-        # A free answer at the next flip back is still not a lapse: the account is flapping.
+        # The window is the token's own lifetime (id_token exp - iat), not a set number of minutes.
+        self.assertEqual((state['flapping']['accounts'], state['flapping']['window_minutes']), (2, LIFETIME / 60))
+        # A free answer at the next flip back, on a renewed token, is still not a lapse: the account is flapping.
         back = start + timedelta(minutes=60)
-        plan.refresh(self.state, read_blob=free, fetch=lambda *_: FREE, now=back)
+        free_renewed = signed_in('free@example.com', generation=1)
+        plan.refresh(self.state, read_blob=free_renewed, fetch=lambda *_: FREE, now=back)
         self.assertIsNone(plan.cached_plan(self.state, back))
         self.assertTrue(plan.flapping(plan.read_cache(self.state), back))
-        self.assertTrue(plan.due(plan.read_cache(self.state), back + timedelta(minutes=plan.CONFIRM_MINUTES)))
-        # Once one account has stayed for a whole window, its tier counts again.
-        settled = back + timedelta(minutes=plan.FLAP_WINDOW_MINUTES + 1)
-        plan.refresh(self.state, read_blob=paid, fetch=lambda *_: ULTRA, now=settled)
+        self.assertTrue(plan.due(plan.read_cache(self.state), back, reading=plan.reading_of(signed_in('free@example.com', 2)())))
+        # Once one account has held the slot for a whole lifetime, its tier counts again.
+        settled = back + timedelta(seconds=LIFETIME + 60)
+        plan.refresh(self.state, read_blob=signed_in('paid@example.com', generation=2), fetch=lambda *_: ULTRA, now=settled)
         self.assertIsNone(plan.flapping(plan.read_cache(self.state), settled))
         self.assertEqual(plan.cached_plan(self.state, settled), 'Google AI Ultra')
+
+    def test_without_iat_exp_the_lifetime_is_the_step_between_two_tokens_and_until_then_a_data_error(self):
+        now = datetime(2026, 11, 11, tzinfo=timezone.utc)
+        first = signed_in('only@example.com', lifetime=1800, iat_exp=False)
+        document = plan.refresh(self.state, read_blob=first, fetch=lambda *_: ULTRA, now=now)
+        self.assertNotIn('lifetime_seconds', document)
+        self.assertIn(plan.LIFETIME_UNREADABLE, plan.cached_state(self.state, now)['data_error'])
+        renewed = signed_in('only@example.com', generation=1, lifetime=1800, iat_exp=False)
+        document = plan.refresh(self.state, read_blob=renewed, fetch=lambda *_: ULTRA, now=now + timedelta(minutes=30))
+        self.assertEqual(document['lifetime_seconds'], 1800)
+        self.assertIsNone(plan.cached_state(self.state, now + timedelta(minutes=30))['data_error'])
 
     def test_background_refresh_needs_agy_and_honours_the_switch(self):
         self.assertIsNone(plan.refresh_in_background(self.state, {'PATH': ''}))

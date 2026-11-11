@@ -927,6 +927,7 @@ def _discover(home=None, environ=None, now=None):
     # /usage carries no tier; the tier comes from Google with agy's own sign-in (antigravity_plan), which is also a sign-in proof.
     agy_state = antigravity_plan.cached_state(state_dir, now)
     agy_tier, agy_flapping = agy_state['plan'], agy_state['flapping']
+    agy_data_error = agy_state['data_error']
     agy_tier_read_at = antigravity_plan.read_cache(state_dir).get('read_at') if agy_tier else None
     result['accounts']['antigravity'] = {'family': 'antigravity', 'provider': 'antigravity-resilient',
         'home': str(home / '.gemini'), 'cli_installed': agy_cli,
@@ -936,7 +937,7 @@ def _discover(home=None, environ=None, now=None):
         'plan_source': 'usage_api' if agy.get('plan_label') else 'account-tier' if agy_tier else None,
         **({'plan_read_at': agy.get('fetched_at') if agy.get('plan_label') else agy_tier_read_at}
            if (agy.get('plan_label') or agy_tier_read_at) else {}),
-        'billing': 'subscription'}
+        'billing': 'subscription', **({'data_error': agy_data_error} if agy_present and agy_data_error else {})}
     if agy_present and agy_flapping:
         # Two Google accounts take turns in agy's one keyring slot: no reading says which account a tier or a quota
         # belongs to, so the account is neither ready nor inactive (antigravity_plan module docstring).

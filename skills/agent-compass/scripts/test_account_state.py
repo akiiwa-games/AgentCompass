@@ -815,10 +815,12 @@ class TemplateTests(Machine):
         self.assertFalse(account_state.plan_is_inactive('opencode', 'free'))
         self.assertFalse(account_state.plan_is_inactive('codex', 'plus'))
 
-    def agy_reading(self, email, tier_id, at):
-        """One antigravity_plan refresh at `at` with `email` in agy's keyring slot answering `tier_id`."""
-        token = {'access_token': 'fake-agy', 'id_token': jwt({'email': email}),
-                 'expiry': (datetime.now(timezone.utc) + timedelta(minutes=40)).isoformat()}
+    def agy_reading(self, email, tier_id, at, generation=0):
+        """One antigravity_plan refresh at `at` with `email`'s token number `generation` in agy's keyring slot answering
+        `tier_id`. Tokens live an hour (id_token exp - iat); each renewal moves the expiry on by one lifetime."""
+        expiry = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=2 + generation)
+        token = {'access_token': 'fake-agy', 'expiry': expiry.isoformat(),
+                 'id_token': jwt({'email': email, 'iat': int(expiry.timestamp()) - 3600, 'exp': int(expiry.timestamp())})}
         names = {'free-tier': 'Antigravity', 'g1-ultra-tier': 'Google AI Ultra'}
         antigravity_plan.refresh(self.state, read_blob=lambda: json.dumps({'token': token}),
                                  fetch=lambda *_: {'paidTier': {'id': tier_id, 'name': names[tier_id]}}, now=at)
@@ -831,7 +833,7 @@ class TemplateTests(Machine):
         # Round 059: two Google accounts write agy's one keyring slot in turn (free at :38, Ultra at :50).
         self.agy_reading('free@example.com', 'free-tier', self.now - timedelta(minutes=24))
         self.agy_reading('paid@example.com', 'g1-ultra-tier', self.now - timedelta(minutes=12))
-        self.agy_reading('free@example.com', 'free-tier', self.now)
+        self.agy_reading('free@example.com', 'free-tier', self.now, generation=1)
         row = self.agy_row()
         self.assertEqual(row['status'], account_state.AGY_ACCOUNT_FLAPPING)
         self.assertIn('2 Google accounts', row['reason'])
@@ -844,10 +846,11 @@ class TemplateTests(Machine):
         self.assertIn(account_state.AGY_FLAPPING_FIX, account_state.unavailable_text(row))
 
     def test_one_free_agy_reading_is_not_a_lapse_until_the_same_account_confirms_it(self):
-        self.agy_reading('only@example.com', 'free-tier', self.now - timedelta(minutes=antigravity_plan.CONFIRM_MINUTES))
+        self.agy_reading('only@example.com', 'free-tier', self.now - timedelta(minutes=20))
+        self.agy_reading('only@example.com', 'free-tier', self.now - timedelta(minutes=10))   # the same token again
         row = self.agy_row()
         self.assertEqual((row['status'], row['plan']), (account_state.READY, None))
-        self.agy_reading('only@example.com', 'free-tier', self.now)
+        self.agy_reading('only@example.com', 'free-tier', self.now, generation=1)            # a renewed token
         row = self.agy_row()
         self.assertEqual((row['status'], row['reason']), (account_state.PLAN_INACTIVE, 'plan Free'))
 
