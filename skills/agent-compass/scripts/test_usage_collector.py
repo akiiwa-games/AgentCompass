@@ -32,6 +32,7 @@ class Response:
 
 class CollectorBase(unittest.TestCase):
     def setUp(self):
+        self.addCleanup(usage_core.configure_paths)
         self.root = support.isolated_router_state(self.addCleanup, discovery=False, policy=False)
         patcher = patch.dict(usage_cache.os.environ)     # the fixture pins ROUTER_USAGE_CACHE; a real default install has none
         patcher.start()
@@ -43,16 +44,9 @@ class CollectorBase(unittest.TestCase):
         self.profile = self.root / 'host-policy.json'
         self.requests = []
         self.codex_used = 25.0
+        usage_core.configure_paths(self.cache, home=self.root, state_dir=self.state)
         stack = ExitStack()
         self.addCleanup(stack.close)
-        codex_home, codex_home_2 = self.root / '.codex', self.root / '.codex-2'
-        accounts = {'codex': usage_core.CodexAccount('codex', 'codex', codex_home)}
-        for name, value in (('HOME', self.root), ('STATE_DIR', self.state), ('CACHE_PATH', self.cache),
-                            ('CONFIG_PATH', self.state / 'usage-config.json'), ('LEGACY_CONFIG_PATH', self.root / '.usage-float' / 'config.json'),
-                            ('CODEX_HOME', codex_home), ('CODEX_HOME_2', codex_home_2), ('CODEX_ACCOUNT_BY_ID', accounts),
-                            ('CLAUDE_HOME', self.root / '.claude'), ('CLAUDE_HOME_2', self.root / '.claude-2'),
-                            ('GROK_HOME', self.root / '.grok')):
-            stack.enter_context(patch.object(usage_core, name, value))
         stack.enter_context(patch.object(collector, 'STATE', self.state))
         stack.enter_context(patch.object(venice_usage, 'key', return_value=None))
         stack.enter_context(patch.object(usage_core.urllib.request, 'urlopen', side_effect=self.transport))
@@ -117,11 +111,19 @@ class CollectorTests(CollectorBase):
         self.assertEqual(sorted(result['providers']), ['codex'])
         self.assertEqual(self.hosts(), ['chatgpt.com'])        # claude is signed in but not allowed on this host
 
-    def test_empty_policy_fetches_nothing(self):
+    def test_dispatch_excluded_accounts_still_collect_usage_unless_usage_providers_narrows(self):
         self.sign_in('codex', 'claude')
+        # Excluding accounts from dispatch (`allowed_accounts`) keeps usage collection enabled for signed-in accounts.
         self.profile.write_text('{"allowed_accounts":[]}')
         result = collector.collect()
-        self.assertEqual((result['requested_providers'], result['providers'], self.requests), ([], {}, []))
+        self.assertEqual(sorted(result['providers']), ['claude', 'codex'])
+        self.assertEqual(self.hosts(), ['api.anthropic.com', 'chatgpt.com'])
+
+        # Only an explicit `usage_providers` list narrows usage collection.
+        self.requests.clear()
+        self.profile.write_text('{"allowed_accounts":["codex","claude"],"usage_providers":[]}')
+        narrowed = collector.collect()
+        self.assertEqual((narrowed['requested_providers'], narrowed['providers'], self.requests), ([], {}, []))
 
     def test_invalid_policy_fetches_nothing_and_raises(self):
         self.sign_in('codex')
@@ -144,9 +146,9 @@ class CollectorTests(CollectorBase):
         self.assertEqual(collector.discovered_subscriptions(),
                          ['claude', 'claude-work', 'codex', 'codex-lab', 'grok', 'antigravity'])
 
-    def test_a_pooled_account_collects_its_source_meter_when_only_it_is_allowed(self):
+    def test_a_pooled_account_collects_its_source_meter_when_only_it_is_listed_in_usage_providers(self):
         self.sign_in('codex')
-        self.profile.write_text(json.dumps({'allowed_accounts': ['codex-alias']}))
+        self.profile.write_text(json.dumps({'allowed_accounts': ['codex-alias'], 'usage_providers': ['codex-alias']}))
         with patch.object(collector.allocator, 'load_accounts', return_value={'quota_sources': {'codex-alias': 'codex'}}):
             result = collector.collect()
         self.assertEqual(result['requested_providers'], ['codex'])
@@ -260,6 +262,124 @@ class MigrationTests(CollectorBase):
             collector.collect()
         self.assertEqual(sorted(json.loads(named.read_text())['providers']), ['codex'])
         self.assertFalse(self.cache.exists())
+
+
+class HostedCollectorEntryTests(CollectorBase):
+    """Tests for shared target resolution, cached reading freshness, config persistence, and reset endpoints."""
+
+    def test_refresh_providers_shares_target_resolution_and_quota_sources_with_collect(self):
+        self.sign_in('codex', 'claude')
+        # Dispatch exclusion (`allowed_accounts`) never drops signed-in accounts from forced refresh or HUD selection.
+        self.profile.write_text(json.dumps({'allowed_accounts': ['claude']}))
+        with patch.object(collector.allocator, 'load_accounts', return_value={'quota_sources': {'codex-alias': 'codex'}}), \
+                patch.object(collector.allocator, 'configured_quota_sources', return_value={'codex-alias': 'codex'}):
+            self.assertEqual(collector.filter_permitted_items(['codex:7d', 'claude:5h']), ['codex:7d', 'claude:5h'])
+            refreshed = collector.refresh_providers(['codex-alias', 'claude:5h'])
+        self.assertEqual([p.provider_id for p in refreshed], ['codex', 'claude'])
+        self.assertEqual(self.hosts(), ['api.anthropic.com', 'chatgpt.com'])
+
+        # Explicit `usage_providers` narrows both HUD selection and forced refresh.
+        self.requests.clear()
+        self.profile.write_text(json.dumps({'allowed_accounts': ['claude'], 'usage_providers': ['codex-alias']}))
+        with patch.object(collector.allocator, 'load_accounts', return_value={'quota_sources': {'codex-alias': 'codex'}}), \
+                patch.object(collector.allocator, 'configured_quota_sources', return_value={'codex-alias': 'codex'}):
+            self.assertEqual(collector.filter_permitted_items(['codex:7d', 'claude:5h']), ['codex:7d'])
+            narrowed = collector.refresh_providers(['codex:7d', 'claude:5h'])
+        self.assertEqual([p.provider_id for p in narrowed], ['codex'])
+        self.assertEqual(self.hosts(), ['chatgpt.com'])
+
+    def test_read_cached_usage_enforces_poll_max_age_bounds_and_clock_skew(self):
+        self.sign_in('codex')
+        now = datetime.now(timezone.utc)
+        now_ts = now.timestamp()
+        key = usage_core.provider_credential_key('codex')
+        row = {
+            'provider_id': 'codex',
+            'display_name': 'codex',
+            'available': True,
+            'stale': False,
+            'fetched_at': (now - timedelta(minutes=20)).isoformat(),
+            'credential_key': key,
+            'windows': [{'id': 'five_hour', 'label': '5h', 'used_pct': 15.0}],
+        }
+        self.state.mkdir(parents=True, exist_ok=True)
+        # Recent idle cadence decision (1800s + 600s grace = 2400s): 20m old reading is still fresh.
+        self.cache.write_text(json.dumps({
+            'providers': {'codex': row},
+            'poll': {'codex': {'seconds': 1800, 'at': now_ts - 60}},
+        }), encoding='utf-8')
+        [fresh] = usage_core.read_cached_usage(['codex:7d'], now=now_ts)
+        self.assertFalse(fresh['stale'])
+
+        # Expired poll decision ('at' older than REFRESH_SECONDS): falls back to REFRESH_SECONDS -> stale.
+        self.cache.write_text(json.dumps({
+            'providers': {'codex': row},
+            'poll': {'codex': {'seconds': 1800, 'at': now_ts - 900}},
+        }), encoding='utf-8')
+        [stale_decision] = usage_core.read_cached_usage(['codex:7d'], now=now_ts)
+        self.assertTrue(stale_decision['stale'])
+
+        # Out-of-bounds poll seconds (> POLL_MAX_SECONDS): rejected -> stale.
+        self.cache.write_text(json.dumps({
+            'providers': {'codex': row},
+            'poll': {'codex': {'seconds': 99999, 'at': now_ts - 10}},
+        }), encoding='utf-8')
+        [stale_bounds] = usage_core.read_cached_usage(['codex:7d'], now=now_ts)
+        self.assertTrue(stale_bounds['stale'])
+
+        # Future fetched_at (clock skew): marked stale rather than treated as fresh forever.
+        future_row = dict(row, fetched_at=(now + timedelta(minutes=5)).isoformat())
+        self.cache.write_text(json.dumps({
+            'providers': {'codex': future_row},
+            'poll': {'codex': {'seconds': 300, 'at': now_ts}},
+        }), encoding='utf-8')
+        [skewed] = usage_core.read_cached_usage(['codex:7d'], now=now_ts)
+        self.assertTrue(skewed['stale'])
+
+        # Fallback to display_snapshots when providers[pid] has no windows.
+        self.cache.write_text(json.dumps({
+            'providers': {'codex': {'provider_id': 'codex', 'credential_key': key, 'error': 'HTTP 502', 'windows': []}},
+            'display_snapshots': {'codex': row},
+        }), encoding='utf-8')
+        [snap] = usage_core.read_cached_usage(['codex:7d'], now=now_ts)
+        self.assertTrue(snap['stale'])
+        self.assertEqual(snap['error'], 'HTTP 502')
+        self.assertEqual(snap['windows'][0]['used_pct'], 15.0)
+
+    def test_write_usage_config_updates_authoritative_collector_config(self):
+        (self.root / '.usage-float').mkdir(parents=True, exist_ok=True)
+        (self.root / '.usage-float' / 'config.json').write_text(json.dumps({'llm_proxy_timezone': 'UTC+8'}), encoding='utf-8')
+        self.state.mkdir(parents=True, exist_ok=True)
+        usage_core.CONFIG_PATH.write_text(json.dumps({'llm_proxy_timezone': 'UTC'}), encoding='utf-8')
+        usage_core.write_usage_config({'llm_proxy_timezone': 'UTC-8', 'card_width': 999})
+        saved = json.loads(usage_core.CONFIG_PATH.read_text(encoding='utf-8'))
+        self.assertEqual(saved['llm_proxy_timezone'], 'UTC-8')
+        self.assertNotIn('card_width', saved)
+        self.assertEqual(usage_core.read_usage_config()['llm_proxy_timezone'], 'UTC-8')
+
+    def test_claude_session_reset_sets_and_obeys_429_backoff(self):
+        self.sign_in('claude')
+        calls = []
+
+        def rate_limited(url, *, method='GET', body=None, timeout=20.0, home=None):
+            calls.append((method, url))
+            return 429, {'error': {'message': 'rate limited'}}
+
+        with patch.object(usage_core, 'claude_authorized_json', side_effect=rate_limited):
+            block, err = usage_core.fetch_claude_session_reset('claude')
+            self.assertIsNone(block)
+            self.assertIn('频繁', err or '')
+            self.assertTrue(usage_core.claude_in_backoff('claude'))
+            self.assertEqual(len(calls), 1)
+
+            # While in backoff, neither 5h reset read nor claim may hit Anthropic again.
+            block2, err2 = usage_core.fetch_claude_session_reset('claude')
+            claim = usage_core.claim_claude_session_reset('claude')
+            self.assertIsNone(block2)
+            self.assertIn('退避', err2 or '')
+            self.assertFalse(claim['ok'])
+            self.assertIn('退避', claim['message'])
+            self.assertEqual(len(calls), 1)
 
 
 if __name__ == '__main__':

@@ -609,8 +609,8 @@ def account_cards() -> list[dict]:
     cards = []
     inv_accounts = inventory.get("accounts") or {}
     acc_table = accounts.get("accounts") or {}
-    # An account drawing on another's quota (fleet `quota_sources`) shows as that pool's one card,
-    # visible while any member of the pool is allowed on this host.
+    # An account drawing on another's quota (fleet `quota_sources`) shows as that pool's one card;
+    # dispatch exclusions (`allowed_accounts`) mark the card as not dispatched rather than hiding its usage.
     members: dict[str, list[str]] = {}
     for member, source in sources.items():
         members.setdefault(source, []).append(member)
@@ -620,7 +620,7 @@ def account_cards() -> list[dict]:
     ordered = card_order([*inv_accounts.keys(), *acc_table.keys()], inv_accounts)
     names = [
         n for n in ordered
-        if n in acc_table and n not in sources and (n not in members or pool_allowed(n))
+        if n in acc_table and n not in sources
         and not signed_out(inv_accounts.get(n)) and not (
             (inv_accounts.get(n) or {}).get("quota_account") not in (None, n)
             and not (acc_table.get(n) or {}).get("bundles")
@@ -644,10 +644,8 @@ def account_cards() -> list[dict]:
                 "reason": usage_row.get("error") or row.get("reason") or _tr("额度接口暂不可用"),
                 "last_success_at": row.get("last_success_at") or usage_row.get("fetched_at"),
             }
-        text, kind = account_badge(name, row, config, policy)
-        if name in members:
-            # Quota visibility belongs to the pool, not the source account's execution switch.
-            text, kind = account_badge(name, row, config, None)
+        # Quota visibility belongs to the pool; mark blocked only when every pool member is excluded from dispatch.
+        text, kind = account_badge(name, row, config, None if pool_allowed(name) else policy)
         held = retry_hold_text(retry_holds, name)
         if held and kind != "idle":   # an idle badge already says why the account takes no work
             text, kind = (held if kind == "ok" else f"{text}；{held}"), "warn"
@@ -850,7 +848,15 @@ def usage_providers(names, accounts: dict | None = None) -> list[str]:
         row = rows.get(source) or {}
         if row.get("family") in USAGE_FAMILIES or row.get("backend_kind") == "litellm":
             result.append(source)
-    return list(dict.fromkeys(result))
+    result = list(dict.fromkeys(result))
+    try:
+        policy = allocator.host_policy.load_policy()
+    except Exception:
+        policy = None
+    if isinstance(policy, dict) and "usage_providers" in policy:
+        allowed = {sources.get(n, n) for n in allocator.host_policy.usage_providers(policy, [*names, *result])}
+        result = [p for p in result if p in allowed]
+    return result
 
 
 def collect_usage_now(providers: list[str]) -> None:

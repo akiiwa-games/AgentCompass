@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import router_data
+import router_window
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts'))
 import provider_inventory as real_inventory
@@ -41,15 +42,18 @@ class GrokQuotaDisplayTests(unittest.TestCase):
                      patch.object(router_data.plugins, 'load', return_value={}), \
                      patch.object(router_data, 'collect_usage_now') as collect:
                     cards = router_data.account_cards()
-                    self.assertEqual([c['account'] for c in cards], ['grok'] if allowed else [])
-                    if allowed:
-                        self.assertEqual(cards[0]['label'], 'Grok')
-                        self.assertTrue(cards[0]['host_enabled'])
-                        self.assertEqual(cards[0]['windows'][0]['remaining_pct'], 44)
-                        self.assertEqual(cards[0]['windows'][0]['reset_in'], router_data.countdown(172800))
-                        self.assertTrue(cards[0]['refreshable'])
-                        router_data.refresh_usage(['grok-bot', 'grok'])
-                        collect.assert_called_once_with(['grok'])
+                    self.assertEqual([c['account'] for c in cards], ['grok'])
+                    self.assertEqual(cards[0]['label'], 'Grok')
+                    self.assertEqual(cards[0]['host_enabled'], bool(allowed))
+                    self.assertEqual(
+                        router_window.card_title(cards[0]),
+                        'Grok' if allowed else 'Grok · 不派发',
+                    )
+                    self.assertEqual(cards[0]['windows'][0]['remaining_pct'], 44)
+                    self.assertEqual(cards[0]['windows'][0]['reset_in'], router_data.countdown(172800))
+                    self.assertTrue(cards[0]['refreshable'])
+                    router_data.refresh_usage(['grok-bot', 'grok'])
+                    collect.assert_called_once_with(['grok'])
 
 
 if __name__ == '__main__':

@@ -17,6 +17,7 @@ Rules, shared by every reader and by the collector:
 from __future__ import annotations
 
 import json
+import math
 import os
 import uuid
 from datetime import datetime, timezone
@@ -26,6 +27,10 @@ CACHE_ENV = 'ROUTER_USAGE_CACHE'
 STATE_ENV = 'ROUTER_STATE_DIR'
 CACHE_FILE = 'usage-cache.json'
 MAX_BYTES = 5 * 1024 * 1024
+# The collector reads an idle account only every 30 minutes; while its per-account cadence decisions keep arriving,
+# a reading counts as current for that cadence plus one collector tick of grace.
+POLL_GRACE_SECONDS = 600
+POLL_MAX_SECONDS = 3600
 
 
 def _environ(environ):
@@ -199,3 +204,18 @@ def seed_from_legacy(home=None, environ=None):
     finally:
         temporary.unlink(missing_ok=True)
     return True
+
+
+def poll_max_age(poll, now, default):
+    """Freshness limit for one account: its published cadence plus grace, while that decision is itself recent."""
+    if not isinstance(poll, dict):
+        return default
+    seconds, at = poll.get('seconds'), poll.get('at')
+    now_ts = now.timestamp() if isinstance(now, datetime) else float(now)
+    if (not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or not math.isfinite(seconds)
+            or not 0 < seconds <= POLL_MAX_SECONDS
+            or not isinstance(at, (int, float)) or isinstance(at, bool) or not math.isfinite(at)):
+        return default
+    if not 0 <= now_ts - at <= default:     # the collector stopped deciding: fall back
+        return default
+    return max(default, seconds + POLL_GRACE_SECONDS)

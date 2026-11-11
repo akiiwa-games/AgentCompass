@@ -1,6 +1,7 @@
 """Collect provider usage once and publish it where the router reads it.
 
-Reads the accounts this machine's host policy allows, writes the usage cache (~/.agent-compass/usage-cache.json, or under
+Reads every account with local credentials (narrowed only by an explicit `usage_providers` list in host policy; dispatch
+exclusions in `allowed_accounts` do not suppress usage), writes the usage cache (~/.agent-compass/usage-cache.json, or under
 ROUTER_STATE_DIR) and prints a receipt (also saved as usage-collector.json next to it). Needs neither the Usage Float
 plugin nor the tray. `agentcompass usage --show` prints what routing reads from that cache without collecting.
 """
@@ -37,16 +38,76 @@ def discovered_subscriptions() -> list[str]:
     return items
 
 
-def collect(*, force: bool = False):
-    usage = usage_core
-    venice_usage.refresh(STATE)
+def _declared_quota_sources() -> dict[str, str]:
+    sources = dict(allocator.configured_quota_sources())
+    override = allocator.accounts_override_path()
+    if override.is_file():
+        try:
+            doc = json.loads(override.read_text(encoding='utf-8-sig'))
+            sources.update(allocator.provider_inventory.quota_sources(doc))
+        except (OSError, ValueError):
+            pass
+    return sources
+
+
+def _permitted_meters(policy, sources: dict[str, str], candidates: list[str]) -> list[str]:
+    allowed = host_policy.usage_providers(policy, candidates + [n for n in sources if n not in candidates])
+    return list(dict.fromkeys(sources.get(name, name) for name in allowed))
+
+
+def resolve_targets(providers=None) -> list[str]:
+    """Resolve permitted quota-meter provider IDs via load_accounts, quota_sources and host policy."""
     # Refresh opted-in admission before filtering newly discovered subscriptions.
     accounts = allocator.load_accounts()
     # A permitted account that draws on another's quota needs that meter even when the source's execution is disabled.
     sources = allocator.provider_inventory.quota_sources(accounts)
-    defaults = discovered_subscriptions()
-    subscriptions = host_policy.usage_providers(host_policy.load_policy(), defaults + [n for n in sources if n not in defaults])
-    subscriptions = list(dict.fromkeys(sources.get(name, name) for name in subscriptions))
+    permitted = _permitted_meters(host_policy.load_policy(), sources, discovered_subscriptions())
+    if providers is None:
+        return permitted
+    allowed_set = set(permitted)
+    requested = [
+        sources.get(pid, pid)
+        for pid in dict.fromkeys(usage_core.provider_fetch_id(item) for item in providers)
+    ]
+    return [pid for pid in dict.fromkeys(requested) if pid in allowed_set]
+
+
+def filter_permitted_items(items) -> list[str]:
+    """Filter display items only when host policy explicitly narrows usage_providers."""
+    items = list(items)
+    if not items:
+        return []
+    try:
+        policy = host_policy.load_policy()
+    except host_policy.HostPolicyError:
+        return items
+    if policy is None or 'usage_providers' not in policy:
+        return items
+    sources = _declared_quota_sources()
+    candidates = list(dict.fromkeys(usage_core.provider_fetch_id(item) for item in items))
+    permitted = set(_permitted_meters(policy, sources, candidates))
+    return [
+        item for item in items
+        if sources.get(usage_core.provider_fetch_id(item), usage_core.provider_fetch_id(item)) in permitted
+    ]
+
+
+def read_usage(providers) -> list[dict]:
+    """Read cached usage for policy-permitted providers without network calls or cache writes."""
+    permitted = filter_permitted_items(providers)
+    return usage_core.read_cached_usage(permitted) if permitted else []
+
+
+def refresh_providers(providers, *, force: bool = True):
+    """Collect usage for requested display items/providers using the collector's target resolution."""
+    selected = usage_core.active_providers(resolve_targets(providers))
+    return usage_core.fetch_all(selected, force=force) if selected else []
+
+
+def collect(*, force: bool = False):
+    usage = usage_core
+    venice_usage.refresh(STATE)
+    subscriptions = resolve_targets()
     selected = usage.active_providers(subscriptions)
     observations = usage.fetch_all(selected, force=force)
     try:

@@ -583,7 +583,7 @@ def start_usage_float() -> str:
         if local_controls.read_snapshot("usage-float") or (child and child.poll() is None):
             return _tr("Usage Float 已在运行")
         env = os.environ.copy()
-        env["AGENTCOMPASS_HOSTED"] = env["ROUTE_MANAGER_HOSTED"] = "1"      # old name for plugin copies predating the rename
+        env["AGENTCOMPASS_HOSTED"] = "1"
         _component_children["usage-float"] = hidden_popen(
             component_launch.command(ROOT / "tray" / "usage_float_host.py"), env, USAGE_FLOAT_ROOT,
             STATE_DIR / "usage-float.log")

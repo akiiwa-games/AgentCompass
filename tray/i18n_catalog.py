@@ -431,6 +431,7 @@ EN = {
     '主面板干跑：模拟需要本机资源的任务': 'Panel dry run: simulate a task requiring local resources',
     '集成已关闭': 'Plugin Off',
     '本机策略禁用': 'Blocked by Host',
+    '不派发': 'Not dispatched',
     '未发现': 'Not Found',
     '已暂停：{0}': 'Paused: {0}',
     '{0}天{1}小时': '{0}d {1}h',

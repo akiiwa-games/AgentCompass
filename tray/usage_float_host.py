@@ -22,14 +22,20 @@ _autostart_state = {"value": None, "checked_at": 0.0, "refreshing": False, "gene
 REQUIRED_USAGE_SEAM = (
     "get_usage",
     "refresh_usage",
+    "filter_providers",
     "provider_credential_key",
-    "provider_fetch_id",
-    "load_usage_cache",
-    "_provider_from_dict",
-    "_iso_epoch",
+    "provider_from_dict",
+    "read_collector_config",
+    "write_collector_config",
+    "fetch_claude_session_reset",
+    "claim_claude_session_reset",
+    "claim_claude_reset",
+    "parse_claude_session_reset",
+    "ClaudeResetClaim",
+    "fetch_codex_reset_cards",
+    "consume_codex_reset_card",
+    "parse_codex_reset_cards",
 )
-_hosted_cache_lock = threading.Lock()
-_hosted_cache_state: dict[str, object] = {"path": None, "signature": None}
 
 
 def refresh_autostart_async(force: bool = False) -> None:
@@ -137,135 +143,47 @@ def _file_signature(path: Path | None) -> tuple[int, int] | None:
         return None
 
 
-def _record_cache_signature(path: Path | None) -> None:
-    sig = _file_signature(path)
-    with _hosted_cache_lock:
-        _hosted_cache_state["path"] = Path(path) if path is not None else None
-        _hosted_cache_state["signature"] = sig
-
-
-def _sync_usage_core_paths(usage_core, cache_path: Path) -> None:
-    home = Path.home()
-    claude_home = Path(os.environ.get("CLAUDE_HOME", home / ".claude"))
-    claude_home_2 = Path(os.environ.get("CLAUDE_HOME_2", home / ".claude-2"))
-    codex_home = home / ".codex"
-    codex_home_2 = Path(os.environ.get("CODEX_HOME_2", home / ".codex-2"))
-    grok_home = Path(os.environ.get("GROK_HOME", home / ".grok"))
-    state_dir = usage_core.usage_cache.state_dir(home)
-    usage_core.HOME = home
-    usage_core.CLAUDE_HOME = claude_home
-    usage_core.CLAUDE_HOME_2 = claude_home_2
-    usage_core.CODEX_HOME = codex_home
-    usage_core.CODEX_HOME_2 = codex_home_2
-    usage_core.GROK_HOME = grok_home
-    usage_core.STATE_DIR = state_dir
-    usage_core.CONFIG_PATH = Path(os.environ.get("AGENTCOMPASS_USAGE_CONFIG") or state_dir / "usage-config.json")
-    usage_core.LEGACY_CONFIG_PATH = home / ".usage-float" / "config.json"
-    usage_core.CACHE_PATH = cache_path
-    codex_accounts = (
-        usage_core.CodexAccount("codex", "codex", codex_home),
-        usage_core.CodexAccount("codex-2", "codex-2", codex_home_2),
-    )
-    usage_core.CODEX_ACCOUNTS = codex_accounts
-    usage_core.CODEX_ACCOUNT_BY_ID = {acc.provider_id: acc for acc in codex_accounts}
-
-
 def bind_usage(native) -> Path:
-    """Bind Usage Float's usage seam to AgentCompass's single collector and shared cache.
-
-    Hosted Usage Float never runs its own fetchers or parsers and never writes providers[*]:
-    - get_usage reads what the AgentCompass collector wrote to ~/.agent-compass/usage-cache.json.
-    - refresh_usage triggers the AgentCompass collector (usage_core.fetch_all(..., force=True)).
-    """
+    """Bind Usage Float's public seam to AgentCompass's single collector and shared cache."""
     missing = [name for name in REQUIRED_USAGE_SEAM if not callable(getattr(native, name, None))]
     if missing:
         raise RuntimeError("Usage Float 接口变化：" + ", ".join(missing))
     cache_path = share_cache(native)
     if cache_path is None:
         raise RuntimeError("AgentCompass 用量采集器脚本未安装")
-    import host_policy
+    import usage_collector
     import usage_core
 
-    _sync_usage_core_paths(usage_core, Path(cache_path))
-
-    def hosted_credential_key(provider_id: str) -> str | None:
-        _sync_usage_core_paths(usage_core, Path(native.CACHE_PATH))
-        return usage_core.provider_credential_key(provider_id)
-
-    def hosted_get_usage(providers: list[str]):
-        current_cache = Path(native.CACHE_PATH)
-        _record_cache_signature(current_cache)
-        cache = native.load_usage_cache()
-        raw_providers = cache.get("providers") if isinstance(cache.get("providers"), dict) else {}
-        snapshots = cache.get("display_snapshots") if isinstance(cache.get("display_snapshots"), dict) else {}
-        polls = cache.get("poll") if isinstance(cache.get("poll"), dict) else {}
-        now_ts = time.time()
-        out = []
-        for pid in dict.fromkeys(native.provider_fetch_id(item) for item in providers):
-            expected_key = hosted_credential_key(pid)
-            raw = raw_providers.get(pid)
-            if isinstance(raw, dict) and raw.get("provider_id") == pid and raw.get("credential_key") == expected_key:
-                try:
-                    item = native._provider_from_dict(raw)
-                except (TypeError, ValueError):
-                    item = None
-                if item is not None and (item.windows or item.summary):
-                    poll_entry = polls.get(pid)
-                    poll_seconds = (
-                        float(poll_entry["seconds"])
-                        if isinstance(poll_entry, dict)
-                        and isinstance(poll_entry.get("seconds"), (int, float))
-                        and not isinstance(poll_entry.get("seconds"), bool)
-                        else 300.0
-                    )
-                    observed = native._iso_epoch(item.fetched_at, 0)
-                    item.stale = (
-                        bool(raw.get("stale", False))
-                        or bool(item.error)
-                        or observed <= 0
-                        or (now_ts - observed >= max(300.0, poll_seconds))
-                    )
-                    out.append(item)
-                    continue
-            snap = snapshots.get(pid)
-            if isinstance(snap, dict) and snap.get("provider_id") == pid and snap.get("credential_key") == expected_key:
-                try:
-                    snap_item = native._provider_from_dict(snap)
-                except (TypeError, ValueError):
-                    snap_item = None
-                if snap_item is not None and (snap_item.windows or snap_item.summary):
-                    snap_item.stale = True
-                    if isinstance(raw, dict) and raw.get("credential_key") in (None, expected_key) and raw.get("error"):
-                        snap_item.error = str(raw["error"])
-                    out.append(snap_item)
-                    continue
-            if isinstance(raw, dict) and raw.get("credential_key") in (None, expected_key) and raw.get("error"):
-                try:
-                    err_item = native._provider_from_dict(raw)
-                    err_item.provider_id = pid
-                    err_item.stale = True
-                    out.append(err_item)
-                except (TypeError, ValueError):
-                    pass
-        return out
-
-    def hosted_refresh_usage(providers: list[str]):
-        current_cache = Path(native.CACHE_PATH)
-        _sync_usage_core_paths(usage_core, current_cache)
-        requested = list(dict.fromkeys(native.provider_fetch_id(item) for item in providers))
-        allowed = host_policy.usage_providers(host_policy.load_policy(), requested)
-        observations = usage_core.fetch_all(allowed, force=True) if allowed else []
-        _record_cache_signature(current_cache)
-        return [native._provider_from_dict(usage_core._provider_to_dict(p)) for p in observations]
-
-    native.provider_credential_key = hosted_credential_key
-    native.get_usage = hosted_get_usage
-    native.refresh_usage = hosted_refresh_usage
-    _record_cache_signature(cache_path)
+    usage_core.configure_paths(Path(cache_path))
+    native.PERIODIC_REFRESH = False
+    native.provider_credential_key = usage_core.provider_credential_key
+    native.filter_providers = usage_collector.filter_permitted_items
+    native.read_collector_config = usage_core.read_usage_config
+    native.write_collector_config = usage_core.write_usage_config
+    native.get_usage = lambda providers: [
+        native.provider_from_dict(d) for d in usage_collector.read_usage(providers)
+    ]
+    native.refresh_usage = lambda providers: [
+        native.provider_from_dict(usage_core.provider_to_dict(p))
+        for p in usage_collector.refresh_providers(providers)
+    ]
+    native.fetch_claude_session_reset = lambda provider_id="claude": (
+        lambda block, err: (None, err) if err is not None else (native.parse_claude_session_reset(block), None)
+    )(*usage_core.fetch_claude_session_reset(provider_id))
+    native.claim_claude_session_reset = lambda provider_id="claude": native.ClaudeResetClaim(
+        **usage_core.claim_claude_session_reset(provider_id)
+    )
+    native.claim_claude_reset = lambda grant_id, *, request_id, provider_id="claude": native.ClaudeResetClaim(
+        **usage_core.claim_claude_reset(grant_id, request_id=request_id, provider_id=provider_id)
+    )
+    native.fetch_codex_reset_cards = lambda home=None, *, provider_id=None: (
+        lambda credits, err: ([], err) if err is not None else (native.parse_codex_reset_cards(credits), None)
+    )(*usage_core.fetch_codex_reset_cards(home, provider_id=provider_id))
+    native.consume_codex_reset_card = usage_core.consume_codex_reset_card
     return cache_path
 
 
-def attach(root, scope):
+def attach(root, scope, watched_cache: Path | None = None):
     from tkinter import TclError
 
     required = ("state", "refresh_async", "request_open_settings", "toggle_panel_mode",
@@ -275,6 +193,10 @@ def attach(root, scope):
         raise RuntimeError("Usage Float 接口变化：" + ", ".join(missing))
     server = local_controls.ControlServer("usage-float")
     state = scope["state"]
+    if watched_cache is None:
+        inferred = getattr(scope.get("refresh_async"), "__globals__", {}).get("CACHE_PATH")
+        if isinstance(inferred, (str, Path)):
+            watched_cache = Path(inferred)
 
     def show():
         scope["set_wallpaper_active"](False)
@@ -305,24 +227,20 @@ def attach(root, scope):
 
     error_reported = False
     cache_ticks = 0
+    last_sig = _file_signature(watched_cache)
 
     def poll():
-        nonlocal error_reported, cache_ticks
+        nonlocal error_reported, cache_ticks, last_sig
         try:
             server.poll()
             cache_ticks += 1
             if cache_ticks >= 5:
                 cache_ticks = 0
-                if not state.get("refreshing"):
-                    with _hosted_cache_lock:
-                        watched_path = _hosted_cache_state["path"]
-                        last_sig = _hosted_cache_state["signature"]
-                    if watched_path is not None:
-                        sig = _file_signature(watched_path)
-                        if sig is not None and sig != last_sig:
-                            with _hosted_cache_lock:
-                                _hosted_cache_state["signature"] = sig
-                            scope["refresh_async"](force=False)
+                if watched_cache is not None and not state.get("refreshing"):
+                    sig = _file_signature(watched_cache)
+                    if sig is not None and sig != last_sig:
+                        last_sig = sig
+                        scope["refresh_async"](force=False)
             if root.winfo_exists():
                 publish()
         except Exception:

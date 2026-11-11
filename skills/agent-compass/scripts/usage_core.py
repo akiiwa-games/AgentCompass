@@ -124,19 +124,6 @@ def _tr(zh: str, en: str, lang: str | None = None) -> str:
     return en if _lang(_ACTIVE_LANGUAGE if lang is None else lang) == "en" else zh
 
 
-HOME = Path.home()
-CLAUDE_HOME = Path(os.environ.get("CLAUDE_HOME", HOME / ".claude"))
-CLAUDE_HOME_2 = Path(os.environ.get("CLAUDE_HOME_2", HOME / ".claude-2"))
-# Not the CODEX_HOME variable: a worker running on another account has it set, and `codex` must stay `codex` there. An
-# account's directory comes from its configuration (the Paseo provider's env, read in discover_codex_accounts).
-CODEX_HOME = HOME / ".codex"
-CODEX_HOME_2 = Path(os.environ.get("CODEX_HOME_2", HOME / ".codex-2"))
-GROK_HOME = Path(os.environ.get("GROK_HOME", HOME / ".grok"))
-STATE_DIR = usage_cache.state_dir(HOME)
-# Proxy settings: the core's own file wins, the legacy Usage Float config only fills what it leaves out (read-only).
-CONFIG_PATH = Path(os.environ.get("AGENTCOMPASS_USAGE_CONFIG") or STATE_DIR / "usage-config.json")
-LEGACY_CONFIG_PATH = HOME / ".usage-float" / "config.json"
-CACHE_PATH = usage_cache.write_path(HOME)
 CLAUDE_OAUTH_BETA = "oauth-2025-04-20"
 CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
@@ -145,6 +132,13 @@ CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 # entitlement. Its status rides along on the usage endpoint as a query flag,
 # so reading it costs no extra call against an API that answers 429 easily.
 CLAUDE_USAGE_RESET_URL = f"{CLAUDE_USAGE_URL}?cedar_ember=1&skip_spend=1"
+CLAUDE_USAGE_AT_WALL_URL = f"{CLAUDE_USAGE_URL}?at_wall=1&skip_spend=1"
+CLAUDE_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
+CLAUDE_RESET_CLAIM_URL = "https://api.anthropic.com/api/organizations/{org}/reset_rate_limits"
+CLAUDE_RESET_PROGRAM = "cedar_ember"
+CLAUDE_SESSION_RESET_PROGRAM = "juniper_tide"
+CLAUDE_RESET_GRANT_ID_RE = re.compile(r"^[a-z0-9_-]{1,40}$")
+CLAUDE_RESET_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 # The server only hands that block to the CLI surface: a plain request comes
@@ -153,21 +147,11 @@ CLAUDE_USAGE_RESET_URL = f"{CLAUDE_USAGE_URL}?cedar_ember=1&skip_spend=1"
 CLAUDE_CLI_VERSION_FALLBACK = "2.1.278"
 
 
-CLAUDE_CLI_PACKAGE_PATHS: tuple[Path, ...] = (
-    Path(os.environ.get("APPDATA", str(HOME)))
-    / "npm"
-    / "node_modules"
-    / "@anthropic-ai"
-    / "claude-code"
-    / "package.json",
-    CLAUDE_HOME / "local" / "node_modules" / "@anthropic-ai" / "claude-code" / "package.json",
-    HOME / ".npm-global" / "lib" / "node_modules" / "@anthropic-ai" / "claude-code" / "package.json",
-)
-
-
 CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token"
+CODEX_RESET_CARDS_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
+CODEX_RESET_CONSUME_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume"
 
 
 @dataclass(frozen=True)
@@ -188,15 +172,73 @@ class CodexAccount:
         return self.home / "auth.json"
 
 
-CODEX_ACCOUNTS: tuple[CodexAccount, ...] = (
-    CodexAccount("codex", "codex", CODEX_HOME),
-    CodexAccount("codex-2", "codex-2", CODEX_HOME_2),
-)
+HOME: Path
+CLAUDE_HOME: Path
+CLAUDE_HOME_2: Path
+CODEX_HOME: Path
+CODEX_HOME_2: Path
+GROK_HOME: Path
+STATE_DIR: Path
+CONFIG_PATH: Path
+LEGACY_CONFIG_PATH: Path
+CACHE_PATH: Path
+CLAUDE_CLI_PACKAGE_PATHS: tuple[Path, ...]
+CODEX_ACCOUNTS: tuple[CodexAccount, ...]
+CODEX_ACCOUNT_BY_ID: dict[str, CodexAccount]
 
 
-CODEX_ACCOUNT_BY_ID: dict[str, CodexAccount] = {
-    account.provider_id: account for account in CODEX_ACCOUNTS
-}
+def configure_paths(
+    cache_path: Path | None = None,
+    *,
+    home: Path | None = None,
+    state_dir: Path | None = None,
+) -> Path:
+    """Configure local provider, config, and cache paths from one source of truth."""
+    global HOME, CLAUDE_HOME, CLAUDE_HOME_2, CODEX_HOME, CODEX_HOME_2, GROK_HOME
+    global STATE_DIR, CONFIG_PATH, LEGACY_CONFIG_PATH, CACHE_PATH
+    global CLAUDE_CLI_PACKAGE_PATHS, CODEX_ACCOUNTS, CODEX_ACCOUNT_BY_ID
+
+    resolved_home = Path(home) if home is not None else Path.home()
+    claude_home = Path(os.environ.get("CLAUDE_HOME", resolved_home / ".claude"))
+    claude_home_2 = Path(os.environ.get("CLAUDE_HOME_2", resolved_home / ".claude-2"))
+    # Not the CODEX_HOME variable: a worker running on another account has it set, and `codex` must stay `codex` there.
+    # An account's directory comes from its configuration (the Paseo provider's env, read in discover_codex_accounts).
+    codex_home = resolved_home / ".codex"
+    codex_home_2 = Path(os.environ.get("CODEX_HOME_2", resolved_home / ".codex-2"))
+    grok_home = Path(os.environ.get("GROK_HOME", resolved_home / ".grok"))
+    resolved_state = Path(state_dir) if state_dir is not None else usage_cache.state_dir(resolved_home)
+    resolved_cache = Path(cache_path) if cache_path is not None else usage_cache.write_path(resolved_home)
+
+    HOME = resolved_home
+    CLAUDE_HOME = claude_home
+    CLAUDE_HOME_2 = claude_home_2
+    CODEX_HOME = codex_home
+    CODEX_HOME_2 = codex_home_2
+    GROK_HOME = grok_home
+    STATE_DIR = resolved_state
+    # Proxy settings: the core's own file wins, the legacy Usage Float config only fills what it leaves out (read-only).
+    CONFIG_PATH = Path(os.environ.get("AGENTCOMPASS_USAGE_CONFIG") or resolved_state / "usage-config.json")
+    LEGACY_CONFIG_PATH = resolved_home / ".usage-float" / "config.json"
+    CACHE_PATH = resolved_cache
+    CLAUDE_CLI_PACKAGE_PATHS = (
+        Path(os.environ.get("APPDATA", str(resolved_home)))
+        / "npm"
+        / "node_modules"
+        / "@anthropic-ai"
+        / "claude-code"
+        / "package.json",
+        claude_home / "local" / "node_modules" / "@anthropic-ai" / "claude-code" / "package.json",
+        resolved_home / ".npm-global" / "lib" / "node_modules" / "@anthropic-ai" / "claude-code" / "package.json",
+    )
+    CODEX_ACCOUNTS = (
+        CodexAccount("codex", "codex", codex_home),
+        CodexAccount("codex-2", "codex-2", codex_home_2),
+    )
+    CODEX_ACCOUNT_BY_ID = {account.provider_id: account for account in CODEX_ACCOUNTS}
+    return CACHE_PATH
+
+
+configure_paths()
 
 
 # Claude and Antigravity share a login across several independently configurable rows.
@@ -366,11 +408,20 @@ def discover_codex_accounts() -> dict[str, CodexAccount]:
     return accounts
 
 
+def is_codex_account(provider_id: str) -> bool:
+    """A known Codex account, discovering Paseo-configured ones on first sight."""
+    if provider_id in CODEX_ACCOUNT_BY_ID:
+        return True
+    return (provider_id == "codex" or provider_id.startswith("codex-")) and provider_id in discover_codex_accounts()
+
+
 def provider_fetch_id(item: str) -> str:
-    """The provider a display item is fetched from ("claude:5h" -> "claude")."""
+    """The provider a display item is fetched from ("claude:5h" -> "claude", "codex:7d" -> "codex")."""
     if item == 'grok-bot':
         return 'grok'  # Saved runner selection uses the ordinary Grok meter.
     provider, sep, _ = item.partition(":")
+    if sep and is_codex_account(provider):
+        return provider
     if sep and (provider in PROVIDER_DISPLAY_ITEMS or is_claude_provider(provider)):
         _register_claude_display_items(provider)
         return provider
@@ -414,6 +465,17 @@ UNKNOWN_ACTIVITY_REFRESH_SECONDS = 900
 CLAUDE_429_BACKOFF_SECONDS = 900
 
 
+COLLECTOR_CONFIG_KEYS: tuple[str, ...] = (
+    "language",
+    "llm_proxy_timezone",
+    "llm_proxy_budget_duration",
+    "llm_proxy_api_key",
+    "llm_proxy_endpoint",
+    "llm_proxy_provider_id",
+    "litellm_proxies",
+)
+
+
 def read_usage_config() -> dict[str, Any]:
     """Collector settings (LLM proxy keys and budget); {} when neither file exists or parses."""
     merged: dict[str, Any] = {}
@@ -425,6 +487,35 @@ def read_usage_config() -> dict[str, Any]:
         if isinstance(data, dict):
             merged.update(data)
     return merged
+
+
+def write_usage_config(cfg: dict[str, Any]) -> None:
+    """Persist collector-relevant settings to CONFIG_PATH atomically."""
+    global _ACTIVE_LANGUAGE
+    if not isinstance(cfg, dict):
+        return
+    updates = {k: cfg[k] for k in COLLECTOR_CONFIG_KEYS if k in cfg}
+    if "language" in updates:
+        _ACTIVE_LANGUAGE = _lang(updates["language"])
+    if not updates:
+        return
+    with file_lock(CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.lock"), timeout=2):
+        existing: dict[str, Any] = {}
+        try:
+            if CONFIG_PATH.exists():
+                loaded = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
+                if isinstance(loaded, dict):
+                    existing = loaded
+        except (OSError, ValueError):
+            pass
+        existing.update(updates)
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(json.dumps(existing, indent=2), encoding="utf-8", newline="\n")
+            temporary.replace(CONFIG_PATH)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def load_usage_cache(*, strict: bool = False) -> dict[str, Any]:
@@ -607,6 +698,9 @@ def _provider_to_dict(p: ProviderUsage) -> dict[str, Any]:
     return out
 
 
+provider_to_dict = _provider_to_dict
+
+
 def window_models(window) -> list[str] | None:
     models = window.get("models") if isinstance(window, dict) else None
     named = [m for m in models if isinstance(m, str) and m.strip()] if isinstance(models, list) else []
@@ -652,8 +746,9 @@ def _provider_from_dict(d: dict[str, Any]) -> ProviderUsage:
     )
 
 
-def cache_get_provider(provider_id: str) -> ProviderUsage | None:
-    raw = (load_usage_cache().get("providers") or {}).get(provider_id)
+def cache_get_provider(provider_id: str, *, cache: dict[str, Any] | None = None) -> ProviderUsage | None:
+    doc = load_usage_cache() if cache is None else cache
+    raw = (doc.get("providers") or {}).get(provider_id)
     if not isinstance(raw, dict):
         return None
     try:
@@ -695,9 +790,10 @@ def cache_put_provider(p: ProviderUsage) -> None:
     update_usage_cache(update)
 
 
-def display_snapshot(provider_id: str) -> ProviderUsage | None:
+def display_snapshot(provider_id: str, *, cache: dict[str, Any] | None = None) -> ProviderUsage | None:
     """Presentation history is never promoted into the router's quota cache."""
-    raw = (load_usage_cache().get('display_snapshots') or {}).get(provider_id)
+    doc = load_usage_cache() if cache is None else cache
+    raw = (doc.get('display_snapshots') or {}).get(provider_id)
     if not isinstance(raw, dict) or raw.get('credential_key') != provider_credential_key(provider_id):
         return None
     try:
@@ -708,6 +804,46 @@ def display_snapshot(provider_id: str) -> ProviderUsage | None:
         return None
     item.stale = True
     return item
+
+
+def read_cached_usage(providers: Iterable[str], *, now: float | None = None) -> list[dict[str, Any]]:
+    """Read cached provider observations and display snapshots with product freshness semantics."""
+    cache = load_usage_cache()
+    raw_providers = cache.get("providers") if isinstance(cache.get("providers"), dict) else {}
+    polls = cache.get("poll") if isinstance(cache.get("poll"), dict) else {}
+    now_ts = time.time() if now is None else float(now)
+    out: list[dict[str, Any]] = []
+    for pid in dict.fromkeys(provider_fetch_id(item) for item in providers):
+        raw = raw_providers.get(pid)
+        item = cache_get_provider(pid, cache=cache)
+        if item is not None:
+            observed = _iso_epoch(item.fetched_at, -1.0)
+            age = now_ts - observed if observed > 0 else float("inf")
+            allowed = usage_cache.poll_max_age(polls.get(pid), now_ts, REFRESH_SECONDS)
+            item.stale = (
+                bool(raw.get("stale", False) if isinstance(raw, dict) else False)
+                or bool(item.error)
+                or not (0.0 <= age <= allowed)
+            )
+            out.append(_provider_to_dict(item))
+            continue
+        expected_key = provider_credential_key(pid)
+        snap = display_snapshot(pid, cache=cache)
+        if snap is not None:
+            if isinstance(raw, dict) and raw.get("credential_key") in (None, expected_key) and raw.get("error"):
+                snap.error = str(raw["error"])
+            out.append(_provider_to_dict(snap))
+            continue
+        if isinstance(raw, dict) and raw.get("credential_key") in (None, expected_key) and raw.get("error"):
+            try:
+                err_item = _provider_from_dict(raw)
+                err_item.provider_id = pid
+                err_item.stale = True
+                err_item.credential_key = expected_key
+                out.append(_provider_to_dict(err_item))
+            except (TypeError, ValueError):
+                pass
+    return out
 
 
 def provider_error_code(payload: Any) -> str | None:
@@ -1138,8 +1274,254 @@ def fetch_claude_usage(*, force: bool = False, provider_id: str = "claude") -> P
     return result
 
 
-def read_codex_auth(home: Path = CODEX_HOME) -> tuple[dict[str, Any] | None, Path | None]:
-    auth_path = home / "auth.json"
+CLAUDE_RESET_WINDOW_LABELS: dict[str, tuple[str, str]] = {
+    "five_hour": ("5 小时会话", "5-hour session"),
+    "seven_day": ("7 天周额度", "7-day weekly limit"),
+    "seven_day_overage_included": ("7 天周额度（含超额）", "7-day weekly limit (with overage)"),
+    "seven_day_opus": ("Opus 周额度", "Opus weekly limit"),
+    "seven_day_sonnet": ("Sonnet 周额度", "Sonnet weekly limit"),
+}
+
+CLAUDE_RESET_RESULT_LABELS: dict[str, tuple[str, str]] = {
+    "already_used": ("这次重置已经用过了。", "This reset has already been used."),
+    "not_limited": ("还没到用量上限，暂时不能使用，额度未消耗。", "Usage limit not reached yet; reset credit was not consumed."),
+    "cooldown": ("刚用过一次重置，冷却中，稍后再试。", "Cooldown active after a recent reset. Please try again later."),
+    "ineligible": ("当前账号不符合使用条件。", "This account is not eligible."),
+    "unavailable": ("重置暂不可用，稍后再试。", "Reset is currently unavailable. Please try again later."),
+}
+
+CLAUDE_SESSION_RESULT_LABELS: dict[str, tuple[str, str]] = {
+    "already_used": ("本周的 5 小时重置已经用过了。", "This week's 5-hour reset has already been used."),
+    "not_limited": ("还没到 5 小时上限，暂时不能使用，额度未消耗。", "5-hour limit not reached yet; reset was not consumed."),
+    "ineligible": ("当前账号不符合使用条件。", "This account is not eligible."),
+    "unavailable": ("重置暂不可用，稍后再试。", "Reset is currently unavailable. Please try again later."),
+}
+
+
+def codex_error_text(status: int, payload: Any) -> str:
+    detail: str | None = None
+    if isinstance(payload, dict):
+        for key in ("detail", "message", "error_description"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                detail = value.strip()
+                break
+        if detail is None:
+            error = payload.get("error")
+            if isinstance(error, str) and error.strip():
+                detail = error.strip()
+            elif isinstance(error, dict):
+                value = error.get("message") or error.get("detail")
+                if isinstance(value, str) and value.strip():
+                    detail = value.strip()
+    elif isinstance(payload, str) and payload.strip():
+        detail = payload.strip()
+    if detail:
+        detail = detail[:160]
+        return f"HTTP {status} · {detail}" if status else detail
+    return f"HTTP {status}" if status else _tr("网络不可用", "Network unavailable")
+
+
+def claude_organization_uuid(provider_id: str = "claude") -> tuple[str | None, int]:
+    """Resolve the OAuth organization UUID for a Claude account, respecting 429 backoff."""
+    is_primary = provider_id == "claude"
+    home = None if is_primary else claude_account_home(provider_id)
+    paths = (CLAUDE_HOME / ".claude.json", HOME / ".claude.json") if is_primary else (home / ".claude.json",)
+    for path in paths:
+        try:
+            if not path.exists():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            found = str(((data or {}).get("oauthAccount") or {}).get("organizationUuid") or "")
+            if found.strip():
+                return found.strip(), 200
+        except Exception:
+            continue
+    if claude_in_backoff(provider_id):
+        return None, 429
+    status, payload = (
+        claude_authorized_json(CLAUDE_PROFILE_URL, home=home)
+        if home is not None
+        else claude_authorized_json(CLAUDE_PROFILE_URL)
+    )
+    if status == 429:
+        set_claude_backoff(provider_id=provider_id)
+        return None, 429
+    if status == 200 and isinstance(payload, dict):
+        found = str((payload.get("organization") or {}).get("uuid") or "").strip()
+        if found:
+            return found, 200
+    return None, status
+
+
+def fetch_claude_session_reset(provider_id: str = "claude") -> tuple[dict[str, Any] | None, str | None]:
+    """Read Claude's 5h session reset block while enforcing 429 rate-limit backoff."""
+    if claude_in_backoff(provider_id):
+        return None, _tr("限流退避中，稍后再试。", "Rate limit cooldown. Please try again later.")
+    home = None if provider_id == "claude" else claude_account_home(provider_id)
+    status, payload = (
+        claude_authorized_json(CLAUDE_USAGE_AT_WALL_URL, home=home)
+        if home is not None
+        else claude_authorized_json(CLAUDE_USAGE_AT_WALL_URL)
+    )
+    if status == 0 and payload is None:
+        return None, _tr("未找到可用的 Claude 登录凭证", "No usable Claude login credentials found")
+    if status == 429:
+        set_claude_backoff(provider_id=provider_id)
+        return None, _tr("请求太频繁，稍后再试。", "Too many requests. Please try again later.")
+    if status != 200 or not isinstance(payload, dict):
+        return None, _tr(
+            f"读取失败：{codex_error_text(status, payload)}",
+            f"Could not load: {codex_error_text(status, payload)}",
+        )
+    clear_claude_backoff(provider_id)
+    block = payload.get("juniper_tide")
+    return (block if isinstance(block, dict) else {}), None
+
+
+def claim_claude_reset(
+    grant_id: str, *, request_id: str, provider_id: str = "claude"
+) -> dict[str, Any]:
+    """Spend one /limit-reset grant while enforcing 429 rate-limit backoff."""
+    if not CLAUDE_RESET_GRANT_ID_RE.match(grant_id or "") or not CLAUDE_RESET_REQUEST_ID_RE.match(request_id or ""):
+        return {
+            "ok": False,
+            "message": _tr("重置数据格式异常，未发送请求。", "Invalid reset data. No request was sent."),
+            "settled": True,
+        }
+    if claude_in_backoff(provider_id):
+        return {
+            "ok": False,
+            "message": _tr("限流退避中，稍后再试。", "Rate limit cooldown. Please try again later."),
+            "settled": False,
+        }
+    home = None if provider_id == "claude" else claude_account_home(provider_id)
+    org, org_status = claude_organization_uuid(provider_id)
+    if org_status == 429:
+        return {
+            "ok": False,
+            "message": _tr("请求太频繁，稍后再试。", "Too many requests. Please try again later."),
+            "settled": False,
+        }
+    if not org:
+        return {
+            "ok": False,
+            "message": _tr("找不到 Claude 组织信息，请在 Claude Code 里重新登录。", "Claude organization not found. Please sign in again in Claude Code."),
+            "settled": True,
+        }
+    url = CLAUDE_RESET_CLAIM_URL.format(org=urllib.parse.quote(org, safe=""))
+    body = {
+        "program": CLAUDE_RESET_PROGRAM,
+        "grant_id": grant_id,
+        "request_id": request_id,
+    }
+    status, payload = (
+        claude_authorized_json(url, method="POST", body=body, timeout=25.0, home=home)
+        if home is not None
+        else claude_authorized_json(url, method="POST", body=body, timeout=25.0)
+    )
+    if status == 0 and payload is None:
+        return {
+            "ok": False,
+            "message": _tr("未找到可用的 Claude 登录凭证", "No usable Claude login credentials found"),
+            "settled": True,
+        }
+    if status == 200 and isinstance(payload, dict):
+        result = str(payload.get("result") or "unavailable")
+        if result == "reset":
+            cleared = _tr("、", ", ").join(
+                _tr(*CLAUDE_RESET_WINDOW_LABELS.get(str(w), (str(w), str(w))))
+                for w in payload.get("cleared") or []
+            )
+            message = _tr(f"已重置{cleared}。", f"Reset {cleared}.") if cleared else _tr("用量已重置。", "Usage reset.")
+            left = payload.get("resets_left")
+            if isinstance(left, int) and not isinstance(left, bool):
+                message += _tr(f" 剩余 {left} 次。", f" {left} remaining.")
+            return {"ok": True, "message": message, "settled": True}
+        zh, en = CLAUDE_RESET_RESULT_LABELS.get(result, CLAUDE_RESET_RESULT_LABELS["unavailable"])
+        return {"ok": False, "message": _tr(zh, en), "settled": True}
+    if status == 429:
+        set_claude_backoff(provider_id=provider_id)
+        return {
+            "ok": False,
+            "message": _tr("请求太频繁，稍后再试。", "Too many requests. Please try again later."),
+            "settled": False,
+        }
+    if status in (401, 403):
+        return {
+            "ok": False,
+            "message": _tr("Claude 登录已失效，请在 Claude Code 里重新登录。", "Claude login expired. Please sign in again in Claude Code."),
+            "settled": True,
+        }
+    return {
+        "ok": False,
+        "message": _tr(f"使用失败：{codex_error_text(status, payload)}", f"Redemption failed: {codex_error_text(status, payload)}"),
+        "settled": False,
+    }
+
+
+def claim_claude_session_reset(provider_id: str = "claude") -> dict[str, Any]:
+    """Spend this week's 5h session reset while enforcing 429 rate-limit backoff."""
+    if claude_in_backoff(provider_id):
+        return {
+            "ok": False,
+            "message": _tr("限流退避中，稍后再试。", "Rate limit cooldown. Please try again later."),
+            "settled": False,
+        }
+    home = None if provider_id == "claude" else claude_account_home(provider_id)
+    org, org_status = claude_organization_uuid(provider_id)
+    if org_status == 429:
+        return {
+            "ok": False,
+            "message": _tr("请求太频繁，稍后再试。", "Too many requests. Please try again later."),
+            "settled": False,
+        }
+    if not org:
+        return {
+            "ok": False,
+            "message": _tr("找不到 Claude 组织信息，请在 Claude Code 里重新登录。", "Claude organization not found. Please sign in again in Claude Code."),
+            "settled": True,
+        }
+    url = CLAUDE_RESET_CLAIM_URL.format(org=urllib.parse.quote(org, safe=""))
+    status, payload = (
+        claude_authorized_json(url, method="POST", body={"program": CLAUDE_SESSION_RESET_PROGRAM}, timeout=25.0, home=home)
+        if home is not None
+        else claude_authorized_json(url, method="POST", body={"program": CLAUDE_SESSION_RESET_PROGRAM}, timeout=25.0)
+    )
+    if status == 0 and payload is None:
+        return {
+            "ok": False,
+            "message": _tr("未找到可用的 Claude 登录凭证", "No usable Claude login credentials found"),
+            "settled": True,
+        }
+    if status == 200 and isinstance(payload, dict):
+        result = str(payload.get("result") or "unavailable")
+        if result == "reset":
+            return {"ok": True, "message": _tr("5 小时会话已重置。", "5-hour session reset."), "settled": True}
+        zh, en = CLAUDE_SESSION_RESULT_LABELS.get(result, CLAUDE_SESSION_RESULT_LABELS["unavailable"])
+        return {"ok": False, "message": _tr(zh, en), "settled": True}
+    if status == 429:
+        set_claude_backoff(provider_id=provider_id)
+        return {
+            "ok": False,
+            "message": _tr("请求太频繁，稍后再试。", "Too many requests. Please try again later."),
+            "settled": False,
+        }
+    if status in (401, 403):
+        return {
+            "ok": False,
+            "message": _tr("Claude 登录已失效，请在 Claude Code 里重新登录。", "Claude login expired. Please sign in again in Claude Code."),
+            "settled": True,
+        }
+    return {
+        "ok": False,
+        "message": _tr(f"使用失败：{codex_error_text(status, payload)}", f"Redemption failed: {codex_error_text(status, payload)}"),
+        "settled": False,
+    }
+
+
+def read_codex_auth(home: Path | None = None) -> tuple[dict[str, Any] | None, Path | None]:
+    auth_path = (CODEX_HOME if home is None else home) / "auth.json"
     if not auth_path.exists():
         return None, None
     try:
@@ -1178,7 +1560,7 @@ def refresh_codex_token(refresh_token: str) -> dict[str, Any] | None:
 def codex_authorized_json(
     url: str,
     *,
-    home: Path = CODEX_HOME,
+    home: Path | None = None,
     method: str = "GET",
     body: dict[str, Any] | None = None,
 ) -> tuple[int, Any]:
@@ -1187,7 +1569,8 @@ def codex_authorized_json(
     Returns the same (status, payload) pair as http_json(); status 0 means the
     local credential is missing. Only the Codex CLI owns token rotation.
     """
-    auth, auth_path = read_codex_auth(home)
+    resolved_home = CODEX_HOME if home is None else home
+    auth, auth_path = read_codex_auth(resolved_home)
     if not auth:
         return 0, None
 
@@ -1205,7 +1588,7 @@ def codex_authorized_json(
 
     status, payload = call(access, account_id)
     if status in (401, 403) and method.upper() == 'GET':
-        latest, _ = read_codex_auth(home)
+        latest, _ = read_codex_auth(resolved_home)
         new = (latest or {}).get('tokens') or {}
         if new.get('access_token') and new['access_token'] != access:
             return call(new['access_token'], new.get('account_id'))
@@ -1251,6 +1634,68 @@ def fetch_codex_usage(account: CodexAccount) -> ProviderUsage:
     )
     cache_put_provider(result)
     return result
+
+
+def _resolve_codex_home(home: Path | None, provider_id: str | None) -> Path | None:
+    if provider_id is not None:
+        account = discover_codex_accounts().get(provider_id)
+        return account.home if account is not None else None
+    return CODEX_HOME if home is None else home
+
+
+def fetch_codex_reset_cards(
+    home: Path | None = None,
+    *,
+    provider_id: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Read raw Codex rate-limit reset credits for a resolved Codex account home."""
+    target_home = _resolve_codex_home(home, provider_id)
+    if target_home is None:
+        return [], _tr("未找到可用的 Codex 登录凭证", "No usable Codex login credentials found")
+    status, payload = codex_authorized_json(CODEX_RESET_CARDS_URL, home=target_home)
+    if status == 0:
+        return [], _tr("未找到可用的 Codex 登录凭证", "No usable Codex login credentials found")
+    if status != 200 or not isinstance(payload, dict):
+        return [], _tr(
+            f"读取重置卡失败：{codex_error_text(status, payload)}",
+            f"Could not load reset credits: {codex_error_text(status, payload)}",
+        )
+    credits = [item for item in (payload.get("credits") or []) if isinstance(item, dict)]
+    return credits, None
+
+
+def consume_codex_reset_card(
+    card_id: str,
+    *,
+    home: Path | None = None,
+    request_id: str | None = None,
+    provider_id: str | None = None,
+) -> tuple[bool, str]:
+    """Redeem one Codex reset credit for a resolved Codex account home."""
+    card_id = str(card_id).strip()
+    if not card_id:
+        return False, _tr("没有选中任何重置卡", "No reset credit selected")
+    target_home = _resolve_codex_home(home, provider_id)
+    if target_home is None:
+        return False, _tr("未找到可用的 Codex 登录凭证", "No usable Codex login credentials found")
+    body = {
+        "credit_id": card_id,
+        "redeem_request_id": request_id or uuid.uuid4().hex,
+    }
+    status, payload = codex_authorized_json(
+        CODEX_RESET_CONSUME_URL,
+        home=target_home,
+        method="POST",
+        body=body,
+    )
+    if status == 0:
+        return False, _tr("未找到可用的 Codex 登录凭证", "No usable Codex login credentials found")
+    if status in (200, 201, 202, 204):
+        return True, _tr("重置卡已使用，用量窗口已重置。", "Reset redeemed. Usage windows have been reset.")
+    return False, _tr(
+        f"使用失败：{codex_error_text(status, payload)}",
+        f"Redemption failed: {codex_error_text(status, payload)}",
+    )
 
 
 def _iso_timestamp(value: Any) -> str | None:

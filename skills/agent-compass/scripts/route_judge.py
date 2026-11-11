@@ -47,10 +47,8 @@ import urllib.request
 USAGE_CACHE_ENV = 'ROUTER_USAGE_CACHE'
 METERED_NAMES_ENV = 'ROUTER_METERED_NAMES'
 MAX_AGE_SECONDS = 900
-# The collector reads an idle account only every 30 minutes; while its per-account cadence decisions keep arriving,
-# a reading counts as current for that cadence plus one collector tick of grace.
-POLL_GRACE_SECONDS = 600
-POLL_MAX_SECONDS = 3600
+POLL_GRACE_SECONDS = usage_cache.POLL_GRACE_SECONDS
+POLL_MAX_SECONDS = usage_cache.POLL_MAX_SECONDS
 JUDGES = {
     'sonnet': {'provider': 'claude', 'account': 'claude', 'model': 'claude-sonnet-5', 'effort': 'low'},
     'codex': {'provider': 'codex', 'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'low'},
@@ -325,17 +323,7 @@ def cache_paths(explicit=None):
     return usage_cache.read_paths(explicit, environ={**os.environ, USAGE_CACHE_ENV: user_env(USAGE_CACHE_ENV) or ''})
 
 
-def poll_max_age(poll, now, default):
-    """Freshness limit for one account: its published cadence plus grace, while that decision is itself recent."""
-    if not isinstance(poll, dict):
-        return default
-    seconds, at = poll.get('seconds'), poll.get('at')
-    if (not isinstance(seconds, (int, float)) or isinstance(seconds, bool) or not 0 < seconds <= POLL_MAX_SECONDS
-            or not isinstance(at, (int, float)) or isinstance(at, bool)):
-        return default
-    if not 0 <= now.timestamp() - at <= default:     # the collector stopped deciding: fall back
-        return default
-    return max(default, seconds + POLL_GRACE_SECONDS)
+poll_max_age = usage_cache.poll_max_age
 
 
 def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_SECONDS, quota_sources=None, inventory=None):

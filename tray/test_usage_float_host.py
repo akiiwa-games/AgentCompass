@@ -185,7 +185,7 @@ class ControlRecoveryTests(unittest.TestCase):
 
 
 class SharedCacheTests(unittest.TestCase):
-    """The hosted Usage Float writes the router's cache file, with the legacy copy carried over once (real files, isolated home)."""
+    """The hosted Usage Float points at the router's read-only cache file, seeded once from the legacy copy (real files, isolated home)."""
 
     def setUp(self):
         import json
@@ -239,37 +239,78 @@ class HostedSingleReaderTests(unittest.TestCase):
         import sys
         from datetime import datetime, timedelta, timezone
 
-        with host._hosted_cache_lock:
-            self._saved_cache_state = dict(host._hosted_cache_state)
-            host._hosted_cache_state.update(path=None, signature=None)
+        scripts = host.component_launch.skill_scripts()
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import allocator
+        import host_policy
+        import usage_cache
+        import usage_collector
+        import usage_core
+
+        self.allocator = allocator
+        self.host_policy = host_policy
+        self.usage_collector = usage_collector
+        self.usage_core = usage_core
 
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.home = Path(temporary.name)
+
+        # Register path reset before env patch so LIFO cleanup restores usage_core after os.environ is restored.
+        self.addCleanup(self.usage_core.configure_paths)
+
         env = {
             "HOME": str(self.home),
             "USERPROFILE": str(self.home),
             "APPDATA": str(self.home / "AppData" / "Roaming"),
             "LOCALAPPDATA": str(self.home / "AppData" / "Local"),
+            "ROUTER_PROVIDER_HOME": str(self.home),
+            "ROUTER_STATE_DIR": str(self.home / ".agent-compass"),
+            "AGENTCOMPASS_PUBLIC_DATA": "off",
+            "AGENTCOMPASS_ANTIGRAVITY_PLAN": "off",
+            "AGENTCOMPASS_LIVE_MODELS": "off",
         }
         patcher = mock.patch.dict(os.environ, env)
         patcher.start()
         self.addCleanup(patcher.stop)
         for name in (
-            "ROUTER_STATE_DIR",
             "ROUTER_USAGE_CACHE",
             "ROUTE_MANAGER_ACTIVITY_FILE",
             "AGENTCOMPASS_STATE_DIR",
             "AGENTCOMPASS_USAGE_CONFIG",
             "ROUTER_HOST_POLICY",
+            "ROUTER_ACCOUNTS_FILE",
+            "ROUTER_ACCOUNTS_OVERRIDE",
+            "ROUTER_CAPACITY",
+            "ROUTER_OVERRIDES",
             "CLAUDE_HOME",
             "CLAUDE_HOME_2",
+            "CODEX_HOME",
             "CODEX_HOME_2",
             "GROK_HOME",
             "PASEO_CONFIG",
             "PASEO_HOME",
         ):
             os.environ.pop(name, None)
+
+        for target, attr, repl in (
+            (Path, "home", classmethod(lambda _cls, h=self.home: h)),
+            (usage_cache, "_registry", lambda _name: ""),
+            (
+                host_policy,
+                "policy_path",
+                lambda h=self.home: (
+                    (Path(os.environ["ROUTER_HOST_POLICY"]).expanduser(), True)
+                    if os.environ.get("ROUTER_HOST_POLICY")
+                    else (h / ".agent-compass" / "host-policy.json", False)
+                ),
+            ),
+            (allocator.provider_inventory, "current", lambda: {"accounts": {}, "launchers": {}}),
+        ):
+            p = mock.patch.object(target, attr, repl)
+            p.start()
+            self.addCleanup(p.stop)
 
         (self.home / ".claude-2").mkdir(parents=True)
         (self.home / ".claude-2" / "settings.json").write_text(
@@ -292,7 +333,10 @@ class HostedSingleReaderTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+        self.usage_core.configure_paths(home=self.home)
+
         now = datetime.now(timezone.utc)
+        self.now = now
         self.now_iso = now.isoformat()
         self.reset_5h = (now + timedelta(hours=4)).isoformat()
         self.reset_7d = (now + timedelta(days=5)).isoformat()
@@ -306,18 +350,10 @@ class HostedSingleReaderTests(unittest.TestCase):
         sys.modules[mod_name] = module
         self.addCleanup(sys.modules.pop, mod_name, None)
         spec.loader.exec_module(module)
+        agy_patch = mock.patch.object(module, "find_antigravity_cli", return_value=None)
+        agy_patch.start()
+        self.addCleanup(agy_patch.stop)
         self.native = module
-
-        scripts = host.component_launch.skill_scripts()
-        if str(scripts) not in sys.path:
-            sys.path.insert(0, str(scripts))
-        import usage_core
-        self.usage_core = usage_core
-
-    def tearDown(self):
-        with host._hosted_cache_lock:
-            host._hosted_cache_state.clear()
-            host._hosted_cache_state.update(self._saved_cache_state)
 
     def _magpie_payload(self, fable_used: float = 20.0) -> dict:
         return {
@@ -349,6 +385,23 @@ class HostedSingleReaderTests(unittest.TestCase):
             ]
         }
 
+    def _codex_payload(self, weekly_used: float = 25.0) -> dict:
+        return {
+            "plan_type": "plus",
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": 10.0,
+                    "limit_window_seconds": 18000,
+                    "reset_at": int(self.now.timestamp()) + 14400,
+                },
+                "secondary_window": {
+                    "used_percent": weekly_used,
+                    "limit_window_seconds": 604800,
+                    "reset_at": int(self.now.timestamp()) + 432000,
+                },
+            },
+        }
+
     def _poison_plugin_fetchers_and_writers(self):
         forbidden = AssertionError("Hosted Usage Float must never invoke plugin fetchers or cache writers")
         for attr in (
@@ -362,11 +415,15 @@ class HostedSingleReaderTests(unittest.TestCase):
             "fetch_api_proxy_usage",
             "fetch_antigravity_usage",
             "http_json",
+            "claude_authorized_json",
+            "codex_authorized_json",
             "update_usage_cache",
             "save_usage_cache",
             "cache_put_provider",
             "mark_provider_stale",
             "record_usage_attempt",
+            "set_claude_backoff",
+            "clear_claude_backoff",
         ):
             patcher = mock.patch.object(self.native, attr, side_effect=forbidden)
             patcher.start()
@@ -374,6 +431,90 @@ class HostedSingleReaderTests(unittest.TestCase):
         patcher = mock.patch.object(self.native.magpie_usage, "parse_quota", side_effect=forbidden)
         patcher.start()
         self.addCleanup(patcher.stop)
+
+    def _run_hosted_ui(self, callback):
+        import sys
+        import tkinter as tk
+        import tk_test_support
+
+        shared_root = tk_test_support.shared_tk_root(self)
+        errors = []
+        real_thread_start = self.native.threading.Thread.start
+
+        def run_sync_thread(thread_self):
+            target = getattr(thread_self, "_target", None)
+            if getattr(target, "__name__", "") == "work":
+                thread_self.run()
+                return
+            real_thread_start(thread_self)
+
+        def drain_immediate(root):
+            # Execute queued after(0, ...) callbacks on the Tk interpreter without blocking on long timers.
+            root.update()
+
+        def fake_mainloop(root, *args, **kwargs):
+            scope = sys._getframe(1).f_locals
+            ctrl_job = scope["state"].get("double_ctrl_job")
+            if ctrl_job is not None:
+                try:
+                    root.after_cancel(ctrl_job)
+                except Exception:
+                    pass
+                scope["state"]["double_ctrl_job"] = None
+            try:
+                with mock.patch.object(tk.Wm, "deiconify"), \
+                        mock.patch.object(tk.Misc, "focus_set"), \
+                        mock.patch.object(tk.Misc, "lift"):
+                    drain_immediate(root)
+                    callback(root, scope, drain_immediate)
+            finally:
+                scope["do_quit"]()
+
+        try:
+            with mock.patch.object(self.native, "_report_tk_callback_exception", side_effect=lambda *exc: errors.append(exc)), \
+                    mock.patch.object(self.native, "_start_mpv_provisioning", return_value=False), \
+                    mock.patch.object(self.native, "_hide_from_taskbar"), \
+                    mock.patch.object(self.native.threading.Thread, "start", run_sync_thread), \
+                    mock.patch.object(tk, "Tk", return_value=shared_root), \
+                    mock.patch.object(shared_root, "destroy"), \
+                    mock.patch.object(tk.Wm, "deiconify"), \
+                    mock.patch.object(tk.Misc, "mainloop", fake_mainloop):
+                self.native.run_ui()
+        finally:
+            try:
+                shared_root.wm_attributes("-transparentcolor", "")
+            except Exception:
+                pass
+            try:
+                shared_root.overrideredirect(False)
+            except Exception:
+                pass
+            tk_test_support.reset_tk_root(shared_root)
+        self.assertEqual(errors, [])
+
+    @staticmethod
+    def _collect_label_texts(widget) -> list[str]:
+        import tkinter as tk
+
+        out = []
+        for child in widget.winfo_children():
+            if isinstance(child, tk.Label):
+                txt = str(child.cget("text") or "").strip()
+                if txt:
+                    out.append(txt)
+            out.extend(HostedSingleReaderTests._collect_label_texts(child))
+        return out
+
+    @staticmethod
+    def _find_buttons(widget) -> dict[str, object]:
+        import tkinter as tk
+
+        found = {}
+        for child in widget.winfo_children():
+            if isinstance(child, tk.Button):
+                found[str(child.cget("text") or "").strip()] = child
+            found.update(HostedSingleReaderTests._find_buttons(child))
+        return found
 
     def test_outdated_plugin_without_seam_fails_fast_without_fallback(self):
         from types import SimpleNamespace
@@ -403,8 +544,9 @@ class HostedSingleReaderTests(unittest.TestCase):
 
     def test_hosted_mode_never_calls_plugin_fetchers_and_reads_collector_cache(self):
         shared = self.home / ".agent-compass" / "usage-cache.json"
-        host._sync_usage_core_paths(self.usage_core, shared)
-        with mock.patch.object(self.usage_core, "http_json", return_value=(200, self._magpie_payload(15.0))),                 mock.patch.object(
+        self.usage_core.configure_paths(shared, home=self.home)
+        with mock.patch.object(self.usage_core, "http_json", return_value=(200, self._magpie_payload(15.0))), \
+                mock.patch.object(
                     self.usage_core,
                     "fetch_grok_usage",
                     side_effect=lambda: self._write_grok_via_core(18.0),
@@ -439,21 +581,37 @@ class HostedSingleReaderTests(unittest.TestCase):
         self.usage_core.cache_put_provider(item)
         return item
 
-    def test_forced_refresh_from_hud_menu_reaches_product_collector_with_force_semantics(self):
+    def test_forced_refresh_collects_and_renders_dispatch_excluded_account_while_router_still_excludes_it(self):
+        # Excluding `codex` in `allowed_accounts` only blocks router dispatch; usage must still be collected and rendered.
         (self.home / ".agent-compass").mkdir(parents=True, exist_ok=True)
         (self.home / ".agent-compass" / "host-policy.json").write_text(
             json.dumps({"allowed_accounts": ["claude-2"]}),
             encoding="utf-8",
         )
+        (self.home / ".usage-float").mkdir(parents=True, exist_ok=True)
+        (self.home / ".usage-float" / "config.json").write_text(
+            json.dumps({
+                "language": "zh",
+                "display_mode": "float",
+                "card_width": 360,
+                "providers": ["codex:7d", "claude-2:fable", "claude-2:7d", "claude-2:5h"],
+                "disabled_providers": ["codex:5h"],
+            }),
+            encoding="utf-8",
+        )
         host.bind_usage(self.native)
+        self.assertFalse(self.native.PERIODIC_REFRESH)
         self._poison_plugin_fetchers_and_writers()
 
         core_http_calls = []
 
         def fake_core_http(url, *, method="GET", headers=None, body=None, timeout=20.0):
             core_http_calls.append((method, url))
+            if "chatgpt.com" in url:
+                return 200, self._codex_payload(25.0)
             return 200, self._magpie_payload(30.0)
 
+        selected = ["codex:7d", "claude-2:fable", "claude-2:7d", "claude-2:5h"]
         state = {
             "refreshing": False,
             "always_on_top": True,
@@ -463,11 +621,7 @@ class HostedSingleReaderTests(unittest.TestCase):
         }
 
         def refresh_async(force: bool = False):
-            state["providers"] = self.native.fetch_display_usage(
-                ["codex:7d", "claude-2:fable", "claude-2:7d", "claude-2:5h"],
-                state["providers"],
-                force=force,
-            )
+            state["providers"] = self.native.fetch_display_usage(selected, state["providers"], force=force)
 
         scope = {
             "state": state,
@@ -486,10 +640,12 @@ class HostedSingleReaderTests(unittest.TestCase):
             "bg_layer": mock.Mock(),
         }
 
-        with mock.patch.object(self.usage_core, "http_json", side_effect=fake_core_http),                 mock.patch.object(self.usage_core, "fetch_all", wraps=self.usage_core.fetch_all) as core_fetch,                 mock.patch.object(host.local_controls, "ControlServer") as server:
+        with mock.patch.object(self.usage_core, "http_json", side_effect=fake_core_http), \
+                mock.patch.object(self.usage_core, "fetch_all", wraps=self.usage_core.fetch_all) as core_fetch, \
+                mock.patch.object(host.local_controls, "ControlServer") as server:
             host.attach(mock.Mock(), scope)
             actions = server.return_value.publish.call_args.args[1]
-            # First forced refresh collects claude-2 via usage_core (codex filtered out by host-policy).
+            # First forced refresh collects both codex (dispatch-excluded) and claude-2 via usage_collector.
             actions["refresh"]()
             # Second immediate forced refresh still bypasses the 300s poll throttle (force=True semantics).
             actions["refresh"]()
@@ -497,13 +653,61 @@ class HostedSingleReaderTests(unittest.TestCase):
         self.assertEqual(scope["refresh_async"].call_args_list, [mock.call(force=True), mock.call(force=True)])
         self.assertEqual(
             core_fetch.call_args_list,
-            [mock.call(["claude-2"], force=True), mock.call(["claude-2"], force=True)],
+            [mock.call(["codex", "claude-2"], force=True), mock.call(["codex", "claude-2"], force=True)],
         )
         refresh_posts = [c for c in core_http_calls if c[0] == "POST" and c[1].startswith("https://magpie.example/v1/magpie/quotas/refresh")]
         self.assertEqual(len(refresh_posts), 4)
         cached_providers = json.loads((self.home / ".agent-compass" / "usage-cache.json").read_text(encoding="utf-8"))["providers"]
         self.assertIn("claude-2", cached_providers)
-        self.assertNotIn("codex", cached_providers)
+        self.assertIn("codex", cached_providers)
+
+        rows = {r.title: r for r in self.native.iter_display_rows(state["providers"], selected)}
+        self.assertIn("codex 7d", rows)
+        self.assertFalse(rows["codex 7d"].failed)
+        self.assertEqual(rows["codex 7d"].left_pct, 75.0)
+        self.assertIn("claude-2 fable 7d×2", rows)
+        self.assertFalse(any(r.failed for r in rows.values()))
+
+        # Render the real Tk HUD rows in hosted mode: codex shows real usage ("75%"), never "更新失败".
+        rendered_hud = {}
+
+        def check_hud(_root, ui_scope, _drain):
+            rendered_hud["dispatch_excluded"] = self._collect_label_texts(ui_scope["lines_frame"])
+            # When an explicit `usage_providers` list narrows usage, the excluded account is omitted cleanly without "更新失败".
+            (self.home / ".agent-compass" / "host-policy.json").write_text(
+                json.dumps({"allowed_accounts": ["claude-2"], "usage_providers": ["claude-2"]}),
+                encoding="utf-8",
+            )
+            ui_scope["refresh_async"](force=False)
+            _drain(_root)
+            rendered_hud["explicit_usage_narrowed"] = self._collect_label_texts(ui_scope["lines_frame"])
+
+        self._run_hosted_ui(check_hud)
+        self.assertIn("codex 7d", rendered_hud["dispatch_excluded"])
+        self.assertIn("75%", rendered_hud["dispatch_excluded"])
+        self.assertNotIn("更新失败", rendered_hud["dispatch_excluded"])
+        self.assertNotIn("codex 7d", rendered_hud["explicit_usage_narrowed"])
+        self.assertNotIn("更新失败", rendered_hud["explicit_usage_narrowed"])
+
+        # Restore dispatch-only exclusion and verify the router still never dispatches to codex despite fresh usage.
+        (self.home / ".agent-compass" / "host-policy.json").write_text(
+            json.dumps({"allowed_accounts": ["claude-2"]}),
+            encoding="utf-8",
+        )
+        fleet = self.allocator.load_accounts(self.allocator.reference_fleet_path())
+        planned = self.allocator.plan(
+            {"work_kind": "general_implementation", "difficulty": "hard"},
+            {"accounts": {"codex": {"status": "fresh", "available": True, "stale": False, "windows": [
+                {"id": "usage", "remaining_pct_before_reset": 75.0, "observed_remaining_pct": 75.0, "seconds_until_reset": 86400}
+            ]}}},
+            now=self.now,
+            accounts=fleet,
+        )
+        self.assertNotEqual((planned.get("selected_bundle") or {}).get("account"), "codex")
+        codex_rankings = [r for r in planned["ranking"] if r["bundle"]["account"] == "codex"]
+        self.assertTrue(codex_rankings)
+        for r in codex_rankings:
+            self.assertIn("excluded by host policy", r["excluded"])
 
     def test_single_writer_keeps_fable_7d_stable_and_notifies_ui_on_external_collector_write(self):
         temp_controls = tempfile.TemporaryDirectory()
@@ -547,7 +751,7 @@ class HostedSingleReaderTests(unittest.TestCase):
                 },
                 "bg_layer": mock.Mock(),
             }
-            server = host.attach(root, scope)
+            server = host.attach(root, scope, watched_cache=Path(self.native.CACHE_PATH))
             self.addCleanup(server.close)
 
             # Multiple hosted UI ticks never overwrite providers['claude-2'] or drop weekly_fable.
@@ -568,6 +772,303 @@ class HostedSingleReaderTests(unittest.TestCase):
             rows = {r.title: r for r in self.native.iter_display_rows(state["providers"], selected)}
             self.assertIn("claude-2 fable 7d×2", rows)
             self.assertEqual(rows["claude-2 fable 7d×2"].left_pct, 110.0)
+
+    def test_lock_contention_during_forced_refresh_never_swallows_external_collector_write(self):
+        temp_controls = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_controls.cleanup)
+        with mock.patch.object(host.local_controls, "DIRECTORY", Path(temp_controls.name)):
+            host.bind_usage(self.native)
+            self._poison_plugin_fetchers_and_writers()
+
+            # Initial cache: grok has 50% used (50% left), claude-2 has fable 20% / 30% (150% left).
+            self._write_grok_via_core(50.0)
+            with mock.patch.object(self.usage_core, "http_json", return_value=(200, self._magpie_payload(20.0))):
+                self.usage_core.fetch_all(["claude-2"], force=True)
+
+            selected = ["grok", "claude-2:fable"]
+            state = {
+                "refreshing": False,
+                "always_on_top": True,
+                "display_mode": "panel",
+                "panel_active": True,
+                "providers": self.native.fetch_display_usage(selected, [], force=False),
+            }
+            refresh_calls = []
+
+            def refresh_async(force: bool = False):
+                refresh_calls.append(force)
+                state["providers"] = self.native.fetch_display_usage(selected, state["providers"], force=force)
+
+            root = ControlRecoveryTests.Root()
+            scope = {
+                "state": state,
+                "refresh_async": refresh_async,
+                **{
+                    name: mock.Mock()
+                    for name in (
+                        "request_open_settings",
+                        "toggle_panel_mode",
+                        "toggle_topmost",
+                        "do_quit",
+                        "set_wallpaper_active",
+                        "stack_text_above_plate",
+                    )
+                },
+                "bg_layer": mock.Mock(),
+            }
+            server = host.attach(root, scope, watched_cache=Path(self.native.CACHE_PATH))
+            self.addCleanup(server.close)
+
+            # Simulate `.fetch.lock` contention on grok during forced refresh, then external collector finishes grok (10% used -> 90% left)
+            # before forced refresh returns. Forced refresh must NOT advance attach()'s watched signature past that external write.
+            def contending_http(url, *, method="GET", headers=None, body=None, timeout=20.0):
+                # Background collector finishes grok while claude-2 HTTP call is in flight.
+                self._write_grok_via_core(10.0)
+                return 200, self._magpie_payload(20.0)
+
+            with mock.patch.object(self.usage_core, "fetch_grok_usage", side_effect=TimeoutError("locked")), \
+                    mock.patch.object(self.usage_core, "http_json", side_effect=contending_http):
+                refresh_async(force=True)
+
+            # Immediately after contending forced refresh, grok in memory still has fallback 50% left.
+            rows_before = {r.title: r for r in self.native.iter_display_rows(state["providers"], selected)}
+            self.assertEqual(rows_before["grok"].left_pct, 50.0)
+
+            # Next 5 control ticks detect the changed cache signature and pick up grok's fresh 90% left reading.
+            for _ in range(5):
+                root.tick()
+            self.assertEqual(refresh_calls, [True, False])
+            rows_after = {r.title: r for r in self.native.iter_display_rows(state["providers"], selected)}
+            self.assertEqual(rows_after["grok"].left_pct, 90.0)
+
+    def test_hosted_settings_timezone_persists_to_collector_usage_config(self):
+        (self.home / ".agent-compass").mkdir(parents=True, exist_ok=True)
+        collector_cfg = self.home / ".agent-compass" / "usage-config.json"
+        collector_cfg.write_text(json.dumps({"llm_proxy_timezone": "UTC"}), encoding="utf-8")
+        (self.home / ".usage-float").mkdir(parents=True, exist_ok=True)
+        (self.home / ".usage-float" / "config.json").write_text(
+            json.dumps({
+                "language": "zh",
+                "display_mode": "float",
+                "llm_proxy_timezone": "UTC+8",
+                "providers": ["claude-2:7d"],
+            }),
+            encoding="utf-8",
+        )
+        host.bind_usage(self.native)
+        self._poison_plugin_fetchers_and_writers()
+
+        def find_timezone_combobox(widget):
+            from tkinter import ttk
+
+            for child in widget.winfo_children():
+                if isinstance(child, ttk.Combobox) and "UTC" in tuple(child.cget("values") or ()):
+                    return child
+                found = find_timezone_combobox(child)
+                if found is not None:
+                    return found
+            return None
+
+        with mock.patch.object(self.usage_core, "http_json", return_value=(200, self._magpie_payload(20.0))):
+            def exercise_settings(root, scope, drain):
+                # Authoritative collector config ("UTC") wins over stale legacy config ("UTC+8") on load.
+                self.assertEqual(scope["state"]["llm_proxy_timezone"], "UTC")
+                scope["open_settings"]()
+                win = scope["state"]["settings_win"]
+                win.update_idletasks()
+                combo = find_timezone_combobox(win)
+                self.assertIsNotNone(combo)
+                combo.set("UTC-5")
+                combo.event_generate("<<ComboboxSelected>>")
+                drain(root)
+                win.tk.call(win.protocol("WM_DELETE_WINDOW"))
+
+            self._run_hosted_ui(exercise_settings)
+
+        saved_collector = json.loads(collector_cfg.read_text(encoding="utf-8"))
+        self.assertEqual(saved_collector["llm_proxy_timezone"], "UTC-5")
+        self.assertEqual(self.usage_core.read_usage_config()["llm_proxy_timezone"], "UTC-5")
+
+    def test_hosted_reset_popups_route_through_product_and_respect_429_backoff(self):
+        from tkinter import messagebox
+        import tkinter as tk
+
+        (self.home / ".claude").mkdir(parents=True)
+        (self.home / ".claude" / ".credentials.json").write_text(
+            json.dumps({"claudeAiOauth": {"accessToken": "tok-claude-primary"}}),
+            encoding="utf-8",
+        )
+        (self.home / ".claude.json").write_text(
+            json.dumps({"oauthAccount": {"organizationUuid": "org-claude-1"}}),
+            encoding="utf-8",
+        )
+        # Dynamic Codex account (.codex-3) + decoy CODEX_HOME env var to verify zero home drift.
+        os.environ["CODEX_HOME"] = str(self.home / "decoy-codex-env")
+        (self.home / ".codex-3").mkdir(parents=True)
+        (self.home / ".codex-3" / "auth.json").write_text(
+            json.dumps({"tokens": {"access_token": "tok-codex-3", "account_id": "acc-codex-3"}}),
+            encoding="utf-8",
+        )
+        (self.home / ".usage-float").mkdir(parents=True, exist_ok=True)
+        (self.home / ".usage-float" / "config.json").write_text(
+            json.dumps({
+                "language": "zh",
+                "display_mode": "float",
+                "providers": ["claude:7d", "claude:5h", "codex-3:7d"],
+            }),
+            encoding="utf-8",
+        )
+
+        host.bind_usage(self.native)
+        self._poison_plugin_fetchers_and_writers()
+
+        core_calls = []
+        session_429 = {"active": True}
+
+        def fake_core_http(url, *, method="GET", headers=None, body=None, timeout=20.0):
+            core_calls.append((method, url, dict(headers or {}), body))
+            if "at_wall=1" in url:
+                if session_429["active"]:
+                    return 429, {"error": {"message": "Too Many Requests"}}
+                return 200, {
+                    "juniper_tide": {
+                        "eligible": True,
+                        "arm": "reset",
+                        "available": True,
+                        "resets_per_week": 1,
+                        "ineligible_reason": None,
+                    }
+                }
+            if "/api/oauth/usage" in url:
+                return 200, {
+                    "five_hour": {"utilization": 20.0, "resets_at": self.reset_5h},
+                    "seven_day": {"utilization": 40.0, "resets_at": self.reset_7d},
+                    "cedar_ember": {
+                        "eligible": True,
+                        "resets_left_total": 1,
+                        "next_grant_id": "grant-weekly-1",
+                        "grants": [{
+                            "id": "grant-weekly-1",
+                            "resets_left": 1,
+                            "ends_at": self.reset_7d,
+                            "clears": ["seven_day"],
+                            "usable_now": True,
+                            "use_requires_limit": False,
+                        }],
+                    },
+                }
+            if url.endswith("/reset_rate_limits"):
+                return 200, {"result": "reset", "cleared": ["seven_day"], "resets_left": 0}
+            if url.endswith("/wham/rate-limit-reset-credits"):
+                return 200, {
+                    "credits": [{
+                        "id": "card-codex-3",
+                        "status": "available",
+                        "reset_type": "wham_reset",
+                        "expires_at": int(self.now.timestamp()) + 86400,
+                        "granted_at": int(self.now.timestamp()) - 3600,
+                    }]
+                }
+            if url.endswith("/wham/rate-limit-reset-credits/consume"):
+                return 200, {"ok": True}
+            if url.endswith("/wham/usage"):
+                return 200, self._codex_payload(30.0)
+            return 200, {}
+
+        def find_radiobuttons(widget) -> list[tk.Radiobutton]:
+            found = []
+            for child in widget.winfo_children():
+                if isinstance(child, tk.Radiobutton):
+                    found.append(child)
+                found.extend(find_radiobuttons(child))
+            return found
+
+        with mock.patch.object(self.usage_core, "http_json", side_effect=fake_core_http), \
+                mock.patch.object(messagebox, "askokcancel", return_value=True):
+            def exercise_popups(root, scope, drain):
+                state = scope["state"]
+
+                # 1. Claude weekly reset popup loads grants through refresh_usage and claims via usage_core.
+                scope["open_claude_reset_info"]("claude")
+                drain(root)
+                win_7d = state["claude_reset_win"]
+                self.assertEqual(len(find_radiobuttons(win_7d)), 1)
+                btns_7d = self._find_buttons(win_7d)
+                self.assertEqual(str(btns_7d["使用"].cget("state")), "normal")
+                btns_7d["使用"].invoke()
+                drain(root)
+                self.assertTrue(
+                    any(
+                        m == "POST"
+                        and u.endswith("/reset_rate_limits")
+                        and isinstance(b, dict)
+                        and b.get("program") == "cedar_ember"
+                        for m, u, _, b in core_calls
+                    )
+                )
+                btns_7d["关闭"].invoke()
+
+                # 2. Claude 5h session reset popup: 429 triggers product backoff and blocks subsequent reloads.
+                scope["open_claude_session_reset"]("claude")
+                drain(root)
+                self.assertTrue(self.usage_core.claude_in_backoff("claude"))
+                win_5h = state["claude_session_win"]
+                labels_429 = " ".join(self._collect_label_texts(win_5h))
+                self.assertIn("请求太频繁", labels_429)
+                calls_after_429 = len(core_calls)
+                btns_5h = self._find_buttons(win_5h)
+                btns_5h["刷新列表"].invoke()
+                drain(root)
+                # Zero upstream HTTP requests while Claude 429 backoff is active!
+                self.assertEqual(len(core_calls), calls_after_429)
+
+                # Clear backoff and reload -> loads juniper_tide and redeems via usage_core.
+                session_429["active"] = False
+                self.usage_core.clear_claude_backoff("claude")
+                btns_5h["刷新列表"].invoke()
+                drain(root)
+                self.assertEqual(len(find_radiobuttons(win_5h)), 1)
+                self.assertEqual(str(btns_5h["使用"].cget("state")), "normal")
+                btns_5h["使用"].invoke()
+                drain(root)
+                self.assertTrue(
+                    any(
+                        m == "POST"
+                        and u.endswith("/reset_rate_limits")
+                        and isinstance(b, dict)
+                        and b.get("program") == "juniper_tide"
+                        for m, u, _, b in core_calls
+                    )
+                )
+                btns_5h["关闭"].invoke()
+
+                # 3. Codex reset cards popup resolves dynamic `.codex-3` without drifting to CODEX_HOME or default codex.
+                scope["open_codex_reset_cards"]("codex-3")
+                drain(root)
+                win_cx = state["reset_cards_win"]
+                self.assertEqual(len(find_radiobuttons(win_cx)), 1)
+                btns_cx = self._find_buttons(win_cx)
+                self.assertEqual(str(btns_cx["使用"].cget("state")), "normal")
+                btns_cx["使用"].invoke()
+                drain(root)
+                codex_headers = [h for m, u, h, _ in core_calls if "/wham/rate-limit-reset-credits" in u]
+                self.assertEqual(len(codex_headers), 3)
+                for hdrs in codex_headers:
+                    self.assertEqual(hdrs.get("Authorization"), "Bearer tok-codex-3")
+                    self.assertEqual(hdrs.get("ChatGPT-Account-ID"), "acc-codex-3")
+                btns_cx["关闭"].invoke()
+
+                # Unknown Codex slot reports missing credentials rather than falling back to default `codex`.
+                calls_before_missing = len(core_calls)
+                scope["open_codex_reset_cards"]("codex-missing")
+                drain(root)
+                win_missing = state["reset_cards_win"]
+                missing_labels = " ".join(self._collect_label_texts(win_missing))
+                self.assertIn("未找到可用的 Codex 登录凭证", missing_labels)
+                self.assertEqual(len(core_calls), calls_before_missing)
+                self._find_buttons(win_missing)["关闭"].invoke()
+
+            self._run_hosted_ui(exercise_popups)
 
     def test_forced_refresh_respects_claude_429_backoff_in_product_collector(self):
         (self.home / ".claude").mkdir(parents=True)

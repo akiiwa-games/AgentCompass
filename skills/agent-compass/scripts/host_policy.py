@@ -117,8 +117,10 @@ def judge_allowed(policy, name, account):
 
 
 def usage_providers(policy, defaults):
-    return [name for name in defaults if account_allowed(policy, name)
-            and (policy is None or 'usage_providers' not in policy or name in policy['usage_providers'])]
+    if policy is None or 'usage_providers' not in policy:
+        return list(defaults)
+    allowed = set(policy['usage_providers'])
+    return [name for name in defaults if name in allowed]
 
 
 def main():

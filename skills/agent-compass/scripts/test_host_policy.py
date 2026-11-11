@@ -166,11 +166,21 @@ class HostPolicyTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertNotIn(str(self.directory), json.dumps(first))
 
-    def test_usage_selection_intersects_both_lists(self):
+    def test_usage_selection_ignores_dispatch_exclusions_and_respects_explicit_usage_providers(self):
         defaults = ['claude', 'codex', 'codex-work', 'grok', 'antigravity']
         self.assertEqual(host_policy.usage_providers(host_policy.load_policy(), defaults), ['codex', 'antigravity'])
         self.assertEqual(host_policy.usage_providers(None, defaults), defaults)
-        self.assertEqual(host_policy.usage_providers({'allowed_accounts': ['codex'], 'usage_providers': ['grok']}, defaults), [])
+        self.assertEqual(host_policy.usage_providers({'allowed_accounts': ['codex']}, defaults), defaults)
+        self.assertEqual(host_policy.usage_providers({'allowed_accounts': []}, defaults), defaults)
+        self.assertEqual(host_policy.usage_providers({'allowed_accounts': ['codex'], 'usage_providers': ['grok']}, defaults), ['grok'])
+        self.assertEqual(host_policy.usage_providers({'allowed_accounts': ['codex'], 'usage_providers': []}, defaults), [])
+        # Dispatch exclusions still strictly govern routing/allocation even when usage is collected for all accounts.
+        self.write({'allowed_accounts': ['codex']})
+        planned = self.plan()
+        self.assertEqual(planned['selected_bundle']['account'], 'codex')
+        for row in planned['ranking']:
+            if row['bundle']['account'] != 'codex':
+                self.assertIn('excluded by host policy', row['excluded'])
 
     def registered(self, **states):
         return {'_discovery': {'accounts': {name: {'status': state} for name, state in states.items()}},
