@@ -29,7 +29,8 @@ Fields
   - `module_precision`: coding (SWE-bench Verified <15 min bucket), terminal (AA Terminal-Bench 4.0, vals.ai
     Terminal-Bench 2.0), alignment (arena.ai Alignment Index: acting only as asked, reporting faithfully).
   - `vision_tools`: vision (LMArena Vision, AA MMMU-Pro), GUI design (LMArena WebDev), GUI (OSWorld-Verified, general
-    models only; arena.ai Agent / Work), tools (AA tau2-bench, AA AutomationBench, arena.ai Agent / Work).
+    models only), tools (AA tau2-bench, AA AutomationBench, arena.ai Agent / Work). The Agent / Work board has one ability
+    column (Net Improvement) and no GUI column, so it is one type: tools.
   The Alignment Index is split by what it measures: the index itself (unauthorized actions, false attribution and
   deceptive completion together) is module precision; of its rates, false attribution (misstating what the user said)
   is a fabricated claim, anti-hallucination, and deceptive completion (reporting unfinished work as done) is the
@@ -38,10 +39,11 @@ Fields
     local `visual` / `text_only` routing flags are not a source (review F1, 2026-11-09), so without a statement and
     without a board the component is missing. A public board that lists the model wins over a statement.
 
-High correction: LMArena and the arena.ai Agent tables list each model at its best variant ("GPT-6 Luna (Max)"). The
-values of those sources are moved to High by the Artificial Analysis Intelligence Index at High over its index at the
-listed variant (efforts.high_ratio), relative to the same ratio of the anchor model so the anchor stays at its value;
-the Alignment Index names no variant and is not corrected. The tier is read as listed (it is the arena.ai Overall
+High correction: LMArena and the arena.ai Agent tables list each model at its best variant ("GPT-6 Luna (Max)"), and
+that variant differs from board to board. The value a source gives a model is moved to High by the Artificial Analysis
+Intelligence Index at High over its index at the variant that source lists it at (efforts.high_ratio), over the same
+ratio of the anchor at the variant the same source lists the anchor at, so the anchor stays at its value on every board
+(value x r_model / r_anchor, both per source). The Alignment Index names no variant and is not corrected. The tier is read as listed (it is the arena.ai Overall
 position), not corrected.
 
 One conversion for every capability source, relative to the anchor model (ANCHOR, Opus 5.5) rather than to the board's
@@ -55,8 +57,11 @@ sits at ANCHOR_VALUE (0.8) on every component it is measured on, so 1.0 is 1.25 
 - arena.ai Alignment: the index is a 0-100 score (s = index / 100); its failure rates are percentages (s = 1 - rate).
 - METR: s is the p50 time horizon in minutes.
 - A board that does not list the anchor is bridged: its reference success is the median, over at least MIN_BRIDGE of
-  our models it lists, of s x ANCHOR_VALUE / the model's anchored value on the same component (else the same axis) from
-  boards that do list the anchor. With fewer shared models the board cannot be anchored and is recorded as missing.
+  our models it lists, of s x ANCHOR_VALUE / the model's anchored value on the same component (type) from boards that do
+  list the anchor. Never the same axis: a board of another type is another construct. With fewer shared models on the
+  same component the board cannot be anchored and is recorded as missing, with the reason.
+- A reference success above 1 is impossible (a success rate is at most 1): the board is rejected, recorded as missing
+  with the reference it would have had, and never used.
   A bridged board's reference moves only when a model listed both on it and on an anchored mate is added (it joins
   the median); a model new to the anchored boards alone moves nothing.
 
@@ -86,8 +91,7 @@ import tiers
 ANCHOR = 'claude-opus-5-5'      # every capability value is relative to this model (the router's fit targets too)
 ANCHOR_VALUE = 0.8              # the anchor's value on each component; 1.0 = 1.25 x the anchor
 MIN_BRIDGE = 3                  # shared models needed to bridge a board that does not list the anchor
-NET_BOUND = {'arena.agent_code': 100.0, 'arena.agent_work_tools': 100.0, 'arena.agent_work_gui': 100.0,
-             'aa.omniscience_index': 100.0}
+NET_BOUND = {'arena.agent_code': 100.0, 'arena.agent_work_tools': 100.0, 'aa.omniscience_index': 100.0}
 OUT = sources.REPO / 'references' / 'public-measurements.json'
 SCHEMA = 'agent-compass.public-measurements/1'
 
@@ -121,7 +125,6 @@ CAPABILITY_SOURCES = {
     'aa.mmmu_pro': ('vision_tools', 'vision', 'fraction'),
     'lmarena.webdev': ('vision_tools', 'gui_design', 'elo'),
     'osworld.verified': ('vision_tools', 'gui', 'fraction'),
-    'arena.agent_work_gui': ('vision_tools', 'gui', 'net'),
     'aa.tau2_bench': ('vision_tools', 'tools', 'fraction'),
     'aa.automationbench': ('vision_tools', 'tools', 'fraction'),
     'arena.agent_work_tools': ('vision_tools', 'tools', 'net'),
@@ -132,8 +135,6 @@ ARENA_CAPTURES = {
                          'arena.ai Agent / Code (Best Coding Agents), Net Improvement %, best listed variant'),
     'arena.agent_work_tools': ('agent', 'Work', lambda r: (r.get('net_improvement') or [None])[0],
                                'arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant'),
-    'arena.agent_work_gui': ('agent', 'Work', lambda r: (r.get('net_improvement') or [None])[0],
-                             'arena.ai Agent / Work (Best Agents for Work), Net Improvement %, best listed variant'),
     'arena.agent_alignment': ('alignment', None, lambda r: r['alignment_index'][0] / 100.0,
                               'arena.ai Agent Alignment Index (Best Aligned Agents), index / 100'),
     'arena.agent_alignment_false_attribution': ('alignment', None, lambda r: 1.0 - r['false_attribution'][0] / 100.0,
@@ -254,32 +255,38 @@ def anchor_boards(raw, kinds, comps, anchor=ANCHOR):
         kind, bound = kinds[src]
         if anchor in board:
             ref = board[anchor] if kind == 'elo' else success(kind, board[anchor], bound)
+            if kind != 'elo' and ref > 1.0:
+                failed[src] = f'reference success {ref:.4f} > 1 is impossible ({anchor} listed); rejected, not used'
+                continue
             refs[src] = {'reference': round(ref, 4), 'how': f'{anchor} listed'}
             values[src] = {m: anchored_value(kind, v, ref, bound) for m, v in board.items()}
     anchored = dict(values)
     for src, board in raw.items():
-        if src in anchored:
+        if src in anchored or src in failed:       # a listed anchor whose reference is impossible is not bridged
             continue
         kind, bound = kinds[src]
         axis, comp = comps[src]
         if kind == 'elo':
             failed[src] = f'{anchor} is not listed, and an Elo board is not bridged'
             continue
-        for level, mates in (('component', [o for o in anchored if comps[o] == (axis, comp)]),
-                             ('axis', [o for o in anchored if comps[o][0] == axis])):
-            def mate(m, mates=mates):
-                vals = [anchored[o][m] for o in mates if anchored[o].get(m, 0) > 0]
-                return sum(vals) / len(vals) if vals else None
-            shared = [m for m in board if mate(m) and success(kind, board[m], bound) > 0]
-            if len(shared) >= MIN_BRIDGE:
-                break
+        # The same component (type) only: a board of another type of the same axis measures another construct.
+        mates = [o for o in anchored if comps[o] == (axis, comp)]
+
+        def mate(m):
+            vals = [anchored[o][m] for o in mates if anchored[o].get(m, 0) > 0]
+            return sum(vals) / len(vals) if vals else None
+        shared = [m for m in board if mate(m) and success(kind, board[m], bound) > 0]
         if len(shared) < MIN_BRIDGE:
             failed[src] = (f'{anchor} is not listed, and only {len(shared)} listed models have an anchored value on the '
-                           f'same {level} (a bridge needs {MIN_BRIDGE})')
+                           f'same component {axis}.{comp} (a bridge needs {MIN_BRIDGE})')
             continue
         ref = float(np.median([success(kind, board[m], bound) * ANCHOR_VALUE / mate(m) for m in shared]))
+        if ref > 1.0:
+            failed[src] = (f'bridged reference success {ref:.4f} > 1 is impossible (through {", ".join(sorted(mates))} on '
+                           f'{len(shared)} shared models); rejected, not used')
+            continue
         refs[src] = {'reference': round(ref, 4), 'shared': sorted(shared),
-                     'how': f'bridged through {", ".join(sorted(mates))} on {len(shared)} shared models (same {level})'}
+                     'how': f'bridged through {", ".join(sorted(mates))} on {len(shared)} shared models (same component)'}
         values[src] = {m: anchored_value(kind, v, ref, bound) for m, v in board.items()}
     return values, refs, failed
 
@@ -438,17 +445,21 @@ class Builder:
             axis, comp, _ = CAPABILITY_SOURCES[src]
             method, listed = boards[src][2], boards[src][4]
             self.source_rows[src]['anchor'] = refs[src]
+            anchor_name = names[src].get(ANCHOR)
             for model, value in board_values.items():
                 extra = {}
-                ratio = self.high_ratio.get(model) if src.startswith(HIGH_CORRECTED) else None
+                name = names[src][model]
+                ratio = (self.source_high_ratio(model, listed.get(name, name), listed.get(anchor_name, anchor_name)
+                                                if anchor_name else None)
+                         if src.startswith(HIGH_CORRECTED) else None)
                 if ratio is not None and ratio != 1.0:
-                    # LMArena and the arena.ai Agent tables list the best variant; read it at High (efforts.high_ratio).
+                    # This source lists the best variant; read it at High (efforts.high_ratio, per source, module docstring).
                     extra = {'best_variant_value': value, 'high_ratio': ratio}
                     value = round(min(1.0, value * ratio), 4)
-                name = names[src][model]
                 self.names[model][src] = name
                 self.add(model, axis, src, value, f'{method}; {ANCHOR_VALUE:g} x s / s_anchor ({refs[src]["how"]}), capped at 1'
-                         + ('; x High/best-variant AA index ratio' if extra else ''), component=comp,
+                         + ("; x the High/listed-variant AA index ratio of this source's listing over the anchor's"
+                            if extra else ''), component=comp,
                          listed_as=listed.get(name, name), raw=round(raw[src][model], 4), reference=refs[src]['reference'], **extra)
                 if src in IMAGE_BENCHMARKS:
                     self.add(model, 'image_input', src, True, f'{method}: measured on image/screenshot input',
@@ -496,11 +507,21 @@ class Builder:
                          f'OpenRouter architecture.input_modalities ({", ".join(mods)})',
                          listed_as=name, input_modalities=mods)
 
+    def source_high_ratio(self, model, listed, anchor_listed):
+        """r_model / r_anchor of one source (module docstring), each the AA index at High over the index at the variant
+        that source lists it at. None when the model's own ratio is unknown (no AA effort listing or no variant tag): the
+        value is then left as listed. A board without the anchor, or listing it with no variant, has r_anchor 1."""
+        own = efforts.high_ratio(self.aa_efforts.get(model) or {}, listed)
+        if own is None:
+            return None
+        anchor = efforts.high_ratio(self.aa_efforts.get(ANCHOR) or {}, anchor_listed) if anchor_listed else None
+        return round(own / (anchor or 1.0), 4)
+
     # --- tier -------------------------------------------------------------------------------------
     def tier(self):
-        """The tier entries (module docstring) and the High ratio of each model's arena listing."""
+        """The tier entries (module docstring), and each model's AA index by effort for the per-source High correction."""
         fitter = tiers.Fitter(self.target)
-        self.high_ratio = {}
+        self.aa_efforts = {}
         overall = fitter.overall
         as_of = max(r[4] for r in overall.values())
         self.register('user.anchor_tier', 'text_style_control.parquet', tiers.ANCHOR_TIER_DATE,
@@ -515,7 +536,6 @@ class Builder:
         arena, aa = Matcher(overall), Matcher(fitter.aa)
         aa_by_effort = sources.artificial_analysis(self.target)
         match_aa = Matcher(aa_by_effort)
-        anchor_ratio = None
         for model in self.models:
             extra_names = EXTRA_NAMES.get(model) or {}
             names = tiers.NAMES.get(model) or {}
@@ -529,14 +549,6 @@ class Builder:
                     t = fitter.arena_overall_tier(found)
                     self.add(model, 'tier', 'tier.arena_overall', round(t, 3), tiers.basis_arena(row, t), listed_as=row[3],
                              arena_value=round(row[0], 1))
-                # arena.ai lists the best variant; the AA index at High over the index at that variant moves it to High.
-                aa_explicit = extra_names.get('aa') or names.get('aa') or tiers.ANCHORS.get(model)
-                aa_name = match_aa.find(model, aa_explicit) or (match_aa.find(model) if aa_explicit else None)
-                ratio = efforts.high_ratio(aa_by_effort.get(aa_name) or {}, row[3]) if aa_name else None
-                if model == ANCHOR:
-                    anchor_ratio = ratio
-                if ratio is not None:
-                    self.high_ratio[model] = ratio
             else:
                 explicit = extra_names.get('aa') or names.get('aa')
                 aa_found = aa.find(model, explicit) or (aa.find(model) if explicit else None)
@@ -546,9 +558,11 @@ class Builder:
                                  f"{r['board']} {r['value']:g} interpolated onto the tier scale between {r['neighbours']['below']['models']} "
                                  f"and {r['neighbours']['above']['models']} of the {r['n']} models listed on both it and arena.ai Overall",
                                  listed_as=r['listed_as'], board_value=r['value'], neighbours=r['neighbours'], n=r['n'])
-        # Relative to the anchor's own correction, so the anchor model stays at its value on every component.
-        ref = anchor_ratio or 1.0
-        self.high_ratio = {m: round(r / ref, 4) for m, r in self.high_ratio.items()}
+            # The AA index by effort, for the High correction of each source at the variant that source lists.
+            aa_explicit = extra_names.get('aa') or names.get('aa') or tiers.ANCHORS.get(model)
+            aa_name = match_aa.find(model, aa_explicit) or (match_aa.find(model) if aa_explicit else None)
+            if aa_name and aa_by_effort.get(aa_name):
+                self.aa_efforts[model] = aa_by_effort[aa_name]
 
     # --- price and usd per hour ------------------------------------------------------------------
     def usd(self):

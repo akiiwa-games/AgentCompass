@@ -47,13 +47,16 @@ def rebuild(target, now=None, meas_out=measurements.OUT, scores_out=five_axis.OU
 def staleness(doc):
     """(rows, worst status): one row per source and per capacity window left without a value."""
     rows = []
+    stale_capability = {e['source']: e for e in doc.get('source_errors') or () if e.get('reason') == 'stale_source'}
     for src, row in sorted((doc.get('source_ages') or {}).items()):
         if row.get('missing'):
             status = 'unused' if str(row.get('reason') or '').startswith('not used') else 'missing'
         else:
             status = 'stale' if row.get('stale') else 'ok'
         rows.append({'what': src, 'kind': row.get('kind'), 'as_of': row.get('as_of'), 'age_days': row.get('age_days'),
-                     'status': status, 'note': row.get('reason') or row.get('as_of_kind') or ''})
+                     'status': status, 'note': row.get('reason') or (
+                         f"stale capability source ({stale_capability[src]['component']}): "
+                         f"{stale_capability[src]['effect']}" if src in stale_capability else row.get('as_of_kind') or '')})
     for e in doc.get('capacity_errors') or ():
         if e.get('level') != 'red':
             continue

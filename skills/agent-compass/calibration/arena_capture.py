@@ -14,7 +14,7 @@ board), keeps the date the page shows (`as_of`), its session or vote count and e
 calibration data directory with a fetch-manifest row (`transcribed_by`, `captured_at`, sha256). measurements.py reads them:
 
 - arena.agent_code (Agent / Code, Net Improvement) -> global_rigor.agentic
-- arena.agent_work_tools and arena.agent_work_gui (Agent / Work, Net Improvement) -> vision_tools.tools and .gui
+- arena.agent_work_tools (Agent / Work, Net Improvement) -> vision_tools.tools (the board has no GUI column, so one type)
 - arena.agent_alignment (Alignment Index) -> module_precision.alignment; its two fabrication rates go to global_rigor:
   false attribution (misreporting what the user said) -> anti_hallucination, deceptive completion (reporting unfinished
   work as done) -> long_horizon

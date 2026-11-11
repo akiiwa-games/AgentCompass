@@ -738,12 +738,67 @@ class AnchorRelativeTests(unittest.TestCase):
         raw = {'arena.text': {anchor: 1500.0, 'b': 1400.0, 'c': 1450.0, 'd': 1300.0},
                'aa.frac': {anchor: 0.70, 'b': 0.50, 'c': 0.60, 'd': 0.40},
                'aa.net': {anchor: 30.0, 'b': -10.0, 'c': 10.0, 'd': 0.0},
-               'vals.frac': {'b': 0.45, 'c': 0.55, 'd': 0.35, 'e': 0.25}}      # no anchor: bridged on b, c, d
+               'vals.frac': {'b': 0.45, 'c': 0.55, 'd': 0.35, 'e': 0.25}}      # no anchor: bridged on b, c, d of aa.frac
         kinds = {'arena.text': ('elo', 1.0), 'aa.frac': ('fraction', 1.0), 'aa.net': ('net', 100.0),
                  'vals.frac': ('fraction', 1.0)}
         comps = {'arena.text': ('global_rigor', 'reasoning'), 'aa.frac': ('global_rigor', 'long_context'),
-                 'aa.net': ('global_rigor', 'anti_hallucination'), 'vals.frac': ('global_rigor', 'long_horizon')}
+                 'aa.net': ('global_rigor', 'anti_hallucination'), 'vals.frac': ('global_rigor', 'long_context')}
         return raw, kinds, comps
+
+    def test_a_bridge_never_crosses_to_another_type_of_the_same_axis(self):
+        """Advisor taxonomy report, bug 1: a board is bridged only through boards of its own component."""
+        raw, kinds, comps = self.boards()
+        comps['vals.frac'] = ('global_rigor', 'long_horizon')       # the same axis, but no anchored long_horizon board
+        values, refs, failed = self.ms.anchor_boards(raw, kinds, comps)
+        self.assertNotIn('vals.frac', values)
+        self.assertNotIn('vals.frac', refs)
+        self.assertIn('same component global_rigor.long_horizon', failed['vals.frac'])
+
+    def test_a_reference_success_above_one_is_rejected_listed_or_bridged(self):
+        """Advisor taxonomy report, bug 1: a success rate is at most 1; a board whose reference would exceed it is
+        recorded as failed (a missing source) and none of its values is used."""
+        anchor = self.ms.ANCHOR
+        raw = {'aa.frac': {anchor: 0.30, 'b': 0.20, 'c': 0.25, 'd': 0.15},
+               'vals.frac': {'b': 0.90, 'c': 0.95, 'd': 0.80},     # bridged: median(1.35, 1.14, 1.6) = 1.35 > 1
+               'aa.net': {anchor: 150.0, 'b': 10.0, 'c': 20.0}}    # listed: (150 + 100) / 200 = 1.25 > 1
+        kinds = {'aa.frac': ('fraction', 1.0), 'vals.frac': ('fraction', 1.0), 'aa.net': ('net', 100.0)}
+        comps = {'aa.frac': ('module_precision', 'coding'), 'vals.frac': ('module_precision', 'coding'),
+                 'aa.net': ('global_rigor', 'anti_hallucination')}
+        values, refs, failed = self.ms.anchor_boards(raw, kinds, comps)
+        self.assertEqual(set(values), {'aa.frac'})
+        self.assertIn('> 1 is impossible', failed['vals.frac'])
+        self.assertIn('> 1 is impossible', failed['aa.net'])
+        self.assertTrue(all(r['reference'] <= 1 for r in refs.values()))
+
+    def test_the_shipped_measurements_have_no_reference_above_one(self):
+        meas = json.loads((Path(__file__).resolve().parents[1] / 'references' / 'public-measurements.json').read_text(encoding='utf-8'))
+        for src, row in meas['sources'].items():
+            if (row.get('anchor') or {}).get('reference') is not None and self.ms.CAPABILITY_SOURCES.get(src, (0, 0, 'elo'))[2] != 'elo':
+                self.assertLessEqual(row['anchor']['reference'], 1.0, src)
+
+    def test_the_high_correction_reads_the_variant_each_source_lists(self):
+        """Advisor taxonomy report, bug 3: the factor is r_model / r_anchor of the same source, each the AA index at High
+        over the index at the variant that source lists (one board lists Opus at Max, another at High)."""
+        anchor = self.ms.ANCHOR
+        b = self.ms.Builder.__new__(self.ms.Builder)
+        b.aa_efforts = {anchor: {'high': 52.0, 'max': 59.0}, 'sonnet': {'high': 42.0, 'max': 55.0}}
+        self.assertEqual(b.source_high_ratio('sonnet', 'Sonnet (Max)', f'{anchor} (Max)'),
+                         round((42 / 55) / (52 / 59), 4))
+        self.assertEqual(b.source_high_ratio('sonnet', 'Sonnet (Max)', f'{anchor} (High)'), round(42 / 55, 4))
+        self.assertEqual(b.source_high_ratio('sonnet', 'Sonnet (Max)', None), round(42 / 55, 4))   # anchor not listed
+        self.assertEqual(b.source_high_ratio(anchor, f'{anchor} (Max)', f'{anchor} (Max)'), 1.0)
+        self.assertIsNone(b.source_high_ratio('sonnet', 'Sonnet', f'{anchor} (Max)'))              # no variant tag
+
+    def test_a_stale_capability_source_is_a_surfaced_yellow_error(self):
+        """Advisor taxonomy report, bug 4: staleness is checked for every capability source, not only capacity."""
+        src = next(iter(self.ms.CAPABILITY_SOURCES))
+        ages = {src: {'as_of': '2026-08-01', 'age_days': 100, 'stale': True},
+                'aa.price': {'as_of': '2026-08-01', 'age_days': 100, 'stale': True},           # not a capability source
+                'metr.x': {'missing': True, 'reason': 'not used'}}
+        errors = self.fa.source_errors(ages)
+        self.assertEqual([(e['source'], e['level'], e['reason'], e['field']) for e in errors],
+                         [(src, 'yellow', 'stale_source', 'capability')])
+        self.assertEqual(errors[0]['threshold_days'], self.fa.STALE_DAYS)
 
     def test_a_new_top_model_moves_no_value_and_no_target(self):
         raw, kinds, comps = self.boards()
@@ -1589,8 +1644,9 @@ class ArenaCaptureTests(unittest.TestCase):
     def test_the_users_mapping_of_the_agent_boards_onto_the_axes(self):
         cap = self.ms.CAPABILITY_SOURCES
         self.assertEqual(cap['arena.agent_code'][:2], ('global_rigor', 'agentic'))
-        self.assertEqual({cap[s][:2] for s in ('arena.agent_work_tools', 'arena.agent_work_gui')},
-                         {('vision_tools', 'tools'), ('vision_tools', 'gui')})
+        # Agent / Work has one ability column (Net Improvement) and no GUI column: it is one type, tools.
+        self.assertEqual(cap['arena.agent_work_tools'][:2], ('vision_tools', 'tools'))
+        self.assertNotIn('arena.agent_work_gui', cap)
         self.assertEqual(cap['arena.agent_alignment'][:2], ('module_precision', 'alignment'))
         self.assertEqual(cap['arena.agent_alignment_false_attribution'][:2], ('global_rigor', 'anti_hallucination'))
         self.assertEqual(cap['arena.agent_alignment_deceptive_completion'][:2], ('global_rigor', 'long_horizon'))

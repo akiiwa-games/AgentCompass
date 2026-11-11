@@ -695,6 +695,17 @@ def source_ages(meas, now=None):
     return out
 
 
+def source_errors(ages):
+    """Yellow `stale_source` errors for every capability source (measurements.CAPABILITY_SOURCES) older than STALE_DAYS,
+    the same shape as the capacity ones: a stale benchmark still feeds the category scores, so it is surfaced, not only
+    a stale capacity reading. A source not anchored is already a missing source (`source_ages`)."""
+    return [{'field': 'capability', 'source': src, 'level': 'yellow', 'reason': 'stale_source',
+             'component': '.'.join(measurements.CAPABILITY_SOURCES[src][:2]), 'age_days': row['age_days'],
+             'as_of': row['as_of'], 'threshold_days': STALE_DAYS, 'effect': 'still used; refresh the source'}
+            for src, row in sorted(ages.items())
+            if src in measurements.CAPABILITY_SOURCES and not row.get('missing') and row.get('stale')]
+
+
 # --- usd per worker-hour ------------------------------------------------------------------------------------------
 
 
@@ -797,6 +808,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', overrides=(), now=None)
     usd = usd_community_mix(scorer, rows, meas)
     convert_usd(usd, rows, scorer, meas, acc, tier)
     caps, cap_errors = capacity(meas, plans, usd, now)
+    ages = source_ages(meas, now)
     index = {m: ((scorer.trusted(r['fields'].get('intelligence_index')) or [{}])[0]).get('value') for m, r in rows.items()}
     dur, dur_fit, dur_rejected = durations(scorer, rows, acc, index, series.boards(meas), tier)
     models, errors = {}, []
@@ -863,7 +875,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', overrides=(), now=None)
                             for k in ('anchor', 'arena_overall', 'other_overall', 'sibling', 'none')},
            'capacity': caps, 'capacity_stale_days': STALE_DAYS,
            'capacity_not_found': (meas.get('capacity') or {}).get('not_found') or {},
-           'capacity_errors': cap_errors, 'source_ages': source_ages(meas, now),
+           'capacity_errors': cap_errors, 'source_ages': ages, 'source_errors': source_errors(ages),
            'usd_checks': [{**h, 'usd_per_hour': (usd.get(h['model']) or {}).get('value'),
                            'community_over_usd': (round(h['value'] / usd[h['model']]['value'], 2)
                                                     if (usd.get(h['model']) or {}).get('value') else None)}
