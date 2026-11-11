@@ -152,6 +152,7 @@ EN = {
     '就绪': 'Ready',
     '套餐失效，已排除派发：{0}': 'Plan inactive, excluded from dispatch: {0}',
     '登录被拒绝，已排除派发：{0}': 'Sign-in rejected, excluded from dispatch: {0}',
+    '账号来回切换，已排除派发：{0}（关闭仍登录另一个 Google 账号的 agy 会话，再用目标账号登录一次）': 'Account flapping, excluded from dispatch: {0} (close the agy sessions still signed in to the other Google account, then sign in once with the one you want)',
     '读数失败，已排除派发：{0}（上次成功 {1}）': 'Usage reading failing, excluded from dispatch: {0} (last good {1})',
     '读数失败：{0}（上次成功 {1}）': 'Usage reading failing: {0} (last good {1})',
     '从未': 'never',

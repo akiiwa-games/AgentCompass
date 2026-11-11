@@ -65,7 +65,8 @@ class AccountStateCardTests(unittest.TestCase):
                 ('usage_failing', '读数失败，已排除派发：read_failed（上次成功 11-07 09:00）', 'Codex · 读数失败'),
                 ('usage_failing', 'Usage reading failing, excluded from dispatch: read_failed (last good never)', 'Codex · Usage reading failing'),
                 ('plan_inactive', '套餐失效，已排除派发：plan free', 'Codex · 套餐失效'),
-                ('auth_failed', '登录被拒绝，已排除派发：x', 'Codex · 登录被拒绝')):
+                ('auth_failed', '登录被拒绝，已排除派发：x', 'Codex · 登录被拒绝'),
+                ('agy_account_flapping', '账号来回切换，已排除派发：x', 'Codex · 账号来回切换')):
             with self.subTest(badge=badge):
                 card = {'label': 'Codex', 'status': status, 'badge': badge, 'kind': 'warn'}
                 self.assertEqual(router_window.card_title(card), title)

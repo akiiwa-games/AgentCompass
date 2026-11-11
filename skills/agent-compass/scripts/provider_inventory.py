@@ -925,7 +925,8 @@ def _discover(home=None, environ=None, now=None):
     # agy answers /usage only for a signed-in account, so a quota reading is the sign-in proof.
     agy_read = bool(array(agy.get('windows')))
     # /usage carries no tier; the tier comes from Google with agy's own sign-in (antigravity_plan), which is also a sign-in proof.
-    agy_tier = antigravity_plan.cached_plan(state_dir, now)
+    agy_state = antigravity_plan.cached_state(state_dir, now)
+    agy_tier, agy_flapping = agy_state['plan'], agy_state['flapping']
     agy_tier_read_at = antigravity_plan.read_cache(state_dir).get('read_at') if agy_tier else None
     result['accounts']['antigravity'] = {'family': 'antigravity', 'provider': 'antigravity-resilient',
         'home': str(home / '.gemini'), 'cli_installed': agy_cli,
@@ -936,6 +937,15 @@ def _discover(home=None, environ=None, now=None):
         **({'plan_read_at': agy.get('fetched_at') if agy.get('plan_label') else agy_tier_read_at}
            if (agy.get('plan_label') or agy_tier_read_at) else {}),
         'billing': 'subscription'}
+    if agy_present and agy_flapping:
+        # Two Google accounts take turns in agy's one keyring slot: no reading says which account a tier or a quota
+        # belongs to, so the account is neither ready nor inactive (antigravity_plan module docstring).
+        result['accounts']['antigravity'].update(
+            status=account_state.AGY_ACCOUNT_FLAPPING,
+            reason=(f"{agy_flapping['accounts']} Google accounts in agy's keyring slot within "
+                    f"{agy_flapping['window_minutes']} min, since {agy_flapping['since']}"),
+            plan_source=None, plan=None)
+        result['accounts']['antigravity'].pop('plan_read_at', None)
     opencode = result['launchers']['opencode']
     installed = bool(_which('opencode', environ.get('PATH')))
     if opencode['status'] == 'ready' and not installed:

@@ -468,6 +468,8 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
         return _tr('套餐失效，已排除派发：{0}').format(reason), 'warn'
     if status == 'auth_failed':
         return _tr('登录被拒绝，已排除派发：{0}').format(row.get('reason') or status), 'warn'
+    if status == 'agy_account_flapping':
+        return _tr('账号来回切换，已排除派发：{0}（关闭仍登录另一个 Google 账号的 agy 会话，再用目标账号登录一次）').format(row.get('reason') or status), 'warn'
     if status == 'usage_failing':
         last = read_time_text(row.get('last_success_at'))
         text = _tr('读数失败，已排除派发：{0}（上次成功 {1}）') if row.get('usage_excluded') else _tr('读数失败：{0}（上次成功 {1}）')

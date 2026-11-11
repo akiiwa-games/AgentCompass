@@ -19,6 +19,11 @@ from pathlib import Path
 import re
 
 READY, PLAN_INACTIVE, USAGE_FAILING, AUTH_FAILED = 'ready', 'plan_inactive', 'usage_failing', 'auth_failed'
+# Antigravity only: two Google accounts take turns in agy's single keyring slot (antigravity_plan), so no reading can be
+# attributed to one account. Not dispatchable, like every state but ready and usage_failing in grace.
+AGY_ACCOUNT_FLAPPING = 'agy_account_flapping'
+AGY_FLAPPING_FIX = ("close every agy session still signed in to the other Google account (each refreshes its own token "
+                    "into the shared keyring slot), then sign in to agy once with the account you want")
 DEFAULT_EXCLUDE_AFTER_HOURS = 6.0
 LATCH_RETRY_HOURS = 6.0
 EXCLUDE_AFTER_ENV = 'AGENTCOMPASS_USAGE_FAILING_EXCLUDE_HOURS'
@@ -26,7 +31,7 @@ EXCLUDE_AFTER_ENV = 'AGENTCOMPASS_USAGE_FAILING_EXCLUDE_HOURS'
 # error means nothing is reading the account any more.
 READING_TOO_OLD_SECONDS = 2 * 3600
 # States an account list must keep showing even when the account cannot take work.
-LISTED_STATES = (READY, PLAN_INACTIVE, USAGE_FAILING, AUTH_FAILED)
+LISTED_STATES = (READY, PLAN_INACTIVE, USAGE_FAILING, AUTH_FAILED, AGY_ACCOUNT_FLAPPING)
 # Plan names that mean the subscription gives no quota, whichever source reported them.
 INACTIVE_PLANS = frozenset(('free', 'free tier', 'expired', 'cancelled', 'canceled', 'inactive', 'lapsed', 'none',
                             'past due', 'payment failed', 'unpaid'))
@@ -145,6 +150,8 @@ def unavailable_text(row):
                 "run `agentcompass usage` or fix the account")
     if status == AUTH_FAILED:
         return f"credentials rejected ({row.get('reason')}); sign in again in the account's own CLI"
+    if status == AGY_ACCOUNT_FLAPPING:
+        return f"keyring account flapping ({row.get('reason')}); {AGY_FLAPPING_FIX}"
     return None
 
 
@@ -161,6 +168,9 @@ def warning(name, row):
         lines.append(f"{name}: plan_inactive ({row.get('reason')}); excluded from dispatch")
     elif status == AUTH_FAILED:
         lines.append(f"{name}: auth_failed ({row.get('reason')}); excluded from dispatch")
+    elif status == AGY_ACCOUNT_FLAPPING:
+        lines.append(f"{name}: agy_account_flapping ({row.get('reason')}); excluded from dispatch until one account "
+                     f"stays signed in. Fix: {AGY_FLAPPING_FIX}")
     return lines
 
 

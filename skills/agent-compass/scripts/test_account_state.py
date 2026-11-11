@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import account_state
 import allocator
+import antigravity_plan
 import plan_state_residue
 import provider_inventory as inventory
 import route_judge
@@ -813,6 +814,42 @@ class TemplateTests(Machine):
                 self.assertTrue(account_state.plan_is_inactive('antigravity', label))
         self.assertFalse(account_state.plan_is_inactive('opencode', 'free'))
         self.assertFalse(account_state.plan_is_inactive('codex', 'plus'))
+
+    def agy_reading(self, email, tier_id, at):
+        """One antigravity_plan refresh at `at` with `email` in agy's keyring slot answering `tier_id`."""
+        token = {'access_token': 'fake-agy', 'id_token': jwt({'email': email}),
+                 'expiry': (datetime.now(timezone.utc) + timedelta(minutes=40)).isoformat()}
+        names = {'free-tier': 'Antigravity', 'g1-ultra-tier': 'Google AI Ultra'}
+        antigravity_plan.refresh(self.state, read_blob=lambda: json.dumps({'token': token}),
+                                 fetch=lambda *_: {'paidTier': {'id': tier_id, 'name': names[tier_id]}}, now=at)
+
+    def agy_row(self):
+        with patch.object(inventory, '_which', side_effect=lambda cmd, *_: 'agy' if cmd == 'agy' else None):
+            return inventory.discover(now=self.now)['accounts']['antigravity']
+
+    def test_a_flapping_agy_keyring_is_its_own_state_never_plan_inactive(self):
+        # Round 059: two Google accounts write agy's one keyring slot in turn (free at :38, Ultra at :50).
+        self.agy_reading('free@example.com', 'free-tier', self.now - timedelta(minutes=24))
+        self.agy_reading('paid@example.com', 'g1-ultra-tier', self.now - timedelta(minutes=12))
+        self.agy_reading('free@example.com', 'free-tier', self.now)
+        row = self.agy_row()
+        self.assertEqual(row['status'], account_state.AGY_ACCOUNT_FLAPPING)
+        self.assertIn('2 Google accounts', row['reason'])
+        self.assertIsNone(row['plan'])
+        self.assertFalse(account_state.dispatchable(row))
+        self.assertIn(row['status'], account_state.LISTED_STATES)
+        lines = account_state.warning('antigravity', row)
+        self.assertEqual(len(lines), 1)
+        self.assertIn(account_state.AGY_FLAPPING_FIX, lines[0])
+        self.assertIn(account_state.AGY_FLAPPING_FIX, account_state.unavailable_text(row))
+
+    def test_one_free_agy_reading_is_not_a_lapse_until_the_same_account_confirms_it(self):
+        self.agy_reading('only@example.com', 'free-tier', self.now - timedelta(minutes=antigravity_plan.CONFIRM_MINUTES))
+        row = self.agy_row()
+        self.assertEqual((row['status'], row['plan']), (account_state.READY, None))
+        self.agy_reading('only@example.com', 'free-tier', self.now)
+        row = self.agy_row()
+        self.assertEqual((row['status'], row['reason']), (account_state.PLAN_INACTIVE, 'plan Free'))
 
     def test_an_unknown_antigravity_tier_is_not_ultra(self):
         accounts = allocator.load_accounts()
