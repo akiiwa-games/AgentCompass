@@ -2055,9 +2055,12 @@ def named_effort_review(allocator, accounts, pin, task, usage, now, records):
     return (plan.get('selected_bundle') or {}).get('effort'), [slow] if slow else []
 
 
-def record_constraint(args, task=None):
+def record_constraint(args, task=None, classified=None):
     """Log a route the caller is forcing. No judge is called; the allocator is run on the same task so the
-    ledger shows whether the router would have chosen it and, if not, what the override cost."""
+    ledger shows whether the router would have chosen it and, if not, what the override cost.
+
+    `classified` is classify_pinned's answer for a pinned roll: the allocator then plans the classified task, the
+    pinned bundle carries that plan's price, and the launch is reserved from the same profile."""
     basis = (args.basis or '').strip()
     if not basis or not args.account or not args.provider or not args.model:
         raise ValueError('record requires --basis, --provider, --account and --model.')
@@ -2162,6 +2165,10 @@ def record_constraint(args, task=None):
                                       c_model, allocator.model_spec(accounts, pin.model))
     warnings = []
     effort = pin.effort or discovered.get('effort')
+    reviewed_task = task
+    if classified:
+        # What is planned and reserved; the decision stays bound to the caller's task.
+        task = {**classified['task'], **({'parent_agent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {})}
     profile = task.get('profile') if isinstance(task.get('profile'), dict) else None
     realtime = bool((task.get('needs') or {}).get('realtime_loop') or task.get('realtime_loop') or (profile or {}).get('realtime_loop'))
     records = None
@@ -2199,6 +2206,14 @@ def record_constraint(args, task=None):
                     "that ends on the model's reply lifts the hold (a cancel or stop does not)", *warnings]
     if warnings:
         result['warnings'] = warnings
+    if classified:
+        result['_allocation_task'] = task
+        if classified.get('scorer') is not None:
+            result.update(scorer=classified['scorer'], task_profile=task['profile'])
+        if classified.get('hours_estimate'):
+            result['hours_estimate'] = classified['hours_estimate']
+        if classified.get('alerts'):
+            result['alerts'] = list(classified['alerts'])
     if fast_requested:
         result['_allocation_task'] = {**(task or {}), 'force_fast': True}
     # Account loading may enroll a newly discovered account; check the resulting policy.
@@ -2229,7 +2244,9 @@ def record_constraint(args, task=None):
                            'router_reason': plan['decision'].get('reason'),
                            'override_cost': None if row is None else {'excluded': row['excluded'], 'score': row['score'],
                                                                       'notes': row['notes']}})
-    return finalize(result, None, 'auto', started, task)
+            if classified and row is not None and isinstance(row.get('expected_usd'), (int, float)):
+                result['expected_usd'] = row['expected_usd']    # the pinned bundle's own price, as the launch reserves it
+    return finalize(result, None, 'auto', started, reviewed_task if classified else task)
 
 
 def _with_effort(pin, effort):
@@ -2503,6 +2520,113 @@ def scorer_unavailable_result(task, scorer, started):
     return result
 
 
+def classify_task(task, needs, allocator, capabilities, policy, timeout, use_model=True):
+    """System-One classification of one task, the same for a planned roll and a pinned one.
+
+    Returns (profile, task, needs, scorer, hours_estimate, alerts). profile is None when no classifier answered;
+    task is then unchanged. hours_estimate is the classifier's own expected_hours when the caller gave no --hours,
+    else None: nothing here invents hours."""
+    alerts, hours_estimate = [], None
+    profile, scorer = score_task(task, allocator, capabilities, timeout, use_model=use_model)
+    if profile is None:
+        return None, task, needs, scorer, None, alerts
+    classified_kind = allocator.profile_kind(profile, policy)
+    derived = allocator.profile_difficulty(profile, policy)
+    order = list(allocator.DIFFICULTY_ORDER)
+    if task.get('difficulty') in order and order.index(task['difficulty']) > order.index(derived):
+        alerts.append({
+            'code': 'difficulty_above_profile', 'severity': 'info', 'account': None,
+            'message': f"The caller's difficulty {task['difficulty']!r} is above the classifier profile's {derived!r} "
+                       f"(reasoning_depth {profile['reasoning_depth']}); the classifier's {derived!r} was used. "
+                       'Do not hand-fill difficulty or work_kind in task.json.'})
+    if scorer.get('source') == 'system_one':
+        if task.get('work_kind') or task.get('difficulty'):
+            alerts.append({
+                'code': 'caller_classification_ignored', 'severity': 'info', 'account': None,
+                'message': 'Caller-supplied work_kind/difficulty was ignored; the System-One classifier '
+                           f'assigned work_kind={classified_kind!r}, difficulty={derived!r}.'})
+        task = {k: v for k, v in task.items() if k not in ('work_kind', 'difficulty')}
+        task['work_kind'] = classified_kind
+        # Leave difficulty off the task. normalize_task then labels the source `profile`
+        # instead of treating the classifier's copy as a caller value. The strip above
+        # still lets the classifier win over a caller-supplied difficulty.
+    if profile['local_only'] and needs.get('local_only') is None:
+        # Trust the classifier; explicit caller needs still take precedence.
+        needs = {**needs, 'local_only': True,
+                 'local_only_reason': profile.get('reason') or 'Task profile requires execution on this machine.'}
+        task = {**task, 'needs': needs}
+        alerts.append({
+            'code': 'profile_local_only_applied', 'severity': 'info', 'account': None,
+            'reason': needs['local_only_reason'],
+            'message': 'The task profile requires local execution: ' + needs['local_only_reason']})
+    task = {**task, 'profile': profile}
+    if task.get('hours_source') == 'classifier_estimate' and task.get('expected_hours') is None:
+        if scorer.get('source') == 'system_one' and profile.get('expected_hours'):
+            task['expected_hours'] = profile['expected_hours']
+            hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
+                              'confidence': profile.get('hours_confidence', 'unknown')}
+    return profile, task, needs, scorer, hours_estimate, alerts
+
+
+def pinned_unclassified_result(task, scorer, hours, started):
+    """A pinned roll with no task profile. The allocator prices and reserves a launch only from a profile, so
+    nothing launches; the message says what is missing and never names an hours figure it does not have."""
+    why = (scorer or {}).get('fallback_detail') or (scorer or {}).get('fallback_reason') or 'scorer_unavailable'
+    given = (f'--hours {hours:g} was given, but' if hours is not None
+             else '--hours was not given, so there is no hours estimate, and AgentCompass does not invent one;')
+    reason = (f'Pinned roll: the System-One classifier is unavailable ({why}). {given} without the classifier\'s task '
+              'profile the pinned bundle cannot be priced or reserved, so nothing was launched.')
+    result = scorer_unavailable_result(task, scorer, started)
+    result.update(reason=reason, decision=dict(result['decision'], reason=reason), pinned=True,
+                  next='Run the same roll again when the classifier answers (`agentcompass scorer --action test` checks '
+                       'it), or do the task in this session.')
+    return result
+
+
+def classify_pinned(task, args):
+    """`roll --provider/--account/--model`: only the model choice is pinned. The task gets the same System-One profile
+    and hours estimate as an automatic roll, so the pinned bundle is priced and reserved like any other launch.
+
+    Returns {'task', 'scorer', 'hours_estimate', 'alerts'}; or {'result': ...} when the roll stops here (split, or no
+    profile to price with)."""
+    started = time.monotonic()
+    hours = task.get('expected_hours')
+    if isinstance(task.get('profile'), dict):
+        estimate = None
+        if hours is None and task.get('hours_source') == 'classifier_estimate':
+            given = task['profile'].get('expected_hours')
+            estimate = {'hours': given, 'source': 'caller_profile',
+                        'confidence': task['profile'].get('hours_confidence', 'unknown')} if given else None
+        return {'task': task, 'scorer': None, 'hours_estimate': estimate, 'alerts': []}
+    if getattr(args, 'dry_run', False) and not getattr(args, 'score', False):
+        # A preview launches and reserves nothing, so it needs no price: the pin is checked, the classifier is not called.
+        return {'task': task, 'scorer': None, 'hours_estimate': None, 'alerts': []}
+    if getattr(args, 'no_score', False):
+        scorer = {'source': 'scorer_unavailable', 'model': None, 'fallback_reason': 'no_score_without_profile',
+                  'fallback_detail': '--no-score was given and the task carries no profile'}
+        return {'result': pinned_unclassified_result(task, scorer, hours, started)}
+    allocator = load_allocator()
+    capabilities = allocator.load_capabilities()
+    policy = allocator.load_accounts()['scoring']
+    needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
+    profile, classified, _, scorer, estimate, alerts = classify_task(
+        task, needs, allocator, capabilities, policy, getattr(args, 'score_timeout', SCORER_TIMEOUT_SECONDS),
+        use_model=not getattr(args, 'dry_run', False))
+    if profile is None:
+        return {'result': pinned_unclassified_result(task, scorer, hours, started)}
+    checked = allocator.validate_caller_profile(classified['profile'])
+    classified = {**classified, 'profile': checked}
+    if checked.get('multi_task') is True:
+        keep_whole = (getattr(args, 'keep_whole', None) or '').strip()
+        if not keep_whole:
+            return {'result': split_result(classified, checked['task_count'], scorer, started)}
+        alerts.append({'code': 'kept_whole', 'severity': 'info', 'account': None, 'reason': keep_whole[:300],
+                       'task_count': checked['task_count'],
+                       'message': f"The classifier found {checked['task_count']} separate tasks; the caller kept them "
+                                  'as one assignment: ' + keep_whole[:300]})
+    return {'task': classified, 'scorer': scorer, 'hours_estimate': estimate, 'alerts': alerts}
+
+
 def plan_stage(document, args):
     """Classify, allocate and record one task; shared by the plan and roll stages."""
     task = document.get('task')
@@ -2574,44 +2698,11 @@ def plan_stage(document, args):
         apply_readiness_gap(planned, loaded_accounts, usage)
         return finalize(planned, None, 'auto', started, reviewed_task), 2
     if should_score:
-        profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
+        profile, task, needs, scorer, hours_estimate, alerts = classify_task(
+            task, needs, allocator, capabilities, policy, args.score_timeout, use_model=not args.dry_run)
         if profile is None:
             return scorer_unavailable_result(task, scorer, started), 2
-        classified_kind = allocator.profile_kind(profile, policy)
-        derived = allocator.profile_difficulty(profile, policy)
-        order = list(allocator.DIFFICULTY_ORDER)
-        if task.get('difficulty') in order and order.index(task['difficulty']) > order.index(derived):
-            extra_alerts.append({
-                'code': 'difficulty_above_profile', 'severity': 'info', 'account': None,
-                'message': f"The caller's difficulty {task['difficulty']!r} is above the classifier profile's {derived!r} "
-                           f"(reasoning_depth {profile['reasoning_depth']}); the classifier's {derived!r} was used. "
-                           'Do not hand-fill difficulty or work_kind in task.json.'})
-        if scorer.get('source') == 'system_one':
-            if task.get('work_kind') or task.get('difficulty'):
-                extra_alerts.append({
-                    'code': 'caller_classification_ignored', 'severity': 'info', 'account': None,
-                    'message': 'Caller-supplied work_kind/difficulty was ignored; the System-One classifier '
-                               f'assigned work_kind={classified_kind!r}, difficulty={derived!r}.'})
-            task = {k: v for k, v in task.items() if k not in ('work_kind', 'difficulty')}
-            task['work_kind'] = classified_kind
-            # Leave difficulty off the task. normalize_task then labels the source `profile`
-            # instead of treating the classifier's copy as a caller value. The strip above
-            # still lets the classifier win over a caller-supplied difficulty.
-        if profile['local_only'] and needs.get('local_only') is None:
-            # Trust the classifier; explicit caller needs still take precedence.
-            needs['local_only'] = True
-            needs['local_only_reason'] = profile.get('reason') or 'Task profile requires execution on this machine.'
-            task = {**task, 'needs': needs}
-            extra_alerts.append({
-                'code': 'profile_local_only_applied', 'severity': 'info', 'account': None,
-                'reason': needs['local_only_reason'],
-                'message': 'The task profile requires local execution: ' + needs['local_only_reason']})
-        task = {**task, 'profile': profile}
-        if task.get('hours_source') == 'classifier_estimate' and task.get('expected_hours') is None:
-            if scorer.get('source') == 'system_one' and profile.get('expected_hours'):
-                task['expected_hours'] = profile['expected_hours']
-                hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
-                                  'confidence': profile.get('hours_confidence', 'unknown')}
+        extra_alerts.extend(alerts)
     task_profile = allocator.validate_caller_profile(task['profile']) if task.get('profile') else {}
     if task_profile:
         task = {**task, 'profile': task_profile}

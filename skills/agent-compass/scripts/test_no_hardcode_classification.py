@@ -260,6 +260,11 @@ ALLOWED_TAINT_SINK_STATEMENTS = {
         "keep_whole = (getattr(args, 'keep_whole', None) or '').strip()",
     ): 'trims optional --keep-whole CLI reason before checking non-empty override',
     (
+        'skills/agent-compass/scripts/route_judge.py',
+        'classify_pinned',
+        "keep_whole = (getattr(args, 'keep_whole', None) or '').strip()",
+    ): 'trims optional --keep-whole CLI reason before checking non-empty override (pinned roll, same as plan_stage)',
+    (
         'tray/decision_theatre.py',
         'scene_from_result',
         'title = next((s.strip().lstrip("# ") for s in title.splitlines() if s.strip()), "")',

@@ -124,6 +124,22 @@ def build_task(args, text, parent):
     return task
 
 
+def hours_assumption(args, decision):
+    """Where the budgeted hours came from, in words that are true for every case; never a figure it does not have.
+    None when the caller gave --hours: their own figure is not an assumption."""
+    if getattr(args, 'hours', None) is not None:
+        return None
+    est = decision.get('hours_estimate') or {}
+    origin = {'classifier_estimate': 'the classifier estimate',
+              'caller_profile': "the caller's task profile (its expected_hours)"}.get(est.get('source'))
+    if origin and isinstance(est.get('hours'), (int, float)) and not isinstance(est.get('hours'), bool):
+        confidence = est.get('confidence') if est.get('confidence') not in (None, '') else 'not stated'
+        return (f"--hours not given: budgeted {est['hours']:g}h from {origin}, confidence {confidence}; "
+                'an estimate, not a measurement. Pass --hours for a large or unusually small task.')
+    return ('--hours not given and no classifier estimate: no hours were budgeted, and none were invented. '
+            'Pass --hours, or roll again when the classifier answers.')
+
+
 def is_readonly_review_profile(profile):
     """True when the classified profile describes a read-only review or audit that writes no repo code."""
     if not isinstance(profile, dict):
@@ -972,7 +988,10 @@ def _run(args, judge):
             if not args.basis:
                 raise ValueError('Naming --provider/--model/--effort is a user override; quote the user with --basis.')
             args.constraint = 'user_override'
-            decision = judge.record_constraint(args, task)
+            # Only the model is pinned: the task is classified exactly as an automatic roll's, and the pinned bundle
+            # is priced and reserved from that profile.
+            classified = judge.classify_pinned(task, args)
+            decision = classified['result'] if 'result' in classified else judge.record_constraint(args, task, classified)
         else:
             args.stage = 'roll'
             decision, _ = judge.plan_stage({'task': task}, args)
@@ -995,19 +1014,14 @@ def _run(args, judge):
         out['route']['reason'] = decision.get('reason')
         return dict(out, launched=False, dispatch_mode='split', caller_action='roll_each_line',
                     task_count=decision['task_count'], next=decision['next']), 2
+    if (said := hours_assumption(args, decision)) is not None:
+        out['assumptions'] = [said]
     if decision.get('error') == 'scorer_unavailable':
         out['route']['reason'] = decision.get('reason') or 'scorer_unavailable'
         return dict(out, launched=False, dispatch_mode='scorer_unavailable',
                     caller_action='parent_autonomous_choice', error='scorer_unavailable',
                     reason='scorer_unavailable', cause=decision.get('reason'),
                     scorer=decision.get('scorer'), next=decision.get('next')), 2
-    if getattr(args, 'hours', None) is None:
-        est = decision.get('hours_estimate') or {}
-        origin = {'classifier_estimate': 'the classifier estimate',
-                  'caller_profile': "the caller's task profile (its expected_hours)"}.get(est.get('source'))
-        if origin:       # a decision that budgeted no estimate has no origin to name
-            out['assumptions'] = [f"--hours not given: budgeted {est.get('hours')}h from {origin}, confidence {est.get('confidence')}; "
-                                  'an estimate, not a measurement. Pass --hours for a large or unusually small task.']
     if (decision.get('task_profile') or {}).get('urgency') == 'high' and not (decision.get('task_profile') or {}).get('wants_fast'):
         out.setdefault('assumptions', []).append(
             'The task profile notes high urgency without wants_fast: fast mode uses task_profile.wants_fast or --fast, '

@@ -1809,13 +1809,15 @@ class RollTests(unittest.TestCase):
                        'read_only_review': False, 'bundle_id': 'lab_sonnet55_high',
                        'bundle': self.bundle}
         review_prof = dict(review_task['profile'])
-        def fake_record_constraint(a, t):
+        def fake_record_constraint(a, t, classified=None):
             t['profile'] = review_prof
             base_dec = {'stage': 'record', 'choice': 'lab_sonnet55_high', 'constraint': 'user_override',
                         'basis': a.basis, 'task_profile': review_prof, 'selected_bundle': self.bundle}
             return {**base_dec, **registry.issue(base_dec, t, self.now)}
 
         judge_named = type('Judge', (), {
+            'classify_pinned': staticmethod(lambda t, a: {'task': dict(t, profile=review_prof), 'scorer': None,
+                                                         'hours_estimate': None, 'alerts': []}),
             'record_constraint': staticmethod(fake_record_constraint),
             'usage_snapshot': staticmethod(lambda _: self.usage),
         })
@@ -1839,6 +1841,84 @@ class RollTests(unittest.TestCase):
             res_auto, code_auto = roll.run(ns_named_auto, judge_named)
             self.assertEqual(code_auto, 0)
             self.assertFalse(res_auto['worker'].get('resumed'))
+
+
+class PinnedRollTests(unittest.TestCase):
+    """`roll --provider/--account/--model --basis` pins the model only: the task is classified like an automatic roll's,
+    and the pinned bundle is priced and reserved from that profile."""
+    setUp, issue = DispatchTests.setUp, DispatchTests.issue
+
+    def args(self, **changes):
+        import argparse
+        return argparse.Namespace(**{
+            'basis': 'User asked for Sonnet', 'provider': 'claude-lab', 'account': 'claude-lab',
+            'model': 'claude-sonnet-5-5', 'effort': 'high', 'input': None, 'usage_cache': None, 'accounts': None,
+            'constraint': 'user_override', 'specialty': None, 'reason_category': None, 'fast': False, 'parent_id': None,
+            'dry_run': False, 'no_score': False, 'score': False, 'score_timeout': 10, 'keep_whole': None, 'hours': None,
+            **changes})
+
+    def unhoured(self):
+        # What roll builds without --hours: no expected_hours, no profile, the classifier asked for its estimate.
+        task = {k: v for k, v in self.task.items() if k not in ('profile', 'expected_hours', 'work_kind', 'difficulty')}
+        return dict(task, hours_source='classifier_estimate')
+
+    def judged(self, scored):
+        import route_judge
+        return route_judge, (patch.object(route_judge, 'load_allocator', return_value=allocator),
+                             patch.object(allocator, 'load_accounts', return_value=self.accounts),
+                             patch.object(route_judge, 'usage_snapshot', return_value=copy.deepcopy(self.usage)),
+                             patch.object(route_judge, 'score_task', return_value=scored))
+
+    def test_a_pinned_roll_gets_the_classifier_hours_and_a_nonzero_reservation(self):
+        import roll
+        classified_profile = dict(profile_for(self.task), expected_hours=0.7, hours_confidence='medium')
+        judge, patches = self.judged((classified_profile, {'source': 'system_one', 'model': 'fixture-scorer'}))
+        task, args = self.unhoured(), self.args()
+        with patches[0], patches[1], patches[2], patches[3] as scorer:
+            classified = judge.classify_pinned(task, args)
+            decision = judge.record_constraint(args, task, classified)
+        scorer.assert_called_once()                       # the classifier ran although the model was named
+        self.assertEqual(decision['hours_estimate'], {'hours': 0.7, 'source': 'classifier_estimate', 'confidence': 'medium'})
+        self.assertEqual(decision['task_profile']['expected_hours'], 0.7)
+        self.assertFalse(decision['classifier_skipped'])
+        self.assertEqual(decision['selected_bundle']['bundle_id'], 'lab_sonnet55_high')
+        self.assertGreater(decision['expected_usd'], 0)    # priced like any other launch
+        self.assertEqual(roll.hours_assumption(args, decision),
+                         '--hours not given: budgeted 0.7h from the classifier estimate, confidence medium; an estimate, '
+                         'not a measurement. Pass --hours for a large or unusually small task.')
+        self.assertEqual(registry.reservations(self.now), [])
+        row = registry.prepare(decision['decision_id'], task, self.launch, self.usage, accounts=self.accounts, now=self.now)
+        self.assertGreater(row['expected_usd'], 0)
+        held = registry.reservations(self.now)
+        self.assertEqual([r['dispatch_id'] for r in held], [row['dispatch_id']])
+        spec = self.accounts['accounts']['claude-lab']
+        self.assertGreater(allocator.inflight_reserved_usd('claude-lab', spec, 'five_hour', spec['windows']['five_hour'],
+                           {'remaining': 100}, 1000, held, self.accounts, self.accounts['scoring'], self.now), 0)
+
+    def test_no_classifier_and_no_hours_says_so_and_never_prints_none(self):
+        import roll
+        judge, patches = self.judged((None, {'source': 'scorer_unavailable', 'fallback_reason': 'all_classifiers_failed'}))
+        task = self.unhoured()
+        ns = self.args(brief=None, task=task['objective'], file=[], apply_to=None, local_only='local daemon',
+                       title=None, workspace=None, task_id=task['task_id'], wait=0, parent_id='parent-a',
+                       parent_host=None, parent_address=None, verbose=True, resume=None, new_worker=True)
+        with patches[0], patches[1], patches[2], patches[3], \
+                patch.object(roll, 'resolve_parent', return_value=('parent-a', 'paseo', 'parent-a')), \
+                patch.object(registry, 'pending', return_value=[]), \
+                patch.object(registry, 'reusable_workers', return_value=[]):
+            result, code = roll.run(ns, judge)
+        self.assertEqual((code, result['status'], result['launched']), (2, 'blocked', False))
+        self.assertIn('--hours was not given, so there is no hours estimate', result['cause'])
+        self.assertIn('cannot be priced or reserved, so nothing was launched', result['cause'])
+        self.assertEqual(result['assumptions'], [
+            '--hours not given and no classifier estimate: no hours were budgeted, and none were invented. '
+            'Pass --hours, or roll again when the classifier answers.'])
+        said = ' '.join([result['cause'], result['next'], *result['assumptions']])
+        self.assertNotIn('None', said)
+        self.assertNotIn('Noneh', json.dumps(result, ensure_ascii=False))
+        self.assertEqual(registry.reservations(self.now), [])
+        # An estimate missing its figure is "no estimate", never "budgeted Noneh".
+        self.assertNotIn('None', roll.hours_assumption(ns, {'hours_estimate': {'source': 'caller_profile', 'hours': None}}))
 
 
 class CreateLifecycleTests(unittest.TestCase):
