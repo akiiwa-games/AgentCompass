@@ -591,7 +591,7 @@ class FallbackTests(unittest.TestCase):
         root, _ = self.scheduled_root(minutes=16)
         self.assertEqual([r['dispatch_id'] for r in registry.pending()], [root['dispatch_id']])
         # The parent sends a follow-up prompt to the failed worker; it runs again before the backoff is over.
-        self.host.end(root['dispatch_id'], 'running', attentionReason=None)
+        self.host.end(root['dispatch_id'], 'running', attentionReason='error')   # Paseo keeps the stale flag
         flow.reconcile(host=self.host)
         fb = registry.inspect(root['dispatch_id'])['fallback']
         self.assertEqual((fb['state'], fb['outcome']['result'], fb['current']),
@@ -626,7 +626,7 @@ class FallbackTests(unittest.TestCase):
         chain = fallback.Chain.of(registry.inspect(root['dispatch_id']), judge=self.judge, host=self.host)
         chain.claim(second['dispatch_id'])
         self.assertEqual([r['dispatch_id'] for r in registry.pending()], [root['dispatch_id']])
-        self.host.end(root['dispatch_id'], 'running', attentionReason=None)
+        self.host.end(root['dispatch_id'], 'running', attentionReason='error')   # Paseo keeps the stale flag
         flow.reconcile(host=self.host)
         fb = registry.inspect(root['dispatch_id'])['fallback']
         self.assertEqual((fb['state'], fb['outcome']['result'], fb['current']),
@@ -647,13 +647,13 @@ class FallbackTests(unittest.TestCase):
                 flow.reconcile(root['dispatch_id'], host=self.host)
                 self.assertEqual(registry.inspect(root['dispatch_id'])['state'], 'failed')
                 if mode == 'already_running':
-                    self.host.end(root['dispatch_id'], 'running', attentionReason=None)
+                    self.host.end(root['dispatch_id'], 'running', attentionReason='error')   # Paseo keeps the stale flag
                     out = self.handle(root['dispatch_id'])
                 else:
                     real_plan = self.judge.plan_stage
 
                     def resume_then_plan(document, args):
-                        self.host.end(root['dispatch_id'], 'running', attentionReason=None)
+                        self.host.end(root['dispatch_id'], 'running', attentionReason='error')   # Paseo keeps the stale flag
                         return real_plan(document, args)
                     with patch.object(self.judge, 'plan_stage', side_effect=resume_then_plan):
                         out = self.handle(root['dispatch_id'])

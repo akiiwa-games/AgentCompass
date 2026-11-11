@@ -898,6 +898,16 @@ def classify_provider_failure(dispatch_id, terminal, path=None):
         return None
 
 
+def later(first, second):
+    """True when ISO stamp `first` is after `second` (a stamp or a datetime); False when either is missing or malformed."""
+    try:
+        if isinstance(second, str):
+            second = parse(second)
+        return isinstance(first, str) and isinstance(second, datetime) and parse(first) > second
+    except ValueError:
+        return False
+
+
 def agent_resumed(snapshot, row, terminal=None):
     """True when `row` is a failed attempt whose bound host agent is running a new turn (or finished one sent after it
     failed). A stuck provider retry whose cancel failed never stopped, so its running status is still the failed turn."""
@@ -907,11 +917,14 @@ def agent_resumed(snapshot, row, terminal=None):
         return False
     if (row.get('failure_detail') or {}).get('cancelled') is False or (terminal or {}).get('cancelled') is False:
         return False
-    if snapshot.get('archivedAt') or snapshot.get('providerUnavailable') or snapshot.get('attentionReason') == 'error':
+    if snapshot.get('archivedAt') or snapshot.get('providerUnavailable'):
         return False
     status = snapshot.get('status')
-    if status in ('running', 'initializing'):
+    if status in ('running', 'initializing'):     # Paseo keeps the failed turn's attention flag until it is viewed
         return True
+    if snapshot.get('attentionReason') == 'error' and not later(snapshot.get('lastUserMessageAt'),
+                                                                  snapshot.get('attentionTimestamp')):
+        return False                                # the follow-up turn, if any, also errored
     if status == 'idle' and (snapshot.get('attentionReason') == 'permission'
                              or (snapshot.get('pendingPermissionCount') or 0) > 0):
         return True

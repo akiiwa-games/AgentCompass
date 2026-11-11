@@ -148,14 +148,6 @@ def write_attempts_file(dispatch_id, root_id, attempt_lines):
         pass  # the notification then names only this attempt; the registry still has the whole chain
 
 
-def later_than(stamp, now):
-    """True when the stamp is after now; a missing or unreadable stamp has passed."""
-    try:
-        return isinstance(stamp, str) and registry.parse(stamp) > now
-    except ValueError:
-        return False
-
-
 def lease_end(stamp):
     try:
         return registry.stamp(registry.parse(stamp) + timedelta(seconds=registry.RUN_LEASE)) if stamp else None
@@ -292,10 +284,10 @@ class Chain:
             handled = dict(fallback.get('handled') or {})
             before = claimed['before'] = handled.get(failed_id)
             action = (before or {}).get('action')
-            due = action == 'scheduled' and not later_than(before.get('retry_at'), now)
-            stale = action == 'pending' and not later_than(before.get('until') or lease_end(before.get('at')), now)
+            due = action == 'scheduled' and not registry.later(before.get('retry_at'), now)
+            stale = action == 'pending' and not registry.later(before.get('until') or lease_end(before.get('at')), now)
             resume = due or (stale and bool(before.get('resume')))
-            if resume and fallback.get('retry_of') == failed_id and not later_than(fallback.get('until'), now):
+            if resume and fallback.get('retry_of') == failed_id and not registry.later(fallback.get('until'), now):
                 registry.retire_scheduled(fallback, now, 'retry_expired', RETRY_EXPIRED_NEXT, self.root_id)
                 claimed['before'] = fallback['handled'][failed_id]
                 claimed['take'] = False
@@ -622,7 +614,7 @@ def resume_due(dispatch_id, *, host=None, now=None):
         return None
     fallback = root.get('fallback') or {}
     if fallback.get('state') != 'retrying' or not fallback.get('retry_of') \
-            or later_than(fallback.get('retry_at'), now or registry.utcnow()):
+            or registry.later(fallback.get('retry_at'), now or registry.utcnow()):
         return None
     return handle(fallback['retry_of'], host=host)
 
