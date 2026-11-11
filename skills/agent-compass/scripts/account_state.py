@@ -22,7 +22,7 @@ READY, PLAN_INACTIVE, USAGE_FAILING, AUTH_FAILED = 'ready', 'plan_inactive', 'us
 DEFAULT_EXCLUDE_AFTER_HOURS = 6.0
 LATCH_RETRY_HOURS = 6.0
 EXCLUDE_AFTER_ENV = 'AGENTCOMPASS_USAGE_FAILING_EXCLUDE_HOURS'
-# Twice the longest polling cadence the router accepts (route_judge.POLL_MAX_SECONDS): a reading this old without an
+# Twice the longest polling cadence the router accepts (usage_cache.POLL_MAX_SECONDS): a reading this old without an
 # error means nothing is reading the account any more.
 READING_TOO_OLD_SECONDS = 2 * 3600
 # States an account list must keep showing even when the account cannot take work.

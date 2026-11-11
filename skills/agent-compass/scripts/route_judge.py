@@ -47,8 +47,6 @@ import urllib.request
 USAGE_CACHE_ENV = 'ROUTER_USAGE_CACHE'
 METERED_NAMES_ENV = 'ROUTER_METERED_NAMES'
 MAX_AGE_SECONDS = 900
-POLL_GRACE_SECONDS = usage_cache.POLL_GRACE_SECONDS
-POLL_MAX_SECONDS = usage_cache.POLL_MAX_SECONDS
 JUDGES = {
     'sonnet': {'provider': 'claude', 'account': 'claude', 'model': 'claude-sonnet-5', 'effort': 'low'},
     'codex': {'provider': 'codex', 'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'low'},
@@ -323,9 +321,6 @@ def cache_paths(explicit=None):
     return usage_cache.read_paths(explicit, environ={**os.environ, USAGE_CACHE_ENV: user_env(USAGE_CACHE_ENV) or ''})
 
 
-poll_max_age = usage_cache.poll_max_age
-
-
 def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_SECONDS, quota_sources=None, inventory=None):
     """Read the real collector cache; project an allowlist, never credentials or reset grants."""
     now = now or datetime.now(timezone.utc)
@@ -366,7 +361,7 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
             continue
         fetched = timestamp(row.get('fetched_at'))
         age = (now - fetched).total_seconds() if fetched else None
-        allowed = poll_max_age(polls.get(source_account), now, max_age_seconds)
+        allowed = usage_cache.poll_max_age(polls.get(source_account), now, max_age_seconds)
         current = (age is not None and 0 <= age <= allowed
                    and row.get('stale') is not True and row.get('available') is not False)
         raw_windows = row.get('windows')
