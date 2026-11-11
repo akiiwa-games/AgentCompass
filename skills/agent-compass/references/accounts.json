@@ -195,6 +195,19 @@
       "url": "https://openai.com/index/introducing-dots/",
       "as_of": "2026-09-29",
       "not_carried": "vision_tools: Dot takes no image or screenshot input through its packet channel (owner, 2026-10-09), so vision and GUI are the channel's own and stay missing, not Astra's."
+    },
+    "grok-bot": {
+      "model": "claude-opus-5-5",
+      "carries": [
+        "divergence",
+        "global_rigor",
+        "module_precision",
+        "duration"
+      ],
+      "kind": "user",
+      "statement": "user: grok-bot is Opus 5.5",
+      "as_of": "2026-11-11",
+      "not_carried": "vision_tools: grok-bot is a text-only channel (models.grok-bot.text_only), so vision and GUI are the channel's own and stay missing, not Opus 5.5's."
     }
   },
   "models": {

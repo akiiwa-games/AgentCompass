@@ -6,6 +6,7 @@ charges burn x a pacing shadow price, ties go to the lower opportunity cost then
 answer the axis demand itself."""
 import copy
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -964,9 +965,9 @@ class AnchorRelativeTests(unittest.TestCase):
         return meas
 
     def test_a_same_model_row_takes_its_declared_models_scores_for_the_categories_it_carries(self):
-        """accounts.json `same_model` (Dot is the model behind OpenAI's dots): the declared model is the base before any
-        other sibling at tier difference 0, the row has the tier of that model, and a category the row does not carry (its
-        channel's own) stays missing even where a fit could estimate it."""
+        """accounts.json `same_model` (Dot is the model behind OpenAI's dots): the row takes the declared model's type
+        scores as they stand (method `same_model`), the row has the tier of that model, and a category the row does not
+        carry (its channel's own) stays missing even where a fit could estimate it."""
         meas = self.vision_set()
         meas['models']['astra'] = self.tiered(4.2, module_precision=[
             {'source': 'arena.agent_alignment', 'component': 'alignment', 'value': 0.72},
@@ -980,14 +981,41 @@ class AnchorRelativeTests(unittest.TestCase):
         mp = rows['channel']['axes']['module_precision']
         for name, value in (('alignment', 0.72), ('terminal', 0.5)):
             est = mp['components'][name]['estimate']
-            self.assertEqual((mp['components'][name]['value'], est['method'], est['base_model'], est['tier_difference'], est['shift']),
-                             (value, 'sibling_shift', 'astra', 0.0, 0.0), name)
+            self.assertEqual((mp['components'][name]['value'], est['method'], est['base_model'], est['base_status'], est['url']),
+                             (value, 'same_model', 'astra', 'measured', 'https://openai.com/index/introducing-dots/'), name)
+        self.assertEqual(mp['value'], rows['astra']['axes']['module_precision']['value'])
         vision = rows['channel']['axes']['vision_tools']
         self.assertEqual((vision['status'], vision.get('flag'), vision['components']), ('missing', 'missing', {}))
         # without the declaration the row has no tier and nothing to estimate from
         rows, tier, _, _ = self.fa.Scorer(meas, {'models': acc['models']}).score()
         self.assertEqual(tier['channel']['method'], 'none')
         self.assertEqual(rows['channel']['axes']['module_precision']['status'], 'missing')
+
+    def test_shipped_grok_bot_category_scores_come_from_opus_5_5_through_same_model(self):
+        """User 2026-11-11: grok-bot is Opus 5.5. The shipped scores give grok-bot Opus 5.5's own category scores, type
+        score for type score (an Opus score that is itself estimated included), and Opus 5.5's times; vision stays the
+        text-only channel's own."""
+        refs = Path(self.fa.__file__).resolve().parents[1] / 'references'
+        declared = json.loads((refs / 'accounts.json').read_text(encoding='utf-8'))['same_model']['grok-bot']
+        self.assertEqual((declared['model'], declared['kind'], declared['as_of'], declared['statement']),
+                         ('claude-opus-5-5', 'user', '2026-11-11', 'user: grok-bot is Opus 5.5'))
+        models = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8'))['models']
+        bot, opus = models['grok-bot'], models['claude-opus-5-5']
+        self.assertEqual(sorted(declared['carries']), ['divergence', 'duration', 'global_rigor', 'module_precision'])
+        for axis in ('divergence', 'global_rigor', 'module_precision'):
+            mine, theirs = bot['axes'][axis], opus['axes'][axis]
+            self.assertEqual(mine['value'], theirs['value'], axis)
+            self.assertEqual(set(mine['components']), set(theirs['components']), axis)
+            for name, rec in mine['components'].items():
+                self.assertEqual((rec['value'], rec['estimate']['method'], rec['estimate']['base_model'],
+                                  rec['estimate']['base_status']),
+                                 (theirs['components'][name]['value'], 'same_model', 'claude-opus-5-5',
+                                  theirs['components'][name]['status']), f'{axis}.{name}')
+        self.assertEqual(bot['axes']['vision_tools']['status'], 'missing')
+        self.assertEqual(bot['tier']['base_model'], 'claude-opus-5-5')
+        self.assertEqual(bot['duration_multiplier']['by_effort'], opus['duration_multiplier']['by_effort'])
+        self.assertTrue(all(b['method'] == 'same_model' and b['base_model'] == 'claude-opus-5-5'
+                            for b in bot['duration_multiplier']['basis_by_effort'].values()))
 
     def test_a_later_measurement_replaces_the_estimate_on_refresh(self):
         """The estimate is not stored anywhere the next build reads: once a board lists the type score, the rebuild uses

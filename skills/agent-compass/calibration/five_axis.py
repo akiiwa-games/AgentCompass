@@ -31,8 +31,9 @@ the quota economy together. Nothing else scores a model: the tier is not a score
   model stays in automatic routing. A category with none is `missing`, scores 0, and a task that demands it leaves
   automatic routing for that model (an explicit --model still dispatches it).
 - A row that `accounts.json` `same_model` declares to be the very model another row names (a vendor statement with its
-  url) takes that model as its base before any other sibling, at tier difference 0, for the categories the row `carries`
-  and for its Time/Task; the other categories are the channel's own and stay missing.
+  url, or a dated user statement, kind `user`) takes that model's type scores as they stand, measured or estimated
+  (method `same_model`), for the categories the row `carries`, and its Time/Task; the declared model is also its tier
+  base before any other sibling. The other categories are the channel's own and stay missing.
 - A dated user override (`--user-overrides`, source `user`) replaces a public axis value; none is shipped.
 - usd_per_hour has one basis (rounds 8-9, user 2026-11-09 "全部都用arena"): `arena.agent_sessions` (arena.ai Agent / Overall
   real sessions, Cost/Task P50 / Time/Task P50 x 60, kind `community`), each source's value at High (else its effort-less
@@ -304,7 +305,11 @@ class Scorer:
         expected = {a: [c for c in comps if ((anchor_comps.get(a) or {}).get(c) or {}).get('status') == 'measured' or fits.get((a, c))]
                     or list(comps) for a, comps in AXES.items()}
         sibs, same = series.groups(self.acc), series.same_model(self.acc)
+        declared_rows = []
         for m, r in rows.items():
+            if (same.get(m) or {}).get('model') in rows:
+                declared_rows.append(m)     # takes its declared model's type scores once those are all in, below
+                continue
             if tier[m]['value'] is None:
                 continue
             carries = (same.get(m) or {}).get('carries')
@@ -318,6 +323,22 @@ class Scorer:
                              if (rows[b]['comps'][a].get(c) or {}).get('status') == 'measured' and tier[b]['value'] is not None]
                     if bases or fits.get((a, c)):
                         r['comps'][a][c] = self.estimate(m, bases[0] if bases else None, a, c, rows, fits, rejected, tier)
+        # A `same_model` row is the very model it declares: it takes that model's type scores as they stand, measured or
+        # estimated, for the categories it carries. Its own measurement, when it has one, stands.
+        for m in declared_rows:
+            entry = same[m]
+            base = rows[entry['model']]
+            carries = entry.get('carries')
+            for a in AXES:
+                if carries is not None and a not in carries:
+                    continue        # a category the row's channel does not share with the model behind it stays missing
+                for c, rec in base['comps'][a].items():
+                    if c in rows[m]['comps'][a]:
+                        continue
+                    rows[m]['comps'][a][c] = {
+                        'value': rec['value'], 'sources': {}, 'status': 'estimated',
+                        'estimate': {'method': 'same_model', 'base_model': entry['model'], 'base_status': rec['status'],
+                                     **{k: entry[k] for k in ('kind', 'statement', 'url', 'as_of') if entry.get(k)}}}
         # Pessimistic unknowns for partial categories (round 8 & round 11, user): a type score that remains neither
         # measured nor estimated counts as 0, so a single board cannot carry a category for a model nothing else
         # can calibrate.

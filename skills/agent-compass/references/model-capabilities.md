@@ -47,7 +47,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `grok-4.6` | 3.53 | 0.66 | 0.76~ | 0.58~ | 0.60 | 12.971 | 0.13 | yes |
 | `grok-4.7` | 3.40 | 0.65 | 0.74 | 0.57~ | 0.61 | 10.778 | 0.20 | yes |
 | `grok-4.7-build-fast` | 3.62 | 0.54~ | 0.74~ | 0.59~ | 0.59~ | - | default | unknown |
-| `grok-bot` | - | missing | missing | missing | missing | - | n/a | unknown |
+| `grok-bot` | 4.60 | 0.80~ | 0.80~ | 0.73~ | missing | - | n/a | unknown |
 | `kimi-k2.6` | 3.57 | 0.55 | 0.64~ | 0.56~ | 0.43~ | 4.6 | 0.00 | yes |
 | `kimi-k2.7-code` | 3.57 | 0.55~ | 0.67~ | 0.43~ | 0.42~ | 6.012 | 0.00 | yes |
 | `kimi-k3` | 3.67 | 0.76 | 0.76~ | 0.70~ | 0.63~ | 5.742 | 0.00 | yes |

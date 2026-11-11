@@ -26,9 +26,10 @@ The router scores a model on **four categories** (divergence, global rigor, modu
   0 and the sibling's value stands (`shift 0: fit rejected, ...`). A category with some type scores missing is yellow (the missing
   ones count as 0, the model stays in routing); a category with none leaves automatic routing for a task that demands it (an
   explicit `--model` still dispatches it). No default value stands in.
-- A row `accounts.json` `same_model` declares to be the model another row names (a vendor statement with its url; today Dot is
-  GPT-6 Astra, OpenAI's launch post) takes that model as its base at tier difference 0, for the categories and the Time/Task the
-  row `carries`; the channel's own categories (Dot's vision and GUI) stay missing.
+- A row `accounts.json` `same_model` declares to be the model another row names (a vendor statement with its url, or a dated
+  user statement, kind `user`; today Dot is GPT-6 Astra, OpenAI's launch post, and grok-bot is Claude Opus 5.5, the user
+  2026-11-11) takes that model's type scores as they stand, measured or estimated, for the categories the row `carries`, and
+  its Time/Task; the channel's own categories (vision and GUI of both text-only channels) stay missing.
 
 ## Scripts
 
