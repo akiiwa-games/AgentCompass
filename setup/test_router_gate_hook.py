@@ -8,6 +8,8 @@ from unittest import mock
 from pathlib import Path
 import sys
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import router_gate_hook as gate
 
@@ -1104,6 +1106,7 @@ class RouterGateHookTests(unittest.TestCase):
         result = gate.evaluate_payload({"tool_name": "exec", "tool_input": code}, now=T0)
         self.assertIn("shell:codex exec", result["reason"])
 
+    @pytest.mark.slow
     def test_native_cli_entrypoint_uses_isolated_state_and_response_contract(self):
         for payload, expected in (({"tool_name": "spawn_agent", "tool_input": {}}, "block"),
                                   ({"toolCall": {"name": "invoke_subagent", "args": {}}}, "deny"),
@@ -1539,6 +1542,7 @@ class RouterGateHookTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(gate.base_tool_name(name), old.group(1) if old else name)
 
+    @pytest.mark.slow
     def test_adversarial_names_classify_in_linear_time(self):
         """R4: the repeated form took over 60 s on this 10k-character name; the gate and the matcher must not."""
         script = (

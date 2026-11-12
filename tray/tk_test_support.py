@@ -46,8 +46,13 @@ def require_tk(*, display=False):
     return tk
 
 
+_WINDOW_PATCHERS = []
+
+
 def _keep_windows_hidden():
     """Keep production dialog helpers from mapping windows during ordinary tests."""
+    if _WINDOW_PATCHERS:
+        return
     original_init = tk.Toplevel.__init__
 
     def withdrawn_init(window, *args, **kwargs):
@@ -61,7 +66,16 @@ def _keep_windows_hidden():
     ):
         patcher = mock.patch.object(target, name, value)
         patcher.start()
-        atexit.register(patcher.stop)
+        _WINDOW_PATCHERS.append(patcher)
+
+
+def restore_window_visibility():
+    """Undo _keep_windows_hidden so non-tray suites in the same worker see real Tk behaviour."""
+    while _WINDOW_PATCHERS:
+        _WINDOW_PATCHERS.pop().stop()
+
+
+atexit.register(restore_window_visibility)
 
 
 def reset_tk_root(root, case=None):
@@ -105,16 +119,56 @@ def reset_tk_root(root, case=None):
                 root.deletecommand(cmd)
             except Exception:
                 pass
+    keep_images = set()
+    for attr in ("_AgentCompass_checks", "_compass_icon"):
+        val = getattr(root, attr, None)
+        items = val.values() if isinstance(val, dict) else (val or ())
+        for img in items:
+            photo = getattr(img, "_PhotoImage__photo", img)
+            name = getattr(photo, "name", None)
+            if name:
+                keep_images.add(name)
+    image_tk_mod = sys.modules.get("PIL.ImageTk")
+    pil_photo_cls = getattr(image_tk_mod, "PhotoImage", None) if image_tk_mod is not None else None
     for obj in gc.get_objects():
         if isinstance(obj, tk.Variable):
-            for cmd in list(getattr(obj, "_tclCommands", None) or ()):
+            tk_interp = getattr(obj, "_tk", None)
+            if tk_interp is not None:
+                for cmd in list(getattr(obj, "_tclCommands", None) or ()):
+                    try:
+                        tk_interp.deletecommand(cmd)
+                    except Exception:
+                        pass
+                if getattr(obj, "_tclCommands", None):
+                    obj._tclCommands.clear()
+                var_name = getattr(obj, "_name", None)
+                if var_name:
+                    try:
+                        if tk_interp.getboolean(tk_interp.call("info", "exists", var_name)):
+                            tk_interp.globalunsetvar(var_name)
+                    except Exception:
+                        pass
+                obj._tk = None
+        elif pil_photo_cls is not None and isinstance(obj, pil_photo_cls):
+            photo = getattr(obj, "_PhotoImage__photo", None)
+            name = getattr(photo, "name", None) if photo is not None else None
+            if name and name not in keep_images:
+                obj.__dict__.pop("_PhotoImage__photo", None)
+                photo.name = None
                 try:
-                    obj._tk.deletecommand(cmd)
+                    root.tk.call("image", "delete", name)
                 except Exception:
                     pass
-            if getattr(obj, "_tclCommands", None):
-                obj._tclCommands.clear()
+        elif isinstance(obj, tk.Image):
+            name = getattr(obj, "name", None)
+            if name and name not in keep_images:
+                obj.name = None
+                try:
+                    root.tk.call("image", "delete", name)
+                except Exception:
+                    pass
     obj = None
+    photo = None
     gc.collect()
     gc.collect()
     gc.collect()
@@ -157,10 +211,10 @@ def shared_tk_root(testcase=None):
                     raise unittest.SkipTest("Tk/display is unavailable")
                 time.sleep(0.05 * (attempt + 1))
         root.withdraw()
-        if not DESKTOP_TESTS:
-            _keep_windows_hidden()
         tk._tray_shared_root = root
         atexit.register(close_tk_root, root)
+    if not DESKTOP_TESTS:
+        _keep_windows_hidden()
     reset_tk_root(root)
     if testcase is not None:
         testcase.addCleanup(reset_tk_root, root, testcase)

@@ -4,6 +4,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
+pytestmark = pytest.mark.slow
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

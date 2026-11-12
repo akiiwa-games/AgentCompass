@@ -5,7 +5,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 import chatgpt_web_patch as web_patch
+
+pytestmark = pytest.mark.slow
 import plugins
 import services
 import updates

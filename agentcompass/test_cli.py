@@ -7,7 +7,11 @@ import sys
 from tempfile import TemporaryDirectory
 import unittest
 
+import pytest
+
 from agentcompass import __version__
+
+pytestmark = pytest.mark.slow
 
 ENTRY = Path(__file__).resolve().parent
 

@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+import pytest
 from PIL import Image
 
 import ui_theme as theme
@@ -45,6 +46,7 @@ class IdentityTests(unittest.TestCase):
         root.iconbitmap.assert_not_called()
 
 
+@pytest.mark.slow
 @unittest.skipUnless(sys.platform == "win32", "native Windows shell icons")
 @desktop_test
 class NativeIconTests(unittest.TestCase):

@@ -23,6 +23,7 @@ dependencies = []
 [project.optional-dependencies]
 venice = ["openai>=1.0"]
 tray = ["psutil", "pystray", "Pillow", "pywin32"]
+dev = ["pytest>=8", "pytest-xdist>=3.5", "psutil"]
 
 [project.urls]
 Homepage = "https://github.com/akiiwa-games/AgentCompass"
@@ -67,6 +68,10 @@ exclude = [
 path = "packaging/hatch_build.py"
 
 [tool.pytest.ini_options]
-testpaths = ["agentcompass", "tray", "setup", "skills/agent-compass", "skills/chatgpt-pro-consult", "skills/dot-subagent"]
+addopts = "--capture=sys"
+testpaths = ["agentcompass", "skills/agent-compass", "setup", "tray", "audit", "skills/chatgpt-pro-consult", "skills/dot-subagent", "usage-float"]
 norecursedirs = ["host_sync", "node_modules", ".staged", ".build", "verify-release", ".git", "__pycache__", ".*", "dist", "build", "scratch", "route-agent-work"]
+markers = [
+  "slow: tests that start real subprocesses, packaging, sandbox checks or real Tk main loops",
+]
 

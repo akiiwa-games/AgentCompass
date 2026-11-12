@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 import allocator
 import account_fleet
 import accounts_override
@@ -650,6 +652,7 @@ class OverrideContractTests(unittest.TestCase):
         quota_overrides.prune_landed_overrides({'priority': self.override}, self.path, self.now)
         self.assertEqual(json.loads(self.path.read_text())['overrides'], [newer])
 
+    @pytest.mark.slow
     def test_upsert_rebaseline_and_atomic_concurrency(self):
         with patch.object(router, 'usage_snapshot', return_value=self.usage):
             first = router.manage_overrides(self.args(), self.now)['active'][0]

@@ -5,7 +5,11 @@ import sys
 import tempfile
 import unittest
 
+import pytest
+
 from remote_root import root_command, root_step
+
+pytestmark = pytest.mark.slow
 import shlex
 
 

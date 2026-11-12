@@ -44,6 +44,7 @@ def test_film_drives_its_companion_view_and_settles_it_when_stopped():
     assert seen==[dt.DURATION]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize('diagnostics', ['off', 'on', 'unwritable'])
 def test_optional_trace_preserves_render_skip_errors_and_close(tmp_path, monkeypatch, diagnostics):
     from tk_test_support import shared_tk_root, reset_tk_root

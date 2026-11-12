@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
 from tk_test_support import require_windows
 
 require_windows("win32gui", "win32process")
@@ -63,6 +64,7 @@ class LauncherTrayTests(unittest.TestCase):
         self.assertEqual(deploy.wanted_env()["CODEX_WEB_GPT_EXTERNAL_TRAY"], "1")
 
 
+@pytest.mark.slow
 class SkillLinkTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -265,7 +267,7 @@ class RestartSingleFlightTests(unittest.TestCase):
     def test_concurrent_restart_is_ignored_while_mutex_is_held(self):
         with tempfile.TemporaryDirectory() as directory, \
                 mock.patch.object(deploy.services, "STATE_DIR", Path(directory)), \
-                mock.patch.object(deploy, "RESTART_MUTEX_NAME", "Local\\AgentCompassTrayRestartTestMutex"):
+                mock.patch.object(deploy, "RESTART_MUTEX_NAME", f"Local\\AgentCompassTrayRestartTestMutex_{os.getpid()}"):
             self.assertFalse(deploy.restart_in_progress())
             handle = deploy.acquire_restart_mutex()
             self.assertIsNotNone(handle)

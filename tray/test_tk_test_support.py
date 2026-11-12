@@ -2,6 +2,8 @@
 import unittest
 from unittest import mock
 
+import pytest
+
 import tk_test_support as support
 
 
@@ -22,6 +24,7 @@ class GuardTests(unittest.TestCase):
             with self.assertRaises(unittest.SkipTest):
                 support.shared_tk_root()
 
+    @pytest.mark.slow
     @unittest.skipIf(support.DESKTOP_TESTS, 'checks the default hidden-window mode')
     def test_root_and_child_stay_unmapped_after_deiconify(self):
         root = support.shared_tk_root(self)

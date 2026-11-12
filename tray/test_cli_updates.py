@@ -12,6 +12,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import psutil
+import pytest
 
 import cli_updates
 import owned_process
@@ -41,9 +42,11 @@ FAKE_NPM = textwrap.dedent("""
         print("npm error code EBUSY: resource busy or locked", file=sys.stderr)
         raise SystemExit(1)
     if mode == "hang":
-        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
-        (root / "child.pid").write_text(str(child.pid))
-        (root / "parent.pid").write_text(str(os.getpid()))
+        child = subprocess.Popen([sys.executable, "-S", "-c", "import time; time.sleep(120)"])
+        for name, pid in (("child.pid", child.pid), ("parent.pid", os.getpid())):
+            tmp = root / f"{name}.tmp"
+            tmp.write_text(str(pid))
+            tmp.replace(root / name)
         time.sleep(120)
     if mode == "slow":
         time.sleep(4)
@@ -89,7 +92,7 @@ class CliUpdateCase(unittest.TestCase):
             folder.mkdir(parents=True)
         script = self.bin / "fake_npm.py"
         script.write_text(FAKE_NPM)
-        (self.bin / "npm.cmd").write_text(f'@"{sys.executable}" "{script}" %*\r\n')
+        (self.bin / "npm.cmd").write_text(f'@"{sys.executable}" -S "{script}" %*\r\n')
         (self.state / "latest.txt").write_text("0.2.0")
         self.environ = {key: value for key, value in os.environ.items()
                         if key.upper() in ("SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT", "TEMP", "TMP")}
@@ -185,6 +188,7 @@ class DiscoveryTests(CliUpdateCase):
             self.assertEqual(call.args[0][1:], ["--version"])    # only the read-only version probe ever ran
 
 
+@pytest.mark.slow
 class NpmUpdateTests(CliUpdateCase):
     def setUp(self):
         super().setUp()
@@ -248,9 +252,9 @@ class NpmUpdateTests(CliUpdateCase):
 
     def test_a_hung_install_is_stopped_with_its_whole_tree(self):
         self.mode("hang")
-        with mock.patch.object(cli_updates, "UPDATE_TIMEOUT", 3):
+        with mock.patch.object(cli_updates, "UPDATE_TIMEOUT", 6):
             message = cli_updates.update("codex", self.home, self.environ)
-        self.assertIn("超过 3 秒", message)
+        self.assertIn("超过 6 秒", message)
         self.assertFalse(psutil.pid_exists(int(wait_for(self.state / "parent.pid"))))
         self.assertFalse(psutil.pid_exists(int(wait_for(self.state / "child.pid"))))
         self.assertEqual(self.version(self.package), "0.1.0")
@@ -437,6 +441,7 @@ class SourceConsistencyTests(NativeUpdateFixture):
         self.assertEqual(json.loads((main / "package.json").read_text())["version"], "2.0.0")
 
 
+@pytest.mark.slow
 class ProviderEnvTests(CliUpdateCase):
     def test_provider_env_replaces_path_and_keeps_keys_from_the_provider_it_extends(self):
         provider = self.root / "provider prefix"

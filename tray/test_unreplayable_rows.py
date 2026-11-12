@@ -5,6 +5,8 @@ import sys
 import unittest
 from unittest import mock
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills/agent-compass/scripts"))
 import router_data
@@ -84,6 +86,7 @@ class UnreplayableRowTests(unittest.TestCase):
             self.assertEqual(router_data.replay(row_of(OLD))["choice"], "saved")
             self.assertFalse(router_data.ledger_summary(row_of(OLD))["unreplayable"])
 
+    @pytest.mark.slow
     def test_the_panel_says_so_and_plays_nothing(self):
         import router_window
         import tk_test_support

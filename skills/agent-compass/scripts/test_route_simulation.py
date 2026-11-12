@@ -24,10 +24,14 @@ class UsageAwareSimulationTests(unittest.TestCase):
         cls.accounts = sim.fresh_accounts(shipped_template(), snapshot())
         cls.tasks = sim.grid_tasks(cls.accounts)
         cls.policy = {'allowed_accounts': list(cls.accounts['accounts'])}
+        cls._wins_cache = {}
 
-    def wins(self, state):
-        usage = sim.snapshot(sim.synthetic_document(self.accounts, NOW, sim.STATES[state]), self.accounts, NOW)
-        return sim.run_state(self.accounts, usage, NOW, self.tasks, self.policy)[1]
+    @classmethod
+    def wins(cls, state):
+        if state not in cls._wins_cache:
+            usage = sim.snapshot(sim.synthetic_document(cls.accounts, NOW, sim.STATES[state]), cls.accounts, NOW)
+            cls._wins_cache[state] = sim.run_state(cls.accounts, usage, NOW, cls.tasks, cls.policy)[1]
+        return cls._wins_cache[state]
 
     @staticmethod
     def share(wins, *labels):

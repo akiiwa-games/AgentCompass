@@ -9,6 +9,8 @@ from contextlib import redirect_stdout
 from unittest import mock
 from xml.etree import ElementTree
 
+import pytest
+
 import easytier_setup as setup
 
 
@@ -109,6 +111,7 @@ class StageTests(unittest.TestCase):
         self.assertEqual((self.home / "private" / "pre-start.ps1").read_text(), "# host policy")
 
 
+    @pytest.mark.slow
     def test_the_supervisor_guards_single_instance_runs_the_hook_and_returns_the_core_exit_code(self):
         if not setup.POWERSHELL.is_file():
             self.skipTest("Windows PowerShell unavailable")

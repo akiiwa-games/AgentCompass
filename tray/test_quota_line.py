@@ -459,6 +459,7 @@ def test_hover_text_says_what_the_chart_under_the_pointer_stands_for():
     assert renderer.tip_at(1, 1) == ""                                 # the margin around the charts
 
 
+@pytest.mark.slow
 def test_canvas_follows_the_film_clock_only_while_visible(monkeypatch):
     from tk_test_support import shared_tk_root, reset_tk_root
     root = shared_tk_root()
@@ -622,6 +623,7 @@ def test_a_malformed_snapshot_is_read_field_by_field_and_never_raises(monkeypatc
     assert words_of(monkeypatch, None, unreadable=True)[1] == {quota_line._tr("额度恢复线记录无法读取")}
 
 
+@pytest.mark.slow
 def test_a_record_the_view_cannot_read_never_raises_into_the_page(monkeypatch):
     # F2. The page shows a decision by calling show(); follow() and a resize draw it again.
     from tk_test_support import shared_tk_root, reset_tk_root

@@ -9,6 +9,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 import usage_core as usage
 from usage_core import file_lock
 
@@ -279,6 +281,7 @@ class UsageSafetyTests(unittest.TestCase):
             self.assertEqual(direct.call_count, 1)
             self.assertTrue(all(r[0].available for r in results))
 
+    @pytest.mark.slow
     def test_two_process_cache_writers_do_not_lose_accounts(self):
         ctx = multiprocessing.get_context('spawn')
         children = [ctx.Process(target=write_account, args=(str(usage.CACHE_PATH), name))

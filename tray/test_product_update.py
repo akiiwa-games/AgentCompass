@@ -7,6 +7,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import updates
@@ -609,6 +611,7 @@ def _make_modular_installer_dir(
     return inst_root
 
 
+@pytest.mark.slow
 class IncrementalCodePackageUpdateTests(unittest.TestCase):
     def test_non_frozen_installer_version_reads_app_current_without_false_0_0_0_mismatch(self):
         with TemporaryDirectory() as tmp:
@@ -1191,6 +1194,7 @@ class IncrementalCodePackageUpdateTests(unittest.TestCase):
                 all_our_procs = deploy.resident_component_processes(include_visible_windows=True)
                 self.assertEqual([p.pid for p in all_our_procs], [41002, 41003])
 
+    @pytest.mark.slow
     def test_superseded_or_closing_router_window_immediately_releases_show_event(self):
         import router_window
         import panel_plugins

@@ -15,6 +15,7 @@ Two guards make a leak fail loudly instead of passing:
 import atexit
 import os
 import shutil
+import site
 import subprocess
 import sys
 import tempfile
@@ -22,22 +23,86 @@ from pathlib import Path
 
 import psutil
 
-REAL_HOME = Path(os.path.expanduser('~'))
-REAL_LOCALAPPDATA = Path(os.environ.get('LOCALAPPDATA') or REAL_HOME / 'AppData' / 'Local')
-PROTECTED = tuple(os.path.normcase(os.path.abspath(p)) for p in (REAL_HOME / '.agent-compass',
-                                                                  REAL_LOCALAPPDATA / 'AgentCompass'))
-# State locations a shell may carry into the run; under test they come from the temporary home.
-STATE_VARIABLES = ('ROUTER_STATE_DIR', 'AGENTCOMPASS_APP_DIR', 'AGENTCOMPASS_CHATGPT_CODEX_HOME',
-                   'ROUTE_MANAGER_CHATGPT_CODEX_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR')
+REPO_ROOT = Path(__file__).resolve().parent
+REAL_USERBASE = Path(os.environ.setdefault('PYTHONUSERBASE', site.getuserbase()))
+REAL_USERSITE = Path(site.getusersitepackages())
+if site.ENABLE_USER_SITE:
+    _user_site = str(REAL_USERSITE)
+    if _user_site and os.path.isdir(_user_site) and _user_site not in sys.path:
+        site.addsitedir(_user_site)
+sys.dont_write_bytecode = True
+os.environ.setdefault('PYTHONDONTWRITEBYTECODE', '1')
 
-TEST_HOME = Path(tempfile.mkdtemp(prefix='agentcompass-test-home-'))
+REAL_HOME = Path(os.environ.setdefault('_AGENTCOMPASS_REAL_HOME', os.path.expanduser('~')))
+REAL_LOCALAPPDATA = Path(os.environ.setdefault(
+    '_AGENTCOMPASS_REAL_LOCALAPPDATA',
+    str(Path(os.environ.get('LOCALAPPDATA') or REAL_HOME / 'AppData' / 'Local')),
+))
+def _protected_roots():
+    roots = [REAL_HOME / '.agent-compass', REAL_HOME / '.usage-float', REAL_LOCALAPPDATA / 'AgentCompass']
+    for item in list(roots):
+        try:
+            roots.append(item.resolve())
+        except OSError:
+            pass
+    return tuple(dict.fromkeys(os.path.normcase(os.path.abspath(p)) for p in roots))
+
+
+PROTECTED = _protected_roots()
+# State locations a shell may carry into the run; under test they come from the temporary home.
+STATE_VARIABLES = ('ROUTER_STATE_DIR', 'AGENTCOMPASS_STATE_DIR', 'AGENTCOMPASS_APP_DIR',
+                   'AGENTCOMPASS_CHATGPT_CODEX_HOME', 'ROUTE_MANAGER_CHATGPT_CODEX_HOME',
+                   'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PASEO_HOME', 'PRO_CONSULT_HOME')
+# Session and worker markers a parent/worker shell may carry into pytest; cleared at startup and before every test.
+WORKER_VARIABLES = (
+    'PASEO_AGENT_ID', 'ROUTER_WORKER', 'PASEO_AGENT_CWD',
+    'ROUTER_PARENT_AGENT_ID', 'ROUTER_PARENT_HOST', 'ROUTER_PARENT_ADDRESS',
+    'ANTIGRAVITY_CONVERSATION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDECODE',
+    'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CODEX_SANDBOX', 'CODEX_CI',
+    'PI_SESSION_ID', 'OPENCODE_SESSION_ID', 'ORCA_AGENT_SESSION_ID', 'ORCA_TERMINAL_HANDLE',
+    'HC_TERMINAL_ID', 'T3_MCP_URL', 'T3_MCP_BEARER_TOKEN',
+    'CINDY_INPUT_HANDOFF_ROUTE', 'CINDY_PI_PERMISSION_FILE', 'CINDY_PI_SESSION_ID', 'CINDY_PI_SUBAGENT_RUN_ROOT',
+)
+
+
+def main_checkout_root(root: Path = REPO_ROOT) -> Path | None:
+    """Return the main repository root when ``root`` is a git worktree, else None."""
+    dot_git = root / '.git'
+    if dot_git.is_file():
+        raw = dot_git.read_text(encoding='utf-8', errors='ignore').strip()
+        if raw.startswith('gitdir:'):
+            gitdir = (root / raw.split(':', 1)[1].strip()).resolve()
+            if gitdir.parent.name == 'worktrees':
+                return gitdir.parents[2]
+    return None
+
+
+def worker_key(environ=None) -> str:
+    env = os.environ if environ is None else environ
+    raw = (env.get('PYTEST_XDIST_WORKER') or 'main').strip()
+    return ''.join(ch if ch.isalnum() or ch in ('-', '_') else '_' for ch in raw) or 'main'
+
+
+WORKER_ID = worker_key()
+TEST_HOME = Path(tempfile.mkdtemp(prefix=f'agentcompass-test-home-{WORKER_ID}-'))
+TEST_STATE_DIR = TEST_HOME / '.agent-compass'
 atexit.register(shutil.rmtree, TEST_HOME, True)
 for name, path in {'HOME': TEST_HOME, 'USERPROFILE': TEST_HOME, 'LOCALAPPDATA': TEST_HOME / 'AppData' / 'Local',
                    'APPDATA': TEST_HOME / 'AppData' / 'Roaming'}.items():
     path.mkdir(parents=True, exist_ok=True)
     os.environ[name] = str(path)
-for name in STATE_VARIABLES:
+for name in (*STATE_VARIABLES, *WORKER_VARIABLES):
     os.environ.pop(name, None)
+
+if 'ROUTER_PASEO_SDK_ROOT' not in os.environ and not (REPO_ROOT / 'setup' / 'paseo-bridge' / 'node_modules').is_dir():
+    _main_root = main_checkout_root()
+    for _sdk in (
+        *([_main_root / 'setup' / 'paseo-bridge' / 'node_modules'] if _main_root else []),
+        REAL_HOME / '.agent-compass' / 'paseo-bridge' / 'node_modules',
+    ):
+        if _sdk.is_dir():
+            os.environ['ROUTER_PASEO_SDK_ROOT'] = str(_sdk)
+            break
 
 
 class HermeticViolation(RuntimeError):
@@ -65,8 +130,10 @@ def _refuse(what):
 
 
 _WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
-_PATH_EVENTS = {'os.remove': 1, 'os.rmdir': 1, 'os.mkdir': 1, 'os.truncate': 1, 'os.utime': 1, 'os.chmod': 1,
-                'shutil.rmtree': 1, 'os.rename': 2, 'shutil.move': 2, 'shutil.copyfile': 2}
+_PATH_INDICES = {
+    'os.remove': (0,), 'os.rmdir': (0,), 'os.mkdir': (0,), 'os.truncate': (0,), 'os.utime': (0,), 'os.chmod': (0,),
+    'shutil.rmtree': (0,), 'os.rename': (0, 1), 'os.replace': (0, 1), 'shutil.move': (0, 1), 'shutil.copyfile': (1,),
+}
 
 
 def _audit(event, args):
@@ -76,10 +143,10 @@ def _audit(event, args):
                   else bool(isinstance(flags, int) and flags & _WRITE_FLAGS))
         if writes and _protected(path):
             _refuse(f'writing {os.fsdecode(path)}')
-    elif event in _PATH_EVENTS:
-        for path in args[:_PATH_EVENTS[event]]:
-            if _protected(path):
-                _refuse(f'{event} {os.fsdecode(path)}')
+    elif event in _PATH_INDICES:
+        for idx in _PATH_INDICES[event]:
+            if idx < len(args) and _protected(args[idx]):
+                _refuse(f'{event} {os.fsdecode(args[idx])}')
     elif event == 'os.kill' and not _ours(args[0]):
         _refuse(f'os.kill of pid {args[0]}')
     elif event == 'subprocess.Popen':

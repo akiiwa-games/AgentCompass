@@ -4,7 +4,11 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
+
 import entry
+
+pytestmark = pytest.mark.slow
 
 
 

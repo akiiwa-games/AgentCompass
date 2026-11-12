@@ -3,6 +3,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
+pytestmark = pytest.mark.slow
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tk_test_support import require_tk, shared_tk_root

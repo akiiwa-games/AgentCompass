@@ -7,6 +7,8 @@ import time
 import unittest
 from unittest import mock
 
+import pytest
+
 import deploy
 import usage_float_host as host
 
@@ -231,6 +233,7 @@ class SharedCacheTests(unittest.TestCase):
         self.assertIsNone(self.native.CACHE_PATH)
 
 
+@pytest.mark.slow
 class HostedSingleReaderTests(unittest.TestCase):
     """Verify the single-reader contract: standalone fetches itself; hosted reads shared cache and delegates refresh to usage_core."""
 
@@ -342,7 +345,22 @@ class HostedSingleReaderTests(unittest.TestCase):
         self.reset_5h = (now + timedelta(hours=4)).isoformat()
         self.reset_7d = (now + timedelta(days=5)).isoformat()
 
-        plugin_dir = host.ROOT / "usage-float"
+        import hermetic_run
+        main_root = hermetic_run.main_checkout_root(host.ROOT)
+        plugin_dir = next(
+            (
+                candidate
+                for candidate in (
+                    host.ROOT / "usage-float",
+                    *([main_root / "usage-float"] if main_root else []),
+                    hermetic_run.REAL_HOME / ".agent-compass" / "plugins" / "usage-float",
+                )
+                if (candidate / "usage_float.py").is_file()
+            ),
+            None,
+        )
+        if plugin_dir is None:
+            self.skipTest("usage-float checkout unavailable")
         if str(plugin_dir) not in sys.path:
             sys.path.insert(0, str(plugin_dir))
         mod_name = f"_uf_isolated_{id(self)}"

@@ -13,6 +13,8 @@ import tempfile
 from unittest.mock import patch
 import unittest
 
+import pytest
+
 import account_fleet
 import candidate_eval
 import task_intake
@@ -54,6 +56,7 @@ class RecordCase(RouterCase):
         return result, row
 
 
+@pytest.mark.slow
 class CallerProfileEntryTests(RecordCase):
     """M1: the CLI read multi_task from an unchecked profile and offered to split on it."""
 

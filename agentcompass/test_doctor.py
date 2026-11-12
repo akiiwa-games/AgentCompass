@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
+
 SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -33,6 +35,7 @@ class DoctorTests(unittest.TestCase):
         self.assertNotIn("credential_key", text)
         self.assertNotIn("api_key", text)
 
+    @pytest.mark.slow
     def test_collect_on_an_isolated_home_does_not_create_files(self):
         with TemporaryDirectory() as directory:
             home = Path(directory) / "home"

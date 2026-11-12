@@ -10,12 +10,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 import demo_plan
 import host_policy
 import provider_inventory
 import quota_overrides
 import route_judge
 import worker_sessions
+
+pytestmark = pytest.mark.slow
 
 ROOT = Path(__file__).resolve().parents[3]
 ENTRY = ROOT / 'agentcompass'

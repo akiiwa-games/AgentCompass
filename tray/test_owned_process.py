@@ -9,8 +9,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import psutil
+import pytest
 
 import owned_process
+
+pytestmark = pytest.mark.slow
 
 CHILD = textwrap.dedent("""
     import subprocess, sys, time
@@ -24,7 +27,7 @@ CHILD = textwrap.dedent("""
             "finishes": "import time; time.sleep(1); open(r'%s', 'w').write('done')",
             "hang": "import os, time; open(r'%s', 'w').write(str(os.getpid())); time.sleep(120)"}[mode.split(":")[0]]
     marker = folder / "marker.txt"
-    subprocess.Popen([sys.executable, "-c", code % marker])    # inherits stdout/stderr
+    subprocess.Popen([sys.executable, "-S", "-c", code % marker])    # inherits stdout/stderr
     if mode == "hang":
         open(folder / "parent.txt", "w").write(str(__import__("os").getpid()))
         time.sleep(120)
@@ -58,7 +61,7 @@ class OwnedProcessTests(unittest.TestCase):
                 pass
 
     def run_child(self, mode, **options):
-        return owned_process.run([sys.executable, str(self.script), mode, str(self.folder)], **options)
+        return owned_process.run([sys.executable, "-S", str(self.script), mode, str(self.folder)], **options)
 
     def test_output_exit_code_and_non_ascii_text_are_returned(self):
         result = self.run_child("output", timeout=30, env={**os.environ, "PYTHONIOENCODING": "utf-8"})

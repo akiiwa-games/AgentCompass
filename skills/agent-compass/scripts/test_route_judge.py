@@ -10,6 +10,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 import account_fleet
 import route_judge as router
 import task_intake
@@ -444,6 +446,7 @@ class RoutingTests(unittest.TestCase):
             {'objective': prefix + 'task one'}, [rec_prefix],
             datetime.now(timezone.utc), 'dot_text', 600))
 
+    @pytest.mark.slow
     def test_timeout_stops_owned_process(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(RuntimeError):

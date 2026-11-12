@@ -14,6 +14,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 import allocator
 import account_fleet
 import axis_scores
@@ -166,6 +168,7 @@ class DispatchTests(unittest.TestCase):
         with patch.object(account_fleet, 'load_accounts', return_value=restored):
             self.assertEqual(registry.claim(prepared['request'], parent_id='parent-a', now=self.now)['state'], 'launching')
 
+    @pytest.mark.slow
     def test_cli_explicit_astra_low_override_is_bound_and_capacity_priced_at_low(self):
         packet = self.root / 'task.json'
         packet.write_text(json.dumps({'task': self.task}))
@@ -201,6 +204,7 @@ class DispatchTests(unittest.TestCase):
                 'parent_agent_id': 'parent-a', 'tool_use_id': 'override-fixture'})
         self.assertEqual(allowed, {})
 
+    @pytest.mark.slow
     def test_cli_pi_fast_is_rejected_before_recording_an_unlaunchable_feature(self):
         pi_home = self.root / '.pi' / 'agent'
         pi_home.mkdir(parents=True)
@@ -295,6 +299,7 @@ class DispatchTests(unittest.TestCase):
         log_file.unlink()
         (self.root / '.agent-compass' / 'rate-limits.json').unlink(missing_ok=True)
 
+    @pytest.mark.slow
     def test_cli_actual_parent_blocks_foreign_prepare_launch_release_but_operator_works(self):
         decision = self.issue()
         packet = self.root / 'dispatch.json'
@@ -643,6 +648,7 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(failed['state'], 'failed')
         self.assertEqual(registry.reservations(later), [])
 
+    @pytest.mark.slow
     def test_concurrent_prepare_checks_and_reserves_atomically(self):
         # On the Pro plan of the fixture credential one task takes about three quarters of the five-hour window.
         jobs = []
@@ -811,6 +817,7 @@ except ValueError as e:
                 pct = quota_economy.unit_rate(account, wid, model, info=info)
                 self.assertAlmostEqual(pct * quota_economy.capacity_usd(account, wid) / 100, budget)
 
+    @pytest.mark.slow
     def test_cli_prepare_launch_and_automatic_status_reconcile_fake_host(self):
         # Exercise the executable entrypoints, not only the in-memory state machine.
         import route_judge
@@ -2414,6 +2421,7 @@ class WatchLimitTests(unittest.TestCase):
     setUp, snapshot, issue, prepare = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue, DispatchTests.prepare
     claimed, claim_row = CreateLifecycleTests.claimed, CreateLifecycleTests.claim_row
 
+    @pytest.mark.slow
     def test_watch_seconds_is_a_hard_limit_on_a_hung_bridge(self):
         bridge = self.root / 'hung_bridge.mjs'
         bridge.write_text("import {spawn} from 'node:child_process';\n"

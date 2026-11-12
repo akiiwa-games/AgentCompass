@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 import chatgpt_web_patch as patch
+
+pytestmark = pytest.mark.slow
 
 MAIN = "\n".join([
     "let tray = null;",

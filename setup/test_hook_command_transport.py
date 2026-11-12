@@ -9,6 +9,10 @@ import sys
 import tempfile
 import unittest
 
+import pytest
+
+pytestmark = pytest.mark.slow
+
 
 class HookCommandTransportTests(unittest.TestCase):
     def test_installed_command_with_spaces_and_quotes_preserves_gate_deny_and_allow(self):

@@ -8,11 +8,14 @@ import sys
 import tempfile
 import threading
 import unittest
+
+import pytest
 import consult_bridge
 from consult_bridge import receive, answer_text
 
 
 class CaptureTests(unittest.TestCase):
+    @pytest.mark.slow
     def test_cli_sends_one_pinned_pro_request_and_captures_answer(self):
         response = {'id': 'resp_pinned', 'status': 'completed', 'model': 'chatgpt-web/gpt-6-pro',
                     'output': [{'type': 'message', 'content': [{'type': 'output_text', 'text': '测试完成'}]}]}

@@ -12,6 +12,8 @@ import time
 from unittest.mock import patch
 from types import SimpleNamespace
 
+import pytest
+
 import host_herdr as hh
 from test_native_hosts import parent
 
@@ -172,6 +174,7 @@ class HerdrAdapterTests(unittest.TestCase):
         self.assertEqual(exec_call.call_args.args[0],sys.executable)
 
 
+@pytest.mark.slow
 @unittest.skipUnless(os.name=='nt','Windows worker lifetime contract')
 class WindowsWorkerLifetimeTests(unittest.TestCase):
     def test_actual_absolute_fixture_stays_live_until_exit_and_propagates_status(self):

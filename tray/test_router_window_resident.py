@@ -3,6 +3,8 @@ import os
 import unittest
 from unittest import mock
 
+import pytest
+
 import tk_test_support
 
 
@@ -58,6 +60,7 @@ class OpenWindowTests(unittest.TestCase):
         popen.assert_not_called()
 
 
+@pytest.mark.slow
 class ResidentPanelTests(unittest.TestCase):
     def make_panel(self):
         import router_window

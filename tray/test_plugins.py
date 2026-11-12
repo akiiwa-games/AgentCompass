@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import plugins
@@ -210,6 +212,7 @@ class SiblingRepoTests(unittest.TestCase):
                 )
 
 
+@pytest.mark.slow
 class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
     """End-to-end regression tests for the '外部集成' (plugins) page in an isolated temp profile."""
 

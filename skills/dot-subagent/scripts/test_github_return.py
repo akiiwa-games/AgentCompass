@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 import unittest
 
+import pytest
+
 import github_return
 
 
@@ -88,6 +90,7 @@ class FetchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             github_return.recipe("a b")
 
+    @pytest.mark.slow
     def test_purge_removes_the_job_directory_from_the_branch(self):
         remote, clone = self.base / "remote.git", self.base / "clone"
         subprocess.run(["git", "init", "--bare", "-b", "main", str(remote)], check=True, capture_output=True)

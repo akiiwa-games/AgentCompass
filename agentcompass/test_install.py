@@ -10,6 +10,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
 
+import pytest
+
 from agentcompass import cli, frozen_python, install
 
 ENTRY = Path(__file__).resolve().parent
@@ -130,6 +132,7 @@ class FrozenPythonTests(unittest.TestCase):
                 run.assert_not_called()
 
 
+@pytest.mark.slow
 class GateHookCommandTests(unittest.TestCase):
     def test_gate_hook_subcommand_runs_the_hook_on_stdin(self):
         with TemporaryDirectory() as tmp:

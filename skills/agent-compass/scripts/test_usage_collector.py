@@ -81,13 +81,18 @@ class CollectorBase(unittest.TestCase):
 class CollectorTests(CollectorBase):
     def test_the_collector_modules_do_not_import_the_optional_plugin(self):
         import ast
+        import importlib
         forbidden = {'usage_float', 'usage_lock', 'magpie_usage', 'plugins'}
         for module in (usage_core, collector, usage_cache, venice_usage, sys.modules['usage_magpie']):
             tree = ast.parse(Path(module.__file__).read_text(encoding='utf-8'))
             imported = {alias.name.split('.')[0] for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
             imported |= {node.module.split('.')[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
             self.assertEqual(imported & forbidden, set(), module.__name__)
-        self.assertNotIn('usage_float', sys.modules)
+        with patch.dict(sys.modules):
+            for name in ('usage_float', 'usage_collector', 'usage_core', 'usage_cache', 'venice_usage', 'usage_magpie'):
+                sys.modules.pop(name, None)
+            importlib.import_module('usage_collector')
+            self.assertNotIn('usage_float', sys.modules)
 
     def test_collects_every_signed_in_account_and_writes_the_canonical_cache(self):
         self.sign_in('codex', 'claude')

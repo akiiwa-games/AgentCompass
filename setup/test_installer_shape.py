@@ -12,6 +12,10 @@ import textwrap
 import unittest
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.slow
+
 SETUP = Path(__file__).resolve().parent
 REPO = SETUP.parent
 

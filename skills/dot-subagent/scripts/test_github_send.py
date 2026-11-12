@@ -8,7 +8,11 @@ import subprocess
 import tempfile
 import unittest
 
+import pytest
+
 import github_send
+
+pytestmark = pytest.mark.slow
 
 
 def simulate_dot(repo_dir, xfer, packet_text):

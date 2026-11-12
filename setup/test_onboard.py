@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 SETUP = Path(__file__).resolve().parent
 sys.path.insert(0, str(SETUP))
 
@@ -143,6 +145,7 @@ class RuleSourceTests(HomeCase):
         self.assertEqual(self.backups(), [])                    # nothing changed, nothing backed up
 
 
+@pytest.mark.slow
 class SyncTests(HomeCase):
     def test_new_user_files_are_created_with_markers_and_nothing_else_is_touched(self):
         self.cli = {"claude": "claude"}
@@ -218,6 +221,7 @@ class SyncTests(HomeCase):
         self.assertEqual(config.read_bytes(), after)
 
 
+@pytest.mark.slow
 class GeminiMaterializationTests(HomeCase):
     def test_skill_search_paths_are_written_for_the_target_home(self):
         (self.home / ".gemini").mkdir()
@@ -270,6 +274,7 @@ class GeminiMaterializationTests(HomeCase):
             self.assertTrue(sg.materialized_skill_matches(dst, source))
 
 
+@pytest.mark.slow
 class SkillUpgradeTests(HomeCase):
     def test_managed_skill_moves_to_new_install_and_uninstalls_cleanly(self):
         old = self.write("v1/agent-compass/SKILL.md", "old").parent
@@ -358,6 +363,7 @@ class SkillUpgradeTests(HomeCase):
         self.assertEqual((hub / "gemini-web").resolve(), foreign.resolve())
 
 
+@pytest.mark.slow
 class UninstallTests(HomeCase):
     def snapshot(self):
         return {str(p.relative_to(self.home)): (p.read_bytes() if p.is_file() else None)
@@ -548,6 +554,7 @@ class UsagePluginTests(HomeCase):
             self.assertEqual(onboard.ensure_usage_float(self.home)["action"], "skipped")
 
 
+@pytest.mark.slow
 class SetupFlowTests(HomeCase):
     def run_setup(self, *argv):
         out = io.StringIO()
@@ -599,6 +606,7 @@ class SetupFlowTests(HomeCase):
         self.assertIn("No signed-in agent CLI was found", output)
 
 
+@pytest.mark.slow
 class OrchestratorTests(HomeCase):
     """A new user who runs Orca and T3 Code on top of Claude Code and Codex."""
 
@@ -699,6 +707,7 @@ class OrchestratorTests(HomeCase):
         self.assertEqual(self.snapshot(), before)
 
 
+@pytest.mark.slow
 class UnifiedDiscoveryAndParityTests(HomeCase):
     """Setup and router share one discovery (`provider_inventory.discover`) and one per-family table (`FAMILY_SPECS`)."""
 

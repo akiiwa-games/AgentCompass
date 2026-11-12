@@ -294,9 +294,7 @@ python tray\updates.py update                      # Fast-forward pull, rebuild,
 ```
 
 ```powershell
-# Hermetic pytest suites
-python -X utf8 -m pytest skills/agent-compass/scripts -q -p no:cacheprovider
-python -X utf8 -m pytest tray -q -p no:cacheprovider
-python -X utf8 -m pytest setup audit agentcompass -q -p no:cacheprovider
-python -X utf8 -m pytest skills/dot-subagent/scripts -q -p no:cacheprovider
+# Hermetic pytest suites (isolated temp HOME/APPDATA per xdist worker; no manual env redirection needed)
+pytest -n auto -m "not slow"    # Inner loop (fast unit and contract tests)
+pytest -n auto                  # Pre-merge (full suite including subprocess, packaging, and Tk UI tests)
 ```

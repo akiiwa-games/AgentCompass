@@ -8,6 +8,8 @@ from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
 
@@ -112,6 +114,7 @@ class DnaDimensionTests(unittest.TestCase):
         self.assertTrue(any(radar_chart.dna_dimensions(info, ceiling)["divergence"] > 0 for info in models.values()))
 
 
+@pytest.mark.slow
 class GeometryTests(unittest.TestCase):
     def test_first_axis_points_up_and_axes_go_clockwise(self):
         x, y = radar_chart.point(100, 100, 50, 0, 5)
@@ -167,6 +170,7 @@ PLAN = {"choice": "opus", "decision": {"margin": 0.05},
                     candidate("flash", "gemini-3.8-flash-high", None, excluded=["below ability floor"])]}
 
 
+@pytest.mark.slow
 class DecisionBindingTests(unittest.TestCase):
     def test_theatre_and_static_strip_integrate_without_showing_a_window(self):
         import router_window
@@ -714,6 +718,7 @@ class WorkerDiscoveryTests(unittest.TestCase):
         self.assertEqual([(r["agent_id"], r["state"]) for r in rows], [("x", "启动中")])
 
 
+@pytest.mark.slow
 class LanguageTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
@@ -939,6 +944,7 @@ class LanguageTests(unittest.TestCase):
             self.assertEqual(filled, ["rows"])
 
 
+@pytest.mark.slow
 class WindowHelperTests(unittest.TestCase):
     def test_layout_keeps_the_tray_page_keys(self):
         import router_window
@@ -1081,6 +1087,7 @@ class WindowHelperTests(unittest.TestCase):
             "a***@qq.com     10% 30m (不计入)"])
 
 
+    @pytest.mark.slow
     @desktop_test
     def test_quota_page_regrids_without_rebuilding_and_keeps_worker_table_visible(self):
         import sqlite3
@@ -1210,6 +1217,7 @@ class WindowHelperTests(unittest.TestCase):
             self.assertEqual([w["outer"] for w in panel.quota_cards], outers_before)
             errors.assert_not_called()
 
+    @pytest.mark.slow
     def test_quota_bar_and_card_show_remaining_percentage_and_thresholds(self):
         import tkinter as tk
         import router_window
@@ -1255,6 +1263,7 @@ class WindowHelperTests(unittest.TestCase):
             self.assertEqual(w_bar.value, rem)
             self.assertEqual(w_bar.colour, expected_colour)
 
+    @pytest.mark.slow
     def test_quota_page_reentering_after_data_update_shows_fresh_readings_and_marks_failed_accounts(self):
         import router_window
         import panel_plugins
@@ -1483,6 +1492,7 @@ class ScorerConfigTests(unittest.TestCase):
         self.assertTrue(message.startswith("测试失败（Jev"), message)
         self.assertIn("TypeSafe API key not configured", message)
 
+    @pytest.mark.slow
     def test_simulate_can_profile_with_the_live_scorer(self):
         with mock.patch.object(router_data, "plan_task", side_effect=AssertionError("should not plan without scorer")):
             no_model = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=False)
@@ -1518,6 +1528,7 @@ class ScorerConfigTests(unittest.TestCase):
             self.assertNotIn("胜出 none", panel.status.get())
 
 
+@pytest.mark.slow
 class ResetEditorTests(unittest.TestCase):
     def test_editor_uses_time_choices_and_submits_dynamic_rule(self):
         import router_window
@@ -1542,6 +1553,7 @@ class ResetEditorTests(unittest.TestCase):
             save.assert_called_once_with('codex', 'gpt-6-astra', hours=1)
 
 
+@pytest.mark.slow
 class SystemVersionCardTests(unittest.TestCase):
     def test_system_settings_shows_version_mismatch_update_available_and_one_click_update(self):
         import router_window

@@ -12,6 +12,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 import provider_inventory
 import allocator
 import account_fleet
@@ -284,6 +286,7 @@ class GrokBotTests(unittest.TestCase):
                 self.assertNotIn('private.invalid', text)
                 self.assertEqual(json.loads(text).get('diagnostic'), diagnostic)
 
+    @pytest.mark.slow
     @unittest.skipUnless(runner.os.name == 'nt', 'Windows process-tree contract')
     def test_cli_timeout_cleans_owned_tree_and_remains_uncertain(self):
         import time
@@ -295,10 +298,11 @@ class GrokBotTests(unittest.TestCase):
         parent = ("import subprocess,sys,pathlib; "
                   "p=subprocess.Popen([sys.executable,'-S','-c'," + repr(child) + "], "
                   "stdout=sys.stdout,stderr=sys.stderr,creationflags=0x08000000); "
-                  "pathlib.Path(sys.argv[1]).write_text(str(p.pid))")
+                  "f=pathlib.Path(sys.argv[1]); t=f.with_suffix('.tmp'); "
+                  "t.write_text(str(p.pid)); t.replace(f)")
         handles = []
         def observe():
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + 8
             while time.monotonic() < deadline:
                 if pidfile.exists():
                     try:
@@ -306,20 +310,20 @@ class GrokBotTests(unittest.TestCase):
                         return
                     except (ValueError, OSError):
                         pass
-                time.sleep(0.01)
+                time.sleep(0.005)
         watcher = threading.Thread(target=observe)
         watcher.start()
         try:
             with self.assertRaises(subprocess.TimeoutExpired):
                 runner._run_cli([sys.executable, '-S', '-c', parent, str(pidfile)],
-                                timeout=1, env=runner.os.environ.copy())
-            watcher.join(6)
+                                timeout=2.5, env=runner.os.environ.copy())
+            watcher.join(8)
             self.assertFalse(watcher.is_alive())
             self.assertEqual(len(handles), 1)
             self.assertEqual(win32event.WaitForSingleObject(handles[0], 0), win32event.WAIT_OBJECT_0)
             self.assertNotEqual(win32process.GetExitCodeProcess(handles[0]), 259)
         finally:
-            watcher.join(6)
+            watcher.join(8)
             for handle in handles:
                 if win32event.WaitForSingleObject(handle, 0) == win32event.WAIT_TIMEOUT:
                     win32api.TerminateProcess(handle, 1)
@@ -333,6 +337,7 @@ class GrokBotTests(unittest.TestCase):
                 runner.gbot('send', '--', 'fixture-bot', 'fixture prompt')
             self.assertEqual(error.exception.delivery, 'unknown')
 
+    @pytest.mark.slow
     @unittest.skipUnless(runner.os.name == 'nt', 'Windows Job assignment')
     def test_job_assignment_failure_does_not_execute_cli(self):
         import win32job
@@ -464,6 +469,7 @@ class GrokBotTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     roll.grok_bot(SimpleNamespace(**{**vars(args), option: value}), {}, prompt, {}, bundle)
 
+    @pytest.mark.slow
     def test_production_roll_records_known_contract_before_mocked_external_send(self):
         brief = self.root / 'brief.md'
         brief.write_text('Reply with the fixture marker. Do not use tools.')
