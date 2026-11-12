@@ -971,7 +971,9 @@ class RollTests(unittest.TestCase):
             (result, code), seen = self.roll(decision, brief=None, task='Rename foo to bar in util.py', hours=None, task_id=None)
         self.assertEqual(code, 0)
         self.assertEqual((result['status'], result['worker']['model']), ('launched', self.bundle['model']))
-        self.assertEqual(set(result) - {'worker', 'reason'}, {'status', 'next_action', 'next_argv', 'assumptions', 'details'})
+        # A launched worker has an agent id, so the compact result also carries its continuation verdict (roll.run).
+        self.assertEqual(set(result) - {'worker', 'reason'},
+                         {'status', 'next_action', 'next_argv', 'assumptions', 'continuation', 'details'})
         self.assertIn('No completion notification is confirmed', result['next_action'])
         self.assertIn('budgeted 0.4h from the classifier estimate, confidence medium', result['assumptions'][0])
         self.assertEqual(seen['task']['objective'], 'Rename foo to bar in util.py')

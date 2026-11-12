@@ -27,13 +27,6 @@ jobs:
             echo "::error::.github/RELEASE_SUBTITLE ('$subtitle') is already the title of a published release; write this release's subtitle"
             exit 1
           fi
-      - name: Check that no tracked file carries personal content
-        env:
-          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
-        run: |
-          list="$RUNNER_TEMP/privacy-denylist.txt"
-          echo "$PRIVACY_DENYLIST" > "$list"
-          python -X utf8 packaging/privacy_check.py --denylist "$list"
       - name: Check that references/public-data.json matches the shipped reference data
         run: python -X utf8 skills/agent-compass/scripts/public_data.py manifest --check
       - name: Build the wheel

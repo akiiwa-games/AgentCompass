@@ -3,7 +3,7 @@
 Generic patterns are public and live here. Personal identifiers (user names, private project names, machine paths) must
 never be written into this public repository, so they come from a denylist outside it, one literal per line:
 ``--denylist FILE``, else ``$AGENTCOMPASS_PRIVACY_DENYLIST``, else ``~/.agent-compass/privacy-denylist.txt`` when it exists.
-In CI the release workflow writes the optional ``PRIVACY_DENYLIST`` repository secret to a temporary file.
+It runs locally as the first step of ``packaging/verify_release.py`` before a release; the denylist never leaves this machine.
 
 Prints only file:line and the kind of hit, never the matched personal text.
 """

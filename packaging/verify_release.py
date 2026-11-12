@@ -3,6 +3,7 @@
     python -X utf8 packaging/verify_release.py [--wheel X.whl] [--with-windows-sandbox] [--report DIR]
 
 Runs the full pre-release verification suite:
+  0. Privacy check of tracked files against generic patterns and the local denylist (privacy_check.py)
   1. Foreign-machine packaged wheel & cloned usage-float behavioral verification (F01..F13)
   2. Zero-credential 13-surface dispatch & scorer verification (zero_dispatch_check.py)
   3. Unit/regression suites across setup/, skills/agent-compass/scripts/, tray/, and usage-float/
@@ -70,6 +71,8 @@ def main(argv=None) -> int:
     py = _find_tray_python()
     started = time.time()
     steps: list[dict] = []
+
+    steps.append(_run_step("privacy_check (tracked files)", [py, "-X", "utf8", str(HERE / "privacy_check.py")]))
 
     foreign_cmd = [py, "-X", "utf8", str(HERE / "foreign_machine_check.py")]
     if args.wheel:
