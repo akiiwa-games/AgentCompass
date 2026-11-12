@@ -19,6 +19,19 @@ def tokens_text(value) -> str:
     return f"{value / 1_000_000:.2f}M" if value >= 100_000 else f"{value / 1000:.0f}k"
 
 
+def cap_tokens_text(value: int) -> str:
+    value = int(value)
+    if value >= 1_000_000 and value % 10_000 == 0:
+        return f"{value / 1_000_000:.2f}".rstrip("0").rstrip(".") + "M"
+    if 1_000 <= value < 1_000_000 and value % 1_000 == 0:
+        return f"{value // 1_000}k"
+    return f"{value:,}"
+
+
+def worker_cap_heading(limit: int) -> str:
+    return _tr("占 {0} 上限").format(cap_tokens_text(limit))
+
+
 def card_title(card: dict) -> str:
     """A quota card's name; an account in trouble or excluded from dispatch says so on the card itself, with the reason on the hover."""
     if card.get("status") not in ("plan_inactive", "usage_failing", "auth_failed", "agy_account_flapping") and not card.get("retry_hold"):
@@ -369,10 +382,11 @@ class QuotaPage:
         workers = theme.card(page, padding=12, fill="both", expand=True, pady=(6, 0))
         self.workers_card = workers
         ttk.Label(workers, text=_tr("在途与活跃会话"), style="CardH3.TLabel").pack(anchor="w", pady=(0, 6))
+        limit = self.data_module().rotation_limit()
         frame, self.worker_table = self.tree(workers, (
             ("agent", "Agent", 70, "w"), ("title", _tr("任务"), 200, "w"), ("bundle", _tr("模型"), 110, "w"),
             ("state", _tr("状态"), 66, "w"), ("compacted", _tr("已压缩"), 62, "e"), ("context", _tr("窗口"), 58, "e"),
-            ("total", _tr("累计"), 62, "e"), ("bar", _tr("占 2M 上限"), 130, "w")), 4)
+            ("total", _tr("累计"), 62, "e"), ("bar", worker_cap_heading(limit), 130, "w")), 4)
         frame.pack(fill="both", expand=True)
         self.attach_row_tooltip(self.worker_table, self.worker_row_tip)
 
@@ -512,7 +526,11 @@ class QuotaPage:
     def load_quota(self, force: bool = False):
         self._quota_refreshed = time.monotonic()
         data = self.data_module()
-        self.run(lambda: (self.cached_account_cards(force), data.workers()), self.quota_loaded, _tr("正在读取账号水位…"))
+        self.run(
+            lambda: (self.cached_account_cards(force), data.workers(), data.rotation_limit()),
+            self.quota_loaded,
+            _tr("正在读取账号水位…"),
+        )
 
     def refresh_usage(self, accounts=None):
         def done(_msg):
@@ -561,10 +579,15 @@ class QuotaPage:
         self.sync_quota_geometry()
 
     def quota_loaded(self, value):
-        cards, workers = value
+        if len(value) == 3:
+            cards, workers, limit = value
+        else:
+            cards, workers = value
+            limit = workers[0]["limit"] if workers and workers[0].get("limit") else self.data_module().rotation_limit()
         self.worker_rows = workers
         if cards is not getattr(self, "_rendered_quota_cards", None):
             self.quota_cards_loaded(cards)
+        self.worker_table.heading("bar", text=worker_cap_heading(limit))
         self.worker_table.delete(*self.worker_table.get_children())
         for index, worker in enumerate(workers):
             share = (worker["historical_tokens"] or 0) / worker["limit"] if worker["limit"] else 0

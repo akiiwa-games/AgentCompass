@@ -135,9 +135,38 @@ def worker_historical_tokens(worker):
     return max(hist, compacted + current)
 
 
+SHIPPED_ACCOUNTS = Path(__file__).resolve().parents[1] / 'references' / 'accounts.json'
+
+
+def shipped_scoring(path=None):
+    """`scoring` mapping from the shipped `accounts.json`."""
+    source = Path(path) if path is not None else SHIPPED_ACCOUNTS
+    doc = json.loads(source.read_text(encoding='utf-8-sig'))
+    scoring = doc.get('scoring') if isinstance(doc, dict) else None
+    if not isinstance(scoring, dict):
+        raise KeyError(f'Missing scoring block in {source}')
+    return scoring
+
+
+def rotation_threshold(policy=None):
+    """Configured historical-context rotation limit (`scoring.rotate_after_carried_tokens`)."""
+    if policy is None:
+        import account_fleet
+        policy = account_fleet.load_accounts().get('scoring')
+    elif isinstance(policy, dict) and 'scoring' in policy and 'rotate_after_carried_tokens' not in policy:
+        policy = policy.get('scoring')
+    if not isinstance(policy, dict) or policy.get('rotate_after_carried_tokens') is None:
+        raise KeyError('Missing scoring.rotate_after_carried_tokens in accounts configuration')
+    raw = policy['rotate_after_carried_tokens']
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw <= 0:
+        raise ValueError(f'scoring.rotate_after_carried_tokens must be a positive number, got {raw!r}')
+    return int(raw)
+
+
 def worker_worn(worker, policy):
-    """True when the worker has reached `rotate_after_carried_tokens` (default 2M)
+    """True when the worker has reached `rotate_after_carried_tokens`
     measured by historical uncompressed context tokens (never compressed window size)."""
+    limit = rotation_threshold(policy)
     if not isinstance(worker, dict):
         return False
-    return worker_historical_tokens(worker) >= policy.get('rotate_after_carried_tokens', 2000000)
+    return worker_historical_tokens(worker) >= limit

@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import sqlite3
+import sys
 import threading
 import time
 import uuid
@@ -88,11 +89,28 @@ PRESETS = (
     ("回测研究包", "运行因子回测，计算样本外夏普并整理研究报告", 3.0, False, False),
 )
 PRESETS = LocalizedSequence(PRESETS)
-TUNING_DEFAULTS = {"safety_margin_pct": 5, "short_window_floor_pct": 10, "rotate_after_carried_tokens": 2000000}
+def _shipped_tuning_defaults() -> dict[str, int]:
+    scripts = Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import worker_sessions
+    scoring = worker_sessions.shipped_scoring()
+    return {
+        "safety_margin_pct": int(scoring["safety_margin_pct"]),
+        "short_window_floor_pct": int(scoring["short_window_floor_pct"]),
+        "rotate_after_carried_tokens": worker_sessions.rotation_threshold(scoring),
+    }
+
+
+TUNING_DEFAULTS = _shipped_tuning_defaults()
 STRATEGY_PRESETS = {
     "均衡默认": dict(TUNING_DEFAULTS),
     "省额度": {"safety_margin_pct": 12, "short_window_floor_pct": 20, "rotate_after_carried_tokens": 1500000},
-    "消纳临期": {"safety_margin_pct": 3, "short_window_floor_pct": 8, "rotate_after_carried_tokens": 2000000},
+    "消纳临期": {
+        "safety_margin_pct": 3,
+        "short_window_floor_pct": 8,
+        "rotate_after_carried_tokens": TUNING_DEFAULTS["rotate_after_carried_tokens"],
+    },
 }
 TUNING_LIMITS = {"safety_margin_pct": (0, 50), "short_window_floor_pct": (0, 50),
                  "rotate_after_carried_tokens": (100000, 10000000)}
@@ -984,8 +1002,22 @@ def _paseo_agents(agents_dir: Path) -> list[dict]:
     return docs
 
 
+def rotation_limit(accounts: dict | None = None) -> int:
+    """Configured historical-context rotation threshold (`scoring.rotate_after_carried_tokens`)."""
+    modules()
+    import account_fleet
+    import worker_sessions
+    if accounts is None:
+        if (hasattr(getattr(account_fleet, "load_accounts", None), "_mock_name")
+                or getattr(account_fleet.load_accounts, "__module__", "") != "account_fleet"):
+            accounts = account_fleet.load_accounts()
+        else:
+            accounts = read_tuning()
+    return worker_sessions.rotation_threshold(accounts)
+
+
 def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict]:
-    """Live workers with their historical (uncompressed) context against the 2M rotation limit.
+    """Live workers with their historical (uncompressed) context against the configured rotation limit.
 
     A dispatch row stays 'completed' after its first turn even when the worker is resumed, so the live Paseo agent
     records are read too: running / initializing agents, and dispatched workers active in the last six hours."""
@@ -994,7 +1026,7 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
     import worker_sessions
     rows = _dispatch_rows(db or STATE_DIR / "dispatch.sqlite3")
     accounts = _cached_accounts()
-    limit = accounts["scoring"].get("rotate_after_carried_tokens", 2000000)
+    limit = rotation_limit(accounts)
     now = now_utc()
     by_agent = {row["agent_id"]: row for row in rows if row.get("agent_id")}
     live = {}

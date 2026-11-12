@@ -17,7 +17,7 @@ To delegate work to a subagent, worker or advisor, run one command; the router p
 agentcompass roll --task "<what the worker should do>"
 ```
 
-Before you launch, continue or replace a worker, read [the dispatch rules](references/dispatch-rules.md): model and effort overrides, re-rolling an unavailable owner, the 2M continuation limit, permission modes, the gate and `record`, and parent messaging.
+Before you launch, continue or replace a worker, read [the dispatch rules](references/dispatch-rules.md): model and effort overrides, re-rolling an unavailable owner, the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray), permission modes, the gate and `record`, and parent messaging.
 
 Long or multi-line assignments: `--task -` reads stdin, `--brief <file>` reads a file; the worker always gets your text unchanged. Several single-task briefs go in one call, `--brief a.md --brief b.md`: they are classified at the same time and routed one after another (`status: batch`, one result per brief). Do not call `create_agent`, `Agent`, `spawn_agent`, `invoke_subagent` or a CLI yourself.
 

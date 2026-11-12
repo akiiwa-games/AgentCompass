@@ -544,6 +544,91 @@ class AllocatorTests(unittest.TestCase):
         self.assertNotIn('disabled', kept['agy_opus55_high'])
         self.assertNotIn('disabled', kept['agy_sonnet55_high'])
 
+    def test_configured_rotation_threshold_and_missing_key_errors(self):
+        import dispatch_registry as registry
+
+        base = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        caps = account_fleet.load_capabilities(accounts=base)
+        roomy = self.usage(codex=[('usage', 80, 100)])
+        step_task = {'work_kind': 'general_implementation', 'difficulty': 'coupled', 'expected_hours': 1}
+
+        # 1. Thresholds below 250k (permitted by TUNING_LIMITS 100k..10M) scale context burn and rotate without a 250k floor.
+        accounts_150k = copy.deepcopy(base)
+        accounts_150k['scoring']['rotate_after_carried_tokens'] = 150_000
+        fresh = self.plan(step_task, roomy, accounts=accounts_150k, capabilities=caps)
+        fresh_usd = self.rows(fresh)['sol_xhigh']['expected_usd']
+        at_120k = self.plan(
+            dict(step_task, chain=self.chain(total=2, tokens=120_000, compacted=0, compactions=0)),
+            roomy,
+            accounts=accounts_150k,
+            capabilities=caps,
+        )
+        self.assertEqual(at_120k['decision']['action'], 'resume')
+        extra = accounts_150k['scoring']['context_burn_extra_at_250k'] * (120_000 / 150_000)
+        self.assertAlmostEqual(self.rows(at_120k)['sol_xhigh']['expected_usd'], fresh_usd * (1 + extra), delta=0.02)
+        accounts_250k = copy.deepcopy(base)
+        accounts_250k['scoring']['rotate_after_carried_tokens'] = 250_000
+        at_120k_250k = self.plan(
+            dict(step_task, chain=self.chain(total=2, tokens=120_000, compacted=0, compactions=0)),
+            roomy,
+            accounts=accounts_250k,
+            capabilities=caps,
+        )
+        self.assertGreater(self.rows(at_120k)['sol_xhigh']['expected_usd'],
+                           self.rows(at_120k_250k)['sol_xhigh']['expected_usd'] + 0.5)
+        at_150k = self.plan(
+            dict(step_task, chain=self.chain(total=2, tokens=90_000, compacted=60_000, compactions=1)),
+            roomy,
+            accounts=accounts_150k,
+            capabilities=caps,
+        )
+        self.assertEqual(at_150k['decision']['action'], 'rotate')
+
+        # 2. Non-default threshold flows through dispatch_registry.reusable_workers; missing/invalid values raise surfaced errors.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / 'dispatch.sqlite3'
+            paseo_home = root / '.paseo'
+            agents = paseo_home / 'agents' / 'ws'
+            agents.mkdir(parents=True)
+            (agents / 'w-reusable.json').write_text(
+                json.dumps({'id': 'w-reusable', 'status': 'idle', 'labels': {'router.parent_id': 'parent-1'}}),
+                encoding='utf-8',
+            )
+            with registry.transaction(db) as conn:
+                registry.save(conn, {
+                    'dispatch_id': 'disp-1', 'decision_id': 'dec-1', 'state': 'completed',
+                    'agent_id': 'w-reusable', 'parent_id': 'parent-1',
+                    'created_at': self.now.isoformat(), 'updated_at': self.now.isoformat(),
+                    'bundle': {'bundle_id': 'sol_xhigh', 'account': 'codex', 'provider': 'codex', 'model': 'gpt-6.1-sol'},
+                    'task': {'task_id': 't-1'},
+                    'request': {'title': 'worker task'},
+                })
+
+            accounts_750k = copy.deepcopy(base)
+            accounts_750k['scoring']['rotate_after_carried_tokens'] = 750_000
+            with patch.object(account_fleet, 'load_accounts', return_value=accounts_750k):
+                with patch.object(worker_sessions, 'session_state', return_value={'historical_context_tokens': 700_000, 'context_tokens': 100_000, 'compacted_tokens': 600_000}):
+                    under = registry.reusable_workers('parent-1', now=self.now + timedelta(minutes=1), path=db, paseo_home=paseo_home)
+                    self.assertEqual([w['worn'] for w in under], [False])
+                with patch.object(worker_sessions, 'session_state', return_value={'historical_context_tokens': 800_000, 'context_tokens': 100_000, 'compacted_tokens': 700_000}):
+                    over = registry.reusable_workers('parent-1', now=self.now + timedelta(minutes=1), path=db, paseo_home=paseo_home)
+                    self.assertEqual([w['worn'] for w in over], [True])
+
+            missing = copy.deepcopy(base)
+            missing['scoring'].pop('rotate_after_carried_tokens', None)
+            with self.assertRaises(KeyError):
+                worker_sessions.rotation_threshold(missing)
+            with self.assertRaises(KeyError):
+                self.plan(step_task, roomy, accounts=missing, capabilities=caps)
+            with patch.object(account_fleet, 'load_accounts', return_value=missing), \
+                    patch.object(worker_sessions, 'session_state', return_value={'historical_context_tokens': 100_000}):
+                with self.assertRaises(KeyError):
+                    registry.reusable_workers('parent-1', now=self.now + timedelta(minutes=1), path=db, paseo_home=paseo_home)
+            for bad_val in (0, -100, True, '750000'):
+                with self.assertRaises(ValueError):
+                    worker_sessions.rotation_threshold({'rotate_after_carried_tokens': bad_val})
+
 
 class OverrideContractTests(unittest.TestCase):
     """Contract tests for temporary priority overrides, reset confirmation, receipts, and atomic store."""

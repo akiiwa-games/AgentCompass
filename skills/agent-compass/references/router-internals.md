@@ -126,9 +126,10 @@ A local `capability_policy.remote_reroute_guard.enabled` may retain a remote ada
 reroute policy; the public catalogue does not enable a remote-first loop.
 
 Historical uncompressed worker context is `compacted_tokens + context_tokens`, including
-all pre-compaction context replaced over the session. At the configured rotation limit,
-start a fresh worker with a handoff. The parent can still steer its own running worker
-under the communication contract below.
+all pre-compaction context replaced over the session. At the configured context rotation
+threshold (`rotate_after_carried_tokens`, default 2M, set in the tray), start a fresh
+worker with a handoff. The parent can still steer its own running worker under the
+communication contract below.
 
 ---
 
@@ -211,7 +212,7 @@ python -X utf8 scripts/route_simulation.py replay [--last N] [--json out.json]
 
 `notifyOnFinish: false` above applies only to worker-to-parent questions and final reports. When the main session uses `send_agent_prompt` to add work, give clearance or resume its own worker, it must set `notifyOnFinish: true` (or omit it): the completion notification and final reply are the result channel for workers without messaging tools, such as agy. `router_gate_hook` blocks an explicit `false` from a parent to its own worker.
 
-Disabling an account/bundle or exhausting its drawn quota window blocks new launches and new turns, while the parent can still control its own currently running worker (steer, scope cut, answering questions, wrap-up/handoff): blocking control messages saves no quota and only leaves a running worker without its wrap-up instruction. The same exception applies at the 2M historical-context limit. Ownership must be proved by consistent locally persisted parent labels and running state by the local Paseo record; missing/unknown/idle state grants no exception, even for a prompt requesting only a commit or report. Collect existing output, cancel if necessary and roll a handoff to a fresh worker, or re-enable a disabled account in AgentCompass settings. Completion-notification checks still apply. See the [gate contract and local-state limitation](parent-address-gate.md#disabled-target-and-context-rotation-gate-contract).
+Disabling an account/bundle or exhausting its drawn quota window blocks new launches and new turns, while the parent can still control its own currently running worker (steer, scope cut, answering questions, wrap-up/handoff): blocking control messages saves no quota and only leaves a running worker without its wrap-up instruction. The same exception applies at the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray). Ownership must be proved by consistent locally persisted parent labels and running state by the local Paseo record; missing/unknown/idle state grants no exception, even for a prompt requesting only a commit or report. Collect existing output, cancel if necessary and roll a handoff to a fresh worker, or re-enable a disabled account in AgentCompass settings. Completion-notification checks still apply. See the [gate contract and local-state limitation](parent-address-gate.md#disabled-target-and-context-rotation-gate-contract).
 
 Paseo SDK creation does not implement MCP's `notifyOnFinish`. The router therefore starts its own notifier before SDK creation, deduplicated by dispatch ID and stable message IDs. Permission notices leave observation active; final delivery, parent closure or the seven-day watch deadline ends the process. A two-minute delivery grace follows the deadline; failures remain in the durable receipt. A stopped watcher can be recovered by observing the dispatch; recovery never creates another worker. No daemon settings or installed Paseo files are modified.
 

@@ -121,8 +121,9 @@ class RuleSourceTests(HomeCase):
         # The procedure itself lives in the skill's docs, which ship with the install the pointer names.
         rules = Path(host_rules.DISPATCH_RULES).read_text(encoding="utf-8")
         for needle in ("launched", "bypassPermissions", "full-access", "notifyOnFinish", "[Worker final report]",
-                       "record --constraint", "gate-hook", "2M", "--basis"):
+                       "record --constraint", "gate-hook", "rotate_after_carried_tokens", "--basis"):
             self.assertIn(needle, rules)
+        self.assertNotIn("2M", rules)
         self.assertIn(host_rules.agentcompass_command() + " roll --task", text)
         self.assertNotIn("route_judge", text)
 

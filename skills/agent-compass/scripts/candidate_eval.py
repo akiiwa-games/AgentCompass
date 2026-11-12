@@ -321,7 +321,7 @@ def evaluate_bundle(bundle, task, ctx):
     if resumes:
         carried = worker_sessions.worker_historical_tokens(worker)
         if not worn:
-            limit = max(250000, policy.get('rotate_after_carried_tokens', 2000000))
+            limit = worker_sessions.rotation_threshold(policy)
             context_extra = policy['context_burn_extra_at_250k'] * quota_pools.clamp(carried / limit, 0, 1)
         if worker.get('telemetry_status') == 'partial':
             result['notes'].append('session telemetry partial; carried tokens are a lower bound')

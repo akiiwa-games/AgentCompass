@@ -63,7 +63,7 @@ class HostRulesTests(unittest.TestCase):
             self.assertIn(host_rules.DISPATCH_RULES, text, kind)
             self.assertIn('next_action', text, kind)
             # The dispatch procedure is not copied into every session any more.
-            for detail in ('bypassPermissions', 'notifyOnFinish', '2M', 'gate-hook', 'record --'):
+            for detail in ('bypassPermissions', 'notifyOnFinish', '2M', 'rotate_after_carried_tokens', 'gate-hook', 'record --'):
                 self.assertNotIn(detail, text, kind)
         self.assertLess(len(host_rules.load('shared', self.home)[0]), 2600)
         self.assertLess(len(host_rules.load('daemon-append', self.home)[0]), 1000)

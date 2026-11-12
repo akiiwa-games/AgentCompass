@@ -210,7 +210,7 @@ EN = {
     '已压缩': 'Compacted',
     '窗口': 'Context',
     '累计': 'Total',
-    '占 2M 上限': '% of 2M cap',
+    '占 {0} 上限': '% of {0} cap',
     '正在读取账号水位…': 'Reading account quota…',
     '正在请求刷新额度…': 'Requesting quota refresh…',
     '近期待命': 'Recently idle',

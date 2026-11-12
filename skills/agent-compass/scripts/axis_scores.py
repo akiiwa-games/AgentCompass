@@ -29,7 +29,7 @@ import account_fleet
 #   target earns more. A candidate below the panel's weakest scores below 0. The economy reads the same fit, and 0 is
 #   its total loss (a candidate at or below it is never an outside alternative).
 # - Continuity: continuing a related worker (coupling high, the same bundle) is worth one demand level, the largest
-#   positive t3 - t2 among the task's highest-demand categories (else 0); the 2M continuation cap (worker_worn) stands.
+#   positive t3 - t2 among the task's highest-demand categories (else 0); the context rotation cap (worker_worn) stands.
 # - Missing data (rule B): a demanded category with no data at all, or no cited usd on a billed account, leaves
 #   automatic routing; a named model still runs, with the data error as a warning.
 # - Plan capacity is the cited figure of the capacity ladder (community, time-to-exhaust, vendor multiplier), priced at

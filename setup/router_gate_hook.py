@@ -641,7 +641,7 @@ def check_worker_compaction_limit(
     home: Path | None = None,
     caller_id: str | None = None,
 ) -> str | None:
-    """Block a new turn at 2M historical tokens, preserving parent control of an active turn."""
+    """Block a new turn at the configured historical-token rotation threshold, preserving parent control of an active turn."""
     if not agent_id or not is_delegated_worker(agent_id, paseo_agents_dir=paseo_agents_dir, caller_id=caller_id):
         return None
     if owns_running_worker(load_paseo_agent(agent_id, paseo_agents_dir), agent_id, caller_id):
@@ -651,11 +651,10 @@ def check_worker_compaction_limit(
     try:
         account_fleet = router_module("account_fleet")
         worker_sessions = router_module("worker_sessions")
-        policy = account_fleet.load_accounts().get("scoring") or {}
-        max_tokens = int(policy.get("rotate_after_carried_tokens", 2_000_000))
-        state = worker_sessions.session_state(agent_id, home=home_dir)
-    except Exception:
+    except ImportError:
         return None
+    max_tokens = worker_sessions.rotation_threshold(account_fleet.load_accounts())
+    state = worker_sessions.session_state(agent_id, home=home_dir)
     compactions = state.get("compactions") or 0
     compacted_tok = state.get("compacted_tokens") or 0
     current_tok = state.get("context_tokens") or 0
@@ -666,7 +665,8 @@ def check_worker_compaction_limit(
         f"[Router Gate] 拦截向已达历史累计上下文上限的旧 worker 续派任务 (agent_id={agent_id}, "
         f"historical_context_tokens={carried:,}/{max_tokens:,}, compactions={compactions})："
         f"该 worker 历史累计未压缩上下文达 {carried:,} tokens"
-        f"（历次压缩前累计 {compacted_tok:,} + 当前窗口 {current_tok:,}，非压缩后当前窗口），继续追加 prompt 会导致上下文漂移与质量退化。"
+        f"（已达配置的上下文轮换阈值 rotate_after_carried_tokens={max_tokens:,}；"
+        f"历次压缩前累计 {compacted_tok:,} + 当前窗口 {current_tok:,}，非压缩后当前窗口），继续追加 prompt 会导致上下文漂移与质量退化。"
         "禁止向该旧 worker 开启新 turn；父会话仍可向自己明确运行中的 worker 发控制消息以收尾交接。"
         "若已 idle 或状态未知，请收取已有输出，必要时调用 cancel_agent，再把当前进展与剩余工作写成交接任务书 <handoff.md>，"
         f"运行 {ROUTER_CMD} roll --brief <handoff.md> 由新 worker 接手。"

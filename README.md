@@ -81,7 +81,7 @@ Three details:
 - Name a model or an effort in your prompt and the main session passes it through as `--model ... --effort ... --basis "<your words>"`. The router does not override it.
 - `agentcompass plan --input examples/task.json --dry-run` prints the ranking for a task without launching anything or writing to the ledger.
 - An optional `PreToolUse` hook blocks sub-agent launches that did not go through the router.
-- A worker whose cumulative context reaches 2M tokens is replaced by a new worker with a handoff brief instead of being compacted again.
+- A worker whose cumulative context reaches the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray) is replaced by a new worker with a handoff brief instead of being compacted again.
 
 ### Quickstart
 
@@ -178,7 +178,7 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 - 在对话里点名模型或档位，主会话会以 `--model ... --effort ... --basis "<你的原话>"` 原样透传，路由器不会改。
 - `agentcompass plan --input examples/task.json --dry-run` 只打印某个任务的候选排名，不启动任何 worker，也不写台账。
 - 可选的 `PreToolUse` 门禁会拦截没有经过路由器的子 Agent 启动。
-- worker 的历史累计上下文达到 2M tokens 时，会带着交接任务书换一个新 worker，而不是继续压缩。
+- worker 的历史累计上下文达到配置的上下文轮换阈值（`rotate_after_carried_tokens`，可在托盘策略页设置）时，会带着交接任务书换一个新 worker，而不是继续压缩。
 
 ### 快速开始
 

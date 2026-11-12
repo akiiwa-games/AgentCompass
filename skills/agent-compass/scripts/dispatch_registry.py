@@ -355,10 +355,7 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
         return []
     p_home = Path(paseo_home or os.environ.get('PASEO_HOME') or Path.home() / '.paseo')
     home_dir = p_home.parent if p_home.name == '.paseo' else Path(os.environ.get('ROUTER_PROVIDER_HOME') or Path.home())
-    try:
-        max_tokens = int((account_fleet.load_accounts().get('scoring') or {}).get('rotate_after_carried_tokens', 2_000_000))
-    except Exception:
-        max_tokens = 2_000_000
+    max_tokens = worker_sessions.rotation_threshold(account_fleet.load_accounts())
     candidates = []
     for agent_id, history in by_agent.items():
         history.sort(key=lambda r: (r.get('created_at') or '', r.get('updated_at') or ''))

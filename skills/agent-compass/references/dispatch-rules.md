@@ -16,8 +16,8 @@ The global rule block AgentCompass installs is a short pointer to this skill. Re
 
 ## 3. Continue a worker, or replace it
 
-1. Follow-up work may go to the same worker (Paseo `send_agent_prompt`, a host's `SendMessage`) only while its accumulated uncompressed context is under 2M tokens. Count `compacted_tokens + context_tokens`: the context before every earlier compaction plus the current window, never the current window alone.
-2. At 2M or more, write the progress and the remaining work into a handoff brief and run `agentcompass roll --brief <handoff.md>` for a fresh worker. Changing the owner, model or effort also means rolling again.
+1. Follow-up work may go to the same worker (Paseo `send_agent_prompt`, a host's `SendMessage`) only while its accumulated uncompressed context is under the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray). Count `compacted_tokens + context_tokens`: the context before every earlier compaction plus the current window, never the current window alone.
+2. At or above `rotate_after_carried_tokens`, write the progress and the remaining work into a handoff brief and run `agentcompass roll --brief <handoff.md>` for a fresh worker. Changing the owner, model or effort also means rolling again.
 3. The limit applies to starting a new turn. A parent may still send control messages (steer, cut scope, answer a question, wrap up and hand off) to its own worker while that worker is running. An idle worker, or one whose state or ownership is unknown, gets no exception: collect its output, `cancel_agent` if needed, and roll the handoff ([gate contract](parent-address-gate.md#disabled-target-quota-and-context-rotation-gate-contract)).
 
 ## 4. Permission mode on every launch

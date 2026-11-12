@@ -1603,5 +1603,184 @@ class SystemVersionCardTests(unittest.TestCase):
             self.assertEqual(panel.ac_version_pill.cget("text").strip(), "已是最新")
 
 
+class RotationThresholdEndToEndTests(unittest.TestCase):
+    def test_presets_and_labels_follow_configured_threshold_and_surface_missing_key(self):
+        import i18n
+        import panel_quota
+
+        shipped = json.loads(CATALOG_JSON.read_text(encoding="utf-8-sig"))["scoring"]["rotate_after_carried_tokens"]
+        self.assertEqual(router_data.TUNING_DEFAULTS["rotate_after_carried_tokens"], shipped)
+        self.assertEqual(router_data.STRATEGY_PRESETS["均衡默认"]["rotate_after_carried_tokens"], shipped)
+        self.assertEqual(router_data.STRATEGY_PRESETS["消纳临期"]["rotate_after_carried_tokens"], shipped)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            with mock.patch.object(router_data, "STATE_DIR", state):
+                i18n.set_language("zh")
+                self.assertEqual(panel_quota.worker_cap_heading(750_000), "占 750k 上限")
+                self.assertEqual(panel_quota.worker_cap_heading(1_500_000), "占 1.5M 上限")
+                self.assertEqual(panel_quota.worker_cap_heading(2_000_000), "占 2M 上限")
+                i18n.set_language("en")
+                self.assertEqual(panel_quota.worker_cap_heading(750_000), "% of 750k cap")
+                self.assertEqual(panel_quota.worker_cap_heading(1_500_000), "% of 1.5M cap")
+                self.assertEqual(panel_quota.worker_cap_heading(2_000_000), "% of 2M cap")
+
+            bad = state / "accounts.json"
+            doc = json.loads(CATALOG_JSON.read_text(encoding="utf-8-sig"))
+            doc["scoring"].pop("rotate_after_carried_tokens", None)
+            bad.write_text(json.dumps(doc), encoding="utf-8")
+            with mock.patch.object(router_data, "_accounts_path", return_value=bad), \
+                    mock.patch.object(router_data, "STATE_DIR", state):
+                with self.assertRaises(KeyError):
+                    router_data.rotation_limit()
+
+    def test_non_default_threshold_flows_through_gate_allocator_registry_and_tray_heading(self):
+        import copy
+        import importlib.util
+        from datetime import datetime, timedelta, timezone
+        import dispatch_registry as registry
+        import i18n
+        import panel_widgets
+        import router_window
+        import tk_test_support
+        from router_test_support import usage_windows
+
+        gate_path = Path(__file__).resolve().parents[1] / "setup" / "router_gate_hook.py"
+        spec = importlib.util.spec_from_file_location("test_gate_hook_e2e", gate_path)
+        gate_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate_mod)
+
+        threshold = 750_000
+        now = datetime(2026, 10, 9, 3, 0, tzinfo=timezone.utc)
+        base_accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        caps = account_fleet.load_capabilities(accounts=base_accounts)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root_dir = Path(tmp)
+            state_dir = root_dir / "state"
+            state_dir.mkdir(parents=True, exist_ok=True)
+            override_file = state_dir / "accounts-override.json"
+            override_file.write_text(
+                json.dumps({"schema_version": 2, "scoring": {"rotate_after_carried_tokens": threshold}}),
+                encoding="utf-8",
+            )
+            paseo_home = root_dir / ".paseo"
+            ws_dir = paseo_home / "agents" / "ws"
+            ws_dir.mkdir(parents=True, exist_ok=True)
+            wid = "77777777-4444-4444-8888-111111111111"
+            (ws_dir / f"{wid}.json").write_text(
+                json.dumps({
+                    "id": wid,
+                    "provider": "codex",
+                    "status": "idle",
+                    "lastStatus": "idle",
+                    "title": "threshold e2e worker",
+                    "updatedAt": router_data.now_utc().isoformat(),
+                    "lastActivityAt": router_data.now_utc().isoformat(),
+                    "labels": {"router.parent_id": "parent-e2e"},
+                    "config": {"model": "gpt-6.1-sol"},
+                }),
+                encoding="utf-8",
+            )
+            db = state_dir / "dispatch.sqlite3"
+            future = (router_data.now_utc() + timedelta(hours=2)).isoformat()
+            row_doc = {
+                "dispatch_id": "disp-e2e",
+                "decision_id": "dec-e2e",
+                "state": "completed",
+                "agent_id": wid,
+                "parent_id": "parent-e2e",
+                "hard_until": future,
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "bundle": {"bundle_id": "sol_xhigh", "account": "codex", "provider": "codex", "model": "gpt-6.1-sol"},
+                "task": {"task_id": "t-e2e"},
+                "request": {"title": "threshold e2e worker"},
+            }
+            with registry.transaction(db) as conn:
+                registry.save(conn, row_doc)
+
+            real_load_accounts = account_fleet.load_accounts
+
+            def custom_load_accounts(path=None):
+                if path is not None:
+                    return real_load_accounts(path)
+                merged = copy.deepcopy(base_accounts)
+                override_doc = json.loads(override_file.read_text(encoding="utf-8"))
+                merged["scoring"].update(override_doc["scoring"])
+                return merged
+
+            usage = usage_windows(now, {
+                "claude": [("five_hour", 90, 3), ("seven_day", 60, 100), ("weekly_fable", 100, 100)],
+                "claude-lab": [("five_hour", 90, 3), ("seven_day", 60, 100), ("weekly_fable", 100, 100)],
+                "codex": [("usage", 80, 100)],
+                "antigravity": [("gemini-5h", 90, 3), ("gemini-weekly", 60, 100), ("3p-5h", 90, 3), ("3p-weekly", 60, 100)],
+            })
+            task_template = {
+                "work_kind": "general_implementation",
+                "difficulty": "coupled",
+                "expected_hours": 1,
+                "needs": {"local_only": True},
+                "profile": profile(local_only=True),
+            }
+
+            router_data._invalidate_accounts_cache()
+            with mock.patch.object(router_data, "STATE_DIR", state_dir), \
+                    mock.patch.object(account_fleet, "load_accounts", side_effect=custom_load_accounts):
+                # 1. Gate hook + 2. Allocator + 3. Dispatch registry at 700k (< 750k) vs 800k (>= 750k)
+                under_state = {"compactions": 1, "compacted_tokens": 600_000, "context_tokens": 100_000, "historical_context_tokens": 700_000}
+                over_state = {"compactions": 1, "compacted_tokens": 700_000, "context_tokens": 100_000, "historical_context_tokens": 800_000}
+
+                with mock.patch.object(worker_sessions, "session_state", return_value=under_state):
+                    self.assertIsNone(
+                        gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, caller_id="parent-e2e")
+                    )
+                    plan_under = allocator.plan(
+                        dict(task_template, chain={"id": "c-e2e", "coupling": "high", "total_hours": 3,
+                                                   "worker": {"bundle": "sol_xhigh", "context_tokens": 100_000, "compacted_tokens": 600_000, "compactions": 1}}),
+                        usage, now=now, accounts=custom_load_accounts(), capabilities=caps,
+                    )
+                    self.assertEqual(plan_under["decision"]["action"], "resume")
+                    reusable_under = registry.reusable_workers("parent-e2e", now=now + timedelta(minutes=1), path=db, paseo_home=paseo_home)
+                    self.assertEqual([w["worn"] for w in reusable_under], [False])
+                    tray_workers = router_data.workers(db=db, paseo_home=paseo_home)
+                    self.assertEqual(tray_workers[0]["limit"], 750_000)
+
+                with mock.patch.object(worker_sessions, "session_state", return_value=over_state):
+                    reason = gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, caller_id="parent-e2e")
+                    self.assertIsNotNone(reason)
+                    self.assertIn("historical_context_tokens=800,000/750,000", reason)
+                    self.assertIn("rotate_after_carried_tokens=750,000", reason)
+                    plan_over = allocator.plan(
+                        dict(task_template, chain={"id": "c-e2e", "coupling": "high", "total_hours": 3,
+                                                   "worker": {"bundle": "sol_xhigh", "context_tokens": 100_000, "compacted_tokens": 700_000, "compactions": 1}}),
+                        usage, now=now, accounts=custom_load_accounts(), capabilities=caps,
+                    )
+                    self.assertEqual(plan_over["decision"]["action"], "rotate")
+                    reusable_over = registry.reusable_workers("parent-e2e", now=now + timedelta(minutes=1), path=db, paseo_home=paseo_home)
+                    self.assertEqual([w["worn"] for w in reusable_over], [True])
+
+                # 4. Live Tray Panel worker table heading shows configured cap in zh and en
+                tk_root = tk_test_support.shared_tk_root(self)
+                tk_root.withdraw()
+                i18n.set_language("zh")
+                with mock.patch.object(router_window.Panel, "run"), \
+                        mock.patch.object(router_window.Panel, "prefill"), \
+                        mock.patch.object(router_window.Panel, "cached_account_cards", return_value=[]), \
+                        mock.patch.object(router_window.theme, "set_window_icon"), \
+                        mock.patch.object(panel_widgets, "log_error"):
+                    panel = router_window.Panel(tk_root, "quota")
+                    self.addCleanup(lambda: tk_root.after_cancel(panel._poll_id) if getattr(panel, "_poll_id", None) else None)
+                    self.assertEqual(panel.worker_table.heading("bar", "text"), "占 750k 上限")
+                    override_file.write_text(
+                        json.dumps({"schema_version": 2, "scoring": {"rotate_after_carried_tokens": 1_500_000}}),
+                        encoding="utf-8",
+                    )
+                    router_data._invalidate_accounts_cache()
+                    i18n.set_language("en")
+                    panel.quota_loaded(([], []))
+                    self.assertEqual(panel.worker_table.heading("bar", "text"), "% of 1.5M cap")
+
+
 if __name__ == "__main__":
     unittest.main()

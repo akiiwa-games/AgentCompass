@@ -5,7 +5,7 @@
 ## When to Use or Reference This Repository
 
 - You want to route coding-agent subtasks across multiple flat-rate AI subscriptions (`Claude Max`, `ChatGPT Pro`, `Google Antigravity`, `Grok`) based on 5-hour and 7-day quota windows, reset countdowns, and model capability floors.
-- You need a `PreToolUse` / `tool_call` spawn gate hook that blocks unrouted sub-agent launches (`Claude Agent`, `Codex spawn_agent`, `Antigravity invoke_subagent`, `Paseo create_agent`) or enforces a 2M-token cumulative context rotation limit.
+- You need a `PreToolUse` / `tool_call` spawn gate hook that blocks unrouted sub-agent launches (`Claude Agent`, `Codex spawn_agent`, `Antigravity invoke_subagent`, `Paseo create_agent`) or enforces the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray).
 - You want a headless multi-account subscription quota collector (`~/.claude*`, `~/.codex*`, `agy`, Magpie, LiteLLM) or a Windows 11 decision cockpit and floating quota HUD.
 
 ## Core Entry Points
@@ -37,7 +37,7 @@
 
 ## Enforcement & Auditing
 
-- [setup/router_gate_hook.py](setup/router_gate_hook.py): Host `PreToolUse` / `tool_call` gate enforcing router ledger entries, parent session address contracts, explicit permission modes, and 2M-token worker context rotation. A parent may still steer or wrap up its own running worker; completion notifications are kept on for workers without a messaging tool.
+- [setup/router_gate_hook.py](setup/router_gate_hook.py): Host `PreToolUse` / `tool_call` gate enforcing router ledger entries, parent session address contracts, explicit permission modes, and worker context rotation at the configured threshold (`rotate_after_carried_tokens`, set in the tray). A parent may still steer or wrap up its own running worker; completion notifications are kept on for workers without a messaging tool.
 - [audit/router_audit.py](audit/router_audit.py): Daily read-only compliance audit cross-checking host session logs against `~/.agent-compass/router-ledger.jsonl`.
 
 ## Companion Modules & Plugins

@@ -1732,5 +1732,53 @@ class DenyMessageEntryTests(unittest.TestCase):
             self.assertNotIn(".py", text)
 
 
+class ConfiguredRotationThresholdGateTests(unittest.TestCase):
+    def setUp(self):
+        import shutil
+
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.agents_dir = self.tmp / ".paseo" / "agents"
+        (self.agents_dir / "ws").mkdir(parents=True, exist_ok=True)
+        self.wid = "88888888-4444-4444-8888-999999999999"
+        (self.agents_dir / "ws" / f"{self.wid}.json").write_text(
+            json.dumps({
+                "id": self.wid,
+                "provider": "claude",
+                "lastStatus": "idle",
+                "labels": {"router.parent_id": "parent-main"},
+            }),
+            encoding="utf-8",
+        )
+
+    def test_gate_uses_configured_threshold_and_surfaces_missing_key(self):
+        account_fleet = gate.router_module("account_fleet")
+        worker_sessions = gate.router_module("worker_sessions")
+        custom_accounts = {"scoring": {"rotate_after_carried_tokens": 750_000}, "accounts": {}}
+        with mock.patch.object(account_fleet, "load_accounts", return_value=custom_accounts):
+            with mock.patch.object(
+                worker_sessions,
+                "session_state",
+                return_value={"compactions": 1, "compacted_tokens": 600_000, "context_tokens": 100_000, "historical_context_tokens": 700_000},
+            ):
+                self.assertIsNone(
+                    gate.check_worker_compaction_limit(self.wid, paseo_agents_dir=self.agents_dir, home=self.tmp, caller_id="parent-main")
+                )
+            with mock.patch.object(
+                worker_sessions,
+                "session_state",
+                return_value={"compactions": 1, "compacted_tokens": 700_000, "context_tokens": 100_000, "historical_context_tokens": 800_000},
+            ):
+                reason = gate.check_worker_compaction_limit(self.wid, paseo_agents_dir=self.agents_dir, home=self.tmp, caller_id="parent-main")
+                self.assertIsNotNone(reason)
+                self.assertIn("historical_context_tokens=800,000/750,000", reason)
+                self.assertIn("rotate_after_carried_tokens=750,000", reason)
+
+        with mock.patch.object(account_fleet, "load_accounts", return_value={"scoring": {}, "accounts": {}}), \
+                mock.patch.object(worker_sessions, "session_state", return_value={"historical_context_tokens": 800_000}):
+            with self.assertRaises(KeyError):
+                gate.check_worker_compaction_limit(self.wid, paseo_agents_dir=self.agents_dir, home=self.tmp, caller_id="parent-main")
+
+
 if __name__ == "__main__":
     unittest.main()
