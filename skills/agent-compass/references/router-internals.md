@@ -84,8 +84,9 @@ without a launcher are listed without changing the user's active account. See
 The sole machine-readable public catalogue is [`accounts.json`](accounts.json).
 Its model rows and `capability_policy` define model settings and route scopes.
 [`model-capabilities.json`](model-capabilities.json) and
-[`model-capabilities.md`](model-capabilities.md) are generated views; regenerate
-with `python -X utf8 skills/agent-compass/scripts/capability_catalog.py` (`--check` verifies them).
+[`model-capabilities.md`](model-capabilities.md) are generated views; `agentcompass data refresh [--no-fetch]`
+rebuilds them alongside the calibrated scores and manifest, or run
+`python -X utf8 skills/agent-compass/scripts/capability_catalog.py` (`--check` verifies them).
 
 The shipped template plus discovery is the whole fleet: accounts and second logins come
 from discovery, plan capacity from the discovered plan through
@@ -171,7 +172,7 @@ When nothing clears the gate, `plan` returns `choice: none` with `decision.actio
 
 ### Calibration data
 
-`calibration/` builds panel standard scores and per-effort curves from LMArena, `arena.ai` Agent/Alignment, Design Arena and Artificial Analysis. See [`../calibration/README.md`](../calibration/README.md). Raw downloads stay outside git.
+`calibration/` builds panel standard scores and per-effort curves from LMArena, `arena.ai` Agent/Alignment, Design Arena and Artificial Analysis; `agentcompass data refresh [--no-fetch]` (`calibration/refresh.py`) rebuilds the calibrated files, generated capability views and `public-data.json` in topological order and validates them. See [`../calibration/README.md`](../calibration/README.md). Raw downloads stay outside git.
 
 ### Distribution simulation and ledger replay
 
@@ -261,4 +262,4 @@ Prices, new models, category scores, plan capacities, manual maintainer scores a
 - **Precedence**: shipped copy < fetched set < your own settings (`~/.agent-compass/user-scores.json`, `accounts-override.json`, host policy). Manual capability scores follow `local user > maintainer (references/user-scores.json) > measured > estimated/converted`, mapped from the 1–3 demand-level scale (`agentcompass score set <model> <category>[.<facet>] <level> [--public]`). The fetched set is read only when it is complete, verified and published after the shipped copy; shipped references with local edits (they no longer match their manifest, e.g. a checkout being edited) are read as they are. Offline or after a failed check, the last good fetched set is read, otherwise the shipped copy.
 - **Visibility**: `agentcompass doctor` prints the `Reference data:` source, version and fetch time; `agentcompass providers` includes it as `public_data`; `agentcompass data` prints the full status and `agentcompass data --refresh` checks now.
 - **Off switch**: `AGENTCOMPASS_PUBLIC_DATA=off` (`0`, `false`, `no` also work), or `{"enabled": false}` in `~/.agent-compass/public-data-config.json`; the environment wins. Off means no network call and only the shipped copy is read. The same file accepts `interval_hours` and `url` (a mirror); `AGENTCOMPASS_PUBLIC_DATA_INTERVAL_HOURS` and `AGENTCOMPASS_PUBLIC_DATA_URL` override them.
-- **Maintainers**: after editing any of the five public files (or running `agentcompass score set ... --public`, which refreshes the manifest automatically), run `python -X utf8 skills/agent-compass/scripts/public_data.py manifest --write` and commit the manifest with them (`published_at` moves only when content changes). `manifest --check` and the test suite fail on a stale manifest. A breaking data change bumps `SCHEMA_VERSION` in `public_data.py` and the manifest together, so older installs keep their last compatible data.
+- **Maintainers**: run `agentcompass data refresh` (or `agentcompass data refresh --no-fetch` from cached downloads; [`calibration/refresh.py`](../calibration/refresh.py)) to rebuild `public-measurements.json`, `five-axis-scores.json`, `model-capabilities.json`, `model-capabilities.md` and `public-data.json` in topological order and validate the `public-data` checks and `user-scores.json` schema. After hand-editing `accounts.json`, `plan-templates.json` or `classifier-cases.json` alone (`agentcompass score set ... --public` updates `public-data.json` automatically), run `python -X utf8 skills/agent-compass/scripts/public_data.py manifest --write` and commit the manifest with them (`published_at` moves only when content changes; also run `capability_catalog.py` when `accounts.json` or `user-scores.json` changes). `manifest --check` and the test suite fail on a stale manifest. A breaking data change bumps `SCHEMA_VERSION` in `public_data.py` and the manifest together, so older installs keep their last compatible data.

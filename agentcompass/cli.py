@@ -40,7 +40,7 @@ install and health:
   setup       first-run onboarding (--dry-run previews)
   uninstall   undo what setup changed
   doctor      read-only report of Python, CLIs, accounts, cache, reference data, plugins, ports and hooks
-  data        which public reference data routing reads (shipped or fetched); `data --refresh` checks for newer data now
+  data        which public reference data routing reads (shipped or fetched); `data --refresh` checks for newer data now; `data refresh [--no-fetch]` rebuilds shipped data in a checkout
 
 other stages: score, scorer, delegate, select, dispatch, launch
 follow-up of a roll result (its next_argv already spells these): dot status, grok-bot status, chatgpt-web, herdr status
@@ -123,7 +123,22 @@ def usage_command(args: list[str]) -> int:
 
 
 def data_command(args: list[str]) -> int:
-    """Show or refresh the public reference data channel (skills/agent-compass/scripts/public_data.py)."""
+    """Show or refresh the public reference data channel (`public_data.py`), or rebuild shipped data (`calibration/refresh.py`)."""
+    if args[:1] == ["refresh"]:
+        rest = args[1:]
+        checkout = locations.checkout_root()
+        in_git_checkout = checkout is not None and (checkout / ".git").exists()
+        if not in_git_checkout and not any(_has_option(rest, flag) for flag in ("-h", "--help", "--references")):
+            sys.stderr.write(
+                "agentcompass data refresh rebuilds shipped reference files inside a git checkout.\n"
+                "To check for newer published data in an install, run: agentcompass data --refresh\n"
+            )
+            return 2
+        script = locations.skill_root() / "agent-compass" / "calibration" / "refresh.py"
+        if not script.is_file():
+            sys.stderr.write(f"calibration/refresh.py was not found ({script})\n")
+            return 2
+        return subprocess.call([sys.executable, "-X", "utf8", str(script), *rest])
     script = locations.skill_root() / "agent-compass" / "scripts" / "public_data.py"
     if not script.is_file():
         sys.stderr.write(f"public_data.py was not found ({script})\n")

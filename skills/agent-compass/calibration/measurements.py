@@ -202,8 +202,8 @@ class Matcher:
 
 
 class Builder:
-    def __init__(self, target, acc):
-        self.target, self.acc = target, acc
+    def __init__(self, target, acc, now=None):
+        self.target, self.acc, self.now = target, acc, now
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
         self.manifest = sources.manifest(target)
         self.source_rows, self.out, self.names = {}, {m: {} for m in self.models}, {m: {} for m in self.models}
@@ -793,7 +793,8 @@ class Builder:
         for name, row in self.manifest.items():
             if row.get('status') != 'ok':
                 missing_sources.setdefault(name, {'file': name, 'url': row.get('url'), 'reason': row.get('error')})
-        return {'schema': SCHEMA, 'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        stamp = (getattr(self, 'now', None) or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        return {'schema': SCHEMA, 'generated_at': stamp.isoformat(timespec='seconds'),
                 'conversion': f'z = (x - x_anchor) / sd_panel per board, anchor {ANCHOR}; see calibration/measurements.py',
                 'panel': self.panel_doc, 'checks': self.checks,
                 'sources': self.source_rows, 'missing_sources': missing_sources, 'conflicts': self.conflicts,

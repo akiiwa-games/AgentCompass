@@ -164,6 +164,19 @@ def build_manifest(directory, previous=None, now=None):
             'published_at': manifest['published_at'], 'files': files}
 
 
+def write_manifest(directory=None, now=None):
+    """Build and write ``public-data.json`` in ``directory`` when missing or changed; unchanged manifests stay byte-identical."""
+    directory = Path(directory or BUNDLED)
+    path = directory / MANIFEST
+    current = _read_json(path)
+    fresh = build_manifest(directory, current, now=now)
+    expected = (json.dumps(fresh, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
+    if not path.is_file() or path.read_bytes() != expected:
+        _write_json(path, fresh)
+    unpin()
+    return fresh
+
+
 def check_set(directory, manifest):
     """('ok' | 'no_manifest' | 'schema' | 'incomplete' | 'modified', detail) for a directory and its manifest."""
     if not isinstance(manifest, dict):
@@ -451,6 +464,7 @@ def summary_line(report):
 
 
 USAGE = """usage: agentcompass data [--refresh]
+       agentcompass data refresh [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE]
 
 Shows which public reference data (accounts.json, plan-templates.json, classifier-cases.json, five-axis-scores.json,
 user-scores.json) routing reads: the copy shipped with this install, or the newer set fetched from the AgentCompass
@@ -458,7 +472,9 @@ repository's main branch.
 
 --refresh   check the published data now and fetch it when it changed (ignores the refresh interval)
 
-Maintainers: public_data.py manifest [--check | --write] keeps references/public-data.json current.
+Maintainers (in a git checkout):
+  agentcompass data refresh [--no-fetch]   rebuild calibrated data, capability views and public-data.json, then validate
+  public_data.py manifest [--check | --write]   verify or rewrite references/public-data.json after hand edits
 Off switch: AGENTCOMPASS_PUBLIC_DATA=off, or {"enabled": false} in ~/.agent-compass/public-data-config.json.
 """
 
@@ -470,22 +486,29 @@ def main(argv=None):
         return 0
     if argv[:1] == ['manifest']:
         path = BUNDLED / MANIFEST
-        current = _read_json(path)
-        fresh = build_manifest(BUNDLED, current)
         if '--write' in argv:
-            if fresh != current:
-                _write_json(path, fresh)
+            fresh = write_manifest(BUNDLED)
+            state, detail = check_set(BUNDLED, fresh)
+            if state != 'ok':
+                sys.stderr.write(f'{path} failed public-data check ({state}): {detail}\n')
+                return 1
             print(json.dumps(fresh, indent=2))
             return 0
+        current = _read_json(path)
+        fresh = build_manifest(BUNDLED, current)
         if fresh != current:
             sys.stderr.write(f'{path} is stale; run: python -X utf8 {Path(__file__).name} manifest --write\n')
             return 1
+        state, detail = check_set(BUNDLED, current)
+        if state != 'ok':
+            sys.stderr.write(f'{path} failed public-data check ({state}): {detail}\n')
+            return 1
         print(f"{path} is current ({fresh['version']}, published {fresh['published_at']})")
         return 0
-    if argv and argv[0] not in ('status', 'refresh', '--refresh'):
+    if argv and argv[0] not in ('status', '--refresh'):
         sys.stderr.write(USAGE)
         return 2
-    if argv[:1] in (['refresh'], ['--refresh']):
+    if argv[:1] == ['--refresh']:
         outcome = refresh(force=True, timeout=10)
         unpin()
         print(json.dumps({'refresh': outcome, **status()}, ensure_ascii=False, indent=2))

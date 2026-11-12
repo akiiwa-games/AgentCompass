@@ -540,7 +540,7 @@ class Scorer:
         parallel full-panel boards, mean-sigma link secondary (partial-panel) boards onto the core over shared panel models,
         then re-center the facet on the anchor at High."""
         anchor = measurements.ANCHOR
-        facets = {key for c in curves.values() for key in c}
+        facets = sorted({key for c in curves.values() for key in c})
         links = {}
         for key in facets:
             srcs = sorted({src for c in curves.values() for src in c.get(key, {})})
@@ -1457,7 +1457,8 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None):
                      'price': pick_price(scorer.trusted(r['fields'].get('price'))),
                      'intelligence_index': idx[0]['value'] if idx else None,
                      'tier': tier[m], 'evidence': evidence, 'data_errors': model_errors}
-    doc = {'schema': SCHEMA, 'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+    stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    doc = {'schema': SCHEMA, 'generated_at': stamp.isoformat(timespec='seconds'),
            'measurements_sha256': hashlib.sha256(meas_bytes).hexdigest() if meas_bytes else None,
            'distrusted_sources': sorted(distrust),
            'method': __doc__.strip().splitlines()[0],

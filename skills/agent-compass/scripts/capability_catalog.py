@@ -18,12 +18,13 @@ def compose(accounts):
     return deepcopy(accounts['capability_policy'])
 
 
-def markdown(accounts, five=None):
+def markdown(accounts, five=None, references=None):
+    ref_dir = Path(references) if references is not None else REFERENCES
     if five is None:
-        five = json.loads((REFERENCES / 'five-axis-scores.json').read_text(encoding='utf-8'))
+        five = json.loads((ref_dir / 'five-axis-scores.json').read_text(encoding='utf-8'))
         import allocator
         import user_scores
-        pub_scores = user_scores.load_public(REFERENCES / 'user-scores.json', effective=False)
+        pub_scores = user_scores.load_public(ref_dir / 'user-scores.json', effective=False)
         overlaid = allocator.five_axis_overlay(
             deepcopy(accounts), five, public_scores=pub_scores, local_scores={'scores': {}}, read_local_state=False
         )
@@ -84,36 +85,46 @@ def markdown(accounts, five=None):
     return '\n'.join(rows)
 
 
-def generated(accounts):
+def generated(accounts, references=None):
     policy = compose(accounts)
     return {'model-capabilities.json': json.dumps(policy, ensure_ascii=False, indent=2) + '\n',
-            'model-capabilities.md': markdown(accounts)}
+            'model-capabilities.md': markdown(accounts, references=references)}
 
 
-def write_default_files(accounts=None):
+def write_default_files(accounts=None, references=None):
+    ref_dir = Path(references) if references is not None else REFERENCES
     if accounts is None:
-        accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))
-    for name, content in generated(accounts).items():
-        (REFERENCES / name).write_text(content, encoding='utf-8', newline='\n')
+        accounts = json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig'))
+    for name, content in generated(accounts, references=ref_dir).items():
+        (ref_dir / name).write_text(content, encoding='utf-8', newline='\n')
 
 
-def main():
+def check_files(references=None, accounts=None):
+    ref_dir = Path(references) if references is not None else REFERENCES
+    if accounts is None:
+        accounts = json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig'))
+    stale = []
+    for name, content in generated(accounts, references=ref_dir).items():
+        target = ref_dir / name
+        if not target.exists() or target.read_text(encoding='utf-8') != content:
+            stale.append(name)
+    return stale
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))
-    stale = []
-    for name, content in generated(accounts).items():
-        target = REFERENCES / name
-        if args.check:
-            if not target.exists() or target.read_text(encoding='utf-8') != content:
-                stale.append(name)
-        else:
-            target.write_text(content, encoding='utf-8', newline='\n')
-    if stale:
-        print('Stale generated views: ' + ', '.join(stale))
-        return 1
-    print('Capability views are current.' if args.check else 'Generated capability JSON and Markdown.')
+    if args.check:
+        stale = check_files(references=REFERENCES, accounts=accounts)
+        if stale:
+            print('Stale generated views: ' + ', '.join(stale))
+            return 1
+        print('Capability views are current.')
+        return 0
+    write_default_files(accounts=accounts, references=REFERENCES)
+    print('Generated capability JSON and Markdown.')
     return 0
 
 
