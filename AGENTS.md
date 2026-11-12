@@ -22,6 +22,21 @@ pytest -n auto
 
 Install test dependencies with `pip install -e ".[dev]"` (`pytest`, `pytest-xdist`, `psutil`).
 
+## Routing Tests Assert Rules, Never Outcomes
+
+- Never assert a routing outcome: which model or bundle wins (`choice == ...`), a model's share across scenarios, a ranking order, or an exact score, price or cost copied from current output. Nobody has validated those results as correct, so such an assertion only freezes whatever the router produced that day.
+- Assert properties that follow from a stated rule, and cite the rule:
+  - exclusion when a window is exhausted or a data gap is mode B;
+  - ability capped at the task target;
+  - quota cost non-decreasing in used share;
+  - the documented tie-break order, as pairwise properties;
+  - declared formulas computed from the data, not pinned constants;
+  - invariance to input order;
+  - local settings never leaking into public defaults.
+- Refactor equivalence checks (same inputs, identical output before and after a pure refactor) are fine. They make no claim that the output is right.
+- Feedback such as "simple research went to the wrong model" or "a frontier task picked a weak model while quota was ample" is a reason to revisit the routing rules, formulas and parameters. Never turn it into a test that pins the desired winner.
+- When a change breaks an outcome-style assertion, delete it or replace it with the rule it stood for. Never re-pin it to the new output.
+
 ## Repository Hygiene
 
 - **Worktrees**: Develop delegated changes in an isolated git worktree on a `work/<name>` branch based on `main`. Deliver new commits only; never `git commit --amend`.
