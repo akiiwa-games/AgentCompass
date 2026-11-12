@@ -31,7 +31,7 @@ def clamp(value, low=0.0, high=1.0) -> float:
 
 # (key, label, formula shown on hover)
 SCORE_AXES = (
-    ("divergence", "发散创新", "divergence：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
+    ("divergence", "创意", "divergence：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
     ("coding", "编码能力", "coding：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
     ("aesthetics", "审美能力", "aesthetics：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
     ("tool_operation", "工具操作", "tool_operation：响应速度与读图中较弱者，在面板最弱（0）到三级目标（1）之间的位置"),
@@ -40,7 +40,7 @@ SCORE_AXES = (
 SCORE_AXES = LocalizedSequence(SCORE_AXES)
 
 DNA_AXES = (
-    ("divergence", "发散创新", "divergence：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
+    ("divergence", "创意", "divergence：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
     ("coding", "编码能力", "coding：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
     ("aesthetics", "审美能力", "aesthetics：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
     ("tool_operation", "工具操作", "tool_operation：High 档响应速度与读图中较弱者的位置；带 ~ 表示含估算值"),

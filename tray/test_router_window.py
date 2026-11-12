@@ -764,9 +764,9 @@ class LanguageTests(unittest.TestCase):
         i18n.set_language("en")
         self.assertEqual([p[1] for p in router_window.PAGES],
                          ["Decision Compass", "Quota Monitor", "Model Settings", "Integrations"])
-        self.assertEqual(radar_chart.DNA_AXES[0][1], "Divergence")
+        self.assertEqual(radar_chart.DNA_AXES[0][1], "Creativity")
         self.assertEqual([a[1] for a in radar_chart.DNA_AXES[:4]],
-                         ["Divergence", "Coding", "Aesthetics", "Tool Operation"])
+                         ["Creativity", "Coding", "Aesthetics", "Tool Operation"])
         self.assertEqual(radar_chart.axis_title(), "Capabilities & Quota")
         self.assertIn("divergence", radar_chart.SCORE_AXES[0][2])
         for axes in (radar_chart.SCORE_AXES, radar_chart.DNA_AXES):
@@ -788,7 +788,7 @@ class LanguageTests(unittest.TestCase):
             self.assertEqual(services.chatgpt_label(), "Stopped")
         i18n.set_language("zh")
         self.assertEqual(router_window.PAGES[0][1], "决策罗盘")
-        self.assertEqual(radar_chart.DNA_AXES[0][1], "发散创新")
+        self.assertEqual(radar_chart.DNA_AXES[0][1], "创意")
         self.assertEqual(plugins.PLUGINS[0].description, "桌面额度悬浮窗")
 
     def test_panel_switch_rebuilds_navigation_and_current_settings(self):
@@ -863,7 +863,7 @@ class LanguageTests(unittest.TestCase):
             self.assertIn('Sol 6.1 · High', panel.pick_a.cget('values'))
             self.assertEqual(panel.breakdown_row_tip('2'), 'sol · a')
             self.assertNotIn('ledger', panel.status.get())
-            self.assertEqual(panel.radar.axes[0][1], "Divergence")
+            self.assertEqual(panel.radar.axes[0][1], "Creativity")
             self.assertEqual(panel.radar_title.cget("text"), "Capabilities & Quota")
             self.assertFalse(hasattr(panel, "mode_switch"))
             for page in ("quota", "plugins", "policy"):
@@ -876,7 +876,7 @@ class LanguageTests(unittest.TestCase):
             panel.show("scoring")
             panel.change_language("zh")
             panel.render_radar()
-            self.assertEqual(panel.radar.axes[0][1], "发散创新")
+            self.assertEqual(panel.radar.axes[0][1], "创意")
             self.assertEqual(panel.radar_title.cget("text"), "能力与额度五维")
             root.update_idletasks()
             errors.assert_not_called()

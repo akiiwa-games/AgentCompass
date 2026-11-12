@@ -205,6 +205,16 @@ def period_samples(series, reset_at, decided_at, elapsed_hours, capacity_usd, sl
     return sorted(out)
 
 
+def empty_text(result):
+    """Why a decision has no chart: no candidate spent from a priced long window (the economy term is 0), or a record
+    older than the quota economy. The page derives the block from `decision.system.quota_windows` when it can
+    (ledger_snapshot.with_quota_line), so only these two remain."""
+    system = ((result or {}).get("decision") or {}).get("system") if isinstance(result, dict) else None
+    if isinstance(system, dict) and isinstance(system.get("quota_windows"), list):
+        return _tr("这次决策没有候选从按额度计价的长周期窗口花费：额度经济项为 0（5 小时窗口只判断能否放下）")
+    return _tr("此决策没有额度恢复线记录（记录早于额度经济）")
+
+
 def model(result):
     """Display model of a snapshot, or None when it carries no quota-line record (older decisions).
 
@@ -335,8 +345,9 @@ class QuotaLineRenderer:
     lines' ends are passing through. Everything that never moves is drawn once into a base layer.
     """
 
-    def __init__(self, data, width, height, scale=1., unreadable=False):
+    def __init__(self, data, width, height, scale=1., unreadable=False, empty_text=None):
         self.data = data
+        self.empty_text = empty_text
         self.w, self.h = max(1, int(width)), max(1, int(height))
         self.s = min(scale, self.w / NOMINAL[0], self.h / MIN_HEIGHT)
         self.k = SUPERSAMPLE
@@ -481,7 +492,8 @@ class QuotaLineRenderer:
     # --- base layer ------------------------------------------------------------------------------
     def empty(self, unreadable=False):
         image = self.canvas()
-        self.text(_tr("额度恢复线记录无法读取") if unreadable else _tr("此决策没有额度恢复线记录"), self.right / 2, self.bottom / 2,
+        self.text(_tr("额度恢复线记录无法读取") if unreadable else (self.empty_text or _tr("此决策没有额度恢复线记录（记录早于额度经济）")),
+                  self.right / 2, self.bottom / 2,
                   BODY, theme.FAINT, anchor="mm", limit=self.right - 16)
         return image
 
@@ -729,7 +741,7 @@ class QuotaLineCanvas:
     def __init__(self, parent):
         import tkinter as tk
         self.canvas = tk.Canvas(parent, bg=theme.CARD, highlightthickness=0, bd=0)
-        self.data = self.renderer = self.photo = self.shown = self.error = None
+        self.data = self.renderer = self.photo = self.shown = self.error = self.empty = None
         self.story = DURATION
         self.item = self.canvas.create_image(0, 0, anchor="nw")
         self.strips = {}    # tile name -> (photo, canvas item): a moving tile is pasted alone, over the full image
@@ -742,6 +754,7 @@ class QuotaLineCanvas:
         self.renderer = self.shown = self.error = None
         try:
             self.data = model(result)
+            self.empty = None if self.data else empty_text(result)
         except Exception as exc:
             self.data, self.error = None, exc
         self.story = story
@@ -781,7 +794,8 @@ class QuotaLineCanvas:
             return
         fresh = self.renderer is None
         if fresh:
-            self.renderer = QuotaLineRenderer(self.data, width, height, theme.FACTOR, unreadable=self.error is not None)
+            self.renderer = QuotaLineRenderer(self.data, width, height, theme.FACTOR, unreadable=self.error is not None,
+                                              empty_text=self.empty)
         self.shown = step
         changed = self.renderer.advance(self.story)
         live = self.renderer.live

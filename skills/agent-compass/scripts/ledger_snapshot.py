@@ -140,6 +140,23 @@ def snapshot_quota_line(quota_windows):
     return {'windows': windows} if windows else None
 
 
+def with_quota_line(result):
+    """`result` with the quota-line block the quota page reads, derived when the result does not carry one: a fresh plan
+    (a simulation or a recomputed replay) or a snapshot recorded without it still holds `decision.system.quota_windows` and
+    each candidate's `economy`, and the block is built from them by the same two functions the snapshot uses. A result
+    that carries a block, or has no recorded quota windows, comes back unchanged."""
+    if not isinstance(result, dict) or isinstance(result.get('quota_line'), dict):
+        return result
+    block = snapshot_quota_line(((result.get('decision') or {}).get('system') or {}).get('quota_windows'))
+    if block is None:
+        return result
+    ranking = []
+    for c in result.get('ranking') or ():
+        line = candidate_quota_line(c) if isinstance(c, dict) and 'quota_line' not in c and not c.get('excluded') else None
+        ranking.append({**c, 'quota_line': line} if line is not None else c)
+    return {**result, 'quota_line': block, 'ranking': ranking}
+
+
 def decision_snapshot(result, task=None):
     """The decision as the allocator made it, small enough for one ledger line, or None when `result` has no ranking.
 

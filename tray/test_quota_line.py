@@ -123,6 +123,15 @@ def test_decisions_without_a_quota_line_record_show_an_empty_state_not_invented_
     assert renderer.repaints == 0 and renderer.tip_at(200, 150) == ""
 
 
+def test_an_empty_view_says_whether_nothing_was_priced_or_the_record_predates_the_economy():
+    priced_nothing = quota_line.empty_text({"decision": {"system": {"quota_windows": []}}, "ranking": []})
+    legacy = quota_line.empty_text({"ranking": []})
+    assert priced_nothing != legacy
+    assert "0" in priced_nothing
+    renderer = quota_line.QuotaLineRenderer(None, 400, 300, 1., empty_text=priced_nothing)
+    assert renderer.empty_text == priced_nothing
+
+
 @pytest.mark.parametrize("size", SIZES)
 def test_frames_render_without_a_display_and_repaint_only_the_tiles_that_moved(size):
     data = quota_line.model(earlier())
@@ -619,7 +628,7 @@ def test_a_malformed_snapshot_is_read_field_by_field_and_never_raises(monkeypatc
     assert data["windows"] == [] and data["dropped"] == ["a", "b"] and data["winner"] is None
     renderer, words = words_of(monkeypatch, data)
     assert words == {quota_line._tr("额度恢复线记录无法读取")} and not renderer.cells and renderer.tip_at(200, 200) == ""
-    assert words_of(monkeypatch, None)[1] == {quota_line._tr("此决策没有额度恢复线记录")}
+    assert words_of(monkeypatch, None)[1] == {quota_line._tr("此决策没有额度恢复线记录（记录早于额度经济）")}
     assert words_of(monkeypatch, None, unreadable=True)[1] == {quota_line._tr("额度恢复线记录无法读取")}
 
 

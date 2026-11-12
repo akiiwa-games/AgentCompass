@@ -14,7 +14,7 @@ import ui_theme as theme
 
 
 TITLE = "AgentCompass"
-SETTINGS = (("models", "模型与加权"), ("strategy", "额度阈值"), ("system", "系统选项"))
+SETTINGS = (("models", "模型与加权"), ("strategy", "评分与能力"), ("system", "系统选项"))
 SETTINGS = LocalizedSequence(SETTINGS)
 TRACK = "#E2E8F0"  # segmented switch track on the page background
 

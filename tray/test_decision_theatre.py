@@ -301,7 +301,7 @@ def test_final_frame_keeps_the_radar_with_its_axis_names_under_the_winner():
 
 
 @pytest.mark.parametrize('size',[(300,300,1),(330,310,1),(474,488,1.15),(630,600,1.5),(900,700,2)])
-@pytest.mark.parametrize('names',[None,('Divergence','Global Rigor','Module Precision','Vision & Tools','Quota Economy')])
+@pytest.mark.parametrize('names',[None,('Creativity','Coding','Aesthetics','Tool Operation','Quota Economy')])
 def test_axis_names_stay_inside_the_stage_and_clear_of_each_other(size,names,monkeypatch):
     if names:
         monkeypatch.setattr(dt.radar,'SCORE_AXES',tuple((str(i),name,'') for i,name in enumerate(names)))

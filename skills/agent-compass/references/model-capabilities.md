@@ -6,7 +6,7 @@ Each model is scored on four categories (divergence, coding, aesthetics, tool op
 
 Route order and plan capacity ship as calibrated public defaults; plan capacity follows the discovered plan (`plan-templates.json`). Disabled models and bundles are personal settings in `accounts-override.json`. Unknown hourly cost remains unknown; it does not mean unlimited.
 
-| Model | Tier | Divergence | Coding | Aesthetics | Tool operation | USD per hour | Image input |
+| Model | Tier | Creativity | Coding | Aesthetics | Tool operation | USD per hour | Image input |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
 | `beam-free` | -0.57 | -3.42 | -3.00 | -3.54 | missing! | - | unknown |
 | `claude-fable-5-1` | 0.03 | -0.79 | -0.53 | -0.65 | -0.00 | 36.11 | yes |

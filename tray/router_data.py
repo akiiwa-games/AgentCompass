@@ -289,8 +289,10 @@ def plan_task(task: dict) -> dict:
     if task_intake.dot_may_take(kind, task.get("needs") or {}, capabilities) and router.dot_unreachable():
         unavailable.append("dot_text")
     result = allocator.plan(task, usage, now, unavailable, records)
-    # Keep the original task title/profile available to the visual replay.
-    return {**result, "task": task}
+    import ledger_snapshot
+    # Keep the original task title/profile available to the visual replay; the quota page reads the same block a ledger
+    # snapshot records.
+    return ledger_snapshot.with_quota_line({**result, "task": task})
 
 
 def simulate(objective: str, hours: float, local_only: bool = False, needs_visual: bool = False,
@@ -326,6 +328,13 @@ def replay(row: dict) -> dict:
     from decision_theatre import snapshot_result
     snapshot = snapshot_result(row)
     if snapshot is not None:
+        if "quota_line" not in snapshot:
+            try:
+                modules()
+                import ledger_snapshot
+                snapshot = ledger_snapshot.with_quota_line(snapshot)
+            except (router_priority.RouterMissing, ImportError):
+                pass        # without the router the snapshot replays as recorded
         return with_usage_readings(snapshot, row.get("at"))
     modules()
     import ledger_snapshot
@@ -442,6 +451,39 @@ def dna_series(models: dict, first: str, second: str | None) -> tuple[list[dict]
                "estimated": radar_chart.dna_estimated(models[m])} for m in picked]
     raw = [radar_chart.dna_raw(models[m]) for m in picked]
     return series, raw
+
+
+def score_overview() -> dict:
+    """The scoring page's data: the four categories (facets, boards, data dates, panel targets, coverage, continuity) and
+    every model's category scores, read the way the router reads them (local manual scores included)."""
+    modules()
+    import account_fleet
+    import axis_scores
+    import score_overview as overview
+    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(_public_accounts(account_fleet.REFERENCES)))
+    data = axis_scores.load_five_axis(axis_scores.five_axis_config(accounts.get("scoring")).get("path"))
+    models = account_fleet.models_table(accounts)
+    meta = accounts.get("_five_axis") or {}
+    targets = meta.get("targets") or {}
+    return {"generated_at": meta.get("generated_at"), "anchor": meta.get("anchor"), "panel_n": meta.get("panel_n"),
+            "targets": targets, "categories": overview.category_overview(data, models),
+            "models": overview.model_rows(models, targets, model_label)}
+
+
+def set_manual_score(model: str, target: str, level: float) -> str:
+    """A local manual score, through the same writer as `agentcompass score set` (never the public file)."""
+    modules()
+    import user_scores
+    result = user_scores.set_score(model, target, level)
+    return _tr("已为 {0} 的 {1} 写入本机评分 {2}").format(result["model"], result["target"], result["entry"]["level"])
+
+
+def clear_manual_score(model: str, target: str) -> str:
+    """Clear a local manual score, through the same writer as `agentcompass score clear` (never the public file)."""
+    modules()
+    import user_scores
+    result = user_scores.clear_score(model, target)
+    return _tr("已清除 {0} 条本机评分").format(result["removed"])
 
 
 # ---------- quota and workers ----------

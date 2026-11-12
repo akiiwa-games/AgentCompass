@@ -1279,6 +1279,22 @@ class SnapshotQuotaLineTests(unittest.TestCase):
         self.assertIsNone(ledger_snapshot.candidate_quota_line({'economy': {'binding_window': None, 'windows': []}}))
         self.assertIsNone(ledger_snapshot.candidate_quota_line({}))
 
+    def test_a_fresh_plan_or_a_snapshot_without_the_block_gets_the_same_block_derived(self):
+        fresh = ledger_snapshot.with_quota_line(self.d)
+        self.assertEqual(fresh['quota_line'], self.snap['quota_line'])
+        chosen = next(c for c in fresh['ranking'] if c['id'] == self.d['choice'])
+        snapped = next(c for c in self.snap['ranking'] if c['id'] == self.snap['choice'])
+        self.assertEqual(chosen['quota_line'], snapped['quota_line'])
+        bare = {**self.snap, 'ranking': [{k: v for k, v in c.items() if k != 'quota_line'} for c in self.snap['ranking']]}
+        bare.pop('quota_line')
+        derived = ledger_snapshot.with_quota_line(bare)
+        self.assertEqual(derived['quota_line'], self.snap['quota_line'])
+        self.assertEqual(next(c for c in derived['ranking'] if c['id'] == self.snap['choice'])['quota_line'],
+                         snapped['quota_line'])
+        self.assertIs(ledger_snapshot.with_quota_line(self.snap), self.snap)
+        legacy = {'ranking': [], 'choice': None}
+        self.assertIs(ledger_snapshot.with_quota_line(legacy), legacy)
+
 
 class DurationUnknownTests(unittest.TestCase):
     """A bundle of a model the data has no time for at all (GPT-OSS 120B: no Artificial Analysis or arena listing and no

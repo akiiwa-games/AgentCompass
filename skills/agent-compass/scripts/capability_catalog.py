@@ -45,7 +45,7 @@ def markdown(accounts, five=None, references=None):
             'Route order and plan capacity ship as calibrated public defaults; plan capacity '
             'follows the discovered plan (`plan-templates.json`). Disabled models and bundles are personal '
             'settings in `accounts-override.json`. Unknown hourly cost remains unknown; it does not mean unlimited.', '',
-            '| Model | Tier | Divergence | Coding | Aesthetics | Tool operation | USD per hour | Image input |',
+            '| Model | Tier | Creativity | Coding | Aesthetics | Tool operation | USD per hour | Image input |',
             '| :--- | ---: | ---: | ---: | ---: | ---: | ---: | :--- |']
     scored = five.get('models') or {}
     for name, spec in sorted((accounts.get('models') or {}).items()):
