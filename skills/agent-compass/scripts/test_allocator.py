@@ -606,6 +606,9 @@ class AllocatorTests(unittest.TestCase):
                     'dispatch_id': 'disp-1', 'decision_id': 'dec-1', 'state': 'completed',
                     'agent_id': 'w-reusable', 'parent_id': 'parent-1',
                     'created_at': self.now.isoformat(), 'updated_at': self.now.isoformat(),
+                    # prepare() writes this bound. reusable_workers expires first, and that read
+                    # requires it on every completed Paseo row.
+                    'hard_until': (self.now + timedelta(seconds=registry.MAX_LIFETIME)).isoformat(),
                     'bundle': {'bundle_id': 'sol_xhigh', 'account': 'codex', 'provider': 'codex', 'model': 'gpt-6.1-sol'},
                     'task': {'task_id': 't-1'},
                     'request': {'title': 'worker task'},

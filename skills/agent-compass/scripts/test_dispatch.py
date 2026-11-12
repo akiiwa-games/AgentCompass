@@ -1036,10 +1036,54 @@ except ValueError as e:
         self.assertEqual(again['expected_usd'], hold)
         self.assertTrue(registry.unresolved(again, reply))
         self.assertIn(again['dispatch_id'], [item['dispatch_id'] for item in held])
-        self.assertTrue(any(str(item.get('reason') or '').startswith('host_followup') for item in again['events']))
+        # dispatch-lifecycle.md §2: a parent continuation is an event whose kind is host_followup.
+        followups = [item for item in again['events'] if item.get('kind') == 'host_followup']
+        self.assertEqual(followups, [{'state': 'started', 'at': registry.stamp(reply),
+                                      'reason': 'host_followup status=running', 'kind': 'host_followup'}])
         seen = registry.observe(row['dispatch_id'], self.snapshot(
             row, 'running', updatedAt=reply.isoformat(), lastUserMessageAt=reply.isoformat()), now=reply)
         self.assertEqual(seen['state'], 'started')
+        ended = reply + timedelta(seconds=30)
+        path.write_text(json.dumps({
+            'id': stored['agent_id'], 'status': 'idle', 'attentionReason': 'finished',
+            'updatedAt': ended.isoformat(), 'lastUserMessageAt': reply.isoformat(),
+            'labels': {'router.dispatch_id': stored['dispatch_id']},
+        }), encoding='utf-8')
+        self.assertEqual(registry.reservations(now=ended), [])
+        closed = registry.inspect(row['dispatch_id'])
+        self.assertEqual(closed['state'], 'completed')
+        self.assertEqual(closed.get('end_notice'), {
+            'state': 'sent', 'message_id': registry.end_notice_message_id(row['dispatch_id']),
+            'source': 'notify_on_finish',
+        })
+
+    def test_a_reason_prefix_is_not_a_parent_continuation(self):
+        # dispatch-lifecycle.md §2: the reason text is not what counts the parent's notice.
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        with registry.transaction() as connection:
+            current = registry.get(connection, 'dispatches', row['dispatch_id'])
+            current.setdefault('events', []).append({
+                'state': 'started', 'at': registry.stamp(self.now),
+                'reason': 'host_followup status=running',
+            })
+            registry.save(connection, current)
+        state = self.root / 'state'
+        when = self.now + timedelta(seconds=30)
+        self._agent_file(stored, {
+            'status': 'idle', 'attentionReason': 'finished', 'updatedAt': when.isoformat(),
+        })
+        self._receipt(stored, {
+            'dispatch_id': stored['dispatch_id'], 'parent_id': 'parent-a', 'status': 'watching',
+            'delivered': [], 'terminal': {'reason': 'finished', 'status': 'idle', 'at': when.isoformat()},
+        }, state)
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+            self.assertEqual(registry.reservations(now=when), [])
+        closed = registry.inspect(row['dispatch_id'])
+        self.assertEqual(closed['state'], 'completed')
+        self.assertEqual(closed.get('end_notice'), {
+            'state': 'due', 'message_id': registry.end_notice_message_id(row['dispatch_id']),
+        })
 
     def test_a_failed_receipt_beats_a_later_idle_document_in_either_order(self):
         import provider_retry
