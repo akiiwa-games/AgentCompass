@@ -44,7 +44,7 @@ agentcompass roll --task "<what the worker should do>"
    - `F`, the fit (in panel standard deviations): `sum_a w_a × (min(z_a, t_a) − t1_a) / sum_a w_a` over the demanded categories that ask for ability. Panel targets set `t1_a` at the panel's weakest model, `t2_a` at the panel median, and `t3_a` at the anchor (`0.0`). Each category's `t1_a` is the **zero point** of the fit: a model at the panel's weakest scores `0`, a model below it can score below `0`, and scores above `t_a` earn nothing extra, so a routine change is not sent to the strongest model at maximum effort.
    - `C`: the quota economy, the part of this task's spend that lands over the recovery line of the account's quota window (next section), priced in panel-SD score units. The spend is the model's USD per hour times the hours the task takes at that effort (Artificial Analysis Time/Task at the same effort).
    - `continuity` (resuming a worker on `coupling == "high"` / `--resume` within its context rotation limit, worth one demand step: the largest positive `t3 − t2` among the task's highest-demanded categories, else `0`) and a temporary `boost` from a user override add to `N`.
-4. **Ties.** Equal `N` goes to the candidate that uses the under-line quota expiring earliest, then to the one that finishes sooner, then to the cheaper one.
+4. **Ties.** Equal `N` goes to the candidate that can start now, then to the one that finishes sooner, then to the cheaper one. Expiring quota is not a tie-break: it already lowers `C`.
 5. **Launch.** The winner starts as a worker, and the ledger keeps every candidate's score.
 
 The animation above is the tray's Decision Compass replaying one decision: the task, its kind, the candidate routes, the winner and the best-ranked other model on the five axes (routes of the same model score the same on every axis), and the winner. The numbers in both animations are synthetic.
@@ -141,7 +141,7 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
    - `F` 是契合度（单位为面板标准差）：对所有有能力要求的类别计算 `sum_a w_a × (min(z_a, t_a) − t1_a) / sum_a w_a`。目标值由面板分位数决定：等级 1（`t1_a`）取面板最低值并作为契合度的**零点**（低于 `t1_a` 可为负分），等级 2（`t2_a`）取面板中位数，等级 3（`t3_a`）取锚点 `0.0`；超出任务需求目标 `t_a` 的能力不额外加分，所以简单改动不会被派给最强模型开最高档。
    - `continuity` 是上下文连续性收益：在未达上下文轮换上限且强耦合续接（`coupling == "high"` / `--resume`）时，等于本次任务最高需求等级类别中最大的正档差 `t3 − t2`（否则为 `0`）。
    - `C`（即 `β × X / h`）是第五个轴“额度经济”：`X` 是本次花费中越过该账号额度窗口恢复线的部分（单位 USD，见下一节），`h` 是任务工时，`β` 是窗口越线花费与契合度之间的汇率。
-4. **平分时。** `N` 相等，先选所用线下额度最早到期的候选，再选完成更快的，最后选更便宜的。
+4. **平分时。** `N` 相等，先选现在就能开始的候选，再选完成更快的，最后选更便宜的。额度临期不参与平分比较：它已经体现在更低的 `C` 里。
 5. **启动。** 胜出的候选作为 worker 启动，台账里保留每个候选的分数。
 
 页首的动画是托盘“决策罗盘”重放一次决策：任务、任务类型、候选路线、胜出者与排名最高的另一个模型在五个轴上的对比（同一模型的不同路线各轴得分相同）、胜出者。两段动画里的数字都是合成数据。
