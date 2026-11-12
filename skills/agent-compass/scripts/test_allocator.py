@@ -1138,5 +1138,24 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
                 self.assertFalse(norm['local_only'])
 
 
+class ExplainPoolWordingTests(unittest.TestCase):
+    """A pooled window's percentage is of one account, so a pool of N holds N x 100 when full."""
+
+    def top(self, remaining, full):
+        return {'id': 'claude-2__opus55_medium', 'action': 'start', 'score': 0.15, 'expected_pct': 10.3, 'chain_pct': 10.3,
+                'bundle': {}, 'components': {'opportunity_cost': 0.01},
+                'capacity': {'window': 'seven_day', 'remaining': remaining, 'full': full, 'priced': False,
+                             'end_hours': 50.0, 'expires_first': False}}
+
+    def test_pool_names_its_size(self):
+        text = allocator.explain(self.top(152.0, 200.0), {})
+        self.assertIn('seven_day: 152% of one account left in a pool of 2 (full = 200%)', text)
+
+    def test_single_account_stays_plain(self):
+        text = allocator.explain(self.top(27.0, 100.0), {})
+        self.assertIn('seven_day: 27% left,', text)
+        self.assertNotIn('pool', text)
+
+
 if __name__ == '__main__':
     unittest.main()

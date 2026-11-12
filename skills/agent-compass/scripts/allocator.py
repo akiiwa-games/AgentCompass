@@ -244,7 +244,10 @@ def explain(top, system):
         exp_usd_str = f" (~${top['expected_usd']:.2f})" if top.get('expected_usd') is not None else ""
         priced = (f"need probability {cap['need_start']:.2f} -> {cap['need_end']:.2f}, quota price "
                   f"{cap['quota_price']:.5f} fit/USD" if cap.get('priced') else 'a short window: feasibility only, not priced')
-        parts.append(f"{cap['window']}: {cap['remaining']:.0f}% left{rem_usd_str}, work ~{top['expected_pct']}%{exp_usd_str} "
+        members = round(cap['full'] / 100.0)
+        left = (f"{cap['remaining']:.0f}% left" if members == 1
+                else f"{cap['remaining']:.0f}% of one account left in a pool of {members} (full = {cap['full']:.0f}%)")
+        parts.append(f"{cap['window']}: {left}{rem_usd_str}, work ~{top['expected_pct']}%{exp_usd_str} "
                      f"(chain ~{top['chain_pct']}%), {priced}, "
                      + (f"before its {'expiry' if cap['expires_first'] else 'reset'} in {cap['end_hours']:.0f}h, "
                         if cap.get('end_hours') is not None else 'with no reset, ')

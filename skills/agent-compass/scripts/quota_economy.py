@@ -562,7 +562,7 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
                 'window': wid, 'quota_source': own_qsrc,
                 'short': bool(st.get('short')),
                 'unstarted': bool(rec.get('unstarted')),
-                'remaining': rem, 'after': rem - step_pct, 'step_pct': step_pct, 'chain_pct': chain_pct,
+                'remaining': rem, 'full': st['full'], 'after': rem - step_pct, 'step_pct': step_pct, 'chain_pct': chain_pct,
                 'capacity_usd': round(cap_usd_w, 2), 'remaining_usd': round(rem_usd, 2),
                 'reserved_usd': round(st.get('reserved_usd', 0.0), 2),
                 'expected_usd': round(spend, 2), 'chain_usd': round(chain_usd, 2), 'after_usd': round(rem_usd - spend, 2),
