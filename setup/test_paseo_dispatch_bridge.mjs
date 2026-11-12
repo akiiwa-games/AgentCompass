@@ -289,6 +289,64 @@ test('a parent reply while the watcher is running is the one end message', async
   assert.equal(f.record.status, 'continued');
 });
 
+test('a delivery failure is not delivery evidence and keeps the pending notice', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-undelivered-'));
+  const old = process.env.ROUTER_STATE_DIR;
+  process.env.ROUTER_STATE_DIR = root;
+  try {
+    const file = notificationFile('case-undelivered');
+    fs.mkdirSync(path.dirname(file), {recursive: true});
+    fs.writeFileSync(file, JSON.stringify({
+      dispatch_id: 'case-undelivered', parent_id: 'parent', status: 'delivery_failed', delivered: [],
+      pending: {key: 'terminal', text: 'final answer'},
+    }));
+    const calls = [];
+    const client = {
+      fetchAgent: async () => ({agent: {status: 'idle'}}),
+      sendMessage: async () => { throw new Error('still down'); },
+    };
+    await assert.rejects(notifyEnd(client, {dispatch_id: 'case-undelivered', parent_id: 'parent'}));
+    const kept = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(kept.status, 'delivery_failed');
+    assert.equal(kept.pending.text, 'final answer');
+    assert.equal(typeof kept.pending.messageId, 'string');
+    assert.equal(kept.pending.messageId.length > 0, true);
+    assert.deepEqual(kept.delivered ?? [], []);
+    client.sendMessage = async (...args) => calls.push(args);
+    const sent = await notifyEnd(client, {dispatch_id: 'case-undelivered', parent_id: 'parent'});
+    assert.equal(sent.sent, true);
+    assert.notEqual(sent.already, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][1], 'final answer');
+    assert.equal(calls[0][2].messageId, kept.pending.messageId);
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).status, 'delivered');
+  } finally {
+    if (old === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = old;
+    fs.rmSync(root, {recursive: true, force: true});
+  }
+});
+
+test('a timeline read failure does not send an empty report', async () => {
+  const f = watchFixture();
+  f.client.fetchAgentTimeline = async () => { throw new Error('temporary unavailable'); };
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), false);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.record.pending, null);
+  assert.notEqual(f.record.status, 'delivered');
+  const body = await composeNotice(f.client, f.record, {key: 'terminal', reason: 'finished'});
+  assert.equal(body, null);
+});
+
+test('a continuation does not send an already pending terminal notice', async () => {
+  const f = watchFixture();
+  f.record.continued = true;
+  f.record.pending = {key: 'terminal', messageId: 'old-id', text: 'old final'};
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.record.status, 'continued');
+  assert.equal(f.record.pending, null);
+});
+
 test('a long final reply is stored beside the receipt and the notice carries the path and a summary', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-notice-'));
   const old = process.env.ROUTER_STATE_DIR;

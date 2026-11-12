@@ -1168,6 +1168,30 @@ except ValueError as e:
             self.assertEqual(flow.deliver_end_notices(now=when + timedelta(seconds=1), host=host), [])
             self.assertEqual(len(calls), 1)
 
+    def test_a_notice_without_delivery_evidence_stays_due(self):
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        state = self.root / 'state'
+        when = self.now + timedelta(seconds=20)
+        self._agent_file(stored, {
+            'status': 'idle', 'attentionReason': 'finished', 'updatedAt': when.isoformat(),
+        })
+        self._receipt(stored, {
+            'dispatch_id': stored['dispatch_id'], 'parent_id': 'parent-a', 'status': 'delivery_failed',
+            'delivered': [], 'pending': {'key': 'terminal', 'text': 'final answer'},
+            'terminal': {'reason': 'finished', 'status': 'idle', 'at': when.isoformat()},
+        }, state)
+
+        def host(_payload):
+            return {'ok': True, 'sent': False, 'already': True}
+
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+            registry.reservations(now=when)
+            self.assertEqual(flow.deliver_end_notices(now=when, host=host), [])
+            notice = registry.inspect(stored['dispatch_id'])['end_notice']
+            self.assertEqual(notice['state'], 'due')
+            self.assertNotIn('source', notice)
+
     def test_one_report_channel_is_injected_and_a_watched_prompt_can_be_rebuilt_unwatched(self):
         import roll
         watched, _ = roll.prepare_worker_prompt('Do work', 'parent-a', watched=True)

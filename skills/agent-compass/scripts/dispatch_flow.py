@@ -394,8 +394,10 @@ def deliver_end_notices(now=None, path=None, host=None):
     """Send each due end notice once. Without an explicit daemon, and without an injected host, send nothing.
 
     A failed send leaves the notice due so the next read retries it. The bridge computes the message id, the same
-    one the watcher uses, so a race with a late watcher is one message. Success, an already-sent receipt, and a
-    parent that can no longer be reached are all recorded, and a second call sends nothing."""
+    one the watcher uses, so a race with a late watcher is one message. A send, a receipt that already shows the
+    terminal was delivered (`evidence` `delivered`), an intentional skip (`evidence` `skipped`), and a parent that
+    can no longer be reached are recorded. `already` without that evidence is not a delivery: the notice stays due.
+    A second call sends nothing."""
     del now
     if host is None and 'daemon' not in paseo_config():
         return []
@@ -411,10 +413,16 @@ def deliver_end_notices(now=None, path=None, host=None):
             continue
         if response.get('error') == 'parent_unavailable':
             registry.mark_end_notice_sent(notice['dispatch_id'], 'parent_unavailable', path=path)
-        elif response.get('sent') or response.get('already'):
-            registry.mark_end_notice_sent(notice['dispatch_id'], 'watcher' if response.get('already') else 'catchup', path=path)
-            if response.get('sent'):
-                sent.append(notice['dispatch_id'])
+        elif response.get('sent'):
+            registry.mark_end_notice_sent(notice['dispatch_id'], 'catchup', path=path)
+            sent.append(notice['dispatch_id'])
+        elif response.get('already') and response.get('evidence') == 'delivered':
+            registry.mark_end_notice_sent(notice['dispatch_id'], 'watcher', path=path)
+        elif response.get('already') and response.get('evidence') == 'skipped':
+            source = response.get('skipped')
+            if not isinstance(source, str) or not source.isidentifier() or len(source) > 64:
+                source = 'skipped'
+            registry.mark_end_notice_sent(notice['dispatch_id'], source, path=path)
     return sent
 
 
