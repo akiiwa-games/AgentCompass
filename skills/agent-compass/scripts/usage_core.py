@@ -934,6 +934,28 @@ def _parse_json_body(raw: str) -> Any:
         return raw
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A 3xx is the answer. Do not open the Location, and do not replay Authorization there."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
+
+
+def _open_usage_request(req: urllib.request.Request, timeout: float):
+    """Open one usage request.
+
+    A test that replaced urllib.request.urlopen gets that replacement. The real client
+    does not follow redirects, so an Authorization header stays on the URL that was asked.
+    """
+    open_url = urllib.request.urlopen
+    if getattr(open_url, "__module__", None) != "urllib.request":
+        return open_url(req, timeout=timeout)
+    return _NO_REDIRECT_OPENER.open(req, timeout=timeout)
+
+
 def http_json_response(
     url: str,
     *,
@@ -951,7 +973,7 @@ def http_json_response(
         req_headers.setdefault("Content-Type", "application/json")
     req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _open_usage_request(req, timeout) as resp:
             raw = resp.read().decode("utf-8")
             return (
                 resp.status,
@@ -2552,8 +2574,9 @@ def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
     non-empty. Subscription-shaped metered accounts (no endpoint) are not these.
     Old proxy sections, environment variables and usage-config keys are not read.
 
-    A harness candidate is added only when its id and its origin are both absent from the
-    handwritten accounts. The key is the one just read from that harness; it is not copied out.
+    A harness candidate is added when its id is absent and no handwritten account already
+    has the same origin and the same key. A different key at that origin is its own meter.
+    The key is the one just read from that harness; it is not copied out.
     Official API hosts are not candidates.
     """
     path = _accounts_override_path()
@@ -2586,7 +2609,8 @@ def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
                 origin=origin,
                 budget_usd=_usd_number(spec.get("budget_usd"), allow_zero=False),
             )
-    origins = {account.origin for account in found.values()}
+    # Same origin and same key are one account. The handwritten entry was inserted first, so it wins.
+    identities = {(account.origin, account.api_key) for account in found.values()}
     import provider_inventory
     for item in provider_inventory.harness_usd_candidates(_harness_scan_home(), os.environ):
         pid = item.get("provider_id")
@@ -2597,7 +2621,7 @@ def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
         origin = _metered_usd_origin(endpoint)
         if not endpoint or not key or not origin or origin in provider_inventory.OFFICIAL_API_ORIGINS:
             continue
-        if origin in origins:
+        if (origin, key) in identities:
             continue
         digest_key = item.get("credential_key")
         PROVIDER_LABELS.setdefault(pid, pid)
@@ -2611,7 +2635,28 @@ def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
             source="harness",
             credential_key=digest_key if isinstance(digest_key, str) and digest_key else None,
         )
+        identities.add((origin, key))
     return found
+
+
+def _metered_sent_digest(account: MeteredUsdAccount) -> str | None:
+    """Digest of the key and base this request will send. A harness uses its discovery digest."""
+    if account.source == "harness":
+        return account.credential_key or None
+    return hashlib.sha256((account.endpoint + "\0" + account.api_key).encode()).hexdigest()
+
+
+def _cached_metered_spend(provider_id: str, credential_key: str | None) -> dict[str, Any] | None:
+    """Spend already stored for this key and base. A later miss does not delete it."""
+    if not credential_key:
+        return None
+    raw = (load_usage_cache().get("providers") or {}).get(provider_id)
+    if not isinstance(raw, dict):
+        return None
+    import provider_inventory
+    if provider_inventory._metered_spend_evidence(raw, credential_key) is None:
+        return None
+    return raw
 
 
 def _parse_key_info(payload: Any) -> tuple[float | None, float | None]:
@@ -2825,18 +2870,39 @@ def _metered_usd_miss(
     )
 
 
+def _discarded_metered_reading(provider_id: str, display_name: str, sent_key: str | None) -> ProviderUsage:
+    """The key or base changed before the reading could be stored. Do not attach it to the new digest."""
+    return ProviderUsage(
+        provider_id=provider_id,
+        display_name=display_name,
+        available=False,
+        error="更新失败",
+        credential_key=sent_key,
+    )
+
+
 def fetch_metered_usd_usage(provider_id: str) -> ProviderUsage:
     """Read spent dollars for one metered USD account from GET {origin}/key/info only."""
     account = discover_metered_usd_accounts().get(provider_id)
     display_name = account.display_name if account is not None else provider_id
     if account is None:
         return ProviderUsage(provider_id=provider_id, display_name=display_name, available=False, error="更新失败")
+    sent_key = _metered_sent_digest(account)
     status, payload, _headers = http_json_response(
         f"{account.origin}/key/info",
         headers={"Authorization": f"Bearer {account.api_key}"},
     )
+    if sent_key is None or provider_credential_key(provider_id) != sent_key:
+        return _discarded_metered_reading(provider_id, display_name, sent_key)
     spend, reported_budget = _parse_key_info(payload) if status == 200 else (None, None)
     if spend is None:
+        kept = _cached_metered_spend(provider_id, sent_key)
+        if kept is not None:
+            # An ordinary miss leaves the proved spend in place. Only a new key or base drops it.
+            item = _provider_from_dict(kept)
+            item.provider_id = provider_id
+            item.credential_key = sent_key
+            return item
         return _metered_usd_miss(
             provider_id, display_name, status, payload, declare_billing=account.source != "harness",
         )
@@ -2860,6 +2926,7 @@ def fetch_metered_usd_usage(provider_id: str) -> ProviderUsage:
         windows=windows,
         available=True,
         fetched_at=datetime.now(timezone.utc).isoformat(),
+        credential_key=sent_key,
         backend_kind="metered_usd",
         billing="metered",
         usage_details=details,

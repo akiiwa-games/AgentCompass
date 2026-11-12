@@ -802,7 +802,8 @@ def _product_reading(family, account_home, env, auth):
     else:
         try:
             config = {'auth': auth, 'config': (account_home / 'config.toml').read_text(encoding='utf-8-sig')}
-        except OSError:
+        except (OSError, UnicodeError):
+            # One unreadable Codex file is that harness only. UnicodeError is not an OSError.
             config = {'auth': auth}
     base, token, models = product_config(family, config)
     return config, base, token if isinstance(token, str) else '', models
@@ -869,13 +870,16 @@ def harness_usd_candidates(home=None, environ=None):
     slots, _orca_slots = _harness_slots(home, environ, definitions)
     found = []
     for name, (family, default_home) in slots.items():
-        env, enabled, account_home, credential_home = _slot_layout(name, family, default_home, home, definitions)
-        if not enabled:
+        try:
+            env, enabled, account_home, credential_home = _slot_layout(name, family, default_home, home, definitions)
+            if not enabled:
+                continue
+            auth = {}
+            if family == 'codex':
+                auth, _auth_error = read_json(credential_home / 'auth.json')
+            config, base, token, _models = _product_reading(family, account_home, env, auth)
+        except UnicodeError:
             continue
-        auth = {}
-        if family == 'codex':
-            auth, _auth_error = read_json(credential_home / 'auth.json')
-        config, base, token, _models = _product_reading(family, account_home, env, auth)
         if not (base and token) or base in OFFICIAL_API_ORIGINS:
             continue
         cached = obj(cache_rows.get(name))

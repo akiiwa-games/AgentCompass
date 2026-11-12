@@ -905,6 +905,18 @@ def _age_usage(box: Sandbox, provider: str) -> None:
     box.cache.write_text(json.dumps(document), encoding="utf-8")
 
 
+def _drop_provider_usage(box: Sandbox, provider: str) -> None:
+    """Remove one provider's stored reading so the next poll is a first read."""
+    if not box.cache.is_file():
+        return
+    document = box.read_cache()
+    for key in ("providers", "display_snapshots", "attempts"):
+        rows = document.get(key)
+        if isinstance(rows, dict):
+            rows.pop(provider, None)
+    box.cache.write_text(json.dumps(document), encoding="utf-8")
+
+
 def scenario_harness_api_key(ctx):
     """A new machine whose Claude harness points at a local self-built key. The tray shows the /key/info result."""
     box = Sandbox(ctx["base"], "harness-api-key", ctx["venv"], ctx["fixture"], ctx["run"])
@@ -948,6 +960,9 @@ def scenario_harness_api_key(ctx):
 
     collect("harness dollars with a budget", 2.5, 10, 200, "已用 $2.50 / $10", "", "metered")
     collect("harness dollars without a budget", 12.3, None, 200, "已用 $12.30", "", "metered")
+    # A 403 does not erase a spend already proved for this key. Billing stays metered.
+    collect("a permission miss keeps the proved spend", 2.5, 10, 403, "已用 $12.30", "", "metered")
+    _drop_provider_usage(box, "claude")
     collect("harness key without query permission", 2.5, 10, 403, "", "无查询权限", "unknown")
     op = ctx["run"].operation("harness requests stay on the fixture", "the whole scenario never called a completion or an official host")
     op.check(

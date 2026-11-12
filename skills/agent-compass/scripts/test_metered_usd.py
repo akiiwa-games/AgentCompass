@@ -1,8 +1,10 @@
 """Metered USD is spent dollars and an optional budget. It does not reset."""
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -241,6 +243,16 @@ class Doctor(unittest.TestCase):
 
 
 class SpendRead(unittest.TestCase):
+    def _clear_usd_cache(self):
+        def update(cache):
+            providers = cache.get('providers')
+            if isinstance(providers, dict):
+                providers.pop('usd', None)
+            snaps = cache.get('display_snapshots')
+            if isinstance(snaps, dict):
+                snaps.pop('usd', None)
+        usage_core.update_usage_cache(update)
+
     def _account(self, models):
         path = Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -276,6 +288,7 @@ class SpendRead(unittest.TestCase):
     def test_permission_denial_is_one_get_and_stores_no_spend(self):
         for status in (401, 403):
             with self.subTest(status=status):
+                self._clear_usd_cache()
                 self._account(['declared-model'])
                 calls = []
 
@@ -314,6 +327,7 @@ class SpendRead(unittest.TestCase):
         )
         for status, payload, reason in cases:
             with self.subTest(status=status, reason=reason):
+                self._clear_usd_cache()
                 self._account([])
                 calls = []
 
@@ -624,6 +638,14 @@ class HarnessCandidates(unittest.TestCase):
             home=Path(os.environ['ROUTER_PROVIDER_HOME']),
             state_dir=Path(os.environ['ROUTER_STATE_DIR']),
         )
+        home = Path(os.environ['ROUTER_PROVIDER_HOME'])
+        for relative in (
+            '.claude/settings.json', '.claude/usage-float.json',
+            '.codex/config.toml', '.codex/auth.json',
+        ):
+            path = home / relative
+            if path.is_file():
+                path.unlink()
 
     def tearDown(self):
         (usage_core.HOME, usage_core.CLAUDE_HOME, usage_core.CLAUDE_HOME_2,
@@ -678,6 +700,16 @@ class HarnessCandidates(unittest.TestCase):
         for secret in secrets:
             self.assertNotIn(secret, joined)
 
+    def _clear_provider_cache(self, provider='claude'):
+        def update(cache):
+            providers = cache.get('providers')
+            if isinstance(providers, dict):
+                providers.pop(provider, None)
+            snaps = cache.get('display_snapshots')
+            if isinstance(snaps, dict):
+                snaps.pop(provider, None)
+        usage_core.update_usage_cache(update)
+
     def _fetch(self, status, payload, provider='claude'):
         calls = []
 
@@ -691,6 +723,7 @@ class HarnessCandidates(unittest.TestCase):
 
     def test_permission_denial_stores_no_number_and_leaves_billing_unknown(self):
         self._clear_override()
+        self._clear_provider_cache()
         self._write_claude('https://proxy.example.test/v1')
         for status in (401, 403):
             with self.subTest(status=status):
@@ -701,11 +734,11 @@ class HarnessCandidates(unittest.TestCase):
                 self.assertEqual(row.usage_details, {'kind': 'metered_usd', 'query': 'no_permission'})
                 self.assertIsNone(row.billing)
                 self.assertIsNone(row.summary)
-                blob = json.dumps(usage_core.load_usage_cache(), ensure_ascii=False)
+                cached = usage_core.load_usage_cache()['providers']['claude']
+                blob = json.dumps(cached, ensure_ascii=False)
                 self.assertNotIn('$', blob)
                 self.assertNotIn('spent_usd', blob)
                 self.assertNotIn('已用', blob)
-                cached = usage_core.load_usage_cache()['providers']['claude']
                 self.assertNotIn('billing', cached)
                 self.assertEqual(cached['backend_kind'], 'metered_usd')
                 discovered = provider_inventory.discover()['accounts']['claude']
@@ -713,14 +746,13 @@ class HarnessCandidates(unittest.TestCase):
                 self.assertNotEqual(discovered.get('backend_kind'), 'metered_usd')
                 self._assert_secret_absent(self.SECRET)
 
-    def test_404_and_other_misses_do_not_change_billing(self):
+    def test_first_miss_does_not_prove_billing(self):
         self._clear_override()
+        self._clear_provider_cache()
         self._write_claude('https://proxy.example.test/v1')
-        proved, _calls = self._fetch(200, {'info': {'spend': 1.5, 'max_budget': 10}})
-        self.assertEqual(proved.summary, '已用 $1.50 / $10')
-        self.assertEqual(provider_inventory.discover()['accounts']['claude']['billing'], 'metered')
         for status, payload in ((404, {'error': 'missing'}), (0, 'timed out'), (200, {'info': {}})):
             with self.subTest(status=status):
+                self._clear_provider_cache()
                 row, calls = self._fetch(status, payload)
                 self.assertEqual(calls[0][0], 'GET')
                 self.assertEqual(row.usage_details, {'kind': 'metered_usd', 'query': 'not_metered'})
@@ -731,10 +763,115 @@ class HarnessCandidates(unittest.TestCase):
                 self.assertNotEqual(cached.get('backend_kind'), 'metered_usd')
                 self.assertNotEqual(cached.get('usage_details', {}).get('query'), 'failed')
                 self.assertNotIn('billing', cached)
+                self.assertNotIn('spent_usd', cached.get('usage_details') or {})
                 discovered = provider_inventory.discover()['accounts']['claude']
                 self.assertEqual(discovered['billing'], 'unknown')
                 self.assertTrue(discovered.get('usd_candidate'))
                 self._assert_secret_absent(self.SECRET)
+
+    def test_cross_origin_redirect_is_not_followed(self):
+        other_seen = []
+
+        class Other(BaseHTTPRequestHandler):
+            def do_GET(self):
+                other_seen.append((self.path, self.headers.get('Authorization')))
+                body = b'{"info":{"spend":1}}'
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, fmt, *args):
+                return
+
+        other = ThreadingHTTPServer(('127.0.0.1', 0), Other)
+        other_port = other.server_address[1]
+
+        class Source(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header('Location', f'http://127.0.0.1:{other_port}/elsewhere')
+                self.end_headers()
+
+            def log_message(self, fmt, *args):
+                return
+
+        source = ThreadingHTTPServer(('127.0.0.1', 0), Source)
+        threads = []
+        for server in (other, source):
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            threads.append(thread)
+        try:
+            status, _payload, _headers = usage_core.http_json_response(
+                f'http://127.0.0.1:{source.server_address[1]}/key/info',
+                headers={'Authorization': 'Bearer fixture-secret'},
+            )
+        finally:
+            for server in (source, other):
+                server.shutdown()
+                server.server_close()
+            for thread in threads:
+                thread.join(timeout=5)
+        self.assertNotEqual(status, 200)
+        self.assertEqual(other_seen, [])
+
+    def test_reading_is_discarded_when_the_key_changes_before_it_is_stored(self):
+        self._clear_override()
+        self._clear_provider_cache()
+        self._write_claude('https://proxy.example.test/v1', secret='fixture-old-key')
+        old = usage_core.discover_metered_usd_accounts()['claude'].credential_key
+
+        def fake(url, method='GET', headers=None, body=None, timeout=20):
+            self._write_claude('https://proxy.example.test/v1', secret='fixture-new-key')
+            return 200, {'info': {'spend': 7}}, {}
+
+        with patch.object(usage_core, 'http_json_response', side_effect=fake):
+            usage_core.fetch_metered_usd_usage('claude')
+        new = usage_core.discover_metered_usd_accounts()['claude'].credential_key
+        self.assertNotEqual(old, new)
+        cached = (usage_core.load_usage_cache().get('providers') or {}).get('claude')
+        self.assertIsNone(provider_inventory._metered_spend_evidence(cached, new))
+        if isinstance(cached, dict) and cached.get('credential_key') == new:
+            self.assertNotEqual((cached.get('usage_details') or {}).get('spent_usd'), 7)
+
+    def test_ordinary_failure_keeps_a_proved_spend(self):
+        self._clear_override()
+        self._clear_provider_cache()
+        self._write_claude('https://proxy.example.test/v1')
+        proved, _calls = self._fetch(200, {'info': {'spend': 7}})
+        self.assertEqual(proved.usage_details['spent_usd'], 7)
+        key = provider_inventory.discover()['accounts']['claude']['credential_key']
+        for status, payload in ((0, 'timed out'), (0, ''), (302, ''), (404, {'error': 'missing'}), (403, {})):
+            with self.subTest(status=status, payload=payload):
+                row, _calls = self._fetch(status, payload)
+                cached = usage_core.load_usage_cache()['providers']['claude']
+                self.assertIsNotNone(provider_inventory._metered_spend_evidence(cached, key))
+                self.assertEqual(cached['usage_details'].get('spent_usd'), 7)
+                self.assertNotEqual(cached['usage_details'].get('query'), 'not_metered')
+                self.assertEqual(row.usage_details.get('spent_usd'), 7)
+                self.assertEqual(provider_inventory.discover()['accounts']['claude']['billing'], 'metered')
+
+    def test_one_non_utf8_codex_config_skips_only_that_harness(self):
+        self._clear_override()
+        codex = self._home() / '.codex'
+        codex.mkdir(parents=True, exist_ok=True)
+        (codex / 'config.toml').write_bytes(b'\xff')
+        self._write_claude('https://proxy.example.test/v1')
+        self._override({'handwritten': {
+            'billing': 'metered',
+            'endpoint': 'https://handwritten.example.test/v1',
+            'api_key': 'fixture-handwritten-key',
+            'label': 'handwritten',
+        }})
+        found = provider_inventory.harness_usd_candidates(self._home(), os.environ)
+        ids = {item['provider_id'] for item in found}
+        self.assertIn('claude', ids)
+        self.assertNotIn('codex', ids)
+        accounts = usage_core.discover_metered_usd_accounts()
+        self.assertIn('claude', accounts)
+        self.assertIn('handwritten', accounts)
+        self.assertNotIn('codex', accounts)
 
     def test_spend_promotes_billing_and_shows_budget_when_present(self):
         self._clear_override()
@@ -779,7 +916,7 @@ class HarnessCandidates(unittest.TestCase):
         self.assertEqual(provider_inventory.discover()['accounts']['codex']['billing'], 'metered')
         self._assert_secret_absent(self.CODEX_SECRET)
 
-    def test_handwritten_account_wins_by_id_and_by_origin(self):
+    def test_handwritten_account_wins_by_id(self):
         self._write_claude('https://proxy.example.test/v1')
         self._override({'claude': {
             'billing': 'metered',
@@ -791,6 +928,10 @@ class HarnessCandidates(unittest.TestCase):
         self.assertEqual(set(found), {'claude'})
         self.assertEqual(found['claude'].source, 'override')
         self.assertEqual(found['claude'].origin, 'https://handwritten.example.test')
+        self._assert_secret_absent(self.SECRET)
+
+    def test_same_origin_and_key_keeps_the_handwritten_account(self):
+        self._write_claude('https://proxy.example.test/v1', secret='fixture-handwritten-key')
         self._override({'handwritten': {
             'billing': 'metered',
             'endpoint': 'https://proxy.example.test/v1',
@@ -800,7 +941,45 @@ class HarnessCandidates(unittest.TestCase):
         found = usage_core.discover_metered_usd_accounts()
         self.assertEqual(set(found), {'handwritten'})
         self.assertNotIn('claude', found)
-        self._assert_secret_absent(self.SECRET)
+        self.assertEqual(found['handwritten'].source, 'override')
+
+    def test_same_origin_different_key_shows_its_own_spend(self):
+        self._clear_provider_cache()
+        self._clear_provider_cache('handwritten')
+        self._write_claude('https://proxy.example.test/v1')
+        self._override({'handwritten': {
+            'billing': 'metered',
+            'endpoint': 'https://proxy.example.test/v1',
+            'api_key': 'fixture-handwritten-key',
+            'label': 'handwritten',
+        }})
+        found = usage_core.discover_metered_usd_accounts()
+        self.assertEqual(set(found), {'claude', 'handwritten'})
+        self.assertNotEqual(found['claude'].api_key, found['handwritten'].api_key)
+
+        def fake(url, method='GET', headers=None, body=None, timeout=20):
+            auth = (headers or {}).get('Authorization') or ''
+            if auth.endswith('fixture-handwritten-key'):
+                return 200, {'info': {'spend': 3}}, {}
+            if auth.endswith(self.SECRET):
+                return 200, {'info': {'spend': 9}}, {}
+            return 500, {}, {}
+
+        with patch.object(usage_core, 'http_json_response', side_effect=fake):
+            handwritten = usage_core.fetch_metered_usd_usage('handwritten')
+            claude = usage_core.fetch_metered_usd_usage('claude')
+        self.assertEqual(handwritten.usage_details['spent_usd'], 3)
+        self.assertEqual(claude.usage_details['spent_usd'], 9)
+        cached = usage_core.load_usage_cache()['providers']
+        self.assertEqual(cached['handwritten']['usage_details']['spent_usd'], 3)
+        self.assertEqual(cached['claude']['usage_details']['spent_usd'], 9)
+        self.assertNotEqual(
+            cached['handwritten']['usage_details']['spent_usd'],
+            cached['claude']['usage_details']['spent_usd'],
+        )
+        stored = json.dumps(provider_inventory.discover(), ensure_ascii=False) + json.dumps(cached, ensure_ascii=False)
+        self.assertNotIn(self.SECRET, stored)
+        self.assertNotIn('fixture-handwritten-key', stored)
 
     def test_official_hosts_are_not_probed(self):
         self._clear_override()
