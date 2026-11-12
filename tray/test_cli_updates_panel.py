@@ -189,6 +189,15 @@ class PanelTests(unittest.TestCase):
         panel = self.open()
         panel.show_setting('strategy')
         panel.tuning_loaded(router_data.TUNING_DEFAULTS)
+        self.assertEqual(panel.strategy_save.cget('text'), '保存可调设置')
+        # Save button lives inside the settings card in the scroll body, not as a page-wide footer under Manual Score.
+        ancestors = []
+        parent = panel.strategy_save.nametowidget(panel.strategy_save.winfo_parent())
+        while parent is not None and parent != self.root:
+            ancestors.append(parent)
+            name = parent.winfo_parent()
+            parent = parent.nametowidget(name) if name else None
+        self.assertIn(panel.strategy_scroll.body, ancestors)
         with mock.patch.object(router_data, 'save_tuning') as save:
             panel.preset_buttons['省额度'].invoke()
             save.assert_not_called()
@@ -200,6 +209,74 @@ class PanelTests(unittest.TestCase):
             done(work())
             self.assertEqual(save.call_args.args[0]['safety_margin_pct'], '12')
             self.assertEqual(panel.status.get(), 'saved')
+
+    def test_strategy_scores_headers_tooltips_and_manual_editor_round_trip(self):
+        import user_scores
+
+        local_scores = self.directory / 'user-scores.json'
+        with mock.patch.dict('os.environ', {user_scores.ENV_VAR: str(local_scores)}), \
+                mock.patch.object(router_data, 'live_economy_windows', return_value=[
+                    {'label': 'claude/weekly', 'used_usd': 80.0, 'capacity_usd': 400.0,
+                     'recovery_line_usd': 150.0, 'need_probability': 0.35, 'quota_price': 0.0085}]):
+            panel = self.open()
+            panel.show_setting('strategy')
+            data = router_data.score_overview()
+            panel.scores_loaded(data)
+
+            # Column headers and z-target tooltip in categories_grid.
+            headers = [w.cget('text') for w in panel.categories_grid.grid_slaves(row=0)]
+            self.assertEqual(set(headers), {'类别 / 子维度', '公开榜单', '数据日期', '面板目标 (z)'})
+            z_header = next(w for w in panel.categories_grid.grid_slaves(row=0) if w.cget('text') == '面板目标 (z)')
+            self.assertIn('面板标准分 z', z_header._tooltip_text)
+            self.assertIn('claude/weekly', panel.economy_label.cget('text'))
+            self.assertIn(f"{data['demand_grid_n']} 点需求网格", panel.economy_label._tooltip_text)
+
+            # Table cells carry plain levels only (no ✎ ◆ ~ markers).
+            for iid in panel.scores_table.get_children():
+                vals = panel.scores_table.item(iid, 'values')[1:]
+                for v in vals:
+                    self.assertFalse(any(mark in v for mark in ('✎', '◆', '~')), v)
+
+            # Multi-facet whole category does not prefill an aggregated level; hover on model combobox has real key.
+            panel.manual_model.set('Sol 6.1')
+            panel.manual_model_changed()
+            self.assertIn('gpt-6.1-sol', panel.manual_model._tooltip_text)
+            panel.manual_target.set('编码能力 · 整个类别')
+            panel.show_manual_current()
+            self.assertEqual(panel.manual_level.get(), '')
+            self.assertIn('类别等级按路由器的类别目标换算', panel.manual_current.cget('text'))
+            self.assertIn('来源：', panel.manual_current.cget('text'))
+
+            # Saving whole-category tool_operation = 3.0 round-trips and prefills 3.0 (not 2.0).
+            panel.manual_target.set('工具操作 · 整个类别')
+            panel.show_manual_current()
+            panel.manual_level.set('3.0')
+            panel.run.reset_mock()
+            panel.save_manual_score()
+            work, done = panel.run.call_args.args[:2]
+            done(work())
+            panel.scores_loaded(router_data.score_overview())
+            self.assertTrue(all(not panel.scores_table.item(iid, 'tags')
+                                for iid in panel.scores_table.get_children()))
+            panel.manual_target.set('工具操作 · 整个类别')
+            panel.show_manual_current()
+            self.assertEqual(panel.manual_level.get(), '3.0')
+
+            # Clearing whole-category coding when only coding.faithfulness is set reports remaining facet override.
+            router_data.set_manual_score('gpt-6.1-sol', 'coding.faithfulness', 1.6)
+            panel.scores_loaded(router_data.score_overview())
+            panel.manual_target.set('编码能力 · 整个类别')
+            panel.show_manual_current()
+            panel.run.reset_mock()
+            panel.clear_manual_score()
+            work, done = panel.run.call_args.args[:2]
+            done(work())
+            self.assertIn('coding.faithfulness', panel.status.get())
+
+            # Jump button opens Decision Compass on the quota-line tab.
+            panel.open_quota_compass()
+            self.assertEqual(panel.current, 'scoring')
+            self.assertEqual(panel.list_switch.value, 'quota')
 
     def test_latest_cli_read_wins_over_a_slower_read(self):
         panel = self.open()

@@ -133,13 +133,82 @@ def test_decisions_without_a_quota_line_record_show_an_empty_state_not_invented_
     assert renderer.repaints == 0 and renderer.tip_at(200, 150) == ""
 
 
-def test_an_empty_view_says_whether_nothing_was_priced_or_the_record_predates_the_economy():
+def test_an_empty_view_says_whether_nothing_was_priced_or_the_record_predates_the_economy(monkeypatch):
+    import ledger_snapshot
     priced_nothing = quota_line.empty_text({"decision": {"system": {"quota_windows": []}}, "ranking": []})
     legacy = quota_line.empty_text({"ranking": []})
     assert priced_nothing != legacy
     assert "0" in priced_nothing
-    renderer = quota_line.QuotaLineRenderer(None, 400, 300, 1., empty_text=priced_nothing)
-    assert renderer.empty_text == priced_nothing
+    _, drawn_words = words_of(monkeypatch, None, (400, 300, 1.), empty_text=priced_nothing)
+    assert priced_nothing in drawn_words
+
+    # Finding I: v0.4.5 snapshots have decision.system.quota_windows (None, or windows without per-candidate economy)
+    # and no per-candidate `economy` dict: they predate the quota economy and must say so.
+    v045_none = {
+        "v": 1, "stage": "plan", "choice": "opus_high",
+        "decision": {"system": {"weights": {}, "quota_windows": None}},
+        "ranking": [{"id": "opus_high", "bundle": {"model": "claude-opus-5-5", "effort": "high"},
+                     "score": 0.82, "excluded": []}],
+    }
+    v045_windows_without_economy = {
+        "v": 1, "stage": "plan", "choice": "opus_high",
+        "decision": {"system": {"quota_windows": [{"label": "claude/weekly", "capacity_usd": 400.0, "used_usd": 50.0,
+                                                   "elapsed_hours": 24.0, "reset_in_hours": 144.0,
+                                                   "quota_source": "claude", "window": "weekly"}]}},
+        "ranking": [{"id": "opus_high", "bundle": {"model": "claude-opus-5-5", "effort": "high"},
+                     "score": 0.82, "excluded": []}],
+    }
+    for snap in (v045_none, v045_windows_without_economy):
+        derived = ledger_snapshot.with_quota_line(snap)
+        assert "quota_line" not in derived
+        assert quota_line.empty_text(derived) == legacy
+        _, snap_words = words_of(monkeypatch, quota_line.model(derived), (400, 300, 1.),
+                                 empty_text=quota_line.empty_text(derived))
+        assert legacy in snap_words
+
+
+def test_plan_task_and_replay_derive_quota_line_for_live_and_legacy_decisions(monkeypatch):
+    from datetime import datetime, timezone
+    _, router = router_data.modules()
+    import account_fleet
+    import host_policy
+    import provider_inventory
+    import router_test_support
+
+    now = datetime(2026, 11, 12, 2, 0, tzinfo=timezone.utc)
+    fake_usage = router_test_support.usage_windows(now, {
+        "claude": [("five_hour", 90, 3), ("seven_day", 75, 100), ("weekly_fable", 100, 100)],
+        "codex": [("usage", 80, 100)],
+    })
+    monkeypatch.setenv("ROUTER_ACCOUNTS_FILE", str(account_fleet.reference_fleet_path()))
+    monkeypatch.setattr(provider_inventory, "current", lambda *_a, **_kw: {"accounts": {}, "launchers": {}})
+    monkeypatch.setattr(host_policy, "load_policy", lambda *_a, **_kw: {"allowed_accounts": ["claude", "codex"]})
+    monkeypatch.setattr(router_data, "now_utc", lambda: now)
+    monkeypatch.setattr(router, "usage_snapshot", lambda *_a, **_kw: fake_usage)
+    monkeypatch.setattr(router, "read_ledger", lambda *_a, **_kw: [])
+    monkeypatch.setattr(router, "dot_unreachable", lambda: True)
+
+    profile = router_test_support.profile(local_only=True, axis_demand={
+        "divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 1,
+    })
+    task = router_data.build_task("implement module fix", 1.0, True, False, "general_implementation", "routine", profile)
+    planned = router_data.plan_task(task)
+    assert isinstance((planned.get("quota_line") or {}).get("windows"), dict) and planned["quota_line"]["windows"]
+    winner = next(c for c in planned["ranking"] if c["id"] == planned["choice"])
+    assert isinstance(winner.get("quota_line"), dict) and winner["quota_line"]["window"] in planned["quota_line"]["windows"]
+
+    # Replay of a current-economy snapshot whose top-level quota_line was omitted derives quota_line cleanly.
+    stripped = {k: v for k, v in planned.items() if k != "quota_line"}
+    stripped["ranking"] = [{k: v for k, v in c.items() if k != "quota_line"} for c in planned["ranking"]]
+    replayed_snap = router_data.replay({"at": "2026-11-12T02:00:00Z", "decision_snapshot": stripped})
+    assert replayed_snap["quota_line"]["windows"] == planned["quota_line"]["windows"]
+
+    # Replay of a snapshot-less row recomputes through plan_task and carries quota_line.
+    replayed_legacy = router_data.replay({"at": "2026-11-12T02:00:00Z", "objective": "implement module fix",
+                                          "hours": 1.0, "local_only": True, "kind": "general_implementation",
+                                          "difficulty": "routine", "profile": profile})
+    assert replayed_legacy["theatre_source"] == "recomputed"
+    assert isinstance((replayed_legacy.get("quota_line") or {}).get("windows"), dict)
 
 
 @pytest.mark.parametrize("size", SIZES)

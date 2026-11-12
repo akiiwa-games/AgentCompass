@@ -187,11 +187,15 @@
     }
   },
   "models": {
-    "deepseek-v4.1-flash-free": {},
+    "deepseek-v4.1-flash-free": {
+      "label": "DeepSeek Flash"
+    },
     "claude-fable-5-1": {
+      "label": "Fable 5.1",
       "api_family": "claude"
     },
     "claude-fable-5-2": {
+      "label": "Fable 5.2",
       "fast_capable": true,
       "api_family": "claude",
       "image_input_source": {
@@ -201,24 +205,35 @@
       }
     },
     "claude-opus-5-5": {
+      "label": "Opus 5.5",
       "fast_capable": true,
       "api_family": "claude"
     },
     "gpt-6.1-sol": {
+      "label": "Sol 6.1",
       "fast_capable": true,
       "api_family": "codex"
     },
     "gpt-6-astra": {
+      "label": "Astra 6",
       "fast_capable": true,
       "api_family": "codex"
     },
-    "gemini-4-argon-high": {},
+    "gemini-4-argon-high": {
+      "label": "Argon 4"
+    },
     "claude-sonnet-5-5": {
+      "label": "Sonnet 5.5",
       "api_family": "claude"
     },
-    "grok-4.7": {},
-    "gemini-3.8-flash-high": {},
+    "grok-4.7": {
+      "label": "Grok 4.7"
+    },
+    "gemini-3.8-flash-high": {
+      "label": "Flash 3.8"
+    },
     "grok-bot": {
+      "label": "Grok Bot",
       "fixed_effort": "medium",
       "excluded_when": "local_only",
       "image_input_source": {
@@ -228,6 +243,7 @@
       }
     },
     "dot": {
+      "label": "Dot",
       "excluded_when": "local_only",
       "image_input_source": {
         "kind": "maintainer",
@@ -236,6 +252,7 @@
       }
     },
     "gpt-6-pro": {
+      "label": "GPT 6 Pro",
       "advisor_only": true,
       "advisor_for": [
         "direction_reasoning",
@@ -249,89 +266,167 @@
       }
     },
     "claude-haiku-5-5": {
+      "label": "Haiku 5.5",
       "api_family": "claude"
     },
     "gpt-6.1-terra": {
+      "label": "Terra 6.1",
       "fast_capable": true,
       "context_window": 500000,
       "api_family": "codex"
     },
     "gpt-6-sol": {
+      "label": "Sol 6",
       "fast_capable": true,
       "context_window": 272000,
       "api_family": "codex"
     },
     "gpt-6-luna": {
+      "label": "Luna 6",
       "fast_capable": true,
       "context_window": 272000,
       "api_family": "codex"
     },
     "gpt-5.6-sol": {
+      "label": "Sol 5.6",
       "context_window": 272000,
       "api_family": "codex"
     },
     "gpt-5.6-terra": {
+      "label": "Terra 5.6",
       "context_window": 272000,
       "api_family": "codex"
     },
     "gpt-5.6-luna": {
+      "label": "Luna 5.6",
       "context_window": 272000,
       "api_family": "codex"
     },
-    "grok-4.7-build-fast": {},
-    "deepseek-v4-pro": {},
-    "glm-5.3": {},
-    "glm-5.3-flash-free": {},
-    "qwen3-coder-next": {},
-    "qwen3.8-max": {},
-    "kimi-k3.1-pro": {},
-    "kimi-k3": {},
-    "minimax-m3": {},
-    "minimax-m3.1-flash": {},
-    "doubao-seed-2-1-pro-260628": {},
-    "mimo-v2.6-pro": {},
-    "mimo-v2.6-flash-free": {},
-    "nemotron-3-ultra-free": {},
-    "nemotron-3.5-super-vl-free": {},
-    "nemotron-3.5-lightning-free": {},
-    "mistral-large-4": {},
-    "muse-wonder-1.0": {},
-    "beam-free": {},
-    "flint-40b-free": {},
+    "grok-4.7-build-fast": {
+      "label": "Grok 4.7 Build Fast"
+    },
+    "deepseek-v4-pro": {
+      "label": "DeepSeek V4 Pro"
+    },
+    "glm-5.3": {
+      "label": "GLM 5.3"
+    },
+    "glm-5.3-flash-free": {
+      "label": "GLM 5.3 Flash"
+    },
+    "qwen3-coder-next": {
+      "label": "Qwen 3 Coder Next"
+    },
+    "qwen3.8-max": {
+      "label": "Qwen 3.8 Max"
+    },
+    "kimi-k3.1-pro": {
+      "label": "Kimi K3.1 Pro"
+    },
+    "kimi-k3": {
+      "label": "Kimi K3"
+    },
+    "minimax-m3": {
+      "label": "MiniMax M3"
+    },
+    "minimax-m3.1-flash": {
+      "label": "MiniMax M3.1 Flash"
+    },
+    "doubao-seed-2-1-pro-260628": {
+      "label": "Seed 2.1 Pro"
+    },
+    "mimo-v2.6-pro": {
+      "label": "MiMo V2.6 Pro"
+    },
+    "mimo-v2.6-flash-free": {
+      "label": "MiMo V2.6 Flash"
+    },
+    "nemotron-3-ultra-free": {
+      "label": "Nemotron 3 Ultra"
+    },
+    "nemotron-3.5-super-vl-free": {
+      "label": "Nemotron 3.5 Super VL"
+    },
+    "nemotron-3.5-lightning-free": {
+      "label": "Nemotron 3.5 Lightning"
+    },
+    "mistral-large-4": {
+      "label": "Mistral Large 4"
+    },
+    "muse-wonder-1.0": {
+      "label": "Muse Wonder 1.0"
+    },
+    "beam-free": {
+      "label": "Beam"
+    },
+    "flint-40b-free": {
+      "label": "Flint 40B"
+    },
     "claude-haiku-4-5": {
+      "label": "Haiku 4.5",
       "api_family": "claude"
     },
     "claude-opus-4-6": {
+      "label": "Opus 4.6",
       "api_family": "claude"
     },
     "claude-sonnet-4-6": {
+      "label": "Sonnet 4.6",
       "api_family": "claude"
     },
-    "glm-5.2": {},
+    "glm-5.2": {
+      "label": "GLM 5.2"
+    },
     "gpt-oss-120b": {
+      "label": "GPT OSS 120B",
       "api_family": "codex"
     },
-    "gemini-3.1-flash-lite": {},
-    "kimi-k2.7-code": {},
-    "qwen3.6-plus": {},
+    "gemini-3.1-flash-lite": {
+      "label": "Flash 3.1 Lite"
+    },
+    "kimi-k2.7-code": {
+      "label": "Kimi K2.7 Code"
+    },
+    "qwen3.6-plus": {
+      "label": "Qwen 3.6 Plus"
+    },
     "claude-opus-4-7": {
+      "label": "Opus 4.7",
       "api_family": "claude"
     },
     "claude-opus-4-8": {
+      "label": "Opus 4.8",
       "fast_capable": true,
       "api_family": "claude"
     },
-    "grok-4.5": {},
-    "grok-4.6": {},
-    "gemini-3.1-pro-preview": {},
-    "gemini-3.7-flash": {},
-    "kimi-k2.6": {},
-    "qwen3-max": {},
-    "qwen3.7-max": {},
+    "grok-4.5": {
+      "label": "Grok 4.5"
+    },
+    "grok-4.6": {
+      "label": "Grok 4.6"
+    },
+    "gemini-3.1-pro-preview": {
+      "label": "Gemini 3.1 Pro"
+    },
+    "gemini-3.7-flash": {
+      "label": "Flash 3.7"
+    },
+    "kimi-k2.6": {
+      "label": "Kimi K2.6"
+    },
+    "qwen3-max": {
+      "label": "Qwen 3 Max"
+    },
+    "qwen3.7-max": {
+      "label": "Qwen 3.7 Max"
+    },
     "qwen3-flash-2025-07-28": {
+      "label": "Qwen 3 Flash",
       "context_window": 1000000
     },
-    "gemini-4-carbon": {}
+    "gemini-4-carbon": {
+      "label": "Carbon 4"
+    }
   },
   "dispatch_efforts": {
     "grok": {

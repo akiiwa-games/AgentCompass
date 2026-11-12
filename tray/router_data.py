@@ -25,7 +25,7 @@ import radar_chart
 import router_priority
 import i18n
 import display_names
-from display_names import MODEL_LABELS, model_label  # noqa: F401
+from display_names import model_label  # noqa: F401
 
 STATE_DIR = Path(os.environ.get("ROUTER_STATE_DIR") or Path.home() / ".agent-compass").expanduser()
 
@@ -471,6 +471,47 @@ def dna_series(models: dict, first: str, second: str | None) -> tuple[list[dict]
     return series, raw
 
 
+def live_economy_windows() -> list[dict]:
+    """Current live priced long-window economy numbers (`FiveAxisEconomy.report()` at 1h), read-only."""
+    try:
+        allocator, router = modules()
+        now = now_utc()
+        usage = router.usage_snapshot(None, None, now)
+        records = router.read_ledger()
+        try:
+            import dispatch_flow
+            records = records + dispatch_flow.reservation_records(read_only=True)
+        except Exception:
+            pass
+        probe = {
+            "objective": "economy overview",
+            "expected_hours": 1.0,
+            "needs": {},
+            "profile": {
+                "reasoning_depth": 2,
+                "code_complexity": 1,
+                "needs_visual": False,
+                "needs_gui": False,
+                "local_only": False,
+                "wants_fast": False,
+                "read_only_review": False,
+                "access": "write",
+                "expected_hours": 1.0,
+                "hours_confidence": "medium",
+                "urgency": "normal",
+                "interaction_style": "engineering",
+                "multi_task": False,
+                "task_count": "1",
+                "axis_demand": {"divergence": 0, "coding": 0, "aesthetics": 0, "tool_operation": 0},
+            },
+        }
+        result = allocator.plan(probe, usage, now, records=records)
+        windows = (((result.get("decision") or {}).get("system") or {}).get("quota_windows"))
+        return [w for w in windows if isinstance(w, dict)] if isinstance(windows, list) else []
+    except Exception:
+        return []
+
+
 def score_overview() -> dict:
     """The scoring page's data: the four categories (facets, boards, data dates, panel targets, coverage, continuity) and
     every model's category scores, read the way the router reads them (local manual scores included)."""
@@ -484,6 +525,7 @@ def score_overview() -> dict:
     meta = accounts.get("_five_axis") or {}
     targets = meta.get("targets") or {}
     return {"generated_at": meta.get("generated_at"), "anchor": meta.get("anchor"), "panel_n": meta.get("panel_n"),
+            "demand_grid_n": overview.demand_grid_n(), "economy_windows": live_economy_windows(),
             "targets": targets, "categories": overview.category_overview(data, models),
             "models": overview.model_rows(models, targets, model_label)}
 
@@ -501,6 +543,12 @@ def clear_manual_score(model: str, target: str) -> str:
     modules()
     import user_scores
     result = user_scores.clear_score(model, target)
+    if "." not in target and result["removed"] == 0:
+        local = user_scores.list_scores(model, scope="local").get("local") or {}
+        remaining = sorted({k for entries in local.values() if isinstance(entries, dict)
+                            for k in entries if k.startswith(f"{target}.")})
+        if remaining:
+            return _tr("未设置整个类别的本机评分（已清除 0 条）；子维度本机评分仍保留：{0}").format(", ".join(remaining))
     return _tr("已清除 {0} 条本机评分").format(result["removed"])
 
 
@@ -1787,7 +1835,7 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
                 key = raw if exact_catalog else canonical(raw)
                 label = (model.get("label") or model.get("model") or raw) if isinstance(model, dict) else raw
                 label = re.sub(r"\s*\((Low|Medium|High|XHigh|Max)\)$", "", label, flags=re.I)
-                detected[key] = model_label(key) if key in MODEL_LABELS else label
+                detected[key] = display_names.catalog_labels().get(key, label)
         row["models_checked_at"] = max(checked, default=None)
         row["models_probe_failed"] = any(failures)
         configured = {}

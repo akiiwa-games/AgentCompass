@@ -144,8 +144,11 @@ def with_quota_line(result):
     """`result` with the quota-line block the quota page reads, derived when the result does not carry one: a fresh plan
     (a simulation or a recomputed replay) or a snapshot recorded without it still holds `decision.system.quota_windows` and
     each candidate's `economy`, and the block is built from them by the same two functions the snapshot uses. A result
-    that carries a block, or has no recorded quota windows, comes back unchanged."""
+    that carries a block, predates per-candidate `economy`, or has no recorded quota windows, comes back unchanged."""
     if not isinstance(result, dict) or isinstance(result.get('quota_line'), dict):
+        return result
+    eligible = [c for c in (result.get('ranking') or ()) if isinstance(c, dict) and not c.get('excluded')]
+    if eligible and not any(isinstance(c.get('economy'), dict) or isinstance(c.get('quota_line'), dict) for c in eligible):
         return result
     block = snapshot_quota_line(((result.get('decision') or {}).get('system') or {}).get('quota_windows'))
     if block is None:

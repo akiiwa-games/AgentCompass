@@ -4,16 +4,14 @@ Visible text uses these labels; raw ids stay in tooltips, plain-text mirrors and
 """
 from __future__ import annotations
 
-import re
+import json
+from pathlib import Path
 
 import i18n
+import router_priority
 
-MODEL_LABELS = {"claude-opus-5-5": "Opus 5.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-fable-5-1": "Fable 5.1",
-                "claude-fable-5-2": "Fable 5.2",
-                "gpt-5.6-sol": "Sol 5.6", "grok-bot": "Grok Bot",
-                "gpt-6-astra": "Astra 6", "gpt-6.1-sol": "Sol 6.1", "gpt-6-pro": "GPT 6 Pro",
-                "gemini-4-argon-high": "Argon 4", "gemini-3.8-flash-high": "Flash 3.8", "grok-4.7": "Grok 4.7",
-                "dot": "Dot", "deepseek-v4.1-flash-free": "DeepSeek Flash"}
+_CATALOG_LABELS_CACHE: tuple[tuple, dict[str, str]] | None = None
+
 WORK_KINDS = {
     "direction_reasoning": "方向推演", "complex_build_plan": "复杂构建规划",
     "debug_review": "调试评审", "text_in_text_out": "文本处理",
@@ -32,16 +30,43 @@ def _tr(text):
     return i18n.translate(text)
 
 
+def _catalog_path() -> Path:
+    try:
+        router_priority.modules()
+        import account_fleet
+        import public_data
+        return public_data.effective(account_fleet.REFERENCES / "accounts.json")
+    except Exception:
+        return Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "references" / "accounts.json"
+
+
+def catalog_labels() -> dict[str, str]:
+    """{model_key: label} from the catalog (`accounts.json` `models[key].label` and `same_model` aliases)."""
+    global _CATALOG_LABELS_CACHE
+    path = _catalog_path()
+    try:
+        st = path.stat()
+        stamp = (str(path), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return {}
+    if _CATALOG_LABELS_CACHE is not None and _CATALOG_LABELS_CACHE[0] == stamp:
+        return _CATALOG_LABELS_CACHE[1]
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    labels = {name: str(spec["label"]) for name, spec in (doc.get("models") or {}).items()
+              if isinstance(spec, dict) and isinstance(spec.get("label"), str) and spec["label"].strip()}
+    for alias, entry in (doc.get("same_model") or {}).items():
+        target = entry.get("target") if isinstance(entry, dict) else None
+        if alias not in labels and isinstance(target, str) and target in labels:
+            labels[alias] = labels[target]
+    _CATALOG_LABELS_CACHE = (stamp, labels)
+    return labels
+
+
 def model_label(model: str) -> str:
-    if model in MODEL_LABELS:
-        return MODEL_LABELS[model]
-    claude = re.fullmatch(r"claude-(opus|sonnet|haiku|fable)-(\d+(?:-\d+)*)", model)
-    if claude:
-        return f"{claude[1].title()} {claude[2].replace('-', '.')}"
-    gpt = re.fullmatch(r"gpt-(\d+(?:\.\d+)*?)-(sol|astra|terra|luna|pro)", model)
-    if gpt:
-        return f"{gpt[2].title()} {gpt[1]}"
-    return model
+    return catalog_labels().get(model, model)
 
 
 def kind_label(value):

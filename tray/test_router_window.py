@@ -768,7 +768,9 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual([a[1] for a in radar_chart.DNA_AXES[:4]],
                          ["Creativity", "Coding", "Aesthetics", "Tool Operation"])
         self.assertEqual(radar_chart.axis_title(), "Capabilities & Quota")
-        self.assertIn("divergence", radar_chart.SCORE_AXES[0][2])
+        self.assertIn("Creativity", radar_chart.SCORE_AXES[0][2])
+        self.assertNotIn("divergence", radar_chart.SCORE_AXES[0][2].lower())
+        self.assertNotIn("divergence", radar_chart.DNA_AXES[0][2].lower())
         for axes in (radar_chart.SCORE_AXES, radar_chart.DNA_AXES):
             for _, label, formula in axes:
                 self.assertFalse(any('\u4e00' <= char <= '\u9fff' for char in label + formula))
@@ -789,6 +791,8 @@ class LanguageTests(unittest.TestCase):
         i18n.set_language("zh")
         self.assertEqual(router_window.PAGES[0][1], "决策罗盘")
         self.assertEqual(radar_chart.DNA_AXES[0][1], "创意")
+        self.assertIn("创意", radar_chart.SCORE_AXES[0][2])
+        self.assertNotIn("divergence", radar_chart.SCORE_AXES[0][2].lower())
         self.assertEqual(plugins.PLUGINS[0].description, "桌面额度悬浮窗")
 
     def test_panel_switch_rebuilds_navigation_and_current_settings(self):

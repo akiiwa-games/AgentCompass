@@ -17,13 +17,24 @@ FACET_LABELS = {"creative_writing": "创意写作", "execution": "执行", "fait
 STATUS_LABELS = {"measured": "实测", "measured_partial": "部分实测", "partial": "部分", "estimated": "估算",
                  "interpolated": "换算", "missing": "缺失", "user": "本机覆盖", "maintainer": "维护者"}
 # The source a status comes from, as the manual-score UI names it.
-SOURCE_OF = {"user": "本机覆盖", "maintainer": "维护者", "measured": "实测", "measured_partial": "实测", "partial": "实测",
+SOURCE_OF = {"user": "本机覆盖", "maintainer": "维护者", "measured": "实测", "measured_partial": "实测", "partial": "部分",
              "estimated": "估算", "interpolated": "估算"}
 EFFORT = "high"     # the effort the overview reads; the hover lists every effort the data has
 
 
 def _number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _usd(value) -> str:
+    if not _number(value):
+        return "—"
+    return f"${value:,.0f}" if abs(value) >= 10 else f"${value:.1f}"
+
+
+def demand_grid_n() -> int:
+    import quota_economy
+    return len(quota_economy.FIVE_AXIS_DEMAND_GRID)
 
 
 def level_text(level) -> str:
@@ -120,9 +131,37 @@ def targets_text(facet: dict) -> str:
                      for lv, (value, _) in facet["targets"].items())
 
 
+def z_targets_note() -> str:
+    return _tr("面板标准分 z：以锚点模型 High 档为 0.000，1 个单位为 1 个面板标准差（L1 面板最弱、L2 面板中位数、L3 锚点）。")
+
+
 def targets_tip(facet: dict) -> str:
-    return "\n".join(_tr("等级 {0}：{1}（{2}）").format(lv, f"{value:+.4f}" if _number(value) else "—", statistic or "—")
-                     for lv, (value, statistic) in facet["targets"].items())
+    rows = [_tr("等级 {0}：{1}（{2}）").format(lv, f"{value:+.4f}" if _number(value) else "—", statistic or "—")
+            for lv, (value, statistic) in facet["targets"].items()]
+    return "\n".join([z_targets_note(), *rows])
+
+
+def economy_text(windows: list[dict] | None, grid_n: int | None = None) -> str:
+    rows = [w for w in (windows or ()) if isinstance(w, dict) and w.get("label")]
+    if not rows:
+        return _tr("额度经济：当前暂无已计价长周期窗口读数（悬停看公式，或打开决策罗盘查看额度恢复线）")
+    shown = [_tr("{0} {1}/{2}（线 {3} · λ {4:.4f}）").format(
+        w["label"], _usd(w.get("used_usd")), _usd(w.get("capacity_usd")),
+        _usd(w.get("recovery_line_usd")), float(w.get("quota_price") or 0.0)) for w in rows[:4]]
+    tail = _tr(" 等 {0} 个窗口").format(len(rows)) if len(rows) > 4 else ""
+    return _tr("额度经济（实时窗口）：{0}").format(" · ".join(shown)) + tail
+
+
+def economy_tip(windows: list[dict] | None, grid_n: int | None = None) -> str:
+    n = grid_n if isinstance(grid_n, int) and grid_n > 0 else demand_grid_n()
+    lines = [_tr("{0}：已用 {1} / {2} · 恢复线 {3} · π {4:.3f} · λ {5:.5f}").format(
+        w["label"], _usd(w.get("used_usd")), _usd(w.get("capacity_usd")),
+        _usd(w.get("recovery_line_usd")), float(w.get("need_probability") or 0.0), float(w.get("quota_price") or 0.0))
+        for w in (windows or ()) if isinstance(w, dict) and w.get("label")]
+    lines.append(_tr(
+        "候选成本 = 在约束长周期窗口上对本单花费 y 积分额度价格 λ(y)；λ 来自该账号价值阶梯（在 {0} 点需求网格上平均）"
+        "与本周期需求概率 π。5 小时窗口只判断能否放下，不计价。净分 N = 契合 + 连续性 + 临时加成 − 成本。").format(n))
+    return "\n".join(lines)
 
 
 def _at(cell: dict | None, effort: str = EFFORT):
@@ -144,9 +183,13 @@ def facet_cell(targets: dict, category: str, facet: str, cell: dict | None) -> d
     """One facet of one model: its z at the overview effort, the level, the status and the evidence for the hover."""
     cell = cell if isinstance(cell, dict) else {}
     z = _at(cell)
+    lv_map = _levels(targets, category, facet)
+    t2 = (lv_map.get("2") or {}).get("target")
+    t3 = (lv_map.get("3") or {}).get("target")
+    collapsed = _number(z) and _number(t2) and _number(t3) and t3 <= t2 and z > t3 + 1e-6
     status = cell.get("status", "missing") if cell else "missing"
     return {"z": z, "level": _level(targets, f"{category}.{facet}", z), "status": status,
-            "manual": cell.get("manual"), "evidence": evidence_lines(cell)}
+            "collapsed": collapsed, "manual": cell.get("manual"), "evidence": evidence_lines(cell)}
 
 
 def evidence_lines(cell: dict) -> list[str]:
@@ -171,8 +214,8 @@ def evidence_lines(cell: dict) -> list[str]:
 
 
 def model_rows(models: dict, targets: dict, label=lambda name: name) -> list[dict]:
-    """Per model: every category's level, status and source, with its facets; the category level is the router's reading
-    (coding is min over its facets in the data; tool_operation the weakest of its level-3 facets)."""
+    """Per model: every category's level, deciding facet and source, with its facets; the category level uses the router's
+    category scale (coding is min over its facets in the data; tool_operation the weakest of its existing facets)."""
     rows = []
     for name, info in sorted((models or {}).items(), key=lambda kv: str(label(kv[0])).lower()):
         five = (info or {}).get("five_axis") if isinstance(info, dict) else None
@@ -183,31 +226,61 @@ def model_rows(models: dict, targets: dict, label=lambda name: name) -> list[dic
         for key, _ in CATEGORIES:
             cat_cell = cats.get(key) if isinstance(cats.get(key), dict) else {}
             facets = {f: facet_cell(targets, key, f, (cat_cell.get("facets") or {}).get(f)) for f in facets_of(key)}
-            status = (five.get("axis_status") or {}).get(key, "missing")
-            if key == "tool_operation":
-                levels = [c["level"] for c in facets.values()]
-                level = min(levels) if levels and all(lv is not None for lv in levels) else None
-            else:
+            present = [(f, fc) for f, fc in facets.items() if fc["z"] is not None and fc["level"] is not None]
+            missing_facets = [f for f, fc in facets.items() if fc["level"] is None]
+            if present:
+                if key == "tool_operation":
+                    deciding_facet, deciding_fc = min(present, key=lambda kv: kv[1]["level"])
+                    level = deciding_fc["level"]
+                else:
+                    deciding_facet, deciding_fc = min(present, key=lambda kv: kv[1]["z"])
+                    z_val = _at(cat_cell)
+                    level = _level(targets, key, z_val if z_val is not None else deciding_fc["z"])
+                deciding_level = deciding_fc["level"]
+                status = deciding_fc["status"]
+            elif _at(cat_cell) is not None and key != "tool_operation":
+                deciding_facet, deciding_level = None, None
                 level = _level(targets, key, _at(cat_cell))
+                status = cat_cell.get("status") or (five.get("axis_status") or {}).get(key, "missing")
+            else:
+                deciding_facet, deciding_level, level, status = None, None, None, "missing"
             manual = cat_cell.get("manual") if isinstance(cat_cell.get("manual"), dict) else None
-            cells[key] = {"level": level, "status": status, "manual": manual, "facets": facets,
-                          "evidence": evidence_lines(cat_cell)}
+            cells[key] = {"level": level, "status": status, "deciding_facet": deciding_facet,
+                          "deciding_level": deciding_level, "missing_facets": missing_facets,
+                          "manual": manual, "facets": facets, "evidence": evidence_lines(cat_cell)}
         rows.append({"model": name, "label": label(name), "cells": cells})
     return rows
 
 
 def cell_text(cell: dict) -> str:
-    mark = {"user": " ✎", "maintainer": " ◆", "estimated": " ~", "interpolated": " ~", "missing": ""}.get(cell["status"], "")
-    return level_text(cell["level"]) + mark
+    return level_text(cell["level"])
 
 
-def cell_tip(model_label: str, category: str, cell: dict) -> str:
-    lines = [f"{model_label} · {category_label(category)}",
-             _tr("等级 {0} · {1} · 来源：{2}").format(level_text(cell["level"]), status_label(cell["status"]),
-                                               source_label(cell["status"]))]
+def model_tip(row: dict) -> str:
+    label, key = row.get("label") or "", row.get("model") or ""
+    return f"{label} ({key})" if label and label != key else str(key or label)
+
+
+def cell_tip(model_label: str, category: str, cell: dict, model_key: str | None = None) -> str:
+    head = f"{model_label} ({model_key})" if model_key and model_key != model_label else model_label
+    deciding = cell.get("deciding_facet")
+    multi = len(cell.get("facets") or {}) > 1
+    if multi and deciding and cell.get("deciding_level") is not None:
+        summary = _tr("等级 {0}（决定项 {1} {2}）· {3} · 来源：{4}").format(
+            level_text(cell["level"]), facet_label(deciding), level_text(cell["deciding_level"]),
+            status_label(cell["status"]), source_label(cell["status"]))
+    else:
+        summary = _tr("等级 {0} · {1} · 来源：{2}").format(
+            level_text(cell["level"]), status_label(cell["status"]), source_label(cell["status"]))
+    lines = [f"{head} · {category_label(category)}", summary]
     for facet, fc in cell["facets"].items():
         lines.append(f"  {facet_label(facet)}: {level_text(fc['level'])} ({status_label(fc['status'])})")
         lines += [f"    {line}" for line in fc["evidence"]]
+    missing = cell.get("missing_facets") or ()
+    if missing and cell["level"] is not None:
+        lines.append(_tr("缺失子维度：{0}").format("、".join(facet_label(f) for f in missing)))
+    if multi:
+        lines.append(_tr("类别等级按路由器的类别目标换算。"))
     if category == "tool_operation":
         lines.append(_tr("响应速度的等级 ≥ 2 表示「至少达到面板中位数」：t2 与 t3 相同。"))
     lines.append(_tr("高于 3 的等级按 t3 − t2 外推，区间很窄，显示为 3.0+。"))
@@ -229,3 +302,48 @@ def current_manual(row: dict, target: str) -> tuple[float | None, str]:
         fc = cell["facets"][facet]
         return fc["level"], fc["status"]
     return cell["level"], cell["status"]
+
+
+def editor_current_text(row: dict, target: str) -> str:
+    category, _, facet = target.partition(".")
+    cell = row["cells"][category]
+    if facet:
+        fc = cell["facets"][facet]
+        return _tr("当前 {0}（来源：{1}）").format(level_text(fc["level"]), source_label(fc["status"]))
+    multi = len(cell.get("facets") or {}) > 1
+    deciding = cell.get("deciding_facet")
+    parts = []
+    if multi and deciding and cell.get("deciding_level") is not None:
+        parts.append(_tr("决定项 {0} {1}").format(facet_label(deciding), level_text(cell["deciding_level"])))
+    parts.append(_tr("来源：{0}").format(source_label(cell["status"])))
+    if multi:
+        parts.append(_tr("类别等级按路由器的类别目标换算"))
+    missing = cell.get("missing_facets") or ()
+    if missing and cell["level"] is not None:
+        parts.append(_tr("缺失：{0}").format("、".join(facet_label(f) for f in missing)))
+    return _tr("当前 {0}（{1}）").format(level_text(cell["level"]), " · ".join(parts))
+
+
+def prefill_level(row: dict, target: str) -> float | None:
+    """Exact level to prefill in the editor, or None when prefilling would lose information (multi-facet aggregation,
+    clamped 3.0+ extrapolation, or collapsed t2 == t3 above median)."""
+    category, _, facet = target.partition(".")
+    cell = row["cells"][category]
+    if facet:
+        fc = cell["facets"][facet]
+        manual = fc.get("manual")
+        if isinstance(manual, dict) and manual.get("target") == target and _number(manual.get("level")):
+            return float(manual["level"])
+        level = fc.get("level")
+        if _number(level) and 1.0 <= level <= 3.0 and not fc.get("collapsed"):
+            return round(float(level), 1)
+        return None
+    manual = cell.get("manual")
+    if isinstance(manual, dict) and manual.get("target") == target and _number(manual.get("level")):
+        return float(manual["level"])
+    if len(cell.get("facets") or {}) == 1:
+        only = next(iter(cell["facets"].values()))
+        level = only.get("level")
+        if _number(level) and 1.0 <= level <= 3.0 and not only.get("collapsed"):
+            return round(float(level), 1)
+    return None

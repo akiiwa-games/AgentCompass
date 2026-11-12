@@ -210,7 +210,11 @@ def empty_text(result):
     older than the quota economy. The page derives the block from `decision.system.quota_windows` when it can
     (ledger_snapshot.with_quota_line), so only these two remain."""
     system = ((result or {}).get("decision") or {}).get("system") if isinstance(result, dict) else None
-    if isinstance(system, dict) and isinstance(system.get("quota_windows"), list):
+    ranking = (result or {}).get("ranking") if isinstance(result, dict) else None
+    eligible = [c for c in (ranking if isinstance(ranking, (list, tuple)) else ())
+                if isinstance(c, dict) and not c.get("excluded")]
+    has_economy = not eligible or any(isinstance(c.get("economy"), dict) for c in eligible)
+    if isinstance(system, dict) and isinstance(system.get("quota_windows"), list) and has_economy:
         return _tr("这次决策没有候选从按额度计价的长周期窗口花费：额度经济项为 0（5 小时窗口只判断能否放下）")
     return _tr("此决策没有额度恢复线记录（记录早于额度经济）")
 
