@@ -1038,7 +1038,10 @@ def scenario_frozen(ctx, skip: bool):
     result = box.run_command(op, [exe, "--run-component", "capacity_stats", "--once", "--quiet"], cwd=box.root, **dead)
     capacity_state = box.state / "capacity-state.json"
     samples = json.loads(capacity_state.read_text(encoding="utf-8")).get("usage_samples", {}) if capacity_state.is_file() else {}
-    op.check("the packaged sampler exits 0 and sampled the proxy account", result.returncode == 0 and "sandbox-proxy" in samples,
+    # A dollar balance does not reset (technical-reference, Metered USD: resets_at is null), and the sampler records only
+    # windows that reset, so the proxy account has nothing to sample.
+    op.check("the packaged sampler exits 0, writes its state, and records no sample for the non-resetting dollar balance",
+             result.returncode == 0 and capacity_state.is_file() and "sandbox-proxy" not in samples,
              result.stderr[-400:] + str(sorted(samples)))
 
     op = ctx["run"].operation("frozen component dispatch", "unknown names are refused, and the dispatch runs before the tray starts anything")
