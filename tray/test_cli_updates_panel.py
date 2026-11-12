@@ -225,7 +225,7 @@ class PanelTests(unittest.TestCase):
 
             # Column headers and z-target tooltip in categories_grid.
             headers = [w.cget('text') for w in panel.categories_grid.grid_slaves(row=0)]
-            self.assertEqual(set(headers), {'类别 / 子维度', '公开榜单', '数据日期', '面板目标 (z)'})
+            self.assertEqual(set(headers), {'类别 / 子维度', '数据日期', '面板目标 (z)'})
             z_header = next(w for w in panel.categories_grid.grid_slaves(row=0) if w.cget('text') == '面板目标 (z)')
             self.assertIn('面板标准分 z', z_header._tooltip_text)
             self.assertIn('claude/weekly', panel.economy_label.cget('text'))

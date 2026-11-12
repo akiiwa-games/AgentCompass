@@ -153,17 +153,17 @@ class StrategyTab:
         editor.pack(fill="x", pady=(10, 0))
         ttk.Label(editor, text=_tr("手动评分"), style="CardH3.TLabel").grid(row=0, column=0, columnspan=6, sticky="w",
                                                                          pady=(0, 6))
-        self.manual_model = ttk.Combobox(editor, state="readonly", width=24)
+        self.manual_model = ttk.Combobox(editor, state="readonly", width=18)
         self.manual_model.grid(row=1, column=0, sticky="w")
         self.attach_tooltip(self.manual_model)
-        self.manual_target = ttk.Combobox(editor, state="readonly", width=20)
+        self.manual_target = ttk.Combobox(editor, state="readonly", width=24)
         self.manual_target.grid(row=1, column=1, sticky="w", padx=(8, 0))
         self.manual_level = tk.StringVar(value="")
         ttk.Spinbox(editor, from_=1, to=3, increment=0.1, textvariable=self.manual_level, width=5,
                     font=(self.mono, STRATEGY_FIELD)).grid(row=1, column=2, sticky="w", padx=(8, 0))
-        ttk.Button(editor, text=_tr("写入本机评分"), style="SmallAccent.TButton",
+        ttk.Button(editor, text=_tr("保存"), style="SmallAccent.TButton",
                    command=self.save_manual_score).grid(row=1, column=3, padx=(8, 0))
-        ttk.Button(editor, text=_tr("清除本机评分"), style="Small.TButton",
+        ttk.Button(editor, text=_tr("清除"), style="Small.TButton",
                    command=self.clear_manual_score).grid(row=1, column=4, padx=(6, 0))
         self.manual_current = ttk.Label(editor, style="CardSub.TLabel", wraplength=theme.px(640), justify="left")
         self.manual_current.grid(row=2, column=0, columnspan=6, sticky="w", pady=(6, 0))
@@ -212,7 +212,7 @@ class StrategyTab:
             str(data.get("generated_at") or "—")[:10], anchor_name, data.get("panel_n") or "—"))
         self.categories_meta._tooltip_text = f"{anchor_name} ({raw_anchor})" if raw_anchor and anchor_name != raw_anchor else raw_anchor
         ttk = self.ttk
-        for col, title in enumerate((_tr("类别 / 子维度"), _tr("公开榜单"), _tr("数据日期"), _tr("面板目标 (z)"))):
+        for col, title in ((0, _tr("类别 / 子维度")), (2, _tr("数据日期")), (3, _tr("面板目标 (z)"))):
             head = ttk.Label(grid, text=title, style="CardTiny.TLabel")
             head.grid(row=0, column=col, sticky="w", padx=(10 if col else 0, 0), pady=(0, 4))
             if col == 3:
@@ -220,23 +220,22 @@ class StrategyTab:
                 self.attach_tooltip(head)
         row = 1
         for category in data.get("categories") or []:
-            ttk.Label(grid, text=category["label"], style="CardH3.TLabel").grid(row=row, column=0, sticky="w",
-                                                                              pady=(6 if row > 1 else 2, 2))
+            title = ttk.Label(grid, text=category["label"], style="CardH3.TLabel")
+            title.grid(row=row, column=0, sticky="w", pady=(6 if row > 1 else 2, 2))
+            title._tooltip_text = _tr("覆盖：{0}").format(so.coverage_text(category["coverage"]))
+            self.attach_tooltip(title)
             continuity = category["continuity"]
             cont = ttk.Label(grid, style="CardSub.TLabel", text=_tr("连续性 {0}").format(
                 f"{continuity:.3f}" if isinstance(continuity, (int, float)) else "—"))
             cont.grid(row=row, column=1, sticky="w", padx=(10, 0), pady=(6 if row > 1 else 2, 2))
             cont._tooltip_text = _tr("连续性（只读，由数据推导）：{0}").format(category["derivation"] or "—")
             self.attach_tooltip(cont)
-            cov = ttk.Label(grid, style="CardTiny.TLabel", text=_tr("覆盖：{0}").format(so.coverage_text(category["coverage"])))
-            cov.grid(row=row, column=2, columnspan=2, sticky="w", padx=(10, 0), pady=(6 if row > 1 else 2, 2))
             row += 1
             for facet in category["facets"]:
                 name = ttk.Label(grid, text="  " + facet["label"], style="Card.TLabel")
-                name.grid(row=row, column=0, sticky="w")
-                boards = ttk.Label(grid, text=", ".join(facet["boards"]) or "—", style="CardTiny.TLabel",
-                                   wraplength=theme.px(230), justify="left")
-                boards.grid(row=row, column=1, sticky="w", padx=(10, 0))
+                name.grid(row=row, column=0, columnspan=2, sticky="w")
+                name._tooltip_text = _tr("公开榜单：{0}").format(", ".join(facet["boards"]) or "—")
+                self.attach_tooltip(name)
                 ttk.Label(grid, text=so.facet_dates_text(facet), style="CardTiny.TLabel").grid(
                     row=row, column=2, sticky="w", padx=(10, 0))
                 targets = ttk.Label(grid, text=so.targets_text(facet), style="CardTiny.TLabel", font=(self.mono, 8))

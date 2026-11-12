@@ -144,7 +144,7 @@ def targets_tip(facet: dict) -> str:
 def economy_text(windows: list[dict] | None, grid_n: int | None = None) -> str:
     rows = [w for w in (windows or ()) if isinstance(w, dict) and w.get("label")]
     if not rows:
-        return _tr("额度经济：当前暂无已计价长周期窗口读数（悬停看公式，或打开决策罗盘查看额度恢复线）")
+        return _tr("额度经济：暂无已计价的长周期窗口读数")
     shown = [_tr("{0} {1}/{2}（线 {3} · λ {4:.4f}）").format(
         w["label"], _usd(w.get("used_usd")), _usd(w.get("capacity_usd")),
         _usd(w.get("recovery_line_usd")), float(w.get("quota_price") or 0.0)) for w in rows[:4]]
