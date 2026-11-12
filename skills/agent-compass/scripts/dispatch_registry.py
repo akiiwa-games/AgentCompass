@@ -38,6 +38,8 @@ CREATE_SEND_WINDOW = 60
 CREATE_DEADLINE = 240
 CREATE_DEADLINES = {'antigravity-resilient': 480}
 MAX_LIFETIME = 86400
+# A parent continuation is this event kind. The reason text is an audit note and is not read back.
+HOST_FOLLOWUP_KIND = 'host_followup'
 # A worker idle longer than this is not resumed: its runtime and prompt cache are gone.
 REUSE_MAX_IDLE_HOURS = 24
 LABELS = ('router.decision_id', 'router.dispatch_id', 'router.parent_id',
@@ -119,9 +121,14 @@ def save(connection, row):
                        (row['dispatch_id'], row['decision_id'], json.dumps(row, ensure_ascii=False)))
 
 
-def event(row, state, now, reason=None):
+def event(row, state, now, reason=None, *, kind=None):
     row.update(state=state, updated_at=stamp(now))
-    row.setdefault('events', []).append({'state': state, 'at': stamp(now), **({'reason': reason} if reason else {})})
+    record = {'state': state, 'at': stamp(now)}
+    if reason:
+        record['reason'] = reason
+    if kind:
+        record['kind'] = kind
+    row.setdefault('events', []).append(record)
     if state in TERMINAL:
         row.update(released_at=stamp(now), lease_until=stamp(now))
 
@@ -645,15 +652,17 @@ def end_notice_message_id(dispatch_id):
 
 
 def _followed_up(row):
-    return any(isinstance(item, dict) and str(item.get('reason') or '').startswith('host_followup')
+    """A parent continuation is the event kind. The reason text is not evidence."""
+    return any(isinstance(item, dict) and item.get('kind') == HOST_FOLLOWUP_KIND
                for item in row.get('events') or [])
 
 
 def _note_end_notice(row, receipt):
     """Record the one end notice for a real terminal. A row that is still open, or that has no watcher receipt, is left alone.
 
-    `sent` is never sent again. A follow-up turn belongs to Paseo's notifyOnFinish. A receipt the watcher already
-    delivered, or one it intentionally did not send, is recorded as sent. Anything else is due for one catch-up."""
+    `sent` is never sent again. A follow-up turn belongs to Paseo's notifyOnFinish; the event kind records that,
+    and the reason text is not read. A receipt the watcher already delivered, or one it intentionally did not send,
+    is recorded as sent. Anything else is due for one catch-up."""
     if row.get('state') not in _END_NOTICE_STATES:
         return False
     notice = row.get('end_notice')
@@ -748,7 +757,7 @@ def refresh_live_rounds(connection, now):
         row.pop('released_at', None)
         row['lease_until'] = stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until'])))
         row.setdefault('started_at', stamp(now))
-        event(row, 'started', now, f"host_followup status={doc.get('status') or ''}")
+        event(row, 'started', now, f"host_followup status={doc.get('status') or ''}", kind=HOST_FOLLOWUP_KIND)
         save(connection, row)
 
 
@@ -1622,13 +1631,15 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
                         later_dispatch_ids.add(other['dispatch_id'])
         if row['state'] != target:
             reason_text = None
+            kind = None
             if followup and target in ACTIVE:
                 reason_text = f"host_followup status={snapshot.get('status') or ''}"
+                kind = HOST_FOLLOWUP_KIND
             elif prev_state == 'expired' and target in ACTIVE:
                 reason_text = running_evidence_reason(snapshot)
             elif target in TERMINAL and isinstance(terminal, dict) and terminal.get('reason') in WATCHER_TERMINAL_REASONS:
                 reason_text = 'watcher_terminal: ' + terminal['reason']
-            event(row, target, now, reason_text)
+            event(row, target, now, reason_text, kind=kind)
         if row['state'] in _END_NOTICE_STATES:
             _note_end_notice(row, watcher_receipt(dispatch_id))
         save(connection, row)
