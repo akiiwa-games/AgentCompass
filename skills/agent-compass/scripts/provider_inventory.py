@@ -833,8 +833,18 @@ def _magpie_state(family, account_home, config, token, is_api, cached):
     return is_magpie, override
 
 
+def _metered_category_evidence(cached, credential_key):
+    """Billing category proved for this digest. The latest read's amount is separate."""
+    if _metered_spend_evidence(cached, credential_key) is not None:
+        return True
+    if not credential_key or not isinstance(cached, dict) or cached.get('credential_key') != credential_key:
+        return False
+    details = cached.get('usage_details')
+    return isinstance(details, dict) and details.get('kind') == 'metered_usd' and details.get('category') == 'metered'
+
+
 def _metered_spend_evidence(cached, credential_key):
-    """A /key/info spend for this credential. A permission miss or a 404 is not evidence."""
+    """A /key/info spend for this credential. A permission miss or a 404 is not an amount."""
     if not credential_key or not isinstance(cached, dict) or cached.get('credential_key') != credential_key:
         return None
     details = cached.get('usage_details')
@@ -1038,6 +1048,11 @@ def _discover(home=None, environ=None, now=None):
                 row['plan'] = 'metered USD'
                 if evidence['budget_usd'] is not None:
                     row['budget_usd'] = evidence['budget_usd']
+            elif _metered_category_evidence(cached, row.get('credential_key')):
+                # The category stays. The latest read did not supply an amount, so no budget is copied from it.
+                row['billing'] = 'metered'
+                row['backend_kind'] = 'metered_usd'
+                row['plan'] = 'metered USD'
         result['accounts'][name] = row
         result['launchers'][name] = {'family': family, 'status': row['status']}
     # Existing independent harnesses keep their established account association.

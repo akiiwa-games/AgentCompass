@@ -602,8 +602,9 @@ def claude_magpie_source(provider_id: str):
 
 def provider_credential_key(provider_id: str) -> str | None:
     metered = discover_metered_usd_accounts().get(provider_id)
-    if metered is not None and metered.source == "harness" and metered.credential_key:
-        return metered.credential_key
+    if metered is not None:
+        # The request and this check share one digest, including a handwritten claude or codex id.
+        return _metered_sent_digest(metered)
     remote = claude_magpie_source(provider_id)
     if remote is not None:
         return remote.credential_key
@@ -631,10 +632,7 @@ def provider_credential_key(provider_id: str) -> str | None:
             if not tokens.get("access_token"):
                 token = None
         else:
-            metered = discover_metered_usd_accounts().get(provider_id)
-            if metered is None:
-                return None
-            return hashlib.sha256((metered.endpoint + "\0" + metered.api_key).encode()).hexdigest()
+            return None
     if not token:
         return None
     return hashlib.sha256((str(home.resolve()) + '\0' + token).encode()).hexdigest()
@@ -941,19 +939,18 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
 
 
-_NO_REDIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
-
-
 def _open_usage_request(req: urllib.request.Request, timeout: float):
     """Open one usage request.
 
     A test that replaced urllib.request.urlopen gets that replacement. The real client
     does not follow redirects, so an Authorization header stays on the URL that was asked.
+    No ProxyHandler argument: http_proxy, https_proxy and no_proxy still apply. Built per
+    request so the environment at send time is the one that is used.
     """
     open_url = urllib.request.urlopen
     if getattr(open_url, "__module__", None) != "urllib.request":
         return open_url(req, timeout=timeout)
-    return _NO_REDIRECT_OPENER.open(req, timeout=timeout)
+    return urllib.request.build_opener(_NoRedirect).open(req, timeout=timeout)
 
 
 def http_json_response(
@@ -2647,7 +2644,7 @@ def _metered_sent_digest(account: MeteredUsdAccount) -> str | None:
 
 
 def _cached_metered_spend(provider_id: str, credential_key: str | None) -> dict[str, Any] | None:
-    """Spend already stored for this key and base. A later miss does not delete it."""
+    """A spend number already stored for this key and base. It proves the category, not the latest amount."""
     if not credential_key:
         return None
     raw = (load_usage_cache().get("providers") or {}).get(provider_id)
@@ -2657,6 +2654,15 @@ def _cached_metered_spend(provider_id: str, credential_key: str | None) -> dict[
     if provider_inventory._metered_spend_evidence(raw, credential_key) is None:
         return None
     return raw
+
+
+def _proved_metered_category(provider_id: str, credential_key: str | None) -> bool:
+    """True once this digest has proved metered billing. A later miss keeps that and drops the amount."""
+    if not credential_key:
+        return False
+    raw = (load_usage_cache().get("providers") or {}).get(provider_id)
+    import provider_inventory
+    return provider_inventory._metered_category_evidence(raw, credential_key)
 
 
 def _parse_key_info(payload: Any) -> tuple[float | None, float | None]:
@@ -2748,12 +2754,18 @@ def _cache_metered_usd_failure(
     query: str,
     read_error: str | None,
     declare_billing: bool = True,
+    retain_category: bool = False,
 ) -> None:
-    """Remember a /key/info miss. No spend number is stored, so routing keeps the data gap."""
+    """Remember a /key/info miss. No spend number is stored, so routing keeps the data gap.
+
+    retain_category keeps billing metered for this digest after a spend was proved. The amount is not copied.
+    """
     key = provider_credential_key(provider_id)
     details: dict[str, Any] = {"kind": "metered_usd", "query": query}
     if read_error:
         details["read_error"] = read_error
+    if retain_category:
+        details["category"] = "metered"
     snap: dict[str, Any] = {
         "provider_id": provider_id,
         "display_name": provider_id,
@@ -2765,13 +2777,16 @@ def _cache_metered_usd_failure(
         "credential_key": key,
         "usage_details": details,
     }
-    if declare_billing:
+    if declare_billing or retain_category:
         snap["billing"] = "metered"
     if read_error:
         snap["error"] = read_error
 
     def update(cache):
         cache.setdefault("providers", {})[provider_id] = snap
+        snaps = cache.get("display_snapshots")
+        if isinstance(snaps, dict):
+            snaps.pop(provider_id, None)
 
     try:
         update_usage_cache(update)
@@ -2830,11 +2845,13 @@ def _metered_usd_miss(
     payload: Any,
     *,
     declare_billing: bool = True,
+    retain_category: bool = False,
 ) -> ProviderUsage:
     """No spend number. 401/403 is a permission hover. A candidate's other miss stays unknown."""
     if status in (401, 403):
         _cache_metered_usd_failure(
-            provider_id, query="no_permission", read_error=None, declare_billing=declare_billing,
+            provider_id, query="no_permission", read_error=None,
+            declare_billing=declare_billing, retain_category=retain_category,
         )
         return ProviderUsage(
             provider_id=provider_id,
@@ -2855,7 +2872,9 @@ def _metered_usd_miss(
         reason = f"/key/info 返回 {status}"
     else:
         reason = "/key/info 没有已用金额"
-    _cache_metered_usd_failure(provider_id, query="failed", read_error=reason)
+    _cache_metered_usd_failure(
+        provider_id, query="failed", read_error=reason, retain_category=retain_category,
+    )
     return ProviderUsage(
         provider_id=provider_id,
         display_name=display_name,
@@ -2896,15 +2915,12 @@ def fetch_metered_usd_usage(provider_id: str) -> ProviderUsage:
         return _discarded_metered_reading(provider_id, display_name, sent_key)
     spend, reported_budget = _parse_key_info(payload) if status == 200 else (None, None)
     if spend is None:
-        kept = _cached_metered_spend(provider_id, sent_key)
-        if kept is not None:
-            # An ordinary miss leaves the proved spend in place. Only a new key or base drops it.
-            item = _provider_from_dict(kept)
-            item.provider_id = provider_id
-            item.credential_key = sent_key
-            return item
+        # Category evidence stays for this digest. The amount and availability are this read.
+        proved = _proved_metered_category(provider_id, sent_key)
         return _metered_usd_miss(
-            provider_id, display_name, status, payload, declare_billing=account.source != "harness",
+            provider_id, display_name, status, payload,
+            declare_billing=proved or account.source != "harness",
+            retain_category=proved,
         )
     budget = _reading_budget(account, reported_budget)
     details: dict[str, Any] = {"kind": "metered_usd", "spent_usd": spend, "budget_usd": budget}
@@ -3446,8 +3462,13 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                     cache_put_provider(item)
                     record_usage_attempt(pid, key, failures=0, retry_seconds=poll)
                 elif item.error or item.stale or not item.available:
+                    previous = [item, cached]
+                    details = item.usage_details if isinstance(item.usage_details, dict) else {}
+                    if details.get("kind") == "metered_usd":
+                        # The latest dollar read failed. Do not put the previous amount back on screen.
+                        previous = [item]
                     item = stale_provider_usage(
-                        pid, item.error or '更新失败', [item, cached],
+                        pid, item.error or '更新失败', previous,
                         status=item.error_status, code=item.error_code, plan=item.plan_label,
                     )
                 out.append(item)

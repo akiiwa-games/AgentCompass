@@ -1,4 +1,5 @@
 """Metered USD is spent dollars and an optional budget. It does not reset."""
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -6,6 +7,7 @@ import os
 from pathlib import Path
 import threading
 import unittest
+import urllib.request
 from unittest.mock import patch
 
 import account_fleet
@@ -28,6 +30,27 @@ def setUpModule():
 
 NOW = datetime(2026, 11, 12, 8, 0, tzinfo=timezone.utc)
 PROBE = 'probe-model'
+_PROXY_KEYS = (
+    'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
+    'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
+)
+
+
+@contextmanager
+def _proxy_env(updates):
+    saved = {key: os.environ.get(key) for key in _PROXY_KEYS}
+    try:
+        for key in _PROXY_KEYS:
+            os.environ.pop(key, None)
+        for key, value in updates.items():
+            os.environ[key] = value
+        yield
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _accounts(budget):
@@ -803,18 +826,70 @@ class HarnessCandidates(unittest.TestCase):
             thread.start()
             threads.append(thread)
         try:
-            status, _payload, _headers = usage_core.http_json_response(
-                f'http://127.0.0.1:{source.server_address[1]}/key/info',
-                headers={'Authorization': 'Bearer fixture-secret'},
-            )
+            with _proxy_env({'no_proxy': '127.0.0.1,localhost'}):
+                status, _payload, _headers = usage_core.http_json_response(
+                    f'http://127.0.0.1:{source.server_address[1]}/key/info',
+                    headers={'Authorization': 'Bearer fixture-secret'},
+                )
         finally:
             for server in (source, other):
                 server.shutdown()
                 server.server_close()
             for thread in threads:
                 thread.join(timeout=5)
-        self.assertNotEqual(status, 200)
+        self.assertEqual(status, 302)
         self.assertEqual(other_seen, [])
+
+    def test_usage_request_uses_the_environment_proxy(self):
+        seen = []
+
+        class Destination(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append('destination')
+                body = b'{"ok":true}'
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, fmt, *args):
+                return
+
+        class Proxy(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append('proxy')
+                body = b'{"ok":true}'
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, fmt, *args):
+                return
+
+        destination = ThreadingHTTPServer(('127.0.0.1', 0), Destination)
+        proxy = ThreadingHTTPServer(('127.0.0.1', 0), Proxy)
+        threads = []
+        for server in (destination, proxy):
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            threads.append(thread)
+        dest_url = f'http://127.0.0.1:{destination.server_address[1]}/key/info'
+        proxy_url = f'http://127.0.0.1:{proxy.server_address[1]}'
+        try:
+            with _proxy_env({'http_proxy': proxy_url, 'HTTP_PROXY': proxy_url}):
+                with urllib.request.urlopen(dest_url, timeout=5) as response:
+                    response.read()
+                status, _payload, _headers = usage_core.http_json_response(dest_url)
+        finally:
+            for server in (destination, proxy):
+                server.shutdown()
+                server.server_close()
+            for thread in threads:
+                thread.join(timeout=5)
+        self.assertEqual(status, 200)
+        self.assertEqual(seen, ['proxy', 'proxy'])
 
     def test_reading_is_discarded_when_the_key_changes_before_it_is_stored(self):
         self._clear_override()
@@ -835,22 +910,104 @@ class HarnessCandidates(unittest.TestCase):
         if isinstance(cached, dict) and cached.get('credential_key') == new:
             self.assertNotEqual((cached.get('usage_details') or {}).get('spent_usd'), 7)
 
-    def test_ordinary_failure_keeps_a_proved_spend(self):
+    def test_a_later_miss_keeps_the_category_and_follows_the_latest_read(self):
         self._clear_override()
         self._clear_provider_cache()
         self._write_claude('https://proxy.example.test/v1')
         proved, _calls = self._fetch(200, {'info': {'spend': 7}})
         self.assertEqual(proved.usage_details['spent_usd'], 7)
         key = provider_inventory.discover()['accounts']['claude']['credential_key']
-        for status, payload in ((0, 'timed out'), (0, ''), (302, ''), (404, {'error': 'missing'}), (403, {})):
+        cases = (
+            (401, {}, 'permission'),
+            (403, {}, 'permission'),
+            (0, 'timed out', 'failure'),
+            (0, '', 'failure'),
+            (302, '', 'failure'),
+            (404, {'error': 'missing'}, 'failure'),
+        )
+        for status, payload, kind in cases:
             with self.subTest(status=status, payload=payload):
+                self._fetch(200, {'info': {'spend': 7}})
                 row, _calls = self._fetch(status, payload)
                 cached = usage_core.load_usage_cache()['providers']['claude']
-                self.assertIsNotNone(provider_inventory._metered_spend_evidence(cached, key))
-                self.assertEqual(cached['usage_details'].get('spent_usd'), 7)
-                self.assertNotEqual(cached['usage_details'].get('query'), 'not_metered')
-                self.assertEqual(row.usage_details.get('spent_usd'), 7)
+                details = cached['usage_details']
+                self.assertTrue(provider_inventory._metered_category_evidence(cached, key))
+                self.assertIsNone(provider_inventory._metered_spend_evidence(cached, key))
+                self.assertEqual(details.get('category'), 'metered')
+                self.assertNotIn('spent_usd', details)
+                self.assertNotIn('spent_usd', row.usage_details or {})
+                self.assertIsNone(row.summary)
+                self.assertFalse(row.available)
+                self.assertFalse(row.available and not row.error)
                 self.assertEqual(provider_inventory.discover()['accounts']['claude']['billing'], 'metered')
+                if kind == 'permission':
+                    self.assertEqual(row.usage_details, {'kind': 'metered_usd', 'query': 'no_permission'})
+                    self.assertIsNone(row.error)
+                else:
+                    self.assertEqual(row.usage_details.get('query'), 'failed')
+                    self.assertTrue(row.error)
+                    self.assertNotEqual(details.get('query'), 'not_metered')
+
+    def test_a_timeout_after_a_proved_spend_does_not_reset_failures(self):
+        self._clear_override()
+        self._clear_provider_cache()
+        self._write_claude('https://proxy.example.test/v1')
+        proved, _calls = self._fetch(200, {'info': {'spend': 7}})
+        self.assertEqual(proved.usage_details['spent_usd'], 7)
+        key = usage_core.provider_credential_key('claude')
+        usage_core.record_usage_attempt('claude', key, failures=2, retry_seconds=120)
+
+        def fake(url, method='GET', headers=None, body=None, timeout=20):
+            return 0, 'timed out', {}
+
+        with patch.object(usage_core, 'http_json_response', side_effect=fake):
+            usage_core.collect_local_usage(['claude'], force=True)
+        attempt = (usage_core.load_usage_cache().get('attempts') or {}).get('claude') or {}
+        cached = usage_core.load_usage_cache()['providers']['claude']
+        self.assertEqual(attempt.get('failures'), 3)
+        self.assertNotIn('spent_usd', cached.get('usage_details') or {})
+        self.assertEqual(cached['usage_details'].get('category'), 'metered')
+        self.assertTrue(cached.get('error') or cached.get('stale') or cached.get('available') is False)
+        self.assertFalse(cached.get('available') is True and not cached.get('error'))
+        self.assertEqual(provider_inventory.discover()['accounts']['claude']['billing'], 'metered')
+
+    def test_handwritten_builtin_id_stores_the_reading(self):
+        self._clear_override()
+        for provider in ('claude', 'claude-2', 'codex'):
+            with self.subTest(provider=provider):
+                self._clear_provider_cache(provider)
+                if provider == 'codex':
+                    secret_path = self._home() / '.codex' / 'auth.json'
+                    secret_path.parent.mkdir(parents=True, exist_ok=True)
+                    secret_path.write_text(json.dumps({
+                        'tokens': {'access_token': 'fixture-old-key', 'account_id': 'acct'},
+                    }), encoding='utf-8')
+                else:
+                    secret_path = usage_core.claude_account_home(provider) / '.credentials.json'
+                    secret_path.parent.mkdir(parents=True, exist_ok=True)
+                    secret_path.write_text(json.dumps({
+                        'claudeAiOauth': {'accessToken': 'fixture-old-key'},
+                    }), encoding='utf-8')
+                try:
+                    self._override({provider: {
+                        'billing': 'metered',
+                        'endpoint': f'https://{provider}.example.test/v1',
+                        'api_key': 'fixture-handwritten-key',
+                        'label': provider,
+                    }})
+                    account = usage_core.discover_metered_usd_accounts()[provider]
+                    sent = usage_core._metered_sent_digest(account)
+                    self.assertEqual(usage_core.provider_credential_key(provider), sent)
+                    row, calls = self._fetch(200, {'info': {'spend': 7}}, provider=provider)
+                    self.assertEqual([call[0] for call in calls], ['GET'])
+                    self.assertTrue(row.available)
+                    self.assertIsNone(row.error)
+                    self.assertEqual((row.usage_details or {}).get('spent_usd'), 7)
+                    cached = usage_core.load_usage_cache()['providers'][provider]
+                    self.assertEqual(cached['usage_details']['spent_usd'], 7)
+                    self.assertEqual(cached.get('credential_key'), sent)
+                finally:
+                    secret_path.unlink(missing_ok=True)
 
     def test_one_non_utf8_codex_config_skips_only_that_harness(self):
         self._clear_override()

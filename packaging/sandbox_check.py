@@ -960,8 +960,8 @@ def scenario_harness_api_key(ctx):
 
     collect("harness dollars with a budget", 2.5, 10, 200, "已用 $2.50 / $10", "", "metered")
     collect("harness dollars without a budget", 12.3, None, 200, "已用 $12.30", "", "metered")
-    # A 403 does not erase a spend already proved for this key. Billing stays metered.
-    collect("a permission miss keeps the proved spend", 2.5, 10, 403, "已用 $12.30", "", "metered")
+    # A 403 hides the proved amount and keeps the billing category.
+    collect("a permission miss hides the amount", 2.5, 10, 403, "", "无查询权限", "metered")
     _drop_provider_usage(box, "claude")
     collect("harness key without query permission", 2.5, 10, 403, "", "无查询权限", "unknown")
     op = ctx["run"].operation("harness requests stay on the fixture", "the whole scenario never called a completion or an official host")
