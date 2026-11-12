@@ -528,6 +528,8 @@ class GrokBotTests(unittest.TestCase):
         self.assertAlmostEqual(low_cand['five_axis_price']['usd_per_hour'],
                                overlaid['models']['claude-opus-5-5']['usd_per_hour'], places=3)
         self.assertIn('nearest plan by price is claude/pro', ' '.join(low_cand['notes']))
+        self.assertIn('grok/premium', ' '.join(low_cand['notes']))
+        self.assertNotIn('grok/supergrok', ' '.join(low_cand['notes']))
         self.assertGreater(high_cand['components']['opportunity_cost'], low_cand['components']['opportunity_cost'])
 
         # Rule: exhausted credits window excludes grok-bot.

@@ -1939,14 +1939,15 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         grok_table = provider_inventory.plan_table(accounts, 'grok')
         claude_table = provider_inventory.plan_table(accounts, 'claude')
+        self.assertNotIn('supergrok', grok_table)
         expected = [
-            ('SuperGrok', 'supergrok', 30),
-            ('GrokPro', 'supergrok', 30),
-            ('Grok Pro', 'supergrok', 30),
+            ('SuperGrok', 'premium', 30),
+            ('GrokPro', 'premium', 30),
+            ('Grok Pro', 'premium', 30),
             ('Premium', 'premium', 30),
             ('The X Subscription Premium', 'premium', 30),
             ('Super', 'super', 100),
-            ('SuperGrok Plus', 'super', 100),
+            ('The X Subscription Super', 'super', 100),
             ('Ultra', 'ultra', 200),
             ('Plus', 'plus', 8),
             ('Free', 'free', 0),
@@ -2001,15 +2002,15 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
                 self.assertEqual((src['match'], src['price_ratio'], src['reference_plan']), ('exact_price', 1.0, ref_plan))
                 self.assertIn(f'same-price claude subscription: claude/{ref_plan}', src['evidence'])
 
-        # Nearest-price ratio scaling: SuperGrok ($30) -> 30/20 * claude/pro ($20); Plus ($8) -> 8/20 * claude/pro ($20).
-        for tier_label, ratio in (('SuperGrok', 30.0 / 20.0), ('Plus', 8.0 / 20.0)):
+        # Nearest-price ratio scaling: SuperGrok -> premium ($30) -> 30/20 * claude/pro ($20); Plus ($8) -> 8/20 * claude/pro ($20).
+        for tier_label, expected_plan, ratio in (('SuperGrok', 'premium', 30.0 / 20.0), ('Plus', 'plus', 8.0 / 20.0)):
             over = overlay_for_tier(tier_label)
             expected = round(claude_cap['pro'] * ratio, 2)
             for acct in ('grok', 'grok-bot'):
                 self.assertFalse(over['accounts'][acct].get('capacity_unknown'))
                 self.assertAlmostEqual(over['accounts'][acct]['capacity_usd']['credits'], expected, places=2)
                 src = over['accounts'][acct]['capacity_source']['credits']
-                self.assertEqual((src['match'], src['reference_plan']), ('nearest_price_scaled', 'pro'))
+                self.assertEqual((src['plan'], src['match'], src['reference_plan']), (expected_plan, 'nearest_price_scaled', 'pro'))
                 self.assertAlmostEqual(src['price_ratio'], ratio, places=4)
                 self.assertIn('nearest plan by price is claude/pro', src['evidence'])
 
@@ -2019,9 +2020,9 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
             self.assertTrue(over['accounts']['grok-bot'].get('capacity_unknown'))
             self.assertEqual(over['accounts']['grok-bot']['capacity_usd'], {})
 
-        # Direct measurement on capacity['grok']['supergrok']['credits'] overrides the maintainer rule automatically.
+        # Direct measurement on capacity['grok']['premium']['credits'] overrides the maintainer rule automatically.
         measured_scores = json.loads(json.dumps(scores))
-        measured_scores.setdefault('capacity', {}).setdefault('grok', {}).setdefault('supergrok', {})['credits'] = {
+        measured_scores.setdefault('capacity', {}).setdefault('grok', {}).setdefault('premium', {})['credits'] = {
             'capacity_usd': 410.0, 'rung': 1, 'status': 'ok', 'sources': [{'source': 'community.test', 'value': 410.0}],
         }
         over_measured = overlay_for_tier('SuperGrok', extra_scores=measured_scores)

@@ -7,7 +7,7 @@
         "kind": "vendor",
         "url": "https://claude.com/pricing",
         "as_of": "2026-11-12",
-        "statement": "Claude Pro: $20/month billed monthly"
+        "statement": "Pro: \"$17 Per month with annual subscription discount ($200 billed up front). $20 if billed monthly.\""
       },
       "basis": "Windows: five_hour and seven_day. Claude Pro includes no Fable allowance, so there is no weekly_fable window. Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
       "windows": {
@@ -27,7 +27,7 @@
         "kind": "vendor",
         "url": "https://claude.com/pricing",
         "as_of": "2026-11-12",
-        "statement": "Claude Max 5x: $100/month"
+        "statement": "Page tier \"Max\" (plan ID max5): \"$100 Per month\" — \"5x Pro usage every 5 hours and every week*\""
       },
       "basis": "Windows: five_hour, seven_day and weekly_fable (the Fable allowance is its own weekly window). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
       "windows": {
@@ -52,7 +52,7 @@
         "kind": "vendor",
         "url": "https://claude.com/pricing",
         "as_of": "2026-11-12",
-        "statement": "Claude Max 20x: $200/month"
+        "statement": "Page tier \"Ultra\" (plan ID max20): \"$200 Per month\" — \"10x Pro usage every week*\""
       },
       "basis": "Windows: five_hour, seven_day and weekly_fable (the Fable allowance is its own weekly window). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
       "windows": {
@@ -239,14 +239,14 @@
         "kind": "vendor",
         "url": "https://docs.x.ai/x-subscription/pricing",
         "as_of": "2026-11-12",
-        "statement": "The X Subscription Free: $0/month (does not include Grok Bot)"
+        "statement": "| Free | $0 | $0 | Limited | — \"Free includes standard X.\" \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
       },
       "tiers": [
         "Free",
         "Free Tier",
         "FreeTier"
       ],
-      "basis": "Free Grok tier: no paid monthly subscription and no Grok Bot allowance. Live window IDs come from the usage collector when present.",
+      "basis": "| Free | $0 | $0 | Limited |. Live window IDs come from the usage collector when present.",
       "windows": {}
     },
     "plus": {
@@ -256,14 +256,14 @@
         "kind": "vendor",
         "url": "https://docs.x.ai/x-subscription/pricing",
         "as_of": "2026-11-12",
-        "statement": "The X Subscription Plus: $8/month"
+        "statement": "| Plus | $8/mo | $80/yr ($7/mo) | Base | — \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
       },
       "tiers": [
         "Plus",
         "X Subscription Plus",
         "The X Subscription Plus"
       ],
-      "basis": "The X Subscription Plus ($8/month). Live credits window IDs come from the usage collector when present; capacity follows the runtime price-matching rule.",
+      "basis": "| Plus | $8/mo | $80/yr ($7/mo) | Base |. Live window IDs come from the usage collector when present; capacity follows the runtime price-matching rule.",
       "windows": {}
     },
     "premium": {
@@ -273,31 +273,17 @@
         "kind": "vendor",
         "url": "https://docs.x.ai/x-subscription/pricing",
         "as_of": "2026-11-12",
-        "statement": "The X Subscription Premium: $30/month (includes Grok Bot and shared weekly usage pool)"
+        "statement": "| Premium | $30/mo | $300/yr ($25/mo) | 4x | — \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
       },
       "tiers": [
         "Premium",
         "X Subscription Premium",
-        "The X Subscription Premium"
-      ],
-      "basis": "The X Subscription Premium ($30/month). Live credits window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
-      "windows": {}
-    },
-    "supergrok": {
-      "provenance": "vendor",
-      "price_usd_per_month": 30,
-      "price_source": {
-        "kind": "vendor",
-        "url": "https://x.ai/news/x-subscription",
-        "as_of": "2026-11-12",
-        "statement": "SuperGrok: $30/month individual subscription (unified with The X Subscription Premium at $30/month)"
-      },
-      "tiers": [
+        "The X Subscription Premium",
         "SuperGrok",
         "GrokPro",
         "Grok Pro"
       ],
-      "basis": "SuperGrok ($30/month; reported as SuperGrok on /v1/settings and GrokPro on /v1/user?include=subscription). Live credits window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
+      "basis": "| Premium | $30/mo | $300/yr ($25/mo) | 4x |. Server tier aliases SuperGrok (/v1/settings) and GrokPro (/v1/user?include=subscription) map to Premium per https://x.ai/news/x-subscription (2026-10-12) Premium row: \"The benefits of SuperGrok, Cursor Pro, and X Premium+, previously $90/month combined.\" Live window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
       "windows": {}
     },
     "super": {
@@ -307,18 +293,14 @@
         "kind": "vendor",
         "url": "https://docs.x.ai/x-subscription/pricing",
         "as_of": "2026-11-12",
-        "statement": "The X Subscription Super: $100/month (includes Grok Bot and shared weekly usage pool)"
+        "statement": "| Super | $100/mo | $1000/yr ($84/mo) | 15x | — \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
       },
       "tiers": [
         "Super",
         "X Subscription Super",
-        "The X Subscription Super",
-        "SuperGrok Plus",
-        "SuperGrokPlus",
-        "GrokPlus",
-        "Grok Plus"
+        "The X Subscription Super"
       ],
-      "basis": "The X Subscription Super ($100/month). Live credits window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
+      "basis": "| Super | $100/mo | $1000/yr ($84/mo) | 15x |. Live window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
       "windows": {}
     },
     "ultra": {
@@ -328,14 +310,14 @@
         "kind": "vendor",
         "url": "https://docs.x.ai/x-subscription/pricing",
         "as_of": "2026-11-12",
-        "statement": "The X Subscription Ultra: $200/month (includes Grok Bot and shared weekly usage pool)"
+        "statement": "| Ultra | $200/mo | $2000/yr ($167/mo) | 50x | — \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
       },
       "tiers": [
         "Ultra",
         "X Subscription Ultra",
         "The X Subscription Ultra"
       ],
-      "basis": "The X Subscription Ultra ($200/month). Live credits window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
+      "basis": "| Ultra | $200/mo | $2000/yr ($167/mo) | 50x |. Live window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
       "windows": {}
     }
   }

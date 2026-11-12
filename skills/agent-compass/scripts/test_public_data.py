@@ -311,7 +311,7 @@ class ProvenanceTests(unittest.TestCase):
 
             # capacity_rule containing a hardcoded plan or price literal fails check_set:
             accounts['models'].pop('grok-bot', None)
-            accounts['same_model']['grok-bot']['capacity_rule']['plan'] = 'supergrok'
+            accounts['same_model']['grok-bot']['capacity_rule']['plan'] = 'premium'
             write_json(folder / 'accounts.json', accounts)
             hardcoded_plan = public_data.build_manifest(folder, now=T0)
             state4, reason4 = public_data.check_set(folder, hardcoded_plan)
@@ -329,7 +329,7 @@ class ProvenanceTests(unittest.TestCase):
             # Restore valid accounts.json, then verify plan-templates.json rejects non-https vendor price_source:
             shutil.copyfile(public_data.BUNDLED / 'accounts.json', folder / 'accounts.json')
             templates = json.loads((folder / 'plan-templates.json').read_text(encoding='utf-8'))
-            templates['grok']['supergrok']['price_source']['url'] = 'http://x.ai/insecure'
+            templates['grok']['premium']['price_source']['url'] = 'http://x.ai/insecure'
             write_json(folder / 'plan-templates.json', templates)
             bad_tpl = public_data.build_manifest(folder, now=T0)
             state6, reason6 = public_data.check_set(folder, bad_tpl)
