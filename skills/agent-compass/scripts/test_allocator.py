@@ -396,7 +396,7 @@ class AllocatorTests(unittest.TestCase):
         )
         self.assertTrue(prof_local['local_only'])
         caller_false = task_intake.normalize_task(
-            {'objective': 'Run pytest', 'cwd': r'E:\PROJECTS\AgentCompass', 'needs': {'local_only': False},
+            {'objective': 'Run pytest', 'cwd': r'D:\work\AgentCompass', 'needs': {'local_only': False},
              'profile': self.profile(local_only=True)},
             policy, capabilities, accounts,
         )

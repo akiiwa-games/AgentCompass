@@ -52,4 +52,4 @@ After pushing the release tag and waiting for `.github/workflows/release.yml` to
 
 ## Feature Inventory
 
-Tracked in [`features.json`](file:///E:/PROJECTS/route_manager/packaging/verify-release/features.json). Update both `features.json` and `packaging/foreign_machine_check.py` whenever a user-visible routing, quota, gate, setup, tray, or `usage-float` behavior changes (`maintain-verification-skill`).
+Tracked in [`features.json`](features.json). Update both `features.json` and `packaging/foreign_machine_check.py` whenever a user-visible routing, quota, gate, setup, tray, or `usage-float` behavior changes (`maintain-verification-skill`).

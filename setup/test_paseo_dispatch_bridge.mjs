@@ -1317,53 +1317,53 @@ test('Paseo placement sends workspaceId only when verified for that exact cwd an
 
   // 1. Exact workspace match (across slash/case/trailing-separator differences) -> sends matching workspaceId + cwd.
   const exactClient = {
-    fetchAgent: async () => ({agent: {cwd: 'E:\\PROJECTS\\lajishouyou', workspaceId: 'wks_c40ae4f1bd0432d3'}}),
+    fetchAgent: async () => ({agent: {cwd: 'D:\\work\\games', workspaceId: 'wks_parent'}}),
     fetchWorkspaces: async () => ({
       entries: [
-        {id: 'wks_c40ae4f1bd0432d3', workspaceDirectory: 'E:\\PROJECTS\\lajishouyou'},
-        {id: 'wks_exact', workspaceDirectory: 'E:\\PROJECTS\\lajishouyou\\whiteout_survival'},
+        {id: 'wks_parent', workspaceDirectory: 'D:\\work\\games'},
+        {id: 'wks_exact', workspaceDirectory: 'D:\\work\\games\\space_trader'},
       ],
       pageInfo: {hasMore: false, nextCursor: null},
     }),
     createAgent: async options => {seenOptions.push(options); return {id, provider: 'claude', model: 'claude-sonnet-4-6', status: 'running', labels: options.labels};},
   };
   const exact = await execute(exactClient, {operation: 'create', dispatch_id: id, parent_id: 'parent',
-    request: {...baseRequest, cwd: 'e:/projects/lajishouyou/whiteout_survival/'}}, notifier);
+    request: {...baseRequest, cwd: 'd:/work/games/space_trader/'}}, notifier);
   assert.equal(exact.ok, true);
   assert.equal(seenOptions.length, 1);
   assert.equal(seenOptions[0].workspaceId, 'wks_exact');
-  assert.equal(seenOptions[0].cwd, 'e:/projects/lajishouyou/whiteout_survival/');
+  assert.equal(seenOptions[0].cwd, 'd:/work/games/space_trader/');
 
   // 2. Only enclosing workspace exists -> refuses before createAgent; never sends ancestor workspaceId.
   let ancestorCreates = 0;
   const ancestorOnlyClient = {
-    fetchAgent: async () => ({agent: {cwd: 'E:\\PROJECTS\\lajishouyou', workspaceId: 'wks_c40ae4f1bd0432d3'}}),
+    fetchAgent: async () => ({agent: {cwd: 'D:\\work\\games', workspaceId: 'wks_parent'}}),
     fetchWorkspaces: async () => ({
-      entries: [{id: 'wks_c40ae4f1bd0432d3', workspaceDirectory: 'E:\\PROJECTS\\lajishouyou'}],
+      entries: [{id: 'wks_parent', workspaceDirectory: 'D:\\work\\games'}],
       pageInfo: {hasMore: false, nextCursor: null},
     }),
     createAgent: async () => {ancestorCreates++; return {};},
   };
   const refused = await execute(ancestorOnlyClient, {operation: 'create', dispatch_id: id, parent_id: 'parent',
-    request: {...baseRequest, cwd: 'E:/PROJECTS/lajishouyou/whiteout_survival'}}, notifier);
+    request: {...baseRequest, cwd: 'D:/work/games/space_trader'}}, notifier);
   assert.deepEqual([refused.ok, refused.sent, refused.error, ancestorCreates],
     [false, false, 'paseo_workspace_not_found_for_directory', 0]);
-  assert.deepEqual(refused.enclosing_directories, ['E:\\PROJECTS\\lajishouyou']);
+  assert.deepEqual(refused.enclosing_directories, ['D:\\work\\games']);
   assert(!JSON.stringify(refused).includes('wks_'));
 
   // 3. Parent has no workspaceId and parent.cwd === target cwd -> omits workspaceId and sends cwd.
   const noWksOptions = [];
   const cwdOnlyClient = {
-    fetchAgent: async () => ({agent: {cwd: 'E:\\PROJECTS\\standalone'}}),
+    fetchAgent: async () => ({agent: {cwd: 'D:\\work\\standalone'}}),
     fetchWorkspaces: async () => ({entries: [], pageInfo: {hasMore: false, nextCursor: null}}),
     createAgent: async options => {noWksOptions.push(options); return {id, provider: 'claude', model: 'claude-sonnet-4-6', status: 'running', labels: options.labels};},
   };
   const cwdOnly = await execute(cwdOnlyClient, {operation: 'create', dispatch_id: id, parent_id: 'parent',
-    request: {...baseRequest, cwd: 'e:/projects/standalone'}}, notifier);
+    request: {...baseRequest, cwd: 'd:/work/standalone'}}, notifier);
   assert.equal(cwdOnly.ok, true);
   assert.equal(noWksOptions.length, 1);
   assert.equal('workspaceId' in noWksOptions[0], false);
-  assert.equal(noWksOptions[0].cwd, 'e:/projects/standalone');
+  assert.equal(noWksOptions[0].cwd, 'd:/work/standalone');
 
   // 4. Unreadable workspace list refuses before createAgent instead of failing open.
   let unreadableCreates = 0;
@@ -1385,7 +1385,7 @@ test('creationFailureCode strips generic unknown wire code and creationFailureCl
   // Paseo workspace/request refusals map to request_invalid, never candidate failure classes.
   assert.equal(creationFailureClass({failedStage: 'workspace', errorCode: 'unknown', error: 'secret path canary'}), 'request_invalid');
   assert.equal(creationFailureClass({errorCode: 'branch_already_checked_out', error: 'secret branch canary'}), 'request_invalid');
-  assert.equal(creationFailureClass({errorCode: 'unknown', error: 'Workspace E:/PROJECTS/lajishouyou/whiteout_survival not found'}), 'request_invalid');
+  assert.equal(creationFailureClass({errorCode: 'unknown', error: 'Workspace D:/work/games/space_trader not found'}), 'request_invalid');
   const snap = creationRecord;
   assert.equal(typeof snap, 'function');
   // Structured candidate codes map to candidate classes; unclassified errors stay unknown.

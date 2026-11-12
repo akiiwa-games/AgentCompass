@@ -44,7 +44,7 @@ def test_plan_explains_regex_exclusion():
         'fixture-account': {'verified': True, 'cwd_regex': '^E:/P4(/|$)',
                             'bundles': {'fixture-bundle': {'model': 'fixture-model', 'effort': 'high'}}}}}
     plan = allocator.plan({'objective': 'Implement a parser', 'work_kind': 'general_implementation',
-                           'expected_hours': .1, 'cwd': 'E:/PROJECTS/AgentCompass', 'profile': profile()},
+                           'expected_hours': .1, 'cwd': 'D:/work/AgentCompass', 'profile': profile()},
                           {'accounts': {}}, datetime(2026, 10, 28, tzinfo=timezone.utc),
                           accounts=accounts, capabilities={'routes': {'general_implementation': {}, 'other_or_mixed': {}}}, overrides=[], host_policy_config={'allowed_accounts': list(accounts['accounts'])})
     row = next(row for row in plan['ranking'] if row['id'] == 'fixture-bundle')

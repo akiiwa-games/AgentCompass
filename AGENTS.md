@@ -68,4 +68,5 @@ There are no compatibility re-exports across split modules. Always import `modul
 - **Worktrees**: Develop delegated changes in an isolated git worktree on a `work/<name>` branch based on `main`. Deliver new commits only; never `git commit --amend`.
 - **Line endings**: On Windows, write text files in Python with `newline='\n'`.
 - **Tracked root files**: `.gitignore` ignores `/*` by default; explicit root additions must be allowlisted in `.gitignore` and verified against `packaging/check_payload.py` when applicable.
+- **Privacy**: This repository is public. Never write personal identifiers (user names, private project names or paths, machine ids, real e-mail addresses) into tracked files; use neutral placeholders such as `D:/work/...`. `python -X utf8 packaging/privacy_check.py` scans tracked files against generic patterns and a local denylist kept outside the repository (`~/.agent-compass/privacy-denylist.txt`); the release workflow runs it with the optional `PRIVACY_DENYLIST` secret.
 - **Child processes**: Every process started by a test or verification command must exit or be terminated before finishing; never terminate processes you did not start.

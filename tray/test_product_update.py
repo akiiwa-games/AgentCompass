@@ -210,7 +210,7 @@ class InstallShapeAndVersionDisplayTests(unittest.TestCase):
                 base,
                 version="0.3.5",
                 installer="uv",
-                direct_url={"url": "file:///E:/PROJECTS/route_manager", "dir_info": {}},
+                direct_url={"url": "file:///D:/work/agentcompass", "dir_info": {}},
             )
             mismatch_path = updates.inspect_installs(root=tray_root, home=home, which_path=cli_old, frozen=False)
             self.assertTrue(mismatch_path["version_mismatch"])

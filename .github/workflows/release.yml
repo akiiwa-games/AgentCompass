@@ -17,6 +17,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Check that the release subtitle is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          subtitle="$(head -n 1 .github/RELEASE_SUBTITLE)"
+          used="$(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --limit 200 --json name --jq '.[].name' | grep -v -- "^$GITHUB_REF_NAME " || true)"
+          if echo "$used" | grep -qF -- "— $subtitle"; then
+            echo "::error::.github/RELEASE_SUBTITLE ('$subtitle') is already the title of a published release; write this release's subtitle"
+            exit 1
+          fi
+      - name: Check that no tracked file carries personal content
+        env:
+          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
+        run: |
+          list="$RUNNER_TEMP/privacy-denylist.txt"
+          echo "$PRIVACY_DENYLIST" > "$list"
+          python -X utf8 packaging/privacy_check.py --denylist "$list"
       - name: Check that references/public-data.json matches the shipped reference data
         run: python -X utf8 skills/agent-compass/scripts/public_data.py manifest --check
       - name: Build the wheel

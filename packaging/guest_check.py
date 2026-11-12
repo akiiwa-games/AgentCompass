@@ -21,6 +21,7 @@ from pathlib import Path
 IN, OUT = Path(r"C:\in"), Path(r"C:\out")
 LOGS = OUT / "logs"
 HOME = Path(os.path.expanduser("~"))
+HOST_HOME = Path(Path(__file__).with_name("host-home.txt").read_text(encoding="utf-8").strip())   # staged by windows_sandbox_check.py
 BASE = HOME / "agent compass test"
 BIN = BASE / "fixtures" / "bin"
 STATE = BASE / "fixtures" / "state"
@@ -130,7 +131,7 @@ def agentcompass(*args, **kwargs):
 # ---------------------------------------------------------------------------------------------------------------------
 def g_isolation():
     section("the guest is a clean, offline machine")
-    check("running in the guest profile, not the host profile", "tanwei" not in str(HOME).lower(), str(HOME))
+    check("running in the guest profile, not the host profile", HOME.name.lower() != HOST_HOME.name.lower(), str(HOME))
     reached = []
     for host in ("1.1.1.1", "8.8.8.8"):
         try:
@@ -147,7 +148,7 @@ def g_isolation():
     check("names do not resolve", not resolved)
     check("git is not installed in the guest", shutil.which("git") is None, shutil.which("git"))
     check("no real codex or claude exists in the guest", shutil.which("codex") is None and shutil.which("claude") is None, (shutil.which("codex"), shutil.which("claude")))
-    check("the host's home is not visible", not Path(r"C:\Users\tanwei").exists())
+    check("the host's home is not visible", not HOST_HOME.exists())
 
 
 def g_stage():

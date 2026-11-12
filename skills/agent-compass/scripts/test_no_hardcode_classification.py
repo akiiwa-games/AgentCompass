@@ -309,7 +309,7 @@ TASK_TEXT_CORPUS = (
     'Do NOT use fast mode; no fast mode; not urgent; 不用开启fast，不着急，慢慢做。',
     'Brainstorm creative novel scheme and roadmap; 制定方案、设计方案、新方案、发散、架构创新、提出假设。',
     '### 交付物 1\nFirst part\n### 交付物 2\nSecond part\n### Deliverable 3\nThird part\n#### Task 4\nFourth part',
-    'Click the Save button with the mouse and keyboard in editor.py on localhost 127.0.0.1 pytest sqlite daemon worktree C:\\Users\\tanwei\\repo',
+    'Click the Save button with the mouse and keyboard in editor.py on localhost 127.0.0.1 pytest sqlite daemon worktree C:\\Users\\alex\\repo',
     '用鼠标点击桌面设置里的保存并截图，检查截图对比视觉差异，搜索官网公开文档完成厂商调研并翻译文档。',
     'Independent security & invariant review (read-only) of commit a81f3c2; do not modify repo; 只读代码审查、独立审查、不修改仓库代码。',
     'Fix the review findings and address audit comments in dispatch_flow.py; 任务：修复"代码包增量更新"审查发现的问题。',
@@ -1099,9 +1099,6 @@ ALLOWED_NAME_RULE_STATEMENTS = {
         'launcher model ids carry their provider prefix (provider/model); this reads the launch command, not a model name',
     ('skills/agent-compass/scripts/account_fleet.py', 'bundle_harness', "if launch_m.startswith('opencode/'):"):
         'launcher model ids carry their provider prefix (provider/model); this reads the launch command, not a model name',
-    ('skills/agent-compass/scripts/account_fleet.py', 'account_cwd_allowed',
-     r"if cand.is_absolute() or ':' in item or item.startswith(('/', '\\')):"):
-        'path syntax',
     ('skills/agent-compass/scripts/allocator.py', 'plan', "if str(note).startswith('data error:'):"):
         'our own note prefix',
     ('skills/agent-compass/scripts/candidate_eval.py', 'evaluate_bundle',

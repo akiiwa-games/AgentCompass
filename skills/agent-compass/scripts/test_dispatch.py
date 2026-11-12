@@ -2935,8 +2935,8 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertFalse(store.exists())
 
     def test_paseo_unplaceable_directory_refuses_before_create_with_no_cooldown_or_fallback(self):
-        ws = self.ws_dir('lajishouyou/whiteout_survival')
-        enclosing = str(self.root / 'lajishouyou')
+        ws = self.ws_dir('games/space_trader')
+        enclosing = str(self.root / 'games')
         self.placeable = False
         self.placement_error = 'paseo_workspace_not_found_for_directory'
         self.enclosing_directories = [enclosing]

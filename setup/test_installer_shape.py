@@ -69,7 +69,7 @@ class InstallerShapeSetupTests(unittest.TestCase):
         self.assertIn("gate-hook", out["rendered"])
 
     def test_setup_takes_over_a_checkout_hook_and_uninstall_removes_the_exe_hook(self):
-        old = "C:/Python313/python.exe -X utf8 E:/PROJECTS/route_manager/setup/router_gate_hook.py"
+        old = "C:/Python313/python.exe -X utf8 D:/work/agentcompass/setup/router_gate_hook.py"
         keep = {"type": "command", "command": "node C:/tools/other-hook.js", "timeout": 5}
         settings = {"model": "opus", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": old}, keep]}]}}
         (self.home / ".claude" / "settings.json").write_text(json.dumps(settings), encoding="utf-8")

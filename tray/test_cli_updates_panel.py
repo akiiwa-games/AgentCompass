@@ -371,14 +371,14 @@ class PanelTests(unittest.TestCase):
         self.assertIn('✓ D:/projects/example', panel.cwd_preview.get())
         panel.cwd_pattern.set('[')
         self.assertTrue(panel.cwd_save_button.instate(['disabled']))
-        panel.cwd_pattern.set('^E:/PROJECTS(/|$)')
+        panel.cwd_pattern.set('^D:/work(/|$)')
         self.assertFalse(panel.cwd_save_button.instate(['disabled']))
         with mock.patch.object(router_data, 'save_account_cwd', return_value='saved') as save:
             panel.run.reset_mock()
             panel.cwd_save_button.invoke()
             work, done = panel.run.call_args.args[:2]
             done(work())
-            save.assert_called_once_with('codex', '^E:/PROJECTS(/|$)')
+            save.assert_called_once_with('codex', '^D:/work(/|$)')
 
     def test_manual_model_refresh_bypasses_the_cache(self):
         panel = self.open()
