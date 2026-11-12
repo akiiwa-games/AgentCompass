@@ -38,43 +38,31 @@ agentcompass roll --task "<what the worker should do>"
 
 ### How a task is routed
 
-1. **Profile.** The classifier returns the task's expected hours and a need level (0–3) on four capability categories: **creativity** (creative writing, brainstorming, research synthesis, data analysis, first-principles decomposition), **coding** (`min(execution, faithfulness)` for code, tests, reviews and audits), **aesthetics** (web/GUI design, layout, 3D and SVG), and **tool operation** (level 1 no ability requirement; level 2 per-turn responsiveness; level 3 responsiveness and image recognition). Single-thread work is handed back to the main session, and a brief that holds several independent tasks is returned to be split.
-2. **Candidates.** Every model, effort and account that can start the task now. Every public leaderboard is put on one panel standard-score scale (`z = (x − x_anchor) / sd_panel` over the `n = 12` fleet panel, so `claude-opus-5-5` at High sits at `0.0` and one unit is one panel standard deviation); facets of a category combine by `min`. A facet a model has no board for is estimated from its same-series sibling (shifted along the facet-on-tier line) or its `arena.ai` Overall tier fit, marked as estimated everywhere it is shown, and replaced by a direct measurement at the next data refresh. A category with some facets missing is yellow: it takes its value from the facets that have data and stays in routing. Only a demanded category with no data at all keeps the model out of automatic routing for that task. Nothing routes on the overall tier itself.
-3. **Score.** `N = F + continuity + boost − C`
-   - `F`, the fit (in panel standard deviations): `sum_a w_a × (min(z_a, t_a) − t1_a) / sum_a w_a` over the demanded categories that ask for ability. Panel targets set `t1_a` at the panel's weakest model, `t2_a` at the panel median, and `t3_a` at the anchor (`0.0`). Each category's `t1_a` is the **zero point** of the fit: a model at the panel's weakest scores `0`, a model below it can score below `0`, and scores above `t_a` earn nothing extra, so a routine change is not sent to the strongest model at maximum effort.
-   - `C`: the quota economy, the part of this task's spend that lands over the recovery line of the account's quota window (next section), priced in panel-SD score units. The spend is the model's USD per hour times the hours the task takes at that effort (Artificial Analysis Time/Task at the same effort).
-   - `continuity` (resuming a worker on `coupling == "high"` / `--resume` within its context rotation limit, worth one demand step: the largest positive `t3 − t2` among the task's highest-demanded categories, else `0`) and a temporary `boost` from a user override add to `N`.
+1. **Profile.** The classifier estimates expected hours and a demand level (`0–3`) across four capability categories: **creativity** (`divergence`: writing, brainstorming, research synthesis, data analysis), **coding** (`execution` and `faithfulness` for code, tests, reviews, and audits), **aesthetics** (web/GUI layout, 3D, and SVG), and **tool operation** (responsiveness and, at level 3, image recognition). Single-thread work stays with the main session; multi-task briefs return `split` so each independent deliverable gets its own worker.
+2. **Candidates.** Every eligible `model × effort × account` is checked against hard gates (sign-in health, host policy, modality, `local_only`, data coverage, and per-window safety reserves). Capability scores come from cited public leaderboards on a shared panel standard-score scale, with missing facets estimated and marked explicitly.
+3. **Score.** `N = F + continuity + boost − C`: capability fit `F` is capped at the task's target (routine tasks do not over-spend on frontier effort), `continuity` rewards resuming an active coupled worker within its context rotation limit, `boost` applies any temporary user priority, and `C` charges only the part of the task's spend that lands over the account's quota recovery line. Exact formulas and panel calibration live in [`docs/technical-reference.md`](docs/technical-reference.md#1-how-scoring--allocation-work).
 4. **Ties.** Equal `N` goes to the candidate that can start now, then to the one that finishes sooner, then to the cheaper one. Expiring quota is not a tie-break: it already lowers `C`.
-5. **Launch.** The winner starts as a worker, and the ledger keeps every candidate's score.
-
-The animation above is the tray's Decision Compass replaying one decision: the task, its kind, the candidate routes, the winner and the best-ranked other model on the five axes (routes of the same model score the same on every axis), and the winner. The numbers in both animations are synthetic.
+5. **Launch.** The winner starts as a worker, and the ledger records every candidate's breakdown for replay in the Decision Compass (shown above with synthetic data).
 
 ### Quota: the recovery line
 
 Treat a window's quota as recovering evenly over its period. A window with capacity `C` has recovered `C × elapsed / period` so far; that is its recovery line.
 
-- **Usage under the line.** The gap is quota that has recovered and will expire at the reset if nobody spends it. Spending it costs nothing.
-- **Usage over the line.** The window is being drained faster than it recovers. Each further dollar is borrowed from the rest of the period and is charged at `β`.
+- **Usage under the line (`Used first`).** The gap is quota that has recovered and will expire at the reset if nobody spends it. Spending under the line adds zero quota cost.
+- **Usage over the line (`Held back`).** The window is being drained faster than it recovers. Each dollar over the line is borrowed from the rest of the period and priced into `C`.
 
 <div align="center">
 <img src="docs/quota-line.gif" width="560" alt="The Quota line tab replaying one task twice, each quota window drawn as a small chart of its quota line and its rising usage line: first a window that is over its line is held back and the task runs on one that is under, then two hours before its reset the remaining quota is used first in fast mode">
 </div>
 
-This is how to read it. Each small chart is one quota window on its own clock: left to right is this period, ending at the reset on the right edge; bottom to top is quota, with the whole period's quota at the top. The pale straight line is the quota line: where usage would stand now if the subscription were spent at an even pace. The thick line is actual usage, rising up to now. It is solid where usage readings were recorded and dotted where there are none and the line is fitted from the period's start to the current usage. While usage is under the quota line it is green and the window is marked **Used first**: that quota has recovered and is lost at the reset if nobody spends it. Once usage crosses the line it turns red and the window is marked **Held back**. The window the task runs on lights up, and the task's own spend continues its usage line in indigo. Last, a dotted line runs from now to the top right corner: the pace that uses up what is left exactly at the reset, where the lines close.
+In the animation above (synthetic data), each chart tracks one window on its own reset clock: the pale diagonal is the recovery line, the green/red curve is current-period usage, indigo shows the chosen task's spend, and the dotted line closes at the reset:
+- **Spared when ahead of pace:** When one account is already above its recovery line while another sits below its own line, the over-line spend raises `C` on the first account, shifting work to the under-line account automatically—even when their reset clocks do not line up.
+- **Used first before reset:** Shortly before a window resets with unused allowance still under its line, its whole spend (including fast mode when it stays under the line) incurs zero over-line cost, so equal-`N` ties go straight to the faster run instead of letting recovered quota expire.
 
-The animation replays one synthetic 2-hour refactor (`coding` demand) at two moments; Opus 5.5 meets the target, with an illustrative `F` of 0.667.
-
-**A window ahead of its line is spared.** Five days before Claude A resets, 45% of it is used and its line stands at 29%. Opus 5.5 on Claude A would put $46 over the line: `N = 0.667 − 0.0075 × 46 / 2 = 0.495`. Claude B is under its line, so the same model and the same $46 cost nothing there: `N = 0.667`. The task runs on Claude B.
-
-**Sprint before reset.** Two hours before Claude A resets, 40% of it is left, nearly all of it under the line. Opus 5.5 now scores 0.667 three ways: on Claude A in normal mode (2 h, $46), on Claude A in fast mode (1.3 h, $91), and on Claude B. The tie goes to Claude A, whose quota expires in 2 hours instead of 6 days, and then to fast mode, which finishes 40 minutes sooner. Fast mode wins only because its whole spend stays under the line; with one dollar over, the normal run would rank higher.
-
-**Resets that do not line up.** None of this needs the windows to share a schedule. At that same moment Codex is five days from its reset and ahead of its line, so the $9 for Sol 6.1 are charged (`0.652 − 0.008 × 9 / 2 = 0.616`) while the $91 on Claude A are not.
-
-Three details:
-
-- An account with both a 5-hour and a weekly window is checked against both; the larger over-line amount counts.
-- A free starter allowance is a pool that never resets. Nothing recovers, so all of its spend is over the line. It is not treated as unlimited.
-- The only usage input is each account's consumption in its current period. There is no usage history and no demand forecast.
+Three rules keep this predictable:
+- Multi-window accounts (such as 5-hour + weekly) are checked against every applicable window; the tightest one binds.
+- Non-resetting starter allowances never recover, so every dollar spent is over the line rather than treated as unlimited.
+- Only current-period usage is read—no usage history and no demand forecasting.
 
 ### Staying in control
 
@@ -110,7 +98,7 @@ Or hand setup to your coding agent:
 
 - **Hosts**: Claude Code, Codex CLI, Google Antigravity (`agy`), Paseo, Pi, OpenCode, Orca, T3 Code, and Herdr core (`hc`).
 - **Host & gateway plugins**: [cindy-agentcompass-plugin](https://github.com/akiiwa-games/cindy-agentcompass-plugin) (Cindy tasks), [magpie-agentcompass-router](https://github.com/akiiwa-games/magpie-agentcompass-router) (Magpie gateway), [usage-float](https://github.com/akiiwa-games/usage-float) (floating quota HUD).
-- **Reference**: allocation internals, quota collection, the Windows tray console, host rollout, checkout migration and the test suites are in **[`docs/technical-reference.md`](docs/technical-reference.md)**.
+- **Reference**: scoring formulas, quota collection, Windows tray console, host rollout, checkout migration, and test suites are in **[`docs/technical-reference.md`](docs/technical-reference.md)**; module ownership and contributor invariants are in **[`AGENTS.md`](AGENTS.md)**.
 
 ---
 
@@ -135,43 +123,31 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 
 ### 一个任务如何被路由
 
-1. **画像。** 分类器给出任务的预计工时，以及四个能力类别上的需求等级（0–3）：**创意**（`divergence`，创意写作、头脑风暴、调研综合、数据分析与第一性原理拆解）、**编码能力**（`coding = min(execution, faithfulness)`，代码读写修改、测试与审查审计）、**审美能力**（`aesthetics`，界面交互、排版图表、3D 与 SVG）与**工具操作**（`tool_operation`，等级 1 无能力门槛，等级 2 考察单轮响应速度，等级 3 同时考察响应速度与图像识别）。单线任务交还主会话自己做；一份任务书里有多个独立任务时，退回给主会话拆分。
-2. **候选。** 所有现在就能开工的模型、档位与账号组合。各榜单统一折算为固定面板（`n = 12`）的标准分 `z = (x − x_anchor) / sd_panel`（锚点 `claude-opus-5-5` High 为 `0.0`），同一类别下的子维度取短板 `min`；缺榜单的子维度由同系列近亲转换或 `arena.ai` Overall 等级线性拟合估算并显式标为估算值，只有需求类别完全无数据时才移出该任务的自动路由。
-3. **打分。** `N = F + continuity + boost − C`
-   - `F` 是契合度（单位为面板标准差）：对所有有能力要求的类别计算 `sum_a w_a × (min(z_a, t_a) − t1_a) / sum_a w_a`。目标值由面板分位数决定：等级 1（`t1_a`）取面板最低值并作为契合度的**零点**（低于 `t1_a` 可为负分），等级 2（`t2_a`）取面板中位数，等级 3（`t3_a`）取锚点 `0.0`；超出任务需求目标 `t_a` 的能力不额外加分，所以简单改动不会被派给最强模型开最高档。
-   - `continuity` 是上下文连续性收益：在未达上下文轮换上限且强耦合续接（`coupling == "high"` / `--resume`）时，等于本次任务最高需求等级类别中最大的正档差 `t3 − t2`（否则为 `0`）。
-   - `C`（即 `β × X / h`）是第五个轴“额度经济”：`X` 是本次花费中越过该账号额度窗口恢复线的部分（单位 USD，见下一节），`h` 是任务工时，`β` 是窗口越线花费与契合度之间的汇率。
+1. **画像。** 分类器给出任务的预计工时，以及四个能力类别上的需求等级（`0–3`）：**创意**（`divergence`：写作、头脑风暴、调研综合、数据分析）、**编码能力**（`coding`：代码实现、测试与审查审计）、**审美能力**（`aesthetics`：界面交互、排版、3D 与 SVG）与**工具操作**（`tool_operation`：单轮响应速度及等级 3 的图像识别）。单线任务交还主会话自己做；包含多个独立交付物的任务书退回主会话拆分。
+2. **候选。** 所有满足硬门禁（登录健康、宿主策略、模态、`local_only`、数据覆盖与窗口安全余量）的 `模型 × 档位 × 账号` 进入评分。模型能力统一由公开引证榜单折算到固定面板标准分，缺失子维度显式标注估算来源。
+3. **打分。** `N = F + continuity + boost − C`：契合度 `F` 在满足任务目标后封顶（简单改动不会浪费最高档旗舰模型），`continuity` 奖励在上下文轮换阈值内续接强耦合 worker，`boost` 叠加用户临时加权，`C` 只对越过账号额度恢复线的花费计价。完整公式与校准细节见 [`docs/technical-reference.md`](docs/technical-reference.md#1-how-scoring--allocation-work)。
 4. **平分时。** `N` 相等，先选现在就能开始的候选，再选完成更快的，最后选更便宜的。额度临期不参与平分比较：它已经体现在更低的 `C` 里。
-5. **启动。** 胜出的候选作为 worker 启动，台账里保留每个候选的分数。
-
-页首的动画是托盘“决策罗盘”重放一次决策：任务、任务类型、候选路线、胜出者与排名最高的另一个模型在五个轴上的对比（同一模型的不同路线各轴得分相同）、胜出者。两段动画里的数字都是合成数据。
+5. **启动。** 胜出的候选作为 worker 启动，台账保留全部候选得分明细供托盘“决策罗盘”重放（页首动画为合成数据）。
 
 ### 额度：恢复线
 
 把一个窗口的额度看成在周期内匀速恢复。容量为 `C` 的窗口，到现在为止已经恢复了 `C × 已过时间 / 周期`，这就是它的恢复线。
 
-- **用量在线下。** 差额是已经恢复、但到重置时没人用就会作废的额度。花掉它不计成本。
-- **用量在线上。** 这个窗口的消耗快于恢复。再花的每一美元都是向本期后面借的，按 `β` 计价。
+- **用量在线下（`优先使用`）。** 差额是已经恢复、但到重置时没人用就会作废的额度。在线下花掉它不计额度成本。
+- **用量在线上（`降权`）。** 这个窗口的消耗快于恢复。越过恢复线的每一美元都是向本期后面借的，计入 `C`。
 
 <div align="center">
 <img src="docs/quota-line.gif" width="560" alt="“额度恢复线”页签把同一个任务重放两次，每个额度窗口画成一张小图，一根额度线和一根不断上涨的实际用量线：先是用量已经超过额度线的窗口被降权，任务派到线下的窗口；然后在重置前两小时，剩余额度被优先使用，用快速模式花掉">
 </div>
 
-读法如下。每张小图是一个额度窗口，各走各的时钟：从左到右是本周期，右端是重置；从下到上是额度，顶端是本周期的全部额度。浅色直线是额度线：按订阅的节奏匀速使用，此刻应该用到哪里。粗线是实际用量，一直涨到现在；有用量读数的地方是实线，没有读数时按期初到当前用量拟合，画成点线。用量在额度线下面时是绿色，窗口标着**优先使用**：这部分额度已经恢复，到重置不花就没了。用量越过额度线就变红，窗口标着**降权**。本次任务用的窗口会亮起来，任务自己的花费用靛蓝色接在它的用量线后面。最后，一条点线从现在连到右上角：按这个节奏用，剩余额度正好在重置时用完，线在那里闭合。
+上方动画（合成数据）里，每张小图按各自重置时钟跟踪一个窗口：浅色斜线是恢复线，绿/红实线是本期用量，靛蓝色是本次任务的预计消耗，点线在重置时刻闭合：
+- **超前消耗自动避让**：当某个账号已跑到恢复线上方而另一账号仍在线下时，越线花费会抬高前者的 `C`，无需重置时间对齐即可自动把任务分流到线下账号。
+- **临期余量优先消纳**：临近重置且仍有大量线下余量时，整笔花费（包括仍在线下的快速模式）越线成本为 `0`，同分时按完成速度优先选用更快方案，避免已恢复额度白白作废。
 
-动画把同一个合成的 2 小时重构任务（`coding` 需求）放在两个时刻各重放一次；Opus 5.5 满足需求，示意 `F` 为 0.667。
-
-**超前于恢复线的窗口先留着。** 距 Claude A 重置还有五天时，它已经用了 45%，而恢复线只到 29%。在 Claude A 上用 Opus 5.5 会有 $46 越线：`N = 0.667 − 0.0075 × 46 / 2 = 0.495`。Claude B 在线下，同一个模型、同样的 $46 在那里不计成本：`N = 0.667`。任务派到 Claude B。
-
-**重置前狂蹬。** 距 Claude A 重置还有两小时，还剩 40%，几乎全部在线下。这时 Opus 5.5 有三种跑法都是 0.667：Claude A 普通模式（2 小时，$46）、Claude A 快速模式（1.3 小时，$91）、Claude B。平分时先选 Claude A，因为它的额度 2 小时后就到期，而 Claude B 还有 6 天；再选快速模式，因为能早 40 分钟完成。快速模式能胜出，只因为它的整笔花费都在线下；只要有一美元越线，普通模式就会排在前面。
-
-**重置时间不同步。** 以上计算都不要求各窗口的重置时间对齐。在同一时刻，Codex 距重置还有五天且已超前于恢复线，所以 Sol 6.1 的 $9 要计价（`0.652 − 0.008 × 9 / 2 = 0.616`），而 Claude A 上的 $91 不计。
-
-三点补充：
-
-- 同一账号同时有 5 小时窗口和周窗口时，两个窗口各算一次，取越线额较大的那个。
-- 免费的入门赠额是一个永不重置的额度池。它不会恢复，所以花的每一美元都算越线。它不会被当作无限额度。
-- 用量方面的输入只有每个账号本期的消耗。不看历史用量，也不做需求预测。
+三点规则保证行为可预期：
+- 同时拥有 5 小时窗口和周窗口的账号会同时检查所有适用窗口，由最紧的窗口约束。
+- 永不重置的入门赠额不会随时间恢复，因此每一美元花费都计为越线，不会被当作无限额度。
+- 只读取各账号本周期的当前用量，不依赖历史用量，也不做需求预测。
 
 ### 你始终可以做主
 
@@ -207,7 +183,7 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"       # 自动分�
 
 - **直接支持的宿主**：Claude Code、Codex CLI、Google Antigravity (`agy`)、Paseo、Pi、OpenCode、Orca、T3 Code、Herdr core (`hc`)。
 - **配套插件**：[cindy-agentcompass-plugin](https://github.com/akiiwa-games/cindy-agentcompass-plugin)（Cindy 任务路由）、[magpie-agentcompass-router](https://github.com/akiiwa-games/magpie-agentcompass-router)（Magpie 网关路由）、[usage-float](https://github.com/akiiwa-games/usage-float)（桌面额度悬浮窗）。
-- **参考文档**：分配实现细节、多账号额度采集、Windows 托盘控制台、各宿主全局规则同步、从源码目录迁移及测试命令，见 **[`docs/technical-reference.md`](docs/technical-reference.md)**。
+- **参考文档**：打分公式、多账号额度采集、Windows 托盘控制台、各宿主全局规则同步、从源码目录迁移及测试命令见 **[`docs/technical-reference.md`](docs/technical-reference.md)**；模块职责地图与开发红线见 **[`AGENTS.md`](AGENTS.md)**。
 
 ## License
 

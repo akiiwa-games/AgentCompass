@@ -39,8 +39,10 @@ level 1 imposes no ability requirement; level 2 evaluates per-effort `responsive
 `min(responsiveness, image_recognition)` and requires image input). A model's category scores are panel standard scores (`z`)
 from public cited boards; a facet a model lacks is estimated from its same-series sibling or its `arena.ai` Overall tier fit (see
 [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). `quota_cost` is the quota economy: the part of the
-task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. Equal scores go to the
-candidate on the earliest-expiring quota, then faster completion, then fewer USD.
+task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. Equal net scores
+`N` go to the candidate that starts sooner (shorter wait before reset), then finishes sooner, then spends fewer list-price USD,
+then has the higher demand-weighted category level and preferred harness (`candidate_ranking.five_axis_order`). Expiring quota is
+not a tie-break: under-line allowance already lowers `quota_cost`.
 
 Hard gates run first: sign-in and credential health, host policy, modality (text-only models never get visual work),
 `local_only`, a demanded category with no data, and per-window safety reserves net of in-flight work. A bundle that draws from
@@ -115,15 +117,16 @@ run in any order. Host configs that still name a checkout path are listed at the
 
 ## 4. Repository Layout
 
-Companion repositories and runtime directories are separate local checkouts or ignored host state, not bundled here.
+Companion repositories and runtime directories are separate local checkouts or ignored host state, not bundled here. Contributors should read [`AGENTS.md`](../AGENTS.md) for the module ownership map, regeneration commands, and architectural invariants.
 
 | Path | Description |
 |---|---|
-| `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`), loaded at the system level on every host via junctions in `~/.codex/skills`, `~/.claude/skills` (`~/.claude-*/skills`), `~/.pi/agent/skills`, `~/.gemini/config/skills.json` and materialized directories in `~/.gemini/skills`. |
-| `tray/` | Windows tray and service supervisor: tray (`app.pyw`), decision console (`router_window.py`, `router_data.py`, `radar_chart.py`, `ui_theme.py`), plugin registry, service lifecycle, updater, the scheduler for the quota collector and capacity analytics. |
-| `audit/` | `router_audit.py`: read-only daily check of sub-agent launches against `~/.agent-compass/router-ledger.jsonl`. |
-| `setup/` | Onboarding (`onboard.py`), host sync (`sync_host_globals.py`, `host_rules.py`), spawn gate (`router_gate_hook.py`), Dot2API and Pi helpers, `claude2_config.py`. |
-| `usage-float/`, `gemini-web/`, `dot2api/`, `codex-chatgpt-web/`, `easytier/`, `tools/bun/` | Companion checkouts and runtime state; see [usage-float](https://github.com/akiiwa-games/usage-float#readme) and [gemini-web](https://github.com/akiiwa-games/gemini-web#readme). |
+| `agentcompass/` | Public console package (`agentcompass`), checkout vs. installed path resolution (`locations.py`), `doctor.py`, and canonical loopback ports (`ports.py`). |
+| `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`), including the split allocator modules (`allocator`, `account_fleet`, `task_intake`, `axis_scores`, `quota_economy`, `quota_pools`, `quota_overrides`, `candidate_eval`, `candidate_ranking`, `ledger_snapshot`, `worker_sessions`), dispatch/usage scripts, and `calibration/` (`agentcompass data refresh`). |
+| `setup/` | Onboarding (`onboard.py`), global host rule and skill sync (`sync_host_globals.py`, `host_rules.py`), `PreToolUse` / `tool_call` spawn and rotation gate (`router_gate_hook.py`), and Paseo SDK dispatch bridge (`paseo_dispatch_bridge.mjs`). |
+| `tray/` | Windows tray (`app.pyw`), decision console shell (`router_window.py`) and page mixins (`panel_scoring.py`, `panel_quota.py`, `panel_policy.py`, `panel_models.py`, `panel_strategy.py`, `panel_system.py`, `panel_plugins.py`, `panel_widgets.py`), Tk-free view model (`router_data.py`), `radar_chart.py`, `quota_line.py`, `decision_theatre.py`, updaters, and service supervisor. |
+| `packaging/` & `audit/` | Wheel/PyInstaller/Inno Setup bundling (`app_bundle.py`, `app_bootstrap.py`, `check_payload.py`), behavioral harnesses (`verify_release.py`, `sandbox_check.py`, `foreign_machine_check.py`, `zero_dispatch_check.py`), and read-only ledger compliance audit (`audit/router_audit.py`). |
+| `usage-float/`, `gemini-web/`, `dot2api/`, `codex-chatgpt-web/`, `easytier/` | Optional companion checkouts and runtime state; see [usage-float](https://github.com/akiiwa-games/usage-float#readme) and [gemini-web](https://github.com/akiiwa-games/gemini-web#readme). |
 
 ---
 
@@ -180,15 +183,15 @@ The tray menu is at most two levels deep and performs no blocking I/O or network
 
 The tray icon displays a status dot: **green** when core usage collection and all enabled always-on plugins are healthy, **amber** while a pre-reset priority boost is active, and **red** when an enabled service has stopped.
 
-### Main Panel Tabs (`tray/router_window.py`)
+### Main Panel Tabs (`tray/router_window.py` & `tray/panel_*.py`)
 
-`router_window.py` runs in its own `pythonw` process so closing the window releases UI memory immediately:
+`router_window.py` runs in its own `pythonw` process so closing the window releases UI memory immediately, delegating each page to `tray/panel_*.py`:
 
-- **Decision Console**:
+- **Decision Console** (`panel_scoring.py`):
   - **Dry-Run Simulator**: Test any task description or preset with custom hours, `local_only`, and `needs_visual` flags using `allocator.plan` without writing to the ledger.
   - **Ledger Replay**: Browse the last 30 router decisions and click any entry to replay its historical parameters against current live quota windows.
-  - **Decision film**: A replayed decision plays as a short film (task → kind → routes → ranking → radar) that ends on the winner's name under the radar of the winner and the best-ranked other model (same-model routes share axis scores), with the five axis names on the radar. The radar's only backdrop is a hairline frame of full scale: the two shapes open from the centre, the winner last. Each model is a sheet of tinted glass: a vertical gradient of its hue, a denser rim, a highlight on the edges that face the light, and on the first sheet a few specks of light that twinkle until the film settles. The radar shows the two models' five values and nothing else; under it a strip names the two models and the task.
-  - **Quota line** (third tab of the list card): for the replayed decision, each window is a small chart on its own clock: x is this period up to its reset, y is quota up to the period's capacity. The pale straight line is the quota line (the recovery line), and the thick line is actual usage rising up to now: green while it is under the quota line, red once it is over. The window's head says which: **Used first** under the line, **Held back** over it; it turns as the rising line crosses, and it ends as the state the decision saw, before this task. The line's colour, that word and the hover text read one and the same comparison. The usage line is solid where readings were recorded in this period and dotted when it is fitted from the period's start to the current usage; readings are display-only and the router's economics never read them. The window the chosen candidate draws from is lit and the task's spend continues its usage line in the accent colour; a task that runs past the reset is drawn up to the reset with the share of its spend that falls before it, and a mark on the reset edge says the rest belongs to the next period. Last, a dotted pace line runs from now to the reset corner, the pace that uses up what is left exactly at the reset. The snapshot is read field by field: a window whose usage or clock is not a number is left out, a capacity that is missing, zero or not a number is shown as unknown (plain usage line, no quota line, no state, no ratio), and a record the view cannot read at all never stops the rest of the decision from loading. At most four windows are shown: the chosen one always, then the other windows of its account, then the rest in recorded order; a note under the charts says how many are not shown or unreadable. The only words are window names, the two states and that note; hovering a chart gives the numbers, and a click replays. It plays on the film's clock. A simulation, a recomputed replay or a snapshot recorded without the block gets it derived from `decision.system.quota_windows` and each candidate's `economy` by the snapshot's own functions (`ledger_snapshot.with_quota_line`); the view is empty only when no candidate spent from a priced long window (the economy term is 0, and the view says so) or for a record older than the quota economy (`tray/quota_line.py` lists the snapshot fields it reads).
+  - **Decision film** (`decision_theatre.py`): Replays a decision step by step (`task → kind → routes → ranking → five-axis radar`) comparing the winner against the best-ranked other model (routes of the same model share axis scores).
+  - **Quota line** (`quota_line.py`): Plots up to four windows on their own reset clocks (the chosen window first, then sibling and remaining windows): the straight recovery line `C × elapsed / period`, actual usage up to now (**Used first** under the line, **Held back** over it; solid where readings were recorded in the current period, dotted when fitted; display-only and never read by the router's economics), the chosen task's projected spend up to the reset edge, and the closing pace line to reset. Simulations and snapshots without a saved block derive it via `ledger_snapshot.with_quota_line` from `decision.system.quota_windows` and candidate `economy`; malformed fields degrade gracefully without blocking the rest of the decision.
   - **Radar Comparison**: Switch between **Decision Score (5D)** (the winner against the best-ranked other model on creativity (`divergence`), coding, aesthetics, tool operation, and quota economy, mapped to `0..1` shares `(min(z, t3) - t1) / (t3 - t1)`) and **Model DNA (5D)** (any two models on the same five axes from their static profiles; quota economy there is price economy `1 − usd_per_hour / max_usd_per_hour`, not live quota). Each model is a sheet of tinted glass inside a hairline frame of full scale, and the chart shows the two models' five values and nothing else. Hovering any vertex shows the formula and raw values.
 - **Account Quotas & In-Flight Tasks**:
   - Live status badges (`Ready`, `Paused`, `Plugin Disabled`, `Blocked by Host Policy`), remaining percentage and API-equivalent USD per window, 3h/24h burn rates, reset countdowns, one-click quota refresh, and active worker sessions with their cumulative uncompressed context against the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray).
