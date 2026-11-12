@@ -147,6 +147,11 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
     detected = {row["name"]: row for row in detection["accounts"]}
     wanted_off = {name for name in disabled if name in detected and detected[name]["signed_in"] is not False}
     enabled = []
+    cleaned = []
+    for name, entry in accounts.items():
+        if entry.get("verified") is False:
+            del entry["verified"]
+            cleaned.append(name)
     # Acceptance is launch evidence for a CLI whose sign-in cannot be inspected.
     for name, row in sorted(detected.items()):
         if row.get("signed_in") is not None or name in wanted_off:
@@ -157,7 +162,7 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
             enabled.append(name)
     if not accounts:
         document.pop("accounts")
-    changed = bool(enabled) or not existed
+    changed = bool(enabled or cleaned) or not existed
     result = {"path": str(path), "created": not existed or bool(previous_state.get("override_created")),
               "enabled": enabled, "disabled": sorted(wanted_off), "backup": None}
     if changed and not dry_run:
@@ -172,14 +177,15 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
 
 
 def disable_in_host_policy(home: Path, detection: dict, disabled: set[str], dry_run: bool = False,
-                           path: Path | None = None) -> Path:
-    """Apply setup's explicit denials to the same policy as the tray."""
+                           path: Path | None = None, enabled: set[str] | None = None) -> Path:
+    """Apply explicit setup choices to the same policy as the tray."""
     import override_store
     import state_upgrade
     path = path or home / ".agent-compass" / "host-policy.json"
     names = list(dict.fromkeys([*(detection.get("inventory", {}).get("accounts") or {}),
                                 *(row["name"] for row in detection["accounts"])]))
-    if not disabled or dry_run:
+    enabled = enabled or set()
+    if (not disabled and not enabled) or dry_run:
         return path
     with override_store.locked(path):
         existing = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else None
@@ -187,9 +193,9 @@ def disable_in_host_policy(home: Path, detection: dict, disabled: set[str], dry_
             state_upgrade.validate_host_policy_doc(existing, path)
         policy = dict(existing or {})
         allowed = policy.get("allowed_accounts", names)
-        policy["allowed_accounts"] = [name for name in allowed if name not in disabled]
+        policy["allowed_accounts"] = list(dict.fromkeys([*(name for name in allowed if name not in disabled), *sorted(enabled - disabled)]))
         if existing is None or "known_accounts" in policy:
-            policy["known_accounts"] = list(dict.fromkeys([*policy.get("known_accounts", []), *allowed, *disabled]))
+            policy["known_accounts"] = list(dict.fromkeys([*policy.get("known_accounts", []), *allowed, *disabled, *enabled]))
         override_store.write(path, policy)
     return path
 
@@ -362,14 +368,17 @@ def setup_main(argv: list[str] | None = None) -> int:
 
     # 2. Which unverifiable accounts to keep
     disabled = {name for name in args.disable}
+    enabled = set()
     for row in usable:
         if row["signed_in"] is None and row["name"] not in disabled:
             if not asker.ask(f"{row['name']} is installed but its sign-in cannot be verified. Route work to it?", True):
                 disabled.add(row["name"])
+            else:
+                enabled.add(row["name"])
     override = write_override(home, detection, disabled, dry)
     import host_policy
     target_policy = host_policy.policy_path()[0] if not args.home else home / ".agent-compass" / "host-policy.json"
-    policy_path = disable_in_host_policy(home, detection, disabled, dry, target_policy)
+    policy_path = disable_in_host_policy(home, detection, disabled, dry, target_policy, enabled)
     summary["override"] = override
     summary["host_policy"] = str(policy_path)
     _line(f"\nAccounts the router may use: {', '.join(r['name'] for r in usable if r['name'] not in disabled) or 'none'}")

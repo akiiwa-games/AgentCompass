@@ -88,6 +88,17 @@ class AllocatorTests(unittest.TestCase):
     def rows(self, result):
         return {c['id']: c for c in result['ranking']}
 
+    def test_legacy_disabled_flag_excludes_only_affected_account(self):
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        accounts_override.apply(accounts, {'schema_version': 2, 'accounts': {'codex': {'verified': False}}})
+        result = self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 0.5}, accounts=accounts, overrides=[])
+        rows = result['ranking']
+        affected = [row for row in rows if row['bundle']['account'] == 'codex']
+        others = [row for row in rows if row['bundle']['account'] != 'codex']
+        assert affected and others
+        assert all(any('legacy disabled flag remains' in reason and 'tray' in reason for reason in row['excluded']) for row in affected)
+        assert all(not any('legacy disabled flag remains' in reason for reason in row['excluded']) for row in others)
+
     def chain(self, bundle='sol_xhigh', coupling='high', total=6, tokens=120000, compacted=None, compactions=None, **extra):
         worker = {'bundle': bundle, 'context_tokens': tokens,
                   **({'compacted_tokens': compacted} if compacted is not None else {}),

@@ -1567,7 +1567,9 @@ def harness_model_rows() -> list[dict]:
         host_enabled = bool(host_policy.account_allowed(policy, account))
         harness_disabled = (((preferences.get("harness_overrides") or {}).get(account) or {}).get(harness) or {}).get("disabled", False)
         badge, kind = account_badge(account, inventory.get(account), {}, policy)
-        if host_enabled and spec.get("verified") is False and kind != "warn":
+        if spec.get("_legacy_disabled_flag"):
+            badge, kind = _tr("旧的关闭标记残留，已排除派发；请在托盘切换此账号，或重新运行 setup"), "warn"
+        elif host_enabled and spec.get("verified") is False and kind != "warn":
             badge, kind = _tr("无法确认账号可启动，已排除派发；请登录 CLI 并刷新额度，或重新运行 setup 确认登录"), "warn"
         recovery = account_exclusion_recovery(inventory.get(account))
         if host_enabled and kind == "warn" and recovery:
@@ -1575,7 +1577,7 @@ def harness_model_rows() -> list[dict]:
         row = {"account": account, "account_label": account_label(account), "harness": harness,
                "harness_label": HARNESS_LABELS.get(harness, harness), "plan": spec.get("plan"),
                "host_enabled": host_enabled, "enabled": host_enabled and not harness_disabled,
-               "verified": bool(spec.get("verified", False)), "badge": badge, "kind": kind, "models": []}
+               "verified": bool(spec.get("verified", False)), "legacy_disabled_flag": bool(spec.get("_legacy_disabled_flag")), "badge": badge, "kind": kind, "models": []}
         account_preferences = (preferences.get("accounts") or {}).get(account) or {}
         row["cwd_regex"] = account_preferences.get("cwd_regex", spec.get("cwd_regex")) or ""
         row["cwd_pattern"] = row["cwd_regex"]
@@ -1618,7 +1620,9 @@ def harness_model_rows() -> list[dict]:
         family = inv.get('family') or account
         host_enabled = bool(host_policy.account_allowed(policy, account))
         badge, kind = account_badge(account, inv, {}, policy)
-        if host_enabled and spec.get('verified') is False and kind != 'warn':
+        if spec.get('_legacy_disabled_flag'):
+            badge, kind = _tr("旧的关闭标记残留，已排除派发；请在托盘切换此账号，或重新运行 setup"), 'warn'
+        elif host_enabled and spec.get('verified') is False and kind != 'warn':
             badge, kind = _tr("无法确认账号可启动，已排除派发；请登录 CLI 并刷新额度，或重新运行 setup 确认登录"), 'warn'
         elif kind == 'ok':
             badge, kind = _tr('没有可派发的模型；请刷新模型列表并检查模型设置'), 'warn'
@@ -1628,7 +1632,7 @@ def harness_model_rows() -> list[dict]:
         rows.append({'account': account, 'account_label': account_label(account), 'harness': family,
             'harness_label': HARNESS_LABELS.get(family, family), 'plan': spec.get('plan'),
             'host_enabled': host_enabled, 'enabled': host_enabled, 'verified': bool(spec.get('verified', True)),
-            'badge': badge, 'kind': kind, 'models': [], 'providers': [account], 'cwd_regex': '', 'cwd_pattern': ''})
+            'legacy_disabled_flag': bool(spec.get('_legacy_disabled_flag')), 'badge': badge, 'kind': kind, 'models': [], 'providers': [account], 'cwd_regex': '', 'cwd_pattern': ''})
     order = {name: index for index, name in enumerate(HARNESS_ORDER)}
     rows = sorted(rows, key=lambda row: (order.get(row["harness"], len(order)), row["account"]))
     return decorate_model_rows(rows, accounts, model_catalog.read(STATE_DIR / "model-catalog.json"))
@@ -2015,6 +2019,9 @@ def toggle_harness(harness: str, account: str, enabled: bool) -> str:
     if not any(row["harness"] == harness for row in rows):
         raise ValueError(f"Unknown harness/account: {harness}/{account}")
     def change(document):
+        entry = (document.get("accounts") or {}).get(account) or {}
+        if entry.get("verified") is False:
+            del entry["verified"]
         preferences = document.setdefault("harness_overrides", {}).setdefault(account, {})
         if enabled and not rows[0]["host_enabled"]:
             # Enabling a row must not incidentally activate its siblings when
@@ -2024,7 +2031,7 @@ def toggle_harness(harness: str, account: str, enabled: bool) -> str:
                     preferences.setdefault(row["harness"], {})["disabled"] = True
         preferences.setdefault(harness, {})["disabled"] = not enabled
     _edit_preferences(change)
-    if len(rows) == 1 or (enabled and not rows[0]["host_enabled"]):
+    if len(rows) == 1 or rows[0].get("legacy_disabled_flag") or (enabled and not rows[0]["host_enabled"]):
         if rows[0]["host_enabled"] != enabled:
             toggle_account_host(account)
     return f"{HARNESS_LABELS.get(harness, harness)} · {account_label(account)} · {_tr('启用') if enabled else _tr('停用')}"
@@ -2067,6 +2074,16 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
 
 def toggle_account_host(account: str) -> str:
     """Toggle only user policy; discovery/readiness is not a user preference."""
+    def clear_legacy(document):
+        entry = (document.get("accounts") or {}).get(account) or {}
+        if entry.get("verified") is False:
+            del entry["verified"]
+    target = STATE_DIR / "accounts-override.json"
+    if target.exists():
+        import accounts_override
+        document = accounts_override.load_override(target)
+        if ((document.get("accounts") or {}).get(account) or {}).get("verified") is False:
+            _edit_preferences(clear_legacy)
     state = host_policy_state()
     all_accounts = state["accounts"]
     allowed = set(all_accounts if state["allowed"] is None else state["allowed"])

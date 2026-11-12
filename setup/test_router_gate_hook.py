@@ -1780,3 +1780,18 @@ class ConfiguredRotationThresholdGateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_legacy_account_flag_does_not_break_rotation_check(tmp_path, monkeypatch):
+    import account_fleet
+    import host_policy
+    import worker_sessions
+    path = tmp_path / 'accounts-override.json'
+    path.write_text(json.dumps({'schema_version': 2, 'accounts': {'codex': {'verified': False}}}), encoding='utf-8')
+    monkeypatch.setattr(account_fleet, 'accounts_override_path', lambda: path)
+    monkeypatch.setattr(host_policy, 'sync_discovered', lambda accounts: {})
+    monkeypatch.setattr(gate, 'is_delegated_worker', lambda *args, **kwargs: True)
+    monkeypatch.setattr(gate, 'owns_running_worker', lambda *args: False)
+    monkeypatch.setattr(gate, 'load_paseo_agent', lambda *args: {})
+    monkeypatch.setattr(worker_sessions, 'session_state', lambda *args, **kwargs: {})
+    assert gate.check_worker_compaction_limit('worker', paseo_agents_dir=tmp_path / 'agents') is None

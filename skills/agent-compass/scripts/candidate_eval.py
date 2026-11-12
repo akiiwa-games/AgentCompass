@@ -151,6 +151,8 @@ def evaluate_bundle(bundle, task, ctx):
 
     execution_account = accounts_override.preference_account(bundle, bundle['account'], accounts)
     cwd_spec = accounts['accounts'].get(execution_account) or spec
+    if spec.get('_legacy_disabled_flag') or cwd_spec.get('_legacy_disabled_flag'):
+        exclude('legacy disabled flag remains; toggle the account in the tray or rerun agentcompass setup')
     if not account_fleet.account_cwd_allowed(cwd_spec, task.get('cwd')):
         exclude(f"outside account cwd restriction ({cwd_spec['cwd_regex']})")
 

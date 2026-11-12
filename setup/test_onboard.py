@@ -464,12 +464,10 @@ class OverrideTests(HomeCase):
         self.assertIs(document["accounts"]["opencode"]["verified"], True)
         self.assertNotIn("claude", document["accounts"])
 
-    def test_legacy_false_is_reported_not_migrated(self):
-        path = self.write(".agent-compass/accounts-override.json", {"schema_version": 2, "accounts": {"opencode": {"verified": False}}})
-        before = path.read_bytes()
-        with self.assertRaisesRegex(ValueError, "remove accounts.opencode.verified"):
-            onboard.write_override(self.home, self.detection(), set())
-        self.assertEqual(path.read_bytes(), before)
+    def test_setup_cleans_legacy_flags_even_for_absent_accounts(self):
+        path = self.write(".agent-compass/accounts-override.json", {"schema_version": 2, "accounts": {"absent": {"verified": False, "cwd_regex": "work"}}})
+        onboard.write_override(self.home, self.detection(), set())
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["accounts"]["absent"], {"cwd_regex": "work"})
 
     def test_dry_run_writes_nothing(self):
         onboard.write_override(self.home, self.detection(), {"opencode"}, dry_run=True)
@@ -570,6 +568,15 @@ class SetupFlowTests(HomeCase):
         self.assertIn("opencode     installed, sign-in unverified", output)
         document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
         self.assertIs(document["accounts"]["opencode"]["verified"], True)
+
+    def test_setup_disable_then_accept_restores_host_policy(self):
+        self.cli = {"claude": "claude", "opencode": "opencode"}
+        self.write(".claude/.credentials.json", CLAUDE_CREDENTIALS)
+        self.run_setup("--disable", "opencode", "--no-docs", "--no-skills")
+        path = self.home / ".agent-compass/host-policy.json"
+        self.assertNotIn("opencode", json.loads(path.read_text(encoding="utf-8"))["allowed_accounts"])
+        self.run_setup("--no-docs", "--no-skills")
+        self.assertIn("opencode", json.loads(path.read_text(encoding="utf-8"))["allowed_accounts"])
 
     def test_no_signed_in_cli_says_so(self):
         _, output = self.run_setup("--no-docs", "--no-skills")

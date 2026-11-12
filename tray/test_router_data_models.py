@@ -76,6 +76,19 @@ def test_enabled_unverified_account_explains_exclusion(tmp_path, monkeypatch):
     assert 'CLI' in row['badge'] and 'setup' in row['badge']
 
 
+def test_legacy_flag_is_visible_and_checkbox_clears_it(tmp_path, monkeypatch):
+    target = settings(tmp_path, monkeypatch)
+    target.write_text(json.dumps({'schema_version': 2, 'accounts': {'codex': {'verified': False, 'cwd_regex': 'work'}}}), encoding='utf-8')
+    row = next(row for row in router_data.harness_model_rows() if row['account'] == 'codex' and row['harness'] == 'codex')
+    assert row['kind'] == 'warn' and '旧的关闭标记残留' in row['badge']
+    monkeypatch.setattr(router_data, 'host_policy_state', lambda: {'accounts': ['codex', 'other'], 'allowed': None, 'path': target.parent / 'host-policy.json', 'policy': None})
+    router_data.toggle_harness('codex', 'codex', False)
+    assert 'verified' not in json.loads(target.read_text(encoding='utf-8'))['accounts']['codex']
+    assert json.loads(target.read_text(encoding='utf-8'))['accounts']['codex']['cwd_regex'] == 'work'
+    policy = json.loads((target.parent / 'host-policy.json').read_text(encoding='utf-8'))
+    assert 'codex' not in policy['allowed_accounts']
+
+
 def test_unavailable_account_stays_visible_with_reason(tmp_path, monkeypatch):
     settings(tmp_path, monkeypatch)
     def discover(data):

@@ -306,6 +306,6 @@ def test_legacy_verified_false_names_account_and_recovery(tmp_path):
     path = tmp_path / 'accounts-override.json'
     path.write_text(json.dumps({'schema_version': 2, 'accounts': {'example': {'verified': False}}}), encoding='utf-8')
     issue = state_upgrade.check_accounts_override(path)
-    assert 'accounts.example.verified=false' in issue
-    assert 'remove accounts.example.verified' in issue
-    assert 'tray' in issue
+    assert 'legacy disabled flag remains for example' in issue
+    assert 'toggle example in the tray' in issue
+    assert 'agentcompass setup' in issue
