@@ -9,6 +9,11 @@ import router_data
 import panel_quota
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts'))
+import account_fleet
+import axis_scores
+import host_policy
+import quota_economy
+import quota_pools
 import provider_inventory as real_inventory
 
 
@@ -18,24 +23,30 @@ class GrokQuotaDisplayTests(unittest.TestCase):
         reset = (now + timedelta(days=2)).isoformat()
         for allowed in (['grok'], ['grok-bot'], ['grok', 'grok-bot'], []):
             with self.subTest(allowed=allowed):
-                allocator, router = Mock(), Mock()
+                fake, router = Mock(), Mock()
                 inventory = Mock(quota_sources=real_inventory.quota_sources)
                 # The fleet document declares the pool; nothing is pooled by name.
-                allocator.load_accounts.return_value = {'quota_sources': {'grok-bot': 'grok'}, 'accounts': {
+                fake.load_accounts.return_value = {'quota_sources': {'grok-bot': 'grok'}, 'accounts': {
                     name: {'windows': {'credits': {'hours': 168}}, 'bundles': {}}
                     for name in ('grok', 'grok-bot')}, '_discovery': {'accounts': {
                     name: {'status': 'ready', 'family': name} for name in ('grok', 'grok-bot')}}}
-                allocator.host_policy.load_policy.return_value = {'allowed_accounts': allowed}
-                allocator.host_policy.account_allowed.side_effect = lambda policy, name: policy is None or name in policy['allowed_accounts']
-                allocator.canonical_window_id.side_effect = lambda spec, wid: wid
-                allocator.capacity_usd.return_value = None
+                fake.host_policy.load_policy.return_value = {'allowed_accounts': allowed}
+                fake.host_policy.account_allowed.side_effect = lambda policy, name: policy is None or name in policy['allowed_accounts']
+                fake.canonical_window_id.side_effect = lambda spec, wid: wid
+                fake.capacity_usd.return_value = None
                 window = {'id': 'credits', 'remaining_pct_before_reset': 44,
                           'observed_remaining_pct': 44, 'resets_at': reset,
                           'seconds_until_reset': 172800, 'reset_time_passed': False}
                 router.usage_snapshot.return_value = {'accounts': {
                     'grok': {'status': 'fresh', 'windows': [window]},
                     'grok-bot': {'status': 'stale', 'windows': [{**window, 'remaining_pct_before_reset': 99}]}}}
-                with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+                with patch.object(router_data, 'modules', return_value=(fake, router)), \
+                     patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
+                     patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
+                     patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
+                     patch.object(quota_pools, 'canonical_window_id', fake.canonical_window_id), \
+                     patch.object(quota_economy, 'capacity_usd', fake.capacity_usd), \
+                     patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay), \
                      patch.dict(sys.modules, {'provider_inventory': inventory}), \
                      patch.object(router_data, '_read_json', return_value={}), \
                      patch.object(router_data, 'pool_reservations', return_value={}), \

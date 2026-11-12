@@ -450,11 +450,12 @@ class ModelsTab:
 
     def fill_priority_buttons(self, frame, style, padx, prefix=""):
         """One-click reset-priority buttons for the targets the router derives from this fleet."""
+        import account_fleet
         import router_priority
 
         def work():
-            allocator, _ = router_priority.modules()
-            return router_priority.targets(allocator, allocator.load_accounts())
+            router_priority.modules()
+            return router_priority.targets(account_fleet.load_accounts())
 
         def done(targets):
             for target in targets or ():
@@ -464,12 +465,13 @@ class ModelsTab:
         self.run(work, done)
 
     def enable_priority(self, account, model):
+        import account_fleet
         import router_priority
 
         def work():
-            allocator, _ = router_priority.modules()
-            accounts = allocator.load_accounts()
-            target = next((t for t in router_priority.targets(allocator, accounts)
+            router_priority.modules()
+            accounts = account_fleet.load_accounts()
+            target = next((t for t in router_priority.targets(accounts)
                            if t["account"] == account and t["model"] == model), None)
             if target is None:
                 return _tr("该模型当前不可设为优先")

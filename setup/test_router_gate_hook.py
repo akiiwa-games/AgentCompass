@@ -727,7 +727,7 @@ class RouterGateHookTests(unittest.TestCase):
             ('conflicting parents', 'parent', {**owner, 'paseo.parent-agent-id': 'peer'}, {'lastStatus': 'running'}, True),
             ('self', wid, {'router.parent_id': wid}, {'lastStatus': 'running'}, True),
         )
-        allocator = gate.router_module('allocator')
+        worker_sessions = gate.router_module('worker_sessions')
         for settings, tokens, cause in (
                 ({'allowed': []}, 0, 'host-policy.json'),
                 ({'accounts': {'claude-lab': {'verified': False}}}, 0, 'verified: false'),
@@ -739,7 +739,7 @@ class RouterGateHookTests(unittest.TestCase):
                 self.exhausted_cache()
             else:
                 (self.state / 'usage.json').unlink(missing_ok=True)
-            with mock.patch.object(allocator, 'session_state', return_value={'context_tokens': tokens}):
+            with mock.patch.object(worker_sessions, 'session_state', return_value={'context_tokens': tokens}):
                 for label, caller, labels, status, blocked in cases:
                     doc = {'provider': 'claude-lab/claude-sonnet-5-5',
                            'labels': {**labels, 'router.account': 'claude-lab', 'router.bundle_id': 'lab_sonnet55_high'},
@@ -968,8 +968,8 @@ class RouterGateHookTests(unittest.TestCase):
         ]}})
         accounts, _ = gate.load_dispatch_settings()
         _, candidates = gate.resolve_target({"bundle_id": "agy_opus55_high"}, accounts)
-        allocator = gate.router_module("allocator")
-        capacity = allocator.five_axis_overlay(accounts)["accounts"]["antigravity"]["capacity_usd"]["3p-weekly"]
+        axis_scores = gate.router_module("axis_scores")
+        capacity = axis_scores.five_axis_overlay(accounts)["accounts"]["antigravity"]["capacity_usd"]["3p-weekly"]
         other_record = {
             "stage": "dispatch",
             "dispatch_id": "other-dispatch",
@@ -1578,7 +1578,8 @@ class RouterGateHookTests(unittest.TestCase):
 class BoundDispatchGateTests(unittest.TestCase):
     def setUp(self):
         dispatch_registry = gate.router_module('dispatch_registry')
-        allocator = gate.router_module('allocator')
+        account_fleet = gate.router_module('account_fleet')
+        host_policy = gate.router_module('host_policy')
         self.registry = dispatch_registry
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -1596,11 +1597,11 @@ class BoundDispatchGateTests(unittest.TestCase):
         })
         env.start()
         self.addCleanup(env.stop)
-        policy = mock.patch.object(allocator.host_policy, 'load_policy', return_value=None)
+        policy = mock.patch.object(host_policy, 'load_policy', return_value=None)
         policy.start()
         self.addCleanup(policy.stop)
-        accounts = allocator.load_accounts(allocator.reference_fleet_path())
-        bundle = dict(allocator.bundles(accounts)['argon_high'], bundle_id='argon_high')
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        bundle = dict(account_fleet.bundles(accounts)['argon_high'], bundle_id='argon_high')
         self.task = {'parent_agent_id': 'parent-fixture', 'task_id': 'task-fixture',
                      'work_kind': 'general_implementation', 'expected_hours': 0.5, 'needs': {'local_only': True},
                      'profile': {'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 1,

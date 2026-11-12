@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import account_fleet
+import allocator
+
 
 # The same bounded task as examples/task.json, so `plan --demo` needs no file from the repository. The profile is what the
 # classifier would answer, including the four category demands the router scores on.
@@ -30,20 +33,20 @@ NO_HOST_STATE_ENV = {'ROUTER_LAUNCH_FAILURES': 'off', 'ROUTER_PROVIDER_RETRY': '
                      'ROUTER_LIVE_MODELS': 'off', 'OPENCODE_DB_PATH': 'demo-no-opencode.db'}
 
 
-def reference_accounts(allocator):
+def reference_accounts():
     """Use an explicit offline fleet; never inspect this machine's saved account state."""
     with patch.dict(os.environ, NO_HOST_STATE_ENV):
-        return allocator.load_accounts(allocator.reference_fleet_path())
+        return account_fleet.load_accounts(account_fleet.reference_fleet_path())
 
 
-def plan(document, allocator):
+def plan(document):
     task = document.get('task')
     if not isinstance(task, dict) or not task:
         raise ValueError('Input requires task.')
     # Continuations refer to live sessions; a demo always starts a fresh simulated task.
     task = {k: v for k, v in task.items() if k not in ('chain', 'worker')}
     now = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)
-    accounts = reference_accounts(allocator)
+    accounts = reference_accounts()
     # Illustrative observations, not a claim about current subscriptions or model availability.
     snapshot = {'claude': (55, 112), 'codex': (83, 144), 'antigravity': (63, 89), 'dot': (100, 168)}
     accounts['accounts'] = {k: v for k, v in accounts['accounts'].items() if k in snapshot}

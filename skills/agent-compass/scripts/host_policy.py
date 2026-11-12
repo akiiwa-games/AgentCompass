@@ -132,8 +132,8 @@ def main():
     args = parser.parse_args()
     try:
         if args.enable_auto_discovery:
-            import allocator
-            print(json.dumps(sync_discovered(allocator.load_accounts(), enable=True), ensure_ascii=False))
+            import account_fleet
+            print(json.dumps(sync_discovered(account_fleet.load_accounts(), enable=True), ensure_ascii=False))
             return 0
         allowed = account_allowed(load_policy(), args.account)
     except HostPolicyError as error:

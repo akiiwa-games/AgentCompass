@@ -27,6 +27,7 @@ BROKEN = MODE == "broken"
 sys.path.insert(0, str(SCRIPTS))
 
 import allocator  # noqa: E402
+import account_fleet
 import provider_inventory  # noqa: E402
 
 STATE = Path(os.environ["ROUTER_STATE_DIR"])
@@ -86,7 +87,7 @@ def discover(root):
 
 
 def applied(snapshot):
-    return provider_inventory.apply(allocator.load_accounts(allocator.reference_fleet_path()), snapshot)
+    return provider_inventory.apply(account_fleet.load_accounts(account_fleet.reference_fleet_path()), snapshot)
 
 
 def omp_rows(snapshot):
@@ -100,7 +101,7 @@ def safe(row):
 # 1. A login on the native Codex account shares that account's quota as a subscription; no metered `omp` side.
 shared = home("shared", codex_account="shared-acct",
               rows=[login("other-acct" if BROKEN else "shared-acct")],
-              models={"openai-codex:1": [b.get("launch_model") or b["model"] for b in (allocator.load_accounts(allocator.reference_fleet_path())
+              models={"openai-codex:1": [b.get("launch_model") or b["model"] for b in (account_fleet.load_accounts(account_fleet.reference_fleet_path())
                                                               ["accounts"].get("codex") or {}).get("bundles", {}).values()]})
 snap = discover(shared)
 row = snap["accounts"].get("omp-openai-codex")
@@ -110,12 +111,12 @@ check("an omp OAuth login signed in as the native Codex account is a subscriptio
 dumped = json.dumps(snap) if not BROKEN else json.dumps(snap) + SECRET   # broken: a dump carrying the raw credential
 check("discovery output carries no omp token or email", SECRET not in dumped and EMAIL not in dumped)
 accounts = applied(snap)
-bundles = allocator.bundles(accounts)
+bundles = account_fleet.bundles(accounts)
 omp = {bid: b for bid, b in bundles.items() if b.get("harness") == "omp"}
 check("omp's bundles sit on the Codex account with omp's `<provider>/<model>` launch ids and no twin",
       omp and all(b["account"] == "codex" and str(b.get("launch_model", "")).startswith("openai-codex/") for b in omp.values())
       and (lambda keys: len(keys) == len(set(keys)))(
-          [(allocator.bundle_harness(b, "codex", bid), allocator.canonical(b["model"], accounts), b.get("effort"))
+          [(account_fleet.bundle_harness(b, "codex", bid), account_fleet.canonical(b["model"], accounts), b.get("effort"))
            for bid, b in bundles.items() if b["account"] == "codex"]),
       sorted({b["account"] for b in omp.values()}))
 

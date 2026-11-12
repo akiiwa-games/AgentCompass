@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import account_fleet
 import model_catalog
 import router_data
 from test_router_data_models import settings
@@ -72,7 +73,7 @@ def test_probe_registry_dispatch_defaults_and_explicit_static_override():
 def test_union_marks_unrouted_and_missing_but_a_failed_probe_falls_back(tmp_path, monkeypatch):
     settings(tmp_path, monkeypatch)
     rows = router_data.harness_model_rows()
-    accounts = router_data.modules()[0].load_accounts()
+    accounts = account_fleet.load_accounts()
     catalog = {'providers': {'codex': {'ok': True, 'models': [{'id': 'new-model-high', 'label': 'New Model (High)'}]}}}
     decorated = router_data.decorate_model_rows(copy.deepcopy(rows), accounts, catalog)
     codex = next(row for row in decorated if row['harness'] == 'codex')
@@ -89,7 +90,7 @@ def test_union_marks_unrouted_and_missing_but_a_failed_probe_falls_back(tmp_path
 def test_efforts_collapse_and_new_configured_bundles_become_selectable(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
     rows = router_data.harness_model_rows()
-    accounts = router_data.modules()[0].load_accounts()
+    accounts = account_fleet.load_accounts()
     catalog = {'providers': {'codex': {'ok': True, 'models': [{'id': 'gpt-6.1-sol-high'}, {'id': 'gpt-6.1-sol-medium'}]}}}
     codex = next(row for row in router_data.decorate_model_rows(copy.deepcopy(rows), accounts, catalog) if row['harness'] == 'codex')
     assert len([model for model in codex['models'] if model['model'] == 'gpt-6.1-sol']) == 1
@@ -117,14 +118,14 @@ def test_bulk_selection_changes_all_efforts_once_and_skips_unrouted(tmp_path, mo
     (target.parent / 'model-catalog.json').write_text(json.dumps({'providers': {
         'codex': {'ok': True, 'models': [{'id': 'new-model', 'label': 'New Model'}]}}}))
     router_data.set_harness_models('codex', 'codex', 'clear')
-    live = router_data.modules()[0].load_accounts()['accounts']['codex']['bundles']
+    live = account_fleet.load_accounts()['accounts']['codex']['bundles']
     assert live['sol_high']['disabled'] and live['sol_medium']['disabled']
     assert not live['pi_sol_high'].get('disabled')
     router_data.set_harness_models('codex', 'codex', 'invert')
-    live = router_data.modules()[0].load_accounts()['accounts']['codex']['bundles']
+    live = account_fleet.load_accounts()['accounts']['codex']['bundles']
     assert live['sol_high']['disabled'] is False and live['experimental']['disabled'] is False
     router_data.set_harness_models('codex', 'codex', 'all')
-    assert router_data.modules()[0].load_accounts()['accounts']['codex']['bundles']['sol_medium']['disabled'] is False
+    assert account_fleet.load_accounts()['accounts']['codex']['bundles']['sol_medium']['disabled'] is False
     assert 'new-model' not in json.loads(target.read_text())['accounts']['codex']['bundles']
 
 

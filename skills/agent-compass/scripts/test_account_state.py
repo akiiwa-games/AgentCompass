@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import account_state
 import allocator
+import account_fleet
+import axis_scores
 import antigravity_plan
 import plan_state_residue
 import provider_inventory as inventory
@@ -95,14 +97,14 @@ class Machine(unittest.TestCase):
 
     def spec(self, account='codex'):
         """The account as the router prices it: capacity comes from the community data by plan."""
-        return allocator.five_axis_overlay(allocator.load_accounts(), allocator.load_five_axis())['accounts'][account]
+        return axis_scores.five_axis_overlay(account_fleet.load_accounts(), axis_scores.load_five_axis())['accounts'][account]
 
     @staticmethod
     def community(family, plan, window):
-        return allocator.load_five_axis()['capacity'][family][plan][window]['capacity_usd']
+        return axis_scores.load_five_axis()['capacity'][family][plan][window]['capacity_usd']
 
     def route(self, account='codex'):
-        accounts = allocator.load_accounts()
+        accounts = account_fleet.load_accounts()
         usage = route_judge.usage_snapshot(accounts=list(accounts['accounts']), inventory=accounts.get('_discovery'))
         result = allocator.plan(TASK, usage, accounts=accounts, overrides=[], records=[])
         rows = [c for c in result['ranking'] if (c.get('bundle') or {}).get('account') == account]
@@ -435,7 +437,7 @@ class StateTests(Machine):
             agy_row = inventory.discover(now=self.now)['accounts']['antigravity']
             self.assertEqual((agy_row['status'], agy_row['usage_excluded']), (account_state.USAGE_FAILING, True))
             self.assertIn('usage-cache', agy_row['sources'])
-            agy_spec = allocator.load_accounts()['accounts']['antigravity']
+            agy_spec = account_fleet.load_accounts()['accounts']['antigravity']
             self.assertFalse(agy_spec['verified'])
             self.assertTrue(all(b.get('discovery_unavailable') for b in agy_spec['bundles'].values()))
 
@@ -455,7 +457,7 @@ class StateTests(Machine):
         for slot in ('codex', 'codex-2', 'pi'):
             self.assertEqual(rows[slot]['quota_account'], 'codex')
             self.assertEqual(rows[slot]['status'], account_state.PLAN_INACTIVE)
-        specs = allocator.load_accounts()['accounts']
+        specs = account_fleet.load_accounts()['accounts']
         self.assertFalse(specs['codex']['verified'])
         self.assertFalse(specs['codex-2']['verified'])
 
@@ -492,7 +494,7 @@ class StateTests(Machine):
             self.assertEqual(inv['accounts']['pi']['status'], account_state.READY)
             for slot in ('codex', 'codex-2', 'pi'):
                 self.assertEqual(inv['accounts'][slot]['quota_account'], 'codex-2')
-            accounts = inventory.apply(allocator.load_accounts(), inv)['accounts']
+            accounts = inventory.apply(account_fleet.load_accounts(), inv)['accounts']
             self.assertFalse(accounts['codex']['verified'])
             self.assertTrue(accounts['codex-2']['verified'])
             c2_bundles = accounts['codex-2']['bundles']
@@ -590,7 +592,7 @@ class StateTests(Machine):
         self.assertEqual((spec_fail['billing'], spec_fail['verified']), ('subscription', False))
 
     def test_tier_multipliers_match_before_pool_suffix(self):
-        base = allocator.load_accounts()
+        base = account_fleet.load_accounts()
         for family, label, expected_plan in (
             ('antigravity', 'Ultra x5', 'ultra5'), ('antigravity', 'ultra ×5', 'ultra5'),
             ('antigravity', 'Google AI Ultra x5', 'ultra5'), ('claude', 'Max x20', 'max20'),
@@ -855,12 +857,12 @@ class TemplateTests(Machine):
         self.assertEqual((row['status'], row['reason']), (account_state.PLAN_INACTIVE, 'plan Free'))
 
     def test_an_unknown_antigravity_tier_is_not_ultra(self):
-        accounts = allocator.load_accounts()
+        accounts = account_fleet.load_accounts()
         snapshot = {'accounts': {'antigravity': {'family': 'antigravity', 'provider': 'antigravity-resilient', 'status': 'ready',
                                                  'plan': 'Gemini Code Assist Standard', 'billing': 'subscription',
                                                  'sources': ['native', 'usage-cache']}},
                     'launchers': {'antigravity-resilient': {'family': 'antigravity-resilient', 'status': 'ready'}}}
-        spec = allocator.five_axis_overlay(inventory.apply(accounts, snapshot), allocator.load_five_axis())['accounts']['antigravity']
+        spec = axis_scores.five_axis_overlay(inventory.apply(accounts, snapshot), axis_scores.load_five_axis())['accounts']['antigravity']
         self.assertEqual((spec['capacity_usd'], spec['plan_priced_as']), ({}, 'pro'))
 
     def test_the_plus_five_hour_window_is_a_feasibility_limit(self):

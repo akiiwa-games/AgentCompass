@@ -52,11 +52,12 @@ class LedgerReplayTests(unittest.TestCase):
         [self.row] = [r for r in self.router.read_ledger() if r.get('stage') == 'plan']
 
     def test_replay_returns_the_stored_ranking_even_after_config_and_quota_change(self):
-        accounts = self.allocator.load_accounts()
+        import account_fleet
+        accounts = account_fleet.load_accounts()
         accounts['scoring']['safety_margin_pct'] = 50
         with patch.object(router_data, 'plan_task', side_effect=AssertionError('replay must not re-plan')), \
                 patch.object(self.allocator, 'plan', side_effect=AssertionError('replay must not re-plan')), \
-                patch.object(self.allocator, 'load_accounts', return_value=accounts):
+                patch.object(account_fleet, 'load_accounts', return_value=accounts):
             replayed = router_data.replay(copy.deepcopy(self.row))
         self.assertEqual(replayed['theatre_source'], 'snapshot')
         self.assertEqual(replayed['choice'], self.live['choice'])

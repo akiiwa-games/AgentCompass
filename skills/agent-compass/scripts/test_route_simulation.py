@@ -71,7 +71,7 @@ class UsageAwareSimulationTests(unittest.TestCase):
 
 
     def test_a_pooled_window_keeps_its_account_count_through_the_ledger(self):
-        import allocator
+        import quota_pools
         import route_judge
         at = NOW - timedelta(days=2)
         reading = {'id': 'seven_day', 'used_pct': 40.0, 'resets_at': (at + timedelta(days=3)).isoformat(), 'accounts': 3}
@@ -82,9 +82,9 @@ class UsageAwareSimulationTests(unittest.TestCase):
         old['claude']['windows'][0].pop('accounts')
         for compact, pools in ((digest, None), (old, {'claude': {'seven_day': 3}})):
             usage = sim.snapshot(sim.ledger_document(compact, pools), self.accounts, at)
-            self.assertEqual(allocator.pool_size(window(usage, 'claude', 'seven_day')), 3)
+            self.assertEqual(quota_pools.pool_size(window(usage, 'claude', 'seven_day')), 3)
         usage = sim.snapshot(sim.ledger_document(old), self.accounts, at)    # old record, no live pool: one account
-        self.assertEqual(allocator.pool_size(window(usage, 'claude', 'seven_day')), 1)
+        self.assertEqual(quota_pools.pool_size(window(usage, 'claude', 'seven_day')), 1)
 
     def test_a_ledger_row_whose_profile_is_not_valid_now_is_marked_unreplayable(self):
         import json

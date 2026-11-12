@@ -14,6 +14,8 @@ from unittest.mock import patch
 
 import provider_inventory
 import allocator
+import account_fleet
+import quota_pools
 import dispatch_registry
 import route_judge
 import roll
@@ -161,7 +163,7 @@ class GrokBotTests(unittest.TestCase):
         snapshot = {'accounts': {'grok-bot': {'family': 'grok-bot', 'status': 'ready'},
                                  'grok': {'family': 'grok', 'status': 'ready', 'usage_windows': ['credits']}},
                     'launchers': {'grok-bot': {'family': 'grok-bot', 'status': 'ready'}}}
-        accounts = provider_inventory.apply(allocator.load_accounts(allocator.reference_fleet_path()), snapshot)
+        accounts = provider_inventory.apply(account_fleet.load_accounts(account_fleet.reference_fleet_path()), snapshot)
         self.assertEqual(set(accounts['accounts']['grok-bot']['windows']), {'credits'})
         cache = self.root / 'shared-usage.json'
         reset = (now + timedelta(days=2)).isoformat()
@@ -199,7 +201,7 @@ class GrokBotTests(unittest.TestCase):
         snapshot = {'accounts': {
             'grok': {'family': 'grok', 'status': 'ready', 'usage_windows': ['credits']},
             'grok-bot': {'family': 'grok-bot', 'status': 'ready'}}, 'launchers': {}}
-        accounts = provider_inventory.apply(allocator.load_accounts(allocator.reference_fleet_path()), snapshot)
+        accounts = provider_inventory.apply(account_fleet.load_accounts(account_fleet.reference_fleet_path()), snapshot)
         source = accounts['accounts']['grok']
         source['observed'] = {'credits': {'pct_per_hour_24h': 2.0}}
         source['capacity_usd'] = {'credits': 200}
@@ -212,11 +214,11 @@ class GrokBotTests(unittest.TestCase):
                     'bundle': {'account': name, 'model': 'grok-bot' if name == 'grok-bot' else 'grok-4.7'},
                     'expected_usd': 10} for name in ('grok', 'grok-bot', 'codex')]
         for account in ('grok', 'grok-bot'):
-            reserved = allocator.inflight_reserved_usd(account, accounts['accounts'][account],
+            reserved = quota_pools.inflight_reserved_usd(account, accounts['accounts'][account],
                 'credits', {}, {}, 200, records + records, accounts, accounts['scoring'], now)
             self.assertEqual(reserved, 20)  # Shared reservations counted once, other pools excluded.
         # Canonical execution identities stay independent (including an explicit Grok disable).
-        self.assertEqual(allocator.bundles(accounts)['grok_bot']['account'], 'grok-bot')
+        self.assertEqual(account_fleet.bundles(accounts)['grok_bot']['account'], 'grok-bot')
         source['bundles']['grok47_high']['disabled'] = True
         self.assertFalse(bot['bundles']['grok_bot'].get('disabled', False))
 
@@ -387,8 +389,8 @@ class GrokBotTests(unittest.TestCase):
         self.assertEqual((row['status'], row['billing'], row['execution'], row['dispatch']),
                          ('ready', 'unknown', 'remote', 'automatic'))
         self.assertIn('grok', snapshot['accounts'])
-        applied = provider_inventory.apply(allocator.load_accounts(allocator.reference_fleet_path()), snapshot)
-        bundle = allocator.bundles(applied)['grok_bot']
+        applied = provider_inventory.apply(account_fleet.load_accounts(account_fleet.reference_fleet_path()), snapshot)
+        bundle = account_fleet.bundles(applied)['grok_bot']
         self.assertEqual((bundle['provider'], bundle['account'], bundle['model'], bundle['effort']),
                          ('grok-bot', 'grok-bot', 'grok-bot', None))
         task = {'objective': 'Rewrite this supplied paragraph as concise prose.', 'work_kind': 'text_in_text_out',
@@ -479,7 +481,7 @@ class GrokBotTests(unittest.TestCase):
                    ROUTER_CAPACITY=str(self.root / 'capacity.json'),
                    DOT2API_BASE_URL='http://127.0.0.1:1',
                    # The fixture fleet declares the Grok pool; discovery reads Grok's meter from this cache.
-                   ROUTER_ACCOUNTS_FILE=str(allocator.reference_fleet_path()), ROUTER_USAGE_CACHE=str(usage),
+                   ROUTER_ACCOUNTS_FILE=str(account_fleet.reference_fleet_path()), ROUTER_USAGE_CACHE=str(usage),
                    HOME=str(self.root), ROUTER_DISABLE_LIVE_SCORER='1', PASEO_AGENT_ID='fixture-parent')
         script = '''
 import json, sys

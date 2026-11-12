@@ -1,11 +1,11 @@
 """Effective catalogue and account-policy contracts; synthetic inputs only."""
 from copy import deepcopy
 from datetime import datetime, timezone
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import allocator
+import account_fleet
+import task_intake
 import capability_catalog
 import route_judge
 
@@ -25,7 +25,7 @@ class CatalogueTests(unittest.TestCase):
 
     def test_the_route_policy_is_the_accounts_policy(self):
         before = deepcopy(self.accounts)
-        policy = allocator.load_capabilities(accounts=self.accounts)
+        policy = account_fleet.load_capabilities(accounts=self.accounts)
         self.assertEqual(policy['routes'], self.accounts['capability_policy']['routes'])
         policy['routes']['custom-route']['implies'] = {}
         self.assertEqual(self.accounts, before)
@@ -54,9 +54,9 @@ class CatalogueTests(unittest.TestCase):
 
     def test_dot_takes_every_route_unless_the_work_is_local_or_visual(self):
         policy = {'routes': {'custom-route': {}}}
-        self.assertTrue(allocator.dot_may_take('custom-route', {}, policy))
-        self.assertFalse(allocator.dot_may_take('custom-route', {'local_only': True}, policy))
-        self.assertFalse(allocator.dot_may_take('custom-route', {'visual': True}, policy))
+        self.assertTrue(task_intake.dot_may_take('custom-route', {}, policy))
+        self.assertFalse(task_intake.dot_may_take('custom-route', {'local_only': True}, policy))
+        self.assertFalse(task_intake.dot_may_take('custom-route', {'visual': True}, policy))
 
     def test_dispatch_cadence_uses_configured_account_and_threshold(self):
         now = datetime(2026, 10, 29, tzinfo=timezone.utc)
@@ -70,12 +70,11 @@ class CatalogueTests(unittest.TestCase):
         self.assertIsNone(route_judge.account_cadence_alert(records, now, 'workspace-account', spec))
 
     def test_remote_adapter_names_do_not_suppress_capacity_alerts(self):
-        fake_allocator = SimpleNamespace(load_accounts=lambda: {'accounts': {}})
         for provider in ('dot', 'chatgpt-web', 'custom-remote'):
             with self.subTest(provider=provider), \
                     patch.object(route_judge, 'LEDGER_WRITES', False), \
                     patch.object(route_judge, 'append_ledger'), \
-                    patch.object(route_judge, 'load_allocator', return_value=fake_allocator), \
+                    patch.object(account_fleet, 'load_accounts', return_value={'accounts': {}}), \
                     patch.object(route_judge, 'capacity_alerts', return_value=[{'code': 'capacity-proof'}]) as alerts:
                 result = {'stage': 'plan', 'selected_bundle': {
                     'provider': provider, 'account': 'workspace-account', 'expected_usd': 0}}

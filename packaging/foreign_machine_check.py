@@ -776,6 +776,7 @@ sys.path.insert(0, {str(scripts_dir)!r})
 sys.path.insert(0, {str(setup_dir)!r})
 sys.path.insert(0, {str(tray_dir)!r})
 
+import account_fleet
 import allocator
 import provider_inventory
 import route_judge
@@ -830,7 +831,7 @@ write_cache({{
         ],
     }}
 }})
-accounts = allocator.load_accounts()
+accounts = account_fleet.load_accounts()
 agy_gemini_reason = gate.check_account_quota_exhausted(
     "antigravity", usage_cache_path=cache_path, now=now, accounts=accounts, model="gemini-4-argon-high"
 )
@@ -873,7 +874,7 @@ write_cache({{
         ],
     }},
 }})
-accounts = allocator.load_accounts()
+accounts = account_fleet.load_accounts()
 floor_blocks_100 = {{
     acc: gate.check_account_quota_exhausted(acc, usage_cache_path=cache_path, now=now, accounts=accounts)
     for acc in ("claude", "codex", "claude-2")
@@ -971,7 +972,7 @@ write_cache({{
         ],
     }},
 }})
-accounts = allocator.load_accounts()
+accounts = account_fleet.load_accounts()
 pool2_reason = gate.check_account_quota_exhausted("claude", usage_cache_path=cache_path, now=now, accounts=accounts)
 pool1_reason = gate.check_account_quota_exhausted("claude-2", usage_cache_path=cache_path, now=now, accounts=accounts)
 
@@ -986,7 +987,7 @@ write_cache({{
         ],
     }},
 }})
-accounts_scoped = allocator.load_accounts()
+accounts_scoped = account_fleet.load_accounts()
 accounts_scoped.setdefault("accounts", {{}}).setdefault("claude", {{}}).setdefault("windows", {{}})["weekly_sonnet"] = {{
     "hours": 168,
     "models": ["sonnet"],
@@ -1084,8 +1085,8 @@ superseded_group = next((m for m in claude_hm.get("models", []) if m.get("model"
 latest_group = next((m for m in claude_hm.get("models", []) if m.get("model") == "claude-sonnet-5-5"), None)
 discovered_group = next((m for m in claude_hm.get("models", []) if m.get("model") == "claude-opus-6-0"), None)
 
-# Check agreement between tray harness_model_rows and allocator.bundles(allocator.load_accounts()) before toggle
-alloc_bundles_initial = allocator.bundles(allocator.load_accounts())
+# Check agreement between tray harness_model_rows and account_fleet.bundles(account_fleet.load_accounts()) before toggle
+alloc_bundles_initial = account_fleet.bundles(account_fleet.load_accounts())
 superseded_bid = "auto:claude:claude:claude-sonnet-4-6@high"
 discovered_bid = "auto:claude:claude:claude-opus-6-0@high"
 initial_alloc_superseded_disabled = (alloc_bundles_initial.get(superseded_bid) or {{}}).get("disabled")
@@ -1094,14 +1095,14 @@ initial_alloc_discovered_disabled = (alloc_bundles_initial.get(discovered_bid) o
 # User checkbox overrides both ways: check the superseded model ON, uncheck the new unknown model OFF
 superseded_toggled_on = router_data.toggle_harness_model("claude", "claude", "claude-sonnet-4-6", True)
 toggled_off = router_data.toggle_harness_model("claude", "claude", "claude-opus-6-0", False)
-alloc_bundles_after = allocator.bundles(allocator.load_accounts())
+alloc_bundles_after = account_fleet.bundles(account_fleet.load_accounts())
 after_alloc_superseded_disabled = (alloc_bundles_after.get(superseded_bid) or {{}}).get("disabled")
 after_alloc_discovered_disabled = (alloc_bundles_after.get(discovered_bid) or {{}}).get("disabled")
 toggled_on = router_data.toggle_harness_model("claude", "claude", "claude-opus-6-0", True)
 
 # Metered last resort check: a checked metered bundle is excluded when subscription bundles are eligible,
 # and selected with metered_fallback=True when all subscription accounts are unavailable/exhausted.
-accounts_metered = allocator.load_accounts()
+accounts_metered = account_fleet.load_accounts()
 accounts_metered["accounts"]["litellm-test"] = {{
     "family": "codex",
     "billing": "metered",

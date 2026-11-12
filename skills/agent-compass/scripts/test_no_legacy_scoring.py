@@ -8,6 +8,9 @@ from pathlib import Path
 import unittest
 
 import allocator
+import account_fleet
+import axis_scores
+import task_intake
 import route_judge
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
@@ -78,18 +81,18 @@ class NoLegacyScoringTests(unittest.TestCase):
         # The scores the router reads carry the four categories, the economy's inputs and the tier only as provenance.
         scores = load(REFERENCES / 'five-axis-scores.json')
         for model, row in scores['models'].items():
-            self.assertEqual(set(row['axes']), set(allocator.FIVE_AXES), model)
+            self.assertEqual(set(row['axes']), set(axis_scores.FIVE_AXES), model)
             self.assertFalse({'capabilities', 'subjective', 'score'} & set(row), model)
 
         # The classifier: the answer's schema, the shipped calibration cases and a normalized task.
-        schema = route_judge.scorer_schema(allocator, allocator.load_capabilities())
+        schema = route_judge.scorer_schema(account_fleet.load_capabilities())
         self.assertFalse(LEGACY_PROFILE_FIELDS & set(schema['properties']), 'classifier schema')
         self.assertIn('axis_demand', schema['required'])
         for case in load(REFERENCES / 'classifier-cases.json')['calibration_cases']:
             self.assertFalse(LEGACY_PROFILE_FIELDS & set(case['expected_profile']), case['id'])
-            self.assertEqual(set(case['expected_profile']['axis_demand']), set(allocator.FIVE_AXES), case['id'])
-        self.assertFalse(LEGACY_PROFILE_FIELDS & set(allocator.TASK_PROFILE_SCHEMA['properties']))
-        accepted = set(allocator.TASK_PROFILE_SCHEMA['properties']) | {'work_kind', 'axis_demand', 'reason'}
+            self.assertEqual(set(case['expected_profile']['axis_demand']), set(axis_scores.FIVE_AXES), case['id'])
+        self.assertFalse(LEGACY_PROFILE_FIELDS & set(task_intake.TASK_PROFILE_SCHEMA['properties']))
+        accepted = set(task_intake.TASK_PROFILE_SCHEMA['properties']) | {'work_kind', 'axis_demand', 'reason'}
         self.assertFalse(LEGACY_PROFILE_FIELDS & accepted)
 
         # The router's own scoring policy has no switch, weights or gates of the older scoring.

@@ -56,10 +56,10 @@ def bare_tasks_get_a_profile(monkeypatch):
     """The router plans only a task with a classifier profile (its category demands). Most tests write a task with a few
     fields; this gives such a task the profile `router_test_support.profile_for` derives. A task whose own profile names no
     `axis_demand` gets the demand `router_test_support.demand_for` derives; a test of the missing-profile or missing-demand error calls
-    `allocator.normalize_task.__wrapped__` or `validate_profile` and is untouched."""
-    import allocator
+    `task_intake.normalize_task.__wrapped__` or `validate_profile` and is untouched."""
+    import task_intake
     import router_test_support
-    real = allocator.normalize_task
+    real = task_intake.normalize_task
 
     def normalize(raw, *args, **kwargs):
         task = dict(raw or {})
@@ -71,4 +71,4 @@ def bare_tasks_get_a_profile(monkeypatch):
                 given.get('reasoning_depth') or 2, given.get('interaction_style'), bool(given.get('needs_visual')))}
         return real(task, *args, **kwargs)
     normalize.__wrapped__ = real
-    monkeypatch.setattr(allocator, 'normalize_task', normalize)
+    monkeypatch.setattr(task_intake, 'normalize_task', normalize)

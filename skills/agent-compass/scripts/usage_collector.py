@@ -17,7 +17,8 @@ import time
 SCRIPTS = Path(__file__).resolve().parent
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
-import allocator
+import account_fleet
+import provider_inventory
 import host_policy
 import usage_cache
 import usage_core
@@ -39,12 +40,12 @@ def discovered_subscriptions() -> list[str]:
 
 
 def _declared_quota_sources() -> dict[str, str]:
-    sources = dict(allocator.configured_quota_sources())
-    override = allocator.accounts_override_path()
+    sources = dict(account_fleet.configured_quota_sources())
+    override = account_fleet.accounts_override_path()
     if override.is_file():
         try:
             doc = json.loads(override.read_text(encoding='utf-8-sig'))
-            sources.update(allocator.provider_inventory.quota_sources(doc))
+            sources.update(provider_inventory.quota_sources(doc))
         except (OSError, ValueError):
             pass
     return sources
@@ -58,9 +59,9 @@ def _permitted_meters(policy, sources: dict[str, str], candidates: list[str]) ->
 def resolve_targets(providers=None) -> list[str]:
     """Resolve permitted quota-meter provider IDs via load_accounts, quota_sources and host policy."""
     # Refresh opted-in admission before filtering newly discovered subscriptions.
-    accounts = allocator.load_accounts()
+    accounts = account_fleet.load_accounts()
     # A permitted account that draws on another's quota needs that meter even when the source's execution is disabled.
-    sources = allocator.provider_inventory.quota_sources(accounts)
+    sources = provider_inventory.quota_sources(accounts)
     permitted = _permitted_meters(host_policy.load_policy(), sources, discovered_subscriptions())
     if providers is None:
         return permitted

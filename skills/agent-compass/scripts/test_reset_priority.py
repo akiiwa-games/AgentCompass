@@ -4,6 +4,9 @@ from datetime import datetime, timedelta, timezone
 import unittest
 
 import allocator
+import account_fleet
+import quota_overrides
+import quota_pools
 from router_test_support import isolated_router_state, usage_windows
 
 
@@ -11,7 +14,7 @@ class ResetPriorityTests(unittest.TestCase):
     def setUp(self):
         isolated_router_state(self.addCleanup)
         self.now = datetime(2026, 10, 29, tzinfo=timezone.utc)
-        self.accounts = allocator.load_accounts()
+        self.accounts = account_fleet.load_accounts()
         self.task = {'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 0.5,
                      'needs': {'local_only': True}, 'disable_fast': True}
         self.usage = usage_windows(self.now, {
@@ -47,15 +50,15 @@ class ResetPriorityTests(unittest.TestCase):
         spec = copy.deepcopy(self.accounts['accounts']['codex'])
         spec.pop('observed', None)
         obs = self.usage['accounts']['codex']['windows'][0]
-        effective = allocator.window_state('usage', spec['windows']['usage'], obs, spec, self.now, 24,
+        effective = quota_pools.window_state('usage', spec['windows']['usage'], obs, spec, self.now, 24,
                                            expected_reset_at=self.now + timedelta(hours=2))
         self.assertEqual((effective['reset_hours'], effective['end_hours'], effective['remaining']), (2, 2, 90))
         for hours in (120,):
-            later = allocator.window_state('usage', spec['windows']['usage'], obs, spec, self.now, 24,
+            later = quota_pools.window_state('usage', spec['windows']['usage'], obs, spec, self.now, 24,
                                            expected_reset_at=self.now + timedelta(hours=hours))
             self.assertEqual(later['reset_hours'], 100)
         unknown = dict(obs, seconds_until_reset=None, resets_at=None)
-        fallback = allocator.window_state('usage', spec['windows']['usage'], unknown, spec, self.now, 24,
+        fallback = quota_pools.window_state('usage', spec['windows']['usage'], unknown, spec, self.now, 24,
                                           expected_reset_at=self.now + timedelta(hours=2))
         self.assertTrue(fallback['known'])
         self.assertEqual(fallback['reset_hours'], 2)
@@ -68,7 +71,7 @@ class ResetPriorityTests(unittest.TestCase):
                              'resets_at': (self.now + timedelta(hours=100)).isoformat()}})
         usage = copy.deepcopy(self.usage)
         usage['accounts']['codex'].update(status='fresh', fetched_at=(self.now-timedelta(minutes=1)).isoformat())
-        self.assertTrue(allocator.override_reset_landed(rule, usage, self.accounts, self.now))
+        self.assertTrue(quota_overrides.override_reset_landed(rule, usage, self.accounts, self.now))
         row = self.row(self.plan(usage, [rule]))
         self.assertNotIn('boost', row['components'])
         low = copy.deepcopy(self.usage)

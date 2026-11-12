@@ -215,17 +215,18 @@ def readiness_notice() -> str | None:
         import json
 
         import accounts_override
-        import allocator
+        import account_fleet
+        import provider_inventory
         import route_judge
 
-        accounts = json.loads(allocator.fleet_document_path().read_text(encoding="utf-8-sig"))
-        user_file = allocator.accounts_override_path()
+        accounts = json.loads(account_fleet.fleet_document_path().read_text(encoding="utf-8-sig"))
+        user_file = account_fleet.accounts_override_path()
         user_doc = None
         if user_file.is_file():
             loaded = json.loads(user_file.read_text(encoding="utf-8-sig"))
             if isinstance(loaded, dict):
                 user_doc = accounts_override.migrate(loaded, accounts)
-        allocator.provider_inventory.apply(accounts, allocator.provider_inventory.discover())
+        provider_inventory.apply(accounts, provider_inventory.discover())
         if user_doc is not None:
             accounts_override.apply(accounts, user_doc)
         gap = route_judge.readiness_gap(accounts, route_judge.usage_snapshot())

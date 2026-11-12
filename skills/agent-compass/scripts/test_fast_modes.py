@@ -7,6 +7,9 @@ from unittest.mock import Mock, patch
 from datetime import datetime, timezone
 
 import allocator
+import account_fleet
+import axis_scores
+import candidate_ranking
 import dispatch_registry as registry
 import fast_modes
 import roll
@@ -21,7 +24,7 @@ def setUpModule():
 class FastModesTests(unittest.TestCase):
     def test_effective_fast_policy_false_wins_but_missing_is_not_disabled(self):
         now = datetime.now(timezone.utc)
-        accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         usage = usage_windows(now, {'codex': [('five_hour', 95, 3), ('seven_day', 95, 100)],
                                     'claude': [('five_hour', 95, 3), ('seven_day', 95, 100)]})
         task = dict(work_kind='debug_review', difficulty='routine', expected_hours=0.01,
@@ -37,18 +40,18 @@ class FastModesTests(unittest.TestCase):
                         info['fast_capable'] = policy
                     for forced in (False, True):
                         ranking = allocator.plan(dict(task, force_fast=forced), usage, now, accounts=accounts)['ranking']
-                        plain = allocator.candidate_for_bundle(ranking, bid, False)
+                        plain = candidate_ranking.candidate_for_bundle(ranking, bid, False)
                         self.assertFalse(plain['bundle'].get('fast') if plain else False)
                         if forced:
                             # Only Claude Opus has cited fast-mode pricing and speed; Codex models have none, so forcing
                             # fast on them is a data error, never a guessed variant.
-                            fast = allocator.candidate_for_bundle(ranking, bid, True)
+                            fast = candidate_ranking.candidate_for_bundle(ranking, bid, True)
                             self.assertEqual(bool(fast and fast['bundle'].get('fast')), provider == 'claude' and policy is not False)
-                    bundle = dict(allocator.bundles(accounts)[bid], fast=True)
+                    bundle = dict(account_fleet.bundles(accounts)[bid], fast=True)
                     args = SimpleNamespace(basis='Diagnostic fixture', provider=provider, account=provider,
                         model=model, effort='high', input=None, usage_cache=None, accounts=None,
                         constraint='user_override', specialty=None, fast=True)
-                    with patch.object(allocator, 'load_accounts', return_value=accounts), \
+                    with patch.object(account_fleet, 'load_accounts', return_value=accounts), \
                             patch.object(route_judge, 'usage_snapshot', return_value=usage):
                         if policy is False:
                             with self.assertRaisesRegex(ValueError, 'fast_capable'):
@@ -111,26 +114,26 @@ class FastModesTests(unittest.TestCase):
 
     def test_claude_fast_is_its_own_candidate_priced_at_the_cited_multiples(self):
         now = datetime.now(timezone.utc)
-        accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         usage = usage_windows(now, {'claude': [('five_hour', 95, 3), ('seven_day', 95, 1)]})
         task = dict(work_kind='debug_review', difficulty='routine', expected_hours=0.01,
                     needs={'local_only': True, 'fast': True})
-        shipped = allocator.load_five_axis()['models']['claude-opus-5-5']['fast_mode']
+        shipped = axis_scores.load_five_axis()['models']['claude-opus-5-5']['fast_mode']
         def rows(t, load=accounts):
             return allocator.plan(t, usage, now, accounts=load)['ranking']
-        plain = allocator.candidate_for_bundle(rows(task), 'opus55_high', False)
+        plain = candidate_ranking.candidate_for_bundle(rows(task), 'opus55_high', False)
         self.assertFalse(plain['bundle'].get('fast'))
-        paid = allocator.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', True)
+        paid = candidate_ranking.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', True)
         self.assertEqual((paid['id'], paid['bundle']['fast']), ('opus55_high+fast', True))
         self.assertEqual(paid['base_id'], 'opus55_high')
         self.assertGreater(paid['expected_usd'], 0)
         self.assertTrue(any(f"{shipped['price_multiplier']:g}x burn" in n for n in paid['notes']))
-        self.assertIsNone(allocator.candidate_for_bundle(rows(dict(task, force_fast=True, disable_fast=True)), 'opus55_high', True))
+        self.assertIsNone(candidate_ranking.candidate_for_bundle(rows(dict(task, force_fast=True, disable_fast=True)), 'opus55_high', True))
         accounts['accounts']['claude']['bundles']['opus55_high']['disabled'] = True
-        self.assertTrue(allocator.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', False)['excluded'])
+        self.assertTrue(candidate_ranking.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', False)['excluded'])
         accounts['accounts']['claude']['bundles']['opus55_high']['disabled'] = False
         usage = usage_windows(now, {'claude': [('five_hour', 0, 3), ('seven_day', 0, 100)]})
-        self.assertTrue(allocator.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', False)['excluded'])
+        self.assertTrue(candidate_ranking.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', False)['excluded'])
 
 
 if __name__ == '__main__':

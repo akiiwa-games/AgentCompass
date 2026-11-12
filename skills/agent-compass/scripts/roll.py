@@ -233,8 +233,8 @@ def _bundle_matches_worker(bundle, worker, same_model=None):
 
 def model_comparison(fleet):
     """Do two names run the same model? A spelling does, a family guess at its target does not."""
-    import allocator
-    return lambda a, b: allocator.row_key(a, fleet) == allocator.row_key(b, fleet)
+    import account_fleet
+    return lambda a, b: account_fleet.row_key(a, fleet) == account_fleet.row_key(b, fleet)
 
 
 def summary(decision):
@@ -421,8 +421,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         raise ValueError('Cannot combine --resume and --new-worker.')
     excluded = set(getattr(args, '_exclude_agents', None) or ())
     all_reusable = [w for w in registry.reusable_workers(parent) if w.get('agent_id') not in excluded]
-    import allocator
-    same_model = model_comparison(allocator.load_accounts())
+    import account_fleet
+    same_model = model_comparison(account_fleet.load_accounts())
     if explicit_id:
         explicit_worker = next((w for w in all_reusable if w.get('agent_id') == explicit_id), None)
         if explicit_worker is None:
@@ -677,10 +677,10 @@ def provider_definition(provider, bundle=None):
             harness = str((bundle or {}).get('harness') or '').strip().lower()
             family = harness if harness in CLI_RUNS else ''
             if not family and (bundle or {}).get('model'):
-                import allocator as alloc_mod
-                accounts_doc = alloc_mod.load_accounts()
-                canon = alloc_mod.canonical((bundle or {}).get('model'), accounts_doc)
-                api_family = str(alloc_mod.model_spec(accounts_doc, canon).get('api_family') or '').strip().lower()
+                import account_fleet
+                accounts_doc = account_fleet.load_accounts()
+                canon = account_fleet.canonical((bundle or {}).get('model'), accounts_doc)
+                api_family = str(account_fleet.model_spec(accounts_doc, canon).get('api_family') or '').strip().lower()
                 if api_family in CLI_RUNS:
                     family = api_family
             if not family:
@@ -748,10 +748,10 @@ def cli(args, out, bundle, text, judge):
                     next=f'No Paseo daemon and no CLI here for {bundle["provider"]!r}' + native), 0
     if bundle.get('fast'):
         from fast_modes import validate
-        import allocator
-        accounts = allocator.load_accounts()
-        model = allocator.canonical(bundle['model'], accounts)
-        validate(family, model, allocator.model_spec(accounts, model))
+        import account_fleet
+        accounts = account_fleet.load_accounts()
+        model = account_fleet.canonical(bundle['model'], accounts)
+        validate(family, model, account_fleet.model_spec(accounts, model))
     executable, flags = CLI_RUNS[family]
     cwd = str(Path.cwd())
     env = {k: v for k, v in judge.subscription_env().items() if not k.startswith(HOST_SESSION_ENV)}

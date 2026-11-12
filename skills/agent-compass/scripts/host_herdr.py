@@ -68,11 +68,11 @@ def interactive(bundle, judge):
     if family not in expected or mode not in (None, expected[family]):
         raise ValueError(f'Herdr cannot reproduce {family!r} permission mode {mode!r}; reroute, do not substitute.')
     if bundle.get('fast'):
-        import allocator
+        import account_fleet
         from fast_modes import validate
-        accounts = allocator.load_accounts()
-        canonical = allocator.canonical(bundle['model'], accounts)
-        validate(family, canonical, allocator.model_spec(accounts, canonical))
+        accounts = account_fleet.load_accounts()
+        canonical = account_fleet.canonical(bundle['model'], accounts)
+        validate(family, canonical, account_fleet.model_spec(accounts, canonical))
     model, effort = bundle.get('launch_model') or bundle['model'], bundle.get('effort')
     command = roll.cli_command(family, bundle['provider'], judge)
     if family == 'claude':

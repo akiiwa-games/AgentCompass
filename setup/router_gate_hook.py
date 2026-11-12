@@ -649,16 +649,17 @@ def check_worker_compaction_limit(
     base = paseo_agents_dir or Path(os.environ.get("ROUTER_PASEO_AGENTS_DIR", DEFAULT_PASEO_AGENTS))
     home_dir = home or (base.parents[1] if base.name == "agents" and base.parent.name == ".paseo" else base.parent)
     try:
-        allocator = router_module("allocator")
-        policy = allocator.load_accounts().get("scoring") or {}
+        account_fleet = router_module("account_fleet")
+        worker_sessions = router_module("worker_sessions")
+        policy = account_fleet.load_accounts().get("scoring") or {}
         max_tokens = int(policy.get("rotate_after_carried_tokens", 2_000_000))
-        state = allocator.session_state(agent_id, home=home_dir)
+        state = worker_sessions.session_state(agent_id, home=home_dir)
     except Exception:
         return None
     compactions = state.get("compactions") or 0
     compacted_tok = state.get("compacted_tokens") or 0
     current_tok = state.get("context_tokens") or 0
-    carried = allocator.worker_historical_tokens(state)
+    carried = worker_sessions.worker_historical_tokens(state)
     if not (isinstance(carried, (int, float)) and carried >= max_tokens):
         return None
     return (
@@ -745,7 +746,7 @@ def check_target_disabled(
 def load_dispatch_settings() -> tuple[dict | None, dict | None]:
     """(accounts, host policy); unreadable configuration degrades to allow-all."""
     try:
-        accounts = router_module("allocator").load_accounts()
+        accounts = router_module("account_fleet").load_accounts()
     except Exception:
         accounts = None
     try:
@@ -760,7 +761,7 @@ def target_windows(candidates: list[dict], accounts: dict | None) -> list[str] |
     if not candidates or not accounts:
         return None
     try:
-        pools = router_module("allocator").bundle_pools
+        pools = router_module("quota_pools").bundle_pools
         return sorted({wid for bundle in candidates for wid in pools(dict(bundle, id=bundle["bundle_id"]), accounts)})
     except Exception:
         return None
@@ -808,7 +809,7 @@ def check_account_quota_exhausted(
 
     `bundles` are the target's resolved bundles; without them the launch is probed as `model` on `account`
     (an unknown model draws every window). Which windows bind and when they refuse come from
-    allocator.launch_blockers on route_judge.usage_snapshot, the same rules and reading routing uses:
+    quota_pools.launch_blockers on route_judge.usage_snapshot, the same rules and reading routing uses:
     the launch floor, a window used up inside its cycle, an empty short window, active in-flight
     reservations, and a scope from data only. `windows` are the quota windows the launch draws, for the
     confirmed-exhaustion latch (an account-wide latch blocks every launch). When the router modules cannot
@@ -831,10 +832,12 @@ def check_account_quota_exhausted(
             f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
         )
     try:
-        allocator = router_module("allocator")
+        account_fleet = router_module("account_fleet")
+        axis_scores = router_module("axis_scores")
+        quota_pools = router_module("quota_pools")
         judge = router_module("route_judge")
         inventory = router_module("provider_inventory")
-        accounts = accounts if accounts is not None else allocator.load_accounts()
+        accounts = accounts if accounts is not None else account_fleet.load_accounts()
         usage = judge.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get("_discovery") or {})
         usage = inventory.merge_usage(usage, accounts, now, names={account})
         if records is None:
@@ -852,9 +855,9 @@ def check_account_quota_exhausted(
             ]
         probes = [dict(b, id=b.get("bundle_id") or b.get("id")) for b in bundles or ()] or [
             {"account": account, "model": model or ""}]
-        priced = allocator.five_axis_overlay(accounts)      # once for every probe
+        priced = axis_scores.five_axis_overlay(accounts)      # once for every probe
         found = [(probe, refusal) for probe in probes
-                 for refusal in allocator.launch_blockers(probe, priced, usage, now, records=records)]
+                 for refusal in quota_pools.launch_blockers(probe, priced, usage, now, records=records)]
     except Exception:
         return None
     if not found:

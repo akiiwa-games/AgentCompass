@@ -22,6 +22,8 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(1, str(TRAY))
 
 import allocator  # noqa: E402
+import account_fleet
+import candidate_eval
 import provider_inventory  # noqa: E402
 import route_judge  # noqa: E402
 
@@ -92,14 +94,14 @@ if BROKEN:
 (STATE / "model-catalog.json").write_text(json.dumps({"schema_version": 1, "providers": {"claude": {
     "ok": True, "type": "cli", "checked_at": NOW.isoformat(),
     "models": [{"id": OLDER, "label": "older generation"}, {"id": NEWER, "label": "newest generation"}]}}}), encoding="utf-8")
-first_scan = allocator.bundles(allocator.load_accounts())
+first_scan = account_fleet.bundles(account_fleet.load_accounts())
 older = {b: s.get("disabled") for b, s in first_scan.items() if s.get("auto") and s.get("model") == OLDER}
 newer = {b: s.get("disabled") for b, s in first_scan.items() if s.get("auto") and s.get("model") == NEWER}
 check("first scan: a model public data lists as superseded is discovered unchecked, its successor checked",
       older and all(older.values()) and newer and not any(newer.values()), {"older": older, "newer": newer})
 shipped_document()
 
-accounts = allocator.load_accounts()
+accounts = account_fleet.load_accounts()
 for name, plan_name in (("claude", "max5"), ("codex", "pro")):   # the plans' community capacities are public data
     accounts["accounts"][name].update(verified=True, plan=plan_name)
 billing = "subscription" if BROKEN else None
@@ -122,7 +124,7 @@ for name, spec in without["accounts"].items():
 fallback = plan(routine, ample, without)
 check("metered and never-billed accounts are a last resort: excluded while a subscription can take the work, "
       "metered chosen only when none can, never-billed never automatically",
-      allocator.METERED_LAST_RESORT in (row(with_subscription, "metered_proxy_high").get("excluded") or [])
+      candidate_eval.METERED_LAST_RESORT in (row(with_subscription, "metered_proxy_high").get("excluded") or [])
       and any("explicit selection only" in e for e in row(with_subscription, "unbilled_proxy_high").get("excluded") or [])
       and fallback.get("choice") == "metered_proxy_high",
       {"metered": row(with_subscription, "metered_proxy_high").get("excluded"),

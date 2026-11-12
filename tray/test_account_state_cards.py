@@ -8,19 +8,28 @@ import router_data
 import panel_quota
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts'))
+import account_fleet
+import axis_scores
+import host_policy
+import quota_economy
+import quota_pools
 import provider_inventory as real_inventory
 
 
 class AccountStateCardTests(unittest.TestCase):
     def card(self, row):
-        allocator, router = Mock(), Mock()
+        fake, router = Mock(), Mock()
         inventory = Mock(quota_sources=real_inventory.quota_sources)
-        allocator.load_accounts.return_value = {'accounts': {'codex': {'windows': {}, 'bundles': {}}},
+        fake.load_accounts.return_value = {'accounts': {'codex': {'windows': {}, 'bundles': {}}},
                                                 '_discovery': {'accounts': {'codex': row}}}
-        allocator.host_policy.load_policy.return_value = None
-        allocator.host_policy.account_allowed.return_value = True
+        fake.host_policy.load_policy.return_value = None
+        fake.host_policy.account_allowed.return_value = True
         router.usage_snapshot.return_value = {'accounts': {}}
-        with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+             patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
+             patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
+             patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
+             patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay), \
              patch.dict(sys.modules, {'provider_inventory': inventory}), \
              patch.object(router_data, '_read_json', return_value={}), \
              patch.object(router_data, 'pool_reservations', return_value={}), \
@@ -101,16 +110,16 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertIn('auto-retry at 2026-11-08T04:05:00+00:00', card['badge'])
 
     def test_failing_reading_never_presents_old_window_as_fresh(self):
-        allocator, router = Mock(), Mock()
+        fake, router = Mock(), Mock()
         inventory = Mock(quota_sources=real_inventory.quota_sources)
-        allocator.load_accounts.return_value = {
+        fake.load_accounts.return_value = {
             'accounts': {'codex': {'windows': {'usage': {'hours': 168}}, 'bundles': {}}},
             '_discovery': {'accounts': {'codex': self.failing()}},
         }
-        allocator.host_policy.load_policy.return_value = None
-        allocator.host_policy.account_allowed.return_value = True
-        allocator.canonical_window_id.side_effect = lambda spec, wid: wid
-        allocator.capacity_usd.return_value = None
+        fake.host_policy.load_policy.return_value = None
+        fake.host_policy.account_allowed.return_value = True
+        fake.canonical_window_id.side_effect = lambda spec, wid: wid
+        fake.capacity_usd.return_value = None
         router.usage_snapshot.return_value = {
             'accounts': {
                 'codex': {
@@ -121,7 +130,13 @@ class AccountStateCardTests(unittest.TestCase):
                 }
             }
         }
-        with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+             patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
+             patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
+             patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
+             patch.object(quota_pools, 'canonical_window_id', fake.canonical_window_id), \
+             patch.object(quota_economy, 'capacity_usd', fake.capacity_usd), \
+             patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay), \
              patch.dict(sys.modules, {'provider_inventory': inventory}), \
              patch.object(router_data, '_read_json', return_value={}), \
              patch.object(router_data, 'pool_reservations', return_value={}), \
@@ -134,18 +149,18 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertIn('旧读数', panel_quota.card_read_stamp(card))
 
     def test_stale_but_available_reading_stays_ready_and_only_unavailable_upgrades_to_failing(self):
-        allocator, router = Mock(), Mock()
+        fake, router = Mock(), Mock()
         inventory = Mock(quota_sources=real_inventory.quota_sources)
         ready_row = {'family': 'claude', 'identity': 'i', 'status': 'ready',
                      'last_success_at': '2026-11-08T14:00:00+00:00'}
-        allocator.load_accounts.return_value = {
+        fake.load_accounts.return_value = {
             'accounts': {'claude-2': {'label': 'Claude 2', 'windows': {'seven_day': {'hours': 168}}, 'bundles': {}}},
             '_discovery': {'accounts': {'claude-2': ready_row}},
         }
-        allocator.host_policy.load_policy.return_value = None
-        allocator.host_policy.account_allowed.return_value = True
-        allocator.canonical_window_id.side_effect = lambda spec, wid: wid
-        allocator.capacity_usd.return_value = None
+        fake.host_policy.load_policy.return_value = None
+        fake.host_policy.account_allowed.return_value = True
+        fake.canonical_window_id.side_effect = lambda spec, wid: wid
+        fake.capacity_usd.return_value = None
         # Case 1: Magpie gateway readAt > 10m sets stale=True, available=True, no error -> must stay ready ("就绪").
         router.usage_snapshot.return_value = {
             'accounts': {
@@ -159,7 +174,13 @@ class AccountStateCardTests(unittest.TestCase):
                 }
             }
         }
-        with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+             patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
+             patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
+             patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
+             patch.object(quota_pools, 'canonical_window_id', fake.canonical_window_id), \
+             patch.object(quota_economy, 'capacity_usd', fake.capacity_usd), \
+             patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay), \
              patch.dict(sys.modules, {'provider_inventory': inventory}), \
              patch.object(router_data, '_read_json', return_value={}), \
              patch.object(router_data, 'pool_reservations', return_value={}), \
@@ -175,7 +196,13 @@ class AccountStateCardTests(unittest.TestCase):
 
         # Case 2: available=False upgrades to usage_failing with localized text (never raw token 'stale_reading').
         router.usage_snapshot.return_value['accounts']['claude-2']['available'] = False
-        with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+             patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
+             patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
+             patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
+             patch.object(quota_pools, 'canonical_window_id', fake.canonical_window_id), \
+             patch.object(quota_economy, 'capacity_usd', fake.capacity_usd), \
+             patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay), \
              patch.dict(sys.modules, {'provider_inventory': inventory}), \
              patch.object(router_data, '_read_json', return_value={}), \
              patch.object(router_data, 'pool_reservations', return_value={}), \
@@ -188,9 +215,9 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertIn('额度接口暂不可用', card_unavail['badge'])
 
     def test_five_axis_free_pool_capacity_unknown_shows_mode_b_warning_and_local_spend(self):
-        allocator, router = Mock(), Mock()
+        fake, router = Mock(), Mock()
         inventory = Mock(quota_sources=real_inventory.quota_sources)
-        allocator.load_accounts.return_value = {
+        fake.load_accounts.return_value = {
             'accounts': {
                 'opencode': {
                     'label': 'OpenCode Zen',
@@ -205,10 +232,14 @@ class AccountStateCardTests(unittest.TestCase):
             },
             '_discovery': {'accounts': {'opencode': {'family': 'opencode', 'status': 'ready'}}},
         }
-        allocator.host_policy.load_policy.return_value = None
-        allocator.host_policy.account_allowed.return_value = True
+        fake.host_policy.load_policy.return_value = None
+        fake.host_policy.account_allowed.return_value = True
         router.usage_snapshot.return_value = {'accounts': {}}
-        with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+             patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
+             patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
+             patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
+             patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay), \
              patch.dict(sys.modules, {'provider_inventory': inventory}), \
              patch.object(router_data, '_read_json', return_value={}), \
              patch.object(router_data, 'pool_reservations', return_value={}), \

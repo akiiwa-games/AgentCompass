@@ -149,7 +149,7 @@ class CollectorTests(CollectorBase):
     def test_a_pooled_account_collects_its_source_meter_when_only_it_is_listed_in_usage_providers(self):
         self.sign_in('codex')
         self.profile.write_text(json.dumps({'allowed_accounts': ['codex-alias'], 'usage_providers': ['codex-alias']}))
-        with patch.object(collector.allocator, 'load_accounts', return_value={'quota_sources': {'codex-alias': 'codex'}}):
+        with patch.object(collector.account_fleet, 'load_accounts', return_value={'quota_sources': {'codex-alias': 'codex'}}):
             result = collector.collect()
         self.assertEqual(result['requested_providers'], ['codex'])
         self.assertEqual(sorted(result['providers']), ['codex'])
@@ -271,8 +271,8 @@ class HostedCollectorEntryTests(CollectorBase):
         self.sign_in('codex', 'claude')
         # Dispatch exclusion (`allowed_accounts`) never drops signed-in accounts from forced refresh or HUD selection.
         self.profile.write_text(json.dumps({'allowed_accounts': ['claude']}))
-        with patch.object(collector.allocator, 'load_accounts', return_value={'quota_sources': {'codex-alias': 'codex'}}), \
-                patch.object(collector.allocator, 'configured_quota_sources', return_value={'codex-alias': 'codex'}):
+        with patch.object(collector.account_fleet, 'load_accounts', return_value={'quota_sources': {'codex-alias': 'codex'}}), \
+                patch.object(collector.account_fleet, 'configured_quota_sources', return_value={'codex-alias': 'codex'}):
             self.assertEqual(collector.filter_permitted_items(['codex:7d', 'claude:5h']), ['codex:7d', 'claude:5h'])
             refreshed = collector.refresh_providers(['codex-alias', 'claude:5h'])
         self.assertEqual([p.provider_id for p in refreshed], ['codex', 'claude'])
@@ -281,8 +281,8 @@ class HostedCollectorEntryTests(CollectorBase):
         # Explicit `usage_providers` narrows both HUD selection and forced refresh.
         self.requests.clear()
         self.profile.write_text(json.dumps({'allowed_accounts': ['claude'], 'usage_providers': ['codex-alias']}))
-        with patch.object(collector.allocator, 'load_accounts', return_value={'quota_sources': {'codex-alias': 'codex'}}), \
-                patch.object(collector.allocator, 'configured_quota_sources', return_value={'codex-alias': 'codex'}):
+        with patch.object(collector.account_fleet, 'load_accounts', return_value={'quota_sources': {'codex-alias': 'codex'}}), \
+                patch.object(collector.account_fleet, 'configured_quota_sources', return_value={'codex-alias': 'codex'}):
             self.assertEqual(collector.filter_permitted_items(['codex:7d', 'claude:5h']), ['codex:7d'])
             narrowed = collector.refresh_providers(['codex:7d', 'claude:5h'])
         self.assertEqual([p.provider_id for p in narrowed], ['codex'])

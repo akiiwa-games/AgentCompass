@@ -7,6 +7,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 import allocator
+import account_fleet
+import quota_pools
 import dispatch_flow
 import dispatch_registry as registry
 import route_judge
@@ -20,13 +22,13 @@ def setUpModule():
 class ApplicableQuotaTests(unittest.TestCase):
     def setUp(self):
         self.now=datetime.now(timezone.utc)
-        self.accounts=allocator.load_accounts(allocator.REFERENCES/'accounts.json')
+        self.accounts=account_fleet.load_accounts(account_fleet.REFERENCES/'accounts.json')
         self.accounts['accounts']={'codex':self.accounts['accounts']['codex']}
         self.accounts['accounts']['codex'].update(verified=True,plan='Plus')
         self.accounts['accounts']['codex']['bundles']={'sol_high':{'provider':'codex','harness':'codex','model':'gpt-6.1-sol','effort':'high'}}
         self.accounts['_discovery']={'accounts':{},'launchers':{}}
         self.assertEqual(list(self.accounts['accounts']['codex']['windows']),['usage'])
-        self.bundle={**allocator.bundles(self.accounts)['sol_high'],'bundle_id':'sol_high'}
+        self.bundle={**account_fleet.bundles(self.accounts)['sol_high'],'bundle_id':'sol_high'}
         self.task={'task_id':'quota-contract','parent_agent_id':'parent-a',
                    'objective':'Implement the independent scoped helper change',
                    'work_kind':'general_implementation','difficulty':'hard','expected_hours':0.2,
@@ -113,7 +115,7 @@ class ApplicableQuotaTests(unittest.TestCase):
             with self.subTest(remaining=remaining): self.assertFalse(self.rejected(self.usage(remaining)))
         self.assertFalse(self.rejected(self.usage(0,resets_at=(self.now-timedelta(seconds=1)).isoformat())))
         # No spec is invented to price a newly observed hard limit.
-        inferred=[spec for wid,spec,_ in allocator.applicable_windows(
+        inferred=[spec for wid,spec,_ in quota_pools.applicable_windows(
             self.accounts['accounts']['codex'],self.bundle['model'],self.usage()['accounts']['codex'],
             self.bundle,self.accounts) if wid=='five_hour']
         self.assertEqual(inferred,[{}])
@@ -127,7 +129,7 @@ class ApplicableQuotaTests(unittest.TestCase):
             launch={'title':'Quota fixture','initialPrompt':'Only the scoped fixture assignment'}
             row=registry.prepare(decision['decision_id'],self.task,launch,healthy,accounts=self.accounts,now=self.now)
             host=Mock()
-            with patch.object(allocator,'load_accounts',return_value=self.accounts), \
+            with patch.object(account_fleet,'load_accounts',return_value=self.accounts), \
                  patch.object(route_judge,'usage_snapshot',return_value=self.usage(0)):
                 with self.assertRaises(ValueError):
                     dispatch_flow.launch(row['dispatch_id'],'parent-a',host=host,watch_seconds=0)
@@ -140,7 +142,7 @@ class ApplicableQuotaTests(unittest.TestCase):
             def available(request):
                 calls.append(request['operation'])
                 return {'ok':True,'agent':snapshot}
-            with patch.object(allocator,'load_accounts',return_value=self.accounts), \
+            with patch.object(account_fleet,'load_accounts',return_value=self.accounts), \
                  patch.object(route_judge,'usage_snapshot',return_value=healthy):
                 started=dispatch_flow.launch(row['dispatch_id'],'parent-a',host=available,watch_seconds=0)
             self.assertEqual(started['state'],'started')

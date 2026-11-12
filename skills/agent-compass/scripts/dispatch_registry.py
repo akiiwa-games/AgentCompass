@@ -19,8 +19,9 @@ import provider_inventory
 def bundle_windows(bundle):
     """Quota windows a dispatched bundle draws; None (whole account) when they cannot be resolved."""
     try:
-        import allocator
-        return allocator.bundle_pools(bundle, allocator.load_accounts()) or None
+        import account_fleet
+        import quota_pools
+        return quota_pools.bundle_pools(bundle, account_fleet.load_accounts()) or None
     except Exception:
         return None
 
@@ -133,19 +134,20 @@ def expire(connection, now):
 
 def resolve_bundle(bundle, accounts, explicit_override=False):
     """Catalog defaults are not the complete supported explicit-effort contract."""
-    import allocator
+    import account_fleet
+    import fast_modes
     import auto_bundles
-    model = allocator.canonical(bundle.get('model'), accounts)
+    model = account_fleet.canonical(bundle.get('model'), accounts)
     if bundle.get('fast'):
-        allocator.fast_modes.validate(allocator.bundle_harness(bundle, bundle.get('account')), model,
-                                      allocator.model_spec(accounts, model))
-    own_model = allocator.row_key(bundle.get('model') or '', accounts)
-    siblings = [b for b in allocator.bundles(accounts).values()
-                if allocator.row_key(b.get('model') or '', accounts) == own_model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
+        fast_modes.validate(account_fleet.bundle_harness(bundle, bundle.get('account')), model,
+                                      account_fleet.model_spec(accounts, model))
+    own_model = account_fleet.row_key(bundle.get('model') or '', accounts)
+    siblings = [b for b in account_fleet.bundles(accounts).values()
+                if account_fleet.row_key(b.get('model') or '', accounts) == own_model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
     bid = bundle.get('bundle_id') or bundle.get('id')
     by_id = next((b for b in siblings if bid and b.get('id') == bid), None)
     carrier = next((b for b in siblings if bundle.get('pin_carrier') and b.get('id') == bundle['pin_carrier']), None)
-    if carrier and bundle.get('effort') in (allocator.dispatch_allowed_efforts(carrier, accounts, model) or ()):
+    if carrier and bundle.get('effort') in (account_fleet.dispatch_allowed_efforts(carrier, accounts, model) or ()):
         # The plan already matched the effort the user named to the launch contract; the row exists only for this task.
         return dict(carrier, id=bid, bundle_id=bid, effort=bundle['effort'], pin_carrier=bundle['pin_carrier'],
                     **({'fast': True} if bundle.get('fast') else {}))
@@ -157,7 +159,7 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
         if exact:
             return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
     # A named level with no row of its own arrives without the row's list, so every row of the model speaks for what it offers.
-    contract = {eff for row in (bundle, *siblings) for eff in allocator.dispatch_allowed_efforts(row, accounts, model) or ()}
+    contract = {eff for row in (bundle, *siblings) for eff in account_fleet.dispatch_allowed_efforts(row, accounts, model) or ()}
     if not explicit_override:
         return None
     exact = (next((b for b in siblings if b.get('effort') == bundle.get('effort') and not b.get('disabled')), None)
@@ -182,21 +184,23 @@ def check_launch_quota(bundle, accounts, usage, now):
     Local disablement also applies after preparation. For quota, only fresh,
     active-window observations hard-block; unknown/stale is not exhausted.
     """
-    import allocator
+    import account_fleet
+    import fast_modes
+    import quota_pools
     reason = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, bundle['account'], bundle['provider'])
     if reason:
         raise ValueError(reason)
     if bundle['account'] not in accounts['accounts']:
         raise ValueError('Account is no longer configured; reroute using the current provider inventory')
     if bundle.get('fast'):
-        model = allocator.canonical(bundle['model'], accounts)
-        allocator.fast_modes.validate(allocator.bundle_harness(bundle, bundle['account']), model,
-                                      allocator.model_spec(accounts, model))
+        model = account_fleet.canonical(bundle['model'], accounts)
+        fast_modes.validate(account_fleet.bundle_harness(bundle, bundle['account']), model,
+                                      account_fleet.model_spec(accounts, model))
     usage = provider_inventory.merge_usage(usage, accounts, now)
     spec = accounts['accounts'][bundle['account']]
     row = (usage.get('accounts') or {}).get(bundle['account']) or {}
-    for wid, window, observed in allocator.applicable_windows(spec, bundle.get('model'), row, bundle, accounts):
-        if allocator.below_launch_floor(window, observed, row, now):
+    for wid, window, observed in quota_pools.applicable_windows(spec, bundle.get('model'), row, bundle, accounts):
+        if quota_pools.below_launch_floor(window, observed, row, now):
             floor = window.get('launch_min_remaining_pct', 0)
             raise ValueError(f"Account {bundle['account']} {wid} is below its existing launch protection ({floor}% remaining floor); refresh quota or replan")
 
@@ -208,8 +212,8 @@ def issue(result, task, now=None, path=None, allocation_task=None):
     if not bundle or result.get('choice') in (None, 'none', 'self'):
         return {}
     bundle.setdefault('bundle_id', result.get('choice'))
-    import allocator
-    accounts = allocator.load_accounts()
+    import account_fleet
+    accounts = account_fleet.load_accounts()
     explicit = result.get('stage') == 'record' and result.get('constraint') == 'user_override' and bool(result.get('basis'))
     resolved = resolve_bundle(bundle, accounts, explicit)
     if resolved:
@@ -334,7 +338,8 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
     """Completed, idle Paseo workers owned by parent_id, newest first, with compaction/context state."""
     if not isinstance(parent_id, str) or not parent_id.strip() or not Path(path or db_path()).exists():
         return []
-    import allocator
+    import account_fleet
+    import worker_sessions
     now = now or utcnow()
     with transaction(path) as connection:
         expire(connection, now)
@@ -351,7 +356,7 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
     p_home = Path(paseo_home or os.environ.get('PASEO_HOME') or Path.home() / '.paseo')
     home_dir = p_home.parent if p_home.name == '.paseo' else Path(os.environ.get('ROUTER_PROVIDER_HOME') or Path.home())
     try:
-        max_tokens = int((allocator.load_accounts().get('scoring') or {}).get('rotate_after_carried_tokens', 2_000_000))
+        max_tokens = int((account_fleet.load_accounts().get('scoring') or {}).get('rotate_after_carried_tokens', 2_000_000))
     except Exception:
         max_tokens = 2_000_000
     candidates = []
@@ -379,8 +384,8 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
                     or doc.get('attentionReason') in ('error', 'permission')
                     or doc.get('providerUnavailable') or doc.get('pendingPermissions')):
                 continue
-        state = allocator.session_state(agent_id, home=home_dir)
-        carried = allocator.worker_historical_tokens(state)
+        state = worker_sessions.session_state(agent_id, home=home_dir)
+        carried = worker_sessions.worker_historical_tokens(state)
         worn = bool(isinstance(carried, (int, float)) and carried >= max_tokens)
         bundle = dict(latest.get('bundle') or {})
         bundle_id = bundle.get('bundle_id') or bundle.get('id')
@@ -526,8 +531,11 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
     require_parent_id(task.get('parent_agent_id'))
     exempt = (attempt or {}).get('attempt_of')
     import allocator
+    import account_fleet
+    import candidate_ranking
+    import ledger_snapshot
     now = now or utcnow()
-    accounts = accounts or allocator.load_accounts()
+    accounts = accounts or account_fleet.load_accounts()
     with transaction(path) as connection:
         expire(connection, now)
         decision = get(connection, 'decisions', decision_id)
@@ -576,7 +584,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         # Capacity check and insertion share the same transaction across concurrent parents.
         alloc_task = dict(decision['allocation_task'])
         if isinstance(alloc_task.get('profile'), dict):     # a decision recorded before the four categories
-            alloc_task['profile'] = allocator.ledger_profile(alloc_task['profile'])
+            alloc_task['profile'] = ledger_snapshot.ledger_profile(alloc_task['profile'])
         profile = (
             alloc_task.get('profile')
             if isinstance(alloc_task.get('profile'), dict)
@@ -598,7 +606,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         if decision.get('constraint') == 'user_override':
             alloc_task['pinned_bundle'] = bundle['bundle_id']
         plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts)
-        candidate = allocator.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))
+        candidate = candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):
             raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
@@ -768,10 +776,10 @@ def claim(request, parent_id=None, call_id=None, now=None, path=None):
             return row
         if row['state'] != 'prepared' or parse(row['lease_until']) <= now:
             raise ValueError('Dispatch already claimed, terminal or expired; reconcile instead of replaying create_agent')
-        import allocator
+        import account_fleet
         import route_judge
         try:
-            check_launch_quota(row['bundle'], allocator.load_accounts(), route_judge.usage_snapshot(now=now), now)
+            check_launch_quota(row['bundle'], account_fleet.load_accounts(), route_judge.usage_snapshot(now=now), now)
         except ValueError as exc:
             raise CapacityChanged(str(exc)) from exc
         row.update(claim_id=call_id or str(uuid.uuid4()), launched_at=stamp(now),

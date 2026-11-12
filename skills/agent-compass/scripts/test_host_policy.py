@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import account_fleet
 import host_policy
 import route_judge as router
 
@@ -29,7 +30,7 @@ class HostPolicyTests(unittest.TestCase):
         patcher = patch.object(host_policy, 'policy_path', return_value=(self.path, False))
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        self.accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         self.now = datetime(2026, 10, 11, tzinfo=timezone.utc)
 
     def write(self, data):

@@ -14,6 +14,12 @@ import unittest
 import numpy as np
 
 import allocator
+import account_fleet
+import axis_scores
+import candidate_ranking
+import ledger_snapshot
+import quota_economy
+import task_intake
 import route_judge
 import route_simulation as sim
 from router_test_support import isolated_router_state
@@ -70,7 +76,7 @@ def cell(z, status='measured'):
 
 def axes_of(scores, missing=()):
     out = {}
-    for a in allocator.FIVE_AXES:
+    for a in axis_scores.FIVE_AXES:
         if a in missing:
             out[a] = {'value': None, 'by_effort': {}, 'status': 'missing', 'flag': 'missing', 'facets': {},
                       'missing_facets': []}
@@ -82,7 +88,7 @@ def axes_of(scores, missing=()):
 
 
 def row(scores=0.8, usd=5.0, missing=(), image_input='yes', dur=1.0, fast=None, price=True):
-    scores = scores if isinstance(scores, dict) else dict.fromkeys(allocator.FIVE_AXES, scores)
+    scores = scores if isinstance(scores, dict) else dict.fromkeys(axis_scores.FIVE_AXES, scores)
     img_val = True if image_input == 'yes' else False if image_input == 'no' else None
     axes = axes_of(scores, missing)
     out = {'axes': axes, 'scores': {a: c['value'] for a, c in axes.items()}, 'missing_axes': list(missing),
@@ -124,8 +130,8 @@ def _synthetic_doc_ctx(doc):
 
     @contextlib.contextmanager
     def _ctx():
-        with patch.object(allocator, 'load_five_axis', lambda path=None, use_effective=True: doc), \
-                patch.object(allocator, 'load_public_user_scores', lambda path=None, use_effective=True: {'schema_version': 1, 'scores': {}}):
+        with patch.object(axis_scores, 'load_five_axis', lambda path=None, use_effective=True: doc), \
+                patch.object(axis_scores, 'load_public_user_scores', lambda path=None, use_effective=True: {'schema_version': 1, 'scores': {}}):
             yield
     return _ctx()
 
@@ -147,7 +153,7 @@ class FiveAxisTests(unittest.TestCase):
                                   accounts=acc, overrides=[], records=[], host_policy_config=self.policy)
 
     def rows_for(self, decision, model):
-        return [c for c in decision['ranking'] if allocator.canonical(c['bundle']['model'], self.accounts) == model]
+        return [c for c in decision['ranking'] if account_fleet.canonical(c['bundle']['model'], self.accounts) == model]
 
     def test_the_fit_follows_the_demanded_axes_continuously_and_no_floor_excludes(self):
         # Sol: precise coder, weak divergence. Round 7: nothing excludes it on a creative task; its fit pays for the
@@ -168,35 +174,35 @@ class FiveAxisTests(unittest.TestCase):
         """Q7 (user, 2026-11-11): fit = sum w (min(z, t) - t1) / sum w; 0 is the panel's weakest, no credit above the
         target, below the weakest is negative. tool_operation level 1 asks for nothing; level 3 is min over its facets."""
         d = demand(3, 1, 0, 2)
-        targets = allocator.five_axis_targets(d, TARGETS)
+        targets = axis_scores.five_axis_targets(d, TARGETS)
         self.assertEqual(targets, {'divergence': {'target': 0.0, 'zero': -1.0}, 'coding': {'target': -1.0, 'zero': -1.0},
                                    'tool_operation': {'by_facet': {'responsiveness': {'target': -0.5, 'zero': -1.0}}}})
         values = {'divergence': -0.3, 'coding': 0.4, 'aesthetics': -3.0,
                   'tool_operation': {'responsiveness': -0.8, 'image_recognition': -5.0}}
-        fit, rows = allocator.five_axis_fit(values, d, targets)
+        fit, rows = axis_scores.five_axis_fit(values, d, targets)
         self.assertAlmostEqual(fit, (3 * 0.7 + 1 * 0.0 + 2 * 0.2) / 6, places=4)
         self.assertNotIn('aesthetics', rows)                 # an undemanded category does not count
-        above = allocator.five_axis_fit({**values, 'divergence': 1.5}, d, targets)[0]
+        above = axis_scores.five_axis_fit({**values, 'divergence': 1.5}, d, targets)[0]
         self.assertAlmostEqual(above, (3 * 1.0 + 0 + 2 * 0.2) / 6, places=4)        # capped at the target
-        below = allocator.five_axis_fit({**values, 'divergence': -2.0}, d, targets)[0]
+        below = axis_scores.five_axis_fit({**values, 'divergence': -2.0}, d, targets)[0]
         self.assertLess(below, 0.2)
         self.assertAlmostEqual(below, (3 * -1.0 + 0 + 2 * 0.2) / 6, places=4)       # below the weakest: negative term
         # tool_operation level 1: no requirement, so it is not part of the fit at all
-        self.assertEqual(allocator.five_axis_targets(demand(0, 0, 0, 1), TARGETS), {})
+        self.assertEqual(axis_scores.five_axis_targets(demand(0, 0, 0, 1), TARGETS), {})
         # level 3: the weaker facet decides; a level never asks less of a facet than the level below
-        t3 = allocator.five_axis_targets(demand(0, 0, 0, 3), TARGETS)['tool_operation']['by_facet']
+        t3 = axis_scores.five_axis_targets(demand(0, 0, 0, 3), TARGETS)['tool_operation']['by_facet']
         self.assertEqual(t3['responsiveness']['target'], 0.0)
-        mono = allocator.five_axis_targets(demand(0, 0, 0, 3), {'tool_operation': tool_targets(-1.7, 0.14, 0.0)})
+        mono = axis_scores.five_axis_targets(demand(0, 0, 0, 3), {'tool_operation': tool_targets(-1.7, 0.14, 0.0)})
         self.assertEqual(mono['tool_operation']['by_facet']['responsiveness']['target'], 0.14)
-        fit3, rows3 = allocator.five_axis_fit(values, demand(0, 0, 0, 3), {'tool_operation': {'by_facet': t3}})
+        fit3, rows3 = axis_scores.five_axis_fit(values, demand(0, 0, 0, 3), {'tool_operation': {'by_facet': t3}})
         self.assertAlmostEqual(fit3, -4.0, places=4)
         self.assertEqual(rows3['tool_operation']['facets']['image_recognition']['term'], -4.0)
 
     def test_continuity_is_one_demand_level_of_the_highest_demanded_categories(self):
         targets = {**TARGETS, 'coding': level_targets(-2.0, -1.4, 0.0), 'tool_operation': tool_targets(-1.7, 0.14, 0.0)}
-        self.assertEqual(allocator.five_axis_continuity_value(demand(1, 3, 0, 3), targets), 1.4)
-        self.assertEqual(allocator.five_axis_continuity_value(demand(0, 0, 0, 3), targets), 0.0)    # t3 - t2 = 0
-        self.assertEqual(allocator.five_axis_continuity_value(demand(0, 0, 0, 0), targets), 0.0)
+        self.assertEqual(axis_scores.five_axis_continuity_value(demand(1, 3, 0, 3), targets), 1.4)
+        self.assertEqual(axis_scores.five_axis_continuity_value(demand(0, 0, 0, 3), targets), 0.0)    # t3 - t2 = 0
+        self.assertEqual(axis_scores.five_axis_continuity_value(demand(0, 0, 0, 0), targets), 0.0)
 
     def test_missing_demanded_axis_leaves_automatic_routing_but_a_named_model_runs(self):
         target = 'claude-sonnet-5-5'
@@ -208,13 +214,13 @@ class FiveAxisTests(unittest.TestCase):
                             for c in self.rows_for(blind, target)))
         self.assertFalse(any('no trusted data' in e for c in self.rows_for(sighted, target) for e in c['excluded']))
         chosen = next(c for c in named['ranking'] if c['id'] == named['choice'])
-        self.assertEqual(allocator.canonical(chosen['bundle']['model'], self.accounts), target)
+        self.assertEqual(account_fleet.canonical(chosen['bundle']['model'], self.accounts), target)
         self.assertIn('no trusted data for the demanded category divergence', ' '.join(chosen['notes']))
 
     def test_missing_usd_is_removed_not_defaulted(self):
         acc = copy.deepcopy(self.accounts)
-        out = allocator.five_axis_overlay(acc, document(acc['models'], **{'claude-sonnet-5-5': row(0.8, None)}))
-        info = allocator.model_spec(out, 'claude-sonnet-5-5')
+        out = axis_scores.five_axis_overlay(acc, document(acc['models'], **{'claude-sonnet-5-5': row(0.8, None)}))
+        info = account_fleet.model_spec(out, 'claude-sonnet-5-5')
         self.assertEqual(info['five_axis']['usd_status'], 'missing')
         self.assertNotIn('usd_per_hour', info)
 
@@ -222,28 +228,28 @@ class FiveAxisTests(unittest.TestCase):
         acc = copy.deepcopy(self.accounts)
         target = 'claude-sonnet-5-5'
         doc = document(acc['models'], **{target: row(0.8, None)})
-        out = allocator.five_axis_overlay(acc, doc)
-        info = allocator.model_spec(out, target)
-        self.assertEqual(allocator.model_usd_per_hour(target, info), 0.0)
-        self.assertEqual(allocator.unit_rate({'windows': {'w': {}}}, 'w', target, info), 0.0)
+        out = axis_scores.five_axis_overlay(acc, doc)
+        info = account_fleet.model_spec(out, target)
+        self.assertEqual(quota_economy.model_usd_per_hour(target, info), 0.0)
+        self.assertEqual(quota_economy.unit_rate({'windows': {'w': {}}}, 'w', target, info), 0.0)
         auto = self.plan(acc, doc, profile={'axis_demand': demand(0, 2, 0, 0)})
         self.assertTrue(all(any('usd_per_hour has no cited source on a metered account' in e for e in c['excluded'])
                             for c in self.rows_for(auto, target)))
         named = self.plan(acc, doc, profile={'axis_demand': demand(0, 2, 0, 0)}, constraints={'model': target})
         chosen = next(c for c in named['ranking'] if c['id'] == named['choice'])
-        self.assertEqual(allocator.canonical(chosen['bundle']['model'], acc), target)
+        self.assertEqual(account_fleet.canonical(chosen['bundle']['model'], acc), target)
         self.assertIn('its cost is not priced', ' '.join(chosen['notes']))
 
     def test_capacity_is_the_community_figure_of_the_account_plan(self):
         acc = copy.deepcopy(self.accounts)
         acc['accounts']['pi']['family'] = 'pi'      # discovery is off here; on a host it names the family
-        out = allocator.five_axis_overlay(acc, document(acc['models']))
+        out = axis_scores.five_axis_overlay(acc, document(acc['models']))
         spec = out['accounts']['claude']
         self.assertEqual(spec['capacity_usd'], {'seven_day': 1700.0, 'five_hour': 270.0})
         # Max 20x weekly_fable has no community value in CAPACITY here: unknown, with neither the template figure nor the burn prior.
         self.assertTrue(spec['capacity_unknown'])
         self.assertEqual(spec['capacity_source']['weekly_fable']['status'], 'missing')
-        self.assertIsNone(allocator.capacity_usd(spec, 'weekly_fable'))
+        self.assertIsNone(quota_economy.capacity_usd(spec, 'weekly_fable'))
         self.assertEqual(out['accounts']['codex']['capacity_usd'], {'usage': 615.0})
         self.assertFalse(out['accounts']['codex'].get('capacity_unknown'))
         # Pi signs in with ChatGPT: the Codex account's plan and windows.
@@ -260,7 +266,7 @@ class FiveAxisTests(unittest.TestCase):
     def test_tie_break_order_net_score_then_wait_then_faster_then_fewer_usd_then_level(self):
         """Quota economy v3 + R2-F4: N = F - C is never rounded; C carries billed vs free, pool used share, and +fast burn.
         `earliest_reset_hours` is NOT in `five_axis_order` — reset timing enters only through C inside N."""
-        self.assertNotIn('earliest_reset_hours', allocator.FIVE_AXIS_ORDER_KEYS)
+        self.assertNotIn('earliest_reset_hours', candidate_ranking.FIVE_AXIS_ORDER_KEYS)
         def cand(name, score=0.5, hours=1.0, usd=10.0, level=0.8, wait=0.0, place=0, reset=48.0):
             return {'id': name, 'score': score, 'available_in_hours': wait or None,
                     'expected_hours': hours, 'duration_hours': hours, 'expected_usd': usd,
@@ -275,19 +281,19 @@ class FiveAxisTests(unittest.TestCase):
             cand('faster_cheap_higher_level', hours=0.2, usd=5.0, level=0.9),
             cand('faster_cheap_later_harness', hours=0.2, usd=5.0, level=0.9, place=1),
         ]
-        self.assertEqual([c['id'] for c in sorted(pool, key=allocator.five_axis_order)],
+        self.assertEqual([c['id'] for c in sorted(pool, key=candidate_ranking.five_axis_order)],
                          ['higher_n', 'faster_cheap_higher_level',
                           'faster_cheap_later_harness', 'faster_cheap',
                           'faster_dear', 'slower_expensive', 'sooner_reset_same_n', 'waits_but_quick'])
-        self.assertEqual(allocator.five_axis_deciding_key(pool[3], pool[4]), 'net_score')
-        self.assertEqual(allocator.five_axis_deciding_key(pool[2], pool[4]), 'completion_hours')
-        self.assertEqual(allocator.five_axis_deciding_key(pool[2], pool[1]), 'usd')
-        self.assertEqual(allocator.five_axis_deciding_key(pool[1], pool[0]), 'completion_hours')
-        self.assertEqual(allocator.five_axis_deciding_key(pool[6], pool[2]), 'axis_level')
-        self.assertEqual(allocator.five_axis_deciding_key(pool[6], pool[7]), 'harness_place')
-        self.assertEqual(allocator.FIVE_AXIS_DEFAULTS['weights']['fit'], 1.0)
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[3], pool[4]), 'net_score')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[2], pool[4]), 'completion_hours')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[2], pool[1]), 'usd')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[1], pool[0]), 'completion_hours')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[6], pool[2]), 'axis_level')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[6], pool[7]), 'harness_place')
+        self.assertEqual(axis_scores.FIVE_AXIS_DEFAULTS['weights']['fit'], 1.0)
         for gone in ('overqualification_weight', 'strong_level', 'pace', 'pace_smoothing'):
-            self.assertNotIn(gone, allocator.FIVE_AXIS_DEFAULTS, gone)
+            self.assertNotIn(gone, axis_scores.FIVE_AXIS_DEFAULTS, gone)
         for gone in ('five_axis_overqualification', 'five_axis_gate', 'five_axis_gate_level',
                      'five_axis_pacing', 'five_axis_wait_cost', 'five_axis_beta', 'five_axis_beta_fallback',
                      'five_axis_over_line_usd', 'five_axis_non_expiring_under_line_usd'):
@@ -297,27 +303,27 @@ class FiveAxisTests(unittest.TestCase):
         """Quota economy v3: each window is read on its own clock. `five_axis_window_recovery` gives the elapsed fraction e of
         its period (the recovery line is C e), a rolling window that starts on first use is at e = 0, and a starter
         allowance (T = inf) never advances."""
-        rec = allocator.five_axis_window_recovery(
+        rec = quota_economy.five_axis_window_recovery(
             {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 70.0, 'reset_hours': 84.0}, 1700.0)
         self.assertAlmostEqual(rec['capacity_usd'], 1700.0)
         self.assertAlmostEqual(rec['used_usd'], 510.0)
         self.assertAlmostEqual(rec['elapsed_frac'], 0.5)
         self.assertAlmostEqual(rec['line_now_usd'], 850.0)
-        cross = allocator.five_axis_window_recovery(
+        cross = quota_economy.five_axis_window_recovery(
             {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 40.0, 'reset_hours': 2.0}, 1704.5)
         self.assertAlmostEqual(cross['elapsed_frac'], 1 - 2 / 168)
         self.assertAlmostEqual(cross['reset_hours'], 2.0)
-        unstarted = allocator.five_axis_window_recovery(
+        unstarted = quota_economy.five_axis_window_recovery(
             {'known': True, 'full': 100.0, 'hours': 168.0, 'remaining': 100.0, 'reset_hours': 168.0, 'unstarted': True}, 2580.0)
         self.assertTrue(unstarted['unstarted'])
         self.assertEqual((unstarted['elapsed_frac'], unstarted['used_usd']), (0.0, 0.0))
-        starter = allocator.five_axis_window_recovery(
+        starter = quota_economy.five_axis_window_recovery(
             {'known': True, 'full': 100.0, 'hours': None, 'remaining': 80.0, 'reset_hours': float('inf')}, 50.0)
         self.assertEqual((starter['elapsed_frac'], starter['line_now_usd'], starter['reset_hours']), (0.0, 0.0, float('inf')))
         self.assertAlmostEqual(starter['used_usd'], 10.0)
-        self.assertIsNone(allocator.five_axis_window_recovery({'known': False}, 100.0))
+        self.assertIsNone(quota_economy.five_axis_window_recovery({'known': False}, 100.0))
         # The starter allowance's clock never runs: its need probability depends on use only.
-        self.assertGreater(allocator.five_axis_need_probability({**starter, 'lump_usd': 5.0}, starter['used_usd']), 0.0)
+        self.assertGreater(quota_economy.five_axis_need_probability({**starter, 'lump_usd': 5.0}, starter['used_usd']), 0.0)
 
     def test_nested_windows_and_5h_plus_weekly_price_only_the_dearest_long_window_once(self):
         """Quota economy v3: a candidate drawing the 5-hour window, the weekly window and the nested weekly_fable window
@@ -332,7 +338,7 @@ class FiveAxisTests(unittest.TestCase):
             }},
             'codex': {'pro': {'usage': window(615.0)}},
         }
-        acc = allocator.five_axis_overlay(acc, doc)
+        acc = axis_scores.five_axis_overlay(acc, doc)
         usage = self.usage(acc, 'ample')
         # seven_day behind its line (80% left at mid-week), weekly_fable well ahead of it (30% left at mid-week).
         for w in usage['accounts']['claude']['windows']:
@@ -496,7 +502,7 @@ class FiveAxisTests(unittest.TestCase):
         named = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 2, 0, 3)},
                           constraints={'model': 'claude-sonnet-5-5'})
         chosen = next(c for c in named['ranking'] if c['id'] == named['choice'])
-        self.assertEqual(allocator.canonical(chosen['bundle']['model'], self.accounts), 'claude-sonnet-5-5')
+        self.assertEqual(account_fleet.canonical(chosen['bundle']['model'], self.accounts), 'claude-sonnet-5-5')
         self.assertIn('data error: image_input modality has no cited source; dispatched because it was named',
                       ' '.join(chosen['notes']))
         # Naming a model whose public data explicitly says no image input stays blocked even when named:
@@ -535,13 +541,13 @@ class FiveAxisTests(unittest.TestCase):
         named = self.plan(acc, doc, profile={'axis_demand': demand(1, 2, 0, 0)},
                           constraints={'model': 'glm-5.3-flash-free'})
         chosen = next(c for c in named['ranking'] if c['id'] == named['choice'])
-        self.assertEqual(allocator.canonical(chosen['bundle']['model'], acc), 'glm-5.3-flash-free')
+        self.assertEqual(account_fleet.canonical(chosen['bundle']['model'], acc), 'glm-5.3-flash-free')
         self.assertIn('capacity_unknown (quota unknown, spend unpriced); dispatched because it was named',
                       ' '.join(chosen['notes']))
         self.assertIn('local opencode.db lower-bound spend', ' '.join(chosen['notes']))
         # Tray / account_state warnings surface opencode when five_axis is enabled:
         overlaid = copy.deepcopy(acc)
-        overlaid = allocator.five_axis_overlay(overlaid, doc)
+        overlaid = axis_scores.five_axis_overlay(overlaid, doc)
         self.assertGreater(overlaid['accounts']['opencode'].get('local_spend_usd', 0.0), 0.0)
         ws = account_state.warnings(overlaid.get('_discovery'), overlaid['accounts'])
         self.assertTrue(any('opencode:' in w and 'quota unknown, spend unpriced' in w for w in ws), ws)
@@ -556,8 +562,8 @@ class FiveAxisTests(unittest.TestCase):
         acc['models']['newcomer-9'] = copy.deepcopy(acc['models']['claude-opus-5-5'])
         acc['models']['newcomer-9'].pop('usd_per_hour', None)
         acc['accounts']['claude']['bundles']['newcomer_high'] = {'model': 'newcomer-9', 'effort': 'high'}
-        self.assertTrue(allocator.usd_unpriced('newcomer-9', acc['models']['newcomer-9']))
-        self.assertEqual(allocator.model_usd_per_hour('newcomer-9', acc['models']['newcomer-9']), 0.0)
+        self.assertTrue(quota_economy.usd_unpriced('newcomer-9', acc['models']['newcomer-9']))
+        self.assertEqual(quota_economy.model_usd_per_hour('newcomer-9', acc['models']['newcomer-9']), 0.0)
         for state in ('ample', 'claude scarce'):
             decision = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'reasoning_depth': 3}},
                                       self.usage(acc, state), NOW, accounts=copy.deepcopy(acc), overrides=[], records=[],
@@ -568,7 +574,7 @@ class FiveAxisTests(unittest.TestCase):
             self.assertNotEqual(decision['choice'], rows[0]['id'])
 
     def test_every_shipped_model_carries_a_sourced_price_or_says_it_has_none(self):
-        shipped = allocator.load_five_axis()
+        shipped = axis_scores.load_five_axis()
         for name, row in shipped['models'].items():
             usd = row['usd_per_hour']
             if usd.get('status') == 'ok':
@@ -583,7 +589,7 @@ class FiveAxisTests(unittest.TestCase):
         the type score's fit on tier by the two tiers' difference, and its usd_per_hour is 5.1's times the API list price
         ratio over the community token mix. No pessimistic 0, no option-B fallback. Fast-mode pricing ($16/$80 = 2x, 2.5x
         speed) and its maintainer image-input declaration (2026-11-12) stay its own."""
-        shipped = allocator.load_five_axis()
+        shipped = axis_scores.load_five_axis()
         fable52, fable51 = shipped['models']['claude-fable-5-2'], shipped['models']['claude-fable-5-1']
         usd = fable52['usd_per_hour']
         self.assertEqual((usd['kind'], usd['fallback'], usd['sources']['base']['model']), ('converted', False, 'claude-fable-5-1'))
@@ -651,18 +657,18 @@ class FiveAxisTests(unittest.TestCase):
                          {c['id']: c['score'] for c in poisoned['ranking']})
 
     def test_classifier_axis_demand_is_parsed_and_used(self):
-        prof = allocator.validate_profile({**PROFILE, 'axis_demand': demand(1, 2, 3, 0)})
+        prof = task_intake.validate_profile({**PROFILE, 'axis_demand': demand(1, 2, 3, 0)})
         self.assertEqual(prof['axis_demand'], demand(1, 2, 3, 0))
-        self.assertEqual(allocator.five_axis_demand({'profile': prof}), demand(1, 2, 3, 0))
+        self.assertEqual(axis_scores.five_axis_demand({'profile': prof}), demand(1, 2, 3, 0))
         for bad in (demand(1, 2, 4, 0), {**demand(1, 2, 3, 0), 'economy': 1}, {'divergence': 1}, demand(True, 2, 3, 0)):
             with self.assertRaises(ValueError):
-                allocator.validate_profile({**PROFILE, 'axis_demand': bad})
+                task_intake.validate_profile({**PROFILE, 'axis_demand': bad})
         # No axis_demand is no profile: the classifier always answers it, nothing is derived from other fields.
         without = {k: v for k, v in PROFILE.items() if k != 'axis_demand'}
         with self.assertRaises(ValueError):
-            allocator.validate_profile(without)
+            task_intake.validate_profile(without)
         # An all-zero answer asks nothing of the categories; it is taken as it is.
-        self.assertEqual(allocator.five_axis_demand({'profile': {**PROFILE, 'axis_demand': demand(0, 0, 0, 0)}}), demand(0, 0, 0, 0))
+        self.assertEqual(axis_scores.five_axis_demand({'profile': {**PROFILE, 'axis_demand': demand(0, 0, 0, 0)}}), demand(0, 0, 0, 0))
 
     def test_an_in_flight_ledger_record_is_mapped_once_onto_the_four_categories(self):
         """The one read-side mapping (user, 2026-11-11): divergence as is, coding = max(global_rigor, module_precision),
@@ -670,26 +676,26 @@ class FiveAxisTests(unittest.TestCase):
         A fresh classifier answer in the old shape is still invalid: only recorded profiles are mapped."""
         old = {**PROFILE, 'realtime_loop': False,
                'axis_demand': {'divergence': 2, 'global_rigor': 1, 'module_precision': 3, 'vision_tools': 1}}
-        mapped = allocator.ledger_profile(old)
+        mapped = ledger_snapshot.ledger_profile(old)
         self.assertEqual(mapped['axis_demand'], demand(2, 3, 0, 2))
         self.assertNotIn('realtime_loop', mapped)
-        self.assertEqual(allocator.validate_profile(mapped)['axis_demand'], demand(2, 3, 0, 2))
+        self.assertEqual(task_intake.validate_profile(mapped)['axis_demand'], demand(2, 3, 0, 2))
         for vision, tool in ((0, 0), (1, 2), (2, 3), (3, 3)):
             rec = {**old, 'axis_demand': {**old['axis_demand'], 'vision_tools': vision}}
-            self.assertEqual(allocator.ledger_profile(rec)['axis_demand']['tool_operation'], tool)
+            self.assertEqual(ledger_snapshot.ledger_profile(rec)['axis_demand']['tool_operation'], tool)
         live = {**old, 'realtime_loop': True, 'axis_demand': {**old['axis_demand'], 'vision_tools': 0}}
-        self.assertEqual(allocator.ledger_profile(live)['axis_demand']['tool_operation'], 2)
+        self.assertEqual(ledger_snapshot.ledger_profile(live)['axis_demand']['tool_operation'], 2)
         current = {**PROFILE, 'axis_demand': demand(1, 2, 0, 0)}
-        self.assertIs(allocator.ledger_profile(current), current)
+        self.assertIs(ledger_snapshot.ledger_profile(current), current)
         with self.assertRaises(ValueError):
-            allocator.validate_profile(old)
+            task_intake.validate_profile(old)
 
     def test_the_scorer_always_asks_for_axis_demand(self):
         caps = {'routes': {'general_implementation': {}, 'other_or_mixed': {}}}
-        schema = route_judge.scorer_schema(allocator, caps)
+        schema = route_judge.scorer_schema(caps)
         self.assertIn('axis_demand', schema['properties'])
         self.assertIn('axis_demand', schema['required'])
-        self.assertEqual(schema['properties']['axis_demand'], allocator.FIVE_AXIS_DEMAND_SCHEMA)
+        self.assertEqual(schema['properties']['axis_demand'], axis_scores.FIVE_AXIS_DEMAND_SCHEMA)
 
     def test_can_wait_hours_defers_only_for_higher_net_score_without_fixed_wait_cost_constant(self):
         """Rounds 8-13b + F3: no fixed 0.15 delay penalty and no 0.06 five_axis_wait_cost constant on the five-axis path.
@@ -899,14 +905,14 @@ class HighFillTests(unittest.TestCase):
         self.assertEqual(targets['facets'][key[1]]['levels']['1']['n'], 3)
 
     def test_shipped_targets_ignore_the_estimated_grok_4_7_image_recognition(self):
-        shipped = allocator.load_five_axis()
+        shipped = axis_scores.load_five_axis()
         grok = shipped['models']['grok-4.7']['axes']['tool_operation']['facets']['image_recognition']
         self.assertEqual(grok['estimate']['method'], 'panel_effort_step')
         level2 = shipped['anchor']['targets']['tool_operation']['facets']['image_recognition']['levels']['2']
         self.assertEqual((level2['target'], level2['n']), (-0.7322, 11))
 
     def test_shipped_glm_5_3_and_deepseek_v4_pro_have_high(self):
-        models = allocator.load_five_axis()['models']
+        models = axis_scores.load_five_axis()['models']
         glm = models['glm-5.3']['axes']
         self.assertEqual(glm['divergence']['facets']['creative_writing']['status'], 'interpolated')
         self.assertEqual(glm['divergence']['by_effort']['high'], round((-1.9724 + -1.5955) / 2, 4))
@@ -1592,7 +1598,7 @@ class DurationTests(unittest.TestCase):
         self.assertEqual(values, sorted(values))
 
     def test_the_shipped_durations_cite_a_basis_for_every_effort_and_leave_none_to_a_default(self):
-        shipped = allocator.load_five_axis()
+        shipped = axis_scores.load_five_axis()
         self.assertTrue(shipped['duration_fit'] or shipped['duration_fit_rejected'])
         for name, r in shipped['models'].items():
             dur = r['duration_multiplier']
@@ -1816,7 +1822,7 @@ class DerivedUsdTests(unittest.TestCase):
                                         'Muse Wonder (Max)', 'Beam 1.0 501B A23B'])
         self.assertEqual(matcher.find('deepseek-v4.1-flash-free'), 'DeepSeek-V4.1-Flash-20261017 (Max)')
         self.assertEqual(matcher.find('muse-wonder-1.0'), 'Muse Wonder (Max)')
-        shipped = allocator.load_five_axis()
+        shipped = axis_scores.load_five_axis()
         ds = shipped['models']['deepseek-v4.1-flash-free']['usd_per_hour']
         mw = shipped['models']['muse-wonder-1.0']['usd_per_hour']
         self.assertEqual((ds['value'], ds['kind'], ds['fallback'], ds['used']), (1.084, 'community', False, ['arena.agent_sessions']))

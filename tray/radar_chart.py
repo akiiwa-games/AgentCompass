@@ -1,6 +1,6 @@
 """One five-axis radar: four capability categories and quota economy, from decisions or model settings.
 
-A category's spoke is its share (allocator.five_axis_shares): 0 at the panel's weakest model, 1 at the level-3 target
+A category's spoke is its share (axis_scores.five_axis_shares): 0 at the panel's weakest model, 1 at the level-3 target
 (the anchor), from the panel standard scores of five-axis-scores.json.
 
 The maths (dimension values, polygon geometry) is plain Python so it is unit-tested without a display;

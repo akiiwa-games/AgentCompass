@@ -3,7 +3,6 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import copy
-import importlib.util
 from datetime import datetime, timedelta, timezone
 import json
 import math
@@ -125,14 +124,6 @@ def dot_unreachable(timeout=1.5):
             return None if response.status == 200 else f'/readyz answered {response.status}'
     except (OSError, ValueError) as exc:
         return f'{type(exc).__name__} on /readyz'
-
-
-def load_allocator():
-    """Load the sibling module by path so the script also works under python -I."""
-    spec = importlib.util.spec_from_file_location('allocator', Path(__file__).resolve().with_name('allocator.py'))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def user_env(name):
@@ -338,7 +329,8 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
     requested = set(providers) if accounts is None else set(accounts)
     # Accounts the fleet document pools onto another account read that account's row.
     if quota_sources is None:
-        quota_sources = (sys.modules.get('allocator') or load_allocator()).configured_quota_sources()
+        import account_fleet
+        quota_sources = account_fleet.configured_quota_sources()
     sources = quota_sources
     requested |= {sources[name] for name in requested if name in sources}
     home_dir = _usage_home(source)
@@ -496,8 +488,8 @@ def window_spec(account_spec, window_id):
     windows = (account_spec or {}).get('windows') if isinstance(account_spec, dict) else None
     if not isinstance(windows, dict) or not window_id:
         return {}
-    allocator = sys.modules.get('allocator') or load_allocator()
-    spec = windows.get(allocator.canonical_window_id(account_spec, window_id))
+    import quota_pools
+    spec = windows.get(quota_pools.canonical_window_id(account_spec, window_id))
     return spec if isinstance(spec, dict) else {}
 
 
@@ -616,8 +608,9 @@ def decision_snapshot(result, task=None):
     """The ranking and component scores this decision was made with, for the ledger. Replays read it as written."""
     if not isinstance(result.get('ranking'), list):
         return None
+    import ledger_snapshot
     try:
-        return load_allocator().decision_snapshot(result, task=task)
+        return ledger_snapshot.decision_snapshot(result, task=task)
     except (AttributeError, KeyError, TypeError, ValueError):
         return None
 
@@ -630,8 +623,9 @@ def finalize(result, payload, requested, started, task=None, records=None):
     alerts = list(result.get('alerts') or [])
     bundle = result.get('selected_bundle') or {}
     if bundle.get('account'):
+        import account_fleet
         try:
-            spec = load_allocator().load_accounts().get('accounts', {}).get(bundle['account']) or {}
+            spec = account_fleet.load_accounts().get('accounts', {}).get(bundle['account']) or {}
         except (OSError, ValueError):
             spec = {}
         alerts += capacity_alerts(usage, [bundle['account']], records, now, bundle.get('model', ''),
@@ -720,8 +714,9 @@ def build_request(stage, document, cache=None, now=None):
     task = document.get('task')
     if not isinstance(task, dict) or not task:
         raise ValueError('Input requires reviewed routing context in task.')
-    effective_accounts = load_allocator().load_accounts()
-    policy = load_allocator().load_capabilities(accounts=effective_accounts)
+    import account_fleet
+    effective_accounts = account_fleet.load_accounts()
+    policy = account_fleet.load_capabilities(accounts=effective_accounts)
     now = now or datetime.now(timezone.utc)
     state = {'task': task, 'now': now.isoformat(), 'capability_policy': policy,
              'scoring': effective_accounts.get('scoring') or {}}
@@ -791,24 +786,26 @@ def build_request(stage, document, cache=None, now=None):
         raise ValueError('Unknown routing stage.')
     state['usage'] = usage_snapshot(cache, accounts, now)
     if stage == 'select':
-        allocator = None
+        quota_probe = False
         loaded_accounts = {}
         merged_usage = state['usage']
         now_dt = now or datetime.now(timezone.utc)
         records = ()
         try:
-            allocator = load_allocator()
-            loaded_accounts = allocator.load_accounts()
-            priced_accounts = allocator.five_axis_overlay(loaded_accounts)      # once for every candidate probed below
-            now_dt = allocator.parse_time((state['usage'] or {}).get('observed_at')) or now_dt
+            import axis_scores
+            import quota_pools
+            loaded_accounts = account_fleet.load_accounts()
+            priced_accounts = axis_scores.five_axis_overlay(loaded_accounts)      # once for every candidate probed below
+            now_dt = quota_pools.parse_time((state['usage'] or {}).get('observed_at')) or now_dt
             merged_usage = provider_inventory.merge_usage(state['usage'], loaded_accounts, now_dt)
             records = dispatch_flow.reservation_records(read_only=True)
+            quota_probe = True
         except Exception:
-            allocator = None
+            quota_probe = False
             priced_accounts = {}
 
         def _candidate_quota_exhausted(key, cand):
-            if allocator is None:
+            if not quota_probe:
                 return False
             acc = cand.get('account') or ''
             probe = {
@@ -819,7 +816,7 @@ def build_request(stage, document, cache=None, now=None):
                 'effort': cand.get('effort'),
                 **({'draws': list(cand['draws'])} if isinstance(cand.get('draws'), list) else {}),
             }
-            return bool(allocator.launch_blockers(probe, priced_accounts, merged_usage, now_dt, records=records))
+            return bool(quota_pools.launch_blockers(probe, priced_accounts, merged_usage, now_dt, records=records))
 
         quota_excluded = [k for k, v in state['candidates'].items() if _candidate_quota_exhausted(k, v)]
         if quota_excluded:
@@ -992,14 +989,16 @@ def parse_scorer_stream(stdout, envelope=False):
     raise ValueError('System-One scorer stream ended without a result.')
 
 
-def scorer_schema(allocator, capabilities):
+def scorer_schema(capabilities):
+    import axis_scores
+    import task_intake
     routes = [k for k in (capabilities.get('routes') or {}) if k != 'other_or_mixed']
-    base = allocator.TASK_PROFILE_SCHEMA
+    base = task_intake.TASK_PROFILE_SCHEMA
     props = {'work_kind': {'type': 'string', 'enum': routes, 'description': 'Canonical route classification for the task.'},
              **base['properties']}
     required = ['work_kind'] + list(base['required'])
     # The task's category demand always comes from the classifier itself.
-    props['axis_demand'] = allocator.FIVE_AXIS_DEMAND_SCHEMA
+    props['axis_demand'] = axis_scores.FIVE_AXIS_DEMAND_SCHEMA
     required.append('axis_demand')
     return {'type': 'object', 'properties': props, 'required': required}
 
@@ -1304,19 +1303,20 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
                             'instructions': 'Does the task text itself state urgency?'}
     for name, (instructions, criteria) in JEV_SCORE_QUESTIONS.items():
         questions[name] = {'type': 'score', 'instructions': instructions, 'criteria': list(criteria)}
-    allocator = load_allocator()
-    for axis, (intro, levels) in allocator.FIVE_AXIS_DEMAND_LEVELS.items():
+    import axis_scores
+    import task_intake
+    for axis, (intro, levels) in axis_scores.FIVE_AXIS_DEMAND_LEVELS.items():
         questions[f'demand_{axis}'] = {'type': 'score', 'instructions': 'How much does this task need: ' + intro,
                                        'criteria': [f'Level {i}: {text}.' for i, text in enumerate(levels)]}
     for name, instructions in JEV_NOUL_QUESTIONS.items():
         questions[name] = {'type': 'noul', 'instructions': instructions}
-    questions['wants_fast'] = {'type': 'noul', 'instructions': allocator.WANTS_FAST_QUESTION}
-    questions['read_only_review'] = {'type': 'noul', 'instructions': allocator.READ_ONLY_REVIEW_QUESTION}
-    questions['access'] = {'type': 'choice', 'instructions': allocator.ACCESS_QUESTION,
+    questions['wants_fast'] = {'type': 'noul', 'instructions': task_intake.WANTS_FAST_QUESTION}
+    questions['read_only_review'] = {'type': 'noul', 'instructions': task_intake.READ_ONLY_REVIEW_QUESTION}
+    questions['access'] = {'type': 'choice', 'instructions': task_intake.ACCESS_QUESTION,
                            'criteria': {'read-only': 'Only reads, inspects, reviews, or analyzes without modifying workspace files or state.',
                                         'write': 'Writes, edits, creates, or deletes workspace files, or runs mutating commands.'}}
-    questions['multi_task'] = {'type': 'noul', 'instructions': allocator.MULTI_TASK_QUESTION}
-    questions['task_count'] = {'type': 'choice', 'instructions': allocator.TASK_COUNT_QUESTION,
+    questions['multi_task'] = {'type': 'noul', 'instructions': task_intake.MULTI_TASK_QUESTION}
+    questions['task_count'] = {'type': 'choice', 'instructions': task_intake.TASK_COUNT_QUESTION,
                                'criteria': {'1': 'One task.', '2': 'Two separate tasks.', '3': 'Three separate tasks.',
                                             '>3': 'More than three separate tasks.'}}
     return {'model': model or JEV_DEFAULT_MODEL,
@@ -1324,9 +1324,11 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
             'questions': questions}
 
 
-def parse_jev_response(response, allocator):
+def parse_jev_response(response):
     """A validated task profile from a /v1/systemone answer: choice names, score = probability-weighted level index
     0..N-1 (rounded, then offset to the profile's range), noul = probability of yes."""
+    import axis_scores
+    import task_intake
     answers = response.get('answers') if isinstance(response, dict) else None
     if not isinstance(answers, dict):
         raise ValueError('Jev response has no answers.')
@@ -1345,9 +1347,9 @@ def parse_jev_response(response, allocator):
         return max(low, min(high, int(round(score)) + low))
 
     profile = {'work_kind': field('work_kind', 'choice'), 'interaction_style': field('interaction_style', 'choice')}
-    for name, (low, high) in allocator.PROFILE_INTEGERS.items():
+    for name, (low, high) in task_intake.PROFILE_INTEGERS.items():
         profile[name] = level(name, low, high)
-    profile['axis_demand'] = {axis: level(f'demand_{axis}', 0, 3) for axis in allocator.FIVE_AXES}
+    profile['axis_demand'] = {axis: level(f'demand_{axis}', 0, 3) for axis in axis_scores.FIVE_AXES}
     for name in JEV_NOUL_QUESTIONS:
         profile[name] = float(field(name, 'noul')) >= 0.5
     if profile['needs_gui']:
@@ -1369,7 +1371,7 @@ def parse_jev_response(response, allocator):
     if access_choice is not None:
         profile['access'] = access_choice
     # A missing or contradictory split answer fails here: the cascade moves on rather than guessing.
-    return allocator.validate_profile(profile)
+    return task_intake.validate_profile(profile)
 
 
 def openai_chat_url(base_url):
@@ -1438,13 +1440,14 @@ def codex_scorer_command(prefix, model, directory):
                      '--output-last-message', str(directory / 'answer.json'), '--json', '-']
 
 
-def run_scorer(scorer_type, task, allocator, capabilities, timeout, config, account=None):
+def run_scorer(scorer_type, task, capabilities, timeout, config, account=None):
     """(validated profile, provider, model) from one scorer backend on `account`, ScorerUnavailable when this host
     lacks its client or key, or another exception when it was tried and failed."""
+    import task_intake
     spec = SCORER_TYPES[scorer_type]
     if scorer_type == 'agy_flash_low':
-        envelope = run_agy_envelope(scorer_prefix(), scorer_schema(allocator, capabilities), scorer_prompt(task), timeout)
-        return allocator.validate_profile(parse_scorer_output(json.dumps(envelope))), SCORER['provider'], SCORER['model']
+        envelope = run_agy_envelope(scorer_prefix(), scorer_schema(capabilities), scorer_prompt(task), timeout)
+        return task_intake.validate_profile(parse_scorer_output(json.dumps(envelope))), SCORER['provider'], SCORER['model']
     if os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1':
         raise ScorerError('Live scorer disabled by environment.')
     if scorer_type in SCORER_API_FIELDS:
@@ -1458,15 +1461,15 @@ def run_scorer(scorer_type, task, allocator, capabilities, timeout, config, acco
         if scorer_type == 'jev':
             response = post_json(base + '/v1/systemone', build_jev_request(task, capabilities, model), key, timeout)
             served = response.get('model') if isinstance(response, dict) and isinstance(response.get('model'), str) else model
-            return parse_jev_response(response, allocator), spec['provider'], served
-        request = build_openai_request(task, scorer_schema(allocator, capabilities), model)
+            return parse_jev_response(response), spec['provider'], served
+        request = build_openai_request(task, scorer_schema(capabilities), model)
         response = post_json(openai_chat_url(base), request, key, timeout)
-        return allocator.validate_profile(parse_openai_response(response)), spec['provider'], model
+        return task_intake.validate_profile(parse_openai_response(response)), spec['provider'], model
     try:
         prefix = cli_prefix(spec['provider'])
     except RuntimeError:
         raise ScorerUnavailable(f"{spec['provider']} CLI is not installed.") from None
-    schema = scorer_schema(allocator, capabilities)
+    schema = scorer_schema(capabilities)
     with tempfile.TemporaryDirectory(prefix='route-score-', ignore_cleanup_errors=True) as temporary:
         directory = Path(temporary)
         if spec['provider'] == 'claude':
@@ -1483,7 +1486,7 @@ def run_scorer(scorer_type, task, allocator, capabilities, timeout, config, acco
             if code != 0:
                 raise ScorerError('Codex scorer CLI failed.')
             answer = json.loads((directory / 'answer.json').read_text(encoding='utf-8-sig'))
-    return allocator.validate_profile(answer), spec['provider'], spec['model']
+    return task_intake.validate_profile(answer), spec['provider'], spec['model']
 
 
 SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, KeyError, IndexError)
@@ -1504,7 +1507,7 @@ def score_cache_path():
     return Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass').expanduser() / 'score-cache.json'
 
 
-def score_cache_key(task, allocator, capabilities, order, config):
+def score_cache_key(task, capabilities, order, config):
     """Classification identity: the exact scorer prompt (objective, context, environment, hours, needs), the output
     schema, and every configured scorer (type, provider/model, endpoint, a hash of its key). Never the raw key."""
     scorers = []
@@ -1515,7 +1518,7 @@ def score_cache_key(task, allocator, capabilities, order, config):
             key, _, base, model = scorer_api_settings(scorer_type, config)
             identity.update(base=base, model=model, key=hashlib.sha256((key or '').encode()).hexdigest()[:16])
         scorers.append(identity)
-    material = json.dumps([SCORE_CACHE_VERSION, scorer_prompt(task), scorer_schema(allocator, capabilities), scorers], sort_keys=True,
+    material = json.dumps([SCORE_CACHE_VERSION, scorer_prompt(task), scorer_schema(capabilities), scorers], sort_keys=True,
                           ensure_ascii=False, default=str)
     return hashlib.sha256(material.encode()).hexdigest()
 
@@ -1584,23 +1587,24 @@ def scorer_attempt_order(config):
     return primary, order
 
 
-def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, use_model=True, scorer_config=None):
+def score_task(task, capabilities, timeout=SCORER_TIMEOUT_SECONDS, use_model=True, scorer_config=None):
     """(task profile or None, scorer metadata). A profile the caller wrote wins; then the System-One scorer cascade
     (`jev` -> `claude_haiku_low` -> `codex_terra_low` -> `agy_flash_low`). When all System-One scorers time out or
     fail, returns `(None, meta)` with `source: 'scorer_unavailable'` so the parent session chooses autonomously;
     never falls back to mechanical keyword guessing."""
+    import task_intake
     if isinstance(task.get('profile'), dict):
-        return allocator.validate_caller_profile(task['profile']), {'source': 'caller_profile', 'model': None}
+        return task_intake.validate_caller_profile(task['profile']), {'source': 'caller_profile', 'model': None}
     config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
     configured, order = scorer_attempt_order(config)
     reason, attempts, skipped = 'model_call_skipped', [], []
     policy = host_policy.load_policy() if use_model else None
     if use_model:
-        cache_key = score_cache_key(task, allocator, capabilities, order, config)
+        cache_key = score_cache_key(task, capabilities, order, config)
         cached = score_cache_get(cache_key)
         if cached:
             try:
-                return allocator.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
+                return task_intake.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
             except ValueError:
                 pass        # written under an older schema, or damaged: a miss, not a failure
         input_error = None
@@ -1614,7 +1618,7 @@ def score_task(task, allocator, capabilities, timeout=SCORER_TIMEOUT_SECONDS, us
             for account in accounts:
                 started = time.monotonic()
                 try:
-                    profile, provider, model = run_scorer(scorer_type, task, allocator, capabilities, timeout, config, account)
+                    profile, provider, model = run_scorer(scorer_type, task, capabilities, timeout, config, account)
                 except ScorerUnavailable as exc:
                     skipped.append({'scorer_type': scorer_type, 'detail': str(exc)})
                     break
@@ -1748,12 +1752,12 @@ def classify_structured(instructions, text, schema, validate, timeout=SCORER_TIM
 def prefetch_scores(tasks, timeout=SCORER_TIMEOUT_SECONDS):
     """Classify several tasks at the same time so a batch roll waits for one scorer round, not one per brief. Results
     land in the score cache that each roll then reads; a failure here is left for that roll to meet and report."""
-    allocator = load_allocator()
-    capabilities = allocator.load_capabilities()
+    import account_fleet
+    capabilities = account_fleet.load_capabilities()
 
     def one(task):
         try:
-            score_task(task, allocator, capabilities, timeout)
+            score_task(task, capabilities, timeout)
         except Exception:       # noqa: BLE001 - the roll that follows classifies again and reports the real error
             pass
     with ThreadPoolExecutor(max_workers=max(1, min(len(tasks), 6))) as pool:
@@ -1781,21 +1785,22 @@ def scorer_status(config, path=None):
 
 def scorer_test(config, objective=None, timeout=SCORER_TIMEOUT_SECONDS):
     """Score one sample task with this config; ok only when the configured scorer itself answered."""
-    allocator = load_allocator()
-    capabilities = allocator.load_capabilities()
+    import account_fleet
+    import task_intake
+    capabilities = account_fleet.load_capabilities()
     task = {'objective': (objective or '').strip() or SCORER_TEST_OBJECTIVE}
     started = time.monotonic()
-    profile, meta = score_task(task, allocator, capabilities, timeout, scorer_config=config)
+    profile, meta = score_task(task, capabilities, timeout, scorer_config=config)
     ok = profile is not None and meta['source'] == 'system_one' and meta.get('scorer_type') == config['scorer_type']
     return {'stage': 'scorer', 'action': 'test', 'ok': ok, 'scorer_type': config['scorer_type'],
             'latency_ms': int((time.monotonic() - started) * 1000), 'task_profile': profile, 'scorer': meta,
-            'derived_kind': allocator.profile_kind(profile, allocator.load_accounts()['scoring']) if profile else None}
+            'derived_kind': task_intake.profile_kind(profile, account_fleet.load_accounts()['scoring']) if profile else None}
 
 
 def judge_account_blocked(acc, base, fleet, usage, now):
-    allocator = load_allocator()
+    import quota_pools
     probe = {'account': acc, 'provider': base.get('provider') or acc, 'model': base['model'], 'effort': base.get('effort')}
-    return bool(allocator.launch_blockers(probe, fleet, usage, now))
+    return bool(quota_pools.launch_blockers(probe, fleet, usage, now))
 
 
 def resolve_judge(kind, usage, availability=None):
@@ -1806,9 +1811,10 @@ def resolve_judge(kind, usage, availability=None):
     if not isinstance(accounts, dict):
         return base
     try:
-        allocator = load_allocator()
-        fleet = allocator.load_accounts()
-        now = allocator.parse_time((usage or {}).get('observed_at')) or datetime.now(timezone.utc)
+        import account_fleet
+        import quota_pools
+        fleet = account_fleet.load_accounts()
+        now = quota_pools.parse_time((usage or {}).get('observed_at')) or datetime.now(timezone.utc)
         merged_usage = provider_inventory.merge_usage(usage, fleet, now)
     except Exception:
         fleet = {}
@@ -1841,7 +1847,8 @@ def resolve_judge(kind, usage, availability=None):
 
 def judge_account_spec(account):
     try:
-        return (load_allocator().load_accounts().get('accounts') or {}).get(account) or {}
+        import account_fleet
+        return (account_fleet.load_accounts().get('accounts') or {}).get(account) or {}
     except Exception:
         return {}
 
@@ -1854,9 +1861,10 @@ def judge_order(usage, requested):
             raise host_policy.HostPolicyError(f'Judge {requested} is excluded by host policy; continue feasible Self work.')
         return [requested]
     try:
-        allocator = load_allocator()
-        fleet = allocator.load_accounts()
-        now = allocator.parse_time((usage or {}).get('observed_at')) or datetime.now(timezone.utc)
+        import account_fleet
+        import quota_pools
+        fleet = account_fleet.load_accounts()
+        now = quota_pools.parse_time((usage or {}).get('observed_at')) or datetime.now(timezone.utc)
         merged_usage = provider_inventory.merge_usage(usage, fleet, now) if isinstance(usage, dict) else usage
     except Exception:
         fleet = {}
@@ -1987,22 +1995,23 @@ def recent_route_lock(task, records, now, bundle_id, window_seconds):
     return None
 
 
-def match_bundle(allocator, accounts, args, include_disabled=False):
+def match_bundle(accounts, args, include_disabled=False):
     """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle.
 
     A name that only a family guess could place matches its own rows, never the flagship's. With no effort named, the
     model's default effort (else High) leads, not whichever row the document lists first."""
+    import account_fleet
     matches = []
-    for bundle in allocator.bundles(accounts).values():
+    for bundle in account_fleet.bundles(accounts).values():
         if not include_disabled and bundle.get('disabled'):
             continue
-        same = allocator.row_key(bundle['model'], accounts) == allocator.row_key(args.model, accounts)
+        same = account_fleet.row_key(bundle['model'], accounts) == account_fleet.row_key(args.model, accounts)
         if (bundle['account'] == args.account and bundle['provider'] == args.provider and same
                 and (args.effort is None or bundle.get('effort') == args.effort)):
             matches.append(bundle)
     if not matches:
         return None
-    default = allocator.model_spec(accounts, args.model).get('default_effort') or 'high'
+    default = account_fleet.model_spec(accounts, args.model).get('default_effort') or 'high'
     return next((b for b in matches if b.get('effort') == default), matches[0])['id']
 
 
@@ -2032,8 +2041,18 @@ def record_constraint(args, task=None, classified=None):
         parent = parent.removeprefix('claude:')
         if parent and not parent.startswith(('claude-session-', 'codex-session-')):
             task = {**task, 'parent_agent_id': parent}
-    allocator = load_allocator()
-    accounts = allocator.load_accounts()
+    import account_fleet
+    import allocator
+    import auto_bundles
+    import axis_scores
+    import candidate_eval
+    import candidate_ranking
+    import launch_failures
+    import model_latch
+    import model_resolution
+    import provider_retry
+    import quota_pools
+    accounts = account_fleet.load_accounts()
     now = datetime.now(timezone.utc)
     usage = usage_snapshot(args.usage_cache, args.accounts, now)
     usage = provider_inventory.merge_usage(usage, accounts, now, args.accounts)
@@ -2042,23 +2061,23 @@ def record_constraint(args, task=None, classified=None):
         raise ValueError(unavailable)
     # `model:effort` and `model-effort` name an effort; --effort, when given too, wins.
     pin = copy.copy(args)
-    pin.model, named_effort = allocator.split_model_effort(args.model)
-    resolved = allocator.resolve_model(pin.model, accounts)
+    pin.model, named_effort = model_resolution.split_model_effort(args.model)
+    resolved = account_fleet.resolve_model(pin.model, accounts)
     pin.effort = args.effort or named_effort or resolved['effort']
-    direct = resolved['source'] in allocator.DIRECT_SOURCES
-    own_model = allocator.row_key(pin.model, accounts)
-    own_rows = [b for b in allocator.bundles(accounts).values() if b['account'] == args.account and b['provider'] == args.provider
-                and allocator.row_key(b['model'], accounts) == own_model]
+    direct = resolved['source'] in model_resolution.DIRECT_SOURCES
+    own_model = account_fleet.row_key(pin.model, accounts)
+    own_rows = [b for b in account_fleet.bundles(accounts).values() if b['account'] == args.account and b['provider'] == args.provider
+                and account_fleet.row_key(b['model'], accounts) == own_model]
     if not direct and (not own_rows or (pin.effort and pin.effort not in {b.get('effort') for b in own_rows}
-                                        and not any(pin.effort in (allocator.dispatch_allowed_efforts(b, accounts) or ())
+                                        and not any(pin.effort in (account_fleet.dispatch_allowed_efforts(b, accounts) or ())
                                                     for b in own_rows))):
         # What it resembles is another model. The same answer the plan gives: blocked, never a substitute.
         raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no configured route on "
                          f"{args.account}/{args.provider}. Tell the user; do not substitute another model.")
-    chosen = match_bundle(allocator, accounts, pin)
-    disabled_match = match_bundle(allocator, accounts, pin, include_disabled=True) if chosen is None else None
+    chosen = match_bundle(accounts, pin)
+    disabled_match = match_bundle(accounts, pin, include_disabled=True) if chosen is None else None
     if disabled_match is not None:
-        if allocator.bundles(accounts)[disabled_match].get('disabled_by_default'):
+        if account_fleet.bundles(accounts)[disabled_match].get('disabled_by_default'):
             chosen = disabled_match     # off by default, not by the user: naming the model reaches it
         else:
             raise ValueError(
@@ -2071,16 +2090,16 @@ def record_constraint(args, task=None, classified=None):
             f"Bundle {own_rows[0]['id']!r} ({args.account}/{pin.model}) is disabled. "
             f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
         )
-    discovered = allocator.bundles(accounts).get(chosen) or {}
+    discovered = account_fleet.bundles(accounts).get(chosen) or {}
     if discovered.get('discovery_unavailable'):
         raise ValueError(discovered['discovery_unavailable'])
     # The account's other row of this model supplies the launch fields of an effort it has no row for.
-    sibling_id = (chosen or match_bundle(allocator, accounts, _with_effort(pin, None))
-                  or match_bundle(allocator, accounts, _with_effort(pin, None), include_disabled=True))
-    sibling = allocator.bundles(accounts).get(sibling_id) or {}
+    sibling_id = (chosen or match_bundle(accounts, _with_effort(pin, None))
+                  or match_bundle(accounts, _with_effort(pin, None), include_disabled=True))
+    sibling = account_fleet.bundles(accounts).get(sibling_id) or {}
     inherited = {k: sibling[k] for k in NAMED_ROW_FIELDS if k in sibling}
     acc_spec = (accounts.get('accounts') or {}).get(args.account) or {}
-    if not allocator.account_cwd_allowed(acc_spec, (task or {}).get('cwd')):
+    if not account_fleet.account_cwd_allowed(acc_spec, (task or {}).get('cwd')):
         raise ValueError(
             f"Account {args.account!r} is restricted to allowed_cwd {acc_spec.get('allowed_cwd')!r} "
             f"and cannot be dispatched from the current working directory."
@@ -2094,8 +2113,8 @@ def record_constraint(args, task=None, classified=None):
         quota_bundle.setdefault('bundle_id', chosen)
     dispatch_registry.check_launch_quota(quota_bundle, accounts, usage, now)
     acc_usage = (usage.get('accounts') or {}).get(args.account) or {}
-    if acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until') or allocator.latched_windows(accounts, args.account):
-        blockers = allocator.launch_blockers(
+    if acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until') or quota_pools.latched_windows(accounts, args.account):
+        blockers = quota_pools.launch_blockers(
             quota_bundle, accounts, usage, now, records=dispatch_flow.reservation_records(read_only=True))
         if blockers:
             wid, reason = blockers[0]
@@ -2103,20 +2122,20 @@ def record_constraint(args, task=None, classified=None):
                 f"Account {args.account!r} window {wid!r} is exhausted or below safety floor ({reason}). "
                 f"Do not dispatch {args.account}; run `{router_command()} plan` to pick an account with remaining capacity."
             )
-    cooling = (allocator.cooling_reason(quota_bundle, allocator.launch_failures.active(), accounts)
-               if allocator.launch_failures.enabled() else None)
+    cooling = (candidate_eval.cooling_reason(quota_bundle, launch_failures.active(), accounts)
+               if launch_failures.enabled() else None)
     if cooling:
         raise ValueError(f"{args.account}/{pin.model} is cooling down ({cooling}). Tell the user; do not substitute another model.")
-    latched_model = allocator.model_latch.reason(quota_bundle, allocator.model_latch.active(now=now))
+    latched_model = model_latch.reason(quota_bundle, model_latch.active(now=now))
     if latched_model:
         raise ValueError(f"{args.account}/{pin.model}: {latched_model}. Tell the user; do not substitute another model.")
     # A model the user names on a held account or model is the probe that can lift the hold: it goes, with a warning.
-    retrying = allocator.provider_retry.reason(quota_bundle, allocator.provider_retry.active(now=now))
-    c_model = resolved['key'] if direct else allocator.model_leaf(pin.model)
+    retrying = provider_retry.reason(quota_bundle, provider_retry.active(now=now))
+    c_model = resolved['key'] if direct else account_fleet.model_leaf(pin.model)
     fast_requested = bool(getattr(args, 'fast', False))
     if fast_requested:
-        allocator.fast_modes.validate(allocator.bundle_harness(discovered or {'provider': args.provider}, args.account),
-                                      c_model, allocator.model_spec(accounts, pin.model))
+        fast_modes.validate(account_fleet.bundle_harness(discovered or {'provider': args.provider}, args.account),
+                                      c_model, account_fleet.model_spec(accounts, pin.model))
     warnings = []
     effort = pin.effort or discovered.get('effort')
     reviewed_task = task
@@ -2125,23 +2144,23 @@ def record_constraint(args, task=None, classified=None):
         task = {**classified['task'], **({'parent_agent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {})}
     records = None
     if effort is None and not sibling:
-        effort = allocator.auto_bundles.HARNESS_DEFAULT_EFFORT.get(allocator.bundle_harness({'provider': args.provider, 'model': c_model}, args.account))
-    base_b = allocator.bundles(accounts).get(chosen) or {}
+        effort = auto_bundles.HARNESS_DEFAULT_EFFORT.get(account_fleet.bundle_harness({'provider': args.provider, 'model': c_model}, args.account))
+    base_b = account_fleet.bundles(accounts).get(chosen) or {}
     bundle = {**inherited, **base_b, 'provider': args.provider, 'account': args.account, 'model': c_model,
               'effort': effort, **({'bundle_id': chosen} if chosen else {}), **({'fast': True} if fast_requested else {})}
     if not direct:
         bundle.setdefault('launch_model', pin.model)
-    bundle['harness'] = allocator.bundle_harness(bundle, args.account, chosen)
-    if 'modeId' not in bundle and bundle['harness'] in allocator.auto_bundles.HARNESS_MODE:
-        bundle['modeId'] = allocator.auto_bundles.HARNESS_MODE[bundle['harness']]
+    bundle['harness'] = account_fleet.bundle_harness(bundle, args.account, chosen)
+    if 'modeId' not in bundle and bundle['harness'] in auto_bundles.HARNESS_MODE:
+        bundle['modeId'] = auto_bundles.HARNESS_MODE[bundle['harness']]
     if fast_requested and bundle['harness'] == 'claude':
-        bundle['fast_billing'] = allocator.fast_modes.claude_billing(accounts['accounts'][args.account])
+        bundle['fast_billing'] = fast_modes.claude_billing(accounts['accounts'][args.account])
     result = {'stage': 'record', 'choice': 'constraint', 'source': 'constraint_record',
               'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
               **({'trigger': args.trigger} if getattr(args, 'trigger', None) else {}),
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
-    overlaid_accounts = allocator.five_axis_overlay(accounts)
+    overlaid_accounts = axis_scores.five_axis_overlay(accounts)
     overlaid_spec = (overlaid_accounts.get('accounts') or {}).get(args.account) or {}
     if overlaid_spec.get('capacity_unknown') and overlaid_spec.get('five_axis_free_pool'):
         warnings = [f"{args.account}/{pin.model}: capacity_unknown (quota unknown, spend unpriced); dispatched because the user named it", *warnings]
@@ -2175,7 +2194,7 @@ def record_constraint(args, task=None, classified=None):
             plan_task = {**task, 'force_fast': True} if fast_requested else task
             has_cadence = any(
                 isinstance((spec or {}).get('cadence'), dict)
-                for spec in (allocator.load_accounts().get('accounts') or {}).values()
+                for spec in (account_fleet.load_accounts().get('accounts') or {}).values()
             )
             plan_records = (records if records is not None else
                             dispatch_flow.reservation_records(read_only=not LEDGER_WRITES)
@@ -2185,7 +2204,7 @@ def record_constraint(args, task=None, classified=None):
         except (ValueError, KeyError, TypeError) as exc:
             result['router_error'] = f'{type(exc).__name__}: {exc}'
         else:
-            row = allocator.candidate_for_bundle(plan['ranking'], chosen, fast_requested)
+            row = candidate_ranking.candidate_for_bundle(plan['ranking'], chosen, fast_requested)
             result.update({'router_choice': plan['choice'],
                            'agrees': chosen is not None and chosen == (plan.get('selected_bundle') or {}).get('bundle_id', plan['choice'])
                            and fast_requested == bool((plan.get('selected_bundle') or {}).get('fast')),
@@ -2205,24 +2224,26 @@ def _with_effort(pin, effort):
 
 
 def manage_overrides(args, now=None):
-    allocator = load_allocator()
-    with override_store.locked(allocator.overrides_path()):
+    import quota_overrides
+    with override_store.locked(quota_overrides.overrides_path()):
         return _manage_overrides_locked(args, now)
 
 
 def _manage_overrides_locked(args, now=None):
     """Upsert priority/reset intent or expiry, under the caller-held store lock."""
-    allocator = load_allocator()
+    import account_fleet
+    import quota_overrides
+    import quota_pools
     now = now or datetime.now(timezone.utc)
-    path = allocator.overrides_path()
+    path = quota_overrides.overrides_path()
     try:
         document = json.loads(path.read_text(encoding='utf-8-sig'))
     except FileNotFoundError:
         document = {}
     rows = [o for o in (document.get('overrides') or []) if isinstance(o, dict)]
-    accounts = allocator.load_accounts()
+    accounts = account_fleet.load_accounts()
     usage = usage_snapshot(getattr(args, 'usage_cache', None), None, now)
-    active = allocator.load_overrides(now, path, usage=usage, accounts=accounts, prune=False)
+    active = quota_overrides.load_overrides(now, path, usage=usage, accounts=accounts, prune=False)
     if args.list:
         return {'stage': 'override', 'path': str(path), 'active': active}
     if args.clear:
@@ -2243,7 +2264,7 @@ def _manage_overrides_locked(args, now=None):
             if hours is not None:
                 return now + timedelta(hours=hours)
             if at:
-                parsed = allocator.parse_time(at)
+                parsed = quota_pools.parse_time(at)
                 if parsed is None:
                     raise ValueError(f'--{name}-at needs an ISO time with a zone, e.g. 2026-10-12T21:00+08:00.')
                 return parsed
@@ -2256,7 +2277,7 @@ def _manage_overrides_locked(args, now=None):
         stop_on_reset = (explicit_stop_on_reset or (resets is not None)
                          or bool(getattr(args, 'reset_confirmation', None)) or bool(getattr(args, 'rebaseline', False)))
         if args.until:
-            until = allocator.parse_time(args.until)
+            until = quota_pools.parse_time(args.until)
         elif stop_on_reset:
             until = max([t for t in (resets, expires) if t] + [now + timedelta(hours=24)])
         else:
@@ -2266,7 +2287,7 @@ def _manage_overrides_locked(args, now=None):
         baseline_windows = None
         if stop_on_reset:
             acct_row = (usage.get('accounts') or {}).get(args.account) or {}
-            fetched = allocator.parse_time(acct_row.get('fetched_at'))
+            fetched = quota_pools.parse_time(acct_row.get('fetched_at'))
             if (acct_row.get('status') == 'fresh' and acct_row.get('stale') is not True
                     and acct_row.get('available') is not False
                     and acct_row.get('account', args.account) == args.account
@@ -2277,9 +2298,9 @@ def _manage_overrides_locked(args, now=None):
                 for w in acct_row.get('windows') or ():
                     if not isinstance(w, dict):
                         continue
-                    wid = allocator.canonical_window_id(spec, w.get('id'))
+                    wid = quota_pools.canonical_window_id(spec, w.get('id'))
                     hours = (spec.get('windows', {}).get(wid) or {}).get('hours', 168)
-                    if (wid == allocator.canonical_window_id(spec, args.window)) if args.window else hours >= short:
+                    if (wid == quota_pools.canonical_window_id(spec, args.window)) if args.window else hours >= short:
                         used_val = w.get('used_pct')
                         rem_val = w.get('remaining_pct_before_reset')
                         if rem_val is None:
@@ -2300,27 +2321,27 @@ def _manage_overrides_locked(args, now=None):
                             bw[wid] = row_bw
                 if bw:
                     baseline_windows = bw
-        rows = [o for o in rows if (until_o := allocator.parse_time(o.get('until'))) is not None and until_o > now
-                and not allocator.override_reset_landed(o, usage, accounts, now)
-                and not allocator.override_depleted(o, usage, accounts)]
+        rows = [o for o in rows if (until_o := quota_pools.parse_time(o.get('until'))) is not None and until_o > now
+                and not quota_overrides.override_reset_landed(o, usage, accounts, now)
+                and not quota_overrides.override_depleted(o, usage, accounts)]
         intent = (getattr(args, 'intent', None) or ' '.join(args.basis.split())).strip()
-        model = allocator.canonical(args.model, accounts) if args.model else None
+        model = account_fleet.canonical(args.model, accounts) if args.model else None
         boost = 0.1 if args.boost is None else args.boost
-        if not expires and allocator.override_depleted({'account': args.account, 'model': model, 'window': args.window,
+        if not expires and quota_overrides.override_depleted({'account': args.account, 'model': model, 'window': args.window,
                                                         'boost': boost}, usage, accounts):
             raise ValueError(f'{args.account} is at or below the {accounts["scoring"]["safety_margin_pct"]}% safety margin; '
                              'the router dispatches no new work there, so a priority would be retired at once.')
         key = (intent, args.account, model, args.window)
         previous = next((o for o in rows if (
             o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'),
-            allocator.canonical(o.get('model'), accounts) if o.get('model') else None, o.get('window')) == key), None)
+            account_fleet.canonical(o.get('model'), accounts) if o.get('model') else None, o.get('window')) == key), None)
         rebaseline = bool(getattr(args, 'rebaseline', False))
         if rebaseline:
             if previous is None:
                 raise ValueError('--rebaseline requires an existing matching intent/account/model/window.')
             if not baseline_windows or any(
                     not isinstance(w.get('used_pct'), (int, float)) or not 0 <= w['used_pct'] <= 100
-                    or allocator.parse_time(w.get('resets_at')) is None
+                    or quota_pools.parse_time(w.get('resets_at')) is None
                     for w in baseline_windows.values()):
                 raise ValueError('--rebaseline needs fresh, valid quota observations; the existing override is unchanged.')
         confirmation = (getattr(args, 'reset_confirmation', None)
@@ -2349,7 +2370,7 @@ def _manage_overrides_locked(args, now=None):
                 entry['baseline_repaired_at'] = previous['baseline_repaired_at']
         rows = [o for o in rows if (
             o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'),
-            allocator.canonical(o.get('model'), accounts) if o.get('model') else None, o.get('window')) != key]
+            account_fleet.canonical(o.get('model'), accounts) if o.get('model') else None, o.get('window')) != key]
         rows.append({k: v for k, v in entry.items() if v is not None})
         removed = 0
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2360,7 +2381,7 @@ def _manage_overrides_locked(args, now=None):
         ledger_row.update({'account': args.account, 'model': model, 'basis': args.basis.strip()[:400],
                            'boost': boost, 'until': until.isoformat()})
     append_ledger(ledger_row)
-    return {'stage': 'override', 'path': str(path), 'removed': removed, 'active': allocator.load_overrides(now, path, usage=usage, accounts=accounts, prune=False)}
+    return {'stage': 'override', 'path': str(path), 'removed': removed, 'active': quota_overrides.load_overrides(now, path, usage=usage, accounts=accounts, prune=False)}
 
 
 def router_command():
@@ -2469,19 +2490,20 @@ def scorer_unavailable_result(task, scorer, started):
     return result
 
 
-def classify_task(task, needs, allocator, capabilities, policy, timeout, use_model=True):
+def classify_task(task, needs, capabilities, policy, timeout, use_model=True):
     """System-One classification of one task, the same for a planned roll and a pinned one.
 
     Returns (profile, task, needs, scorer, hours_estimate, alerts). profile is None when no classifier answered;
     task is then unchanged. hours_estimate is the classifier's own expected_hours when the caller gave no --hours,
     else None: nothing here invents hours."""
+    import task_intake
     alerts, hours_estimate = [], None
-    profile, scorer = score_task(task, allocator, capabilities, timeout, use_model=use_model)
+    profile, scorer = score_task(task, capabilities, timeout, use_model=use_model)
     if profile is None:
         return None, task, needs, scorer, None, alerts
-    classified_kind = allocator.profile_kind(profile, policy)
-    derived = allocator.profile_difficulty(profile, policy)
-    order = list(allocator.DIFFICULTY_ORDER)
+    classified_kind = task_intake.profile_kind(profile, policy)
+    derived = task_intake.profile_difficulty(profile, policy)
+    order = list(task_intake.DIFFICULTY_ORDER)
     if task.get('difficulty') in order and order.index(task['difficulty']) > order.index(derived):
         alerts.append({
             'code': 'difficulty_above_profile', 'severity': 'info', 'account': None,
@@ -2554,16 +2576,17 @@ def classify_pinned(task, args):
         scorer = {'source': 'scorer_unavailable', 'model': None, 'fallback_reason': 'no_score_without_profile',
                   'fallback_detail': '--no-score was given and the task carries no profile'}
         return {'result': pinned_unclassified_result(task, scorer, hours, started)}
-    allocator = load_allocator()
-    capabilities = allocator.load_capabilities()
-    policy = allocator.load_accounts()['scoring']
+    import account_fleet
+    import task_intake
+    capabilities = account_fleet.load_capabilities()
+    policy = account_fleet.load_accounts()['scoring']
     needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
     profile, classified, _, scorer, estimate, alerts = classify_task(
-        task, needs, allocator, capabilities, policy, getattr(args, 'score_timeout', SCORER_TIMEOUT_SECONDS),
+        task, needs, capabilities, policy, getattr(args, 'score_timeout', SCORER_TIMEOUT_SECONDS),
         use_model=not getattr(args, 'dry_run', False))
     if profile is None:
         return {'result': pinned_unclassified_result(task, scorer, hours, started)}
-    checked = allocator.validate_caller_profile(classified['profile'])
+    checked = task_intake.validate_caller_profile(classified['profile'])
     classified = {**classified, 'profile': checked}
     if checked.get('multi_task') is True:
         keep_whole = (getattr(args, 'keep_whole', None) or '').strip()
@@ -2597,7 +2620,7 @@ def plan_stage(document, args):
         if args.stage != 'plan' or not args.dry_run:
             raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
         from demo_plan import plan as reference_plan
-        result = reference_plan({**document, 'task': task}, load_allocator())
+        result = reference_plan({**document, 'task': task})
         return result, 0 if result.get('choice') != 'none' else 2
     reviewed_task = task
     started = time.monotonic()
@@ -2615,9 +2638,11 @@ def plan_stage(document, args):
     if getattr(args, 'fast', False):
         needs['fast'] = True
         task = {**task, 'needs': needs}
-    allocator = load_allocator()
-    capabilities = allocator.load_capabilities()
-    loaded_accounts = allocator.load_accounts()
+    import account_fleet
+    import allocator
+    import task_intake
+    capabilities = account_fleet.load_capabilities()
+    loaded_accounts = account_fleet.load_accounts()
     policy = loaded_accounts['scoring']
     guard_cfg = capabilities.get('remote_reroute_guard') or {}
     has_cadence = any(
@@ -2653,11 +2678,11 @@ def plan_stage(document, args):
         return finalize(planned, None, 'auto', started, reviewed_task), 2
     if should_score:
         profile, task, needs, scorer, hours_estimate, alerts = classify_task(
-            task, needs, allocator, capabilities, policy, args.score_timeout, use_model=not args.dry_run)
+            task, needs, capabilities, policy, args.score_timeout, use_model=not args.dry_run)
         if profile is None:
             return scorer_unavailable_result(task, scorer, started), 2
         extra_alerts.extend(alerts)
-    task_profile = allocator.validate_caller_profile(task['profile']) if task.get('profile') else {}
+    task_profile = task_intake.validate_caller_profile(task['profile']) if task.get('profile') else {}
     if task_profile:
         task = {**task, 'profile': task_profile}
     is_ro_review = bool(task_profile.get('read_only_review'))
@@ -2674,13 +2699,13 @@ def plan_stage(document, args):
                              'task_count': count,
                              'message': f'The classifier found {count} separate tasks; the caller kept them as one '
                                         'assignment: ' + keep_whole[:300]})
-    kind = allocator.task_kind(task, capabilities, policy)
+    kind = task_intake.task_kind(task, capabilities, policy)
     guard = capabilities.get('remote_reroute_guard') or {}
     guarded_bundle = guard.get('bundle_id')
     locked_route = (recent_route_lock(task, records, now, guarded_bundle, guard.get('window_seconds', 600))
                     if guard.get('enabled') is True and isinstance(guarded_bundle, str) else None)
     if locked_route is not None and guarded_bundle in unavailable and not needs.get('local_only'):
-        guarded = allocator.bundles(loaded_accounts).get(guarded_bundle) or {}
+        guarded = account_fleet.bundles(loaded_accounts).get(guarded_bundle) or {}
         probe_err = dot_unreachable() if guarded.get('provider') == 'dot' else 'no readiness probe'
         if probe_err is None:
             unavailable = [u for u in unavailable if u != guarded_bundle]
@@ -2689,7 +2714,7 @@ def plan_stage(document, args):
                 'message': f'The effective local reroute policy retains the recent {guarded_bundle} route '
                            'while its adapter is healthy. Provide concrete local-runtime evidence or '
                            'continue the recorded route.'})
-    wants_dot = allocator.dot_may_take(kind, needs, capabilities, task.get('profile') if isinstance(task.get('profile'), dict) else None)
+    wants_dot = task_intake.dot_may_take(kind, needs, capabilities, task.get('profile') if isinstance(task.get('profile'), dict) else None)
     dot_down = dot_unreachable() if wants_dot and 'dot_text' not in unavailable else None
     if dot_down:
         unavailable.append('dot_text')
@@ -2864,18 +2889,19 @@ def main():
             task = document.get('task')
             if not isinstance(task, dict) or not task:
                 raise ValueError('Input requires task.')
-            allocator = load_allocator()
-            capabilities = allocator.load_capabilities()
-            policy = allocator.load_accounts()['scoring']
-            profile, scorer = score_task(task, allocator, capabilities, args.score_timeout, use_model=not args.dry_run)
+            import account_fleet
+            import task_intake
+            capabilities = account_fleet.load_capabilities()
+            policy = account_fleet.load_accounts()['scoring']
+            profile, scorer = score_task(task, capabilities, args.score_timeout, use_model=not args.dry_run)
             if profile is None:
                 result = {'stage': 'score', 'status': 'blocked', 'source': scorer['source'], 'task_profile': None,
                           'scorer': scorer, 'error': 'scorer_unavailable', 'next': SCORER_UNAVAILABLE_NEXT}
                 print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
                 return 2
-            derived = allocator.profile_difficulty(profile, policy)
+            derived = task_intake.profile_difficulty(profile, policy)
             result = {'stage': 'score', 'source': scorer['source'], 'task_profile': profile, 'scorer': scorer,
-                      'derived': {'kind': allocator.task_kind({**task, 'profile': profile}, capabilities, policy),
+                      'derived': {'kind': task_intake.task_kind({**task, 'profile': profile}, capabilities, policy),
                                   'difficulty': task.get('difficulty') or derived, 'profile_difficulty': derived}}
             print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
             return 0
@@ -2896,13 +2922,13 @@ def main():
             result = dispatch_flow.cli(args)
             code = 1 if result.get('state') in ('failed', 'create_failed') else 0
         elif args.stage == 'providers':
-            accounts = load_allocator().load_accounts()
+            accounts = account_fleet.load_accounts()
             result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync'),
                       'public_data': public_data.status()}
             code = 0
         elif args.stage == 'usage':
             result = usage_snapshot(args.usage_cache, args.accounts)
-            result = provider_inventory.merge_usage(result, load_allocator().load_accounts(), datetime.now(timezone.utc), args.accounts)
+            result = provider_inventory.merge_usage(result, account_fleet.load_accounts(), datetime.now(timezone.utc), args.accounts)
             code = 0 if result['read_ok'] else 1
         elif args.stage == 'override':
             result = manage_overrides(args)

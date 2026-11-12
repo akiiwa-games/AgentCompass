@@ -92,7 +92,8 @@ def test_active_manual_operation_or_auto_worker_prevents_duplicate_start(tmp_pat
 def test_a_batch_in_another_process_defers_this_batch(tmp_path, monkeypatch):
     configure(tmp_path, monkeypatch)
     from router_priority import modules
-    store = modules()[0].override_store
+    modules()
+    import override_store as store
     with store.locked(tmp_path / 'cli-update-operation'):
         with mock.patch.object(cli, 'update') as install:
             result = cli.update_all()

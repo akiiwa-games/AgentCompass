@@ -8,6 +8,9 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
 import allocator
+import account_fleet
+import host_policy
+import provider_inventory
 import accounts_override
 import router_data
 
@@ -67,13 +70,13 @@ def settings(tmp_path, monkeypatch):
     (reference / 'accounts.json').write_text(json.dumps(document()))
     state = tmp_path / 'state'
     state.mkdir()
-    monkeypatch.setattr(allocator, 'REFERENCES', reference)
+    monkeypatch.setattr(account_fleet, 'REFERENCES', reference)
     monkeypatch.setenv('ROUTER_ACCOUNTS_OVERRIDE', str(state / 'accounts-override.json'))
     monkeypatch.setenv('ROUTER_CAPACITY', str(state / 'capacity.json'))
-    monkeypatch.setattr(allocator.provider_inventory, 'apply', lambda data: None)
-    monkeypatch.setattr(allocator.host_policy, 'sync_discovered', lambda data: {})
-    monkeypatch.setattr(allocator.host_policy, 'load_policy', lambda: None)
-    monkeypatch.setattr(allocator.host_policy, 'policy_path', lambda: (state / 'host-policy.json', False))
+    monkeypatch.setattr(provider_inventory, 'apply', lambda data: None)
+    monkeypatch.setattr(host_policy, 'sync_discovered', lambda data: {})
+    monkeypatch.setattr(host_policy, 'load_policy', lambda: None)
+    monkeypatch.setattr(host_policy, 'policy_path', lambda: (state / 'host-policy.json', False))
     monkeypatch.setattr(router_data, 'STATE_DIR', state)
     monkeypatch.setattr(router_data, 'modules', lambda: (allocator, mock.Mock()))
     return state / 'accounts-override.json'
@@ -90,7 +93,7 @@ def test_first_write_is_sparse_and_partial_model_toggle_is_harness_scoped(tmp_pa
     assert sol['partial'] and not sol['enabled']
     assert router_data.toggle_harness_model('codex', 'codex', 'gpt-6.1-sol') is True
     assert router_data.toggle_harness_model('codex', 'codex', 'gpt-6.1-sol') is False
-    live = allocator.load_accounts()['accounts']['codex']['bundles']
+    live = account_fleet.load_accounts()['accounts']['codex']['bundles']
     assert live['sol_medium']['disabled'] and live['sol_high']['disabled']
     assert not live['pi_sol_high'].get('disabled')
 
@@ -103,7 +106,7 @@ def test_legacy_disabled_strings_load_and_save_as_boolean_state(tmp_path, monkey
                 'sol_high': {'disabled': old_value}, 'sol_medium': {'disabled': False}}}},
                 'harness_overrides': {'codex': {'pi': {'disabled': old_value}}}}
             target.write_text(json.dumps(original))
-            live = allocator.load_accounts()['accounts']['codex']['bundles']
+            live = account_fleet.load_accounts()['accounts']['codex']['bundles']
             assert live['sol_high']['disabled'] is True
             assert live['sol_medium']['disabled'] is False
             assert live['pi_sol_high']['disabled'] is True
@@ -142,19 +145,19 @@ def test_direct_file_toggle_normalizes_other_flags_and_writes_explicit_state(tmp
 def test_harness_suspension_keeps_model_memory_and_other_harness(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
     router_data.toggle_harness('pi', 'codex', False)
-    live = allocator.load_accounts()['accounts']['codex']['bundles']
+    live = account_fleet.load_accounts()['accounts']['codex']['bundles']
     assert live['pi_sol_high']['disabled']
     assert not live['sol_high'].get('disabled')
     row = next(row for row in router_data.harness_model_rows() if row['harness'] == 'pi')
     assert not row['enabled'] and row['models'][0]['enabled']
     router_data.toggle_harness('pi', 'codex', True)
-    assert not allocator.load_accounts()['accounts']['codex']['bundles']['pi_sol_high'].get('disabled')
+    assert not account_fleet.load_accounts()['accounts']['codex']['bundles']['pi_sol_high'].get('disabled')
     assert 'bundles' not in json.loads(target.read_text()).get('accounts', {}).get('codex', {})
 
 
 def test_enabling_one_harness_on_a_denied_account_keeps_its_siblings_off(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
-    monkeypatch.setattr(allocator.host_policy, 'account_allowed', lambda *args: False)
+    monkeypatch.setattr(host_policy, 'account_allowed', lambda *args: False)
     with mock.patch.object(router_data, 'toggle_account_host') as account_toggle:
         router_data.toggle_harness('pi', 'codex', True)
     account_toggle.assert_called_once_with('codex')
@@ -196,8 +199,8 @@ def test_only_discovered_ready_execution_profiles_with_bundles_are_shown(tmp_pat
         data['accounts']['codex']['bundles']['second_high'] = {'model': 'gpt-6.1-sol', 'provider': 'codex-work'}
         data['_discovery'] = {'accounts': {'codex': {'family': 'codex', 'status': 'ready'},
                                           'codex-work': {'family': 'codex', 'quota_account': 'codex', 'status': status['second']}}}
-    monkeypatch.setattr(allocator.provider_inventory, 'apply', discover)
-    monkeypatch.setattr(allocator.host_policy, 'load_policy', lambda: {
+    monkeypatch.setattr(provider_inventory, 'apply', discover)
+    monkeypatch.setattr(host_policy, 'load_policy', lambda: {
         'allowed_accounts': ['codex', 'codex-work', 'codex-team'], 'known_accounts': ['codex', 'codex-work', 'codex-team']})
     rows = {(row['account'], row['harness']): row for row in router_data.harness_model_rows()}
     assert ('codex-work', 'codex') not in rows and ('codex-work', 'pi') not in rows
@@ -211,27 +214,27 @@ def test_only_discovered_ready_execution_profiles_with_bundles_are_shown(tmp_pat
     assert preferences['accounts']['codex']['bundles']['second_high']['disabled']
     with mock.patch.object(router_data, 'toggle_account_host'):
         router_data.toggle_harness('codex', 'codex-work', False)
-    live = allocator.load_accounts()['accounts']['codex']['bundles']
+    live = account_fleet.load_accounts()['accounts']['codex']['bundles']
     assert live['second_high']['_harness_disabled']
     assert not live['sol_high'].get('disabled')
 
 
 def test_discovered_model_checkbox_matches_routing_and_writes_only_the_boolean(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
-    reference = allocator.REFERENCES / 'accounts.json'
+    reference = account_fleet.REFERENCES / 'accounts.json'
     doc = json.loads(reference.read_text())
     doc['superseded'] = {'gpt-5.6-sol': {'by': 'gpt-6.1-sol', 'basis': 'test'}}
     reference.write_text(json.dumps(doc))
     inventory = {'accounts': {'codex': {'family': 'codex', 'status': 'ready',
                                         'models': ['gpt-6.1-sol', 'gpt-5.6-sol', 'gpt-9-new']}}}
-    monkeypatch.setattr(allocator.provider_inventory, 'apply',
-                        lambda data: allocator.provider_inventory._apply_auto_bundles(data, inventory, False))
+    monkeypatch.setattr(provider_inventory, 'apply',
+                        lambda data: provider_inventory._apply_auto_bundles(data, inventory, False))
 
     def states():
         rows = router_data.harness_model_rows()
         tray = {m['model']: m['enabled'] for row in rows if (row['account'], row['harness']) == ('codex', 'codex')
                 for m in row['models'] if m.get('routed', True)}
-        live = allocator.bundles(allocator.load_accounts())
+        live = account_fleet.bundles(account_fleet.load_accounts())
         routing = {b['model']: not b.get('disabled') for b in live.values() if b.get('auto') and b['harness'] == 'codex'}
         return tray, routing
 

@@ -116,13 +116,14 @@ def _invalidate_accounts_cache() -> None:
         _ACCOUNTS_CACHE = None
 
 
-def _accounts_fingerprint(allocator) -> tuple | None:
-    if hasattr(allocator, "_mock_name") or hasattr(getattr(allocator, "load_accounts", None), "_mock_name"):
+def _accounts_fingerprint() -> tuple | None:
+    import account_fleet
+    import host_policy
+    if hasattr(getattr(account_fleet, "load_accounts", None), "_mock_name"):
         return None
-    if getattr(allocator.load_accounts, "__module__", "") != "allocator":
+    if getattr(account_fleet.load_accounts, "__module__", "") != "account_fleet":
         return None
-    host_policy_mod = getattr(allocator, "host_policy", None)
-    if hasattr(getattr(host_policy_mod, "load_policy", None), "_mock_name"):
+    if hasattr(getattr(host_policy, "load_policy", None), "_mock_name"):
         return None
     try:
         import provider_inventory
@@ -132,12 +133,12 @@ def _accounts_fingerprint(allocator) -> tuple | None:
                 return None
     except Exception:
         return None
-    refs = getattr(allocator, "REFERENCES", None)
+    refs = getattr(account_fleet, "REFERENCES", None)
     if not isinstance(refs, Path):
         return None
     paseo_home = Path(os.environ.get("PASEO_HOME") or Path.home() / ".paseo")
     files = (
-        _public_accounts(allocator, refs),
+        _public_accounts(refs),
         STATE_DIR / "accounts-override.json",
         STATE_DIR / "host-policy.json",
         STATE_DIR / "plugins.json",
@@ -160,32 +161,33 @@ def _accounts_fingerprint(allocator) -> tuple | None:
     return (str(STATE_DIR), os.environ.get("ROUTER_HOST_POLICY"), *stamps)
 
 
-def _cached_accounts(allocator=None) -> dict:
+def _cached_accounts() -> dict:
     global _ACCOUNTS_CACHE
-    if allocator is None:
-        allocator, _ = modules()
-    fp = _accounts_fingerprint(allocator)
+    modules()
+    import account_fleet
+    fp = _accounts_fingerprint()
     if fp is None:
-        return allocator.load_accounts()
+        return account_fleet.load_accounts()
     now = time.monotonic()
     with _ACCOUNTS_CACHE_LOCK:
         cached = _ACCOUNTS_CACHE
         if cached is not None and cached[0] == fp and now - cached[1] < 2.0:
             return cached[2]
-    accounts = allocator.load_accounts()
-    fp_after = _accounts_fingerprint(allocator) or fp
+    accounts = account_fleet.load_accounts()
+    fp_after = _accounts_fingerprint() or fp
     with _ACCOUNTS_CACHE_LOCK:
         _ACCOUNTS_CACHE = (fp_after, time.monotonic(), accounts)
     return accounts
 
 
-def _load_capabilities(allocator, accounts: dict | None = None) -> dict:
+def _load_capabilities(accounts: dict | None = None) -> dict:
+    import account_fleet
     if accounts is not None:
         try:
-            return allocator.load_capabilities(accounts=accounts)
+            return account_fleet.load_capabilities(accounts=accounts)
         except TypeError:
             pass
-    return allocator.load_capabilities()
+    return account_fleet.load_capabilities()
 
 
 def now_utc() -> datetime:
@@ -203,9 +205,10 @@ class UnreplayableProfile(ValueError):
 
 def profile_invalid(profile) -> bool:
     """True when a profile fails the classifier's current schema (a missing or invalid field of any kind)."""
-    allocator, _ = modules()
+    modules()
+    import task_intake
     try:
-        allocator.validate_profile(profile)
+        task_intake.validate_profile(profile)
         return False
     except ValueError:
         return True
@@ -213,8 +216,9 @@ def profile_invalid(profile) -> bool:
 
 def unreplayable(row: dict) -> bool:
     from decision_theatre import snapshot_result
-    allocator, _ = modules()
-    return snapshot_result(row) is None and profile_invalid(allocator.ledger_profile(row.get("profile")))
+    modules()
+    import ledger_snapshot
+    return snapshot_result(row) is None and profile_invalid(ledger_snapshot.ledger_profile(row.get("profile")))
 
 
 def recent_ledger(limit: int = 30, path: Path | None = None) -> list[dict]:
@@ -244,7 +248,8 @@ def ledger_summary(row: dict) -> dict:
 def build_task(objective: str, hours: float, local_only: bool = False, needs_visual: bool = False,
                work_kind: str | None = None, difficulty: str | None = None, profile: dict | None = None,
                local_only_reason: str | None = None) -> dict:
-    allocator, _ = modules()
+    modules()
+    import task_intake
     needs = {}
     if needs_visual:
         needs["visual"] = True
@@ -259,13 +264,14 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
     if profile is not None:
         if profile_invalid(profile):
             raise UnreplayableProfile(_tr(UNREPLAYABLE_NOTE))
-        task["profile"] = allocator.validate_profile(profile)
+        task["profile"] = task_intake.validate_profile(profile)
     return task
 
 
 def plan_task(task: dict) -> dict:
     """allocator.plan for a task, with the same Dot reachability rule as route_judge; never writes the ledger."""
     allocator, router = modules()
+    import task_intake
     now = now_utc()
     usage = router.usage_snapshot(None, None, now)
     records = router.read_ledger()
@@ -275,12 +281,12 @@ def plan_task(task: dict) -> dict:
         records = records + dispatch_flow.reservation_records(read_only=True)
     except Exception:
         pass
-    accounts = _cached_accounts(allocator)
-    capabilities = _load_capabilities(allocator, accounts)
+    accounts = _cached_accounts()
+    capabilities = _load_capabilities(accounts)
     policy = accounts["scoring"]
-    kind = allocator.task_kind(task, capabilities, policy)
+    kind = task_intake.task_kind(task, capabilities, policy)
     unavailable = []
-    if allocator.dot_may_take(kind, task.get("needs") or {}, capabilities) and router.dot_unreachable():
+    if task_intake.dot_may_take(kind, task.get("needs") or {}, capabilities) and router.dot_unreachable():
         unavailable.append("dot_text")
     result = allocator.plan(task, usage, now, unavailable, records)
     # Keep the original task title/profile available to the visual replay.
@@ -291,12 +297,13 @@ def simulate(objective: str, hours: float, local_only: bool = False, needs_visua
              live_scorer: bool = True) -> dict:
     """Plan a typed task. Profiles it with the configured System-One scorer; when the classifier is unavailable,
     returns blocked / scorer_unavailable rather than guessing from keywords."""
-    allocator, router = modules()
-    accounts = _cached_accounts(allocator)
-    capabilities = _load_capabilities(allocator, accounts)
+    _, router = modules()
+    import task_intake
+    accounts = _cached_accounts()
+    capabilities = _load_capabilities(accounts)
     policy = accounts["scoring"]
     task = build_task(objective, hours, local_only, needs_visual)
-    profile, scorer = router.score_task(task, allocator, capabilities, use_model=bool(live_scorer))
+    profile, scorer = router.score_task(task, capabilities, use_model=bool(live_scorer))
     if profile is None:
         return {
             "stage": "plan",
@@ -309,8 +316,8 @@ def simulate(objective: str, hours: float, local_only: bool = False, needs_visua
         }
     task["profile"] = profile
     if scorer.get("source") == "system_one":
-        task["work_kind"] = allocator.profile_kind(profile, policy)
-        task["difficulty"] = allocator.profile_difficulty(profile, policy)
+        task["work_kind"] = task_intake.profile_kind(profile, policy)
+        task["difficulty"] = task_intake.profile_difficulty(profile, policy)
     return {**plan_task(task), "scorer": scorer}
 
 
@@ -320,8 +327,9 @@ def replay(row: dict) -> dict:
     snapshot = snapshot_result(row)
     if snapshot is not None:
         return with_usage_readings(snapshot, row.get("at"))
-    allocator, _ = modules()
-    mapped_profile = allocator.ledger_profile(row.get("profile"))
+    modules()
+    import ledger_snapshot
+    mapped_profile = ledger_snapshot.ledger_profile(row.get("profile"))
     if profile_invalid(mapped_profile):
         return {"choice": None, "ranking": [], "theatre_source": "unreplayable", "replay_note": _tr(UNREPLAYABLE_NOTE)}
     task = build_task(row.get("objective") or "", float(row.get("hours") or 1.0), bool(row.get("local_only")),
@@ -419,9 +427,11 @@ def _estimated_axes(candidate: dict) -> dict:
 
 def model_table() -> dict:
     """The router's model rows with their category scores (`five_axis`), tier and cited usd per hour (absent when unpriced)."""
-    allocator, _ = modules()
-    accounts = allocator.five_axis_overlay(allocator.load_accounts(_public_accounts(allocator, allocator.REFERENCES)))
-    return allocator.models_table(accounts)
+    modules()
+    import account_fleet
+    import axis_scores
+    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(_public_accounts(account_fleet.REFERENCES)))
+    return account_fleet.models_table(accounts)
 
 
 def dna_series(models: dict, first: str, second: str | None) -> tuple[list[dict], list[dict]]:
@@ -446,7 +456,8 @@ def _read_json(path: Path) -> dict:
 
 def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, policy) -> tuple[str, str]:
     """(text, colour kind) of an account's status."""
-    allocator, _ = modules()
+    modules()
+    import host_policy
     row = inventory_row or {}
     plugin_id = {"dot": "dot2api", "chatgpt-web": "chatgpt-web"}.get(name)
     plugin_entry = (plugin_config or {}).get(plugin_id) if plugin_id and isinstance(plugin_config, dict) else None
@@ -456,7 +467,7 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
         if isinstance(plugin_entry, dict) and plugin_entry.get("enabled") is True:
             return _tr("已启用，等待刷新"), "idle"
         return _tr("集成已关闭"), "idle"
-    if not allocator.host_policy.account_allowed(policy, name):
+    if not host_policy.account_allowed(policy, name):
         if row.get('billing') in ('metered', 'unknown'):
             return _tr('仅手动使用'), 'idle'
         return _tr("本机策略禁用"), "idle"
@@ -556,14 +567,18 @@ def signed_out(row: dict | None) -> bool:
 
 
 def account_cards() -> list[dict]:
-    allocator, router = modules()
+    _, router = modules()
+    import axis_scores
+    import host_policy
+    import quota_economy
+    import quota_pools
     import provider_inventory
 
     now = now_utc()
-    accounts = _cached_accounts(allocator)
-    if callable(getattr(allocator, "five_axis_overlay", None)):
+    accounts = _cached_accounts()
+    if callable(getattr(axis_scores, "five_axis_overlay", None)):
         try:
-            overlaid = allocator.five_axis_overlay(accounts)
+            overlaid = axis_scores.five_axis_overlay(accounts)
             if isinstance(overlaid, dict):
                 accounts = overlaid
         except Exception:
@@ -577,7 +592,7 @@ def account_cards() -> list[dict]:
     capacity = _read_json(STATE_DIR / "capacity.json")
     observed = capacity.get("observed") or {}
     try:
-        policy = allocator.host_policy.load_policy()
+        policy = host_policy.load_policy()
     except Exception:
         policy = None
     config = plugins.load()
@@ -593,7 +608,7 @@ def account_cards() -> list[dict]:
         members.setdefault(source, []).append(member)
 
     def pool_allowed(name):
-        return any(allocator.host_policy.account_allowed(policy, n) for n in (name, *members.get(name, ())))
+        return any(host_policy.account_allowed(policy, n) for n in (name, *members.get(name, ())))
     ordered = card_order([*inv_accounts.keys(), *acc_table.keys()], inv_accounts)
     names = [
         n for n in ordered
@@ -604,10 +619,10 @@ def account_cards() -> list[dict]:
         )
     ]
     reservations = pool_reservations(accounts=accounts, now=now)
-    retry_holds = provider_retry_holds(allocator)
-    live_doc = live_model_state(allocator, accounts)
+    retry_holds = provider_retry_holds()
+    live_doc = live_model_state(accounts)
     try:
-        priority = router_priority.targets(allocator, accounts)
+        priority = router_priority.targets(accounts)
     except Exception:
         priority = []
     for name in names:
@@ -628,7 +643,7 @@ def account_cards() -> list[dict]:
             text, kind = (held if kind == "ok" else f"{text}；{held}"), "warn"
         else:
             held = None
-        live_note = live_model_hold_text(allocator, live_doc, name, spec)
+        live_note = live_model_hold_text(live_doc, name, spec)
         if live_note and kind != "idle":
             text, kind = (live_note if kind == "ok" else f"{text}；{live_note}"), "warn"
         status = (row or {}).get("status")
@@ -638,7 +653,7 @@ def account_cards() -> list[dict]:
         member_rows = pool_member_rows(usage_row.get("pool_members"), now)
         for window in usage_row.get("windows") or []:
             wid = window.get("id")
-            c_wid = allocator.canonical_window_id(spec, wid)
+            c_wid = quota_pools.canonical_window_id(spec, wid)
             hours = ((spec.get("windows") or {}).get(c_wid) or {}).get("hours")
             reset_passed = window.get("reset_time_passed") is True
             remaining = window.get("remaining_pct_before_reset")
@@ -649,7 +664,7 @@ def account_cards() -> list[dict]:
                 remaining = window.get("observed_remaining_pct")
             if status == 'quota_exhausted' or wid in latched or c_wid in latched:
                 remaining = 0.0  # Explicit upstream exhaustion outranks an older positive cache.
-            cap = allocator.capacity_usd(spec, c_wid) if spec else None
+            cap = quota_economy.capacity_usd(spec, c_wid) if spec else None
             acct_obs = observed.get(name) or {}
             rates = acct_obs.get(wid) or acct_obs.get(c_wid) or {}
             res = reservations.get((name, wid)) or reservations.get((name, c_wid)) or {}
@@ -722,9 +737,11 @@ def account_cards() -> list[dict]:
 def pool_reservations(db: Path | None = None, accounts: dict | None = None,
                       now: datetime | None = None) -> dict[tuple[str, str], dict]:
     """Read-only in-flight quota reservations per (account, window_id) from active dispatch leases."""
-    allocator, _ = modules()
+    modules()
+    import quota_economy
+    import quota_pools
     now = now or now_utc()
-    accounts = accounts or _cached_accounts(allocator)
+    accounts = accounts or _cached_accounts()
     scoring = accounts.get("scoring") or {}
     acc_table = accounts.get("accounts") or {}
     rows = _dispatch_rows(db or STATE_DIR / "dispatch.sqlite3")
@@ -734,7 +751,7 @@ def pool_reservations(db: Path | None = None, accounts: dict | None = None,
         did = r.get("dispatch_id")
         if not did or did in seen or r.get("state") not in LIVE_DISPATCH:
             continue
-        expiry = allocator.parse_time(r.get("lease_until"))
+        expiry = quota_pools.parse_time(r.get("lease_until"))
         if expiry is None or expiry <= now:
             continue
         seen.add(did)
@@ -756,15 +773,15 @@ def pool_reservations(db: Path | None = None, accounts: dict | None = None,
     result: dict[tuple[str, str], dict] = {}
     if not records:
         return result
-    bundle_pools_fn = getattr(allocator, "bundle_pools", None)
+    bundle_pools_fn = getattr(quota_pools, "bundle_pools", None)
     for account, spec in acc_table.items():
         if not isinstance(spec, dict):
             continue
         for wid, wspec in (spec.get("windows") or {}).items():
             if not isinstance(wspec, dict):
                 continue
-            c_wid = allocator.canonical_window_id(spec, wid)
-            cap_usd = allocator.capacity_usd(spec, c_wid)
+            c_wid = quota_pools.canonical_window_id(spec, wid)
+            cap_usd = quota_economy.capacity_usd(spec, c_wid)
             if not cap_usd or cap_usd <= 0:
                 continue
             pool_workers = []
@@ -778,14 +795,14 @@ def pool_reservations(db: Path | None = None, accounts: dict | None = None,
                     try:
                         pools = bundle_pools_fn(dict(bundle, account=account), accounts)
                     except Exception:
-                        usd = allocator.inflight_reserved_usd(
+                        usd = quota_pools.inflight_reserved_usd(
                             account, spec, c_wid, wspec, {}, cap_usd, [rec], accounts, scoring, now)
                     else:
                         amt = rec.get("expected_usd")
                         if (wid in pools or c_wid in pools) and isinstance(amt, (int, float)) and not isinstance(amt, bool) and amt > 0:
                             usd = float(amt)
                 else:
-                    usd = allocator.inflight_reserved_usd(
+                    usd = quota_pools.inflight_reserved_usd(
                         account, spec, c_wid, wspec, {}, cap_usd, [rec], accounts, scoring, now)
                 if usd > 0:
                     total_usd += usd
@@ -813,10 +830,11 @@ def pool_reservations(db: Path | None = None, accounts: dict | None = None,
 
 def usage_providers(names, accounts: dict | None = None) -> list[str]:
     """Collector provider IDs for these accounts: a pooled account reads its source, by discovered family."""
-    allocator, _ = modules()   # installs the skill scripts path before provider_inventory is imported
+    modules()   # installs the skill scripts path before provider_inventory is imported
+    import host_policy
     import provider_inventory
     if accounts is None:
-        accounts = _cached_accounts(allocator)
+        accounts = _cached_accounts()
     rows = ((accounts.get("_discovery") or {}).get("accounts") or {})
     sources = provider_inventory.quota_sources(accounts)
     result = []
@@ -827,11 +845,11 @@ def usage_providers(names, accounts: dict | None = None) -> list[str]:
             result.append(source)
     result = list(dict.fromkeys(result))
     try:
-        policy = allocator.host_policy.load_policy()
+        policy = host_policy.load_policy()
     except Exception:
         policy = None
     if isinstance(policy, dict) and "usage_providers" in policy:
-        allowed = {sources.get(n, n) for n in allocator.host_policy.usage_providers(policy, [*names, *result])}
+        allowed = {sources.get(n, n) for n in host_policy.usage_providers(policy, [*names, *result])}
         result = [p for p in result if p in allowed]
     return result
 
@@ -929,9 +947,11 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
 
     A dispatch row stays 'completed' after its first turn even when the worker is resumed, so the live Paseo agent
     records are read too: running / initializing agents, and dispatched workers active in the last six hours."""
-    allocator, _ = modules()
+    modules()
+    import quota_pools
+    import worker_sessions
     rows = _dispatch_rows(db or STATE_DIR / "dispatch.sqlite3")
-    accounts = _cached_accounts(allocator)
+    accounts = _cached_accounts()
     limit = accounts["scoring"].get("rotate_after_carried_tokens", 2000000)
     now = now_utc()
     by_agent = {row["agent_id"]: row for row in rows if row.get("agent_id")}
@@ -939,7 +959,7 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
     for row in rows:
         if row.get("state") not in LIVE_DISPATCH:
             continue
-        hard = allocator.parse_time(row.get("hard_until"))
+        hard = quota_pools.parse_time(row.get("hard_until"))
         if hard is not None and hard <= now:
             continue
         live[row.get("agent_id") or row.get("dispatch_id") or id(row)] = (row, {})
@@ -948,7 +968,7 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
         for doc in _paseo_agents(home / "agents"):
             agent, status = doc["id"], doc.get("lastStatus")
             dispatched = (doc.get("labels") or {}).get("router.dispatch_id") or agent in by_agent
-            seen = allocator.parse_time(doc.get("lastActivityAt") or doc.get("updatedAt"))
+            seen = quota_pools.parse_time(doc.get("lastActivityAt") or doc.get("updatedAt"))
             recent = seen is not None and (now - seen).total_seconds() <= RECENT_WORKER_SECONDS
             if status in ("running", "initializing") or (dispatched and recent and status != "closed"):
                 live[agent] = (live.get(agent, (by_agent.get(agent) or {}, None))[0], doc)
@@ -980,15 +1000,15 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
             if cached and cached[0] == stamp and mono_now - cached[1] < ttl:
                 session = dict(cached[2])
             else:
-                session = allocator.session_state(agent)
+                session = worker_sessions.session_state(agent)
                 _WORKER_SESSION_CACHE[agent] = (stamp, mono_now, dict(session))
         else:
-            session = allocator.session_state(agent)
+            session = worker_sessions.session_state(agent)
         result.append({"agent_id": agent, "title": title, "bundle": bundle_text, "label": label, "model": model, "state": state_text,
                        "started": doc.get("lastActivityAt") or doc.get("updatedAt") or row.get("started_at"),
                        "compacted_tokens": session.get("compacted_tokens"),
                        "context_tokens": session.get("context_tokens"),
-                       "historical_tokens": allocator.worker_historical_tokens(session), "limit": limit,
+                       "historical_tokens": worker_sessions.worker_historical_tokens(session), "limit": limit,
                        "telemetry": session.get("telemetry_status") or ("ok" if session else "unknown")})
     result.sort(key=lambda r: r["started"] or "", reverse=True)
     result.sort(key=lambda r: r["state"] == _tr("近期待命"))
@@ -998,23 +1018,24 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
 # ---------- policy ----------
 
 def overrides(now: datetime | None = None) -> list[dict]:
-    allocator, router = modules()
+    _, router = modules()
+    import quota_overrides
     now = now or now_utc()
-    document = router_priority.read_document(allocator.overrides_path())
-    active_rows = [row for row in document["overrides"] if router_priority.active(row, now, allocator)]
+    document = router_priority.read_document(quota_overrides.overrides_path())
+    active_rows = [row for row in document["overrides"] if router_priority.active(row, now)]
     if not active_rows:
         return []
-    accounts = _cached_accounts(allocator)
+    accounts = _cached_accounts()
     usage = router.usage_snapshot(now=now)
     rows = []
     for row in active_rows:
-        if allocator.override_reset_landed(row, usage, accounts, now) or allocator.override_depleted(row, usage, accounts):
+        if quota_overrides.override_reset_landed(row, usage, accounts, now) or quota_overrides.override_depleted(row, usage, accounts):
             continue
         rows.append({"id": row["id"], "revision": router_priority.revision(row), "account": row.get("account"),
                      "model": row.get("model"), "boost": row.get("boost"),
-                     "until": router_priority.stamp(allocator.expected_reset_time(row) or row.get("until"), allocator),
+                     "until": router_priority.stamp(quota_overrides.expected_reset_time(row) or row.get("until")),
                      "stop_on_reset": bool(row.get("stop_on_reset")), "intent": row.get("intent") or "",
-                     **router_priority.countdown(row, allocator, now),
+                     **router_priority.countdown(row, now),
                      "label": f"{account_label(row.get('account'))}"
                               + (f" / {model_label(row['model'])}" if row.get("model") else "")})
     return rows
@@ -1022,10 +1043,11 @@ def overrides(now: datetime | None = None) -> list[dict]:
 
 def boost_targets() -> list[tuple[str, str]]:
     """(account, model) pairs with an enabled bundle."""
-    allocator, _ = modules()
-    accounts = _cached_accounts(allocator)
+    modules()
+    import account_fleet
+    accounts = _cached_accounts()
     seen = []
-    for bundle in allocator.bundles(accounts).values():
+    for bundle in account_fleet.bundles(accounts).values():
         pair = (bundle["account"], bundle["model"])
         if not bundle.get("disabled") and pair not in seen:
             seen.append(pair)
@@ -1039,25 +1061,29 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
         raise ValueError(_tr('加成需在 +{0} ~ +{1} 之间').format(f'{BOOST_RANGE[0]:.2f}', f'{BOOST_RANGE[1]:.2f}'))
     if hours not in BOOST_HOURS:
         raise ValueError(_tr("预期重置时间只能是 1h / 3h / 6h / 12h / 24h"))
-    allocator, router = modules()
+    _, router = modules()
+    import account_fleet
+    import override_store
+    import quota_overrides
+    import quota_pools
     now = now or now_utc()
-    accounts = allocator.load_accounts()
+    accounts = account_fleet.load_accounts()
     if account not in accounts["accounts"]:
         raise ValueError(_tr("未知账号"))
-    model = allocator.canonical(model, accounts) if model else None
-    path = allocator.overrides_path()
-    with allocator.override_store.locked(path):
+    model = account_fleet.canonical(model, accounts) if model else None
+    path = quota_overrides.overrides_path()
+    with override_store.locked(path):
         document = router_priority.read_document(path)
         new_until = (now + timedelta(hours=hours)).isoformat()
         overlapping = [
             r for r in document["overrides"]
-            if (router_priority.overlaps(r, account, model, now, allocator, accounts) if model
-                else (router_priority.active(r, now, allocator) and r.get("account") == account))
+            if (router_priority.overlaps(r, account, model, now, accounts) if model
+                else (router_priority.active(r, now) and r.get("account") == account))
         ]
         if overlapping:
             ui_rules = [r for r in overlapping if r.get("intent") in (PANEL_INTENT, router_priority.INTENT)
                         and not r.get("expires_at")]
-            if not ui_rules or any(r.get("until") == new_until and (allocator.canonical(r["model"], accounts) if r.get("model") else None) == model
+            if not ui_rules or any(r.get("until") == new_until and (account_fleet.canonical(r["model"], accounts) if r.get("model") else None) == model
                                    for r in ui_rules):
                 return _tr("该账号/模型已有临时规则；未叠加权重")
             existing = ui_rules[0]
@@ -1070,7 +1096,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
             if boost is not None:
                 existing["boost"] = round(float(boost), 2)
             document["overrides"] = [r for r in document["overrides"] if r is existing or r not in ui_rules]
-            router_priority.save(allocator, path, {**document, "v": 1})
+            router_priority.save(path, {**document, "v": 1})
             return _tr('已更新 {0}{1} 预期重置，{2} 小时后重置前动态优先').format(
                 account_label(account), (' / ' + model_label(model) if model else ''), hours)
         row = {"id": uuid.uuid4().hex, "intent": PANEL_INTENT, "account": account,
@@ -1081,27 +1107,28 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
         if model:
             row["model"] = model
         if stop_on_reset:
-            windows = [(wid, spec) for wid, spec, _ in allocator.applicable_windows(accounts["accounts"][account], model, {})
+            windows = [(wid, spec) for wid, spec, _ in quota_pools.applicable_windows(accounts["accounts"][account], model, {})
                        if spec.get("hours", 0) >= 24]
             if not windows:
                 raise ValueError(_tr("该账号没有可确认重置的周额度窗口；请取消“重置后自动撤销”"))
             wid = max(windows, key=lambda w: w[1]["hours"])[0]
             usage = router.usage_snapshot(now=now)
-            base = router_priority.baseline(allocator, accounts, usage, {"account": account, "window": wid}, now)
+            base = router_priority.baseline(accounts, usage, {"account": account, "window": wid}, now)
             row.update(window=wid, stop_on_reset=True, reset_confirmation="replenishment", baseline_windows={wid: base})
         document["overrides"].append(row)
-        router_priority.save(allocator, path, {**document, "v": 1})
+        router_priority.save(path, {**document, "v": 1})
     return _tr('已添加 {0}{1} 预期重置，{2} 小时后重置前动态优先').format(account_label(account), (' / ' + model_label(model) if model else ''), hours)
 
 
 def host_policy_state() -> dict:
     """{'path', 'explicit', 'allowed': set or None (all), 'accounts': [names], 'error'}."""
-    allocator, _ = modules()
-    path, explicit = allocator.host_policy.policy_path()
-    accounts = _cached_accounts(allocator)
+    modules()
+    import host_policy
+    path, explicit = host_policy.policy_path()
+    accounts = _cached_accounts()
     names = list(accounts["accounts"])
     try:
-        policy = allocator.host_policy.load_policy()
+        policy = host_policy.load_policy()
         error = None
     except Exception as exc:
         policy, error = None, str(exc)
@@ -1114,9 +1141,11 @@ def host_policy_state() -> dict:
 def save_host_policy(allowed: list[str], all_accounts: list[str], path: Path | None = None,
                      existing: dict | None = None) -> str:
     """Write allowed_accounts atomically; every account allowed and nothing else set means no file (the default)."""
-    allocator, _ = modules()
-    target = path or allocator.host_policy.policy_path()[0]
-    with allocator.override_store.locked(target):
+    modules()
+    import host_policy
+    import override_store
+    target = path or host_policy.policy_path()[0]
+    with override_store.locked(target):
         current = json.loads(target.read_text(encoding='utf-8-sig')) if target.exists() else (existing or {})
         if 'known_accounts' in current:
             # A known omission is a manual disable. Keep it even while the account is absent.
@@ -1132,7 +1161,7 @@ def save_host_policy(allowed: list[str], all_accounts: list[str], path: Path | N
             updated = {**current, 'allowed_accounts': list(dict.fromkeys(selected)),
                        'known_accounts': list(dict.fromkeys([*current.get('known_accounts', []), *changed]))}
             _backup(target, 'host-policy')
-            allocator.override_store.write(target, updated)
+            override_store.write(target, updated)
             _invalidate_accounts_cache()
             return _tr('已保存本机准入：{0} 个账号').format(len(updated['allowed_accounts']))
         extra = {k: v for k, v in (existing or {}).items() if k in ("judges", "usage_providers")}
@@ -1150,16 +1179,17 @@ def save_host_policy(allowed: list[str], all_accounts: list[str], path: Path | N
         return _tr('已保存本机准入：{0} 个账号').format(f'{len(allowed)}')
 
 
-def _public_accounts(allocator, refs: Path) -> Path:
+def _public_accounts(refs: Path) -> Path:
     """The public accounts.json routing reads: the fetched copy when it is newer than the shipped one."""
+    import public_data
     shipped = refs / "accounts.json"
-    channel = getattr(allocator, "public_data", None)
-    return channel.effective(shipped) if hasattr(channel, "effective") else shipped
+    return public_data.effective(shipped)
 
 
 def _accounts_path() -> Path:
-    allocator, _ = modules()
-    return _public_accounts(allocator, allocator.REFERENCES)
+    modules()
+    import account_fleet
+    return _public_accounts(account_fleet.REFERENCES)
 
 
 def _user_accounts_path(create: bool = False) -> Path:
@@ -1189,8 +1219,9 @@ def _user_accounts_path(create: bool = False) -> Path:
 def read_tuning(path: Path | None = None) -> dict:
     document = json.loads((path or _accounts_path()).read_text(encoding="utf-8-sig"))
     if path is None:
-        allocator, _ = modules()
-        document = allocator.accounts_override.merge(document, _read_json(STATE_DIR / "accounts-override.json"))
+        modules()
+        import accounts_override
+        document = accounts_override.merge(document, _read_json(STATE_DIR / "accounts-override.json"))
     scoring = document.get("scoring") or {}
     return {key: scoring.get(key) for key in TUNING_DEFAULTS}
 
@@ -1343,37 +1374,43 @@ HARNESS_LABELS = {"claude": "Claude Code", "codex": "Codex CLI", "pi": "Pi", "an
 
 def harness_model_rows() -> list[dict]:
     """A compact row for each (harness, account), with effort bundles grouped by canonical model."""
-    allocator, _ = modules()
-    accounts = _cached_accounts(allocator)
-    policy = allocator.host_policy.load_policy()
-    preferences = allocator.accounts_override.normalize(_read_json(STATE_DIR / "accounts-override.json"))
+    modules()
+    import account_fleet
+    import accounts_override
+    import host_policy
+    import live_models
+    import provider_inventory
+    accounts = _cached_accounts()
+    policy = host_policy.load_policy()
+    preferences = accounts_override.normalize(_read_json(STATE_DIR / "accounts-override.json"))
     inventory = (accounts.get("_discovery") or {}).get("accounts") or {}
     table = accounts.get("accounts") or {}
     groups = {}
     for owner, spec in table.items():
         for bid, bundle in (spec.get("bundles") or {}).items():
-            account = allocator.accounts_override.preference_account(bundle, owner, accounts)
-            if inventory and not allocator.provider_inventory.account_state.dispatchable(inventory.get(account)):
+            account = accounts_override.preference_account(bundle, owner, accounts)
+            if inventory and not provider_inventory.account_state.dispatchable(inventory.get(account)):
                 continue
             provider = bundle.get("provider") or owner
             launcher = ((accounts.get("_discovery") or {}).get("launchers") or {}).get(provider)
             if launcher and launcher.get("status") != "ready":
                 continue
-            harness = allocator.accounts_override.harness(bundle, owner, bid, allocator.bundle_harness)
-            model = allocator.canonical(bundle.get("model") or bid, accounts)
+            harness = accounts_override.harness(bundle, owner, bid, account_fleet.bundle_harness)
+            model = account_fleet.canonical(bundle.get("model") or bid, accounts)
             groups.setdefault((account, harness), {}).setdefault(model, []).append((owner, bid, bundle))
     rows = []
     import model_catalog
-    latch = allocator.model_latch
+    import model_latch
+    latch = model_latch
     latches = latch.active(path=None if os.environ.get("ROUTER_MODEL_LATCH") else STATE_DIR / latch.FILE,
                            catalog=model_catalog.read(STATE_DIR / "model-catalog.json"))
-    retry_holds = provider_retry_holds(allocator)
-    live_doc = live_model_state(allocator, accounts)
+    retry_holds = provider_retry_holds()
+    live_doc = live_model_state(accounts)
     for (account, harness), models in groups.items():
         if not any(not bundle.get("discovery_unavailable") for entries in models.values() for _, _, bundle in entries):
             continue
         spec = table.get(account) or {}
-        host_enabled = bool(allocator.host_policy.account_allowed(policy, account))
+        host_enabled = bool(host_policy.account_allowed(policy, account))
         harness_disabled = (((preferences.get("harness_overrides") or {}).get(account) or {}).get(harness) or {}).get("disabled", False)
         badge, kind = account_badge(account, inventory.get(account), {}, policy)
         row = {"account": account, "account_label": account_label(account), "harness": harness,
@@ -1393,9 +1430,9 @@ def harness_model_rows() -> list[dict]:
                      "partial": any(flags) and not all(flags), "bundle_ids": [bid for _, bid, _ in bundles],
                      "bundle_refs": [(owner, bid) for owner, bid, _ in bundles]}
             group.update(_model_group_tags([b for _, _, b in bundles], flags))
-            unavailable = (launch_unavailable_text(allocator, latches, account, bundles)
-                           or retry_model_text(allocator, retry_holds, account, bundles)
-                           or live_model_group_text(allocator, live_doc, account, spec, bundles))
+            unavailable = (launch_unavailable_text(latches, account, bundles)
+                           or retry_model_text(retry_holds, account, bundles)
+                           or live_model_group_text(live_doc, account, spec, bundles))
             if unavailable:
                 group["launch_unavailable"] = unavailable
             row["models"].append(group)
@@ -1403,7 +1440,7 @@ def harness_model_rows() -> list[dict]:
         account_hold = retry_holds.get(account)
         pool_holds = {k: v for k, v in retry_holds.items() if v.get("account") == account and retry_hold_pool(v)}
         unavail_provs = [
-            allocator.live_models.unavailable_detail((live_doc.get("providers") or {}).get(p))
+            live_models.unavailable_detail((live_doc.get("providers") or {}).get(p))
             for p in row["providers"]
         ]
         unavail_provs = [d for d in unavail_provs if d]
@@ -1419,11 +1456,11 @@ def harness_model_rows() -> list[dict]:
     present = {row['account'] for row in rows}
     for account, spec in table.items():
         inv = inventory.get(account) or {}
-        if account not in present and inv.get('models') and allocator.provider_inventory.account_state.dispatchable(inv):
+        if account not in present and inv.get('models') and provider_inventory.account_state.dispatchable(inv):
             family = inv.get('family') or account
             rows.append({'account': account, 'account_label': account_label(account), 'harness': family,
                 'harness_label': HARNESS_LABELS.get(family, family), 'plan': spec.get('plan'),
-                'host_enabled': bool(allocator.host_policy.account_allowed(policy, account)),
+                'host_enabled': bool(host_policy.account_allowed(policy, account)),
                 'enabled': False, 'verified': False, 'badge': _tr('仅手动使用'), 'kind': 'warn',
                 'models': [], 'providers': [account], 'cwd_regex': '', 'allowed_cwd': [], 'cwd_pattern': ''})
     order = {name: index for index, name in enumerate(HARNESS_ORDER)}
@@ -1431,21 +1468,23 @@ def harness_model_rows() -> list[dict]:
     return decorate_model_rows(rows, accounts, model_catalog.read(STATE_DIR / "model-catalog.json"))
 
 
-def launch_unavailable_text(allocator, latches: dict, account: str, bundles: list) -> str | None:
+def launch_unavailable_text(latches: dict, account: str, bundles: list) -> str | None:
     """The model list's note for a model a launch reported as not existing; None when no bundle of it is latched.
     The latch lives in its own state file, never in the user's model settings."""
+    import model_latch
     for owner, _, bundle in bundles:
-        entry = (allocator.model_latch.entry_for({**bundle, "account": owner}, latches)
-                 or allocator.model_latch.entry_for({**bundle, "account": account}, latches))
+        entry = (model_latch.entry_for({**bundle, "account": owner}, latches)
+                 or model_latch.entry_for({**bundle, "account": account}, latches))
         if entry:
-            retry = allocator.model_latch.retry_at(entry)
+            retry = model_latch.retry_at(entry)
             return _tr("模型启动失败：不可用，下次重试 {0}").format(read_time_text(retry.isoformat() if retry else None))
     return None
 
 
-def provider_retry_holds(allocator) -> dict:
+def provider_retry_holds() -> dict:
     """Accounts and models held out of dispatch because their provider kept retrying without progress."""
-    holds = allocator.provider_retry
+    import provider_retry
+    holds = provider_retry
     found = holds.active(path=None if os.environ.get("ROUTER_PROVIDER_RETRY") else STATE_DIR / holds.FILE)
     return found if isinstance(found, dict) else {}
 
@@ -1454,12 +1493,12 @@ _LIVE_REFRESH_LOCK = threading.Lock()
 _LIVE_REFRESH: dict = {"thread": None}
 
 
-def live_model_state(allocator, accounts: dict | None = None) -> dict:
+def live_model_state(accounts: dict | None = None) -> dict:
     """Live Paseo provider model lists as roll/plan cached them. Never calls the bridge: this runs on the Tk thread
     (model page prefill) and a hung Paseo would freeze the window. A stale or missing reading starts one background
     refresh; its answer shows on the next redraw."""
-    live_mod = getattr(allocator, "live_models", None)
-    if live_mod is None or not isinstance(getattr(live_mod, "FILE", None), str) or not live_mod.enabled():
+    import live_models as live_mod
+    if not isinstance(getattr(live_mod, "FILE", None), str) or not live_mod.enabled():
         return {"providers": {}}
     cached = live_mod.read_cached(base_dir=STATE_DIR, allow_stale=True)
     if not isinstance(cached, dict):
@@ -1490,25 +1529,22 @@ def _refresh_live_models_in_background(live_mod, accounts: dict) -> threading.Th
         return thread
 
 
-def _resolve_live_models_module(allocator):
-    live_mod = getattr(allocator, "live_models", None)
-    if live_mod is not None and isinstance(getattr(live_mod, "FILE", None), str):
-        return live_mod
+def _resolve_live_models_module():
     try:
-        import live_models as real_live_models
-        return real_live_models
+        import live_models
+        return live_models
     except Exception:
         return None
 
 
-def live_model_hold_text(allocator, live_doc: dict, account: str, spec: dict) -> str | None:
+def live_model_hold_text(live_doc: dict, account: str, spec: dict) -> str | None:
     """Account card note when live Paseo model list omits configured models or is unavailable."""
     if not isinstance(live_doc, dict) or not isinstance(spec, dict):
         return None
     providers = live_doc.get("providers")
     if not isinstance(providers, dict) or not providers:
         return None
-    live_mod = _resolve_live_models_module(allocator)
+    live_mod = _resolve_live_models_module()
     if live_mod is None:
         return None
     unoffered_models: list[str] = []
@@ -1540,11 +1576,11 @@ def live_model_hold_text(allocator, live_doc: dict, account: str, spec: dict) ->
     return "；".join(notes) or None
 
 
-def live_model_group_text(allocator, live_doc: dict, account: str, spec: dict, bundles: list) -> str | None:
+def live_model_group_text(live_doc: dict, account: str, spec: dict, bundles: list) -> str | None:
     """Model row note when the provider's live model list no longer offers a bundle's launch model."""
     if not isinstance(live_doc, dict) or not isinstance(live_doc.get("providers"), dict) or not live_doc["providers"]:
         return None
-    live_mod = _resolve_live_models_module(allocator)
+    live_mod = _resolve_live_models_module()
     if live_mod is None:
         return None
     for owner, _, bundle in bundles:
@@ -1604,16 +1640,18 @@ def retry_hold_text(holds: dict, account: str) -> str | None:
 def clear_retry_holds(account: str, pool: str | None = None) -> bool:
     """The account card's clear button: drop every provider-failure hold of the account (its own and its models'), or
     with `pool` that quota pool's hold and its models' only."""
-    allocator, _ = modules()
-    holds = allocator.provider_retry
+    modules()
+    import provider_retry
+    holds = provider_retry
     return holds.clear(account, path=None if os.environ.get("ROUTER_PROVIDER_RETRY") else STATE_DIR / holds.FILE,
                        **({"pool": pool} if pool else {}))
 
 
-def retry_model_text(allocator, holds: dict, account: str, bundles: list) -> str | None:
+def retry_model_text(holds: dict, account: str, bundles: list) -> str | None:
     """The model list's note for a model held for a provider failure: its own hold or its quota pool's (a hold of the
     whole account badges the row instead)."""
-    retry = allocator.provider_retry
+    import provider_retry
+    retry = provider_retry
     for owner, _, bundle in bundles:
         for name in (owner, account):
             entry = retry.entry_for({**bundle, "account": name}, {k: v for k, v in holds.items() if k != name})
@@ -1645,10 +1683,11 @@ def _model_group_tags(bundles: list[dict], flags: list[bool]) -> dict:
 
 def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list[dict]:
     """Union configured bundles with advertised models, without creating launchable bundles."""
-    allocator, _ = modules()
+    modules()
+    import account_fleet
     inventory = (accounts.get("_discovery") or {}).get("accounts") or {}
     def canonical(raw):
-        resolved = allocator.canonical(raw, accounts)
+        resolved = account_fleet.canonical(raw, accounts)
         return re.sub(r"-(low|medium|high|xhigh|max|minimal|default|standard|extended)$", "", resolved)
     for row in rows:
         row['models'] = [group for group in row['models'] if group.get('routed', True)]
@@ -1711,9 +1750,9 @@ def refresh_model_catalog(force=False) -> list[dict]:
 def _persist_auto_seen() -> None:
     """Record when each auto bundle's model was last advertised, so stale/expired survives cache failures."""
     try:
-        allocator, _ = modules()
+        modules()
         import auto_bundles
-        derived = (_cached_accounts(allocator).get("_auto_bundles") or {}).get("seen")
+        derived = (_cached_accounts().get("_auto_bundles") or {}).get("seen")
         if isinstance(derived, dict) and derived:
             auto_bundles.write_seen(STATE_DIR / "auto-bundles-seen.json", derived, now=time.time())
     except Exception:
@@ -1760,9 +1799,9 @@ def set_harness_models(account: str, harness: str, action: str) -> str:
 
 
 def read_account_cwd(account: str) -> str:
-    allocator, _ = modules()
+    modules()
     import cwd_policy
-    spec = _cached_accounts(allocator).get("accounts", {}).get(account) or {}
+    spec = _cached_accounts().get("accounts", {}).get(account) or {}
     saved = ((_read_json(STATE_DIR / "accounts-override.json").get("accounts") or {}).get(account) or {})
     if "cwd_regex" in saved:
         return saved["cwd_regex"] or ""
@@ -1826,8 +1865,9 @@ def toggle_harness(harness: str, account: str, enabled: bool) -> str:
 def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str:
     """Toggle exactly one effort bundle; harnesses never change together."""
     if path is None:
-        allocator, _ = modules()
-        bundles = ((allocator.load_accounts().get("accounts") or {}).get(account) or {}).get("bundles") or {}
+        modules()
+        import account_fleet
+        bundles = ((account_fleet.load_accounts().get("accounts") or {}).get(account) or {}).get("bundles") or {}
         if bundle_id not in bundles:
             raise ValueError(_tr('未知档位 {0}').format(bundle_id))
         enable_now = bool(bundles[bundle_id].get("_model_disabled", bundles[bundle_id].get("disabled")))
@@ -1840,8 +1880,8 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
     doc = accounts_override.normalize(json.loads(target.read_text(encoding="utf-8-sig")))
     bundles = ((doc.get("accounts") or {}).get(account) or {}).get("bundles") or {}
     if bundle_id not in bundles:
-        allocator, _ = modules()
-        live_acc = (allocator.load_accounts().get("accounts") or {}).get(account) or {}
+        modules()
+        live_acc = (account_fleet.load_accounts().get("accounts") or {}).get(account) or {}
         live_bundles = live_acc.get("bundles") or {}
         if bundle_id not in live_bundles:
             raise ValueError(_tr('未知档位 {0}').format(f'{bundle_id}'))

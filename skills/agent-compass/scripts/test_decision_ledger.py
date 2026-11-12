@@ -8,6 +8,8 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import account_fleet
+import ledger_snapshot
 import route_judge as router
 from router_test_support import isolated_router_state, profile
 
@@ -61,10 +63,10 @@ class DecisionLedgerTests(unittest.TestCase):
         self.assertEqual(snapshot['ranking_eligible'], sum(1 for c in result['ranking'] if not c['excluded']))
         live_eligible = [c for c in result['ranking'] if not c['excluded']]
         recorded_eligible = [row for row in ranking if not row['excluded']]
-        self.assertEqual(len(recorded_eligible), min(len(live_eligible), allocator.SNAPSHOT_FULL + allocator.SNAPSHOT_COMPACT))
+        self.assertEqual(len(recorded_eligible), min(len(live_eligible), ledger_snapshot.SNAPSHOT_FULL + ledger_snapshot.SNAPSHOT_COMPACT))
         for row, live in zip(recorded_eligible, live_eligible):
             self.assertEqual((row['id'], row['score']), (live['id'], round(live['score'], 4)))
-        full = recorded_eligible[:allocator.SNAPSHOT_FULL]
+        full = recorded_eligible[:ledger_snapshot.SNAPSHOT_FULL]
         # Full rows hold every component, the binding window and the money numbers the comparison table reads.
         winner, live = ranking[0], result['ranking'][0]
         self.assertEqual(winner['components'], {k: (round(v, 4) if isinstance(v, float) else v) for k, v in live['components'].items()})
@@ -92,11 +94,11 @@ class DecisionLedgerTests(unittest.TestCase):
         self.assertLess(len(text), 40000, len(text))
         ranking = line['decision_snapshot']['ranking']
         eligible = [row for row in ranking if not row['excluded']]
-        self.assertLessEqual(len(eligible), allocator.SNAPSHOT_FULL + allocator.SNAPSHOT_COMPACT)
-        self.assertLessEqual(len(ranking) - len(eligible), allocator.SNAPSHOT_EXCLUDED)
+        self.assertLessEqual(len(eligible), ledger_snapshot.SNAPSHOT_FULL + ledger_snapshot.SNAPSHOT_COMPACT)
+        self.assertLessEqual(len(ranking) - len(eligible), ledger_snapshot.SNAPSHOT_EXCLUDED)
         omitted = line['decision_snapshot']['ranking_omitted']
         self.assertEqual(len(ranking) + omitted['eligible'] + omitted['excluded'], line['decision_snapshot']['ranking_total'])
-        compact = eligible[allocator.SNAPSHOT_FULL:]
+        compact = eligible[ledger_snapshot.SNAPSHOT_FULL:]
         self.assertTrue(all('capacity' not in row and 'notes' not in row for row in compact))
         self.assertTrue(all({'fit', 'opportunity_cost'} <= set(row['components']) for row in compact))
 
@@ -105,12 +107,12 @@ class DecisionLedgerTests(unittest.TestCase):
         self.run_plan('--dry-run')
         self.assertEqual(len(router.read_ledger()), before)
         self.assertIsNone(router.decision_snapshot({'stage': 'record'}))
-        self.assertIsNone(allocator.decision_snapshot({'stage': 'record'}))
+        self.assertIsNone(ledger_snapshot.decision_snapshot({'stage': 'record'}))
 
     def test_snapshot_survives_a_later_change_of_configuration_and_quota(self):
         self.run_plan()
         [before] = self.plan_rows()
-        accounts = allocator.load_accounts()
+        accounts = account_fleet.load_accounts()
         accounts['accounts']['codex']['verified'] = False             # the fleet is reconfigured afterwards
         later = allocator.plan({'work_kind': 'general_implementation', 'needs': {'local_only': True}, 'profile': profile(local_only=True)},
                                {'read_ok': True, 'accounts': {}}, self.now + timedelta(days=3), accounts=accounts, overrides=[])

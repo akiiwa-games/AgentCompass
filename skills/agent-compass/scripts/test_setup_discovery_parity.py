@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch
 
 import accounts_override
-import allocator
+import account_fleet
 import provider_inventory as inventory
 from router_test_support import isolated_router_state, temporary_root
 
@@ -22,7 +22,7 @@ def setUpModule():
 
 
 def shipped_template():
-    return accounts_override.normalize(json.loads((allocator.REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig')))
+    return accounts_override.normalize(json.loads((account_fleet.REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig')))
 
 
 class SetupAndRouterHomeParityTests(unittest.TestCase):

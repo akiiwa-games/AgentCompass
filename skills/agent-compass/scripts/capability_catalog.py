@@ -22,10 +22,10 @@ def markdown(accounts, five=None, references=None):
     ref_dir = Path(references) if references is not None else REFERENCES
     if five is None:
         five = json.loads((ref_dir / 'five-axis-scores.json').read_text(encoding='utf-8'))
-        import allocator
+        import axis_scores
         import user_scores
         pub_scores = user_scores.load_public(ref_dir / 'user-scores.json', effective=False)
-        overlaid = allocator.five_axis_overlay(
+        overlaid = axis_scores.five_axis_overlay(
             deepcopy(accounts), five, public_scores=pub_scores, local_scores={'scores': {}}, read_local_state=False
         )
         scored_over = {}

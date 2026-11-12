@@ -12,6 +12,10 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import account_fleet
+import accounts_override
+import axis_scores
+import candidate_eval
 import dispatch_registry
 import host_policy
 import provider_inventory as inventory
@@ -26,12 +30,12 @@ def setUpModule():
 
 def community_capacity(family, plan, window):
     """The cited community capacity of one plan window: the only capacity a subscription account has."""
-    return allocator.load_five_axis()['capacity'][family][plan][window]['capacity_usd']
+    return axis_scores.load_five_axis()['capacity'][family][plan][window]['capacity_usd']
 
 
 def overlaid_capacity(accounts, name):
     """The capacity the router prices an account's windows at (community data by plan)."""
-    return allocator.five_axis_overlay(accounts, allocator.load_five_axis())['accounts'][name].get('capacity_usd')
+    return axis_scores.five_axis_overlay(accounts, axis_scores.load_five_axis())['accounts'][name].get('capacity_usd')
 
 class DiscoveryTests(unittest.TestCase):
     def setUp(self):
@@ -83,7 +87,7 @@ class DiscoveryTests(unittest.TestCase):
         return result
 
     def apply(self, snapshot):
-        accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         return inventory.apply(accounts, snapshot)
 
     def live_plan(self, **plans):
@@ -105,24 +109,24 @@ class DiscoveryTests(unittest.TestCase):
                'PASEO_HOME': str(self.home / '.paseo'), 'ROUTER_HOST_POLICY': str(policy),
                'ROUTER_CAPACITY': str(self.home / 'capacity.json'), 'PATH': ''}
         with patch.dict(inventory.os.environ, env):
-            host_policy.sync_discovered(allocator.load_accounts(), enable=True)
+            host_policy.sync_discovered(account_fleet.load_accounts(), enable=True)
             self.paseo({'codex': {'enabled': True}, 'codex-work': {'extends': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.home / '.codex-work')}}})
-            waiting = allocator.load_accounts()
+            waiting = account_fleet.load_accounts()
             self.assertNotIn('codex-work', host_policy.load_policy()['known_accounts'])
             self.assertNotEqual(waiting['_discovery']['accounts']['codex-work']['status'], 'ready')
             self.native_codex('codex-work', 'account-B')
-            ready = allocator.load_accounts()
+            ready = account_fleet.load_accounts()
             self.assertEqual(ready['_host_policy_sync']['added'], ['codex-work'])
             before = policy.read_bytes()
-            self.assertEqual(allocator.load_accounts()['_host_policy_sync']['added'], [])
+            self.assertEqual(account_fleet.load_accounts()['_host_policy_sync']['added'], [])
             self.assertEqual(before, policy.read_bytes())
             document = host_policy.load_policy()
             document['allowed_accounts'].remove('codex-work')
             policy.write_text(json.dumps(document))
             self.paseo({'codex': {'enabled': True}})
-            allocator.load_accounts()
+            account_fleet.load_accounts()
             self.paseo({'codex': {'enabled': True}, 'codex-work': {'extends': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.home / '.codex-work')}}})
-            allocator.load_accounts()
+            account_fleet.load_accounts()
             self.assertFalse(host_policy.account_allowed(host_policy.load_policy(), 'codex-work'))
 
     def test_grok_requires_live_client_evidence_and_honors_launcher_switch(self):
@@ -412,7 +416,7 @@ class DiscoveryTests(unittest.TestCase):
     def test_grok_no_usage_is_eligible_without_unlimited_bonus_and_launchable(self):
         self.paseo({'grok': {'extends': 'acp', 'enabled': True}})
         snapshot = self.discover()
-        accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         accounts['accounts'].pop('grok')  # custom catalog without a Grok template
         inventory.apply(accounts, snapshot)
         spec = accounts['accounts']['grok']
@@ -421,14 +425,14 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(spec['unmetered'])
         self.assertFalse(spec.get('unlimited', False))
         self.assertEqual(spec['windows'], {})
-        with patch.object(allocator.host_policy, 'load_policy', return_value=None):
+        with patch.object(host_policy, 'load_policy', return_value=None):
             result = allocator.plan({'work_kind': 'web_research', 'difficulty': 'routine', 'expected_hours': .1},
                                     {'accounts': {}}, self.now, accounts=accounts, overrides=[], records=[])
         candidate = next(c for c in result['ranking'] if c['id'] == 'grok47_high')
         self.assertEqual(candidate['excluded'], [])
         self.assertNotIn('free_usage', candidate['components'])
         with patch.object(inventory, 'current', return_value=snapshot):
-            bundle = allocator.bundles(accounts)['grok47_high']
+            bundle = account_fleet.bundles(accounts)['grok47_high']
             request = dispatch_registry.launch_request(bundle, {'title': 'Grok fixture', 'initialPrompt': 'fixture'})
         self.assertEqual(request['provider'], 'grok/grok-4.7')
         self.assertNotIn('modeId', request['settings'])
@@ -448,7 +452,7 @@ class DiscoveryTests(unittest.TestCase):
         spec = accounts['accounts']['grok']
         self.assertFalse(spec['unmetered'])
         self.assertIn('credits', spec['windows'])
-        with patch.object(allocator.host_policy, 'load_policy', return_value=None):
+        with patch.object(host_policy, 'load_policy', return_value=None):
             result = allocator.plan({'work_kind': 'web_research', 'difficulty': 'routine', 'expected_hours': .1},
                                     {'accounts': {'grok': {'windows': [{'id': 'credits', 'used_pct': 99,
                                         'remaining_pct_before_reset': 1, 'seconds_until_reset': 86400}]}}},
@@ -476,7 +480,7 @@ class DiscoveryTests(unittest.TestCase):
             'claude-sonnet-4-6', 'qwen3-coder-next', 'some-new-model', 'another-new-model', 'gpt-6.1-terra'})
         self.assertEqual({b['model'] for b in bundles if b['model'].startswith('gpt-')}, {'gpt-6.1-terra'})
         # A model with no public data has no row and no score; it stays out of automatic routing until the data has it.
-        self.assertEqual(allocator.model_spec(accounts, 'some-new-model'), {})
+        self.assertEqual(account_fleet.model_spec(accounts, 'some-new-model'), {})
 
     def test_bound_cc_switch_api_models_get_native_bundles_without_changing_signin(self):
         config = {'env': {'ANTHROPIC_BASE_URL': 'https://example.invalid',
@@ -536,7 +540,7 @@ class DiscoveryTests(unittest.TestCase):
         spec = accounts['accounts']['claude-work']
         self.assertTrue(spec['verified'])
         self.assertEqual(overlaid_capacity(accounts, 'claude-work')['seven_day'], community_capacity('claude', 'pro', 'seven_day'))
-        bundle = next(b for b in allocator.bundles(accounts).values() if b['account'] == 'claude-work' and not b.get('disabled'))
+        bundle = next(b for b in account_fleet.bundles(accounts).values() if b['account'] == 'claude-work' and not b.get('disabled'))
         self.assertEqual(bundle['provider'], 'claude-work')
         self.assertEqual(bundle['modeId'], 'bypassPermissions')
         with patch.object(inventory, 'current', return_value=snapshot):
@@ -558,7 +562,7 @@ class DiscoveryTests(unittest.TestCase):
         snapshot = self.discover()
         self.assertEqual(snapshot['accounts']['codex-work']['quota_account'], 'codex')
         accounts = self.apply(snapshot)
-        second = allocator.bundles(accounts)['work_sol_xhigh']
+        second = account_fleet.bundles(accounts)['work_sol_xhigh']
         self.assertEqual((second['account'], second['provider']), ('codex', 'codex-work'))
         self.assertFalse(accounts['accounts']['codex-work']['bundles'])
         self.write('.usage-float/usage-cache.json', {'providers': {'codex': {
@@ -624,11 +628,11 @@ class DiscoveryTests(unittest.TestCase):
         self.paseo({'claude-lab': {'extends': 'claude', 'enabled': False,
                     'env': {'CLAUDE_CONFIG_DIR': str(self.home / '.claude-lab')}}})
         accounts = self.apply(self.discover())
-        bundles = allocator.bundles(accounts)
+        bundles = account_fleet.bundles(accounts)
         self.assertIn('disabled', bundles['lab_sonnet55_high']['discovery_unavailable'])
         self.assertIn('disabled', bundles['lab_opus55_high'])
         task = {'objective': 'Fixture', 'expected_hours': 0.1, 'needs': {'local_only': True}, 'include_unverified': True}
-        with patch.object(allocator.host_policy, 'load_policy', return_value=None):
+        with patch.object(host_policy, 'load_policy', return_value=None):
             plan = allocator.plan(task, {'accounts': {}}, self.now, accounts=accounts, overrides=[])
         row = next(r for r in plan['ranking'] if r['id'] == 'lab_sonnet55_high')
         self.assertTrue(any('provider discovery: disabled' in reason for reason in row['excluded']))
@@ -867,9 +871,9 @@ class DiscoveryTests(unittest.TestCase):
                 }
             }
         })
-        with patch.object(allocator, 'accounts_override_path', return_value=override_path), \
+        with patch.object(account_fleet, 'accounts_override_path', return_value=override_path), \
                 patch.object(inventory, 'current', return_value=snapshot):
-            merged = allocator.load_accounts()
+            merged = account_fleet.load_accounts()
             self.assertEqual(
                 merged['accounts']['claude-magpie']['bundles']['claude-magpie__sonnet55_high'].get('disabled'),
                 True,
@@ -924,16 +928,16 @@ class DiscoveryTests(unittest.TestCase):
         accounts = self.apply(snapshot)
         self.assertNotIn('omp', accounts['accounts'])
         self.assertEqual(accounts['accounts']['omp-openai-codex']['bundles'], {})
-        omp = {bid: b for bid, b in allocator.bundles(accounts).items() if b.get('harness') == 'omp'}
+        omp = {bid: b for bid, b in account_fleet.bundles(accounts).items() if b.get('harness') == 'omp'}
         self.assertTrue(omp)
         for bid, b in omp.items():
             # On the Codex account itself: its windows, its subscription billing, omp's `<provider>/<model>` id.
             self.assertEqual((b['account'], b['provider']), ('codex', 'omp'), bid)
             self.assertTrue(b['launch_model'].startswith('openai-codex/'), b)
-            self.assertIsNone(allocator.accounts_override.manual_only_billing(b['account'], accounts))
+            self.assertIsNone(accounts_override.manual_only_billing(b['account'], accounts))
         # No twin: each (harness, model, effort) once on the shared account.
-        keys = [(allocator.bundle_harness(b, 'codex', bid), allocator.canonical(b['model'], accounts), b.get('effort'))
-                for bid, b in allocator.bundles(accounts).items() if b['account'] == 'codex']
+        keys = [(account_fleet.bundle_harness(b, 'codex', bid), account_fleet.canonical(b['model'], accounts), b.get('effort'))
+                for bid, b in account_fleet.bundles(accounts).items() if b['account'] == 'codex']
         self.assertEqual(len(keys), len(set(keys)))
 
     def test_omp_only_oauth_login_is_its_own_subscription_account_on_the_family_plan(self):
@@ -995,14 +999,14 @@ class DiscoveryTests(unittest.TestCase):
         self.live_plan(codex='pro')
         accounts = self.apply(self.discover())
         accounts['accounts']['codex']['verified'] = True
-        omp_id = next(bid for bid, b in allocator.bundles(accounts).items() if b.get('harness') == 'omp')
+        omp_id = next(bid for bid, b in account_fleet.bundles(accounts).items() if b.get('harness') == 'omp')
         task = {'objective': 'Fix a bug in parser.py', 'work_kind': 'general_implementation', 'expected_hours': 1,
-                'constraints': {'model': allocator.bundles(accounts)[omp_id]['model']}}
+                'constraints': {'model': account_fleet.bundles(accounts)[omp_id]['model']}}
         usage = usage_windows(self.now, {'codex': [('usage', 80, 100)]})
         plan = allocator.plan(task, usage, self.now, accounts=accounts, overrides=[], records=[], host_policy_config=None)
         row = next(c for c in plan['ranking'] if c['id'] == omp_id)
         self.assertEqual(row['excluded'], [], row)
-        self.assertNotIn(allocator.METERED_LAST_RESORT, row['excluded'])
+        self.assertNotIn(candidate_eval.METERED_LAST_RESORT, row['excluded'])
         # It draws the Codex account's window, as Pi's rows do.
         self.assertEqual(row['bundle']['account'], 'codex')
         self.assertEqual(row['capacity']['window'], 'usage')
@@ -1020,16 +1024,16 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(snapshot['accounts']['pi'].get('quota_account'), 'codex')
         # Pi's catalog, as the tray's model-catalog.json lists it on that host.
         snapshot['accounts']['pi']['models'] = ['openai-codex/gpt-6.1-sol', 'openai-codex/gpt-6-luna']
-        fleet = allocator.load_accounts(allocator.reference_fleet_path())
+        fleet = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         # The shipped template's bundle-less `pi` account, which derives its bundles per model.
         fleet['accounts']['pi'] = {'plan': 'Pi', 'billing': 'subscription', 'verified': False,
                                    'windows': {'usage': {'hours': 168}}}
         accounts = inventory.apply(fleet, snapshot)
-        self.assertNotIn('auto:pi:pi:gpt-6.1-sol@high', allocator.bundles(accounts))
+        self.assertNotIn('auto:pi:pi:gpt-6.1-sol@high', account_fleet.bundles(accounts))
         seen = {}
-        for bid, b in allocator.bundles(accounts).items():
+        for bid, b in account_fleet.bundles(accounts).items():
             if b['account'] == 'codex':
-                key = (allocator.bundle_harness(b, 'codex', bid), allocator.canonical(b['model'], accounts), b.get('effort'))
+                key = (account_fleet.bundle_harness(b, 'codex', bid), account_fleet.canonical(b['model'], accounts), b.get('effort'))
                 self.assertNotIn(key, seen, f'{bid} duplicates {seen.get(key)}')
                 seen[key] = bid
         self.assertTrue(any(k[0] == 'pi' for k in seen))
@@ -1083,8 +1087,8 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(accounts['team-proxy']['bundles']['auto:team-proxy:claude:claude-sonnet-5-5@high']['harness'], 'claude')
         self.assertEqual(accounts['team-proxy']['bundles']['auto:team-proxy:claude:claude-sonnet-5-5@high']['modeId'], 'bypassPermissions')
         override_file = self.home / '.agent-compass/accounts-override.json'
-        self.assertEqual(allocator.accounts_override_path({'ROUTE_MANAGER_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
-        self.assertEqual(allocator.accounts_override_path({'ROUTER_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
+        self.assertEqual(account_fleet.accounts_override_path({'ROUTE_MANAGER_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
+        self.assertEqual(account_fleet.accounts_override_path({'ROUTER_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
 
 
 class FreshPathTests(unittest.TestCase):
@@ -1155,7 +1159,7 @@ class IsolationRecipeTests(unittest.TestCase):
                'PASEO_HOME': str(self.sandbox / '.paseo'), 'USERPROFILE': str(self.sandbox), 'HOME': str(self.sandbox),
                'ROUTER_CAPACITY': str(self.sandbox / 'capacity.json'), 'PATH': ''}
         with patch.dict(inventory.os.environ, env, clear=True):
-            accounts = allocator.load_accounts()
+            accounts = account_fleet.load_accounts()
         self.assertTrue(accounts['accounts'])
         self.assertEqual([n for n, spec in accounts['accounts'].items() if spec.get('verified')], [])
         self.assertFalse([n for n in accounts['accounts'] if n in

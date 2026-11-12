@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import account_fleet
 import dispatch_fallback as fallback
 import dispatch_flow as flow
 import dispatch_registry as registry
@@ -90,7 +91,7 @@ class FallbackTests(unittest.TestCase):
                                       'ROUTER_MODEL_LATCH': str(self.root / 'latch.json')})
         env.start()
         self.addCleanup(env.stop)
-        accounts = patch.object(allocator, 'load_accounts', return_value=self.accounts)
+        accounts = patch.object(account_fleet, 'load_accounts', return_value=self.accounts)
         accounts.start()
         self.addCleanup(accounts.stop)
         self.scopes = []
@@ -228,7 +229,7 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(self.host.creates, ['claude-lab/claude-sonnet-5-5'])
         self.assertIn('stop_failed', refused['lines'][0])
         other_task = dict(self.task, task_id='stuck-2')
-        sol = dict(allocator.bundles(self.accounts)['sol_high'], bundle_id='sol_high')
+        sol = dict(account_fleet.bundles(self.accounts)['sol_high'], bundle_id='sol_high')
         other = self.first(task=other_task, decision=self.issue(task=other_task, choice='sol_high', selected_bundle=sol))
         self.host.end(other['dispatch_id'], 'idle', terminal=dict(stuck, cancelled=True))
         out = self.handle(other['dispatch_id'])

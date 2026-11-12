@@ -8,25 +8,36 @@ from unittest.mock import Mock, patch
 import router_data
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts'))
+import account_fleet
+import axis_scores
+import host_policy
+import quota_economy
+import quota_pools
 import provider_inventory as real_inventory
 
 
 class QuotaLatchCardTests(unittest.TestCase):
     def card(self, row):
-        allocator, router = Mock(), Mock()
+        fake, router = Mock(), Mock()
         inventory = Mock(quota_sources=real_inventory.quota_sources)
-        allocator.load_accounts.return_value = {'accounts': {'antigravity': {
+        fake.load_accounts.return_value = {'accounts': {'antigravity': {
             'windows': {w: {'hours': 5} for w in ('gemini-5h', '3p-weekly')}, 'bundles': {}}},
             '_discovery': {'accounts': {'antigravity': row}}}
-        allocator.host_policy.load_policy.return_value = None
-        allocator.host_policy.account_allowed.return_value = True
-        allocator.canonical_window_id.side_effect = lambda spec, wid: wid
-        allocator.capacity_usd.return_value = None
+        fake.host_policy.load_policy.return_value = None
+        fake.host_policy.account_allowed.return_value = True
+        fake.canonical_window_id.side_effect = lambda spec, wid: wid
+        fake.capacity_usd.return_value = None
         reset = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
         router.usage_snapshot.return_value = {'accounts': {'antigravity': {'status': 'fresh', 'windows': [
             {'id': 'gemini-5h', 'observed_remaining_pct': 99, 'resets_at': reset, 'seconds_until_reset': 10800},
             {'id': '3p-weekly', 'observed_remaining_pct': 0, 'resets_at': reset, 'seconds_until_reset': 10800}]}}}
-        with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+             patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
+             patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
+             patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
+             patch.object(quota_pools, 'canonical_window_id', fake.canonical_window_id), \
+             patch.object(quota_economy, 'capacity_usd', fake.capacity_usd), \
+             patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay), \
              patch.dict(sys.modules, {'provider_inventory': inventory}), \
              patch.object(router_data, '_read_json', return_value={}), \
              patch.object(router_data, 'pool_reservations', return_value={}), \

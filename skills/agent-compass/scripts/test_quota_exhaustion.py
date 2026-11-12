@@ -71,17 +71,18 @@ def test_account_wide_latch_narrows_to_exhausted_windows_and_reset_releases(tmp_
 
 
 def test_zero_remaining_blocks_even_without_a_configured_floor_or_reset():
-    import allocator
+    import quota_pools
     now = datetime.now(timezone.utc)
     row = {'status': 'fresh', 'fetched_at': now.isoformat()}
-    assert allocator.below_launch_floor({}, {'remaining_pct_before_reset': 0}, row, now)
-    assert not allocator.below_launch_floor({}, {'remaining_pct_before_reset': 20}, row, now)
-    assert not allocator.below_launch_floor({}, {}, row, now)
+    assert quota_pools.below_launch_floor({}, {'remaining_pct_before_reset': 0}, row, now)
+    assert not quota_pools.below_launch_floor({}, {'remaining_pct_before_reset': 20}, row, now)
+    assert not quota_pools.below_launch_floor({}, {}, row, now)
 
 
 def test_routing_excludes_only_bundles_drawing_a_latched_window():
     import allocator
-    accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+    import account_fleet
+    accounts = account_fleet.load_accounts(account_fleet.REFERENCES / 'accounts.json')
     accounts['accounts']['antigravity']['verified'] = True
     accounts['_discovery'] = {'accounts': {'antigravity': {
         'family': 'antigravity', 'status': 'ready', 'exhausted_windows': ['3p-weekly']}}}

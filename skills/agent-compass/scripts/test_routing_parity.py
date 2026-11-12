@@ -10,6 +10,11 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import account_fleet
+import candidate_eval
+import launch_failures
+import quota_pools
+import task_intake
 import auto_bundles
 import dispatch_registry
 import roll
@@ -33,7 +38,7 @@ FULL_QUOTA = {
 class RouterCase(unittest.TestCase):
     def setUp(self):
         self.root = isolated_router_state(self.addCleanup)
-        self.accounts = allocator.load_accounts()
+        self.accounts = account_fleet.load_accounts()
         self.usage = usage_windows(NOW, FULL_QUOTA)
 
     def task(self, profile=PROFILE, **extra):
@@ -85,11 +90,11 @@ class ModelResolverTests(RouterCase):
         }
         for raw, expected in cases.items():
             with self.subTest(raw=raw):
-                found = allocator.resolve_model(raw, self.accounts)
+                found = account_fleet.resolve_model(raw, self.accounts)
                 self.assertEqual((found['key'], found['source'], found['effort']), expected)
 
     def test_a_vendor_tag_is_not_an_effort(self):
-        found = allocator.resolve_model('qwen/Qwen3-Coder-Next:free', self.accounts)
+        found = account_fleet.resolve_model('qwen/Qwen3-Coder-Next:free', self.accounts)
         self.assertEqual((found['key'], found['effort']), ('qwen3-coder-next', None))
 
     def test_family_names_have_no_scores_of_their_own_and_leave_automatic_routing(self):
@@ -130,15 +135,15 @@ class ModelResolverTests(RouterCase):
         self.assertTrue(window_scope.binds_any(('gemini-4-argon-high', 'argon'), {'models': ['gemini']}))
         self.assertFalse(window_scope.binds_any(('gemini-4-argon-high', 'argon'), {'models_except': ['gemini']}))
         accounts = self.only('claude', x={'model': 'anthropic/claude-fable-5-1', 'effort': 'high', 'provider': 'claude'})
-        self.assertIn('weekly_fable', allocator.bundle_pools(allocator.bundles(accounts)['x'], accounts))
+        self.assertIn('weekly_fable', quota_pools.bundle_pools(account_fleet.bundles(accounts)['x'], accounts))
 
     def test_a_cooldown_on_the_key_stops_every_spelling(self):
         entries = {'claude/claude-opus-5-5': {'until': '2099-01-01T00:00:00+00:00', 'failure_class': 'launch failed'}}
-        found = allocator.cooling_reason({'account': 'claude', 'model': 'claude-opus-5'}, entries, self.accounts, now=NOW)
+        found = candidate_eval.cooling_reason({'account': 'claude', 'model': 'claude-opus-5'}, entries, self.accounts, now=NOW)
         self.assertIn('cooling down', found)
 
     def test_worker_continuity_compares_the_key(self):
-        same = lambda a, b: allocator.canonical(a, self.accounts) == allocator.canonical(b, self.accounts)
+        same = lambda a, b: account_fleet.canonical(a, self.accounts) == account_fleet.canonical(b, self.accounts)
         row = {'provider': 'claude', 'account': 'claude', 'effort': 'high'}
         worker = {'bundle': {**row, 'model': 'claude-opus-5-5'}}
         self.assertTrue(roll._bundle_matches_worker({**row, 'model': 'claude-opus-5'}, worker, same))
@@ -158,7 +163,7 @@ class StepDownRangeTests(RouterCase):
     def test_a_row_listing_its_efforts_offers_only_them_when_unlisted_in_table(self):
         accounts = self.only('codex', astra={'model': 'gpt-6-astra', 'effort': 'high', 'provider': 'codex', 'efforts': ['high']})
         accounts['dispatch_efforts']['codex'].pop('gpt-6-astra', None)
-        self.assertEqual(allocator.dispatch_allowed_efforts(accounts['accounts']['codex']['bundles']['astra'], accounts), ('high',))
+        self.assertEqual(account_fleet.dispatch_allowed_efforts(accounts['accounts']['codex']['bundles']['astra'], accounts), ('high',))
         plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'medium'}), accounts)
         self.assertEqual(plan['choice'], 'none')
 
@@ -177,13 +182,13 @@ class StepDownRangeTests(RouterCase):
     def test_discovery_family_names_the_table(self):
         accounts = self.only('claude', x={'model': 'claude-haiku-5-5', 'effort': 'high', 'provider': 'work'})
         accounts['_discovery'] = {'launchers': {'work': {'family': 'claude', 'status': 'ready'}}, 'accounts': {}}
-        self.assertEqual(allocator.dispatch_table('work', accounts), accounts['dispatch_efforts']['claude'])
-        self.assertEqual(allocator.dispatch_allowed_efforts({'provider': 'work', 'model': 'claude-haiku-5-5'}, accounts), ('high',))
+        self.assertEqual(account_fleet.dispatch_table('work', accounts), accounts['dispatch_efforts']['claude'])
+        self.assertEqual(account_fleet.dispatch_allowed_efforts({'provider': 'work', 'model': 'claude-haiku-5-5'}, accounts), ('high',))
 
     def test_pi_has_its_own_table(self):
         self.assertIn('pi', self.accounts['dispatch_efforts'])
         row = {'model': 'gpt-6-astra', 'effort': 'high', 'provider': 'pi'}
-        self.assertEqual(allocator.dispatch_allowed_efforts(row, self.accounts),
+        self.assertEqual(account_fleet.dispatch_allowed_efforts(row, self.accounts),
                          tuple(self.accounts['dispatch_efforts']['pi']['gpt-6-astra']))
         unlisted = self.only('codex', x={'model': 'deepseek-v4.1-flash-free', 'effort': 'high', 'provider': 'pi'})
         self.assertEqual(self.row(self.plan(self.task(LIVE), unlisted), 'x')['bundle']['effort'], 'high')
@@ -191,7 +196,7 @@ class StepDownRangeTests(RouterCase):
     def test_a_table_that_does_not_list_the_model_offers_no_unlisted_effort(self):
         accounts = self.only('codex', x={'model': 'gpt-6-astra', 'effort': 'high', 'provider': 'codex'})
         del accounts['dispatch_efforts']['codex']['gpt-6-astra']
-        self.assertEqual(allocator.dispatch_allowed_efforts(accounts['accounts']['codex']['bundles']['x'], accounts), ())
+        self.assertEqual(account_fleet.dispatch_allowed_efforts(accounts['accounts']['codex']['bundles']['x'], accounts), ())
         self.assertEqual(self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'medium'}), accounts)['choice'], 'none')
 
     def test_model_colon_effort_is_a_fixed_level(self):
@@ -219,9 +224,9 @@ class UserPinTests(RouterCase):
 
     def test_colon_effort_is_an_effort_not_a_vendor_tag(self):
         """3.2: `:medium` was stripped as a vendor tag and the effort was lost."""
-        norm = allocator.normalize_task({'objective': 'x', 'profile': PROFILE, 'expected_hours': 1,
+        norm = task_intake.normalize_task({'objective': 'x', 'profile': PROFILE, 'expected_hours': 1,
                                          'constraints': {'model': 'claude-opus-5-5:medium'}},
-                                        self.accounts['scoring'], allocator.load_capabilities(accounts=self.accounts), self.accounts)
+                                        self.accounts['scoring'], account_fleet.load_capabilities(accounts=self.accounts), self.accounts)
         self.assertEqual((norm['constraint_model'], norm['constraint_effort']), ('claude-opus-5-5', 'medium'))
         plan = self.plan(self.task(constraints={'model': 'claude-opus-5-5:medium'}))
         self.assertEqual(plan['selected_bundle']['effort'], 'medium')
@@ -242,7 +247,7 @@ class UserPinTests(RouterCase):
     def test_a_named_effort_with_no_row_reaches_prepare(self):
         task = self.task(constraints={'model': 'gpt-6-astra', 'effort': 'medium'}, parent_agent_id='p', task_id='t')
         plan = self.plan(task)
-        with tempfile.TemporaryDirectory() as directory, patch.object(allocator, 'load_accounts', return_value=copy.deepcopy(self.accounts)):
+        with tempfile.TemporaryDirectory() as directory, patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(self.accounts)):
             db = os.path.join(directory, 'reg.sqlite')
             issued = dispatch_registry.issue(plan, task, now=NOW, path=db, allocation_task=task)
             prepared = dispatch_registry.prepare(issued['decision_id'], task, {'title': 'x', 'initialPrompt': 'go'},
@@ -278,8 +283,8 @@ class UserPinTests(RouterCase):
         self.assertTrue(any('usage' in w for w in plan['decision']['warnings']), plan['decision']['warnings'])
         self.assertIn('do not substitute', plan['next'])
 
-        with patch.object(allocator.launch_failures, 'active', return_value={'x': 1}), \
-                patch.object(allocator.launch_failures, 'reason', side_effect=lambda b, e, now=None: 'cooling down' if b.get('account') == 'codex' else None):
+        with patch.object(launch_failures, 'active', return_value={'x': 1}), \
+                patch.object(launch_failures, 'reason', side_effect=lambda b, e, now=None: 'cooling down' if b.get('account') == 'codex' else None):
             cooled = self.plan(self.task(constraints={'model': 'gpt-6-astra'}))
         self.assertEqual(cooled['choice'], 'none')
         self.assertTrue(any('cooling down' in w for w in cooled['decision']['warnings']))
@@ -320,13 +325,6 @@ class UserPinTests(RouterCase):
 class RecordConstraintTests(RouterCase):
     """R3 through `roll --provider ... --model ...`: 3.4."""
 
-    def setUp(self):
-        super().setUp()
-        # route_judge loads its own copy of the module; share ours so the fleet can be patched.
-        patcher = patch.object(route_judge, 'load_allocator', return_value=allocator)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
     def record(self, task=None, usage=None, **fields):
         args = argparse.Namespace(**{
             'basis': 'User asked', 'account': 'claude', 'provider': 'claude', 'model': 'claude-opus-5-5', 'effort': None,
@@ -350,7 +348,7 @@ class RecordConstraintTests(RouterCase):
         """3C-2: the launch fields were lost for a level the account has no row for."""
         accounts = copy.deepcopy(self.accounts)
         accounts['accounts']['claude']['bundles']['opus55_high'].update(modeId='bypassPermissions', draws=['five_hour', 'seven_day'])
-        with patch.object(allocator, 'load_accounts', return_value=accounts):
+        with patch.object(account_fleet, 'load_accounts', return_value=accounts):
             bundle = self.record(effort='low')['selected_bundle']
         self.assertEqual((bundle['effort'], bundle['modeId'], bundle['draws']), ('low', 'bypassPermissions', ['five_hour', 'seven_day']))
         self.assertEqual(bundle['harness'], 'claude')
@@ -364,13 +362,13 @@ class RecordConstraintTests(RouterCase):
         for bundle_id in [k for k, b in rows.items() if b.get('model') == 'claude-opus-5-5' and b.get('effort') == 'low']:
             del rows[bundle_id]
         for effort in ('high', 'low'):
-            with self.subTest(effort=effort), patch.object(allocator, 'load_accounts', return_value=accounts), \
+            with self.subTest(effort=effort), patch.object(account_fleet, 'load_accounts', return_value=accounts), \
                     self.assertRaisesRegex(ValueError, 'five_hour|seven_day'):
                 self.record(usage=spent, effort=effort)
 
     def test_a_cooling_route_is_refused(self):
-        with patch.object(allocator.launch_failures, 'active', return_value={'x': 1}), \
-                patch.object(allocator.launch_failures, 'reason', side_effect=lambda b, e, now=None: 'cooling down' if b.get('model') == 'claude-opus-5-5' else None), \
+        with patch.object(launch_failures, 'active', return_value={'x': 1}), \
+                patch.object(launch_failures, 'reason', side_effect=lambda b, e, now=None: 'cooling down' if b.get('model') == 'claude-opus-5-5' else None), \
                 self.assertRaisesRegex(ValueError, 'cooling down'):
             self.record(effort='high')
 
@@ -390,7 +388,7 @@ class RecordConstraintTests(RouterCase):
         rows = accounts['accounts']['codex']['bundles']
         rows['old'] = {'model': 'gpt-5.6-terra', 'effort': 'high', 'disabled': True, 'disabled_by_default': True}
         rows['off'] = {'model': 'gpt-5.6-luna', 'effort': 'high', 'disabled': True}
-        with patch.object(allocator, 'load_accounts', return_value=accounts):
+        with patch.object(account_fleet, 'load_accounts', return_value=accounts):
             named = self.record(model='gpt-5.6-terra', account='codex', provider='codex', effort='high')
             self.assertEqual(named['selected_bundle']['bundle_id'], 'old')
             with self.assertRaisesRegex(ValueError, 'is disabled'):
@@ -398,7 +396,7 @@ class RecordConstraintTests(RouterCase):
 
     def test_a_family_name_keeps_its_own_launch_id(self):
         accounts = self.only('claude', own={'model': 'claude-opus-4-20250514', 'effort': 'high', 'provider': 'claude'})
-        with patch.object(allocator, 'load_accounts', return_value=accounts):
+        with patch.object(account_fleet, 'load_accounts', return_value=accounts):
             bundle = self.record(model='claude-opus-4-20250514', effort='high')['selected_bundle']
         self.assertEqual((bundle['model'], bundle['launch_model'], bundle['bundle_id']),
                          ('claude-opus-4-20250514', 'claude-opus-4-20250514', 'own'))
@@ -414,43 +412,43 @@ class ProfileValidationTests(RouterCase):
         for raw, multi, expected in ((1, False, '1'), (2, True, '2'), (3, True, '3'), (4, True, '>3'), (9, True, '>3'), (2.0, True, '2'),
                                      ('1', False, '1'), ('2', True, '2'), ('3', True, '3'), ('>3', True, '>3')):
             with self.subTest(raw=raw):
-                profile = allocator.validate_profile(dict(PROFILE, multi_task=multi, task_count=raw))
+                profile = task_intake.validate_profile(dict(PROFILE, multi_task=multi, task_count=raw))
                 self.assertEqual(profile['task_count'], expected)
-                self.assertEqual(allocator.validate_profile(profile), profile)
+                self.assertEqual(task_intake.validate_profile(profile), profile)
 
     def test_anything_else_is_invalid(self):
         for raw in BAD_COUNTS:
             with self.subTest(raw=raw), self.assertRaisesRegex(ValueError, 'task_count'):
-                allocator.validate_profile(dict(PROFILE, multi_task=True, task_count=raw))
+                task_intake.validate_profile(dict(PROFILE, multi_task=True, task_count=raw))
         missing = {k: v for k, v in PROFILE.items() if k != 'task_count'}
         with self.assertRaisesRegex(ValueError, 'task_count'):
-            allocator.validate_profile(missing)
+            task_intake.validate_profile(missing)
         with self.assertRaisesRegex(ValueError, 'multi_task'):
-            allocator.validate_profile({k: v for k, v in PROFILE.items() if k != 'multi_task'})
+            task_intake.validate_profile({k: v for k, v in PROFILE.items() if k != 'multi_task'})
 
     def test_contradictions_are_invalid_not_repaired(self):
         """4.1: `multi_task true, task_count 1` passed through and printed "1 separate tasks"."""
         for multi, count in ((True, '1'), (True, 1), (False, '3'), (False, 2), (False, '>3')):
             with self.subTest(multi=multi, count=count), self.assertRaisesRegex(ValueError, 'contradicts'):
-                allocator.validate_profile(dict(PROFILE, multi_task=multi, task_count=count))
+                task_intake.validate_profile(dict(PROFILE, multi_task=multi, task_count=count))
 
     def test_caller_profile_failure_has_its_code(self):
-        caps = allocator.load_capabilities()
+        caps = account_fleet.load_capabilities()
         bad = dict(PROFILE, multi_task=True, task_count='1')
         with self.assertRaisesRegex(ValueError, 'invalid_caller_profile'):
-            route_judge.score_task({'objective': 'x', 'profile': bad}, allocator, caps)
+            route_judge.score_task({'objective': 'x', 'profile': bad}, caps)
         with self.assertRaisesRegex(ValueError, 'invalid_caller_profile'):
             self.plan(self.task(bad))
 
     def test_invalid_classifier_output_moves_on_and_finally_blocks(self):
-        caps = allocator.load_capabilities()
+        caps = account_fleet.load_capabilities()
 
         def answer(*_args, **_kw):
-            return allocator.validate_profile(dict(PROFILE, multi_task=True, task_count='1')), 'x', 'y'
+            return task_intake.validate_profile(dict(PROFILE, multi_task=True, task_count='1')), 'x', 'y'
         with patch.dict(os.environ, {'ROUTER_SCORE_CACHE': 'off'}), \
                 patch.object(route_judge, 'scorer_accounts', return_value=[None]), \
                 patch.object(route_judge, 'run_scorer', side_effect=answer) as scorer:
-            profile, meta = route_judge.score_task({'objective': 'x'}, allocator, caps, scorer_config={'scorer_type': 'claude_haiku_low', 'fallback_to_agy': True})
+            profile, meta = route_judge.score_task({'objective': 'x'}, caps, scorer_config={'scorer_type': 'claude_haiku_low', 'fallback_to_agy': True})
         self.assertIsNone(profile)
         self.assertEqual(meta['source'], 'scorer_unavailable')
         self.assertEqual(meta['fallback_reason'], 'ValueError')
@@ -458,30 +456,30 @@ class ProfileValidationTests(RouterCase):
 
     def test_a_cached_profile_is_revalidated_and_a_bad_one_is_a_miss(self):
         """4.2: a stale cache entry raised through score_task."""
-        caps = allocator.load_capabilities()
+        caps = account_fleet.load_capabilities()
         config = {'scorer_type': 'claude_haiku_low', 'fallback_to_agy': False}
         task = {'objective': 'hello world'}
         order = route_judge.scorer_attempt_order(config)[1]
-        key = route_judge.score_cache_key(task, allocator, caps, order, config)
-        good = allocator.validate_profile(dict(PROFILE))
+        key = route_judge.score_cache_key(task, caps, order, config)
+        good = task_intake.validate_profile(dict(PROFILE))
         for stale in ({'work_kind': 'removed_legacy_kind'}, dict(PROFILE, multi_task=True, task_count='1'), {k: v for k, v in PROFILE.items() if k != 'task_count'}):
             with self.subTest(stale=stale), patch.dict(os.environ, {'ROUTER_SCORE_CACHE': str(Path(self.root) / 'cache.json')}):
                 route_judge.score_cache_put(key, stale, {'source': 'system_one', 'scorer_type': 'claude_haiku_low'})
                 with patch.object(route_judge, 'scorer_accounts', return_value=[None]), \
                         patch.object(route_judge, 'run_scorer', return_value=(good, 'p', 'm')) as scorer:
-                    profile, meta = route_judge.score_task(task, allocator, caps, scorer_config=config)
+                    profile, meta = route_judge.score_task(task, caps, scorer_config=config)
                 self.assertEqual(profile, good)
                 self.assertFalse(meta.get('cached'))
                 scorer.assert_called_once()
 
     def test_cache_key_covers_every_structured_input_and_copies_are_isolated(self):
-        caps = allocator.load_capabilities()
+        caps = account_fleet.load_capabilities()
         config = {'scorer_type': 'claude_haiku_low', 'fallback_to_agy': False}
         order = route_judge.scorer_attempt_order(config)[1]
         base = {'objective': 'o', 'context': 'c', 'environment': 'e', 'expected_hours': 1, 'needs': {'gui': False}}
-        keys = {route_judge.score_cache_key(base, allocator, caps, order, config)}
+        keys = {route_judge.score_cache_key(base, caps, order, config)}
         for name, value in (('objective', 'o2'), ('context', 'c2'), ('environment', 'e2'), ('expected_hours', 2), ('needs', {'gui': True})):
-            keys.add(route_judge.score_cache_key({**base, name: value}, allocator, caps, order, config))
+            keys.add(route_judge.score_cache_key({**base, name: value}, caps, order, config))
         self.assertEqual(len(keys), 6)
         self.assertEqual(set(route_judge.SCORER_TASK_FIELDS), {'objective', 'context', 'environment', 'expected_hours', 'needs'})
         with patch.dict(os.environ, {'ROUTER_SCORE_CACHE': str(Path(self.root) / 'cache2.json')}):

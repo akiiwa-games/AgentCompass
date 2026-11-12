@@ -11,7 +11,11 @@ import unittest
 from unittest.mock import patch
 
 import demo_plan
+import host_policy
+import provider_inventory
+import quota_overrides
 import route_judge
+import worker_sessions
 
 ROOT = Path(__file__).resolve().parents[3]
 ENTRY = ROOT / 'agentcompass'
@@ -40,16 +44,15 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_demo_never_reads_live_state_even_with_a_continuation(self):
-        allocator = route_judge.load_allocator()
         document = json.loads(EXAMPLE.read_text(encoding='utf-8'))
         document['task']['chain'] = {'worker': {'agent_id': 'must-not-read-live-session'}}
         with ExitStack() as stack:
-            for obj, name in ((allocator.provider_inventory, 'current'), (allocator.host_policy, 'load_policy'),
-                              (allocator, 'load_overrides'), (allocator, 'session_state'),
+            for obj, name in ((provider_inventory, 'current'), (host_policy, 'load_policy'),
+                              (quota_overrides, 'load_overrides'), (worker_sessions, 'session_state'),
                               (route_judge, 'usage_snapshot'), (route_judge, 'read_ledger'),
                               (Path, 'home')):
                 stack.enter_context(patch.object(obj, name, side_effect=AssertionError('live state read')))
-            result = demo_plan.plan(document, allocator)
+            result = demo_plan.plan(document)
         self.assertNotEqual(result['choice'], 'none')
 
     def test_demo_is_only_a_read_only_plan(self):

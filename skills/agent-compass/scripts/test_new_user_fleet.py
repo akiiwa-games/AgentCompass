@@ -2,14 +2,14 @@
 import json
 import unittest
 
-import allocator
+import account_fleet
 import provider_inventory
 import route_judge
 
 
 class ShippedFleetTests(unittest.TestCase):
     def test_shipped_accounts_are_neutral_and_unverified(self):
-        document = json.loads((allocator.REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))
+        document = json.loads((account_fleet.REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))
         names = set(document['accounts'])
         self.assertTrue({'claude', 'codex', 'antigravity', 'opencode', 'pi', 'grok', 'dot', 'chatgpt-web'} <= names)
         for fixture_only in ('claude-2', 'codex-2', 'claude-lab', 'codex-work'):

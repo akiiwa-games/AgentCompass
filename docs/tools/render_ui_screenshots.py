@@ -28,10 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 def isolate(state: Path) -> None:
-    import allocator
+    import account_fleet
 
     accounts = state / "accounts.json"
-    shutil.copy(allocator.reference_fleet_path(), accounts)
+    shutil.copy(account_fleet.reference_fleet_path(), accounts)
     policy = state / "host-policy.json"
     policy.write_text(json.dumps({"allowed_accounts": list(json.loads(accounts.read_text("utf-8-sig"))["accounts"])}),
                       encoding="utf-8")

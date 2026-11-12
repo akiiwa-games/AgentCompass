@@ -874,7 +874,8 @@ def _change_state(change) -> None:
     # The panel and tray watcher live in different processes. Share the router's
     # stable file transaction lock so a completed check cannot undo a checkbox click.
     from router_priority import modules
-    store = modules()[0].override_store
+    modules()
+    import override_store as store
     path = state_dir() / "cli-updates-state.json"
     with _state_lock, store.locked(path):
         state = _load_state()
@@ -914,8 +915,10 @@ def update_all(progress=None, *, auto: bool = False, only: list[str] | None = No
     claim = ExitStack()
     try:
         from router_priority import modules
+        modules()
+        import override_store
         try:
-            claim.enter_context(modules()[0].override_store.locked(state_dir() / "cli-update-operation", timeout=0))
+            claim.enter_context(override_store.locked(state_dir() / "cli-update-operation", timeout=0))
         except TimeoutError:
             result["summary"] = _tr("另一个 CLI 正在更新，请等它结束后再更新")
             return result

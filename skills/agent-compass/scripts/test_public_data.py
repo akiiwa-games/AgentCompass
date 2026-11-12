@@ -9,7 +9,8 @@ import unittest
 from unittest.mock import patch
 import urllib.error
 
-import allocator
+import account_fleet
+import axis_scores
 import provider_inventory
 import public_data
 import route_judge
@@ -245,10 +246,10 @@ class LoaderPrecedenceTests(ChannelCase):
         })
         self.publish(safety_margin_pct=0.5, at=T0 + timedelta(days=2))
         self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'updated')
-        with patch.object(allocator, 'REFERENCES', self.bundled):
-            self.assertEqual(allocator.fleet_document_path().parent.parent.name, 'sets')
-            self.assertEqual(allocator.load_five_axis()['as_of'], '2026-11-12')
-            self.assertEqual(allocator.load_public_user_scores()['scores']['grok-bot']['coding']['level'], 2.0)
+        with patch.object(account_fleet, 'REFERENCES', self.bundled):
+            self.assertEqual(account_fleet.fleet_document_path().parent.parent.name, 'sets')
+            self.assertEqual(axis_scores.load_five_axis()['as_of'], '2026-11-12')
+            self.assertEqual(axis_scores.load_public_user_scores()['scores']['grok-bot']['coding']['level'], 2.0)
         with patch.object(provider_inventory, 'PLAN_TEMPLATES', self.bundled / 'plan-templates.json'), \
                 patch.object(provider_inventory, '_SHIPPED_PLAN_TEMPLATES', None):
             self.assertEqual(provider_inventory.plan_defaults({}, 'claude', 'pro')['windows']['five_hour']['hours'], 6)
@@ -256,14 +257,14 @@ class LoaderPrecedenceTests(ChannelCase):
             self.assertEqual(route_judge.load_classifier_cases()['calibration_cases'], [{'marker': 'fetched'}])
 
     def test_user_override_beats_fetched_data(self):
-        with patch.object(allocator, 'REFERENCES', self.bundled):
-            self.assertEqual(allocator.load_accounts()['scoring']['safety_margin_pct'], 0.5)
+        with patch.object(account_fleet, 'REFERENCES', self.bundled):
+            self.assertEqual(account_fleet.load_accounts()['scoring']['safety_margin_pct'], 0.5)
             write_json(Path(os.environ['ROUTER_ACCOUNTS_OVERRIDE']), {'schema_version': 2, 'scoring': {'safety_margin_pct': 0.9}})
-            self.assertEqual(allocator.load_accounts()['scoring']['safety_margin_pct'], 0.9)
+            self.assertEqual(account_fleet.load_accounts()['scoring']['safety_margin_pct'], 0.9)
             before = (self.bundled / 'accounts.json').read_bytes()
             local = self.state / 'accounts.local.json'
             write_json(local, json.loads(before.decode('utf-8-sig')))
-            self.assertNotEqual(allocator.fleet_document_path(), local)  # no machine-local fleet replaces public data
+            self.assertNotEqual(account_fleet.fleet_document_path(), local)  # no machine-local fleet replaces public data
         self.assertEqual((self.bundled / 'accounts.json').read_bytes(), before)  # fetched data never writes user files
         self.assertEqual(json.loads(Path(os.environ['ROUTER_ACCOUNTS_OVERRIDE']).read_text(encoding='utf-8')),
                          {'schema_version': 2, 'scoring': {'safety_margin_pct': 0.9}})

@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
 import allocator
+import account_fleet
 import cwd_policy
 import router_data
 from test_router_data_models import settings
@@ -31,7 +32,7 @@ def test_legacy_prefix_prefill_and_override_save(tmp_path, monkeypatch):
     data = router_data._read_json(target)['accounts']['codex']
     assert 'allowed_cwd' not in data
     assert data['cwd_regex'] == '^E:/(P4|PROJECTS)(/|$)'
-    assert allocator.load_accounts()['accounts']['codex']['cwd_regex'] == data['cwd_regex']
+    assert account_fleet.load_accounts()['accounts']['codex']['cwd_regex'] == data['cwd_regex']
     before = target.read_bytes()
     with pytest.raises(ValueError):
         router_data.save_account_cwd('codex', '[')
@@ -42,13 +43,13 @@ def test_legacy_prefix_prefill_and_override_save(tmp_path, monkeypatch):
 
 def test_regex_and_legacy_prefix_intersect_in_allocator():
     spec = {'allowed_cwd': ['E:/P4'], 'cwd_regex': '/game(/|$)'}
-    assert allocator.account_cwd_allowed(spec, r'e:\p4\game')
-    assert not allocator.account_cwd_allowed(spec, r'e:\p4\other')
-    assert not allocator.account_cwd_allowed(spec, r'e:\projects\game')
+    assert account_fleet.account_cwd_allowed(spec, r'e:\p4\game')
+    assert not account_fleet.account_cwd_allowed(spec, r'e:\p4\other')
+    assert not account_fleet.account_cwd_allowed(spec, r'e:\projects\game')
 
 
 def test_plan_explains_regex_exclusion_and_legacy_intersection():
-    scoring = json.loads(allocator.reference_fleet_path().read_text(encoding='utf-8'))['scoring']
+    scoring = json.loads(account_fleet.reference_fleet_path().read_text(encoding='utf-8'))['scoring']
     accounts = {'scoring': scoring, 'models': {'fixture-model': {}}, 'accounts': {
         'fixture-account': {'verified': True, 'cwd_regex': '^E:/P4(/|$)', 'allowed_cwd': ['E:/P4'],
                             'bundles': {'fixture-bundle': {'model': 'fixture-model', 'effort': 'high'}}}}}

@@ -173,7 +173,7 @@ def harness_compatibility(harness, model, account_spec, accounts=None):
 
 def _account_harnesses(account, spec):
     """(harness, catalog provider) pairs an account already launches through, from its manual bundles."""
-    from allocator import bundle_harness  # local import: allocator is heavy and imports this module's peers
+    from account_fleet import bundle_harness  # local import: account_fleet imports this module's peers
     pairs = {}
     for bid, bundle in (spec.get('bundles') or {}).items():
         if isinstance(bundle, dict):
@@ -302,7 +302,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
 
 
 def _harness_of(bundle, account, bid):
-    from allocator import bundle_harness
+    from account_fleet import bundle_harness
     return bundle_harness(bundle, account, bid)
 
 

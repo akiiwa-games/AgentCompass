@@ -23,9 +23,10 @@ def main():
     args = parser.parse_args()
     sys.path.insert(0, str(args.skill/'scripts'))
     import allocator
+    import account_fleet
     import host_policy
     fixture = json.loads(args.fixture.read_text(encoding='utf-8-sig'))
-    accounts = allocator.load_accounts(args.skill/'references/accounts.json')
+    accounts = account_fleet.load_accounts(args.skill/'references/accounts.json')
     results = {}
     with tempfile.TemporaryDirectory() as temporary:
         path = (args.profile, True) if args.profile else (Path(temporary)/'absent-default.json', False)

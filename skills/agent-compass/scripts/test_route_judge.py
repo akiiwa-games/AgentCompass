@@ -10,7 +10,9 @@ import time
 import unittest
 from unittest.mock import patch
 
+import account_fleet
 import route_judge as router
+import task_intake
 from router_test_support import isolated_router_state, profile, profile_for, temporary_root
 
 
@@ -27,8 +29,8 @@ def setUpModule():
     unittest.addModuleCleanup(accounts.stop)
 
 
-def reference_capabilities(allocator):
-    return allocator.load_capabilities(accounts=allocator.load_accounts(allocator.reference_fleet_path()))
+def reference_capabilities():
+    return account_fleet.load_capabilities(accounts=account_fleet.load_accounts(account_fleet.reference_fleet_path()))
 
 
 def live_providers():
@@ -101,10 +103,9 @@ class RoutingTests(unittest.TestCase):
         self.assertNotEqual(single['choice'], 'split')
 
     def test_multi_task_fields_are_required_and_checked(self):
-        allocator = router.load_allocator()
-        self.assertEqual({k: v for k, v in allocator.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count='>3')).items()
+        self.assertEqual({k: v for k, v in task_intake.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count='>3')).items()
                           if k in ('multi_task', 'task_count')}, {'multi_task': True, 'task_count': '>3'})
-        self.assertEqual(allocator.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count=5))['task_count'], '>3')
+        self.assertEqual(task_intake.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count=5))['task_count'], '>3')
         for bad in (
             dict(GUI_PROFILE, multi_task='yes', task_count='5'),
             dict(GUI_PROFILE, multi_task='yes', task_count='2'),
@@ -115,13 +116,13 @@ class RoutingTests(unittest.TestCase):
             {k: v for k, v in GUI_PROFILE.items() if k != 'task_count'},
         ):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
-                allocator.validate_profile(bad)
+                task_intake.validate_profile(bad)
         for missing_flag in ('wants_fast', 'read_only_review'):
-            with self.subTest(missing_flag=missing_flag), self.assertRaises(allocator.InvalidCallerProfile):
-                allocator.validate_caller_profile({k: v for k, v in GUI_PROFILE.items() if k != missing_flag})
-        self.assertFalse(hasattr(allocator, 'multi_task_marks'))
-        self.assertFalse(hasattr(allocator, 'MULTI_TASK_MARK_RE'))
-        checked = allocator.validate_profile(dict(GUI_PROFILE, wants_fast=True, read_only_review=False))
+            with self.subTest(missing_flag=missing_flag), self.assertRaises(task_intake.InvalidCallerProfile):
+                task_intake.validate_caller_profile({k: v for k, v in GUI_PROFILE.items() if k != missing_flag})
+        self.assertFalse(hasattr(task_intake, 'multi_task_marks'))
+        self.assertFalse(hasattr(task_intake, 'MULTI_TASK_MARK_RE'))
+        checked = task_intake.validate_profile(dict(GUI_PROFILE, wants_fast=True, read_only_review=False))
         self.assertEqual((checked['wants_fast'], checked['read_only_review']), (True, False))
 
     def test_usage_snapshot_discovery_freshness_projection_and_window_math(self):
@@ -286,8 +287,7 @@ class RoutingTests(unittest.TestCase):
         # Finalize & record_constraint
         now = datetime.now(timezone.utc)
         pro = {'provider': 'chatgpt-web', 'account': 'fixture-advisor', 'model': 'gpt-6-pro', 'effort': 'max'}
-        allocator = router.load_allocator()
-        accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         accounts['accounts']['fixture-advisor'] = {'cadence': {'window_seconds': 6 * 3600, 'limit': 5}}
         history = [{'at': (now - timedelta(hours=h)).isoformat(), 'stage': 'select', 'choice': 'pro_web', 'bundle': pro} for h in (1, 2, 3, 4, 5)]
         u_low = {'accounts': {'codex': {'status': 'fresh', 'fetched_at': now.isoformat(), 'windows': [
@@ -297,8 +297,7 @@ class RoutingTests(unittest.TestCase):
                'reason': 'r', 'judge': dict(router.JUDGES['codex']), 'selected_bundle': pro, 'usage': u_low}
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(router, 'ledger_path', return_value=Path(directory) / 'ledger.jsonl'), \
-                patch.object(router, 'load_allocator', return_value=allocator), \
-                patch.object(allocator, 'load_accounts', return_value=accounts):
+                patch.object(account_fleet, 'load_accounts', return_value=accounts):
             out = router.finalize(res, {'stage': 'select'}, 'codex', time.monotonic(),
                                   {'objective': 'Advise', 'work_kind': 'direction_reasoning'}, history)
             self.assertEqual({a['code'] for a in out['alerts']},
@@ -414,8 +413,7 @@ class RoutingTests(unittest.TestCase):
             self.assertIn('unknown_work_kind', {a['code'] for a in unknown['alerts']})
 
     def test_recent_dot_reroll_requires_local_evidence_or_failed_health(self):
-        allocator = router.load_allocator()
-        capabilities = reference_capabilities(allocator)
+        capabilities = reference_capabilities()
         task = {'task_id': 't-dot-1', 'objective': 'Fix single-file parser bug', 'work_kind': 'debug_review', 'difficulty': 'hard'}
         recent = {'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan',
                   'choice': 'dot_text', 'task_id': 't-dot-1', 'request_hash': router._task_request_hash(task)}
@@ -427,8 +425,7 @@ class RoutingTests(unittest.TestCase):
         ):
             with self.subTest(local_only=local_only, down=down, enabled=enabled), \
                     tempfile.TemporaryDirectory() as directory, \
-                    patch.object(router, 'load_allocator', return_value=allocator), \
-                    patch.object(allocator, 'load_capabilities', return_value={**capabilities,
+                    patch.object(account_fleet, 'load_capabilities', return_value={**capabilities,
                         'remote_reroute_guard': {'enabled': enabled, 'bundle_id': 'dot_text', 'window_seconds': 600}}):
                 result, _ = self.run_plan(directory, dict(task, needs={'local_only': local_only}),
                                            down, unavailable=['dot_text'], records=[recent])
@@ -545,8 +542,7 @@ class ScoreCacheTests(unittest.TestCase):
     """Classification cache: same task and scorer identity skips the scorer call; anything else misses."""
 
     def setUp(self):
-        self.allocator = router.load_allocator()
-        self.capabilities = reference_capabilities(self.allocator)
+        self.capabilities = reference_capabilities()
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
         patcher = patch.dict(router.os.environ, {'ROUTER_SCORE_CACHE': str(Path(self.dir.name) / 'score-cache.json')})
@@ -561,7 +557,7 @@ class ScoreCacheTests(unittest.TestCase):
             return 0, (as_agy_stream(answer) if command[0] == 'agy.exe' else answer), ''
         cfg = config if config is not None else {'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=run):
-            return router.score_task({'objective': objective}, self.allocator, self.capabilities, scorer_config=cfg)
+            return router.score_task({'objective': objective}, self.capabilities, scorer_config=cfg)
 
     def test_repeat_is_served_from_cache_and_changed_task_or_scorer_is_not(self):
         first, meta = self.score()
@@ -607,8 +603,7 @@ class ScoreCacheTests(unittest.TestCase):
         tasks = [{'objective': f'Fix bug {n}'} for n in range(4)]
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=run), \
                 patch.object(router, 'load_scorer_config', return_value={'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}), \
-                patch.object(router, 'load_allocator', return_value=self.allocator), \
-                patch.object(self.allocator, 'load_capabilities', return_value=self.capabilities):
+                patch.object(account_fleet, 'load_capabilities', return_value=self.capabilities):
             router.prefetch_scores(tasks)
         self.assertEqual(self.calls, 4)
         self.assertGreater(peak[0], 1)
@@ -634,8 +629,7 @@ class FullTaskTextTests(unittest.TestCase):
     """The classifier gets the whole task text on every transport; a text no transport can carry stops instead of being cut."""
 
     def setUp(self):
-        self.allocator = router.load_allocator()
-        self.capabilities = reference_capabilities(self.allocator)
+        self.capabilities = reference_capabilities()
         patcher = patch.dict(router.os.environ, {'ROUTER_SCORE_CACHE': 'off', 'ROUTER_DISABLE_LIVE_SCORER': ''})
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -648,8 +642,8 @@ class FullTaskTextTests(unittest.TestCase):
         prompt = router.scorer_prompt({'objective': self.text, 'context': '上下文' * 5000})
         self.assertIn(json.dumps(self.text, ensure_ascii=False), prompt)
         self.assertIn('中间的硬性验收条件', prompt)
-        self.assertNotEqual(router.score_cache_key({'objective': self.text}, self.allocator, self.capabilities, ['agy_flash_low'], {}),
-                            router.score_cache_key({'objective': self.text.replace('周五', '周四')}, self.allocator,
+        self.assertNotEqual(router.score_cache_key({'objective': self.text}, self.capabilities, ['agy_flash_low'], {}),
+                            router.score_cache_key({'objective': self.text.replace('周五', '周四')},
                                                    self.capabilities, ['agy_flash_low'], {}))
 
     def test_agy_sends_every_task_on_stdin_and_nothing_long_on_the_command_line(self):
@@ -660,8 +654,8 @@ class FullTaskTextTests(unittest.TestCase):
             result = {'conversation_id': 'c', 'status': 'SUCCESS', 'structured_output': GUI_PROFILE}
             return 0, json.dumps({'event': 'init'}) + chr(10) + json.dumps({'event': 'result', 'result': result}) + chr(10), ''
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=fake_run):
-            router.score_task({'objective': self.text}, self.allocator, self.capabilities, scorer_config=self.config)
-            router.score_task({'objective': 'short task'}, self.allocator, self.capabilities, scorer_config=self.config)
+            router.score_task({'objective': self.text}, self.capabilities, scorer_config=self.config)
+            router.score_task({'objective': 'short task'}, self.capabilities, scorer_config=self.config)
         for (command, stdin), expected in zip(runs, (self.text, 'short task')):
             self.assertEqual(command[-2:], ['--print', ''])
             self.assertIn('stream-json', command)
@@ -675,7 +669,7 @@ class FullTaskTextTests(unittest.TestCase):
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), \
                 patch.object(router, 'run_process', return_value=(2, '', 'unsupported')):
             for objective in (self.text, 'short task'):
-                prof, meta = router.score_task({'objective': objective}, self.allocator, self.capabilities, scorer_config=self.config)
+                prof, meta = router.score_task({'objective': objective}, self.capabilities, scorer_config=self.config)
                 self.assertIsNone(prof)
                 self.assertEqual(meta['source'], 'scorer_unavailable')
 
@@ -683,11 +677,11 @@ class FullTaskTextTests(unittest.TestCase):
         ok = {'conversation_id': 'c', 'status': 'SUCCESS', 'structured_output': GUI_PROFILE}
         error = router.urllib.error.HTTPError('https://api.typesafe.ai', 413, 'too large', {}, None)
         with patch.object(router.urllib.request, 'urlopen', side_effect=error), patch.object(router, 'user_env', return_value=None),                 patch.object(router, 'scorer_prefix', return_value=['agy.exe']),                 patch.object(router, 'run_process', return_value=(0, json.dumps({'event': 'result', 'result': ok}), '')):
-            _, meta = router.score_task({'objective': self.text}, self.allocator, self.capabilities,
+            _, meta = router.score_task({'objective': self.text}, self.capabilities,
                                         scorer_config={'scorer_type': 'jev', 'jev_api_key': 'k', 'fallback_to_agy': True})
             self.assertEqual((meta['source'], meta['attempts'][0]['error_type']), ('system_one', 'ScorerInputError'))
             with self.assertRaises(router.ScorerInputError):
-                router.score_task({'objective': self.text}, self.allocator, self.capabilities,
+                router.score_task({'objective': self.text}, self.capabilities,
                                   scorer_config={'scorer_type': 'jev', 'jev_api_key': 'k', 'fallback_to_agy': False})
 
 
@@ -695,8 +689,7 @@ class SystemOneScorerTests(unittest.TestCase):
     """Contract tests for System-One scoring via Gemini 3.8 Flash low and heuristic fallback."""
 
     def setUp(self):
-        self.allocator = router.load_allocator()
-        self.capabilities = reference_capabilities(self.allocator)
+        self.capabilities = reference_capabilities()
         # Tests rescore one objective with different fake answers; a cache hit would replay the first.
         patcher = patch.dict(router.os.environ, {'ROUTER_SCORE_CACHE': 'off'})
         patcher.start()
@@ -717,7 +710,7 @@ class SystemOneScorerTests(unittest.TestCase):
         calls, run = self.fake_agy(stdout if stdout is not None else self.envelope(GUI_PROFILE), code)
         with patch.object(router, 'scorer_prefix', return_value=['agy.exe']), patch.object(router, 'run_process', side_effect=run):
             profile, meta = router.score_task(
-                task, self.allocator, self.capabilities, use_model=use_model,
+                task, self.capabilities, use_model=use_model,
                 scorer_config={'scorer_type': 'agy_flash_low', 'fallback_to_agy': False},
             )
         return profile, meta, calls
@@ -759,7 +752,7 @@ class SystemOneScorerTests(unittest.TestCase):
         self.assertIn('dimension_rubric', prompt)
         self.assertIn('read_only_review', cases['dimension_rubric'])
         for c in cases['calibration_cases']:
-            self.assertEqual(self.allocator.validate_profile(c['expected_profile']), c['expected_profile'])
+            self.assertEqual(task_intake.validate_profile(c['expected_profile']), c['expected_profile'])
             self.assertIn(c['expected_profile']['work_kind'], self.capabilities['routes'])
         reviews = [c['expected_profile'] for c in cases['calibration_cases'] if c.get('id') == 'security_diff_review']
         self.assertTrue(reviews and all(p['code_complexity'] == 0 and p['read_only_review'] for p in reviews))
@@ -789,7 +782,7 @@ class SystemOneScorerTests(unittest.TestCase):
                 cache_file = Path(directory) / 'score-cache.json'
                 task = {'objective': 'Click Save and take a screenshot', 'expected_hours': 0.5}
                 with patch.dict(router.os.environ, {'ROUTER_SCORE_CACHE': str(cache_file)}):
-                    key = router.score_cache_key(task, self.allocator, self.capabilities, order, config)
+                    key = router.score_cache_key(task, self.capabilities, order, config)
                     cache_file.write_text(
                         json.dumps({'entries': {key: {'saved_at': time.time(), 'profile': bad_cached,
                                                       'scorer': {'source': 'system_one', 'model': 'old'}}}}),
@@ -863,9 +856,9 @@ class SystemOneScorerTests(unittest.TestCase):
             self.assertEqual(explicit['decision']['task']['hours'], 0.25)
         for bad in ({'expected_hours': 'x'}, {'urgency': 'now'}, {'hours_confidence': 'sure'}, {'expected_hours': True}):
             with self.assertRaises(ValueError):
-                self.allocator.validate_profile(dict(base, **bad))
-        self.assertEqual(self.allocator.validate_profile(dict(base, expected_hours=999))['expected_hours'], 24.0)
-        self.assertNotIn('expected_hours', self.allocator.validate_profile(base))
+                task_intake.validate_profile(dict(base, **bad))
+        self.assertEqual(task_intake.validate_profile(dict(base, expected_hours=999))['expected_hours'], 24.0)
+        self.assertNotIn('expected_hours', task_intake.validate_profile(base))
 
     def test_profile_local_only_is_trusted_and_caller_values_win(self):
         profile = dict(GUI_PROFILE, work_kind='general_implementation', needs_visual=False,
@@ -946,8 +939,7 @@ class SelectableScorerTests(unittest.TestCase):
     """Contract tests for the user-selectable System-One scorers (config, Jev, Claude, Codex, custom API, heuristic)."""
 
     def setUp(self):
-        self.allocator = router.load_allocator()
-        self.capabilities = reference_capabilities(self.allocator)
+        self.capabilities = reference_capabilities()
         self.path = temporary_root(self.addCleanup) / 'scorer-config.json'
         env = patch.dict(router.os.environ, {'ROUTER_SCORER_CONFIG': str(self.path), 'ROUTER_SCORER_TYPE': '',
                                              'ROUTER_DISABLE_LIVE_SCORER': '', 'ROUTER_SCORE_CACHE': 'off'})
@@ -976,7 +968,7 @@ class SelectableScorerTests(unittest.TestCase):
                 patch.object(router, 'run_process', side_effect=fake_run), \
                 patch.object(router, 'scorer_prefix', return_value=list(prefix)), \
                 patch.object(router, 'cli_prefix', return_value=list(cli)):
-            profile, meta = router.score_task(self.task, self.allocator, self.capabilities, scorer_config=config)
+            profile, meta = router.score_task(self.task, self.capabilities, scorer_config=config)
         return profile, meta, calls
 
     def test_config_load_save_env_override_and_masking(self):
@@ -1027,7 +1019,7 @@ class SelectableScorerTests(unittest.TestCase):
         self.assertEqual((questions['multi_task']['type'], questions['task_count']['type']), ('noul', 'choice'))
         self.assertEqual(list(questions['task_count']['criteria']), ['1', '2', '3', '>3'])
         answers = {**JEV_RESPONSE['answers'], 'multi_task': {'noul': 0.91}, 'task_count': {'choice': '2'}}
-        profile = router.parse_jev_response({'answers': answers}, self.allocator)
+        profile = router.parse_jev_response({'answers': answers})
         self.assertEqual((profile['multi_task'], profile['task_count']), (True, '2'))
 
     def test_jev_request_matches_typesafe_systemone_contract(self):
@@ -1043,9 +1035,9 @@ class SelectableScorerTests(unittest.TestCase):
         routes = set(self.capabilities['routes']) - {'other_or_mixed'}
         self.assertEqual((questions['work_kind']['type'], set(questions['work_kind']['criteria'])), ('choice', routes))
         self.assertTrue(all(isinstance(v, str) and v for v in questions['work_kind']['criteria'].values()))
-        self.assertEqual(set(questions['interaction_style']['criteria']), set(self.allocator.INTERACTION_STYLES))
+        self.assertEqual(set(questions['interaction_style']['criteria']), set(task_intake.INTERACTION_STYLES))
         self.assertEqual((questions['access']['type'], set(questions['access']['criteria'])), ('choice', {'read-only', 'write'}))
-        for name, (low, high) in self.allocator.PROFILE_INTEGERS.items():
+        for name, (low, high) in task_intake.PROFILE_INTEGERS.items():
             q = questions[name]
             self.assertEqual((q['type'], len(q['criteria']), isinstance(q['criteria'], list)), ('score', high - low + 1, True), name)
             self.assertLessEqual(len(q['criteria']), 10)
@@ -1054,9 +1046,9 @@ class SelectableScorerTests(unittest.TestCase):
             self.assertNotIn('criteria', questions[name])
 
     def test_jev_response_parsing_maps_every_dimension(self):
-        profile = router.parse_jev_response(JEV_RESPONSE, self.allocator)
+        profile = router.parse_jev_response(JEV_RESPONSE)
         self.assertEqual(profile, JEV_PROFILE)
-        self.assertEqual(self.allocator.validate_profile(profile), profile)
+        self.assertEqual(task_intake.validate_profile(profile), profile)
         # Scores clamp into range; a bare value answer is accepted; noul below 0.5 is false and needs_gui implies visual only when true
         answers = {k: dict(v) for k, v in JEV_RESPONSE['answers'].items()}
         answers['reasoning_depth']['score'] = 9
@@ -1065,7 +1057,7 @@ class SelectableScorerTests(unittest.TestCase):
         answers['local_only'] = 0.5
         answers['work_kind'] = 'debug_review'
         answers['access'] = {'choice': 'write'}
-        p2 = router.parse_jev_response({'answers': answers}, self.allocator)
+        p2 = router.parse_jev_response({'answers': answers})
         self.assertEqual((p2['reasoning_depth'], p2['code_complexity'], p2['needs_gui'], p2['needs_visual'], p2['local_only'],
                           p2['work_kind'], p2['access']),
                          (4, 3, False, False, True, 'debug_review', 'write'))
@@ -1082,21 +1074,21 @@ class SelectableScorerTests(unittest.TestCase):
                        {'answers': {**answers, 'demand_divergence': {'score': float('nan')}}},
                        {'error': 'x'}):
             with self.assertRaises(ValueError):
-                router.parse_jev_response(broken, self.allocator)
+                router.parse_jev_response(broken)
         for bad_prof in (
             {k: v for k, v in GUI_PROFILE.items() if k != 'wants_fast'},
             {k: v for k, v in GUI_PROFILE.items() if k != 'read_only_review'},
             {**GUI_PROFILE, 'read_only_review': True, 'code_complexity': 1},
         ):
             with self.assertRaises(ValueError):
-                self.allocator.validate_profile(bad_prof)
+                task_intake.validate_profile(bad_prof)
 
     def test_jev_answers_effort_band_and_urgency_in_the_same_request(self):
         answers = {**JEV_RESPONSE['answers'], 'effort_band': {'choice': 'multi_file'}, 'urgency': {'choice': 'high'}}
-        profile = router.parse_jev_response({'answers': answers}, self.allocator)
+        profile = router.parse_jev_response({'answers': answers})
         self.assertEqual((profile['expected_hours'], profile['urgency'], 'hours_confidence' in profile), (2.0, 'high', False))
         for value in ('minutes', None):  # unknown or missing answers leave the allocator's difficulty default in force
-            plain = router.parse_jev_response({'answers': {**answers, 'effort_band': {'choice': value}, 'urgency': {'choice': value}}}, self.allocator)
+            plain = router.parse_jev_response({'answers': {**answers, 'effort_band': {'choice': value}, 'urgency': {'choice': value}}})
             self.assertNotIn('expected_hours', plain)
             self.assertNotIn('urgency', plain)
 
@@ -1244,8 +1236,7 @@ class ScorerAccountTests(unittest.TestCase):
     }}
 
     def setUp(self):
-        self.allocator = router.load_allocator()
-        self.capabilities = reference_capabilities(self.allocator)
+        self.capabilities = reference_capabilities()
         env = patch.dict(router.os.environ, {'ROUTER_SCORER_CONFIG': str(temporary_root(self.addCleanup) / 'scorer.json'),
                                              'ROUTER_SCORER_TYPE': '', 'ROUTER_DISABLE_LIVE_SCORER': '',
                                              'ROUTER_SCORE_CACHE': 'off'})
@@ -1281,7 +1272,7 @@ class ScorerAccountTests(unittest.TestCase):
                 patch.object(router, 'run_process', side_effect=fake_run), \
                 patch.object(router, 'scorer_prefix', return_value=['agy.exe']), \
                 patch.object(router, 'cli_prefix', return_value=['cli.exe']):
-            _, meta = router.score_task(self.task, self.allocator, self.capabilities, scorer_config={})
+            _, meta = router.score_task(self.task, self.capabilities, scorer_config={})
         self.assertEqual(used, [('cli.exe', 'claude-2')])
         self.assertEqual((meta['source'], meta['scorer_type'], meta['account']), ('system_one', 'claude_haiku_low', 'claude-2'))
         self.assertNotIn('attempts', meta)
@@ -1292,7 +1283,7 @@ class ScorerAccountTests(unittest.TestCase):
         homes = iter([(1, '', ''), (0, json.dumps({'structured_output': GUI_PROFILE}), '')])
         with patch.object(router.provider_inventory, 'current', return_value=both),                 patch.object(router.host_policy, 'load_policy', return_value=None),                 patch.object(router, 'run_process', side_effect=lambda c, d, p=None, t=120, account=None:
                              (used.append((c[0], account)), next(homes))[1]),                 patch.object(router, 'cli_prefix', return_value=['cli.exe']):
-            _, meta = router.score_task(self.task, self.allocator, self.capabilities, scorer_config={})
+            _, meta = router.score_task(self.task, self.capabilities, scorer_config={})
         self.assertEqual(used, [('cli.exe', 'claude'), ('cli.exe', 'claude-2')])
         self.assertEqual((meta['account'], [(a['scorer_type'], a['account']) for a in meta['attempts']]),
                          ('claude-2', [('claude_haiku_low', 'claude')]))
@@ -1303,7 +1294,7 @@ class ScorerAccountTests(unittest.TestCase):
                 patch.object(router, 'run_process', side_effect=fake_run), \
                 patch.object(router, 'scorer_prefix', return_value=['agy.exe']), \
                 patch.object(router, 'cli_prefix', return_value=['cli.exe']):
-            _, meta = router.score_task(self.task, self.allocator, self.capabilities, scorer_config={})
+            _, meta = router.score_task(self.task, self.capabilities, scorer_config={})
         self.assertEqual([c for c, _ in used], ['agy.exe'])        # claude and codex absent: agy, no error recorded
         self.assertEqual(meta['scorer_type'], 'agy_flash_low')
         self.assertNotIn('attempts', meta)
@@ -1329,9 +1320,8 @@ class ScorerAccountTests(unittest.TestCase):
         self.assertEqual(compact['calibration_cases'][0][2], ['general_implementation', 2, None])
         self.assertEqual(compact['calibration_cases'][1][2], ['computer_use', 1, True])
 
-        allocator = router.load_allocator()
-        capabilities = reference_capabilities(allocator)
-        schema = router.scorer_schema(allocator, capabilities)
+        capabilities = reference_capabilities()
+        schema = router.scorer_schema(capabilities)
         prompt = router.scorer_prompt({
             'objective': 'Implement a live order-book dashboard and run unit tests',
             'context': 'Frontend React + WebSocket module',
@@ -1377,12 +1367,11 @@ class LiveSystemOneSmokeTests(unittest.TestCase):
     TIMEOUT = 60
 
     def test_real_scores_and_plans(self):
-        allocator = router.load_allocator()
-        capabilities = reference_capabilities(allocator)
+        capabilities = reference_capabilities()
         for name, (task, plausible) in self.TASKS.items():
             with self.subTest(task=name), patch.dict(router.os.environ, self.LIVE_ENV, clear=True), \
                     patch.object(Path, 'home', return_value=self.LIVE_HOME):
-                profile, meta = router.score_task(task, allocator, capabilities, timeout=self.TIMEOUT,
+                profile, meta = router.score_task(task, capabilities, timeout=self.TIMEOUT,
                                                    scorer_config={'scorer_type': 'agy_flash_low'})
             self.assertEqual(meta['source'], 'system_one', (name, meta))
             self.assertTrue(plausible(profile), (name, profile))

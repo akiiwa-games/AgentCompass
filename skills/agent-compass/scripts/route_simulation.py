@@ -31,6 +31,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import accounts_override  # noqa: E402
 import allocator  # noqa: E402
+import account_fleet
+import axis_scores
+import ledger_snapshot
+import quota_economy
+import task_intake
 import host_policy  # noqa: E402
 import provider_inventory  # noqa: E402
 import route_judge  # noqa: E402
@@ -113,13 +118,13 @@ def accounts_for(mode, account_set=None):
 
 
 def machine_accounts():
-    """The document routing uses on this machine (allocator.load_accounts)."""
-    return allocator.load_accounts()
+    """The document routing uses on this machine (account_fleet.load_accounts)."""
+    return account_fleet.load_accounts()
 
 
 def fresh_accounts(document=None, inventory=None):
     """Public data plus discovery, as load_accounts builds it, minus personal overrides and machine measurements."""
-    doc = document if document is not None else json.loads(allocator.fleet_document_path().read_text(encoding='utf-8-sig'))
+    doc = document if document is not None else json.loads(account_fleet.fleet_document_path().read_text(encoding='utf-8-sig'))
     accounts = accounts_override.normalize(copy.deepcopy(doc))
     accounts = provider_inventory.apply(accounts, inventory, live=False)
     provider_inventory.apply_shared_quota(accounts)
@@ -239,11 +244,11 @@ def demand_task(demand, local, hours=2.0):
     The grid sweeps the whole space; no work kind or difficulty is assumed. `reasoning_depth` follows the strongest
     reasoning demand so the profile is complete."""
     reasoning = max(demand['coding'], demand['divergence'])
-    return {'objective': 'demand ' + ' '.join(f'{a}={demand[a]}' for a in allocator.FIVE_AXES), 'expected_hours': hours,
+    return {'objective': 'demand ' + ' '.join(f'{a}={demand[a]}' for a in axis_scores.FIVE_AXES), 'expected_hours': hours,
             'needs': {'local_only': local},
             'profile': {'work_kind': 'general_implementation', 'reasoning_depth': min(4, 1 + reasoning),
                         'code_complexity': 2 if demand['coding'] else 0,
-                        'needs_visual': demand['tool_operation'] >= allocator.IMAGE_INPUT_LEVEL,
+                        'needs_visual': demand['tool_operation'] >= axis_scores.IMAGE_INPUT_LEVEL,
                         'needs_gui': False, 'local_only': local, 'wants_fast': False,
                         'read_only_review': False, 'access': 'write', 'expected_hours': hours, 'hours_confidence': 'medium',
                         'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
@@ -251,7 +256,7 @@ def demand_task(demand, local, hours=2.0):
 
 
 def grid_tasks(accounts=None):
-    return [demand_task(point, local) for point in allocator.FIVE_AXIS_DEMAND_GRID for local in (True, False)]
+    return [demand_task(point, local) for point in quota_economy.FIVE_AXIS_DEMAND_GRID for local in (True, False)]
 
 
 def label(bundle):
@@ -320,7 +325,7 @@ def grid(mode, states=None, now=None, account_set=None):
         accounts, pools = accounts_for(mode, account_set)
         policy = host_policy_for(mode, accounts, account_set)
         tasks = grid_tasks(accounts)
-        flat = allocator.bundles(accounts)
+        flat = account_fleet.bundles(accounts)
         enabled = {bid: b for bid, b in flat.items() if not b.get('disabled')}
         report = {'mode': mode, 'account_set': account_set or ('this machine' if mode == 'machine' else 'discovered here'),
                   'tasks_per_state': len(tasks), 'states': {}}
@@ -389,7 +394,7 @@ def ledger_records(path=None, last=None):
 
 def replay_task(row):
     task = dict(row['decision_snapshot']['task'])
-    task['profile'] = allocator.ledger_profile(task.get('profile'))      # records written before the four categories
+    task['profile'] = ledger_snapshot.ledger_profile(task.get('profile'))      # records written before the four categories
     if row.get('hours'):
         task.setdefault('hours', row['hours'])
     return task
@@ -407,7 +412,7 @@ def replay(last=None, path=None, accounts=None):
     for row in ledger_records(path, last):
         task = replay_task(row)
         try:
-            allocator.validate_profile(task.get('profile') if isinstance(task.get('profile'), dict) else {})
+            task_intake.validate_profile(task.get('profile') if isinstance(task.get('profile'), dict) else {})
         except ValueError:
             out.append({'at': row['at'], 'kind': row.get('kind'), 'difficulty': row.get('difficulty'),
                         'ledger_choice': row.get('choice'), 'choice': None, 'model': None,
@@ -462,7 +467,7 @@ def main(argv=None):
     e = sub.add_parser('explain')
     e.add_argument('--mode', choices=('machine', 'fresh'), default='fresh')
     e.add_argument('--state', choices=list(STATES), default='ample')
-    for axis in allocator.FIVE_AXES:
+    for axis in axis_scores.FIVE_AXES:
         e.add_argument('--' + axis.replace('_', '-'), type=int, choices=range(4), default=0, help=f'demand level 0-3 on {axis}')
     e.add_argument('--local', action='store_true')
     e.add_argument('--bundle', action='append', default=[])
@@ -500,7 +505,7 @@ def run(args, ledger):
                 print(f'  {state:28s} {row["models"]}')
             print(f"  wins nowhere: {sorted(report['wins_nowhere'])}")
     elif args.command == 'explain':
-        task = demand_task({axis: getattr(args, axis) for axis in allocator.FIVE_AXES}, args.local)
+        task = demand_task({axis: getattr(args, axis) for axis in axis_scores.FIVE_AXES}, args.local)
         result = explain('fresh' if args.accounts else args.mode, args.state, task, args.bundle, args.top,
                          account_set=args.accounts)
         for row in result:

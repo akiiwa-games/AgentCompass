@@ -1845,7 +1845,7 @@ def apply(accounts, inventory=None, *, live=None):
                 else:
                     bundle['discovery_unavailable'] = 'model not advertised by the configured provider'
     _apply_auto_bundles(accounts, inventory, live)
-    from allocator import bundle_harness
+    from account_fleet import bundle_harness
     for name, row in inventory['accounts'].items():
         owner = row.get('quota_account')
         if owner and owner != name and name in specs and owner in specs:

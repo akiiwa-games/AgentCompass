@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-import allocator
+import account_fleet
 import auto_bundles
 import provider_retry
 
@@ -22,7 +22,7 @@ GEMINI_POOL, THIRD_PARTY_POOL = 'gemini-5h+gemini-weekly', '3p-5h+3p-weekly'
 @pytest.fixture
 def accounts():
     """The shipped fleet, with OpenCode Go connected: Paseo lists its models under provider `opencode` (mocked)."""
-    fleet = allocator.load_accounts(allocator.reference_fleet_path())
+    fleet = account_fleet.load_accounts(account_fleet.reference_fleet_path())
     catalog = {'providers': {'opencode': {'ok': True, 'type': 'paseo_provider', 'checked_at': 1,
                                           'models': [{'id': m} for m in (*ZEN, *GO)]}}}
     return auto_bundles.merge_into(fleet, auto_bundles.derive(fleet, catalog, 2))
@@ -36,7 +36,7 @@ def store(tmp_path, monkeypatch):
 
 
 def bundle(accounts, launch):
-    return next(b for b in allocator.bundles(accounts).values() if provider_retry.launch_model(b) == launch)
+    return next(b for b in account_fleet.bundles(accounts).values() if provider_retry.launch_model(b) == launch)
 
 
 def hold(accounts, launch, scope, dispatch_id, at=NOW, message=MESSAGE):
@@ -184,7 +184,7 @@ def test_windows_scoped_only_by_the_usage_reading_split_pools_too():
 
 def test_an_account_hold_from_a_single_pool_account_narrows_to_its_pool_once_go_appears(store):
     # Review 049 item 3: today's `opencode` hold (Zen only, one pool) must not keep blocking Go connected after it.
-    fleet = allocator.load_accounts(allocator.reference_fleet_path())
+    fleet = account_fleet.load_accounts(account_fleet.reference_fleet_path())
     entry = hold(fleet, 'opencode/deepseek-v4.1-flash-free', 'account', 'd1')
     assert ('pool' not in entry, set(provider_retry.active(now=NOW))) == (True, {'opencode'})
     hold(fleet, 'claude-opus-5-5-high', 'model', 'd2', message=QUOTA)
@@ -212,7 +212,7 @@ def test_loading_the_accounts_narrows_a_legacy_account_hold(store, monkeypatch, 
         'account': 'antigravity', 'provider': 'antigravity-resilient', 'model': None, 'scope': 'account',
         'failure_code': 'provider_turn_failed', 'message': QUOTA, 'observed_at': NOW.isoformat(), 'retry_at': None,
         'models': ['claude-opus-5-5-high'], 'source': 'd-old'}}}), encoding='utf-8')
-    accounts = allocator.load_accounts(allocator.reference_fleet_path())
+    accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
     assert set(provider_retry.active(now=NOW)) == {f'antigravity#{THIRD_PARTY_POOL}'}
     assert held_out(accounts, 'claude-sonnet-5-5-high')
     assert held_out(accounts, 'gemini-4-argon-high') is None

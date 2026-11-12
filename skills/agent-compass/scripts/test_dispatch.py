@@ -15,6 +15,12 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import account_fleet
+import axis_scores
+import provider_inventory
+import quota_economy
+import quota_pools
+import worker_sessions
 import dispatch_flow as flow
 import dispatch_registry as registry
 
@@ -29,8 +35,8 @@ class DispatchTests(unittest.TestCase):
     def test_fast_opt_out_after_record_is_rechecked_at_prepare(self):
         # Claude fast mode has cited pricing and speed; the fixture's Opus bundle is switched on.
         self.accounts['accounts']['claude-lab']['bundles']['lab_opus55_high']['disabled'] = False
-        self.bundle = dict(allocator.bundles(self.accounts)['lab_opus55_high'], bundle_id='lab_opus55_high', fast=True)
-        with patch.object(allocator, 'load_accounts', return_value=self.accounts):
+        self.bundle = dict(account_fleet.bundles(self.accounts)['lab_opus55_high'], bundle_id='lab_opus55_high', fast=True)
+        with patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
             decision = self.issue(stage='record', choice='constraint', constraint='user_override',
                                   basis='Diagnostic fixture')
         self.accounts['models']['claude-opus-5-5']['fast_capable'] = False
@@ -42,7 +48,7 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(row['request']['settings']['features'], {'fast_mode': True})
         self.accounts['models']['claude-opus-5-5']['fast_capable'] = False
         import route_judge
-        with patch.object(allocator, 'load_accounts', return_value=self.accounts), \
+        with patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
                 patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
             with self.assertRaisesRegex(ValueError, 'fast_capable'):
                 registry.claim(row['request'], parent_id='parent-a', call_id='fixture', now=self.now)
@@ -73,7 +79,7 @@ class DispatchTests(unittest.TestCase):
             (self.root / folder).mkdir()
             (self.root / folder / filename).write_text(json.dumps(document), encoding='utf-8')
         self.now = registry.utcnow()
-        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        self.accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         self.accounts['accounts']['claude-lab']['plan'] = 'max20'       # in-process planning sees a Max 20x account; the CLI subprocesses read the fixture credential's Pro plan
         (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-lab', 'codex', 'antigravity']}))
         env = patch.dict(os.environ, {
@@ -111,7 +117,7 @@ class DispatchTests(unittest.TestCase):
                    'plan_label': 'pro', 'plan_source': 'profile_api',
                    'windows': self.usage['accounts']['claude-lab']['windows']}
         (self.root / 'usage.json').write_text(json.dumps({'providers': {'claude-lab': reading}}))
-        self.bundle = dict(allocator.bundles(self.accounts)['lab_sonnet55_high'], bundle_id='lab_sonnet55_high')
+        self.bundle = dict(account_fleet.bundles(self.accounts)['lab_sonnet55_high'], bundle_id='lab_sonnet55_high')
         self.launch = {'title': 'Fixture task', 'initialPrompt': 'Only fixture work'}
 
     def issue(self, task=None, **changes):
@@ -142,7 +148,7 @@ class DispatchTests(unittest.TestCase):
             registry.prepare(unbound['decision_id'], {'objective': 'legacy'}, self.launch, self.usage, now=self.now)
         spec = self.accounts['accounts']['claude-lab']
         for stage in ('plan', 'select', 'record'):
-            self.assertEqual(allocator.inflight_reserved_usd('claude-lab', spec, 'five_hour', spec['windows']['five_hour'],
+            self.assertEqual(quota_pools.inflight_reserved_usd('claude-lab', spec, 'five_hour', spec['windows']['five_hour'],
                 {'remaining': 40}, 18, [{'stage': stage, 'expected_usd': 100, 'bundle': self.bundle}],
                 self.accounts, self.accounts['scoring'], self.now), 0)
 
@@ -150,14 +156,14 @@ class DispatchTests(unittest.TestCase):
         prepared = self.prepare()
         snapshot = {'accounts': {'claude-lab': {'family': 'claude', 'status': 'paused',
                     'reason': 'account_disabled_in_magpie', 'plan': 'pro'}}, 'launchers': {}}
-        paused = allocator.provider_inventory.apply(copy.deepcopy(self.accounts), snapshot)
-        with patch.object(allocator, 'load_accounts', return_value=paused):
+        paused = provider_inventory.apply(copy.deepcopy(self.accounts), snapshot)
+        with patch.object(account_fleet, 'load_accounts', return_value=paused):
             with self.assertRaisesRegex(ValueError, 'account_disabled_in_magpie'):
                 registry.claim(prepared['request'], parent_id='parent-a', now=self.now)
         self.assertEqual(registry.inspect(prepared['dispatch_id'])['state'], 'prepared')
         snapshot['accounts']['claude-lab'].update(status='ready', reason=None)
-        restored = allocator.provider_inventory.apply(copy.deepcopy(self.accounts), snapshot)
-        with patch.object(allocator, 'load_accounts', return_value=restored):
+        restored = provider_inventory.apply(copy.deepcopy(self.accounts), snapshot)
+        with patch.object(account_fleet, 'load_accounts', return_value=restored):
             self.assertEqual(registry.claim(prepared['request'], parent_id='parent-a', now=self.now)['state'], 'launching')
 
     def test_cli_explicit_astra_low_override_is_bound_and_capacity_priced_at_low(self):
@@ -175,10 +181,10 @@ class DispatchTests(unittest.TestCase):
         row = self.prepare(decision)
         self.assertEqual(row['request']['provider'], 'codex/gpt-6-astra')
         self.assertEqual(row['request']['settings'], {'thinkingOptionId': 'low', 'modeId': 'full-access', 'features': {'service_tier': 'default'}})
-        priced = allocator.five_axis_overlay(allocator.load_accounts())     # what the CLI plans with
+        priced = axis_scores.five_axis_overlay(account_fleet.load_accounts())     # what the CLI plans with
         info = priced['models']['gpt-6-astra']
-        at = lambda effort: allocator.bundle_task_usd(priced['accounts']['codex'], 'gpt-6-astra',
-            self.task['expected_hours'] * allocator.duration_at(info, effort)[0], info)
+        at = lambda effort: quota_economy.bundle_task_usd(priced['accounts']['codex'], 'gpt-6-astra',
+            self.task['expected_hours'] * quota_economy.duration_at(info, effort)[0], info)
         # Priced at the effort the user named: a Low run spends less than the same work at High, and the reservation says so.
         self.assertGreater(row['expected_usd'], 0)
         self.assertLess(row['expected_usd'], round(at('high'), 2))
@@ -795,15 +801,15 @@ except ValueError as e:
         self.assertEqual(calls, ['observe'])
 
     def test_argon_and_flash_budget_units_agree_in_both_windows(self):
-        accounts = allocator.five_axis_overlay(self.accounts)
+        accounts = axis_scores.five_axis_overlay(self.accounts)
         account = accounts['accounts']['antigravity']
         account['capacity_usd'] = {'gemini-weekly': 120.0, 'gemini-5h': 18.0}      # fixture capacity: the units are what is tested
         for model in ('gemini-4-argon-high', 'gemini-3.8-flash-high'):
             info = accounts['models'][model]
-            budget = allocator.bundle_task_usd(account, model, 1, info=info)
+            budget = quota_economy.bundle_task_usd(account, model, 1, info=info)
             for wid in ('gemini-weekly', 'gemini-5h'):
-                pct = allocator.unit_rate(account, wid, model, info=info)
-                self.assertAlmostEqual(pct * allocator.capacity_usd(account, wid) / 100, budget)
+                pct = quota_economy.unit_rate(account, wid, model, info=info)
+                self.assertAlmostEqual(pct * quota_economy.capacity_usd(account, wid) / 100, budget)
 
     def test_cli_prepare_launch_and_automatic_status_reconcile_fake_host(self):
         # Exercise the executable entrypoints, not only the in-memory state machine.
@@ -954,7 +960,7 @@ class RollTests(unittest.TestCase):
         decision = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle,
                         decision={'action': 'start'},
                         hours_estimate={'hours': 0.4, 'source': 'classifier_estimate', 'confidence': 'medium'})
-        with patch.object(flow, 'host_call', host), patch.object(allocator, 'load_accounts', return_value=self.accounts):
+        with patch.object(flow, 'host_call', host), patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
             (result, code), seen = self.roll(decision, brief=None, task='Rename foo to bar in util.py', hours=None, task_id=None)
         self.assertEqual(code, 0)
         self.assertEqual((result['status'], result['worker']['model']), ('launched', self.bundle['model']))
@@ -1107,7 +1113,7 @@ class RollTests(unittest.TestCase):
             inventory = {'accounts': {'grok': {'family': 'grok', 'provider': 'grok', 'sources': ['native', 'paseo', 'usage-cache'],
                                                'status': status, 'plan': 'subscription', 'billing': 'subscription'}},
                          'launchers': {'grok': {'family': 'grok', 'status': status}}}
-            with self.subTest(status), patch.object(allocator.provider_inventory, 'current', return_value=inventory), \
+            with self.subTest(status), patch.object(provider_inventory, 'current', return_value=inventory), \
                     patch.object(flow, 'host_call', host), \
                     patch.object(roll_module.subprocess, 'Popen', side_effect=AssertionError('must not use the CLI')):
                 if launched:
@@ -1138,7 +1144,7 @@ class RollTests(unittest.TestCase):
         inventory = {'accounts': {}, 'launchers': {'grok': {'family': 'grok', 'status': 'ready'}}}
         host = {'PASEO_HOME': str(self.root / '.paseo'), 'CLAUDECODE': '1', 'CODEX_HOME': 'C:/host/.codex-work',
                 'FAKE_GROK_RECORD': str(self.root / 'grok-record.json')}
-        with patch.object(allocator.provider_inventory, 'current', return_value=inventory), \
+        with patch.object(provider_inventory, 'current', return_value=inventory), \
                 patch.object(roll_module, 'CLI_RUNS_DIR', self.root / 'runs'), \
                 patch.object(flow, 'host_call', side_effect=AssertionError('no Paseo')), \
                 patch.object(roll_module, 'cli_command', command):
@@ -1300,7 +1306,7 @@ class RollTests(unittest.TestCase):
             'claude-lab': {'extends': 'claude', 'env': {'CLAUDE_CONFIG_DIR': 'C:/fixture/.claude-lab'}}}}}))
         host = {'PASEO_HOME': str(self.root / 'paseo'), 'CLAUDECODE': '1', 'CLAUDE_CONFIG_DIR': 'C:/host/.claude-lab',
                 'CODEX_HOME': 'C:/host/.codex-work'}
-        bundles = allocator.bundles(self.accounts)
+        bundles = account_fleet.bundles(self.accounts)
         brief = ['--print']
         cases = (('claude-lab via its Paseo definition', 'lab_sonnet55_high',
                   ['claude', '-p', '--model', 'claude-sonnet-5-5', '--effort', 'high', '--permission-mode', 'bypassPermissions', '--settings', '{"fastMode": false}'],
@@ -1684,7 +1690,7 @@ class RollTests(unittest.TestCase):
                 patch.object(flow, 'host_call', host):
             roll.run(argparse.Namespace(brief=b1, **base_args), judge)
             operations.clear()
-            with patch.object(allocator, 'session_state', return_value=worn_state):
+            with patch.object(worker_sessions, 'session_state', return_value=worn_state):
                 # Explicit --resume on a worn worker must raise ValueError rather than silently creating a new worker
                 with self.assertRaisesRegex(ValueError, '--resume'):
                     roll.run(argparse.Namespace(brief=b1, **{**base_args, 'resume': 'agent-worn'}), judge)
@@ -1746,7 +1752,7 @@ class RollTests(unittest.TestCase):
         with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
                 patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
                 patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
-                patch.object(allocator, 'load_accounts', return_value=self.accounts), \
+                patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
                 patch.object(flow, 'host_call', host):
             r1, c1 = roll.run_batch(argparse.Namespace(brief=[b1a, b1b], **batch_args), judge)
             self.assertEqual(c1, 0)
@@ -1866,8 +1872,7 @@ class PinnedRollTests(unittest.TestCase):
 
     def judged(self, scored):
         import route_judge
-        return route_judge, (patch.object(route_judge, 'load_allocator', return_value=allocator),
-                             patch.object(allocator, 'load_accounts', return_value=self.accounts),
+        return route_judge, (patch.object(account_fleet, 'load_accounts', return_value=self.accounts),
                              patch.object(route_judge, 'usage_snapshot', return_value=copy.deepcopy(self.usage)),
                              patch.object(route_judge, 'score_task', return_value=scored))
 
@@ -1876,7 +1881,7 @@ class PinnedRollTests(unittest.TestCase):
         classified_profile = dict(profile_for(self.task), expected_hours=0.7, hours_confidence='medium')
         judge, patches = self.judged((classified_profile, {'source': 'system_one', 'model': 'fixture-scorer'}))
         task, args = self.unhoured(), self.args()
-        with patches[0], patches[1], patches[2], patches[3] as scorer:
+        with patches[0], patches[1], patches[2] as scorer:
             classified = judge.classify_pinned(task, args)
             decision = judge.record_constraint(args, task, classified)
         scorer.assert_called_once()                       # the classifier ran although the model was named
@@ -1894,7 +1899,7 @@ class PinnedRollTests(unittest.TestCase):
         held = registry.reservations(self.now)
         self.assertEqual([r['dispatch_id'] for r in held], [row['dispatch_id']])
         spec = self.accounts['accounts']['claude-lab']
-        self.assertGreater(allocator.inflight_reserved_usd('claude-lab', spec, 'five_hour', spec['windows']['five_hour'],
+        self.assertGreater(quota_pools.inflight_reserved_usd('claude-lab', spec, 'five_hour', spec['windows']['five_hour'],
                            {'remaining': 100}, 1000, held, self.accounts, self.accounts['scoring'], self.now), 0)
 
     def test_no_classifier_and_no_hours_says_so_and_never_prints_none(self):
@@ -1904,7 +1909,7 @@ class PinnedRollTests(unittest.TestCase):
         ns = self.args(brief=None, task=task['objective'], file=[], apply_to=None, local_only='local daemon',
                        title=None, workspace=None, task_id=task['task_id'], wait=0, parent_id='parent-a',
                        parent_host=None, parent_address=None, verbose=True, resume=None, new_worker=True)
-        with patches[0], patches[1], patches[2], patches[3], \
+        with patches[0], patches[1], patches[2], \
                 patch.object(roll, 'resolve_parent', return_value=('parent-a', 'paseo', 'parent-a')), \
                 patch.object(registry, 'pending', return_value=[]), \
                 patch.object(registry, 'reusable_workers', return_value=[]):
@@ -1938,7 +1943,7 @@ class CreateLifecycleTests(unittest.TestCase):
 
     def claim_row(self, row):
         import route_judge
-        with patch.object(allocator, 'load_accounts', return_value=self.accounts), \
+        with patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
                 patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
             return registry.claim(registry.inspect(row['dispatch_id'])['request'], parent_id='parent-a', now=self.now)
 
@@ -2160,7 +2165,7 @@ class CreateLifecycleTests(unittest.TestCase):
 
     def sent_create(self, pause, **prepare):
         """The create a launch sends when the process stalls for `pause` seconds right after the claim."""
-        import allocator
+        import account_fleet
         import route_judge
         row = self.prepare() if not prepare else registry.prepare(self.issue()['decision_id'], self.task, self.launch, self.usage,
                                                                   accounts=self.accounts, now=self.now, **prepare)
@@ -2180,7 +2185,7 @@ class CreateLifecycleTests(unittest.TestCase):
                 return {'ok': False, 'sent': True, 'error': 'host_timeout'}
             return {'ok': True, 'agent': None, 'creation': None}
         with patch.object(registry, 'claim', claim), patch.object(registry, 'utcnow', lambda: real_now() + timedelta(seconds=offset[0])), \
-                patch.object(allocator, 'load_accounts', return_value=self.accounts), \
+                patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
                 patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
             flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
         launched = registry.parse(registry.inspect(row['dispatch_id'])['launched_at'])
@@ -2965,7 +2970,7 @@ class ModelLatchTests(unittest.TestCase):
                 patch.object(roll, 'RESULTS_DIR', self.root / 'roll-results'), \
                 patch.object(flow, 'paseo_reachable', return_value=True), \
                 patch.object(flow, 'host_call', host or self.host), \
-                patch.object(allocator, 'load_accounts', return_value=self.accounts):
+                patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
             return roll.run(args, judge)
 
     def refuse_first(self, request):
@@ -3108,8 +3113,8 @@ class ProviderRetryTests(unittest.TestCase):
         classifier = patch.object(provider_retry, 'classify_scope', side_effect=classify)
         classifier.start()
         self.addCleanup(classifier.stop)
-        self.other = dict(allocator.bundles(self.accounts)['lab_opus55_high'], bundle_id='lab_opus55_high')
-        self.third = dict(allocator.bundles(self.accounts)['lab_fable51_high'], bundle_id='lab_fable51_high')
+        self.other = dict(account_fleet.bundles(self.accounts)['lab_opus55_high'], bundle_id='lab_opus55_high')
+        self.third = dict(account_fleet.bundles(self.accounts)['lab_fable51_high'], bundle_id='lab_fable51_high')
 
     def stuck(self, at, **changes):
         return {'reason': 'provider retry stuck', 'failure_code': 'provider_retry_stuck', 'provider_message': self.MESSAGE,
@@ -3257,7 +3262,7 @@ class ProviderRetryTests(unittest.TestCase):
         # accounts itself to find the pool, and routing keeps the other pool.
         import provider_retry
         self.scopes = ['account']
-        third = dict(allocator.bundles(self.accounts)['agy_opus55_high'], bundle_id='agy_opus55_high')
+        third = dict(account_fleet.bundles(self.accounts)['agy_opus55_high'], bundle_id='agy_opus55_high')
         entry = provider_retry.record(third, self.stuck(self.now), dispatch_id='d-agy')
         self.assertEqual(set(provider_retry.active(now=self.now)), {'antigravity#3p-5h+3p-weekly'})
         self.assertEqual(entry['pool']['windows'], {'3p-5h': [{'models_except': ['gemini']}],
@@ -3534,7 +3539,7 @@ class LiveModelCheckTests(unittest.TestCase):
                 patch.object(roll, 'RESULTS_DIR', self.root / 'roll-results'), \
                 patch.object(flow, 'paseo_reachable', return_value=True), \
                 patch.object(flow, 'host_call', host or self.host), \
-                patch.object(allocator, 'load_accounts', return_value=self.accounts):
+                patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
             return roll.run(args, judge)
 
     def test_a_bundle_missing_from_the_live_list_is_excluded_with_reason_and_the_next_one_launches_in_the_same_roll(self):

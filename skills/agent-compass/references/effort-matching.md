@@ -23,7 +23,7 @@ Per-effort capability and duration live in `references/five-axis-scores.json` (`
 
 ## Ledger snapshot
 
-Every non-dry-run `plan` line in `router-ledger.jsonl` carries `decision_snapshot` (`allocator.decision_snapshot`): the task
+Every non-dry-run `plan` line in `router-ledger.jsonl` carries `decision_snapshot` (`ledger_snapshot.decision_snapshot`): the task
 demand, the scoring weights and the ranking. The best 6 eligible rows keep every component, `expected_pct`, `expected_usd`,
 capacity summary and notes; the next 8 eligible and 16 excluded rows are compact. A plan line stays under about 24 KB so the
 gate's 1 MiB tail read (and `read_ledger`'s 8 MB tail) still reaches recent routes.

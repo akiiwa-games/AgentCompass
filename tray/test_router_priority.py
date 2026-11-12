@@ -11,6 +11,10 @@ from unittest.mock import patch
 import router_priority as priority
 from router_test_support import isolated_router_state
 
+import account_fleet
+import host_policy
+import quota_overrides
+
 
 class PriorityTests(unittest.TestCase):
     def setUp(self):
@@ -30,7 +34,7 @@ class PriorityTests(unittest.TestCase):
         for p in [patch.object(priority, 'modules', return_value=(self.a, self.r)),
                   patch.dict(os.environ, {'ROUTER_OVERRIDES': str(self.path)}),
                   patch.object(self.r, 'usage_snapshot', return_value=self.usage),
-                  patch.object(self.a.host_policy, 'load_policy', return_value={'allowed_accounts': ['codex']})]:
+                  patch.object(host_policy, 'load_policy', return_value={'allowed_accounts': ['codex']})]:
             p.start(); self.addCleanup(p.stop)
 
     def enable(self, hours=24):
@@ -143,7 +147,7 @@ class PriorityTests(unittest.TestCase):
         self.assertEqual(self.rows()[0]['reset_confirmed_at'], later.isoformat())
         self.usage['accounts']['codex']['status'] = 'stale'
         self.usage['accounts']['codex']['windows'][0]['used_pct'] = 99
-        _, _, applied = self.a.apply_overrides(self.rows(), self.usage, self.a.load_accounts(), later)
+        _, _, applied = quota_overrides.apply_overrides(self.rows(), self.usage, account_fleet.load_accounts(), later)
         self.assertEqual(applied, [])
         self.assertEqual(self.rows(), [])
         self.assertEqual(priority.snapshot(later)['label'], '已重置')
@@ -163,15 +167,15 @@ class PriorityTests(unittest.TestCase):
             self.assertEqual(self.path.read_text(), value)
 
     def test_only_top_models_and_weekly_windows_are_offered(self):
-        with patch.object(self.a.host_policy, 'load_policy', return_value=None):
-            choices = priority.targets(self.a, self.a.load_accounts())
+        with patch.object(host_policy, 'load_policy', return_value=None):
+            choices = priority.targets(account_fleet.load_accounts())
         self.assertEqual({t['model'] for t in choices}, {'gpt-6-astra', 'gemini-4-argon-high', 'claude-opus-5-5'})
         self.assertEqual({t['account'] for t in choices}, {'codex', 'antigravity', 'claude'})
 
     def test_switch_model_is_atomic_and_failed_baseline_preserves_current_choice(self):
         self.enable(); before = self.path.read_bytes()
-        with patch.object(self.a.host_policy, 'load_policy', return_value=None):
-            target = next(t for t in priority.targets(self.a, self.a.load_accounts()) if t['model']=='gemini-4-argon-high')
+        with patch.object(host_policy, 'load_policy', return_value=None):
+            target = next(t for t in priority.targets(account_fleet.load_accounts()) if t['model']=='gemini-4-argon-high')
             with self.assertRaises(ValueError):
                 priority.enable(target['account'], target['model'], target['window'], 24, self.now)
             self.assertEqual(self.path.read_bytes(), before)
@@ -203,7 +207,7 @@ class PriorityTests(unittest.TestCase):
         later = self.now+timedelta(minutes=1)
         self.usage['accounts']['codex']['fetched_at'] = later.isoformat()
         self.usage['accounts']['codex']['windows'][0]['used_pct'] = 0
-        self.a.apply_overrides(self.rows(), self.usage, self.a.load_accounts(), later)
+        quota_overrides.apply_overrides(self.rows(), self.usage, account_fleet.load_accounts(), later)
         self.assertEqual(json.loads(self.path.read_text())['last_reset']['at'], later.isoformat())
         self.assertEqual(priority.snapshot(later)['label'], '已重置')
         self.assertEqual(priority.snapshot(later+timedelta(hours=12))['label'], '重置前优先')
@@ -213,7 +217,7 @@ class PriorityTests(unittest.TestCase):
         changed = dict(original, boost=.4)
         self.path.write_text(json.dumps({'overrides': [changed]}))
         before = self.path.read_bytes()
-        self.a.observe_landed_overrides({original['id']: original}, self.path, self.now)
+        quota_overrides.observe_landed_overrides({original['id']: original}, self.path, self.now)
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(priority.snapshot(self.now+timedelta(hours=24))['label'], '重置前优先')
         self.assertNotIn('last_reset', json.loads(self.path.read_text()))

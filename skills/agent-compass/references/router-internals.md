@@ -147,7 +147,7 @@ The same rules hold in the other repositories that port this router.
 
 A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry.
 
-`allocator.row_key` says which model a row runs: the key for `exact` and `alias`, the row's own name for `family` and `unknown`. A family guess folds to its target only for its estimated score. Wherever a row, a pin, a cooldown, a worker or a rival is matched, it is its own model, so naming the flagship never takes a family row. A cooldown recorded under any spelling of a model cools all its spellings.
+`account_fleet.row_key` says which model a row runs: the key for `exact` and `alias`, the row's own name for `family` and `unknown`. A family guess folds to its target only for its estimated score. Wherever a row, a pin, a cooldown, a worker or a rival is matched, it is its own model, so naming the flagship never takes a family row. A cooldown recorded under any spelling of a model cools all its spellings.
 
 **Behaviour change: fewer judge calls.** The rival for the margin used to be the best row with a different literal name, so `claude-opus-5-5` and `claude-opus-5-5-high` counted as rivals and could trigger a judge that "weighs models, not efforts, harnesses or accounts of one model". It is now the best row of a different model. A margin grows or disappears and `needs_judgment` can only go from true to false: on a grid of 6144 ordinary tasks, 890 rows (14.5%) on the public fleet and 38 rows on each of the reference and discovered fleets stop calling the judge. The allocator's own choice did not change on any of the 18432 rows; its choice could differ from what a judge would have changed it to, and that was not compared against a real judge.
 
@@ -168,7 +168,7 @@ A ledger row with no saved snapshot and no split answer cannot be replayed: its 
 
 ### No eligible bundle
 
-When nothing clears the gate, `plan` returns `choice: none` with `decision.action: none`, `needs_user_decision: true` and a `reason`. If a bundle is held back only by its own account's quota windows (`allocator.quota_wait_hours`), `decision.next_reset` gives that bundle, the hours until its last blocking window resets, and the time. The parent can wait or decide otherwise.
+When nothing clears the gate, `plan` returns `choice: none` with `decision.action: none`, `needs_user_decision: true` and a `reason`. If a bundle is held back only by its own account's quota windows (`quota_pools.quota_wait_hours`), `decision.next_reset` gives that bundle, the hours until its last blocking window resets, and the time. The parent can wait or decide otherwise.
 
 ### Calibration data
 
@@ -185,7 +185,7 @@ python -X utf8 scripts/route_simulation.py explain [--divergence N] [--coding N]
 python -X utf8 scripts/route_simulation.py replay [--last N] [--json out.json]
 ```
 
-- `grid` plans every point of the category demand space (`allocator.FIVE_AXIS_DEMAND_GRID`) x local/remote under each usage state, then reports wins per bundle and per `model@account`. It also lists the enabled models that win nowhere, each with its median score gap to the winner and its most common exclusions.
+- `grid` plans every point of the category demand space (`quota_economy.FIVE_AXIS_DEMAND_GRID`) x local/remote under each usage state, then reports wins per bundle and per `model@account`. It also lists the enabled models that win nowhere, each with its median score gap to the winner and its most common exclusions.
 - States:
   - `live`: the current collector cache.
   - `ample`: 10% used everywhere.
@@ -246,7 +246,7 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 - [`effort-matching.md`](effort-matching.md) — Per-model effort curves and the ledger `decision_snapshot` the tray replays.
 - [`provider-usage.md`](provider-usage.md) — Live usage snapshot precedence, `capacity.json` overlay, host policy, and temporary overrides.
 - [`public-data.json`](public-data.json) — Manifest of the public reference data (sha256 per file, data schema, publish time); see Public reference data below.
-- [`scripts/route_judge.py`](../scripts/route_judge.py) · [`scripts/allocator.py`](../scripts/allocator.py) · [`scripts/host_policy.py`](../scripts/host_policy.py) · [`scripts/check_router_contract.py`](../scripts/check_router_contract.py)
+- [`scripts/route_judge.py`](../scripts/route_judge.py) · [`scripts/allocator.py`](../scripts/allocator.py) (with [`account_fleet`](../scripts/account_fleet.py), [`task_intake`](../scripts/task_intake.py), [`axis_scores`](../scripts/axis_scores.py), [`quota_economy`](../scripts/quota_economy.py), [`quota_pools`](../scripts/quota_pools.py), [`quota_overrides`](../scripts/quota_overrides.py), [`candidate_eval`](../scripts/candidate_eval.py), [`candidate_ranking`](../scripts/candidate_ranking.py), [`ledger_snapshot`](../scripts/ledger_snapshot.py), [`worker_sessions`](../scripts/worker_sessions.py)) · [`scripts/host_policy.py`](../scripts/host_policy.py) · [`scripts/check_router_contract.py`](../scripts/check_router_contract.py)
 
 ### Antigravity plan tier
 

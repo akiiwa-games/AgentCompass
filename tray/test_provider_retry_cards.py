@@ -11,23 +11,25 @@ import router_data
 import panel_quota
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts'))
+import account_fleet
+import axis_scores
+import host_policy
+import model_latch
+import provider_inventory
 import provider_inventory as real_inventory
+import provider_retry
 
 MESSAGE = 'Free usage exceeded, subscribe to Go'
 
 
 class ProviderRetryCardTests(unittest.TestCase):
     def card(self, holds, row=None):
-        allocator, router = Mock(), Mock()
+        router = Mock()
         inventory = Mock(quota_sources=real_inventory.quota_sources)
-        allocator.load_accounts.return_value = {'accounts': {'opencode': {'bundles': {}}},
-                                                '_discovery': {'accounts': {'opencode': row or {
-                                                    'family': 'opencode', 'status': 'ready'}}}}
-        allocator.host_policy.load_policy.return_value = None
-        allocator.host_policy.account_allowed.return_value = True
-        allocator.provider_retry.active.return_value = holds
+        accounts = {'accounts': {'opencode': {'bundles': {}}},
+                    '_discovery': {'accounts': {'opencode': row or {'family': 'opencode', 'status': 'ready'}}}}
         router.usage_snapshot.return_value = {'accounts': {}}
-        with patch.object(router_data, 'modules', return_value=(allocator, router)), \
+        with patch.object(router_data, 'modules', return_value=(Mock(), router)),              patch.object(account_fleet, 'load_accounts', return_value=accounts),              patch.object(axis_scores, 'five_axis_overlay'),              patch.object(host_policy, 'load_policy', return_value=None),              patch.object(host_policy, 'account_allowed', return_value=True),              patch.object(provider_retry, 'active', return_value=holds), \
              patch.dict(sys.modules, {'provider_inventory': inventory}), \
              patch.object(router_data, '_read_json', return_value={}), \
              patch.object(router_data, 'pool_reservations', return_value={}), \
@@ -92,10 +94,9 @@ class ProviderRetryCardTests(unittest.TestCase):
         panel_quota.QuotaPage.fill_quota_card({'clear': grid, 'clear_layout': 'grid', 'windows': [], 'refreshable': False},
                                             card)
         grid.grid.assert_called_once_with()
-        allocator = Mock()
-        with patch.object(router_data, 'modules', return_value=(allocator, Mock())):
+        with patch.object(router_data, 'modules', return_value=(Mock(), Mock())),                 patch.object(provider_retry, 'clear') as clear_holds:
             router_data.clear_retry_holds('opencode')
-        self.assertEqual(allocator.provider_retry.clear.call_args.args, ('opencode',))
+        self.assertEqual(clear_holds.call_args.args, ('opencode',))
 
     def test_a_pool_hold_names_the_pool_and_the_clear_link_clears_that_pool(self):
         # 2026-11-09: OpenCode Go and the Zen free models are separate quotas under one provider.
@@ -129,26 +130,23 @@ class ProviderRetryCardTests(unittest.TestCase):
         panel_quota.QuotaPage.clear_retry_hold(panel, 'opencode', 'opencode')
         panel.run.call_args.args[0]()
         panel.data_module.return_value.clear_retry_holds.assert_called_once_with('opencode', 'opencode')
-        allocator = Mock()
-        with patch.object(router_data, 'modules', return_value=(allocator, Mock())):
+        with patch.object(router_data, 'modules', return_value=(Mock(), Mock())),                 patch.object(provider_retry, 'clear') as clear_holds:
             router_data.clear_retry_holds('opencode', 'opencode')
-        self.assertEqual(allocator.provider_retry.clear.call_args.args, ('opencode',))
-        self.assertEqual(allocator.provider_retry.clear.call_args.kwargs['pool'], 'opencode')
+        self.assertEqual(clear_holds.call_args.args, ('opencode',))
+        self.assertEqual(clear_holds.call_args.kwargs['pool'], 'opencode')
 
     def test_the_model_list_marks_the_models_of_a_held_pool_only(self):
-        import provider_retry
-        allocator = Mock(provider_retry=provider_retry)
         pool = {'id': 'opencode', 'prefix': 'opencode', 'provider': 'opencode', 'models': ['opencode/beam-free']}
         holds = {'opencode#opencode': {'account': 'opencode', 'model': None, 'pool': pool, 'message': MESSAGE,
                                        'retry_at': None}}
         zen = [('opencode', 'z', {'provider': 'opencode', 'model': 'iceman-free', 'launch_model': 'opencode/iceman-free'})]
         go = [('opencode', 'g', {'provider': 'opencode', 'model': 'kimi-k3', 'launch_model': 'opencode-go/kimi-k3'})]
-        text = router_data.retry_model_text(allocator, holds, 'opencode', zen)
+        text = router_data.retry_model_text(holds, 'opencode', zen)
         self.assertIn('额度池 opencode 提供方持续重试，已排除派发', text)
-        self.assertIsNone(router_data.retry_model_text(allocator, holds, 'opencode', go))
+        self.assertIsNone(router_data.retry_model_text(holds, 'opencode', go))
         # A hold of the whole account badges the row, not each model.
         self.assertIsNone(router_data.retry_model_text(
-            allocator, {'opencode': {'account': 'opencode', 'model': None, 'message': MESSAGE}}, 'opencode', zen))
+            {'opencode': {'account': 'opencode', 'model': None, 'message': MESSAGE}}, 'opencode', zen))
 
     def test_no_hold_leaves_the_card_alone_and_another_problem_keeps_its_text(self):
         card = self.card({})
@@ -207,11 +205,11 @@ def test_account_cards_and_model_rows_surface_live_model_exclusions_and_unreadab
     rtr_mock = Mock()
     rtr_mock.usage_snapshot.return_value = {'accounts': {}}
     monkeypatch.setattr(router_data, 'modules', lambda: (alloc, rtr_mock))
-    monkeypatch.setattr(alloc.provider_inventory, 'current', lambda: {'accounts': {
+    monkeypatch.setattr(provider_inventory, 'current', lambda: {'accounts': {
         'antigravity': {'family': 'antigravity', 'status': 'ready', 'identity': 'id-agy'},
         'codex': {'family': 'codex', 'status': 'ready', 'identity': 'id-codex'},
     }})
-    (alloc.REFERENCES / 'accounts.json').write_text(json.dumps({
+    (account_fleet.REFERENCES / 'accounts.json').write_text(json.dumps({
         'scoring': {'safety_margin_pct': 5},
         'models': {
             'gemini-4-argon-high': {'label': 'Gemini 4 Argon (High)'},
@@ -292,15 +290,15 @@ def test_account_cards_and_model_rows_surface_live_model_exclusions_and_unreadab
     # 3. INVALID_MODEL is one mechanism: the model latch. Its note is the model row's only note.
     latch_store = target.parent / 'model-unavailable.json'
     monkeypatch.setenv('ROUTER_MODEL_LATCH', str(latch_store))
-    alloc.model_latch.record({'account': 'antigravity', 'provider': 'antigravity-resilient',
+    model_latch.record({'account': 'antigravity', 'provider': 'antigravity-resilient',
                               'model': 'gemini-4-argon-high'}, 'INVALID_MODEL', source='d-invalid-tray')
-    alloc.live_models.invalidate('antigravity-resilient')
+    live_models.invalidate('antigravity-resilient')
     assert provider_retry.active() == {}
     with patch.object(live_models, 'fetch_from_paseo', return_value={'ok': True, 'providers': {
             'antigravity-resilient': {'ok': True, 'models': [{'id': 'gemini-3.8-flash-high'}]}}}):
         rows = {(r['account'], r['harness']): r for r in router_data.harness_model_rows()}
         argon_group = next(m for m in rows[('antigravity', 'antigravity-resilient')]['models'] if 'argon' in m['model'])
-        latch_note = router_data.launch_unavailable_text(alloc, alloc.model_latch.active(), 'antigravity',
+        latch_note = router_data.launch_unavailable_text(model_latch.active(), 'antigravity',
                                                          [('antigravity', 'argon_high', {'model': 'gemini-4-argon-high'})])
         assert latch_note and argon_group['launch_unavailable'] == latch_note
         thread = router_data._LIVE_REFRESH['thread']
@@ -330,14 +328,14 @@ def test_the_tray_never_calls_the_bridge_on_its_own_thread(tmp_path, monkeypatch
 
     with patch.object(live_models, 'fetch_from_paseo', hung_bridge):
         started = time.monotonic()
-        assert router_data.live_model_state(alloc, accounts) == {'providers': {}}
-        assert router_data.live_model_state(alloc, accounts) == {'providers': {}}  # one refresh at a time
+        assert router_data.live_model_state(accounts) == {'providers': {}}
+        assert router_data.live_model_state(accounts) == {'providers': {}}  # one refresh at a time
         assert time.monotonic() - started < 1.0
         release.set()
         router_data._LIVE_REFRESH['thread'].join(5)
     assert len(callers) == 1 and callers[0] is not threading.current_thread()
     live_models._MEM_CACHE.clear()
-    doc = router_data.live_model_state(alloc, accounts)
+    doc = router_data.live_model_state(accounts)
     assert doc['providers']['antigravity-resilient']['models'] == [{'id': 'gemini-3.8-flash-high'}]
 
 

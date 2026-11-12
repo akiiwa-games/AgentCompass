@@ -2,7 +2,7 @@
 
 `python -X utf8 five_axis.py [--distrust SOURCE ...] [--measurements PATH] [--out PATH]`
 
-Writes `references/five-axis-scores.json`, the only model scoring the router reads (allocator.five_axis_overlay). The
+Writes `references/five-axis-scores.json`, the only model scoring the router reads (axis_scores.five_axis_overlay). The
 user's taxonomy (2026-11-11): four categories, each made of facets, each facet read from public boards; the router
 scores on the four categories and the quota economy together. Nothing else scores a model: the tier is not a score.
 

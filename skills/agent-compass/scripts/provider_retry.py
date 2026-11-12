@@ -18,7 +18,7 @@ None is special-cased here. This module records each such dispatch once in <stat
   - Pools: one account (one Paseo provider) can hold several independent quotas, so an `account` answer, or a widened
     guess, holds the quota pool that contains the failed model, keyed `account#pool`, and the whole account only when
     the account has a single pool. The pools come from structure, never from names (`pool_of`): models that draw a
-    common quota window are one pool (allocator.bundle_pools: the windows' `models`/`models_except` scopes, the usage
+    common quota window are one pool (quota_pools.bundle_pools: the windows' `models`/`models_except` scopes, the usage
     readings' own `models`, a bundle's explicit `draws`; Antigravity's Gemini and third-party windows), and where one
     provider of the account launches models under several provider prefixes of its own (`opencode/...` Zen free models
     and `opencode-go/...` Go models: OpenCode's own provider ids), each prefix is its own pool. Widening never crosses
@@ -171,7 +171,7 @@ def pool_of(bundle, accounts, observed=None):
 
     Structure only: the account's bundles are its models. Where one provider of the account launches models under
     more than one provider prefix of its own (OpenCode's `opencode/` and `opencode-go/`), each prefix is a bucket;
-    within a bucket, models drawing a common quota window (allocator.bundle_pools, `observed` being the account's
+    within a bucket, models drawing a common quota window (quota_pools.bundle_pools, `observed` being the account's
     usage reading by window id) are one pool, and models drawing no window share one. The pool keeps its member models
     and, when windows split the bucket, each window's scope, so `in_pool` can place a model without the accounts.
     """
@@ -180,7 +180,7 @@ def pool_of(bundle, accounts, observed=None):
     spec = specs.get(account) if isinstance(account, str) else None
     if not isinstance(spec, dict) or not isinstance(model, str):
         return None
-    import allocator
+    import quota_pools
     import window_scope
     members = {}
     for bid, row in (spec.get('bundles') or {}).items():
@@ -197,7 +197,7 @@ def pool_of(bundle, accounts, observed=None):
     observed = observed if isinstance(observed, dict) else {}
     groups = []   # (bucket, member models, windows drawn)
     for name, row in sorted(members.items()):
-        own, windows = bucket(row), set(allocator.bundle_pools(row, accounts, observed))
+        own, windows = bucket(row), set(quota_pools.bundle_pools(row, accounts, observed))
         joined = [g for g in groups if g[0] == own and (g[2] & windows or not (g[2] or windows))]
         groups = [g for g in groups if g not in joined] + [
             (own, {name}.union(*(g[1] for g in joined)), windows.union(*(g[2] for g in joined)))]
@@ -243,9 +243,10 @@ def resolve_pool(bundle, accounts=None):
     """`pool_of` against the installed accounts and the account's cached usage reading; None (the whole account) when
     they cannot be read."""
     try:
-        import allocator
+        import account_fleet
+        import quota_pools
         if accounts is None:
-            accounts = allocator.load_accounts()
+            accounts = account_fleet.load_accounts()
         observed = {}
         try:
             import usage_cache
@@ -253,7 +254,7 @@ def resolve_pool(bundle, accounts=None):
             row = usage_cache.providers().get(bundle.get('account')) or {}
             for window in row.get('windows') or ():
                 if isinstance(window, dict) and window.get('id'):
-                    observed.setdefault(allocator.canonical_window_id(spec, window['id']), window)
+                    observed.setdefault(quota_pools.canonical_window_id(spec, window['id']), window)
         except Exception:   # no readable reading: the configured scopes alone
             observed = {}
         return pool_of(bundle, accounts, observed)
@@ -420,7 +421,7 @@ def _account_hold_pools(entry, accounts):
 def scope_account_holds(accounts, *, path=None):
     """An account hold taken while its account had a single pool (or before pools were kept) holds only the pools of
     the models it was recorded for once the account has several: a Zen free-usage hold on `opencode` must not keep
-    blocking OpenCode Go connected after it. Rewrites such holds into pool holds (allocator.load_accounts, which knows
+    blocking OpenCode Go connected after it. Rewrites such holds into pool holds (account_fleet.load_accounts, which knows
     the accounts), keeping their scope, retry time and login; returns the keys written. A pool hold already recorded
     for the same pool is newer and is kept."""
     if not enabled() or not isinstance(accounts, dict):
@@ -643,8 +644,8 @@ def ingest(*, classify=None, registry_path=None, notifications=None, path=None, 
             continue
         if accounts is None:
             try:   # read once for every sighting, to place each failed model in its pool
-                import allocator
-                accounts = allocator.load_accounts()
+                import account_fleet
+                accounts = account_fleet.load_accounts()
             except Exception:
                 accounts = {}
         entry = record(row.get('bundle'), terminal, dispatch_id=dispatch_id, classify=classify, path=path,

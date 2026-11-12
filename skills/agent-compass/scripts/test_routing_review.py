@@ -13,7 +13,9 @@ import tempfile
 from unittest.mock import patch
 import unittest
 
-import allocator
+import account_fleet
+import candidate_eval
+import task_intake
 import dispatch_registry
 import launch_failures
 import roll
@@ -28,20 +30,13 @@ FAMILY_9 = 'claude-opus-9'
 
 
 class RecordCase(RouterCase):
-    def setUp(self):
-        super().setUp()
-        # route_judge loads its own copy of the module; share ours so the fleet can be patched.
-        patcher = patch.object(route_judge, 'load_allocator', return_value=allocator)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
     def record(self, task=None, accounts=None, **fields):
         args = argparse.Namespace(**{
             'basis': 'User asked', 'account': 'claude', 'provider': 'claude', 'model': FLAGSHIP, 'effort': None,
             'input': None, 'usage_cache': None, 'accounts': None, 'constraint': 'user_override', 'specialty': None,
             'reason_category': None, 'fast': False, 'parent_id': None, **fields})
         with patch.object(route_judge, 'usage_snapshot', return_value=copy.deepcopy(self.usage)), \
-                patch.object(allocator, 'load_accounts', return_value=copy.deepcopy(accounts or self.accounts)), \
+                patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(accounts or self.accounts)), \
                 patch.object(route_judge, 'datetime', wraps=datetime) as clock:
             clock.now.return_value = NOW
             return route_judge.record_constraint(args, task)
@@ -53,7 +48,7 @@ class RecordCase(RouterCase):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory, \
                 patch.dict(os.environ, {'ROUTER_DISPATCH_DB': os.path.join(directory, 'db.sqlite3')}):
             result = self.record(task, fleet, **fields)
-            with patch.object(allocator, 'load_accounts', return_value=copy.deepcopy(fleet)):
+            with patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(fleet)):
                 row = dispatch_registry.prepare(result['decision_id'], task, {'title': 'x', 'initialPrompt': 'go'},
                                                 copy.deepcopy(self.usage), accounts=copy.deepcopy(fleet), now=NOW)
         return result, row
@@ -139,7 +134,7 @@ class FamilyRowTests(RecordCase):
     def test_a_family_level_unchecked_does_not_reach_the_flagship_in_prepare(self):
         fleet = self.only('claude', opus_high={'model': FLAGSHIP, 'effort': 'high', 'provider': 'claude'},
                           old={'model': FAMILY, 'effort': 'medium', 'provider': 'claude', 'disabled': True})
-        pinned = dict(allocator.bundles(fleet)['opus_high'], id='opus_high@medium', bundle_id='opus_high@medium',
+        pinned = dict(account_fleet.bundles(fleet)['opus_high'], id='opus_high@medium', bundle_id='opus_high@medium',
                       effort='medium', pin_carrier='opus_high')
         self.assertEqual(dispatch_registry.resolve_bundle(pinned, fleet)['effort'], 'medium')
 
@@ -155,13 +150,13 @@ class FamilyRowTests(RecordCase):
             path = Path(directory) / 'failures.json'
             launch_failures.record({'account': 'claude', 'model': FAMILY}, 'model_unavailable', now=NOW, path=path)
             entries = launch_failures.active(now=NOW, path=path)
-        self.assertIsNotNone(allocator.cooling_reason({'account': 'claude', 'model': FAMILY}, entries, self.accounts, now=NOW))
-        self.assertIsNone(allocator.cooling_reason({'account': 'claude', 'model': FLAGSHIP}, entries, self.accounts, now=NOW))
+        self.assertIsNotNone(candidate_eval.cooling_reason({'account': 'claude', 'model': FAMILY}, entries, self.accounts, now=NOW))
+        self.assertIsNone(candidate_eval.cooling_reason({'account': 'claude', 'model': FLAGSHIP}, entries, self.accounts, now=NOW))
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory:
             path = Path(directory) / 'failures.json'
             launch_failures.record({'account': 'claude', 'model': FLAGSHIP}, 'model_unavailable', now=NOW, path=path)
             entries = launch_failures.active(now=NOW, path=path)
-        self.assertIsNone(allocator.cooling_reason({'account': 'claude', 'model': FAMILY}, entries, self.accounts, now=NOW))
+        self.assertIsNone(candidate_eval.cooling_reason({'account': 'claude', 'model': FAMILY}, entries, self.accounts, now=NOW))
 
 
 class RecordPathTests(RecordCase):
@@ -212,7 +207,7 @@ class BestLevelTests(RecordCase):
 
     def test_prepare_accepts_any_contract_level_via_pin_carrier_and_no_other(self):
         fleet = self.accounts
-        row = allocator.bundles(fleet)['sol_high']
+        row = account_fleet.bundles(fleet)['sol_high']
         for effort, accepted in (('low', True), ('medium', True), ('bogus', False)):
             with self.subTest(effort=effort):
                 pinned = dict(row, id=f'sol_high@{effort}', bundle_id=f'sol_high@{effort}', effort=effort, pin_carrier='sol_high')
@@ -224,7 +219,7 @@ class BestLevelTests(RecordCase):
         fleet = self.levels('gpt-6-astra', 'high')
         plan = self.plan(task, fleet)
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory, \
-                patch.object(allocator, 'load_accounts', return_value=copy.deepcopy(fleet)):
+                patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(fleet)):
             db = os.path.join(directory, 'reg.sqlite')
             issued = dispatch_registry.issue(plan, task, now=NOW, path=db, allocation_task=task)
             prepared = dispatch_registry.prepare(issued['decision_id'], task, {'title': 'x', 'initialPrompt': 'go'},
@@ -240,7 +235,7 @@ class MinorFindingTests(RecordCase):
         plan = self.plan(self.task(LIVE, constraints={'model': 'gpt-6-astra', 'effort': 'low'}), fleet)
         self.assertEqual(plan['selected_bundle']['effort'], 'low')
         self.assertEqual(dispatch_registry.resolve_bundle(dict(plan['selected_bundle']), fleet)['effort'], 'low')
-        unlisted = dict(allocator.bundles(fleet)['astra'], id='astra@medium', bundle_id='astra@medium',
+        unlisted = dict(account_fleet.bundles(fleet)['astra'], id='astra@medium', bundle_id='astra@medium',
                         effort='medium', pin_carrier='astra')
         self.assertIsNone(dispatch_registry.resolve_bundle(unlisted, fleet))
 
@@ -250,29 +245,29 @@ class MinorFindingTests(RecordCase):
         reasons = ['y' * 299 + ' z', ' ' + 'y' * 299 + ' z', 'y' * 299 + '  ']
         reasons += [''.join(rng.choice('ab  \t\n') for _ in range(rng.randint(1, 340))) for _ in range(500)]
         for reason in reasons:
-            once = allocator.validate_profile(dict(PROFILE, reason=reason))
-            self.assertEqual(allocator.validate_profile(once), once, repr(reason))
+            once = task_intake.validate_profile(dict(PROFILE, reason=reason))
+            self.assertEqual(task_intake.validate_profile(once), once, repr(reason))
 
     def test_a_huge_whole_number_is_a_band_and_huge_hours_are_invalid(self):
         """m4: math.isfinite raised OverflowError out of validation."""
-        self.assertEqual(allocator.validate_profile(dict(PROFILE, multi_task=True, task_count=10 ** 400))['task_count'], '>3')
+        self.assertEqual(task_intake.validate_profile(dict(PROFILE, multi_task=True, task_count=10 ** 400))['task_count'], '>3')
         self.assertEqual(self.plan(self.task(dict(PROFILE, multi_task=True, task_count=10 ** 400)))['choice'] is not None, True)
         with self.assertRaisesRegex(ValueError, 'expected_hours'):
-            allocator.validate_profile(dict(PROFILE, expected_hours=10 ** 400))
+            task_intake.validate_profile(dict(PROFILE, expected_hours=10 ** 400))
         with self.assertRaisesRegex(ValueError, 'task_count'):
-            allocator.validate_profile(dict(PROFILE, multi_task=True, task_count=-10 ** 400))
+            task_intake.validate_profile(dict(PROFILE, multi_task=True, task_count=-10 ** 400))
 
     def test_a_cached_huge_number_is_only_a_miss(self):
-        caps = allocator.load_capabilities()
+        caps = account_fleet.load_capabilities()
         config = {'scorer_type': 'claude_haiku_low', 'fallback_to_agy': False}
         task = {'objective': 'hello world'}
-        key = route_judge.score_cache_key(task, allocator, caps, route_judge.scorer_attempt_order(config)[1], config)
-        good = allocator.validate_profile(dict(PROFILE))
+        key = route_judge.score_cache_key(task, caps, route_judge.scorer_attempt_order(config)[1], config)
+        good = task_intake.validate_profile(dict(PROFILE))
         with patch.dict(os.environ, {'ROUTER_SCORE_CACHE': str(Path(self.root) / 'cache.json')}):
             route_judge.score_cache_put(key, dict(PROFILE, expected_hours=10 ** 400), {'source': 'system_one', 'scorer_type': 'claude_haiku_low'})
             with patch.object(route_judge, 'scorer_accounts', return_value=[None]), \
                     patch.object(route_judge, 'run_scorer', return_value=(good, 'p', 'm')) as scorer:
-                self.assertEqual(route_judge.score_task(task, allocator, caps, scorer_config=config)[0], good)
+                self.assertEqual(route_judge.score_task(task, caps, scorer_config=config)[0], good)
             scorer.assert_called_once()
 
     def test_a_cooldown_recorded_under_any_spelling_cools_the_model(self):
@@ -282,7 +277,7 @@ class MinorFindingTests(RecordCase):
                 path = Path(directory) / 'failures.json'
                 launch_failures.record({'account': 'claude', 'model': recorded}, 'model_unavailable', now=NOW, path=path)
                 entries = launch_failures.active(now=NOW, path=path)
-                self.assertIsNotNone(allocator.cooling_reason({'account': 'claude', 'model': row}, entries, self.accounts, now=NOW))
+                self.assertIsNotNone(candidate_eval.cooling_reason({'account': 'claude', 'model': row}, entries, self.accounts, now=NOW))
 
 
 class PinIdentityTests(RecordCase):

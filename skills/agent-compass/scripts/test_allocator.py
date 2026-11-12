@@ -12,6 +12,14 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import account_fleet
+import accounts_override
+import axis_scores
+import ledger_snapshot
+import quota_overrides
+import quota_pools
+import task_intake
+import worker_sessions
 import antigravity_telemetry
 import override_store
 import route_judge as router
@@ -24,11 +32,11 @@ EXPIRING_SUBSCRIPTION = {
     'windows': {'credits': {'hours': 168}},
     'bundles': {'grok47_high': {'model': 'grok-4.7', 'effort': 'high'}},
 }
-_real_load_accounts = allocator.load_accounts
+_real_load_accounts = account_fleet.load_accounts
 
 
 def reference_capabilities():
-    return allocator.load_capabilities(accounts=allocator.load_accounts(allocator.reference_fleet_path()))
+    return account_fleet.load_capabilities(accounts=account_fleet.load_accounts(account_fleet.reference_fleet_path()))
 
 
 def _load_accounts_with_expiring_subscription(path=None):
@@ -40,7 +48,7 @@ def _load_accounts_with_expiring_subscription(path=None):
 
 def setUpModule():
     isolated_router_state(unittest.addModuleCleanup)
-    fixture = patch.object(allocator, 'load_accounts', _load_accounts_with_expiring_subscription)
+    fixture = patch.object(account_fleet, 'load_accounts', _load_accounts_with_expiring_subscription)
     fixture.start()
     unittest.addModuleCleanup(fixture.stop)
 
@@ -89,12 +97,12 @@ class AllocatorTests(unittest.TestCase):
         return profile(**{'local_only': True, **access, **fields})
 
     def unsubscribed(self, account):
-        accounts = allocator.load_accounts()
+        accounts = account_fleet.load_accounts()
         accounts['accounts'].pop(account)
         return accounts
 
     def codex_bundles(self):
-        return [b for b, v in allocator.bundles(allocator.load_accounts()).items() if v['account'] == 'codex']
+        return [b for b, v in account_fleet.bundles(account_fleet.load_accounts()).items() if v['account'] == 'codex']
 
     def test_chain_continuity_and_handoff_rotation(self):
         # 1. Active high-coupling chain resumes owner; blocked owner asks user; low-coupling switches silently
@@ -160,30 +168,30 @@ class AllocatorTests(unittest.TestCase):
             log('.claude-lab/projects/E--PROJECTS-x/s-c2.jsonl', [
                 {'type': 'system', 'subtype': 'compact_boundary', 'compactMetadata': {'preTokens': 510000}},
                 {'type': 'assistant', 'message': {'usage': {'input_tokens': 50, 'cache_read_input_tokens': 200000, 'cache_creation_input_tokens': 50}}}])
-            self.assertEqual(allocator.session_state('a1', home), {'compactions': 2, 'compacted_tokens': 490000, 'context_tokens': 120000, 'historical_context_tokens': 610000})
-            self.assertEqual(allocator.session_state('a2', home), {'compactions': 1, 'compacted_tokens': 970000, 'context_tokens': 500100, 'historical_context_tokens': 1470100})
-            self.assertEqual(allocator.session_state('a3', home), {'compactions': 3, 'compacted_tokens': 780000, 'context_tokens': 41000, 'historical_context_tokens': 821000})
-            self.assertEqual(allocator.session_state('a4', home), {'compactions': 1, 'compacted_tokens': 510000, 'context_tokens': 200100, 'historical_context_tokens': 710100})
+            self.assertEqual(worker_sessions.session_state('a1', home), {'compactions': 2, 'compacted_tokens': 490000, 'context_tokens': 120000, 'historical_context_tokens': 610000})
+            self.assertEqual(worker_sessions.session_state('a2', home), {'compactions': 1, 'compacted_tokens': 970000, 'context_tokens': 500100, 'historical_context_tokens': 1470100})
+            self.assertEqual(worker_sessions.session_state('a3', home), {'compactions': 3, 'compacted_tokens': 780000, 'context_tokens': 41000, 'historical_context_tokens': 821000})
+            self.assertEqual(worker_sessions.session_state('a4', home), {'compactions': 1, 'compacted_tokens': 510000, 'context_tokens': 200100, 'historical_context_tokens': 710100})
             agent('a1-arch', 'codex', 's-codex-arch')
             log('.codex/archived_sessions/rollout-2026-10-20T21-21-50-s-codex-arch.jsonl', [reading(249566)])
-            self.assertEqual(allocator.session_state('a1-arch', home), {'compactions': 0, 'compacted_tokens': 0, 'context_tokens': 249566, 'historical_context_tokens': 249566})
-            self.assertEqual(allocator.session_state('missing', home)['telemetry_status'], 'unknown')
+            self.assertEqual(worker_sessions.session_state('a1-arch', home), {'compactions': 0, 'compacted_tokens': 0, 'context_tokens': 249566, 'historical_context_tokens': 249566})
+            self.assertEqual(worker_sessions.session_state('missing', home)['telemetry_status'], 'unknown')
 
             # Historical 2M context cannot be masked by a small post-compaction compressed context_tokens
             agent('a5', 'claude', 's-claude-long-context')
             log('.claude/projects/E--PROJECTS-x/s-claude-long-context.jsonl', [
                 {'type': 'system', 'subtype': 'compact_boundary', 'compactMetadata': {'preTokens': 1950000, 'postTokens': 12000, 'cumulativeDroppedTokens': 1938000}},
                 {'type': 'assistant', 'message': {'usage': {'input_tokens': 100, 'cache_read_input_tokens': 80000, 'cache_creation_input_tokens': 0}}}])
-            st5 = allocator.session_state('a5', home)
+            st5 = worker_sessions.session_state('a5', home)
             self.assertEqual((st5['compactions'], st5['context_tokens'], st5['historical_context_tokens']), (1, 80100, 2030100))
-            orig_log = allocator.session_log
-            with patch.object(allocator, 'session_log', side_effect=lambda aid, h=None: orig_log(aid, home)):
+            orig_log = worker_sessions.session_log
+            with patch.object(worker_sessions, 'session_log', side_effect=lambda aid, h=None: orig_log(aid, home)):
                 rot = self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled',
                                  'chain': {'id': 'c5', 'coupling': 'high', 'worker': {'agent_id': 'a5', 'bundle': 'sol_xhigh', 'context_tokens': 80100}}})
                 self.assertEqual(rot['decision']['action'], 'rotate')
 
     def test_harness_selection_and_invariance(self):
-        bundles = allocator.bundles(allocator.load_accounts())
+        bundles = account_fleet.bundles(account_fleet.load_accounts())
         for bundle_id in ('pi_astra_high', 'pi_astra_xhigh', 'pi_sol_high', 'pi_sol_xhigh', 'pi_sol_max'):
             b = bundles[bundle_id]
             self.assertEqual((b['provider'], b['account'], b['launch_model']), ('pi', 'codex', 'openai-codex/' + b['model']))
@@ -211,13 +219,13 @@ class AllocatorTests(unittest.TestCase):
         capabilities = reference_capabilities()
         self.assertEqual(self.plan({'work_kind': 'dot_execution'})['choice'], 'dot_text')
         # Caller false stands. Route implies fill local_only only when the caller and the profile left it unset.
-        self.assertTrue(allocator.dot_may_take('exploration_analysis', {'local_only': False}, capabilities))
-        self.assertTrue(allocator.dot_may_take('exploration_analysis', {}, capabilities, {'local_only': False}))
-        self.assertTrue(allocator.dot_may_take('research_packet', {}, capabilities, {'local_only': False}))
-        self.assertFalse(allocator.dot_may_take('exploration_analysis', {}, capabilities, {'local_only': True}))
-        self.assertTrue(allocator.dot_may_take('exploration_analysis', {'local_only': False}, capabilities, {'local_only': True}))
-        self.assertFalse(allocator.dot_may_take('exploration_analysis', {}, capabilities))
-        self.assertFalse(allocator.dot_may_take('general_implementation', {'visual': True}, capabilities))
+        self.assertTrue(task_intake.dot_may_take('exploration_analysis', {'local_only': False}, capabilities))
+        self.assertTrue(task_intake.dot_may_take('exploration_analysis', {}, capabilities, {'local_only': False}))
+        self.assertTrue(task_intake.dot_may_take('research_packet', {}, capabilities, {'local_only': False}))
+        self.assertFalse(task_intake.dot_may_take('exploration_analysis', {}, capabilities, {'local_only': True}))
+        self.assertTrue(task_intake.dot_may_take('exploration_analysis', {'local_only': False}, capabilities, {'local_only': True}))
+        self.assertFalse(task_intake.dot_may_take('exploration_analysis', {}, capabilities))
+        self.assertFalse(task_intake.dot_may_take('general_implementation', {'visual': True}, capabilities))
         for kind in ('research_packet', 'exploration_analysis'):
             opened = self.plan({'work_kind': kind, 'difficulty': 'hard', 'needs': {'local_only': False},
                                 'profile': self.profile(local_only=False)})
@@ -235,7 +243,7 @@ class AllocatorTests(unittest.TestCase):
     def test_short_window_deferral_and_wait_limits(self):
         usage = self.usage(claude=[('five_hour', 3, 1.0), ('seven_day', 60, 100), ('weekly_fable', 100, 100)], codex=[('usage', 1, 121)])
         task = {'work_kind': 'visual_analysis', 'difficulty': 'routine', 'expected_hours': 1, 'needs': {'visual': True}}
-        no_argon = ['argon_high'] + [b for b in allocator.bundles(allocator.load_accounts()) if b.startswith(('agy_opus', 'agy_sonnet'))]
+        no_argon = ['argon_high'] + [b for b in account_fleet.bundles(account_fleet.load_accounts()) if b.startswith(('agy_opus', 'agy_sonnet'))]
         # The cheapest sufficient candidate sits behind Claude's short five-hour window: a task that can wait waits for the reset.
         deferred = self.plan(dict(task, can_wait_hours=2), usage, unavailable=no_argon)
         self.assertEqual(deferred['decision']['action'], 'defer')
@@ -315,7 +323,7 @@ class AllocatorTests(unittest.TestCase):
         # Even if five_hour telemetry is completely missing, an oversized task exceeding full 5h Pro capacity is excluded
         missing_5h = copy.deepcopy(stale_c2)
         missing_5h['accounts']['claude-lab']['windows'] = [missing_5h['accounts']['claude-lab']['windows'][1]]
-        custom_acc = allocator.load_accounts()
+        custom_acc = account_fleet.load_accounts()
         custom_acc['accounts']['claude-lab']['bundles']['lab_opus55_high'].pop('disabled', None)
         res_opus_3h = self.plan({'work_kind': 'frontend_implementation', 'difficulty': 'hard', 'expected_hours': 3.0,
                                  'needs': {'local_only': True}}, missing_5h, accounts=custom_acc)
@@ -333,15 +341,15 @@ class AllocatorTests(unittest.TestCase):
             self.plan({'difficulty': 'impossible'})
         with self.assertRaises(ValueError):
             self.plan({'chain': {'coupling': 'tight'}})
-        accounts = allocator.load_accounts()
-        models = allocator.models_table(accounts)
-        for bundle in allocator.bundles(accounts).values():
-            self.assertIn(allocator.canonical(bundle['model'], accounts), models, bundle['id'])
+        accounts = account_fleet.load_accounts()
+        models = account_fleet.models_table(accounts)
+        for bundle in account_fleet.bundles(accounts).values():
+            self.assertIn(account_fleet.canonical(bundle['model'], accounts), models, bundle['id'])
 
     def test_heuristic_profile_and_schema_contract(self):
         capabilities = reference_capabilities()
-        policy = allocator.load_accounts()['scoring']
-        accounts = allocator.load_accounts()
+        policy = account_fleet.load_accounts()['scoring']
+        accounts = account_fleet.load_accounts()
         for banned in (
             'infer_task_profile', 'infer_kind_from_objective', 'infer_fast_preference',
             'is_readonly_review_task', 'infer_divergence', 'multi_task_marks',
@@ -353,7 +361,7 @@ class AllocatorTests(unittest.TestCase):
         for kind in capabilities['routes']:
             for difficulty in (None, 'routine', 'hard', 'coupled', 'frontier'):
                 task = {'work_kind': kind, **({'difficulty': difficulty} if difficulty else {})}
-                normalized = allocator.normalize_task(task, policy, capabilities, accounts)
+                normalized = task_intake.normalize_task(task, policy, capabilities, accounts)
                 # No default table: the caller's difficulty, else the one the profile derives.
                 self.assertEqual(normalized['difficulty'], difficulty or normalized['profile_difficulty'], task)
         good = self.profile()
@@ -363,22 +371,22 @@ class AllocatorTests(unittest.TestCase):
                     dict(good, needs_gui='yes'), dict(good, wants_fast='yes'), dict(good, read_only_review=1),
                     dict(good, interaction_style='coding'), 'deep'):
             with self.assertRaises(ValueError):
-                allocator.validate_profile(bad)
-        schema = allocator.TASK_PROFILE_SCHEMA
+                task_intake.validate_profile(bad)
+        schema = task_intake.TASK_PROFILE_SCHEMA
         self.assertEqual(set(schema['required']), set(schema['properties']))
         self.assertIn('wants_fast', schema['properties'])
         self.assertIn('read_only_review', schema['properties'])
         for name, prop in schema['properties'].items():
             if prop['type'] == 'integer':
                 self.assertNotIn('enum', prop, name)
-                self.assertEqual((prop['minimum'], prop['maximum']), allocator.PROFILE_INTEGERS[name])
+                self.assertEqual((prop['minimum'], prop['maximum']), task_intake.PROFILE_INTEGERS[name])
         # local_only is resolved strictly from caller needs -> profile.local_only -> route implies -> False, never from objective/cwd text.
-        prof_local = allocator.normalize_task(
+        prof_local = task_intake.normalize_task(
             {'objective': 'Pure text', 'profile': self.profile(local_only=True)},
             policy, capabilities, accounts,
         )
         self.assertTrue(prof_local['local_only'])
-        caller_false = allocator.normalize_task(
+        caller_false = task_intake.normalize_task(
             {'objective': 'Run pytest', 'cwd': r'E:\PROJECTS\AgentCompass', 'needs': {'local_only': False},
              'profile': self.profile(local_only=True)},
             policy, capabilities, accounts,
@@ -398,7 +406,7 @@ class AllocatorTests(unittest.TestCase):
     def test_cross_domain_offline_routes(self):
         # Route selection follows the classified profile work_kind regardless of incidental keywords in objective.
         capabilities = reference_capabilities()
-        policy = allocator.load_accounts()['scoring']
+        policy = account_fleet.load_accounts()['scoring']
         for objective, kind in (
             ('Click the Save button in the desktop settings', 'debug_review'),
             ('Compare screenshots with the UI mockup', 'general_implementation'),
@@ -419,10 +427,10 @@ class AllocatorTests(unittest.TestCase):
         ):
             with self.subTest(objective=objective, kind=kind):
                 prof = self.profile(work_kind=kind)
-                self.assertEqual(allocator.task_kind({'objective': objective, 'profile': prof}, capabilities, policy), kind)
+                self.assertEqual(task_intake.task_kind({'objective': objective, 'profile': prof}, capabilities, policy), kind)
 
     def test_account_allowed_cwd_optional_directory_scope(self):
-        accounts = allocator.load_accounts()
+        accounts = account_fleet.load_accounts()
         accounts['accounts']['codex']['allowed_cwd'] = ['/workspace/allowed_root']
         task_base = {'work_kind': 'general_implementation', 'difficulty': 'hard',
                      'expected_hours': 1.0, 'needs': {'local_only': True}}
@@ -435,11 +443,11 @@ class AllocatorTests(unittest.TestCase):
 
     def test_classified_read_only_review_profile_and_its_own_hours(self):
         ro_prof = self.profile(work_kind='debug_review', code_complexity=0, read_only_review=True)
-        ro_norm = allocator.normalize_task(
+        ro_norm = task_intake.normalize_task(
             {'objective': 'Independent review (read-only) of the authentication module', 'profile': ro_prof},
-            allocator.load_accounts()['scoring'],
+            account_fleet.load_accounts()['scoring'],
             reference_capabilities(),
-            allocator.load_accounts(),
+            account_fleet.load_accounts(),
         )
         self.assertEqual(ro_norm['kind'], 'debug_review')
         self.assertEqual(ro_norm['profile']['code_complexity'], 0)
@@ -447,8 +455,8 @@ class AllocatorTests(unittest.TestCase):
         self.assertEqual(ro_norm['hours'], ro_prof['expected_hours'])      # the classifier's own estimate; no per-difficulty default
 
     def test_existing_bundles_keep_tag_pools_and_draws_override(self):
-        accounts = allocator.load_accounts()
-        flat = allocator.bundles(accounts)
+        accounts = account_fleet.load_accounts()
+        flat = account_fleet.bundles(accounts)
         # Expected pools are contract examples, not a copy of the production tag predicate.
         for bid, expected in (
             ('opus55_high', ['five_hour', 'seven_day']),
@@ -465,21 +473,21 @@ class AllocatorTests(unittest.TestCase):
             with self.subTest(bundle=bid):
                 bundle = flat[bid]
                 spec = accounts['accounts'][bundle['account']]
-                self.assertEqual(allocator.bundle_pools(bundle, accounts), expected)
-                self.assertEqual([wid for wid, _, _ in allocator.applicable_windows(
+                self.assertEqual(quota_pools.bundle_pools(bundle, accounts), expected)
+                self.assertEqual([wid for wid, _, _ in quota_pools.applicable_windows(
                     spec, bundle['model'], {}, bundle, accounts)], expected)
                 if 'draws' not in bundle:
-                    self.assertEqual([wid for wid, _, _ in allocator.applicable_windows(
-                        spec, allocator.canonical(bundle['model'], accounts), {})], expected)
+                    self.assertEqual([wid for wid, _, _ in quota_pools.applicable_windows(
+                        spec, account_fleet.canonical(bundle['model'], accounts), {})], expected)
         for bid, draws in (('flash_high', ['3p-weekly']), ('agy_opus55_high', ['3p-weekly']),
                            ('agy_opus55_high', [])):
             with self.subTest(bundle=bid, draws=draws):
-                self.assertEqual(allocator.bundle_pools({**flat[bid], 'draws': draws}, accounts), draws)
+                self.assertEqual(quota_pools.bundle_pools({**flat[bid], 'draws': draws}, accounts), draws)
         for family, canonical_name in (('opus', 'claude-opus-5-5'), ('sonnet', 'claude-sonnet-5-5')):
             for effort in ('low', 'medium', 'high'):
                 bundle = flat[f'agy_{family}55_{effort}']
-                self.assertEqual(allocator.bundle_pools(bundle, accounts), ['3p-5h', '3p-weekly'])
-                self.assertEqual(allocator.canonical(bundle['model'], accounts), canonical_name)
+                self.assertEqual(quota_pools.bundle_pools(bundle, accounts), ['3p-5h', '3p-weekly'])
+                self.assertEqual(account_fleet.canonical(bundle['model'], accounts), canonical_name)
                 self.assertEqual(bundle['model'], f'{canonical_name}-{effort}')
                 self.assertEqual(bundle['launch_model'], bundle['model'])
                 self.assertEqual((bundle['provider'], bundle['modeId']), ('antigravity-resilient', 'full-access'))
@@ -488,7 +496,7 @@ class AllocatorTests(unittest.TestCase):
 
     def test_agy_claude_3p_reservation_launch_and_short_window(self):
         import dispatch_registry
-        accounts = allocator.load_accounts()
+        accounts = account_fleet.load_accounts()
         spec = accounts['accounts']['antigravity']
         lease = (self.now + timedelta(hours=2)).isoformat()
         record = {
@@ -497,18 +505,18 @@ class AllocatorTests(unittest.TestCase):
             'expected_usd': 4.0,
         }
         for wid, cap in (('3p-5h', 17.6), ('3p-weekly', 88.0)):
-            self.assertEqual(allocator.inflight_reserved_usd(
+            self.assertEqual(quota_pools.inflight_reserved_usd(
                 'antigravity', spec, wid, spec['windows'][wid], {}, cap, [record], accounts, {}, self.now), 4.0)
         for wid in ('gemini-5h', 'gemini-weekly'):
-            self.assertEqual(allocator.inflight_reserved_usd(
+            self.assertEqual(quota_pools.inflight_reserved_usd(
                 'antigravity', spec, wid, spec['windows'][wid], {}, 100.0, [record], accounts, {}, self.now), 0.0)
         # Catalog draws win even when the record's model string would tag-match the Gemini pool.
         mismatched = {'stage': 'dispatch', 'dispatch_id': 'agy-opus-2', 'state': 'started', 'lease_until': lease,
                       'expected_usd': 4.0,
                       'bundle': {'account': 'antigravity', 'bundle_id': 'agy_opus55_high', 'model': 'gemini-3.8-flash-high'}}
-        self.assertEqual(allocator.inflight_reserved_usd(
+        self.assertEqual(quota_pools.inflight_reserved_usd(
             'antigravity', spec, '3p-5h', spec['windows']['3p-5h'], {}, 17.6, [mismatched], accounts, {}, self.now), 4.0)
-        self.assertEqual(allocator.inflight_reserved_usd(
+        self.assertEqual(quota_pools.inflight_reserved_usd(
             'antigravity', spec, 'gemini-5h', spec['windows']['gemini-5h'], {}, 182.0, [mismatched], accounts, {}, self.now), 0.0)
 
         resolved = dispatch_registry.resolve_bundle(
@@ -521,13 +529,13 @@ class AllocatorTests(unittest.TestCase):
                 {'provider': 'antigravity-resilient', 'account': 'antigravity', 'model': 'claude-opus-5-5', 'effort': 'xhigh'},
                 accounts, explicit_override=True)
         request = dispatch_registry.launch_request(
-            allocator.bundles(accounts)['agy_opus55_high'], {'title': 'agy claude', 'initialPrompt': 'fixture'})
+            account_fleet.bundles(accounts)['agy_opus55_high'], {'title': 'agy claude', 'initialPrompt': 'fixture'})
         self.assertEqual(request['provider'], 'antigravity-resilient/claude-opus-5-5-high')
         self.assertEqual(request['settings'].get('modeId'), 'full-access')
         self.assertNotIn('thinkingOptionId', request['settings'])
 
-        sparse = allocator.load_accounts()
-        allocator.accounts_override.apply(sparse, {'accounts': {'antigravity': {'bundles': {
+        sparse = account_fleet.load_accounts()
+        accounts_override.apply(sparse, {'accounts': {'antigravity': {'bundles': {
             'flash_high': {'disabled': 'sparse test'}}}}})
         kept = sparse['accounts']['antigravity']['bundles']
         self.assertIs(kept['flash_high'].get('disabled'), True)
@@ -544,7 +552,7 @@ class OverrideContractTests(unittest.TestCase):
         self.now = datetime(2026, 10, 16, 9, tzinfo=timezone.utc)
         self.baseline = self.now - timedelta(hours=1)
         self.reset = self.now + timedelta(days=6)
-        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        self.accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         self.usage = {'accounts': {'codex': {
             'status': 'fresh', 'fetched_at': self.now.isoformat(), 'observation_id': 'new',
             'windows': [{'id': 'usage', 'used_pct': 94, 'remaining_pct_before_reset': 6,
@@ -602,9 +610,9 @@ class OverrideContractTests(unittest.TestCase):
 
     def test_reset_confirmation_scheduled_and_one_off(self):
         one_off = dict(self.override, reset_confirmation='replenishment')
-        self.assertTrue(allocator.override_reset_landed(self.override, self.replenished(), self.accounts, self.now))
-        self.assertFalse(allocator.override_reset_landed(self.override, self.same_cycle(), self.accounts, self.now))
-        self.assertTrue(allocator.override_reset_landed(one_off, self.same_cycle(), self.accounts, self.now))
+        self.assertTrue(quota_overrides.override_reset_landed(self.override, self.replenished(), self.accounts, self.now))
+        self.assertFalse(quota_overrides.override_reset_landed(self.override, self.same_cycle(), self.accounts, self.now))
+        self.assertTrue(quota_overrides.override_reset_landed(one_off, self.same_cycle(), self.accounts, self.now))
         for invalid in ({'status': 'stale'}, {'stale': True}, {'available': False}, {'account': 'codex-work'},
                         {'fetched_at': self.baseline.isoformat()}, {'observation_id': 'old'},
                         {'fetched_at': (self.now - timedelta(minutes=16)).isoformat()},
@@ -612,39 +620,38 @@ class OverrideContractTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 usage = self.replenished()
                 usage['accounts']['codex'].update(invalid)
-                self.assertFalse(allocator.override_reset_landed(self.override, usage, self.accounts, self.now))
+                self.assertFalse(quota_overrides.override_reset_landed(self.override, usage, self.accounts, self.now))
                 sc = self.same_cycle()
                 sc['accounts']['codex'].update(invalid)
-                self.assertFalse(allocator.override_reset_landed(one_off, sc, self.accounts, self.now))
+                self.assertFalse(quota_overrides.override_reset_landed(one_off, sc, self.accounts, self.now))
 
     def test_reset_receipts_and_pruning(self):
         self.path.write_text(json.dumps({'overrides': [self.override], 'unrelated': 7}))
-        allocator.observe_landed_overrides({'priority': self.override}, self.path, self.now)
+        quota_overrides.observe_landed_overrides({'priority': self.override}, self.path, self.now)
         first = json.loads(self.path.read_text())
         marked = first['overrides'][0]
         self.assertEqual(marked['reset_confirmed_at'], self.now.isoformat())
         later = self.now + timedelta(hours=2)
-        allocator.observe_landed_overrides({'priority': marked}, self.path, later)
+        quota_overrides.observe_landed_overrides({'priority': marked}, self.path, later)
         self.assertEqual(json.loads(self.path.read_text()), first)
-        allocator.prune_landed_overrides({'priority': marked}, self.path, later)
+        quota_overrides.prune_landed_overrides({'priority': marked}, self.path, later)
         final = json.loads(self.path.read_text())
         self.assertEqual((final['overrides'], final['last_reset']['at'], final['unrelated']), ([], self.now.isoformat(), 7))
 
         # Confirmed marker survives stale usage; future/pre-creation marker is rejected; replaced record is untouched
         stale_usage = copy.deepcopy(self.usage)
         stale_usage['accounts']['codex']['status'] = 'stale'
-        self.assertTrue(allocator.override_reset_landed(marked, stale_usage, self.accounts, later))
+        self.assertTrue(quota_overrides.override_reset_landed(marked, stale_usage, self.accounts, later))
         for bad_when in (self.now + timedelta(seconds=1), self.baseline - timedelta(seconds=1)):
-            self.assertFalse(allocator.override_reset_landed(dict(self.override, reset_confirmed_at=bad_when.isoformat()),
+            self.assertFalse(quota_overrides.override_reset_landed(dict(self.override, reset_confirmed_at=bad_when.isoformat()),
                                                              self.usage, self.accounts, self.now))
         newer = dict(self.override, boost=0.4)
         self.path.write_text(json.dumps({'overrides': [newer]}))
-        allocator.prune_landed_overrides({'priority': self.override}, self.path, self.now)
+        quota_overrides.prune_landed_overrides({'priority': self.override}, self.path, self.now)
         self.assertEqual(json.loads(self.path.read_text())['overrides'], [newer])
 
     def test_upsert_rebaseline_and_atomic_concurrency(self):
-        with patch.object(router, 'load_allocator', return_value=allocator), \
-             patch.object(router, 'usage_snapshot', return_value=self.usage):
+        with patch.object(router, 'usage_snapshot', return_value=self.usage):
             first = router.manage_overrides(self.args(), self.now)['active'][0]
             override_rows = [row for row in router.read_ledger() if row.get('stage') == 'override']
             self.assertEqual((override_rows[-1]['action'], override_rows[-1]['account'], override_rows[-1]['removed']),
@@ -690,11 +697,11 @@ class OverrideContractTests(unittest.TestCase):
         self.assertEqual(({r['intent'] for r in rows}, len(rows)), ({'a', 'b', 'c', 'd'}, 4))
 
     def test_depletion_retirement(self):
-        self.assertTrue(allocator.override_depleted(self.override, self.depleted(5), self.accounts))
-        self.assertFalse(allocator.override_depleted(self.override, self.depleted(5.5), self.accounts))
+        self.assertTrue(quota_overrides.override_depleted(self.override, self.depleted(5), self.accounts))
+        self.assertFalse(quota_overrides.override_depleted(self.override, self.depleted(5.5), self.accounts))
         other = dict(self.override, id='other', account='claude', model='claude-opus-5-5')
         self.path.write_text(json.dumps({'v': 1, 'overrides': [self.override, other]}))
-        _, _, applied = allocator.apply_overrides([self.override], self.depleted(4), self.accounts, self.now)
+        _, _, applied = quota_overrides.apply_overrides([self.override], self.depleted(4), self.accounts, self.now)
         self.assertEqual(applied, [])
         self.assertEqual(json.loads(self.path.read_text()), {'v': 1, 'overrides': [other]})
 
@@ -714,7 +721,7 @@ class AntigravityTelemetryTests(unittest.TestCase):
             'sessionId': session or 'plugin:' + json.dumps({'version': 1, 'data': data or {'conversationId': 'fixture'}})}}))
 
     def test_resilient_bundles_and_session_key_binding(self):
-        bundles = allocator.bundles(allocator.load_accounts(allocator.reference_fleet_path()))
+        bundles = account_fleet.bundles(account_fleet.load_accounts(account_fleet.reference_fleet_path()))
         for name in ('flash_high', 'argon_high'):
             self.assertEqual((bundles[name]['provider'], bundles[name]['account'], bundles[name]['modeId']),
                              ('antigravity-resilient', 'antigravity', 'full-access'))
@@ -728,7 +735,7 @@ class AntigravityTelemetryTests(unittest.TestCase):
             if structured:
                 self.agent.write_text(json.dumps({'persistence': {'provider': 'antigravity-resilient',
                     'version': 1, 'data': {'sessionKey': session_key}}}))
-            self.assertEqual(allocator.session_state('agent', self.home)['context_tokens'], 123)
+            self.assertEqual(worker_sessions.session_state('agent', self.home)['context_tokens'], 123)
 
     def test_native_transcript_checkpoints_and_partial_evidence(self):
         self.persistence()
@@ -743,16 +750,16 @@ class AntigravityTelemetryTests(unittest.TestCase):
              'usage': {'input_tokens': 1, 'cache_read_tokens': 2}},
         ]
         self.log.write_text('\n'.join(map(json.dumps, steps)))
-        result = allocator.session_state('agent', self.home)
+        result = worker_sessions.session_state('agent', self.home)
         self.assertEqual((result['telemetry_status'], result['compactions'], result['compacted_tokens'], result['context_tokens']),
                          ('observed', 2, 230000, 22000))
         self.assertNotIn('secret-canary', json.dumps(result))
 
         # Partial or missing evidence
         self.log.write_text(json.dumps({'type': 'CHECKPOINT', 'step_index': 1}) + '\n{partial')
-        self.assertEqual(allocator.session_state('agent', self.home)['telemetry_status'], 'partial')
+        self.assertEqual(worker_sessions.session_state('agent', self.home)['telemetry_status'], 'partial')
         self.persistence({'conversationId': '../outside'})
-        self.assertEqual(allocator.session_state('agent', self.home)['telemetry_status'], 'unknown')
+        self.assertEqual(worker_sessions.session_state('agent', self.home)['telemetry_status'], 'unknown')
 
     def test_carried_context_triggers_handoff_rotation(self):
         self.persistence()
@@ -761,10 +768,10 @@ class AntigravityTelemetryTests(unittest.TestCase):
             {'type': 'CHECKPOINT', 'step_index': 2},
             {'type': 'PLANNER_RESPONSE', 'step_index': 3, 'usage': {'input_tokens': 22000}},
         ])))
-        accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         now = datetime(2026, 10, 16, 9, tzinfo=timezone.utc)
-        original_session_log = allocator.session_log
-        with patch.object(allocator, 'session_log', side_effect=lambda agent_id, home=None: original_session_log(agent_id, self.home)):
+        original_session_log = worker_sessions.session_log
+        with patch.object(worker_sessions, 'session_log', side_effect=lambda agent_id, home=None: original_session_log(agent_id, self.home)):
             plan = allocator.plan({'work_kind': 'general_implementation', 'difficulty': 'hard',
                 'needs': {'local_only': True}, 'chain': {'coupling': 'high', 'handoff_ready': True,
                     'worker': {'bundle': 'argon_high', 'agent_id': 'agent'}}},
@@ -891,23 +898,23 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
             'infer_realtime_loop',
         ):
             self.assertFalse(hasattr(allocator, banned_attr), f'{banned_attr} must be deleted')
-        self.assertNotIn('realtime_loop', allocator.PROFILE_FLAGS)
-        self.assertNotIn('realtime_loop', allocator.TASK_PROFILE_SCHEMA['properties'])
-        self.assertNotIn('realtime_loop', allocator.TASK_PROFILE_SCHEMA['required'])
+        self.assertNotIn('realtime_loop', task_intake.PROFILE_FLAGS)
+        self.assertNotIn('realtime_loop', task_intake.TASK_PROFILE_SCHEMA['properties'])
+        self.assertNotIn('realtime_loop', task_intake.TASK_PROFILE_SCHEMA['required'])
         self.assertFalse((Path(__file__).resolve().parent / 'refresh_speed_data.py').exists())
 
     def test_all_calibrated_classifier_cases_validate_and_plan(self):
-        base_accounts = copy.deepcopy(allocator.load_accounts())
-        capabilities = allocator.load_capabilities(accounts=base_accounts)
+        base_accounts = copy.deepcopy(account_fleet.load_accounts())
+        capabilities = account_fleet.load_capabilities(accounts=base_accounts)
         usage = self.healthy_usage()
         cases_path = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
         doc = json.loads(cases_path.read_text(encoding='utf-8-sig'))
         rubric_axis = (doc.get('dimension_rubric') or {}).get('axis_demand', '')
-        for cat in allocator.FIVE_AXES:
+        for cat in axis_scores.FIVE_AXES:
             self.assertIn(cat, rubric_axis)
         for case in doc['calibration_cases']:
-            prof = allocator.validate_profile(dict(case['expected_profile']))
-            self.assertEqual(set(prof['axis_demand']), set(allocator.FIVE_AXES), case['id'])
+            prof = task_intake.validate_profile(dict(case['expected_profile']))
+            self.assertEqual(set(prof['axis_demand']), set(axis_scores.FIVE_AXES), case['id'])
             self.assertNotIn('realtime_loop', prof, case['id'])
             task_obj = case.get('task') if isinstance(case.get('task'), dict) else case
             res = allocator.plan(
@@ -922,10 +929,10 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
             self.assertIn('choice', res, case['id'])
 
     def test_tool_operation_levels_0_and_1_ask_for_no_ability_target(self):
-        base_accounts = allocator.five_axis_overlay(copy.deepcopy(allocator.load_accounts()))
+        base_accounts = axis_scores.five_axis_overlay(copy.deepcopy(account_fleet.load_accounts()))
         targets = base_accounts['_five_axis']['targets']
-        self.assertEqual(allocator.five_axis_targets({'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}, targets).get('tool_operation'), None)
-        self.assertEqual(allocator.five_axis_targets({'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1}, targets).get('tool_operation'), None)
+        self.assertEqual(axis_scores.five_axis_targets({'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}, targets).get('tool_operation'), None)
+        self.assertEqual(axis_scores.five_axis_targets({'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1}, targets).get('tool_operation'), None)
 
         # Stripping tool_operation facet scores completely does not change choice, fit, or net score at tool_operation <= 1
         stripped = copy.deepcopy(base_accounts)
@@ -935,7 +942,7 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
                 if 'tool_operation' in cats:
                     cats['tool_operation'] = {'value': None, 'by_effort': {}, 'by_level': {'2': {}, '3': {}},
                                               'status': 'missing', 'facets': {}, 'missing_facets': ['responsiveness', 'image_recognition']}
-        capabilities = allocator.load_capabilities(accounts=base_accounts)
+        capabilities = account_fleet.load_capabilities(accounts=base_accounts)
         usage = self.healthy_usage()
         for tool_level in (0, 1):
             task = {
@@ -970,8 +977,8 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
                 self.assertFalse(any('tool_operation' in r for r in by_id['grok_bot']['excluded']), by_id['grok_bot']['excluded'])
 
     def test_tool_operation_level_2_scores_per_effort_responsiveness_and_excludes_unmeasured(self):
-        base_accounts = copy.deepcopy(allocator.load_accounts())
-        capabilities = allocator.load_capabilities(accounts=base_accounts)
+        base_accounts = copy.deepcopy(account_fleet.load_accounts())
+        capabilities = account_fleet.load_capabilities(accounts=base_accounts)
         usage = self.healthy_usage()
 
         live_cli_task = {
@@ -1002,7 +1009,7 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         # With shipped maintainer scores in references/user-scores.json, dot_text carries maintainer responsiveness;
         # when public manual scores are empty, channels with no responsiveness measurement leave automatic routing via Mode B.
         self.assertEqual(by_id['dot_text']['excluded'], [])
-        with patch.object(allocator, 'load_public_user_scores', return_value={'schema_version': 1, 'scores': {}}):
+        with patch.object(axis_scores, 'load_public_user_scores', return_value={'schema_version': 1, 'scores': {}}):
             res_unscored = allocator.plan(live_cli_task, usage, now=self.now, accounts=copy.deepcopy(base_accounts),
                                           capabilities=capabilities, overrides=[])
         by_id_unscored = {c['id']: c for c in res_unscored['ranking']}
@@ -1015,8 +1022,8 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
                 )
 
     def test_tool_operation_level_3_requires_image_input_and_scores_min_of_responsiveness_and_vision(self):
-        base_accounts = copy.deepcopy(allocator.load_accounts())
-        capabilities = allocator.load_capabilities(accounts=base_accounts)
+        base_accounts = copy.deepcopy(account_fleet.load_accounts())
+        capabilities = account_fleet.load_capabilities(accounts=base_accounts)
         usage = self.healthy_usage()
 
         gui_task = {
@@ -1053,23 +1060,23 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
 
     def test_family_guesses_have_no_scores_while_date_aliases_resolve_to_calibrated_model(self):
         import auto_bundles
-        accounts = copy.deepcopy(allocator.load_accounts())
+        accounts = copy.deepcopy(account_fleet.load_accounts())
         for variant_id in ('claude-opus-5-6', 'gpt-6-experimental', 'gemini-2.5-pro'):
             with self.subTest(variant=variant_id):
                 prof = auto_bundles.default_profile(variant_id, accounts)
                 self.assertEqual(prof['source'], 'family')
-                self.assertEqual(allocator.model_spec(accounts, variant_id), {})
+                self.assertEqual(account_fleet.model_spec(accounts, variant_id), {})
         for variant_id, exact_id in (('claude-opus-5-5-20260901', 'claude-opus-5-5'), ('gpt-6.1-sol-20260901', 'gpt-6.1-sol'),
                                      ('gpt-6-astra-preview', 'gpt-6-astra'), ('grok-4.7-latest', 'grok-4.7')):
             with self.subTest(variant=variant_id):
                 prof = auto_bundles.default_profile(variant_id, accounts)
                 self.assertEqual(prof['source'], 'calibrated')
-                self.assertEqual(allocator.model_spec(accounts, variant_id), allocator.model_spec(accounts, exact_id))
+                self.assertEqual(account_fleet.model_spec(accounts, variant_id), account_fleet.model_spec(accounts, exact_id))
 
     def test_high_coupling_continuity_keeps_close_worker_and_switches_past_one_demand_level(self):
-        accounts = copy.deepcopy(allocator.load_accounts())
+        accounts = copy.deepcopy(account_fleet.load_accounts())
         accounts['accounts']['claude']['bundles']['fable52_high']['disabled'] = False
-        capabilities = allocator.load_capabilities(accounts=accounts)
+        capabilities = account_fleet.load_capabilities(accounts=accounts)
         usage = self.healthy_usage()
         # High-divergence task (divergence=3, continuity = t3 - t2 = 1.19 SD):
         # 1. `fable52_high` (divergence -0.93, within 1.19 SD of Argon +0.25 / Opus 0.0) stays when continuing (`coupling='high'`).
@@ -1107,18 +1114,18 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
             'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
             'axis_demand': {'divergence': 1, 'global_rigor': 2, 'module_precision': 3, 'vision_tools': 2},
         }
-        mapped = allocator.ledger_profile(legacy)
+        mapped = ledger_snapshot.ledger_profile(legacy)
         self.assertEqual(mapped['axis_demand'], {'divergence': 1, 'coding': 3, 'aesthetics': 0, 'tool_operation': 3})
         self.assertNotIn('realtime_loop', mapped)
 
         legacy_rt_only = dict(legacy, needs_visual=False, needs_gui=False,
                               axis_demand={'divergence': 0, 'global_rigor': 1, 'module_precision': 1, 'vision_tools': 0})
-        mapped_rt = allocator.ledger_profile(legacy_rt_only)
+        mapped_rt = ledger_snapshot.ledger_profile(legacy_rt_only)
         self.assertEqual(mapped_rt['axis_demand'], {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2})
 
     def test_normalize_task_local_only_matches_origin_main_without_gui_expansion(self):
-        caps = allocator.load_capabilities()
-        accounts = allocator.load_accounts()
+        caps = account_fleet.load_capabilities()
+        accounts = account_fleet.load_accounts()
         policy = accounts['scoring']
         for task in (
             {'objective': 'Click the Save button in the dialog'},
@@ -1127,7 +1134,7 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
             {'objective': 'Design a browser dashboard UI layout in React'},
         ):
             with self.subTest(task=task):
-                norm = allocator.normalize_task(task, policy, caps, accounts)
+                norm = task_intake.normalize_task(task, policy, caps, accounts)
                 self.assertFalse(norm['local_only'])
 
 

@@ -12,6 +12,12 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import axis_scores
+import candidate_eval
+import candidate_ranking
+import ledger_snapshot
+import quota_economy
+import quota_pools
 import model_latch
 import provider_retry
 import route_simulation as sim
@@ -41,16 +47,16 @@ def rec_of(capacity=1000.0, used_frac=0.5, elapsed=0.5, reset_hours=None, period
 
 def ladder_for(spend_scale=1.0, with_outside=0.0):
     """A realistic ladder: three models (cheap weak, middle, dear strong) over the real demand grid and panel z-score targets."""
-    anchor_targets = allocator.load_five_axis()['anchor']['targets']
+    anchor_targets = axis_scores.load_five_axis()['anchor']['targets']
     models = [(0.29 * spend_scale, {'divergence': -2.2, 'coding': -1.8, 'aesthetics': -1.9, 'tool_operation': {'responsiveness': 1.0, 'image_recognition': -1.5}}),
               (12.59 * spend_scale, {'divergence': -0.8, 'coding': -0.6, 'aesthetics': -0.6, 'tool_operation': {'responsiveness': 0.2, 'image_recognition': -0.5}}),
               (22.86 * spend_scale, {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0, 'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}})]
     hulls = []
-    for d in allocator.FIVE_AXIS_DEMAND_GRID:
-        targets = allocator.five_axis_targets(d, anchor_targets)
-        pts = [(s, allocator.five_axis_fit(sc, d, targets)[0]) for s, sc in models]
-        hulls.append(allocator.five_axis_upper_hull(pts, with_outside * max(f for _, f in pts)))
-    return allocator.five_axis_value_ladder(hulls)
+    for d in quota_economy.FIVE_AXIS_DEMAND_GRID:
+        targets = axis_scores.five_axis_targets(d, anchor_targets)
+        pts = [(s, axis_scores.five_axis_fit(sc, d, targets)[0]) for s, sc in models]
+        hulls.append(quota_economy.five_axis_upper_hull(pts, with_outside * max(f for _, f in pts)))
+    return quota_economy.five_axis_value_ladder(hulls)
 
 
 class Fleet:
@@ -90,12 +96,12 @@ class Fleet:
             usage['accounts'].pop('codex', None)
         if usage_hook:
             usage_hook(usage)
-        profile = {**PROFILE, 'axis_demand': dict(zip(allocator.FIVE_AXES, axes)), 'expected_hours': hours, 'local_only': local_only}
-        pub = copy.deepcopy(allocator.load_public_user_scores())
+        profile = {**PROFILE, 'axis_demand': dict(zip(axis_scores.FIVE_AXES, axes)), 'expected_hours': hours, 'local_only': local_only}
+        pub = copy.deepcopy(axis_scores.load_public_user_scores())
         pub.setdefault('scores', {}).setdefault('claude-haiku-5-5', {})['coding.faithfulness'] = {
             'level': 1.0, 'as_of': '2026-11-11', 'kind': 'maintainer',
         }
-        with patch.object(allocator, 'load_public_user_scores', return_value=pub):
+        with patch.object(axis_scores, 'load_public_user_scores', return_value=pub):
             return allocator.plan({'objective': 't', 'hours': hours, 'profile': profile, **task}, usage, NOW, accounts=acc,
                                   overrides=[], records=[], host_policy_config={'allowed_accounts': list(allowed)})
 
@@ -114,7 +120,7 @@ def price_of(decision, account):
 
 class NeedTailTests(unittest.TestCase):
     def test_the_incomplete_beta_matches_known_values(self):
-        beta = allocator.regularized_incomplete_beta
+        beta = quota_economy.regularized_incomplete_beta
         self.assertAlmostEqual(beta(2.509, 4.763, 0.4312), 0.7053, places=3)      # the advisor's worked tail
         self.assertAlmostEqual(beta(1.0, 1.0, 0.3), 0.3, places=9)                  # uniform
         self.assertAlmostEqual(beta(3.0, 1.0, 0.5), 0.125, places=9)                # x^a when b = 1
@@ -137,31 +143,31 @@ class NeedTailTests(unittest.TestCase):
             s_ = q / cap
             self.assertAlmostEqual((e * cap + q) * (1 - e) / (e + s_), cap - e * cap, places=9)
             # the integer-lump mean of the continuous-extension tail is the negative-binomial mean: q * sum_r P(K >= r)
-            mean = q * sum(allocator.five_axis_need_tail(rec, r * q) for r in range(1, int(8 * cap / q)))
+            mean = q * sum(quota_economy.five_axis_need_tail(rec, r * q) for r in range(1, int(8 * cap / q)))
             self.assertAlmostEqual(mean / (cap * (1 - e)), 1.0, delta=0.01)
-            self.assertLess(allocator.five_axis_need_probability(rec_of(cap, 0.5 * e, e, lump=share), 0.5 * e * cap), 0.5)
-            on_line = allocator.five_axis_need_probability(rec, e * cap)
+            self.assertLess(quota_economy.five_axis_need_probability(rec_of(cap, 0.5 * e, e, lump=share), 0.5 * e * cap), 0.5)
+            on_line = quota_economy.five_axis_need_probability(rec, e * cap)
             self.assertTrue(0.40 < on_line < 0.70, (cap, e, share, on_line))
-            self.assertGreater(allocator.five_axis_need_probability(rec_of(cap, min(1.0, e + 0.15), e, lump=share), (e + 0.15) * cap), 0.5)
+            self.assertGreater(quota_economy.five_axis_need_probability(rec_of(cap, min(1.0, e + 0.15), e, lump=share), (e + 0.15) * cap), 0.5)
 
     def test_the_tail_grows_with_use_falls_toward_the_reset_and_is_a_probability(self):
         previous = -1.0
         for u in range(0, 100, 2):
-            p = allocator.five_axis_need_probability(rec_of(1000.0, u / 100, 0.5), u * 10.0)
+            p = quota_economy.five_axis_need_probability(rec_of(1000.0, u / 100, 0.5), u * 10.0)
             self.assertTrue(0.0 <= p <= 1.0)
             self.assertGreaterEqual(p, previous - 1e-12)
             previous = p
-        late = [allocator.five_axis_need_probability(rec_of(1000.0, 0.5, e), 500.0) for e in (0.2, 0.5, 0.8, 0.95, 0.999)]
+        late = [quota_economy.five_axis_need_probability(rec_of(1000.0, 0.5, e), 500.0) for e in (0.2, 0.5, 0.8, 0.95, 0.999)]
         self.assertEqual(late, sorted(late, reverse=True))
         self.assertLess(late[-1], 0.05)
-        self.assertEqual(allocator.five_axis_need_tail(rec_of(1000.0, 0.5, 1.0), 100.0), 0.0)     # the reset is now
-        self.assertEqual(allocator.five_axis_need_tail(rec_of(1000.0, 0.5, 0.5), 0.0), 1.0)       # no room left: sure
+        self.assertEqual(quota_economy.five_axis_need_tail(rec_of(1000.0, 0.5, 1.0), 100.0), 0.0)     # the reset is now
+        self.assertEqual(quota_economy.five_axis_need_tail(rec_of(1000.0, 0.5, 0.5), 0.0), 1.0)       # no room left: sure
 
     def test_a_slack_reads_only_its_own_window(self):
         tight, loose = rec_of(1000.0, 0.95, 0.5), rec_of(1000.0, 0.05, 0.5)
-        self.assertLess(allocator.five_axis_substitute_slack(tight, 10.0), 0.1)
-        self.assertGreater(allocator.five_axis_substitute_slack(loose, 10.0), 0.6)
-        self.assertEqual(allocator.five_axis_substitute_slack(tight, 60.0), 0.0)        # the task does not even fit
+        self.assertLess(quota_economy.five_axis_substitute_slack(tight, 10.0), 0.1)
+        self.assertGreater(quota_economy.five_axis_substitute_slack(loose, 10.0), 0.6)
+        self.assertEqual(quota_economy.five_axis_substitute_slack(tight, 60.0), 0.0)        # the task does not even fit
 
 
 class PriceTests(unittest.TestCase):
@@ -170,13 +176,13 @@ class PriceTests(unittest.TestCase):
         and the step across the line is no more than twice its neighbours; at a fixed use it falls to zero toward the reset."""
         ladder, spend, costs = ladder_for(), 22.86, []
         for u in range(1, 100):
-            costs.append(allocator.five_axis_spend_cost(rec_of(1704.5, u / 100, 0.5), ladder, spend, 1.0)['cost'])
+            costs.append(quota_economy.five_axis_spend_cost(rec_of(1704.5, u / 100, 0.5), ladder, spend, 1.0)['cost'])
         self.assertTrue(all(b > a for a, b in zip(costs, costs[1:])))
         self.assertGreater(costs[20], 0.0)           # 21% used at the half-way clock: below the line, still not free
         steps = [b - a for a, b in zip(costs, costs[1:])]
         across = steps[49]                           # 50% -> 51%
         self.assertLessEqual(across, 2 * max(steps[48], steps[50]))
-        later = [allocator.five_axis_spend_cost(rec_of(1704.5, 0.6, e), ladder, spend, 0.5 * (1 - e) * WEEK)['cost']
+        later = [quota_economy.five_axis_spend_cost(rec_of(1704.5, 0.6, e), ladder, spend, 0.5 * (1 - e) * WEEK)['cost']
                  for e in (0.3, 0.5, 0.7, 0.9, 0.99, 0.9999)]     # the task ends before the reset each time
         self.assertEqual(later, sorted(later, reverse=True))
         self.assertLess(later[-1], 0.01)
@@ -184,44 +190,44 @@ class PriceTests(unittest.TestCase):
     def test_units_do_not_matter_and_the_task_length_cancels(self):
         """Advisor test 6: scaling every dollar leaves the cost unchanged; scaling the task's hours and spends scales the
         price by 1/h so h * lambda is the same."""
-        base_cost = allocator.five_axis_spend_cost(rec_of(1704.5, 0.6, 0.5), ladder_for(), 22.86, 1.0)
+        base_cost = quota_economy.five_axis_spend_cost(rec_of(1704.5, 0.6, 0.5), ladder_for(), 22.86, 1.0)
         for k in (0.01, 3.0, 250.0):
-            scaled = allocator.five_axis_spend_cost(rec_of(1704.5 * k, 0.6, 0.5), ladder_for(k), 22.86 * k, 1.0)
+            scaled = quota_economy.five_axis_spend_cost(rec_of(1704.5 * k, 0.6, 0.5), ladder_for(k), 22.86 * k, 1.0)
             self.assertAlmostEqual(scaled['cost'], base_cost['cost'], places=4)
             self.assertAlmostEqual(scaled['lambda_start'] * k, base_cost['lambda_start'], places=6)
         for hours in (0.5, 2.0, 40.0):       # h times the task's hours: the spends scale with h
-            lam = allocator.five_axis_spend_cost(rec_of(1704.5, 0.6, 0.5), ladder_for(hours), 22.86 * hours, hours)['lambda_start']
+            lam = quota_economy.five_axis_spend_cost(rec_of(1704.5, 0.6, 0.5), ladder_for(hours), 22.86 * hours, hours)['lambda_start']
             self.assertAlmostEqual(lam * hours, base_cost['lambda_start'], places=6)
 
     def test_the_cost_table_agrees_with_direct_integration(self):
         ladder, rec = ladder_for(), rec_of(1704.5, 0.6, 0.5)
         for spend in (0.29, 3.0, 22.86, 137.15, 457.0):
-            got = allocator.five_axis_spend_cost(rec, ladder, spend, 1.0, spend_max=457.0)['cost']
+            got = quota_economy.five_axis_spend_cost(rec, ladder, spend, 1.0, spend_max=457.0)['cost']
             n, direct = 4000, 0.0
             for i in range(n):
-                direct += allocator.five_axis_quota_price(rec, ladder, rec['used_usd'] + (i + 0.5) * spend / n) * spend / n
+                direct += quota_economy.five_axis_quota_price(rec, ladder, rec['used_usd'] + (i + 0.5) * spend / n) * spend / n
             self.assertAlmostEqual(got, direct, delta=max(2e-4, 0.01 * direct))
 
     def test_a_task_across_the_reset_pays_its_second_part_on_a_fresh_period(self):
         """Advisor test 10 (the post-reset share): 2h to the reset in a 6h task, a third of the spend before it."""
         ladder, spend, hours = ladder_for(), 137.0, 6.0
         rec = rec_of(1704.5, 0.6, 1 - 2 / WEEK, reset_hours=2.0)
-        got = allocator.five_axis_spend_cost(rec, ladder, spend, hours, spend, {})
-        before = allocator.five_axis_spend_cost({**rec, 'reset_hours': allocator.math.inf}, ladder, spend / 3, hours)['cost']
-        fresh = {'capacity_usd': 1704.5, 'used_usd': 0.0, 'elapsed_frac': 0.0, 'reset_hours': allocator.math.inf,
+        got = quota_economy.five_axis_spend_cost(rec, ladder, spend, hours, spend, {})
+        before = quota_economy.five_axis_spend_cost({**rec, 'reset_hours': math.inf}, ladder, spend / 3, hours)['cost']
+        fresh = {'capacity_usd': 1704.5, 'used_usd': 0.0, 'elapsed_frac': 0.0, 'reset_hours': math.inf,
                  'lump_usd': rec['lump_usd']}
-        after = allocator.five_axis_spend_cost(fresh, ladder, spend * 2 / 3, hours)['cost']
+        after = quota_economy.five_axis_spend_cost(fresh, ladder, spend * 2 / 3, hours)['cost']
         self.assertAlmostEqual(got['spend_before'], spend / 3, places=6)
         self.assertAlmostEqual(got['cost'], before + after, delta=2e-3)
         self.assertLess(got['need_start'], 0.25)         # 2h to the reset: the first dollars mostly lapse
         # the same 60% used with a full week left prices all of it in the old period and is dearer
-        week_left = allocator.five_axis_spend_cost(rec_of(1704.5, 0.6, 0.5), ladder, spend, hours)['cost']
+        week_left = quota_economy.five_axis_spend_cost(rec_of(1704.5, 0.6, 0.5), ladder, spend, hours)['cost']
         self.assertGreater(week_left, got['cost'])
 
     def test_different_clocks_give_different_prices_for_the_same_use(self):
         """Advisor test 10 (desync)."""
         ladder = ladder_for()
-        costs = {e: allocator.five_axis_spend_cost(rec_of(1704.5, 0.6, e), ladder, 45.0, 2.0)['cost'] for e in (0.2, 0.5, 0.8)}
+        costs = {e: quota_economy.five_axis_spend_cost(rec_of(1704.5, 0.6, e), ladder, 45.0, 2.0)['cost'] for e in (0.2, 0.5, 0.8)}
         self.assertEqual(len({round(v, 6) for v in costs.values()}), 3)
         self.assertGreater(costs[0.2], costs[0.5])
         self.assertGreater(costs[0.5], costs[0.8])
@@ -230,29 +236,29 @@ class PriceTests(unittest.TestCase):
         """Advisor test 2 (the limit): an outside certain to have room that does the work at the full fit makes the price
         zero, none at all gives the highest price, and anything between is in between."""
         rec = rec_of(1704.5, 0.6, 0.5)
-        prices = [allocator.five_axis_spend_cost(rec, ladder_for(with_outside=v), 22.86, 2.0)['cost'] for v in (0.0, 0.3, 0.6, 1.0)]
+        prices = [quota_economy.five_axis_spend_cost(rec, ladder_for(with_outside=v), 22.86, 2.0)['cost'] for v in (0.0, 0.3, 0.6, 1.0)]
         self.assertEqual(prices, sorted(prices, reverse=True))
         self.assertEqual(prices[-1], 0.0)
         self.assertGreater(prices[0], 0.0)
 
     def test_the_upper_hull_and_the_ladder(self):
-        hull = allocator.five_axis_upper_hull([(1.0, 0.4), (3.0, 0.45), (4.0, 0.7), (9.0, 0.7), (2.0, 0.39)], 0.1)
+        hull = quota_economy.five_axis_upper_hull([(1.0, 0.4), (3.0, 0.45), (4.0, 0.7), (9.0, 0.7), (2.0, 0.39)], 0.1)
         self.assertEqual(hull[0], (0.0, 0.1))
         self.assertEqual(hull[-1], (4.0, 0.7))        # the cheapest of the highest fits
         slopes = [(b[1] - a[1]) / (b[0] - a[0]) for a, b in zip(hull, hull[1:])]
         self.assertEqual(slopes, sorted(slopes, reverse=True))      # concave
-        self.assertEqual(allocator.five_axis_upper_hull([(1.0, 0.3)], 0.5), [])
-        ladder = allocator.five_axis_value_ladder([hull, hull])
+        self.assertEqual(quota_economy.five_axis_upper_hull([(1.0, 0.3)], 0.5), [])
+        ladder = quota_economy.five_axis_value_ladder([hull, hull])
         self.assertEqual(ladder['steps'][0][0], 1.0)
         self.assertEqual([s for _, s in ladder['steps']], sorted(s for _, s in ladder['steps']))
         self.assertTrue(all(0 < r <= 1 for r, _ in ladder['steps']))
-        self.assertEqual(allocator.five_axis_value_ladder([[(0.0, 0.5)]])['steps'], [])
+        self.assertEqual(quota_economy.five_axis_value_ladder([[(0.0, 0.5)]])['steps'], [])
 
     def test_the_outside_value_walks_the_alternatives_by_fit(self):
-        self.assertEqual(allocator.five_axis_outside_value([], 0.6), 0.0)
-        self.assertAlmostEqual(allocator.five_axis_outside_value([(0.5, 1.0), (0.6, 1.0)], 0.6), 0.6)
-        self.assertAlmostEqual(allocator.five_axis_outside_value([(0.7, 0.5), (0.4, 1.0)], 0.6), 0.5 * 0.6 + 0.5 * 0.4)
-        self.assertAlmostEqual(allocator.five_axis_outside_value([(0.7, 0.0)], 0.6), 0.0)
+        self.assertEqual(quota_economy.five_axis_outside_value([], 0.6), 0.0)
+        self.assertAlmostEqual(quota_economy.five_axis_outside_value([(0.5, 1.0), (0.6, 1.0)], 0.6), 0.6)
+        self.assertAlmostEqual(quota_economy.five_axis_outside_value([(0.7, 0.5), (0.4, 1.0)], 0.6), 0.5 * 0.6 + 0.5 * 0.4)
+        self.assertAlmostEqual(quota_economy.five_axis_outside_value([(0.7, 0.0)], 0.6), 0.0)
 
 
 class FleetEconomyTests(unittest.TestCase):
@@ -355,12 +361,12 @@ class FleetEconomyTests(unittest.TestCase):
                               (cand(0.5, reset=99.0, usd=0.5), base),
                               (cand(0.5, level=0.8), base),
                               (cand(0.5, place=0), cand(0.5, place=1))):
-            self.assertLess(allocator.five_axis_order(better), allocator.five_axis_order(worse))
+            self.assertLess(candidate_ranking.five_axis_order(better), candidate_ranking.five_axis_order(worse))
         # R2-F4: earliest_reset_hours never separates two candidates; reset proximity acts only through C inside N.
-        self.assertEqual(allocator.five_axis_order(cand(0.5, reset=1.0)), allocator.five_axis_order(cand(0.5, reset=99.0)))
-        self.assertEqual(allocator.five_axis_order(base), allocator.five_axis_order(cand(0.5, reset=None)))
-        self.assertEqual(allocator.five_axis_deciding_key(cand(0.5, reset=10.0, hours=0.5), base), 'completion_hours')
-        self.assertNotIn('earliest_reset_hours', allocator.FIVE_AXIS_ORDER_KEYS)
+        self.assertEqual(candidate_ranking.five_axis_order(cand(0.5, reset=1.0)), candidate_ranking.five_axis_order(cand(0.5, reset=99.0)))
+        self.assertEqual(candidate_ranking.five_axis_order(base), candidate_ranking.five_axis_order(cand(0.5, reset=None)))
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(cand(0.5, reset=10.0, hours=0.5), base), 'completion_hours')
+        self.assertNotIn('earliest_reset_hours', candidate_ranking.FIVE_AXIS_ORDER_KEYS)
 
     def test_fable_5_1_cannot_beat_opus_5_5(self):
         """Advisor test 8, without the speed rule: at equal fit Fable 5.1 trails Opus 5.5 on N, and in the creative task, where
@@ -385,8 +391,8 @@ class FleetEconomyTests(unittest.TestCase):
         self.assertTrue(gone)
         for c in gone:
             self.assertTrue(c['excluded'])
-            self.assertIn(allocator.QUOTA_READING_UNAVAILABLE, c['excluded'][0])
-        self.assertTrue(any(allocator.QUOTA_READING_UNAVAILABLE in w for w in d['decision']['warnings']))
+            self.assertIn(candidate_eval.QUOTA_READING_UNAVAILABLE, c['excluded'][0])
+        self.assertTrue(any(candidate_eval.QUOTA_READING_UNAVAILABLE in w for w in d['decision']['warnings']))
         alone = self.fleet.plan(0.6, 0.9, allowed=('claude',))
         self.assertEqual(price_of(d, 'claude'), price_of(alone, 'claude'))
         self.assertEqual(d['choice'], alone['choice'])
@@ -395,12 +401,12 @@ class FleetEconomyTests(unittest.TestCase):
         """The owner's D3: none of the economics use 5-hour windows. Whatever a 5-hour window reads, no tail, price or ladder is
         computed on it, its row is unpriced, and the answer is the same."""
         seen = []
-        real = allocator.five_axis_need_tail
+        real = quota_economy.five_axis_need_tail
 
         def spy(rec, room):
             seen.append(rec.get('period_hours'))
             return real(rec, room)
-        with patch.object(allocator, 'five_axis_need_tail', spy):
+        with patch.object(quota_economy, 'five_axis_need_tail', spy):
             relaxed = self.fleet.plan(0.6, 0.9, five_hour_used=0.05)
             squeezed = self.fleet.plan(0.6, 0.9, five_hour_used=0.7)
         self.assertTrue(seen)
@@ -429,7 +435,7 @@ class FleetEconomyTests(unittest.TestCase):
         a = self.fleet.plan(0.6, 0.5, ex=0.1, mutate=starter)
         b = self.fleet.plan(0.6, 0.5, ex=0.9, mutate=starter)
         json.dumps(a['ranking'], allow_nan=False)
-        json.dumps(allocator.decision_snapshot(a), allow_nan=False)
+        json.dumps(ledger_snapshot.decision_snapshot(a), allow_nan=False)
         sol = row(a, 'sol_high')
         self.assertIsNone(sol['economy']['windows'][0]['reset_in_hours'])
         self.assertGreater(sol['components']['opportunity_cost'], 0.0)
@@ -437,7 +443,7 @@ class FleetEconomyTests(unittest.TestCase):
 
     def test_the_snapshot_carries_what_the_page_reads(self):
         d = self.fleet.plan(0.6, 0.9)
-        snap = allocator.decision_snapshot(d)
+        snap = ledger_snapshot.decision_snapshot(d)
         rows = [r for r in snap['ranking'] if r.get('economy')]
         self.assertTrue(rows)
         top = rows[0]
@@ -615,7 +621,7 @@ class ReadFailureAndHoldTests(unittest.TestCase):
                           if c['bundle']['account'] == 'claude' and not c['bundle'].get('fast')]
         self.assertEqual(same(fresh), same(failed))
         self.assertNotIn('reading_at', fresh['ranking'][0]['components'])
-        snap = allocator.decision_snapshot(failed)
+        snap = ledger_snapshot.decision_snapshot(failed)
         top_claude = next(r for r in snap['ranking'] if r.get('id') and 'reading_at' in (r.get('components') or {}))
         self.assertEqual(top_claude['components']['reading_at'], read_at.isoformat())
 
@@ -628,8 +634,8 @@ class ReadFailureAndHoldTests(unittest.TestCase):
         self.assertTrue(gone)
         for c in gone:
             self.assertTrue(c['excluded'])
-            self.assertIn(allocator.QUOTA_READING_UNAVAILABLE, c['excluded'][0])
-        self.assertTrue(any(allocator.QUOTA_READING_UNAVAILABLE in w for w in d['decision']['warnings']))
+            self.assertIn(candidate_eval.QUOTA_READING_UNAVAILABLE, c['excluded'][0])
+        self.assertTrue(any(candidate_eval.QUOTA_READING_UNAVAILABLE in w for w in d['decision']['warnings']))
         self.assertEqual(d['selected_bundle']['account'], 'codex')
 
     def test_a_provider_hold_on_a_model_wins_over_a_stale_reading_and_another_model_is_chosen_in_the_same_roll(self):
@@ -694,7 +700,7 @@ class DurationKeyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.fleet = Fleet()
-        cls.data = allocator.load_five_axis()
+        cls.data = axis_scores.load_five_axis()
 
     def record(self, model):
         return self.data['models'][model]['duration_multiplier']
@@ -719,8 +725,8 @@ class DurationKeyTests(unittest.TestCase):
         self.assertGreater(fable['expected_hours'], opus['expected_hours'])
         tied_opus, tied_fable = dict(opus), dict(fable)
         tied_fable['score'] = tied_opus['score']
-        self.assertLess(allocator.five_axis_order(tied_opus), allocator.five_axis_order(tied_fable))
-        self.assertEqual(allocator.five_axis_deciding_key(tied_opus, tied_fable), 'completion_hours')
+        self.assertLess(candidate_ranking.five_axis_order(tied_opus), candidate_ranking.five_axis_order(tied_fable))
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(tied_opus, tied_fable), 'completion_hours')
         self.assertIn('time at high', ' '.join(opus['notes']))
 
     def test_the_spend_is_usd_per_hour_times_those_hours(self):
@@ -734,8 +740,8 @@ class DurationKeyTests(unittest.TestCase):
         opus, fable = self.info('claude-opus-5-5'), self.info('claude-fable-5-1')
         seen = set()
         for effort in ('low', 'medium', 'high', 'xhigh', 'max'):
-            m_opus, basis = allocator.duration_at(opus, effort)
-            m_fable, _ = allocator.duration_at(fable, effort)
+            m_opus, basis = quota_economy.duration_at(opus, effort)
+            m_fable, _ = quota_economy.duration_at(fable, effort)
             self.assertEqual(basis['method'], 'aa', effort)
             aa_o, aa_f = self.minutes('claude-opus-5-5', effort), self.minutes('claude-fable-5-1', effort)
             self.assertEqual(m_opus < m_fable, aa_o < aa_f, effort)
@@ -745,10 +751,10 @@ class DurationKeyTests(unittest.TestCase):
     def test_an_effort_with_no_time_has_none_and_no_other_efforts_time_stands_in(self):
         opus = self.info('claude-opus-5-5')
         del opus['five_axis']['duration']['by_effort']['xhigh']
-        self.assertEqual(allocator.duration_at(opus, 'xhigh'), (None, None))
-        self.assertEqual(allocator.duration_at(opus, 'high')[1]['method'], 'aa')
-        self.assertEqual(allocator.duration_at(opus, None), allocator.duration_at(opus, 'high'))    # no effort: the single configuration
-        self.assertEqual(allocator.duration_at({}, 'high'), (None, None))
+        self.assertEqual(quota_economy.duration_at(opus, 'xhigh'), (None, None))
+        self.assertEqual(quota_economy.duration_at(opus, 'high')[1]['method'], 'aa')
+        self.assertEqual(quota_economy.duration_at(opus, None), quota_economy.duration_at(opus, 'high'))    # no effort: the single configuration
+        self.assertEqual(quota_economy.duration_at({}, 'high'), (None, None))
 
     def test_a_fast_variant_shortens_the_candidates_hours_and_keeps_the_source(self):
         d = self.fleet.plan(0.6, 0.5, ec=1 - 2 / WEEK)
@@ -758,7 +764,7 @@ class DurationKeyTests(unittest.TestCase):
 
     def test_the_snapshot_row_names_the_duration_source(self):
         d = self.fleet.plan(0.05, 0.5, ec=0.9, axes=CREATIVE, hours=0.3, allowed=('claude', 'codex', 'dot'))
-        snap = allocator.decision_snapshot(d)
+        snap = ledger_snapshot.decision_snapshot(d)
         top = next(r for r in snap['ranking'] if r.get('components'))
         self.assertIn('duration_source', top['components'])
 
@@ -810,8 +816,8 @@ class BurstSizeTests(unittest.TestCase):
                 for fast in [c for c in inside if c['bundle'].get('fast') and c['base_id'] in ids]:
                     base = row(d, fast['base_id'])
                     self.assertEqual(round(base['score'], 4), round(fast['score'], 4), (fast['id'], left, tau))
-                    self.assertLess(allocator.five_axis_order(fast), allocator.five_axis_order(base), (fast['id'], left, tau))
-                    self.assertEqual(allocator.five_axis_deciding_key(fast, base), 'completion_hours')
+                    self.assertLess(candidate_ranking.five_axis_order(fast), candidate_ranking.five_axis_order(base), (fast['id'], left, tau))
+                    self.assertEqual(candidate_ranking.five_axis_deciding_key(fast, base), 'completion_hours')
                     pairs += 1
                 self.assertGreaterEqual(pairs, 1, (left, tau))
                 self.assertTrue(d['selected_bundle'].get('fast'), (left, tau))
@@ -883,10 +889,10 @@ class BurstSizeTests(unittest.TestCase):
             cap, share = rng.uniform(10.0, 4000.0), rng.uniform(0.003, 0.1)
             previous = -1.0
             for u in range(0, 101, 4):
-                p = allocator.five_axis_need_probability(rec_of(cap, u / 100, 0.5, lump=share), cap * u / 100)
+                p = quota_economy.five_axis_need_probability(rec_of(cap, u / 100, 0.5, lump=share), cap * u / 100)
                 self.assertGreaterEqual(p, previous - 1e-12)
                 previous = p
-            late = [allocator.five_axis_need_probability(rec_of(cap, 0.5, e, lump=share), 0.5 * cap) for e in (0.2, 0.5, 0.8, 0.95, 0.999)]
+            late = [quota_economy.five_axis_need_probability(rec_of(cap, 0.5, e, lump=share), 0.5 * cap) for e in (0.2, 0.5, 0.8, 0.95, 0.999)]
             self.assertEqual(late, sorted(late, reverse=True))
 
     def test_the_burst_is_cut_at_the_reset_and_is_the_whole_task_when_the_task_ends_before_it(self):
@@ -915,8 +921,8 @@ class BurstSizeTests(unittest.TestCase):
         before the reset) has twice the burst."""
         for k in (0.01, 3.0, 250.0):
             for share in (0.01, 0.04):
-                self.assertAlmostEqual(allocator.five_axis_need_probability(rec_of(1000.0, 0.45, 0.5, lump=share), 450.0),
-                                       allocator.five_axis_need_probability(rec_of(1000.0 * k, 0.45, 0.5, lump=share), 450.0 * k), places=12)
+                self.assertAlmostEqual(quota_economy.five_axis_need_probability(rec_of(1000.0, 0.45, 0.5, lump=share), 450.0),
+                                       quota_economy.five_axis_need_probability(rec_of(1000.0 * k, 0.45, 0.5, lump=share), 450.0 * k), places=12)
         one = self.plan(0.5, 0.5, ec=0.5, hours=1.0)
         two = self.plan(0.5, 0.5, ec=0.5, hours=2.0)
         for label, w in window_reports(one).items():
@@ -928,8 +934,8 @@ class BurstSizeTests(unittest.TestCase):
         5 % week lets no big candidate start at all, so this is a window-level check; the whole-fleet check uses 8 %.)"""
         e = 1.0 - 2.0 / WEEK
         rec = rec_of(1704.5, 0.95, e, reset_hours=2.0, lump=30.61 / 1704.5)
-        self.assertAlmostEqual(allocator.five_axis_need_probability(rec, rec['used_usd']), 0.0401, places=3)
-        cost = allocator.five_axis_spend_cost(rec, ladder_for(), 45.72, 2.0)['cost']
+        self.assertAlmostEqual(quota_economy.five_axis_need_probability(rec, rec['used_usd']), 0.0401, places=3)
+        cost = quota_economy.five_axis_spend_cost(rec, ladder_for(), 45.72, 2.0)['cost']
         self.assertGreater(cost, 1e-3)
         d = self.plan(0.92, 0.92, ec=e, ex=e)
         for label, w in window_reports(d).items():
@@ -943,11 +949,11 @@ class BurstSizeTests(unittest.TestCase):
         bare = rec_of(1000.0, 0.5, 0.5)
         bare.pop('lump_usd')
         with self.assertRaises(KeyError):
-            allocator.five_axis_need_tail(bare, 100.0)
+            quota_economy.five_axis_need_tail(bare, 100.0)
         ladder = ladder_for()
         rec = rec_of(1704.5, 0.6, 1 - 2 / WEEK, reset_hours=2.0, lump=0.001)
-        small = allocator.five_axis_spend_cost(rec, ladder, 137.0, 6.0, fresh_lump=17.0)['cost']
-        big = allocator.five_axis_spend_cost(rec, ladder, 137.0, 6.0, fresh_lump=170.0)['cost']
+        small = quota_economy.five_axis_spend_cost(rec, ladder, 137.0, 6.0, fresh_lump=17.0)['cost']
+        big = quota_economy.five_axis_spend_cost(rec, ladder, 137.0, 6.0, fresh_lump=170.0)['cost']
         self.assertNotEqual(small, big)
 
 
@@ -968,12 +974,12 @@ class PoolIndependenceTests(unittest.TestCase):
     def economies(self, *args, **kwargs):
         """(decision, the FiveAxisEconomy objects the plan built), so the unrounded ladder, lump and outside values compare."""
         built = []
-        real = allocator.FiveAxisEconomy.report
+        real = quota_economy.FiveAxisEconomy.report
 
         def spy(econ):
             built.append(econ)
             return real(econ)
-        with patch.object(allocator.FiveAxisEconomy, 'report', spy):
+        with patch.object(quota_economy.FiveAxisEconomy, 'report', spy):
             d = self.plan(*args, **kwargs)
         return d, built[-1]
 
@@ -1091,9 +1097,9 @@ class WeeklyWindowTests(unittest.TestCase):
     def plan(self, *args, hours=2.0, **kwargs):
         # Keep an explicitly expensive synthetic candidate to exercise simultaneous short-window and weekly exclusions
         # independently of public price changes (Fable 5.2's usd is a series conversion from Fable 5.1).
-        data = copy.deepcopy(allocator.load_five_axis())
+        data = copy.deepcopy(axis_scores.load_five_axis())
         data['models']['claude-fable-5-2']['usd_per_hour']['value'] = 100.0
-        with patch.object(allocator, 'load_five_axis', return_value=data):
+        with patch.object(axis_scores, 'load_five_axis', return_value=data):
             return self.fleet.plan(*args, hours=hours, expected_hours=hours, **kwargs)
 
     def only_five_hour(self, acc):
@@ -1122,9 +1128,9 @@ class WeeklyWindowTests(unittest.TestCase):
         for hours in (2.0, 6.0):
             alone = self.plan(0.5, 0.5, allowed=('codex',), hours=hours)
             d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), claude_long=False, hours=hours)    # only five_hour is read
-            rows = self.assert_every_row_has_one_of(d, (allocator.QUOTA_LONG_UNREAD, allocator.QUOTA_READING_UNAVAILABLE))
-            self.assertTrue(any(self.has_error(c, allocator.QUOTA_LONG_UNREAD) for c in rows), hours)
-            self.assertTrue(any(allocator.QUOTA_LONG_UNREAD in w and 'claude' in w for w in d['decision']['warnings']))
+            rows = self.assert_every_row_has_one_of(d, (candidate_eval.QUOTA_LONG_UNREAD, candidate_eval.QUOTA_READING_UNAVAILABLE))
+            self.assertTrue(any(self.has_error(c, candidate_eval.QUOTA_LONG_UNREAD) for c in rows), hours)
+            self.assertTrue(any(candidate_eval.QUOTA_LONG_UNREAD in w and 'claude' in w for w in d['decision']['warnings']))
             self.assertNotEqual(d['selected_bundle']['account'], 'claude')
             # claude is not Codex price source: Codex weekly price is the one it has with claude absent
             self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
@@ -1139,7 +1145,7 @@ class WeeklyWindowTests(unittest.TestCase):
             held = [c for c in self.claude_rows(d) if self.held_by_five_hour(c)]
             self.assertTrue(held, hours)
             for c in held:
-                self.assertTrue(any(self.has_error(c, code) for code in allocator.QUOTA_DATA_ERRORS), (c['id'], c['excluded']))
+                self.assertTrue(any(self.has_error(c, code) for code in candidate_eval.QUOTA_DATA_ERRORS), (c['id'], c['excluded']))
             self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
             # nothing of Claude is priced, and every window sees the same outside option as with Claude absent
             windows, windows_alone = d['decision']['system']['quota_windows'], alone['decision']['system']['quota_windows']
@@ -1150,15 +1156,15 @@ class WeeklyWindowTests(unittest.TestCase):
         for hours in (2.0, 6.0):
             alone = self.plan(0.5, 0.5, allowed=('codex',), hours=hours)
             d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), mutate=self.only_five_hour, claude_long=False, hours=hours)
-            self.assert_every_row_has_one_of(d, (allocator.QUOTA_NO_LONG_WINDOW,))
+            self.assert_every_row_has_one_of(d, (candidate_eval.QUOTA_NO_LONG_WINDOW,))
             self.assertTrue([c for c in self.claude_rows(d) if self.held_by_five_hour(c)], hours)       # incl. the 5h-held ones
-            warning = next(w for w in d['decision']['warnings'] if allocator.QUOTA_NO_LONG_WINDOW in w)
+            warning = next(w for w in d['decision']['warnings'] if candidate_eval.QUOTA_NO_LONG_WINDOW in w)
             self.assertIn('claude', warning)
             self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
         # naming the model dispatches it with the error surfaced, as for an unknown capacity
         named = self.plan(0.5, 0.5, allowed=('claude',), mutate=self.only_five_hour, claude_long=False, pinned_bundle='opus55_high')
         self.assertEqual(named['selected_bundle']['bundle_id'], 'opus55_high')
-        self.assertTrue(any(allocator.QUOTA_NO_LONG_WINDOW in n for n in next(c for c in named['ranking'] if c['id'] == 'opus55_high')['notes']))
+        self.assertTrue(any(candidate_eval.QUOTA_NO_LONG_WINDOW in n for n in next(c for c in named['ranking'] if c['id'] == 'opus55_high')['notes']))
 
     def test_a_bundle_that_draws_no_window_at_all_is_the_same_data_error(self):
         """The shape of a metered API account with no budget window (its auto bundles carry an explicit empty `draws`)."""
@@ -1168,7 +1174,7 @@ class WeeklyWindowTests(unittest.TestCase):
         for hours in (2.0, 6.0):
             alone = self.plan(0.5, 0.5, allowed=('codex',), hours=hours)
             d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), mutate=no_draws, hours=hours)
-            self.assert_every_row_has_one_of(d, (allocator.QUOTA_NO_LONG_WINDOW,))
+            self.assert_every_row_has_one_of(d, (candidate_eval.QUOTA_NO_LONG_WINDOW,))
             self.assertNotEqual(d['selected_bundle']['account'], 'claude')
             self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
 
@@ -1178,22 +1184,22 @@ class WeeklyWindowTests(unittest.TestCase):
         for hours in (2.0, 6.0):
             alone = self.plan(0.5, 0.5, allowed=('codex',), hours=hours)
             d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), usage_hook=nothing_read, hours=hours)
-            self.assert_every_row_has_one_of(d, (allocator.QUOTA_READING_UNAVAILABLE,))
+            self.assert_every_row_has_one_of(d, (candidate_eval.QUOTA_READING_UNAVAILABLE,))
             self.assertAlmostEqual(self.codex_price(d), self.codex_price(alone), places=12, msg=hours)
         # a candidate of an account that is read, held by the 5-hour clock, with no weekly state of its own
         d = self.plan(0.5, 0.5, allowed=('claude', 'codex'), claude_long=False)
         fable = next(c for c in d['ranking'] if c['id'] == 'fable52_high')
-        self.assertTrue(self.held_by_five_hour(fable) and self.has_error(fable, allocator.QUOTA_READING_UNAVAILABLE), fable['excluded'])
+        self.assertTrue(self.held_by_five_hour(fable) and self.has_error(fable, candidate_eval.QUOTA_READING_UNAVAILABLE), fable['excluded'])
 
     def test_the_economy_never_builds_an_entry_for_a_candidate_with_no_long_window_state(self):
         """Defence in depth: even if some path lets a stateless candidate through, the economy skips it, so it cannot become an
         outside point whatever the data error says."""
-        overlaid = allocator.five_axis_overlay(copy.deepcopy(self.fleet.accounts))
+        overlaid = axis_scores.five_axis_overlay(copy.deepcopy(self.fleet.accounts))
         stateless = {'bundle': {'account': 'claude', 'id': 'x'}, 'components': {'fit': 0.9}, 'expected_usd': 5.0,
                      '_five_window_states': {},
                      '_five_values': {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0,
                                       'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}}}
-        econ = allocator.FiveAxisEconomy([stateless], overlaid, {}, {'hours': 2.0})
+        econ = quota_economy.FiveAxisEconomy([stateless], overlaid, {}, {'hours': 2.0})
         self.assertEqual(econ.entries, [])
         self.assertEqual(econ.units, {})
 
@@ -1209,7 +1215,7 @@ class WeeklyWindowTests(unittest.TestCase):
                                                                          'model': 'glm-5.3-flash-free', 'draws': [], 'auto': True},
                                                'named': {'provider': 'opencode', 'harness': 'opencode', 'model': 'glm-5.3-flash-free',
                                                          'draws': ['elsewhere']}}}
-        out = allocator.five_axis_overlay(acc)['accounts']['pool']
+        out = axis_scores.five_axis_overlay(acc)['accounts']['pool']
         self.assertEqual(list(out['windows']), ['allowance'])
         self.assertEqual(out['bundles']['auto:pool:opencode:x']['draws'], ['allowance'])
         self.assertEqual(out['bundles']['named']['draws'], ['elsewhere'])       # an explicit non-empty draw is left alone
@@ -1224,7 +1230,7 @@ class SnapshotQuotaLineTests(unittest.TestCase):
     def setUpClass(cls):
         cls.fleet = Fleet()
         cls.d = cls.fleet.plan(0.5, 0.5, hours=2.0, expected_hours=2.0)
-        cls.snap = allocator.decision_snapshot(cls.d)
+        cls.snap = ledger_snapshot.decision_snapshot(cls.d)
 
     def test_every_priced_window_is_written_once_keyed_by_its_label_with_the_fields_the_page_draws(self):
         windows = self.snap['quota_line']['windows']
@@ -1269,9 +1275,9 @@ class SnapshotQuotaLineTests(unittest.TestCase):
     def test_the_block_is_plain_json_and_absent_when_nothing_was_priced(self):
         import json
         json.dumps(self.snap)
-        self.assertIsNone(allocator.snapshot_quota_line([]))
-        self.assertIsNone(allocator.candidate_quota_line({'economy': {'binding_window': None, 'windows': []}}))
-        self.assertIsNone(allocator.candidate_quota_line({}))
+        self.assertIsNone(ledger_snapshot.snapshot_quota_line([]))
+        self.assertIsNone(ledger_snapshot.candidate_quota_line({'economy': {'binding_window': None, 'windows': []}}))
+        self.assertIsNone(ledger_snapshot.candidate_quota_line({}))
 
 
 class DurationUnknownTests(unittest.TestCase):
@@ -1322,22 +1328,22 @@ class LaunchBlockersTests(unittest.TestCase):
 
     def test_raw_and_overlaid_accounts_give_the_same_blockers(self):
         raw = copy.deepcopy(self.fleet.accounts)
-        overlaid = allocator.five_axis_overlay(copy.deepcopy(raw))
+        overlaid = axis_scores.five_axis_overlay(copy.deepcopy(raw))
         bundle = {'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'high', 'bundle_id': 'sol_high'}
         for used in (0.1, 0.999):
             usage = {'accounts': {'codex': {'windows': [{'id': 'usage', 'remaining_pct_before_reset': 100.0 * (1 - used),
                                                           'seconds_until_reset': 3600}]}}}
-            blockers = allocator.launch_blockers(bundle, overlaid, usage, NOW)
-            self.assertEqual(allocator.launch_blockers(bundle, raw, usage, NOW), blockers, used)
+            blockers = quota_pools.launch_blockers(bundle, overlaid, usage, NOW)
+            self.assertEqual(quota_pools.launch_blockers(bundle, raw, usage, NOW), blockers, used)
             self.assertEqual(bool(blockers), used > 0.9, used)         # not vacuous: a used-up window blocks, a fresh one does not
 
     def test_an_unmetered_or_free_pool_account_never_blocks_a_launch(self):
-        overlaid = allocator.five_axis_overlay(copy.deepcopy(self.fleet.accounts))
+        overlaid = axis_scores.five_axis_overlay(copy.deepcopy(self.fleet.accounts))
         for flag in ('unmetered', 'five_axis_free_pool'):
             accounts = copy.deepcopy(overlaid)
             accounts['accounts']['codex'][flag] = True
             usage = {'accounts': {'codex': {'windows': [{'id': 'usage', 'remaining_pct_before_reset': 0.0, 'seconds_until_reset': 3600}]}}}
-            self.assertEqual(allocator.launch_blockers({'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'high'}, accounts, usage, NOW), [], flag)
+            self.assertEqual(quota_pools.launch_blockers({'account': 'codex', 'model': 'gpt-6.1-sol', 'effort': 'high'}, accounts, usage, NOW), [], flag)
 
 
 class ChatGPTWebCadenceTests(unittest.TestCase):
@@ -1436,7 +1442,7 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         self.assertLess(opus_fast['components']['opportunity_cost'], 5e-5)
         self.assertEqual(round(pro_tie['score'], 4), round(opus_fast['score'], 4))
         self.assertLess(opus_fast['duration_hours'], pro_tie['duration_hours'])
-        self.assertEqual(allocator.five_axis_deciding_key(opus_fast, pro_tie), 'completion_hours')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(opus_fast, pro_tie), 'completion_hours')
         self.assertTrue(d_tie['selected_bundle'].get('fast'))
         self.assertNotEqual(d_tie['choice'], 'pro_max')
 

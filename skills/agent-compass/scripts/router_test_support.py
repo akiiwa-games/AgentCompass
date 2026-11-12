@@ -15,7 +15,8 @@ def temporary_root(add_cleanup):
 
 def isolated_router_state(add_cleanup, *, discovery=True, policy=True):
     """Install isolated defaults; individual tests may override any boundary."""
-    import allocator
+    import host_policy
+    import provider_inventory
     import route_judge
 
     stack = ExitStack()
@@ -43,10 +44,10 @@ def isolated_router_state(add_cleanup, *, discovery=True, policy=True):
     stack.enter_context(patch.object(route_judge, 'user_env', side_effect=os.environ.get))
     stack.enter_context(patch.object(route_judge, 'LEDGER_WRITES', True))
     if discovery:
-        stack.enter_context(patch.object(allocator.provider_inventory, 'current',
+        stack.enter_context(patch.object(provider_inventory, 'current',
                                         return_value={'accounts': {}, 'launchers': {}}))
     if policy:
-        stack.enter_context(patch.object(allocator.host_policy, 'load_policy', return_value=None))
+        stack.enter_context(patch.object(host_policy, 'load_policy', return_value=None))
     return root
 
 

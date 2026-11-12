@@ -174,7 +174,7 @@ class PackagingTests(unittest.TestCase):
         import ast
         import sys
         sys.path.insert(0, str(ROOT / "skills" / "agent-compass" / "scripts"))
-        import allocator
+        import task_intake
         for name in ("sandbox_check.py", "guest_check.py"):
             tree = ast.parse((ROOT / "packaging" / name).read_text(encoding="utf-8"))
             literals = [ast.literal_eval(node) for node in ast.walk(tree) if isinstance(node, ast.Dict)
@@ -182,7 +182,7 @@ class PackagingTests(unittest.TestCase):
             self.assertTrue(literals, name)
             for literal in literals:
                 with self.subTest(file=name):
-                    allocator.validate_caller_profile(literal)
+                    task_intake.validate_caller_profile(literal)
 
     def test_fixture_repos_hold_tracked_files_only(self):
         """An untracked file must stay out of the fixture, or `git add -A` there hides it from check_payload."""

@@ -12,6 +12,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
 
 import allocator
+import account_fleet
+import axis_scores
+import host_policy
+import ledger_snapshot
+import provider_inventory
+import quota_economy
+import quota_pools
+import task_intake
+import worker_sessions
 from tk_test_support import desktop_test, require_tk, import_theatre_without_user_diagnostics
 require_tk()
 decision_theatre = import_theatre_without_user_diagnostics()
@@ -53,7 +62,7 @@ class DnaDimensionTests(unittest.TestCase):
         fake = SimpleNamespace(REFERENCES=Path('unused'), load_accounts=lambda _: {'models': models},
                                five_axis_overlay=lambda accounts: accounts,
                                models_table=lambda accounts: accounts['models'])
-        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, 'modules', return_value=(fake, None)),                 mock.patch.object(router_data, 'STATE_DIR', Path(directory)):
+        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, 'modules', return_value=(fake, None)),                 mock.patch.object(account_fleet, 'REFERENCES', fake.REFERENCES),                 mock.patch.object(account_fleet, 'load_accounts', fake.load_accounts),                 mock.patch.object(account_fleet, 'models_table', fake.models_table),                 mock.patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay),                 mock.patch.object(router_data, 'STATE_DIR', Path(directory)):
             table = router_data.model_table()
             series, _ = router_data.dna_series(table, 'priced', 'unpriced')
         self.assertNotIn('usd_per_hour', table['unpriced'])
@@ -324,39 +333,47 @@ class DecisionBindingTests(unittest.TestCase):
         self.assertEqual(len(router_data.dna_series(models, "a", "missing")[0]), 1)
 
     def test_dry_run_binds_the_profile_and_never_writes_the_ledger(self):
-        allocator = mock.Mock()
-        allocator.load_accounts.return_value = {"scoring": {}}
-        allocator.dot_may_take.return_value = True
-        allocator.plan.return_value = PLAN
+        fake = mock.Mock()
+        fake.load_accounts.return_value = {"scoring": {}}
+        fake.dot_may_take.return_value = True
+        fake.plan.return_value = PLAN
         router = mock.Mock()
         router.score_task.return_value = ({"reasoning_depth": 2}, {"source": "system_one", "model": "jev-latest"})
         router.read_ledger.return_value = []
         router.dot_unreachable.return_value = "refused"
-        with mock.patch.object(router_data, "modules", return_value=(allocator, router)):
+        with mock.patch.object(router_data, "modules", return_value=(fake, router)), \
+                mock.patch.object(account_fleet, "load_accounts", fake.load_accounts), \
+                mock.patch.object(account_fleet, "load_capabilities", fake.load_capabilities), \
+                mock.patch.object(task_intake, "task_kind", fake.task_kind), \
+                mock.patch.object(task_intake, "dot_may_take", fake.dot_may_take), \
+                mock.patch.object(task_intake, "profile_kind", fake.profile_kind), \
+                mock.patch.object(task_intake, "profile_difficulty", fake.profile_difficulty):
             result = router_data.simulate("修复竞态", 1.5, local_only=True, needs_visual=False)
         self.assertEqual({k: v for k, v in result.items() if k not in ("task", "scorer")}, PLAN)
         self.assertEqual(result["task"]["objective"], "修复竞态")
         self.assertNotIn("task", PLAN)  # adding replay metadata must not mutate allocator output
-        task = allocator.plan.call_args.args[0]
+        task = fake.plan.call_args.args[0]
         self.assertEqual(task["expected_hours"], 1.5)
         self.assertTrue(task["needs"]["local_only"])
         self.assertTrue(task["needs"]["local_only_reason"])
         self.assertEqual(task["profile"], {"reasoning_depth": 2})
-        self.assertEqual(allocator.plan.call_args.args[3], ["dot_text"])
-        allocator.infer_task_profile.assert_not_called()
+        self.assertEqual(fake.plan.call_args.args[3], ["dot_text"])
+        fake.infer_task_profile.assert_not_called()
         router.append_ledger.assert_not_called()
 
     def test_replay_reuses_the_recorded_profile_when_valid(self):
-        allocator = mock.Mock()
-        allocator.ledger_profile.side_effect = lambda p: p
-        allocator.validate_profile.side_effect = lambda p: p
-        with mock.patch.object(router_data, "modules", return_value=(allocator, mock.Mock())), \
+        fake = mock.Mock()
+        fake.ledger_profile.side_effect = lambda p: p
+        fake.validate_profile.side_effect = lambda p: p
+        with mock.patch.object(router_data, "modules", return_value=(fake, mock.Mock())), \
+                mock.patch.object(ledger_snapshot, "ledger_profile", fake.ledger_profile), \
+                mock.patch.object(task_intake, "validate_profile", fake.validate_profile), \
                 mock.patch.object(router_data, "plan_task", side_effect=lambda task: task):
             task = router_data.replay({"kind": "debug_review", "difficulty": "hard", "hours": 2.0,
                                        "profile": {"reasoning_depth": 3}, "objective": "x"})
         self.assertEqual(task["work_kind"], "debug_review")
         self.assertEqual(task["profile"], {"reasoning_depth": 3})
-        allocator.infer_task_profile.assert_not_called()
+        fake.infer_task_profile.assert_not_called()
 
     def test_ledger_summary(self):
         summary = router_data.ledger_summary({"at": "2026-10-26T08:02:08+00:00", "objective": "# Title\n\nbody",
@@ -413,17 +430,17 @@ class DecisionBindingTests(unittest.TestCase):
 
 class AccountCardTests(unittest.TestCase):
     def cards(self, window):
-        allocator = mock.Mock()
-        allocator.load_accounts.return_value = {"accounts": {"claude-lab": {"windows": {"five_hour": {"hours": 5}}}}}
-        allocator.canonical_window_id.side_effect = lambda spec, wid: wid
-        allocator.capacity_usd.return_value = None
-        allocator.host_policy.load_policy.return_value = None
+        fake = mock.Mock()
+        fake.load_accounts.return_value = {"accounts": {"claude-lab": {"windows": {"five_hour": {"hours": 5}}}}}
+        fake.canonical_window_id.side_effect = lambda spec, wid: wid
+        fake.capacity_usd.return_value = None
+        fake.host_policy.load_policy.return_value = None
         router = mock.Mock()
         router.usage_snapshot.return_value = {"accounts": {"claude-lab": {"status": "fresh", "windows": [window]}}}
         inventory = mock.Mock()
         inventory.current.return_value = {"accounts": {}}
         inventory.quota_sources.return_value = {}
-        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, "modules", return_value=(allocator, router)),                 mock.patch.dict(sys.modules, {"provider_inventory": inventory}),                 mock.patch.object(router_data, "STATE_DIR", Path(directory)),                 mock.patch.object(router_data.plugins, "load", return_value={}),                 mock.patch.object(router_data, "account_badge", return_value=("", "")):
+        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, "modules", return_value=(fake, router)),                 mock.patch.object(account_fleet, "load_accounts", fake.load_accounts),                 mock.patch.object(axis_scores, "five_axis_overlay", fake.five_axis_overlay),                 mock.patch.object(host_policy, "load_policy", fake.host_policy.load_policy),                 mock.patch.object(host_policy, "account_allowed", fake.host_policy.account_allowed),                 mock.patch.object(quota_pools, "canonical_window_id", fake.canonical_window_id),                 mock.patch.object(quota_economy, "capacity_usd", fake.capacity_usd),                 mock.patch.dict(sys.modules, {"provider_inventory": inventory}),                 mock.patch.object(router_data, "STATE_DIR", Path(directory)),                 mock.patch.object(router_data.plugins, "load", return_value={}),                 mock.patch.object(router_data, "account_badge", return_value=("", "")):
             return router_data.account_cards()[0]["windows"][0]
 
     def test_a_window_past_its_reset_waits_for_a_new_reading(self):
@@ -447,7 +464,7 @@ class SettingsTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.dir = Path(directory.name)
         self.accounts = self.dir / 'fixture-accounts.json'
-        shutil.copy(allocator.reference_fleet_path(), self.accounts)
+        shutil.copy(account_fleet.reference_fleet_path(), self.accounts)
         patcher = mock.patch.object(router_data, "STATE_DIR", self.dir)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -466,7 +483,7 @@ class SettingsTests(unittest.TestCase):
         for patcher in (
             mock.patch.object(router_data, 'modules', return_value=(allocator, mock.Mock())),
             mock.patch.object(router_data, '_accounts_path', return_value=self.accounts),
-            mock.patch.object(allocator.provider_inventory, 'apply', return_value=None),
+            mock.patch.object(provider_inventory, 'apply', return_value=None),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -551,7 +568,7 @@ class SettingsTests(unittest.TestCase):
 
         for mode in ('dialog', 'toggle'):
             with self.subTest(mode=mode), \
-                 mock.patch.object(allocator.host_policy, 'policy_path', return_value=(path, False)):
+                 mock.patch.object(host_policy, 'policy_path', return_value=(path, False)):
                 path.write_text(json.dumps({'allowed_accounts': ['codex', 'grok'],
                                             'known_accounts': ['codex', 'grok', 'claude-lab']}))
                 change(['codex'], 'grok', mode)
@@ -560,9 +577,9 @@ class SettingsTests(unittest.TestCase):
                 ready = {'_discovery': {'accounts': {'codex-new': {'status': 'ready'}}},
                          'accounts': {'codex-new': {'verified': True, 'billing': 'subscription',
                                                    'bundles': {'worker': {'provider': 'codex-new'}}}}}
-                self.assertEqual(allocator.host_policy.sync_discovered(ready)['added'], ['codex-new'])
+                self.assertEqual(host_policy.sync_discovered(ready)['added'], ['codex-new'])
                 change(['codex'], 'codex-new', mode)
-                self.assertEqual(allocator.host_policy.sync_discovered(ready)['added'], [])
+                self.assertEqual(host_policy.sync_discovered(ready)['added'], [])
                 saved = json.loads(path.read_text())
                 self.assertEqual(saved['allowed_accounts'], ['codex'])
                 self.assertIn('codex-new', saved['known_accounts'])
@@ -578,7 +595,7 @@ class SettingsTests(unittest.TestCase):
     def test_usage_refresh_asks_usage_float_for_named_accounts_only(self):
         accounts = {'accounts': {}, '_discovery': {'accounts': {
             'team-main': {'family': 'claude'}, 'team-backup': {'family': 'claude'}, 'dot': {'family': 'dot'}}}}
-        with mock.patch.object(allocator, 'load_accounts', return_value=accounts), \
+        with mock.patch.object(account_fleet, 'load_accounts', return_value=accounts), \
                 mock.patch.object(router_data, "collect_usage_now") as collect:
             self.assertIn("Team Main", router_data.refresh_usage(["team-main", "dot"]))
             collect.assert_called_once_with(["team-main"])
@@ -608,7 +625,8 @@ class SettingsTests(unittest.TestCase):
                 }
             }
         }
-        with mock.patch.object(router_data, "modules", return_value=(fake_alloc, mock.Mock())):
+        with mock.patch.object(router_data, "modules", return_value=(fake_alloc, mock.Mock())), \
+                mock.patch.object(account_fleet, "load_accounts", fake_alloc.load_accounts):
             dyn_msg = router_data.toggle_bundle("claude-magpie", "claude-magpie__sonnet55_high")
             self.assertIn("Claude Magpie", dyn_msg)
             self.assertIn("已停用", dyn_msg)
@@ -625,12 +643,18 @@ class WorkerDiscoveryTests(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.dir, True)
-        self.allocator = mock.Mock()
-        self.allocator.load_accounts.return_value = {"scoring": {"rotate_after_carried_tokens": 2000000}}
-        self.allocator.parse_time.side_effect = lambda v: (
+        self.fake = mock.Mock()
+        self.fake.load_accounts.return_value = {"scoring": {"rotate_after_carried_tokens": 2000000}}
+        self.fake.parse_time.side_effect = lambda v: (
             router_data.datetime.fromisoformat(str(v).replace("Z", "+00:00")) if v else None)
-        self.allocator.session_state.side_effect = lambda agent: {"compacted_tokens": 1000, "context_tokens": 500}
-        self.allocator.worker_historical_tokens.side_effect = lambda s: s["compacted_tokens"] + s["context_tokens"]
+        self.fake.session_state.side_effect = lambda agent: {"compacted_tokens": 1000, "context_tokens": 500}
+        self.fake.worker_historical_tokens.side_effect = lambda s: s["compacted_tokens"] + s["context_tokens"]
+        for patcher in (mock.patch.object(account_fleet, "load_accounts", self.fake.load_accounts),
+                        mock.patch.object(quota_pools, "parse_time", self.fake.parse_time),
+                        mock.patch.object(worker_sessions, "session_state", self.fake.session_state),
+                        mock.patch.object(worker_sessions, "worker_historical_tokens", self.fake.worker_historical_tokens)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def iso(self, seconds_ago):
         return (router_data.now_utc() - router_data.timedelta(seconds=seconds_ago)).isoformat()
@@ -668,7 +692,7 @@ class WorkerDiscoveryTests(unittest.TestCase):
         self.agent("f-old", "idle", 9 * 3600, labels={"router.dispatch_id": "f"})
         self.agent("g-archived", "running", 5, archivedAt=self.iso(1))
         self.agent("h-closed", "closed", 60, labels={"router.dispatch_id": "h"})
-        with mock.patch.object(router_data, "modules", return_value=(self.allocator, mock.Mock())):
+        with mock.patch.object(router_data, "modules", return_value=(self.fake, mock.Mock())):
             rows = router_data.workers(db, self.dir / "paseo")
         by_id = {r["agent_id"]: r for r in rows}
         self.assertEqual(set(by_id), {"a-started", "b-resumed", "c-done", "e-session"})
@@ -684,7 +708,7 @@ class WorkerDiscoveryTests(unittest.TestCase):
 
     def test_an_explicit_dispatch_db_alone_skips_the_paseo_scan(self):
         db = self.dispatch_db([{"agent_id": "x", "state": "launched"}])
-        with mock.patch.object(router_data, "modules", return_value=(self.allocator, mock.Mock())), \
+        with mock.patch.object(router_data, "modules", return_value=(self.fake, mock.Mock())), \
                 mock.patch.object(router_data, "_paseo_agents", side_effect=AssertionError("scanned")):
             rows = router_data.workers(db)
         self.assertEqual([(r["agent_id"], r["state"]) for r in rows], [("x", "启动中")])
@@ -1099,7 +1123,7 @@ class WindowHelperTests(unittest.TestCase):
             conn.commit()
             conn.close()
             # The repo definition, not this host's accounts: other hosts may lack a claude account.
-            res = router_data.pool_reservations(db=db, accounts=allocator.load_accounts(allocator.reference_fleet_path()))
+            res = router_data.pool_reservations(db=db, accounts=account_fleet.load_accounts(account_fleet.reference_fleet_path()))
             self.assertIn(("claude", "seven_day"), res)
             self.assertGreater(res[("claude", "seven_day")]["pct"], 0.0)
             self.assertEqual(res[("claude", "seven_day")]["usd"], 20.0)
@@ -1475,8 +1499,7 @@ class ScorerConfigTests(unittest.TestCase):
         self.assertEqual((live["task"]["work_kind"], live["task"]["difficulty"], live["scorer"]["model"]),
                          ("debug_review", "coupled", "m"))
         self.assertEqual(live["task"]["needs"], {})
-        allocator, _ = router_data.modules()
-        self.assertEqual(allocator.resolve_modality_needs(live["task"]["needs"], live["task"]["profile"], {}),
+        self.assertEqual(task_intake.resolve_modality_needs(live["task"]["needs"], live["task"]["profile"], {}),
                          {"visual": True, "local_only": True})
         with mock.patch.object(router_data, "plan_task", side_effect=AssertionError("should not plan when scorer unavailable")), \
                 mock.patch.object(self.router, "score_task", return_value=(None, {"source": "scorer_unavailable", "fallback_detail": "timed out"})):

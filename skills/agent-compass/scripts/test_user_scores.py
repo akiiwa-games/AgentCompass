@@ -13,6 +13,10 @@ import unittest
 from unittest.mock import patch
 
 import allocator
+import account_fleet
+import axis_scores
+import candidate_ranking
+import ledger_snapshot
 import public_data
 import roll
 import route_judge
@@ -43,8 +47,8 @@ def _load_calibration_modules():
 class ManualScoreLayerTests(unittest.TestCase):
     def setUp(self):
         isolated_router_state(self.addCleanup)
-        self.five = copy.deepcopy(allocator.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json'))
-        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        self.five = copy.deepcopy(axis_scores.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json'))
+        self.accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         self.now = datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc)
 
     def test_shipped_public_user_scores_file_is_valid_maintainer_only(self):
@@ -97,7 +101,7 @@ class ManualScoreLayerTests(unittest.TestCase):
         expected_m = user_scores.mapped_z_for_target('divergence', 3.2, targets)
         expected_u = user_scores.mapped_z_for_target('divergence', 1.2, targets)
 
-        only_m = allocator.five_axis_overlay(
+        only_m = axis_scores.five_axis_overlay(
             copy.deepcopy(self.accounts), data=self.five, public_scores=maintainer_doc, local_scores=None,
             read_local_state=False,
         )
@@ -107,7 +111,7 @@ class ManualScoreLayerTests(unittest.TestCase):
         # Multi-effort curve preserves relative effort deltas rather than flattening to a constant.
         self.assertGreater(ax_m['by_effort']['high'], ax_m['by_effort']['low'])
 
-        both = allocator.five_axis_overlay(
+        both = axis_scores.five_axis_overlay(
             copy.deepcopy(self.accounts), data=self.five, public_scores=maintainer_doc, local_scores=local_doc,
             read_local_state=False,
         )
@@ -136,7 +140,7 @@ class ManualScoreLayerTests(unittest.TestCase):
             },
         }
         empty_pub = {'schema_version': 1, 'scores': {}}
-        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+        with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
             before = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts))
         gb_before = next(c for c in before['ranking'] if c['id'] == 'grok_bot')
         self.assertTrue(gb_before['excluded'])
@@ -156,7 +160,7 @@ class ManualScoreLayerTests(unittest.TestCase):
             },
         }
         user_scores.set_score('grok-bot', 'tool_operation.responsiveness', 1.1, public=False, accounts=accounts)
-        with patch.object(allocator, 'load_public_user_scores', return_value=pub_doc):
+        with patch.object(axis_scores, 'load_public_user_scores', return_value=pub_doc):
             fresh_plan = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts), read_local_state=False)
             local_plan = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts), read_local_state=True)
         gb_fresh = next(c for c in fresh_plan['ranking'] if c['id'] == 'grok_bot')
@@ -251,16 +255,16 @@ class FixRoundRegressionTests(unittest.TestCase):
         self.assertEqual(rows['partial_coder']['axes']['tool_operation']['missing_facets'], ['image_recognition'])
 
         # Named dispatch / direct fit monotonicity: missing responsiveness stands at zero (0.0) at both L2 and L3.
-        targets = allocator.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json')['anchor']['targets']
+        targets = axis_scores.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json')['anchor']['targets']
         vals = {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0,
                 'tool_operation': {'responsiveness': None, 'image_recognition': 0.5}}
         d2 = {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}
         d3 = {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 3}
-        fit_l2, _ = allocator.five_axis_fit(vals, d2, allocator.five_axis_targets(d2, targets))
-        fit_l3, _ = allocator.five_axis_fit(vals, d3, allocator.five_axis_targets(d3, targets))
+        fit_l2, _ = axis_scores.five_axis_fit(vals, d2, axis_scores.five_axis_targets(d2, targets))
+        fit_l3, _ = axis_scores.five_axis_fit(vals, d3, axis_scores.five_axis_targets(d3, targets))
         self.assertEqual(fit_l2, 0.0)
         self.assertEqual(fit_l3, 0.0)
-        self.assertIsNone(allocator.five_axis_shares(vals, targets)['tool_operation'])
+        self.assertIsNone(axis_scores.five_axis_shares(vals, targets)['tool_operation'])
 
     def test_f2_select_variants_picks_own_high_row_and_correlates_aa_effort_curve(self):
         cal = _load_calibration_modules()
@@ -292,7 +296,7 @@ class FixRoundRegressionTests(unittest.TestCase):
         self.assertNotEqual(scores['links']['aesthetics.design']['scales']['designarena.svg'], 1.0)
 
     def test_f3_economy_cost_is_inside_net_score_without_score_rounding(self):
-        accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         now = self.now
         accounts['accounts']['claude']['plan'] = 'pro'
         accounts['accounts']['claude']['verified'] = True
@@ -333,11 +337,11 @@ class FixRoundRegressionTests(unittest.TestCase):
         c1_fast = next(c for c in plan['ranking'] if c['id'] == 'opus55_high+fast')
         self.assertLess(c1['components']['opportunity_cost'], c2['components']['opportunity_cost'])
         self.assertGreater(c1['score'], c2['score'])
-        self.assertEqual(allocator.five_axis_deciding_key(c1, c2), 'net_score')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(c1, c2), 'net_score')
         # 2x burn of +fast has higher C and lower N than plain when wants_fast=False at mid-week ample (Pro and Max20 alike):
         self.assertLess(c1['components']['opportunity_cost'], c1_fast['components']['opportunity_cost'])
         self.assertGreater(c1['score'], c1_fast['score'])
-        self.assertEqual(allocator.five_axis_deciding_key(c1, c1_fast), 'net_score')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(c1, c1_fast), 'net_score')
 
         acc_max20 = copy.deepcopy(accounts)
         acc_max20['accounts']['claude']['plan'] = 'max20'
@@ -352,7 +356,7 @@ class FixRoundRegressionTests(unittest.TestCase):
         m1 = next(c for c in plan_max20['ranking'] if c['id'] == 'opus55_high')
         m1_fast = next(c for c in plan_max20['ranking'] if c['id'] == 'opus55_high+fast')
         self.assertGreater(m1['score'], m1_fast['score'])
-        self.assertEqual(allocator.five_axis_deciding_key(m1, m1_fast), 'net_score')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(m1, m1_fast), 'net_score')
         self.assertFalse(plan_max20['selected_bundle'].get('fast'))
 
         # Free unmetered dot_text beats billed astra_high on net_score when both reach the same fit:
@@ -375,17 +379,17 @@ class FixRoundRegressionTests(unittest.TestCase):
         self.assertEqual(dot_row['components']['opportunity_cost'], 0.0)
         self.assertGreater(astra_row['components']['opportunity_cost'], 0.0)
         self.assertGreater(dot_row['score'], astra_row['score'])
-        self.assertEqual(allocator.five_axis_deciding_key(dot_row, astra_row), 'net_score')
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(dot_row, astra_row), 'net_score')
 
     def test_f5_auto_matched_medium_coupling_gets_continuity_and_tool_op_never_zeros_other_axes(self):
-        scores = allocator.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json')
+        scores = axis_scores.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json')
         targets = scores['anchor']['targets']
-        cont = allocator.five_axis_continuity_value(
+        cont = axis_scores.five_axis_continuity_value(
             {'divergence': 0, 'coding': 2, 'aesthetics': 2, 'tool_operation': 3}, targets
         )
         self.assertGreater(cont, 1.0)
 
-        accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         usage = usage_windows(self.now, {'claude': [('five_hour', 10, 3), ('seven_day', 10, 84)],
                                          'codex': [('five_hour', 10, 3), ('usage', 10, 84)]})
         base_profile = {
@@ -435,8 +439,8 @@ class FixRoundRegressionTests(unittest.TestCase):
                 }
             }
             with patch.dict(os.environ, {'OPENCODE_DB_PATH': str(db_path)}):
-                self.assertGreater(sum(allocator.opencode_local_spend(models_tbl, None, read_local_db=True)[0].values()), 0.0)
-                self.assertEqual(allocator.opencode_local_spend(models_tbl, None, read_local_db=False)[0], {})
+                self.assertGreater(sum(axis_scores.opencode_local_spend(models_tbl, None, read_local_db=True)[0].values()), 0.0)
+                self.assertEqual(axis_scores.opencode_local_spend(models_tbl, None, read_local_db=False)[0], {})
 
         proxy = {'endpoint': 'https://proxy.example.com', 'api_key': 'sk-test', 'family': 'claude'}
         with patch.object(roll.dispatch_flow, 'paseo_config', return_value={}), \
@@ -461,8 +465,8 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
     def setUp(self):
         isolated_router_state(self.addCleanup)
         self.now = datetime(2026, 11, 11, 8, 0, tzinfo=timezone.utc)
-        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
-        self.five = copy.deepcopy(allocator.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json'))
+        self.accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        self.five = copy.deepcopy(axis_scores.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json'))
 
     def test_r2_f1_end_to_end_decision_snapshot_and_plan_stage_with_non_empty_user_scores(self):
         # Populate local user scores so both eligible (selected) and excluded rows carry manual_scores.
@@ -488,7 +492,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             },
         }
         decision = allocator.plan(task, usage, self.now, accounts=accounts, read_local_state=True)
-        snap = allocator.decision_snapshot(decision)
+        snap = ledger_snapshot.decision_snapshot(decision)
         json.dumps(snap, allow_nan=False)
         selected_rows = [r for r in snap['ranking'] if not r['excluded'] and r.get('manual_scores')]
         excluded_rows = [r for r in snap['ranking'] if r['excluded'] and r.get('manual_scores')]
@@ -517,7 +521,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
                 hours=0.5, can_wait_hours=None, fast=False, usage_cache=cache_path,
                 keep_whole=None, score_timeout=30,
             )
-            with patch.object(allocator, 'load_accounts', return_value=accounts):
+            with patch.object(account_fleet, 'load_accounts', return_value=accounts):
                 result, rc = route_judge.plan_stage({'task': task}, args)
             self.assertEqual(rc, 0)
             self.assertNotEqual(result['choice'], 'none')
@@ -551,7 +555,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         empty_pub = {'schema_version': 1, 'scores': {}}
 
         def excluded():
-            with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+            with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
                 d = allocator.plan(code_task, usage, self.now, accounts=copy.deepcopy(accounts),
                                    host_policy_config={'allowed_accounts': ['codex']})
             return {c['id']: c['excluded'] for c in d['ranking']}
@@ -573,8 +577,8 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         for bid in ('gpt6_sol_max', 'ds_v4_max'):
             self.assertTrue(any('no trusted data' in e for e in after[bid]), after[bid])
 
-        overlay = allocator.five_axis_overlay(copy.deepcopy(accounts), read_local_state=True, public_scores=empty_pub)
-        shipped = allocator.load_five_axis()['models']['gpt-6-sol']['axes']['coding']['facets']['execution']
+        overlay = axis_scores.five_axis_overlay(copy.deepcopy(accounts), read_local_state=True, public_scores=empty_pub)
+        shipped = axis_scores.load_five_axis()['models']['gpt-6-sol']['axes']['coding']['facets']['execution']
         execution = overlay['models']['gpt-6-sol']['five_axis']['categories']['coding']['facets']['execution']
         self.assertEqual(execution['by_effort']['max'], shipped['by_effort']['max'])    # the measured Max stands
         self.assertEqual(execution['measured_efforts'], ['max'])
@@ -627,7 +631,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
                 'axis_demand': {'divergence': 0, 'coding': 0, 'aesthetics': 2, 'tool_operation': 0},
             },
         }
-        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+        with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
             d = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts),
                                host_policy_config={'allowed_accounts': ['codex']})
         self.assertEqual(d['choice'], 'luna56_high')
@@ -640,7 +644,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             **task, 'constraints': {'model': 'gpt-oss-120b'},
             'profile': {**task['profile'], 'axis_demand': {'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}},
         }
-        with patch.object(allocator, 'load_public_user_scores', return_value=empty_pub):
+        with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
             d_un = allocator.plan(task_unscored, usage, self.now, accounts=copy.deepcopy(accounts),
                                   host_policy_config={'allowed_accounts': ['codex']})
         self.assertEqual(d_un['choice'], 'unscored_high')
@@ -662,7 +666,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
                 },
             },
         }
-        overlaid = allocator.five_axis_overlay(
+        overlaid = axis_scores.five_axis_overlay(
             copy.deepcopy(self.accounts), data=self.five, public_scores=pub_doc, read_local_state=False
         )
         self.assertEqual(overlaid['models']['gpt-oss-120b']['five_axis']['image_input']['status'], 'no')
@@ -677,7 +681,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
                 },
             },
         }
-        over_code = allocator.five_axis_overlay(
+        over_code = axis_scores.five_axis_overlay(
             copy.deepcopy(self.accounts), data=self.five, public_scores=code_doc, read_local_state=False
         )
         facets = over_code['models']['gpt-oss-120b']['five_axis']['categories']['coding']['facets']

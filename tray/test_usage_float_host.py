@@ -243,6 +243,7 @@ class HostedSingleReaderTests(unittest.TestCase):
         if str(scripts) not in sys.path:
             sys.path.insert(0, str(scripts))
         import allocator
+        import provider_inventory
         import host_policy
         import usage_cache
         import usage_collector
@@ -306,7 +307,7 @@ class HostedSingleReaderTests(unittest.TestCase):
                     else (h / ".agent-compass" / "host-policy.json", False)
                 ),
             ),
-            (allocator.provider_inventory, "current", lambda: {"accounts": {}, "launchers": {}}),
+            (provider_inventory, "current", lambda: {"accounts": {}, "launchers": {}}),
         ):
             p = mock.patch.object(target, attr, repl)
             p.start()
@@ -694,7 +695,8 @@ class HostedSingleReaderTests(unittest.TestCase):
             json.dumps({"allowed_accounts": ["claude-2"]}),
             encoding="utf-8",
         )
-        fleet = self.allocator.load_accounts(self.allocator.reference_fleet_path())
+        import account_fleet
+        fleet = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         import router_test_support
         planned = self.allocator.plan(
             {"work_kind": "general_implementation", "difficulty": "hard", "profile": router_test_support.profile()},

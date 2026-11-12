@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import accounts_override
 import allocator
+import account_fleet
 import dispatch_registry
 import host_policy
 import provider_inventory as inventory
@@ -42,7 +43,7 @@ def setUpModule():
 
 
 def omp_accounts(billing='metered', subscription=True):
-    accounts = allocator.load_accounts(allocator.REFERENCES / 'accounts.json')
+    accounts = account_fleet.load_accounts(account_fleet.REFERENCES / 'accounts.json')
     accounts['accounts']['codex'].update(verified=subscription, plan='Pro')  # one launchable subscription account
     spec = accounts['accounts']['omp']
     # A metered account states its own prepaid budget: community capacity data measures subscription plans only.
@@ -162,7 +163,7 @@ class DiscoveryTests(unittest.TestCase):
         muse = snapshot['accounts']['muse']
         self.assertEqual((muse['family'], muse['billing'], muse['status']), ('muse', 'unknown', 'ready'))
         self.assertNotIn('models', muse)
-        accounts = inventory.apply(allocator.load_accounts(allocator.reference_fleet_path()), snapshot)
+        accounts = inventory.apply(account_fleet.load_accounts(account_fleet.reference_fleet_path()), snapshot)
         self.assertFalse((accounts['accounts'].get('muse') or {}).get('bundles'))
 
     def test_metered_ready_account_is_not_auto_enrolled_by_host_policy(self):

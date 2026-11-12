@@ -721,10 +721,11 @@ def cli_main(argv: list[str] | None = None) -> int:
                          help='Clear from references/user-scores.json and refresh public-data.json (git checkout only).')
 
     args = parser.parse_args(argv)
-    import allocator
+    import account_fleet
+    import axis_scores
     try:
-        accounts = json.loads(allocator.fleet_document_path().read_text(encoding='utf-8-sig'))
-        five = allocator.load_five_axis()
+        accounts = json.loads(account_fleet.fleet_document_path().read_text(encoding='utf-8-sig'))
+        five = axis_scores.load_five_axis()
         targets_table = (five.get('anchor') or {}).get('targets') or {}
     except Exception:
         accounts, targets_table = None, {}

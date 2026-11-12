@@ -4,6 +4,8 @@ import unittest
 
 import auto_bundles as ab
 import allocator
+import account_fleet
+import quota_pools
 
 from router_test_support import isolated_router_state
 
@@ -11,7 +13,7 @@ from router_test_support import isolated_router_state
 def setUpModule():
     isolated_router_state(unittest.addModuleCleanup)
 
-REAL = json.loads(allocator.reference_fleet_path().read_text(encoding='utf-8-sig'))
+REAL = json.loads(account_fleet.reference_fleet_path().read_text(encoding='utf-8-sig'))
 NOW = 2_000_000_000.0
 
 
@@ -60,7 +62,7 @@ class DefaultProfile(unittest.TestCase):
 
 class Derive(unittest.TestCase):
     def test_proxy_metered_latest_checked_and_non_chat_excluded(self):
-        # Checked is not routed: metered stays a last resort in allocator.evaluate_bundle.
+        # Checked is not routed: metered stays a last resort in candidate_eval.evaluate_bundle.
         out = ab.derive(proxy_accounts(), catalog('llmproxy', ['gpt-6.1-sol', 'kimi-k3', 'gemini-embedding-001', 'qwen-flash', 'zzz-proxy-model']), NOW)
         rows = out['bundles']['llmproxy']
         self.assertTrue(all(not b['disabled'] and b['billing'] == 'metered' for b in rows.values()))
@@ -124,7 +126,7 @@ class Derive(unittest.TestCase):
         self.assertTrue(rows['auto:claude:claude:claude-haiku-5-5@high']['disabled'])
 
     def test_superseded_data_points_at_latest_known_models(self):
-        table = json.loads((allocator.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        table = json.loads((account_fleet.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
         known = set(table['models']) | set(table['aliases'])
         for old, entry in table['superseded'].items():
             with self.subTest(old=old):
@@ -137,10 +139,10 @@ class Derive(unittest.TestCase):
     def test_merge_feeds_allocator(self):
         out = ab.derive(proxy_accounts(), catalog('llmproxy', ['zzz-unknown-9']), NOW)
         merged = ab.merge_into(proxy_accounts(), out)
-        flat = allocator.bundles(merged)
+        flat = account_fleet.bundles(merged)
         bid = 'auto:llmproxy:codex:zzz-unknown-9@high'
         self.assertIn(bid, flat)
-        self.assertEqual(allocator.bundle_pools(flat[bid], merged), ['spend'])
+        self.assertEqual(quota_pools.bundle_pools(flat[bid], merged), ['spend'])
         self.assertNotIn('zzz-unknown-9', merged['models'])     # no row is invented for an unmeasured name
 
 
@@ -172,12 +174,12 @@ class SharedHooks(unittest.TestCase):
 
     def test_harness_visual_capability(self):
         # File-based visual work (the router's only kind) reaches multimodal models on agy via read_file (probe 2026-10-28).
-        self.assertTrue(allocator.harness_accepts_visual('antigravity-resilient', 'claude-opus-5-5'))
-        self.assertTrue(allocator.harness_accepts_visual('antigravity-resilient', 'gemini-4-argon-high'))
-        self.assertFalse(allocator.harness_accepts_visual('antigravity', 'claude-opus-5-5', needs_attachment=True))
-        self.assertTrue(allocator.harness_accepts_visual('claude', 'claude-opus-5-5', needs_attachment=True))
+        self.assertTrue(account_fleet.harness_accepts_visual('antigravity-resilient', 'claude-opus-5-5'))
+        self.assertTrue(account_fleet.harness_accepts_visual('antigravity-resilient', 'gemini-4-argon-high'))
+        self.assertFalse(account_fleet.harness_accepts_visual('antigravity', 'claude-opus-5-5', needs_attachment=True))
+        self.assertTrue(account_fleet.harness_accepts_visual('claude', 'claude-opus-5-5', needs_attachment=True))
         # Non-multimodal models are excluded by their own model row, not the harness.
-        self.assertFalse(allocator.models_table(allocator.load_accounts()).get('gpt-oss-120b', {}).get('visual'))
+        self.assertFalse(account_fleet.models_table(account_fleet.load_accounts()).get('gpt-oss-120b', {}).get('visual'))
 
 
 if __name__ == '__main__':

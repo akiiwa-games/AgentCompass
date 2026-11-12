@@ -75,8 +75,9 @@ def window_label(wid, spec):
     return _tr('{0}（周额度）').format(f'{wid}') if hours == 168 else _tr('{0}（{1}小时）').format(f'{wid}', f'{hours:g}') if isinstance(hours, (float, int)) else wid
 
 
-def stamp(value, allocator):
-    moment = allocator.parse_time(value)
+def stamp(value):
+    import quota_pools
+    moment = quota_pools.parse_time(value)
     return moment.astimezone().strftime('%m-%d %H:%M') if moment else _tr('未知')
 
 
@@ -91,57 +92,65 @@ def percentage(window):
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0 <= value <= 100 else None
 
 
-def active(row, now, allocator):
-    until = allocator.parse_time(row.get('until')) or allocator.expected_reset_time(row)
+def active(row, now):
+    import quota_overrides
+    import quota_pools
+    until = quota_pools.parse_time(row.get('until')) or quota_overrides.expected_reset_time(row)
     return until is not None and until > now
 
 
-def countdown(row, allocator, now):
+def countdown(row, now):
     """Hours left until the rule's expected reset, and its label; the boost itself is the rule's fixed `boost`."""
-    reset = allocator.expected_reset_time(row)
+    import quota_overrides
+    reset = quota_overrides.expected_reset_time(row)
     if reset is None:
         return {'remaining_hours': None, 'countdown': ''}
     hours = max(0.0, (reset - now).total_seconds() / 3600)
     return {'remaining_hours': hours, 'countdown': _tr('预计 {0}h 后重置').format(f'{hours:.1f}')}
 
 
-def overlaps(row, account, model, now, allocator, accounts):
+def overlaps(row, account, model, now, accounts):
     # An account-wide or same-model priority already applies. Do not double its
     # boost by opening another window or by adopting an existing CLI-created rule.
-    return (active(row, now, allocator) and not allocator.override_reset_landed(row, None, accounts, now)
+    import account_fleet
+    import quota_overrides
+    return (active(row, now) and not quota_overrides.override_reset_landed(row, None, accounts, now)
             and row.get('account') == account
-            and (not row.get('model') or allocator.canonical(row['model'], accounts) == model))
+            and (not row.get('model') or account_fleet.canonical(row['model'], accounts) == model))
 
 
-def _candidates(allocator, accounts):
+def _candidates(accounts):
     """(account, model) pairs with an enabled, launchable bundle on an allowed account, in fleet order."""
-    policy = allocator.host_policy.load_policy()
+    import account_fleet
+    import host_policy
+    policy = host_policy.load_policy()
     pairs = []
-    for bundle in allocator.bundles(accounts).values():
+    for bundle in account_fleet.bundles(accounts).values():
         account, model = bundle.get('account'), bundle.get('model')
         spec = (accounts.get('accounts') or {}).get(account) or {}
         if (not account or not model or bundle.get('disabled') or bundle.get('discovery_unavailable')
-                or spec.get('verified') is False or not allocator.host_policy.account_allowed(policy, account)):
+                or spec.get('verified') is False or not host_policy.account_allowed(policy, account)):
             continue
         if (account, model) not in pairs:
             pairs.append((account, model))
     return pairs
 
 
-def _weekly_window(allocator, accounts, account, model):
-    windows = [(wid, spec) for wid, spec, _ in allocator.applicable_windows(
+def _weekly_window(accounts, account, model):
+    import quota_pools
+    windows = [(wid, spec) for wid, spec, _ in quota_pools.applicable_windows(
         accounts['accounts'][account], model, {}) if spec.get('hours', 0) >= 24]
     return max(windows, key=lambda w: w[1]['hours'])[0] if windows else None
 
 
-def targets(allocator, accounts):
-    candidates = _candidates(allocator, accounts)
+def targets(accounts):
+    candidates = _candidates(accounts)
     configured = [t for t in accounts.get('priority_targets') or () if isinstance(t, dict)]
     wanted = [(t.get('account'), t.get('model')) for t in configured]
     pairs = [pair for pair in wanted if pair in candidates]
     result = []
     for account, model in pairs:
-        wid = _weekly_window(allocator, accounts, account, model)
+        wid = _weekly_window(accounts, account, model)
         if wid:
             result.append({'account': account, 'model': model, 'window': wid, 'label': model_label(model, accounts)})
     labels = [t['label'] for t in result]
@@ -151,19 +160,20 @@ def targets(allocator, accounts):
     return result
 
 
-def baseline(allocator, accounts, usage, target, now):
+def baseline(accounts, usage, target, now):
+    import quota_pools
     account, wid = target['account'], target['window']
     row = (usage.get('accounts') or {}).get(account) or {}
-    fetched = allocator.parse_time(row.get('fetched_at'))
+    fetched = quota_pools.parse_time(row.get('fetched_at'))
     if (row.get('status') != 'fresh' or row.get('stale') is True or row.get('available') is False
             or row.get('account', account) != account or fetched is None
             or not 0 <= (now-fetched).total_seconds() <= 900):
         raise ValueError(_tr('额度缺失或超过15分钟；请先在 Usage Float 刷新该账号，再开启'))
     spec = accounts['accounts'][account]
     observed = next((w for w in row.get('windows', [])
-                     if allocator.canonical_window_id(spec, w.get('id')) == wid), None)
+                     if quota_pools.canonical_window_id(spec, w.get('id')) == wid), None)
     used = percentage(observed)
-    reset = allocator.parse_time((observed or {}).get('resets_at'))
+    reset = quota_pools.parse_time((observed or {}).get('resets_at'))
     if used is None or reset is None or reset <= now:
         raise ValueError(_tr('所选窗口缺少有效额度或重置日期；请先刷新额度'))
     return {k: v for k, v in {'account': account, 'fetched_at': row['fetched_at'],
@@ -171,30 +181,34 @@ def baseline(allocator, accounts, usage, target, now):
             'resets_at': observed['resets_at']}.items() if v is not None}
 
 
-def save(allocator, path, document):
+def save(path, document):
     # Caller holds the same sidecar lock as route_judge and allocator.
+    import override_store
     if path.exists():
         backup = path.parent/'backups'/f'tray-priority-{uuid.uuid4().hex}'
         backup.mkdir(parents=True)
         shutil.copy2(path, backup/path.name)
-    allocator.override_store.write(path, document)
+    override_store.write(path, document)
 
 
 def enable(account, model, window, hours, now=None):
     if hours not in DURATIONS:
         raise ValueError(_tr('请选择菜单中的预期重置时间'))
-    allocator, router = modules()
+    _, router = modules()
+    import account_fleet
+    import override_store
+    import quota_overrides
     now = now or datetime.now(timezone.utc)
-    accounts = allocator.load_accounts()
-    target = next((t for t in targets(allocator, accounts)
+    accounts = account_fleet.load_accounts()
+    target = next((t for t in targets(accounts)
                    if (t['account'], t['model'], t['window']) == (account, model, window)), None)
     if target is None:
         raise ValueError(_tr('该账号、模型或窗口已不可用；请等待菜单刷新'))
-    path = allocator.overrides_path()
-    with allocator.override_store.locked(path):
+    path = quota_overrides.overrides_path()
+    with override_store.locked(path):
         doc = read_document(path)
         new_until = (now+timedelta(hours=hours)).isoformat()
-        overlapping = [r for r in doc['overrides'] if overlaps(r, account, model, now, allocator, accounts)]
+        overlapping = [r for r in doc['overrides'] if overlaps(r, account, model, now, accounts)]
         if overlapping:
             ui_rules = [r for r in overlapping if r.get('intent') in (INTENT, 'panel:temporary-boost')
                         and r.get('stop_on_reset') and not r.get('expires_at')]
@@ -205,14 +219,14 @@ def enable(account, model, window, hours, now=None):
             existing['basis'] = _tr('用户在托盘选择预计临时重置，优先 {0}/{1}；额度回升后 router 自动撤销').format(f'{account}', f'{model}')
             doc['overrides'] = [r for r in doc['overrides'] if r is existing or r not in ui_rules]
             doc.pop('last_reset', None)
-            save(allocator, path, {**doc, 'v': 1})
+            save(path, {**doc, 'v': 1})
             return _tr('已更新 {0}/{1} 预期重置时间；重置确认后撤销，最迟 {2} 失效').format(
-                f'{account_label(account)}', f'{model_label(model, accounts)}', f"{stamp(new_until, allocator)}")
+                f'{account_label(account)}', f'{model_label(model, accounts)}', f"{stamp(new_until)}")
         # Use ONE real observation for the baseline. Never synthesize a timestamp
         # for a cached older value and never fetch directly from provider APIs.
         usage = router.usage_snapshot(now=now)
-        base = baseline(allocator, accounts, usage, target, now)
-        if allocator.override_depleted({'account': account, 'model': model, 'window': window, 'boost': BOOST},
+        base = baseline(accounts, usage, target, now)
+        if quota_overrides.override_depleted({'account': account, 'model': model, 'window': window, 'boost': BOOST},
                                        usage, accounts):
             raise ValueError(_tr('该窗口额度已不足 {0}%，router 不再派新任务，临时优先无意义').format(f"{accounts['scoring']['safety_margin_pct']}"))
         row = {'id': uuid.uuid4().hex, 'intent': INTENT, 'account': account, 'model': model,
@@ -222,20 +236,22 @@ def enable(account, model, window, hours, now=None):
                'basis': _tr('用户在托盘选择预计临时重置，优先 {0}/{1}；额度回升后 router 自动撤销').format(f'{account}', f'{model}')}
         # The compact chooser is single selection, not cumulative boosts.
         # Replace reset-only priorities for the chooser's models, not unrelated expiry constraints.
-        selected_models = {(t['account'], t['model']) for t in targets(allocator, accounts)}
+        selected_models = {(t['account'], t['model']) for t in targets(accounts)}
         doc['overrides'] = [r for r in doc['overrides'] if not (
             r.get('stop_on_reset') and not r.get('expires_at')
             and (r.get('account'), r.get('model')) in selected_models)]
         doc.pop('last_reset', None)
         doc['overrides'].append(row)
-        save(allocator, path, {**doc, 'v': 1})
-    return _tr('已开启 {0}/{1} 临时优先；重置确认后撤销，最迟 {2} 失效').format(f'{account_label(account)}', f'{model_label(model, accounts)}', f"{stamp(row['until'], allocator)}")
+        save(path, {**doc, 'v': 1})
+    return _tr('已开启 {0}/{1} 临时优先；重置确认后撤销，最迟 {2} 失效').format(f'{account_label(account)}', f'{model_label(model, accounts)}', f"{stamp(row['until'])}")
 
 
 def cancel(entry_id, expected_revision):
-    allocator, _ = modules()
-    path = allocator.overrides_path()
-    with allocator.override_store.locked(path):
+    modules()
+    import override_store
+    import quota_overrides
+    path = quota_overrides.overrides_path()
+    with override_store.locked(path):
         doc = read_document(path)
         row = next((r for r in doc['overrides'] if r['id'] == entry_id), None)
         if row is None:
@@ -243,45 +259,48 @@ def cancel(entry_id, expected_revision):
         if revision(row) != expected_revision:
             raise ValueError(_tr('规则已被其他操作更新；请等待菜单刷新后再取消'))
         doc['overrides'] = [r for r in doc['overrides'] if r['id'] != entry_id]
-        save(allocator, path, doc)
+        save(path, doc)
     return _tr('已取消这条临时优先；不影响正在运行的任务')
 
 
 def snapshot(now=None):
-    allocator, router = modules()
+    _, router = modules()
+    import account_fleet
+    import quota_overrides
+    import quota_pools
     now = now or datetime.now(timezone.utc)
-    path = allocator.overrides_path()
+    path = quota_overrides.overrides_path()
     doc = read_document(path)
-    accounts = allocator.load_accounts()
+    accounts = account_fleet.load_accounts()
     usage = router.usage_snapshot(now=now)
-    landed = {r['id']: r for r in doc['overrides'] if active(r, now, allocator)
-              and allocator.override_reset_landed(r, usage, accounts, now)}
+    landed = {r['id']: r for r in doc['overrides'] if active(r, now)
+              and quota_overrides.override_reset_landed(r, usage, accounts, now)}
     if landed:
         # Store the first confirmed event, not a refresh timestamp. This survives
         # a tray restart and the allocator deleting the original rule.
-        allocator.observe_landed_overrides(landed, path, now)
+        quota_overrides.observe_landed_overrides(landed, path, now)
         doc = read_document(path)
-    depleted = {r['id']: r for r in doc['overrides'] if active(r, now, allocator)
-                and allocator.override_depleted(r, usage, accounts)}
+    depleted = {r['id']: r for r in doc['overrides'] if active(r, now)
+                and quota_overrides.override_depleted(r, usage, accounts)}
     if depleted:
         # Down to the safety margin: the allocator retires these on its next plan; do it now so the menu agrees.
-        allocator.retire_overrides(depleted, path)
+        quota_overrides.retire_overrides(depleted, path)
         doc = read_document(path)
-    rows = [r for r in doc['overrides'] if active(r, now, allocator)
-            and not allocator.override_reset_landed(r, None, accounts, now)]
+    rows = [r for r in doc['overrides'] if active(r, now)
+            and not quota_overrides.override_reset_landed(r, None, accounts, now)]
     entries = [{'label': model_label(r['model'], accounts) if r.get('model') else account_label(r.get('account')) or _tr('其他'),
                 'id': r['id'], 'revision': revision(r),
-                'boost': r.get('boost'), **countdown(r, allocator, now)} for r in rows]
+                'boost': r.get('boost'), **countdown(r, now)} for r in rows]
     for entry in entries:
         if entry['remaining_hours'] is not None:
             entry['label'] += ' · ' + entry['countdown']
         if entry['boost']:
             entry['label'] += _tr(' · 加成 +{0}').format(f"{entry['boost']:.2f}")
-    choices = targets(allocator, accounts)
+    choices = targets(accounts)
     for t in choices:
-        t['selected'] = any(overlaps(r, t['account'], t['model'], now, allocator, accounts) for r in rows)
+        t['selected'] = any(overlaps(r, t['account'], t['model'], now, accounts) for r in rows)
     last = doc.get('last_reset') or {}
-    reset_at = allocator.parse_time(last.get('at')) if isinstance(last, dict) else None
+    reset_at = quota_pools.parse_time(last.get('at')) if isinstance(last, dict) else None
     recent = reset_at is not None and timedelta(0) <= now-reset_at < timedelta(hours=RESET_BADGE_HOURS)
     label = (_tr('优先中：') + '、'.join(dict.fromkeys(e['label'] for e in entries)) if entries
              else _tr('已重置') if recent else _tr('重置前优先'))

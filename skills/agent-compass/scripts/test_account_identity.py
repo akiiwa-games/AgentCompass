@@ -7,7 +7,8 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-import allocator
+import account_fleet
+import worker_sessions
 import accounts_override
 import provider_inventory
 import roll
@@ -19,7 +20,7 @@ class AccountIdentityTests(unittest.TestCase):
     def setUp(self):
         self.root = isolated_router_state(self.addCleanup)
         self.now = datetime.now(timezone.utc)
-        self.fleet = json.loads(allocator.reference_fleet_path().read_text(encoding='utf-8'))
+        self.fleet = json.loads(account_fleet.reference_fleet_path().read_text(encoding='utf-8'))
         self.fleet['accounts'] = {'team-backup': {
             'family': 'claude', 'billing': 'subscription', 'verified': True,
             'windows': {'five_hour': {'hours': 5}},
@@ -31,8 +32,7 @@ class AccountIdentityTests(unittest.TestCase):
             'family': 'claude', 'home': str(self.root / 'profiles' / 'backup'), 'status': 'ready'}},
             'launchers': {'team-backup': {'family': 'claude', 'status': 'ready'}}}
         self.fleet['_discovery'] = self.inventory
-        self.enterContext(patch.object(router, 'load_allocator', return_value=allocator))
-        self.enterContext(patch.object(allocator, 'load_accounts', return_value=self.fleet))
+        self.enterContext(patch.object(account_fleet, 'load_accounts', return_value=self.fleet))
         self.enterContext(patch.object(provider_inventory, 'current', return_value=self.inventory))
 
     def usage(self, remaining):
@@ -117,7 +117,7 @@ class AccountIdentityTests(unittest.TestCase):
         self.assertEqual(family, 'claude')
         self.assertEqual(env['CLAUDE_CONFIG_DIR'], self.inventory['accounts']['team-backup']['home'])
         self.fleet['accounts']['team-backup']['bundles']['team_worker'].pop('harness')
-        self.assertEqual(allocator.bundles(self.fleet)['team_worker']['harness'], 'claude')
+        self.assertEqual(account_fleet.bundles(self.fleet)['team_worker']['harness'], 'claude')
 
     def test_session_telemetry_uses_discovered_family_and_custom_home(self):
         record = self.root / '.paseo' / 'agents' / 'workspace' / 'worker.json'
@@ -127,7 +127,7 @@ class AccountIdentityTests(unittest.TestCase):
         log.parent.mkdir(parents=True)
         log.write_text(json.dumps({'type': 'assistant', 'message': {'usage': {'input_tokens': 123}}}) + '\n')
         with patch.object(provider_inventory, 'discover', return_value=self.inventory):
-            self.assertEqual(allocator.session_state('worker', self.root)['context_tokens'], 123)
+            self.assertEqual(worker_sessions.session_state('worker', self.root)['context_tokens'], 123)
 
     def test_missing_arbitrary_account_is_removed_by_family(self):
         inventory = {'accounts': {'primary-team': {'family': 'claude', 'status': 'missing_credentials'}},

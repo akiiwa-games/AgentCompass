@@ -507,9 +507,8 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             self.assertIn("已启用 Gemini Web；已启动 Gemini Web", panel.status.get())
 
     def test_account_badge_immediately_reflects_plugin_config_switch(self):
-        allocator = mock.Mock()
-        allocator.host_policy.account_allowed.return_value = True
-        with mock.patch.object(self.router_data, "modules", return_value=(allocator, mock.Mock())):
+        import host_policy
+        with mock.patch.object(self.router_data, "modules", return_value=(mock.Mock(), mock.Mock())),                 mock.patch.object(host_policy, "account_allowed", return_value=True):
             # Stale inventory says ready, but plugins.json disabled dot2api
             badge, kind = self.router_data.account_badge(
                 "dot", {"status": "ready"}, {"dot2api": {"enabled": False, "autostart": True}}, None

@@ -19,6 +19,8 @@ for _p in (str(SCRIPT_DIR), str(TRAY_DIR)):
         sys.path.insert(0, _p)
 
 import allocator
+import account_fleet
+import task_intake
 import dispatch_flow as flow
 import dispatch_registry as registry
 import roll
@@ -123,6 +125,16 @@ BASE_TASK_TEXT_KEYS = frozenset({
 
 ROUTING_MODULES = frozenset({
     'allocator.py',
+    'account_fleet.py',
+    'axis_scores.py',
+    'candidate_eval.py',
+    'candidate_ranking.py',
+    'ledger_snapshot.py',
+    'quota_economy.py',
+    'quota_overrides.py',
+    'quota_pools.py',
+    'task_intake.py',
+    'worker_sessions.py',
     'route_judge.py',
     'roll.py',
     'dispatch_registry.py',
@@ -200,12 +212,12 @@ REASON_EXEMPT_CONTAINERS = frozenset({
 # `test_allowlist_entries_all_match_live_ast_statements`.
 ALLOWED_TAINT_SINK_STATEMENTS = {
     (
-        'skills/agent-compass/scripts/allocator.py',
+        'skills/agent-compass/scripts/task_intake.py',
         'validate_profile',
         'if isinstance(reason, str) and reason.strip():',
     ): 'checks non-empty optional classifier reason string before capping length',
     (
-        'skills/agent-compass/scripts/allocator.py',
+        'skills/agent-compass/scripts/task_intake.py',
         'validate_profile',
         "profile['reason'] = reason.strip()[:300].rstrip()",
     ): 'trims and caps optional classifier reason string to 300 chars',
@@ -837,7 +849,7 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
         self.assertEqual(violations, [], 'Banned keyword/phrase config keys found in JSON:\n' + '\n'.join(violations))
 
     def test_all_17_review_mutants_and_controls_are_caught_by_static_scanner(self):
-        a_rel = 'skills/agent-compass/scripts/allocator.py'
+        a_rel = 'skills/agent-compass/scripts/task_intake.py'
         j_rel = 'skills/agent-compass/scripts/route_judge.py'
         r_rel = 'skills/agent-compass/scripts/roll.py'
         s_rel = 'setup/router_gate_hook.py'
@@ -942,8 +954,8 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
                         'def recent_route_lock(task, records, now, bundle_id, window_seconds):',
                         "_EDIT_ONLY_RX = re.compile(r'^\\s*patch(ing)? files?\\s*$', re.I)\n\n\ndef recent_route_lock(task, records, now, bundle_id, window_seconds):",
                     ),
-                    '    kind = allocator.task_kind(task, capabilities, policy)\n    guard = capabilities',
-                    "    if needs.get('local_only') and _EDIT_ONLY_RX.match(str(needs.get('local_only_reason') or '')):\n        needs['local_only'] = False\n        task = {**task, 'needs': needs}\n    kind = allocator.task_kind(task, capabilities, policy)\n    guard = capabilities",
+                    '    kind = task_intake.task_kind(task, capabilities, policy)\n    guard = capabilities',
+                    "    if needs.get('local_only') and _EDIT_ONLY_RX.match(str(needs.get('local_only_reason') or '')):\n        needs['local_only'] = False\n        task = {**task, 'needs': needs}\n    kind = task_intake.task_kind(task, capabilities, policy)\n    guard = capabilities",
                 ),
             ),
             'M16_startswith_on_brief_path_in_match_reusable_worker': (
@@ -970,7 +982,7 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
                 self.assertTrue(violations, f'Mutant {name} escaped static scanner!')
 
     def test_round2_10_key_review_mutants_are_caught_by_static_scanner(self):
-        a_rel = 'skills/agent-compass/scripts/allocator.py'
+        a_rel = 'skills/agent-compass/scripts/task_intake.py'
         r_rel = 'skills/agent-compass/scripts/roll.py'
         a_src = (REPO_ROOT / a_rel).read_text(encoding='utf-8-sig').replace('\r\n', '\n')
         r_src = (REPO_ROOT / r_rel).read_text(encoding='utf-8-sig').replace('\r\n', '\n')
@@ -1062,27 +1074,37 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
 # with its reason; free-pool status, capacity and price come from account and model fields.
 NAME_RULE_SCAN_FILES = (
     'skills/agent-compass/scripts/allocator.py',
+    'skills/agent-compass/scripts/account_fleet.py',
+    'skills/agent-compass/scripts/axis_scores.py',
+    'skills/agent-compass/scripts/candidate_eval.py',
+    'skills/agent-compass/scripts/candidate_ranking.py',
+    'skills/agent-compass/scripts/ledger_snapshot.py',
+    'skills/agent-compass/scripts/quota_economy.py',
+    'skills/agent-compass/scripts/quota_overrides.py',
+    'skills/agent-compass/scripts/quota_pools.py',
+    'skills/agent-compass/scripts/task_intake.py',
+    'skills/agent-compass/scripts/worker_sessions.py',
     'skills/agent-compass/scripts/account_state.py',
 )
 NAME_RULE_METHODS = frozenset({'startswith', 'endswith', 'removeprefix', 'removesuffix'})
 ALLOWED_NAME_RULE_STATEMENTS = {
-    ('skills/agent-compass/scripts/allocator.py', 'account_family', "return family.strip().removesuffix('-resilient')"):
+    ('skills/agent-compass/scripts/account_fleet.py', 'account_family', "return family.strip().removesuffix('-resilient')"):
         'the resilient launcher variant is a declared suffix of the same provider family, not a model or account rule',
-    ('skills/agent-compass/scripts/allocator.py', 'account_family', "return raw.strip().removesuffix('-resilient')"):
+    ('skills/agent-compass/scripts/account_fleet.py', 'account_family', "return raw.strip().removesuffix('-resilient')"):
         'the resilient launcher variant is a declared suffix of the same provider family, not a model or account rule',
-    ('skills/agent-compass/scripts/allocator.py', 'five_axis_overlay', "family = family.removesuffix('-resilient')"):
+    ('skills/agent-compass/scripts/axis_scores.py', 'five_axis_overlay', "family = family.removesuffix('-resilient')"):
         'the resilient launcher variant is a declared suffix of the same provider family, not a model or account rule',
-    ('skills/agent-compass/scripts/allocator.py', 'bundle_harness',
+    ('skills/agent-compass/scripts/account_fleet.py', 'bundle_harness',
      "if bid.startswith('pi_') or '__pi_' in bid or launch_m.startswith('openai-codex/'):"):
         'launcher model ids carry their provider prefix (provider/model); this reads the launch command, not a model name',
-    ('skills/agent-compass/scripts/allocator.py', 'bundle_harness', "if launch_m.startswith('opencode/'):"):
+    ('skills/agent-compass/scripts/account_fleet.py', 'bundle_harness', "if launch_m.startswith('opencode/'):"):
         'launcher model ids carry their provider prefix (provider/model); this reads the launch command, not a model name',
-    ('skills/agent-compass/scripts/allocator.py', 'account_cwd_allowed',
+    ('skills/agent-compass/scripts/account_fleet.py', 'account_cwd_allowed',
      r"if cand.is_absolute() or ':' in item or item.startswith(('/', '\\')):"):
         'path syntax',
     ('skills/agent-compass/scripts/allocator.py', 'plan', "if str(note).startswith('data error:'):"):
         'our own note prefix',
-    ('skills/agent-compass/scripts/allocator.py', 'evaluate_bundle',
+    ('skills/agent-compass/scripts/candidate_eval.py', 'evaluate_bundle',
      "unpriced = ' (its cost is not priced)' if error.startswith('usd_per_hour') else ''"):
         'our own error text prefix',
 }
@@ -1133,8 +1155,8 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
 
     def setUp(self):
         self.now = datetime.now(timezone.utc)       # the readings must be current for the plan to price anything
-        self.accounts = allocator.load_accounts()
-        self.capabilities = allocator.load_capabilities(accounts=self.accounts)
+        self.accounts = account_fleet.load_accounts()
+        self.capabilities = account_fleet.load_capabilities(accounts=self.accounts)
         self.policy = self.accounts['scoring']
         self.usage = usage_windows(self.now, {
             'claude': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
@@ -1149,7 +1171,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
 
     def make_profile(self, **overrides):
         access = {'access': 'read-only'} if overrides.get('read_only_review') else {}
-        return allocator.validate_profile(profile(**{'local_only': True, 'hours_confidence': 'high', 'urgency': 'unknown',
+        return task_intake.validate_profile(profile(**{'local_only': True, 'hours_confidence': 'high', 'urgency': 'unknown',
                                                      **access, **overrides}))
 
     def test_allocator_plan_is_invariant_across_task_text_corpus(self):
@@ -1176,7 +1198,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                     'expected_hours': 1.0,
                     'profile': dict(prof, reason=text[:200]),
                 }
-                norm = allocator.normalize_task(task, self.policy, self.capabilities, self.accounts)
+                norm = task_intake.normalize_task(task, self.policy, self.capabilities, self.accounts)
                 plan = allocator.plan(task, self.usage, self.now, accounts=self.accounts, capabilities=self.capabilities)
                 scores = [(r['id'], r['score'], r['excluded']) for r in plan['ranking']]
                 norm_key = (
@@ -1368,6 +1390,16 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
         strings = set()
         for rel in (
             'skills/agent-compass/scripts/allocator.py',
+            'skills/agent-compass/scripts/account_fleet.py',
+            'skills/agent-compass/scripts/axis_scores.py',
+            'skills/agent-compass/scripts/candidate_eval.py',
+            'skills/agent-compass/scripts/candidate_ranking.py',
+            'skills/agent-compass/scripts/ledger_snapshot.py',
+            'skills/agent-compass/scripts/quota_economy.py',
+            'skills/agent-compass/scripts/quota_overrides.py',
+            'skills/agent-compass/scripts/quota_pools.py',
+            'skills/agent-compass/scripts/task_intake.py',
+            'skills/agent-compass/scripts/worker_sessions.py',
             'skills/agent-compass/scripts/route_judge.py',
             'skills/agent-compass/scripts/roll.py',
         ):
@@ -1386,7 +1418,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                 'expected_hours': 1.0,
                 'profile': dict(prof, reason=text[:200]),
             }
-            norm = allocator.normalize_task(task, self.policy, self.capabilities, self.accounts)
+            norm = task_intake.normalize_task(task, self.policy, self.capabilities, self.accounts)
             return (
                 norm['kind'], norm['difficulty'], norm['profile']['axis_demand'], norm['wants_fast'],
                 norm['read_only_review'], norm['local_only'], norm['needs_gui'],

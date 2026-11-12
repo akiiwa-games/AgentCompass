@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import accounts_override
 import allocator
+import account_fleet
+import axis_scores
 import provider_inventory as inventory
 
 from router_test_support import isolated_router_state, temporary_root
@@ -20,7 +22,7 @@ def setUpModule():
 
 
 def shipped_template():
-    return accounts_override.normalize(json.loads((allocator.REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig')))
+    return accounts_override.normalize(json.loads((account_fleet.REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig')))
 
 
 def snapshot():
@@ -49,11 +51,11 @@ def snapshot():
 
 def priced(accounts):
     """The accounts as the router prices them: capacity from the community data by plan."""
-    return allocator.five_axis_overlay(accounts, allocator.load_five_axis())['accounts']
+    return axis_scores.five_axis_overlay(accounts, axis_scores.load_five_axis())['accounts']
 
 
 def community(family, plan, window):
-    return allocator.load_five_axis()['capacity'][family][plan][window]['capacity_usd']
+    return axis_scores.load_five_axis()['capacity'][family][plan][window]['capacity_usd']
 
 
 class CleanInstallParityTests(unittest.TestCase):
@@ -117,7 +119,7 @@ class CleanInstallParityTests(unittest.TestCase):
                         'axis_demand': {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}},
         }
         # Without manual scores, unmeasured tool_operation.responsiveness enters Mode B with actionable CLI hint:
-        with unittest.mock.patch.object(allocator, 'load_public_user_scores',
+        with unittest.mock.patch.object(axis_scores, 'load_public_user_scores',
                                         return_value={'schema_version': 1, 'scores': {}}):
             unscored = allocator.plan(task_doc, {'accounts': {}}, now, accounts=self.accounts, overrides=[],
                                       host_policy_config=None, read_local_state=False)
@@ -137,7 +139,7 @@ class CleanInstallParityTests(unittest.TestCase):
         scoring = self.accounts['scoring']
         self.assertEqual(scoring['harness_order'], ['codex', 'pi'])
         self.assertEqual(scoring['profile']['harness_by_style'], {'engineering': ['codex', 'pi'], 'exploration': ['pi', 'codex']})
-        policy = allocator.load_capabilities(accounts=self.accounts)
+        policy = account_fleet.load_capabilities(accounts=self.accounts)
         self.assertEqual(policy['remote_reroute_guard'], {'enabled': True, 'bundle_id': 'dot_text', 'window_seconds': 600})
         self.assertEqual([t['label'] for t in self.accounts['priority_targets']], ['Astra', 'Argon', 'Opus 5.5'])
 

@@ -1,7 +1,8 @@
 """Public/gateway launch names score consistently without changing launch IDs."""
 import unittest
 
-import allocator
+import account_fleet
+import axis_scores
 from model_resolution import resolve_canonical_model
 
 from router_test_support import isolated_router_state
@@ -13,7 +14,7 @@ def setUpModule():
 
 class ModelResolutionTests(unittest.TestCase):
     def setUp(self):
-        self.accounts = allocator.load_accounts(allocator.reference_fleet_path())
+        self.accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
 
     def test_decorated_names_aliases_and_family_defaults(self):
         cases = {
@@ -72,9 +73,9 @@ class ModelResolutionTests(unittest.TestCase):
         }
         for raw, expected in cases.items():
             with self.subTest(raw=raw):
-                self.assertEqual(allocator.canonical(raw, self.accounts), expected)
-                resolved = allocator.resolve_model(raw, self.accounts)
-                spec = allocator.model_spec(self.accounts, raw)
+                self.assertEqual(account_fleet.canonical(raw, self.accounts), expected)
+                resolved = account_fleet.resolve_model(raw, self.accounts)
+                spec = account_fleet.model_spec(self.accounts, raw)
                 if resolved['source'] == 'family':
                     # A family name carries no row of its own: its scores come from the series conversion in the shipped
                     # five-axis data, never from a copied or default spec.
@@ -85,22 +86,22 @@ class ModelResolutionTests(unittest.TestCase):
     def test_exact_custom_models_aliases_and_existing_calibrations_win(self):
         for name, spec in self.accounts['models'].items():
             if isinstance(spec, dict):
-                self.assertEqual(allocator.canonical(name, self.accounts), name)
-                self.assertIs(allocator.model_spec(self.accounts, name), spec)
+                self.assertEqual(account_fleet.canonical(name, self.accounts), name)
+                self.assertIs(account_fleet.model_spec(self.accounts, name), spec)
         for alias, target in self.accounts['aliases'].items():
-            self.assertEqual(allocator.canonical(alias, self.accounts), target)
+            self.assertEqual(account_fleet.canonical(alias, self.accounts), target)
         self.accounts['models']['gpt-5-custom'] = {'fast_capable': False}
         self.accounts['aliases']['openai/gpt-5-custom@20251001'] = 'gpt-6.1-sol'
-        self.assertEqual(allocator.canonical('gpt-5-custom', self.accounts), 'gpt-5-custom')
-        self.assertEqual(allocator.canonical('openai/gpt-5-custom@20251001', self.accounts), 'gpt-6.1-sol')
-        self.assertEqual(allocator.canonical('vendor/gpt-5-custom-latest', self.accounts), 'gpt-5-custom')
+        self.assertEqual(account_fleet.canonical('gpt-5-custom', self.accounts), 'gpt-5-custom')
+        self.assertEqual(account_fleet.canonical('openai/gpt-5-custom@20251001', self.accounts), 'gpt-6.1-sol')
+        self.assertEqual(account_fleet.canonical('vendor/gpt-5-custom-latest', self.accounts), 'gpt-5-custom')
         # Alias cycles and metadata strings must not become model specifications.
         self.assertIsNone(resolve_canonical_model('loop', {}, {'loop': 'other', 'other': 'loop'}))
         self.assertIsNone(resolve_canonical_model('basis', self.accounts['models'], {}))
 
     def test_unknown_models_have_no_row_score_or_price(self):
-        self.assertEqual(allocator.resolve_model('new-vendor/unknown', self.accounts)['source'], 'unknown')
-        self.assertEqual(allocator.model_spec(self.accounts, 'new-vendor/unknown'), {})
+        self.assertEqual(account_fleet.resolve_model('new-vendor/unknown', self.accounts)['source'], 'unknown')
+        self.assertEqual(account_fleet.model_spec(self.accounts, 'new-vendor/unknown'), {})
         self.assertNotIn('unmeasured_models', self.accounts)
 
     def test_obsolete_defaults_are_removed_and_catalog_gaps_stay_explicit(self):
@@ -127,7 +128,7 @@ class ModelResolutionTests(unittest.TestCase):
             self.assertIsNone(resolve_canonical_model(name, self.accounts['models'], self.accounts['aliases']))
 
     def test_current_frontier_tiers_and_context_windows(self):
-        shipped = allocator.load_five_axis()['models']
+        shipped = axis_scores.load_five_axis()['models']
         self.assertEqual(shipped['claude-opus-5-5']['tier']['value'], 0.0)
         sentinels = {
             'claude-opus-5-5': 'arena_overall',
