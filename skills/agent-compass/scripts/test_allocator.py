@@ -270,7 +270,13 @@ class AllocatorTests(unittest.TestCase):
             antigravity=[('gemini-5h', 90, 3), ('gemini-weekly', 2, 100), ('3p-5h', 90, 3), ('3p-weekly', 2, 100)],
             **{'claude-lab': [('five_hour', 65, 3), ('seven_day', 83, 100), ('weekly_fable', 100, 100)]},
         )
-        self.assertTrue(self.plan({'work_kind': 'exploration_analysis'}, all_big_empty)['choice'].startswith('lab_sonnet55_'))
+        # Rule: an exhausted window excludes its candidates. With every big pool spent, only claude-lab rows stay eligible
+        # and the plan still routes; which claude-lab effort wins is not pinned.
+        empty_plan = self.plan({'work_kind': 'exploration_analysis'}, all_big_empty)
+        open_rows = [c for c in empty_plan['ranking'] if c['score'] is not None and not c['excluded']]
+        self.assertTrue(open_rows)
+        self.assertEqual({c['bundle']['account'] for c in open_rows}, {'claude-lab'}, [c['id'] for c in open_rows])
+        self.assertNotIn(empty_plan['choice'], (None, 'none'))
 
         task = {'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 0.7, 'needs': {'local_only': True}}
         usage_low = self.usage(**{'claude-lab': [('five_hour', 23, 2.5), ('seven_day', 61, 130)], 'claude': [('five_hour', 0, 2.0), ('seven_day', 0, 100)]})

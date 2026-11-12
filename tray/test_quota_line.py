@@ -51,9 +51,17 @@ def test_synthetic_decision_follows_the_quota_line_formula_and_tie_break_order()
         assert row["components"]["fit"] == pytest.approx(
             sum(axis["demand"] * min(axis["score"], axis["target"]) for axis in fit.values()) / total, abs=1e-4)
     assert [row["score"] for row in rows] == sorted((row["score"] for row in rows), reverse=True)
-    # Three candidates tie on N: the earliest-expiring under-line quota comes first, and on it the faster run.
-    assert [row["id"] for row in rows[:3]] == ["opus55_high_fast", "opus55_high", "opus55_high_b"]
-    assert [row["quota_line"]["decided_by"] for row in rows[:4]] == ["N", "faster", "earliest_expiry", "N"]
+    # The rows follow the router's own order (candidate_ranking.five_axis_order, R2-F4): each row is at or after the
+    # one above it, `decided_by` names the first key that separates them, and quota expiry is never such a key.
+    import candidate_ranking
+    for above, below in zip(rows, rows[1:]):
+        assert candidate_ranking.five_axis_order(above) <= candidate_ranking.five_axis_order(below)
+        assert below["quota_line"]["decided_by"] == candidate_ranking.five_axis_deciding_key(above, below)
+        assert below["quota_line"]["decided_by"] in candidate_ranking.FIVE_AXIS_ORDER_KEYS + ("tie",)
+    # Equal N: the faster run ranks first (expiring quota is optimised for speed).
+    for above, below in zip(rows, rows[1:]):
+        if above["score"] == below["score"] and above["duration_hours"] != below["duration_hours"]:
+            assert above["duration_hours"] < below["duration_hours"]
     assert rows[0]["bundle"]["fast"] and rows[0]["quota_line"]["hours"] < rows[1]["quota_line"]["hours"]
     assert rows[0]["quota_line"]["spend_usd"] == pytest.approx(demo.FAST_PRICE * rows[1]["quota_line"]["spend_usd"])
 

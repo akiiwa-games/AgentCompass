@@ -4,10 +4,17 @@ Values are made up to show the UI: not benchmark claims, not live allocation inp
 
 The headline decision follows the quota-line economy: N = F − β·X/h, where F is the fit capped at what the
 task needs (demand-weighted mean of min(score, target) per axis), X the spend that lands over the window's
-recovery line ℓ(t) = C·(t − t0)/L, h the task hours and β the window's quota price. Ties on N go to the
-earliest-expiring under-line quota, then the faster completion, then the fewer USD.
+recovery line ℓ(t) = C·(t − t0)/L, h the task hours and β the window's quota price. The rows are ordered by the
+router's own `candidate_ranking.five_axis_order` (after R2-F4): N, then the shorter wait, then the faster completion,
+then the fewer USD, then the higher level. Quota expiry is never a tie-break; it only enters N through the price.
 """
 from __future__ import annotations
+
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "agent-compass" / "scripts"))
+import candidate_ranking  # noqa: E402
 
 AXES = ("divergence", "coding", "aesthetics", "tool_operation")
 HEADLINE = "Refactor payment retries with integration tests"
@@ -111,7 +118,9 @@ def ranking(specs=HEADLINE_SPECS, winner=None, hours=HOURS, windows=WINDOWS):
         over = over_line(windows[window], spend, task_hours)
         cost = beta * over / hours
         components = {**dict(zip(AXES, scores)), **{f"share_{a}": s for a, s in zip(AXES, scores)}}
-        components.update(fit=round(fit, 4), opportunity_cost=round(cost, 4))
+        level = sum(DEMAND[a] * s for a, s in zip(AXES, scores)) / sum(DEMAND.values())
+        components.update(fit=round(fit, 4), opportunity_cost=round(cost, 4), five_axis_level=round(level, 4),
+                          harness_place=0)
         rows.append({
             "id": bundle_id, "bundle": {"model": model, "effort": effort, "account": window, **({"fast": True} if fast else {})},
             "score": round(fit - cost, 4), "components": components, "excluded": [], "five_axis_fit": axis_rows,
@@ -119,17 +128,14 @@ def ranking(specs=HEADLINE_SPECS, winner=None, hours=HOURS, windows=WINDOWS):
                            "over_line_usd": round(over, 2)},
             "capacity": {"remaining": round(100 * (1 - used / capacity), 1)},
             "expected_pct": round(100 * spend / capacity, 1),
-            "_order": (-round(fit - cost, 4), reset_in if over < spend else float("inf"), task_hours, spend),
+            "duration_hours": round(task_hours, 4), "expected_hours": round(task_hours, 4), "available_in_hours": None,
+            "expected_usd": round(spend, 2),
         })
-    rows.sort(key=lambda row: (row["id"] != winner, row["_order"]))
-    keys = ("N", "earliest_expiry", "faster", "cheaper")
+    rows.sort(key=lambda row: (row["id"] != winner, candidate_ranking.five_axis_order(row)))
     for index, row in enumerate(rows):
-        previous = rows[index - 1]["_order"] if index else None
-        # The first sort key that differs from the row above is the one that decided this row's place.
-        row["quota_line"]["decided_by"] = next(
-            (key for key, a, b in zip(keys, previous, row["_order"]) if a != b), "N") if previous else "N"
-    for row in rows:
-        del row["_order"]
+        # The first key of the router's order on which the row above beats this one ('net_score' for the first row).
+        row["quota_line"]["decided_by"] = (
+            candidate_ranking.five_axis_deciding_key(rows[index - 1], row) if index else "net_score")
     return rows
 
 
