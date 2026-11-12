@@ -535,7 +535,7 @@ class ModelsTab:
         import update_status
         self.run(update_status.open_log, self.say())
 
-    def load_cli(self, summary=None):
+    def load_cli(self, summary=None, result=None):
         import cli_updates
         self._cli_generation = getattr(self, "_cli_generation", 0) + 1
         generation = self._cli_generation
@@ -544,17 +544,22 @@ class ModelsTab:
                 self.cli_loaded(rows)
                 if summary is not None:
                     self.cli_status.set(summary)
+                if result is not None:
+                    self.set_cli_result_pill(result)
         self.run(cli_updates.snapshot, done)
 
     def cli_loaded(self, rows):
         self.cli_inventory = rows
         installed = sum(bool(row.get("path")) and row.get("source") not in ("missing", "custom") for row in rows)
         available = sum(row.get("status") == "outdated" for row in rows)
+        unverified = sum(row.get("status") == "unverified" for row in rows)
         updatable = [row for row in rows if row.get("can_update", row.get("source") in ("npm", "native"))]
         unchecked = bool(updatable) and all(row.get("status") == "unchecked" for row in updatable)
         if hasattr(self, "cli_pill"):
             if getattr(self, "cli_updating", False):
                 theme.set_pill(self.cli_pill, _tr("更新中"), "warn")
+            elif unverified:
+                theme.set_pill(self.cli_pill, _tr("更新未确认"), "warn")
             elif available:
                 theme.set_pill(self.cli_pill, _tr("{0} 可更新").format(available), "warn")
             elif unchecked:
@@ -562,8 +567,9 @@ class ModelsTab:
             else:
                 theme.set_pill(self.cli_pill, _tr("已是最新"), "ok")
         if not getattr(self, "cli_updating", False):
-            self.cli_status.set(_tr("CLI：{0} 已安装 · 尚未检查更新").format(installed) if unchecked and not available else
-                                _tr("CLI：{0} 已安装 · {1} 可更新").format(installed, available))
+            self.cli_status.set(_tr("CLI：{0} 已安装 · {1} 可更新 · {2} 未确认").format(installed, available, unverified)
+                                if unverified else _tr("CLI：{0} 已安装 · 尚未检查更新").format(installed)
+                                if unchecked and not available else _tr("CLI：{0} 已安装 · {1} 可更新").format(installed, available))
         for widgets, row in zip(getattr(self, "model_widgets", []), getattr(self, "model_inventory", [])):
             self.fill_harness_version(widgets, row)
 
@@ -572,6 +578,12 @@ class ModelsTab:
         enabled = bool(self.cli_auto.get())
         self.run(lambda: cli_updates.set_auto_update(enabled), lambda value: self.status.set(
             _tr("已开启每日 CLI 自动更新") if value else _tr("已关闭 CLI 自动更新")))
+
+    def set_cli_result_pill(self, result):
+        if hasattr(self, "cli_pill"):
+            failed, unverified = bool(result.get("failed")), bool(result.get("unverified"))
+            theme.set_pill(self.cli_pill, _tr("部分异常") if failed else _tr("更新未确认") if unverified else _tr("已是最新"),
+                           "warn" if failed or unverified else "ok")
 
     def update_all_cli(self):
         import cli_updates
@@ -597,12 +609,10 @@ class ModelsTab:
             self.cli_updating = False
             self.cli_update_button.state(["!disabled"])
             self.cli_update_button.configure(text=_tr("检查更新"))
-            if hasattr(self, "cli_pill"):
-                failed = bool(result.get("failed") or result.get("deferred"))
-                theme.set_pill(self.cli_pill, _tr("部分异常") if failed else _tr("已是最新"), "warn" if failed else "ok")
+            self.set_cli_result_pill(result)
             self.cli_status.set(result["summary"])
             self.status.set(result["summary"])
-            self.load_cli(summary=result["summary"])
+            self.load_cli(summary=result["summary"], result=result)
         self.run(work, done, _tr("正在检查并更新 CLI…"), long=True)
 
     def cli_progress(self, message):

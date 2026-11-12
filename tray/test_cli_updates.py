@@ -237,18 +237,13 @@ class NpmUpdateTests(CliUpdateCase):
         self.assertNotIn("已更新", message)
         self.assertIn("仍是 0.1.0", message)
 
-    def test_running_sessions_block_the_update_before_npm_touches_anything(self):
-        with mock.patch.object(cli_updates, "running_instances", return_value=2):
-            message = cli_updates.update("codex", self.home, self.environ)
-        self.assertIn("2 个 Codex CLI 进程正在运行", message)
-        self.assertEqual(self.installs(), [])
-
-    def test_only_processes_inside_the_package_count_as_running(self):
-        inside = self.package / "node_modules" / "codex-win32-x64" / "codex.exe"
-        rows = [mock.Mock(info={"exe": str(inside)}), mock.Mock(info={"exe": str(self.decoy / "bin" / "codex.exe")}),
-                mock.Mock(info={"exe": None}), mock.Mock(info={"exe": str(self.package) + "-sibling\\x.exe"})]
-        with mock.patch("psutil.process_iter", return_value=rows):
-            self.assertEqual(cli_updates.running_instances(self.package), 1)
+    def test_updates_do_not_inspect_or_stop_existing_sessions(self):
+        # Rule: an active session must never prevent the installer from running.
+        with mock.patch("psutil.process_iter", side_effect=AssertionError("foreign process inventory")):
+            outcome = {}
+            cli_updates.update("codex", self.home, self.environ, outcome=outcome)
+        self.assertEqual(outcome["status"], "updated")
+        self.assertEqual(len(self.installs()), 1)
 
     def test_a_hung_install_is_stopped_with_its_whole_tree(self):
         self.mode("hang")
@@ -335,6 +330,34 @@ class NativeUpdateTests(NativeUpdateFixture):
         self.assertNotIn(["update"], self.commands)
 
 
+
+    def test_check_reports_update_but_successful_noop_is_failed(self):
+        original = self.fake
+        def unchanged(argv, **options):
+            if argv[1:] == ["update"]:
+                self.commands.append(argv[1:])
+                return owned_process.Result(0, "success", "")
+            return original(argv, **options)
+        outcome = {}
+        with mock.patch.object(cli_updates.owned_process, "run", side_effect=unchanged):
+            cli_updates.update("grok", self.home, self.environ, outcome=outcome)
+        # Rule: a known available update must be verified on disk, regardless of exit code.
+        self.assertEqual(outcome["status"], "failed")
+        self.assertIn(["update"], self.commands)
+        self.assertNotEqual(self.version, self.latest)
+
+    def test_no_check_and_no_version_change_is_unverified_including_later_snapshot(self):
+        folder = self.home / "AppData" / "Local" / "agy" / "bin"
+        folder.mkdir(parents=True)
+        (folder / "agy.exe").write_bytes(b"MZ")
+        self.environ.update(PATH=str(folder), LOCALAPPDATA=str(self.home / "AppData" / "Local"))
+        self.latest = self.version  # successful vendor command leaves the binary unchanged
+        outcome = {}
+        cli_updates.update("agy", self.home, self.environ, outcome=outcome)
+        self.assertEqual(outcome["status"], "unverified")
+        self.assertIn(["update"], self.commands)
+        self.assertEqual(self.row("agy")["status"], "unverified")
+        self.assertNotIn("agy", cli_updates._latest)  # no invented latest-version proof
 
     def test_a_cli_without_a_check_command_just_runs_its_own_updater(self):
         folder = self.home / "AppData" / "Local" / "agy" / "bin"

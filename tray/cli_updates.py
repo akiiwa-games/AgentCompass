@@ -28,13 +28,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import owned_process
+import cli_update_files
 
 CHECK_TIMEOUT = 60
 VERSION_TIMEOUT = 20
 UPDATE_TIMEOUT = 600
 AUTO_UPDATE_INTERVAL_SECONDS = 24 * 3600
 AUTO_UPDATE_STARTUP_SECONDS = 180
-DEFERRED_RETRY_SECONDS = 60
 _started_at = time.monotonic()
 _state_lock = threading.RLock()
 _batch_lock = threading.Lock()
@@ -498,6 +498,8 @@ def describe(target: Target, probe: bool = True) -> dict:
         status = "manual"
     elif not resolve_command(install):
         status = "outdated"
+    elif cached.get("kind") == "unverified":
+        status = "unverified"
     elif latest and version and version_key(latest) > version_key(version):
         status = "outdated"
     elif latest and version:
@@ -514,15 +516,6 @@ def describe(target: Target, probe: bool = True) -> dict:
 
 # ---------- actions ----------
 
-class InterruptedUpdate(RuntimeError):
-    """The installer or check exited by external termination or session lock; keep the CLI queued for retry."""
-
-
-def externally_terminated(result: owned_process.Result) -> bool:
-    """An exit by external termination (signal or killed with no diagnostic output) is not a stable error."""
-    return result.returncode != 0 and (result.returncode < 0 or not (result.stdout or result.stderr).strip())
-
-
 def begin(target: Target) -> str:
     """Claim the CLI for an action; returns '' when claimed, else why not. Only one update runs at a time."""
     with _lock:
@@ -534,7 +527,7 @@ def begin(target: Target) -> str:
         return ""
 
 
-def finish(target: Target, kind: str = "", message: str = "", *, deferred: bool | None = None) -> None:
+def finish(target: Target, kind: str = "", message: str = "") -> None:
     with _lock:
         _busy.pop(target.id, None)
     if message:
@@ -542,12 +535,6 @@ def finish(target: Target, kind: str = "", message: str = "", *, deferred: bool 
         def persist(state):
             state.setdefault("items", {})[target.id] = {"latest": _latest.get(target.id, ""), "kind": kind,
                                                        "message": message, "at": time.time()}
-            if deferred is not None:
-                queued = list(state.get("deferred") or [])
-                if deferred and target.id not in queued:
-                    state["deferred"] = [*queued, target.id]
-                elif not deferred and target.id in queued:
-                    state["deferred"] = [item for item in queued if item != target.id]
         _change_state(persist)
 
 
@@ -575,8 +562,6 @@ def fail_text(name: str, result) -> str:
 
 def npm_latest(install: Install) -> str:
     result = run_tool([*install.npm, "view", install.spec.package, "version"], CHECK_TIMEOUT, install)
-    if externally_terminated(result):
-        raise InterruptedUpdate(fail_text(install.spec.name, result))
     found = VERSION.search(result.stdout) if result.returncode == 0 else None
     if not found:
         raise RuntimeError(_tr("查询 {0} 的最新版本失败：{1}").format(
@@ -586,8 +571,6 @@ def npm_latest(install: Install) -> str:
 
 def native_latest(install: Install) -> tuple[str, bool]:
     result = run_tool([str(install.path), *install.spec.check], CHECK_TIMEOUT, install)
-    if externally_terminated(result):
-        raise InterruptedUpdate(fail_text(install.spec.name, result))
     try:
         value = json.loads(result.stdout)
         latest = str(value["latestVersion"])
@@ -612,135 +595,9 @@ def unsupported(target: Target) -> str:
 
 
 
-_proc_cache: tuple[float, list[tuple[int, str, str]]] = (0.0, [])
-_SCRIPT_RUNNERS = {"node.exe", "node", "bun.exe", "bun", "deno.exe", "deno"}
-
-
-def _psutil_iter_is_mocked() -> bool:
-    import psutil
-
-    fn = getattr(psutil, "process_iter", None)
-    return fn is None or getattr(fn, "__module__", "") != "psutil" or hasattr(fn, "_mock_name")
-
-
-def _win32_process_table() -> list[tuple[int, str, str]]:
-    """Fast ~25ms kernel process snapshot on Windows (vs ~9s for psutil.process_iter(['exe', 'cmdline']))."""
-    global _proc_cache
-    now = time.monotonic()
-    with _lock:
-        if now - _proc_cache[0] < 1.2 and _proc_cache[1]:
-            return _proc_cache[1]
-    import ctypes
-    import ctypes.wintypes as wintypes
-
-    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-
-    class PROCESSENTRY32W(ctypes.Structure):
-        _fields_ = [
-            ("dwSize", wintypes.DWORD),
-            ("cntUsage", wintypes.DWORD),
-            ("th32ProcessID", wintypes.DWORD),
-            ("th32DefaultHeapID", ctypes.c_size_t),
-            ("th32ModuleID", wintypes.DWORD),
-            ("cntThreads", wintypes.DWORD),
-            ("th32ParentProcessID", wintypes.DWORD),
-            ("pcPriClassBase", wintypes.LONG),
-            ("dwFlags", wintypes.DWORD),
-            ("szExeFile", wintypes.WCHAR * 260),
-        ]
-
-    snap = k32.CreateToolhelp32Snapshot(0x2, 0)
-    if snap == wintypes.HANDLE(-1).value:
-        return []
-    rows: list[tuple[int, str, str]] = []
-    buf = ctypes.create_unicode_buffer(1024)
-    try:
-        entry = PROCESSENTRY32W(dwSize=ctypes.sizeof(PROCESSENTRY32W))
-        if k32.Process32FirstW(snap, ctypes.byref(entry)):
-            while True:
-                pid = int(entry.th32ProcessID)
-                name = str(entry.szExeFile or "")
-                exe = ""
-                if pid > 4:
-                    handle = k32.OpenProcess(0x1000, False, pid)
-                    if handle:
-                        try:
-                            size = wintypes.DWORD(1024)
-                            if k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
-                                exe = buf.value
-                        finally:
-                            k32.CloseHandle(handle)
-                rows.append((pid, name.lower(), exe))
-                if not k32.Process32NextW(snap, ctypes.byref(entry)):
-                    break
-    finally:
-        k32.CloseHandle(snap)
-    with _lock:
-        _proc_cache = (time.monotonic(), rows)
-    return rows
-
-
-def running_instances(root: Path) -> int:
-    """Processes whose executable lives inside this npm package; Windows locks those files against replacement."""
-    import psutil
-
-    count, prefix = 0, os.path.normcase(str(root)) + os.sep
-    if os.name == "nt" and not _psutil_iter_is_mocked():
-        for pid, name_lower, exe in _win32_process_table():
-            inside = bool(exe and os.path.normcase(exe).startswith(prefix))
-            script = False
-            if not inside and name_lower in _SCRIPT_RUNNERS:
-                try:
-                    command = psutil.Process(pid).cmdline() or []
-                    script = any(os.path.normcase(str(arg)).startswith(prefix) for arg in command[1:])
-                except psutil.Error:
-                    script = False
-            if inside or script:
-                count += 1
-        return count
-    for process in psutil.process_iter(["exe", "cmdline"]):
-        try:
-            exe = process.info.get("exe")
-            command = process.info.get("cmdline") or []
-            inside = exe and os.path.normcase(exe).startswith(prefix)
-            # Node-based CLIs (Pi/OpenCode/Claude npm) run node.exe outside
-            # the package, but their entry script still belongs to this root.
-            script = any(os.path.normcase(str(arg)).startswith(prefix) for arg in command[1:])
-        except psutil.Error:
-            continue
-        if inside or script:
-            count += 1
-    return count
-
-
-def target_running(target: Target) -> int:
-    if target.install.source == "npm":
-        return running_instances(target.install.package_dir)
-    import psutil
-    path = target.install.path
-    if path is None:
-        return 0
-    aliases = {str(path), *(str(path.with_name(alias + path.suffix)) for alias in target.install.spec.aliases)}
-    names = {os.path.normcase(value) for value in aliases}
-    if os.name == "nt" and not _psutil_iter_is_mocked():
-        basenames = {Path(value).name.lower() for value in aliases}
-        return sum(
-            1
-            for _pid, name_lower, exe in _win32_process_table()
-            if name_lower in basenames and os.path.normcase(exe or "") in names
-        )
-    count = 0
-    for process in psutil.process_iter(["exe"]):
-        try:
-            if os.path.normcase(process.info.get("exe") or "") in names:
-                count += 1
-        except psutil.Error:
-            continue
-    return count
-
-
 def update(cli_id: str, home=None, environ=None, *, outcome: dict | None = None) -> str:
     """Update one CLI with the method proven for the executable the router resolves; verify the result."""
+    cleanup_retired()
     _clear_which_cache()
     target = find(cli_id, home, environ)
     if target is None:
@@ -748,43 +605,29 @@ def update(cli_id: str, home=None, environ=None, *, outcome: dict | None = None)
     busy = begin(target)
     if busy:
         if outcome is not None:
-            outcome.update(status="deferred", message=busy)
+            outcome.update(status="busy", message=busy)
         return busy
     kind, message, status = "warn", "", "failed"
     try:
         if unsupported(target):
             message = unsupported(target)
             status = "unsupported"
-        elif target.install.source == "native" and target_running(target):
-            message = _tr("{0} 有运行中的会话，已延后更新").format(target.name)
-            status = "deferred"
         elif target.install.source == "npm":
             before = package_version(target.install.package_dir)
             had_command = resolve_command(target.install, fresh=True) is not None
             kind, message = update_npm(target)
             after = package_version(target.install.package_dir)
             status = ("updated" if (before != after or not had_command) else "current") if kind == "ok" else "failed"
-            if kind != "ok" and target_running(target):
-                status = "deferred"
         else:
-            before = local_version(target.install)
-            had_command = resolve_command(target.install, fresh=True) is not None
-            kind, message = update_native(target)
-            after = local_version(target.install)
-            status = ("updated" if kind == "ok" and ((before and after and before != after) or not had_command)
-                      else ("current" if kind == "ok" else "failed"))
-            if kind != "ok" and target_running(target):
-                status = "deferred"
-    except InterruptedUpdate as interrupted:
-        message = str(interrupted)
-        status = "deferred"
-    except (RuntimeError, OSError) as error:
+            status, message = update_native(target)
+            kind = "ok" if status in ("updated", "current") else ("unverified" if status == "unverified" else "warn")
+    except (RuntimeError, OSError, ValueError) as error:
         message = _tr("{0} 更新失败：{1}").format(target.name, error)
-        status = "deferred" if target_running(target) else "failed"
+        status = "failed"
     finally:
         if outcome is not None:
             outcome.update(status=status, message=message)
-        finish(target, kind, message, deferred=(status == "deferred"))
+        finish(target, kind, message)
     return message
 
 
@@ -797,15 +640,9 @@ def update_npm(target: Target) -> tuple[str, str]:
         _latest[target.id] = latest
     if resolved_before is not None and before and version_key(before) >= version_key(latest):
         return "ok", _tr("{0} 已是最新（{1}）").format(name, before)
-    running = running_instances(install.package_dir)
-    if running:
-        raise InterruptedUpdate(
-            _tr("检测到 {0} 个 {1} 进程正在运行，Windows 会锁住它们的文件，未更新。关闭这些会话后再试（不会自动结束它们）。").format(running, name)
-        )
+    cli_update_files.prepare_npm(install.package_dir, install.prefix, remember_retired)
     result = run_tool([*install.npm, "install", "-g", f"{install.spec.package}@latest", "--prefix", str(install.prefix),
                        "--no-fund", "--no-audit"], UPDATE_TIMEOUT, install)
-    if externally_terminated(result):
-        raise InterruptedUpdate(fail_text(name, result))
     if result.returncode != 0:
         return "warn", fail_text(name, result)
     after = package_version(install.package_dir)
@@ -822,6 +659,7 @@ def update_npm(target: Target) -> tuple[str, str]:
 
 
 def update_native(target: Target) -> tuple[str, str]:
+    """Return a verified outcome, keeping successful command exit separate from version proof."""
     install, name = target.install, target.name
     before = local_version(install)
     resolved_before = resolve_command(install, fresh=True)
@@ -830,23 +668,24 @@ def update_native(target: Target) -> tuple[str, str]:
         with _lock:
             _latest[target.id] = latest
         if resolved_before is not None and not available:
-            return "ok", _tr("{0} 已是最新（{1}）").format(name, before or latest)
+            return "current", _tr("{0} 已是最新（{1}）").format(name, before or latest)
     result = run_tool([str(install.path), *install.spec.update], UPDATE_TIMEOUT, install)
-    if externally_terminated(result):
-        raise InterruptedUpdate(fail_text(name, result))
     if result.returncode != 0:
-        return "warn", fail_text(name, result)
+        return "failed", fail_text(name, result)
     resolved_after = resolve_command(install, fresh=True)
     if resolved_after is None:
-        return "warn", _tr("{0} 更新命令已结束，但命令 {1} 仍无法解析，详见日志").format(
+        return "failed", _tr("{0} 更新命令已结束，但命令 {1} 仍无法解析，详见日志").format(
             name, install.configured or install.spec.command)
     after = local_version(install)
-    if not install.spec.check and (after or before):
-        with _lock:
-            _latest[target.id] = after or before
     if after and before and after != before:
-        return "ok", _tr("{0} 已更新：{1} → {2}；新版本在下次启动该 CLI 时生效，未重启任何会话").format(name, before, after)
-    return "ok", _tr("{0} 的更新命令已完成，版本仍为 {1}（可能已是最新）").format(name, after or before or "?")
+        if not install.spec.check:
+            with _lock:
+                _latest[target.id] = after
+        return "updated", _tr("{0} 已更新：{1} → {2}；新版本在下次启动该 CLI 时生效，未重启任何会话").format(name, before, after)
+    if install.spec.check and available:
+        return "failed", _tr("{0} 更新失败：更新命令返回成功但版本未变（当前 {1}，目标 {2}）").format(
+            name, after or before or "?", latest)
+    return "unverified", _tr("{0} 的更新命令返回成功，版本仍为 {1}；无法确认是否已是最新").format(name, after or before or "?")
 
 
 def open_log() -> str:
@@ -892,6 +731,23 @@ def set_auto_update(enabled: bool) -> bool:
     return bool(enabled)
 
 
+def remember_retired(path: Path) -> None:
+    def persist(state):
+        state.setdefault("retired_files", []).append(str(path))
+    _change_state(persist)
+
+
+def cleanup_retired() -> None:
+    # Hold the state transaction while deleting, so concurrent panels cannot lose
+    # a newly retained image. Windows refuses to unlink a still-mapped last link.
+    if not _load_state().get("retired_files"):
+        return
+    def clean(state):
+        state["retired_files"] = [raw for raw in state.get("retired_files", [])
+                                  if not cli_update_files.remove_retired(Path(raw))]
+    _change_state(clean)
+
+
 def _record_status(event: dict) -> None:
     try:
         import update_status
@@ -901,13 +757,12 @@ def _record_status(event: dict) -> None:
         pass
 
 
-def update_all(progress=None, *, auto: bool = False, only: list[str] | None = None, home=None, environ=None) -> dict:
+def update_all(progress=None, *, auto: bool = False, home=None, environ=None) -> dict:
     """Check then update each supported install. All installers are owned; no worker is terminated.
 
-    Returns structured results so notification and deferred retries never depend
-    on translated text. `only` retries locked installs without checking others.
+    Returns structured results so notifications never depend on translated text.
     """
-    result = {key: [] for key in ("updated", "current", "deferred", "failed")}
+    result = {key: [] for key in ("updated", "current", "unverified", "failed")}
     result["messages"] = []
     if not _batch_lock.acquire(blocking=False):
         result["summary"] = _tr("另一个 CLI 正在更新，请等它结束后再更新")
@@ -924,7 +779,7 @@ def update_all(progress=None, *, auto: bool = False, only: list[str] | None = No
             return result
         environ = os.environ if environ is None else environ
         candidates = [target for target in targets(Path(home) if home is not None else Path.home(), environ)
-                      if not unsupported(target) and (only is None or target.id in only)]
+                      if not unsupported(target)]
         if not auto:
             _record_status({
                 "kind": "start",
@@ -939,35 +794,22 @@ def update_all(progress=None, *, auto: bool = False, only: list[str] | None = No
             if progress:
                 progress(step)
             outcome = {}
-            if target_running(target):
-                message = _tr("{0} 有运行中的会话，已延后更新").format(target.name)
-                outcome.update(status="deferred", message=message)
-                log(message)
-            else:
-                message = update(target.id, home, environ, outcome=outcome)
+            message = update(target.id, home, environ, outcome=outcome)
             if not auto:
                 _record_status({"kind": "result", "component": target.name, "message": message, "status": outcome.get("status", "failed")})
             status = outcome.get("status", "failed")
             if status in result:
                 result[status].append(target.id)
             result["messages"].append(message)
-        result["summary"] = _tr("CLI：已更新 {0} · 已是最新 {1} · 延后 {2} · 失败 {3}").format(
-            *(len(result[key]) for key in ("updated", "current", "deferred", "failed")))
+        result["summary"] = _tr("CLI：已更新 {0} · 已是最新 {1} · 未确认 {2} · 失败 {3}").format(
+            *(len(result[key]) for key in ("updated", "current", "unverified", "failed")))
         if not auto:
             _record_status({"kind": "finish", "component": "", "message": result["summary"]})
         def persist(state):
-            # A retry only owns its checked subset; new full runs replace the queue.
-            if only is None:
-                state["deferred"] = list(result["deferred"])
-            else:
-                kept = [item for item in (state.get("deferred") or []) if item not in only]
-                state["deferred"] = kept + [item for item in result["deferred"] if item not in kept]
             state["last_summary"] = result["summary"]
             if auto:
                 state["last_auto_update_summary"] = result["summary"]
-                if only is None:
-                    state["last_auto_update_at"] = time.time()
-                state["last_deferred_retry_at"] = time.time()
+                state["last_auto_update_at"] = time.time()
         _change_state(persist)
         return result
     finally:
@@ -987,7 +829,8 @@ def _timestamp(value) -> float:
 
 def maybe_trigger_auto_update(notify_fn=None, *, now: float | None = None, uptime: float | None = None,
                               home=None, environ=None) -> bool:
-    """Nonblocking daily maintenance; retry busy CLIs at most once per minute."""
+    """Clean retired files and start nonblocking daily maintenance when enabled."""
+    cleanup_retired()
     global _auto_running
     now = time.time() if now is None else now
     uptime = time.monotonic() - _started_at if uptime is None else uptime
@@ -999,17 +842,14 @@ def maybe_trigger_auto_update(notify_fn=None, *, now: float | None = None, uptim
             if _busy:
                 return False
         due = now - _timestamp(state.get("last_auto_update_at")) >= AUTO_UPDATE_INTERVAL_SECONDS
-        deferred = state.get("deferred") or []
-        retry_due = deferred and now - _timestamp(state.get("last_deferred_retry_at")) >= DEFERRED_RETRY_SECONDS
-        if not due and not retry_due:
+        if not due:
             return False
         _auto_running = True
-        only = None if due else deferred
 
     def runner():
         global _auto_running
         try:
-            result = update_all(auto=True, only=only, home=home, environ=environ)
+            result = update_all(auto=True, home=home, environ=environ)
             if result["updated"] and notify_fn:
                 notify_fn(result["summary"])
         except Exception as error:
