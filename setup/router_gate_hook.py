@@ -725,16 +725,14 @@ DISABLED_RECOVERY = (
 
 
 def check_target_disabled(
-    target: dict, account: str | None, candidates: list[dict], accounts: dict | None, policy: dict | None,
+    target: dict, account: str | None, candidates: list[dict], policy: dict | None,
 ) -> str | None:
-    """Block a target the user turned off: host policy, account verified=false, or every matching bundle disabled."""
+    """Block a target disabled by host policy or with every matching bundle disabled."""
     if not account:
         return None
     where = f" (agent_id={target['agent_id']})" if target.get("agent_id") else ""
     if policy is not None and account not in (policy.get("allowed_accounts") or []):
         cause = f"账号 {account} 已在本机禁用（不在 host-policy.json 的 allowed_accounts 中）"
-    elif ((accounts or {}).get("accounts") or {}).get(account, {}).get("verified") is False:
-        cause = f"账号 {account} 已标记 verified: false（accounts-override.json / accounts.json）"
     elif candidates and all(c.get("disabled") for c in candidates):
         cause = "档位 " + ", ".join(c["bundle_id"] for c in candidates) + " 已在模型管理中停用"
     else:
@@ -1199,7 +1197,7 @@ def evaluate_payload(
             account, candidates = resolve_target(target, accounts)
             controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
             reason = None if controlling else (
-                check_target_disabled(target, account, candidates, accounts, policy)
+                check_target_disabled(target, account, candidates, policy)
                 or check_account_quota_exhausted(
                     account or target.get("provider"),
                     usage_cache_path=usage_cache_path,

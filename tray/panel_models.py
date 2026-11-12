@@ -103,6 +103,7 @@ class ModelsTab:
         for widgets, row in zip(self.model_widgets, rows):
             widgets["on"].set(bool(row["enabled"]))
             theme.set_pill(widgets["pill"], short_badge(row["badge"]), row["kind"])
+            widgets["reason"].configure(text=row["badge"] if row["kind"] == "warn" else "")
             widgets["row"] = row
             pattern = row.get("cwd_pattern") or row.get("cwd_regex") or ""
             widgets["cwd"].configure(text="⌁•" if pattern else "⌁")
@@ -144,13 +145,15 @@ class ModelsTab:
         pill.pack(side="left")
         if row["harness"] == "grok-bot":
             ttk.Button(status, text="↗", width=2, style="Tiny.TButton", command=lambda: self.show("plugins")).pack(side="left", padx=3)
+        reason = ttk.Label(account, style="CardTiny.TLabel", wraplength=280)
+        reason.pack(anchor="w")
         selection = ttk.Frame(box, style="Card.TFrame")
         selection.grid(row=grid, column=2, sticky="new", pady=7)
         dropdown = ttk.Button(selection, text="✎ ▾", style="Tiny.TButton")
         dropdown.configure(command=lambda: self.open_model_menu(row["account"], row["harness"], dropdown))
         overflow = ttk.Button(selection, style="Tiny.TButton", command=lambda: dropdown.invoke())
         widgets = {"on": on, "check": check, "version": version, "pill": pill, "chips": selection,
-                   "dropdown": dropdown, "overflow": overflow, "cwd": cwd, "row": row, "selected_models": [], "chip_labels": []}
+                   "dropdown": dropdown, "overflow": overflow, "cwd": cwd, "reason": reason, "row": row, "selected_models": [], "chip_labels": []}
         def resize(event):
             if event.width <= 1 or event.width == widgets.get("_last_chip_width"):
                 return

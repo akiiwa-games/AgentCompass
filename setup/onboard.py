@@ -4,9 +4,9 @@
     agentcompass uninstall [--dry-run]
 
 `setup` detects which agent CLIs are installed and signed in (claude, codex, agy, opencode, pi, grok, paseo), writes the
-accounts the router may use into ~/.agent-compass/accounts-override.json, runs one usage collection with the router's own
+launch evidence into ~/.agent-compass/accounts-override.json and account preferences into host policy, runs one usage collection with the router's own
 collector (optionally also fetches the Usage Float display plugin), links the router skill, writes the global agent rules and (only on request) the router
-gate hook. Everything it changes is backed up and recorded so `uninstall` can reverse it.
+gate hook. Uninstall removes managed host integration while retaining account preferences and launch evidence.
 
 Importable: `main(argv)`, `setup_main(argv)` and `uninstall_main(argv)` return process exit codes.
 """
@@ -137,48 +137,29 @@ def onboarding_path(home: Path) -> Path:
 
 
 def write_override(home: Path, detection: dict, disabled: set[str], dry_run: bool = False) -> dict:
-    """Make exactly the detected, not-disabled accounts routable; never overwrite the user's own override entries."""
+    """Record acceptance of detected accounts with unreadable sign-in as launch evidence."""
     path = override_path(home)
     previous_state = _read_json(onboarding_path(home))
-    ours_before = set(previous_state.get("disabled_by_onboarding") or [])
     existed = path.is_file()
     document = (accounts_override.load_override(path) or {}) if existed else {}
     document.setdefault("schema_version", 2)
     accounts = document.setdefault("accounts", {})
     detected = {row["name"]: row for row in detection["accounts"]}
     wanted_off = {name for name in disabled if name in detected and detected[name]["signed_in"] is not False}
-    added, removed, enabled = [], [], []
-    for name in sorted(wanted_off):
-        entry = accounts.setdefault(name, {})
-        if entry.get("verified") is not False:
-            if "verified" in entry and name not in ours_before:
-                continue          # the user set this deliberately; leave it
-            entry["verified"] = False
-            added.append(name)
-    for name in sorted(ours_before - wanted_off):
-        entry = accounts.get(name)
-        if isinstance(entry, dict) and entry.get("verified") is False:
-            entry.pop("verified")
-            removed.append(name)
-            if not entry:
-                accounts.pop(name)
-    # An accepted CLI whose sign-in cannot be read stays routable only when the override says so.
-    # Discovery no longer promotes "installed" to a confident pick by itself.
+    enabled = []
+    # Acceptance is launch evidence for a CLI whose sign-in cannot be inspected.
     for name, row in sorted(detected.items()):
         if row.get("signed_in") is not None or name in wanted_off:
             continue
-        entry = accounts.get(name)
-        if isinstance(entry, dict) and entry.get("verified") is False and name not in ours_before:
-            continue              # the user turned this slot off; do not flip it back
         entry = accounts.setdefault(name, {})
         if entry.get("verified") is not True:
             entry["verified"] = True
             enabled.append(name)
     if not accounts:
         document.pop("accounts")
-    changed = bool(added or removed or enabled) or not existed
+    changed = bool(enabled) or not existed
     result = {"path": str(path), "created": not existed or bool(previous_state.get("override_created")),
-              "added": added, "removed": removed, "enabled": enabled, "disabled": sorted(wanted_off), "backup": None}
+              "enabled": enabled, "disabled": sorted(wanted_off), "backup": None}
     if changed and not dry_run:
         if existed:
             backup = home / ".agent-compass" / "backups" / f"onboard-{datetime.now().strftime('%Y%m%d-%H%M%S')}" / path.name
@@ -188,6 +169,29 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(accounts_override.normalize(document), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     return result
+
+
+def disable_in_host_policy(home: Path, detection: dict, disabled: set[str], dry_run: bool = False,
+                           path: Path | None = None) -> Path:
+    """Apply setup's explicit denials to the same policy as the tray."""
+    import override_store
+    import state_upgrade
+    path = path or home / ".agent-compass" / "host-policy.json"
+    names = list(dict.fromkeys([*(detection.get("inventory", {}).get("accounts") or {}),
+                                *(row["name"] for row in detection["accounts"])]))
+    if not disabled or dry_run:
+        return path
+    with override_store.locked(path):
+        existing = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else None
+        if existing is not None:
+            state_upgrade.validate_host_policy_doc(existing, path)
+        policy = dict(existing or {})
+        allowed = policy.get("allowed_accounts", names)
+        policy["allowed_accounts"] = [name for name in allowed if name not in disabled]
+        if existing is None or "known_accounts" in policy:
+            policy["known_accounts"] = list(dict.fromkeys([*policy.get("known_accounts", []), *allowed, *disabled]))
+        override_store.write(path, policy)
+    return path
 
 
 # --- usage-float plugin ----------------------------------------------------------------------------------------------
@@ -363,7 +367,11 @@ def setup_main(argv: list[str] | None = None) -> int:
             if not asker.ask(f"{row['name']} is installed but its sign-in cannot be verified. Route work to it?", True):
                 disabled.add(row["name"])
     override = write_override(home, detection, disabled, dry)
+    import host_policy
+    target_policy = host_policy.policy_path()[0] if not args.home else home / ".agent-compass" / "host-policy.json"
+    policy_path = disable_in_host_policy(home, detection, disabled, dry, target_policy)
     summary["override"] = override
+    summary["host_policy"] = str(policy_path)
     _line(f"\nAccounts the router may use: {', '.join(r['name'] for r in usable if r['name'] not in disabled) or 'none'}")
     if disabled:
         _line(f"Kept out of routing: {', '.join(sorted(disabled))}")
@@ -399,9 +407,7 @@ def setup_main(argv: list[str] | None = None) -> int:
     # 5. Summary
     summary["hooks"] = "installed" if (hooks or (hooks is None and sg.hooks_installed())) else "not installed"
     if not dry:
-        state = {**summary, "disabled_by_onboarding": override["added"] + [n for n in (_read_json(onboarding_path(home)).get("disabled_by_onboarding") or []) if n not in override["removed"]],
-                 "override_created": bool(override["created"])}
-        state["disabled_by_onboarding"] = sorted(set(state["disabled_by_onboarding"]))
+        state = {**summary, "override_created": bool(override["created"])}
         onboarding_path(home).parent.mkdir(parents=True, exist_ok=True)
         onboarding_path(home).write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     _line("\nSummary")
@@ -433,12 +439,6 @@ def uninstall_main(argv: list[str] | None = None) -> int:
     if state and path.is_file():
         document = _read_json(path)
         accounts = document.get("accounts") if isinstance(document.get("accounts"), dict) else {}
-        for name in state.get("disabled_by_onboarding") or []:
-            entry = accounts.get(name)
-            if isinstance(entry, dict) and entry.get("verified") is False:
-                entry.pop("verified")
-                if not entry:
-                    accounts.pop(name)
         if not accounts:
             document.pop("accounts", None)
         if state.get("override_created") and set(document) <= {"schema_version"}:
@@ -446,9 +446,7 @@ def uninstall_main(argv: list[str] | None = None) -> int:
                 path.unlink()
             print(f"[uninstall] {path}: removed (created by setup)")
         else:
-            if not args.dry_run:
-                path.write_text(json.dumps(accounts_override.normalize(document), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
-            print(f"[uninstall] {path}: onboarding entries removed")
+            print(f"[uninstall] {path}: retained account preferences and launch evidence")
     if state and not args.dry_run:
         onboarding_path(home).unlink(missing_ok=True)
     plugin = home / ".agent-compass" / "plugins" / "usage-float"

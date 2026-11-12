@@ -101,9 +101,7 @@ def apply(accounts, document):
         if not isinstance(spec, dict) or not isinstance(target, dict):
             continue
         discovery = ((accounts.get('_discovery') or {}).get('accounts') or {}).get(name) or {}
-        if spec.get('verified') is False:
-            target['verified'] = False
-        elif (spec.get('verified') is True and target.get('discovery_status') in (None, 'ready', 'usage_failing')
+        if (spec.get('verified') is True and target.get('discovery_status') in (None, 'ready', 'usage_failing')
               and not discovery.get('usage_excluded')):
             target['verified'] = True
         if 'cwd_regex' in spec:

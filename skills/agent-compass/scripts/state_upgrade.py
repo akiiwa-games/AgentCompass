@@ -104,6 +104,11 @@ def validate_accounts_override_doc(doc, path: Path | str) -> None:
                 raise ValueError(format_issue(
                     path, f'invalid accounts-override entry for {name!r} (expected JSON object)', FIX_TRAY,
                 ))
+            if spec.get('verified') is False:
+                raise ValueError(format_issue(
+                    path, f'legacy accounts.{name}.verified=false user switch',
+                    f'remove accounts.{name}.verified from this file, then check or uncheck {name} in the tray',
+                ))
             if 'allowed_cwd' in spec:
                 raise ValueError(format_issue(
                     path, f'older field accounts.{name}.allowed_cwd (replaced by cwd_regex)', FIX_TRAY,

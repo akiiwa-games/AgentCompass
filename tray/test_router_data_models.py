@@ -67,6 +67,25 @@ def test_first_write_is_sparse_and_partial_model_toggle_is_harness_scoped(tmp_pa
     assert not live['pi_sol_high'].get('disabled')
 
 
+
+def test_enabled_unverified_account_explains_exclusion(tmp_path, monkeypatch):
+    settings(tmp_path, monkeypatch)
+    row = next(row for row in router_data.harness_model_rows() if row['harness'] == 'codex')
+    assert row['host_enabled'] and row['enabled']
+    assert row['kind'] == 'warn'
+    assert 'CLI' in row['badge'] and 'setup' in row['badge']
+
+
+def test_unavailable_account_stays_visible_with_reason(tmp_path, monkeypatch):
+    settings(tmp_path, monkeypatch)
+    def discover(data):
+        data['_discovery'] = {'accounts': {'codex': {'family': 'codex', 'status': 'auth_failed', 'reason': 'expired login'}}}
+    monkeypatch.setattr(provider_inventory, 'apply', discover)
+    row = next(row for row in router_data.harness_model_rows() if row['account'] == 'codex')
+    assert row['host_enabled'] and row['kind'] == 'warn'
+    assert 'expired login' in row['badge']
+    assert 'CLI' in row['badge']
+
 def test_old_shape_override_and_string_disabled_are_rejected(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
     for bad in (

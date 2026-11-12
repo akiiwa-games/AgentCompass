@@ -688,8 +688,7 @@ class RouterGateHookTests(unittest.TestCase):
                                                             "lab_sonnet55_medium": {"disabled": True},
                                                             "lab_opus55_high": {"disabled": False}}}}}, "档位 lab_sonnet55_high",
                      resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet), (turn("opus"), launch("opus"))),
-                    ({"accounts": {"claude-lab": {"verified": False}}}, "verified: false",
-                     (turn("bare"), launch("sonnet")), (turn("codex"),))):
+                    ):
                 self.write_settings(**settings)
                 for payload in blocked:
                     with self.subTest(cause=cause, blocked=payload):
@@ -736,7 +735,6 @@ class RouterGateHookTests(unittest.TestCase):
         worker_sessions = gate.router_module('worker_sessions')
         for settings, tokens, cause in (
                 ({'allowed': []}, 0, 'host-policy.json'),
-                ({'accounts': {'claude-lab': {'verified': False}}}, 0, 'verified: false'),
                 ({'accounts': {'claude-lab': {'bundles': {'lab_sonnet55_high': {'disabled': True}}}}}, 0, '档位 lab_sonnet55_high'),
                 ({}, 2_000_000, 'historical_context_tokens=2,000,000/2,000,000'),
                 ({}, 0, 'five_hour')):

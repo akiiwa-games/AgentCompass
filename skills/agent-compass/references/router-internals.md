@@ -97,6 +97,8 @@ discovery; its `scoring` merges key by key, so defaults it does not set still ap
 There is no machine-local fleet document: a clean install reaches the same routing from
 discovery plus public data alone. Keep explanations in `~/.agent-compass/host-rules/*.md`.
 
+Account on/off preference lives only in host policy (`allowed_accounts`), shared by setup and the tray. `verified` is launch evidence: discovery may establish it from login or usage, and setup records `true` for an accepted CLI whose sign-in cannot be read. Legacy override `verified: false` is rejected by doctor and the loader; remove that field and choose the account in the tray.
+
 The allocator first checks discovered availability, explicit disablement, host policy,
 expiry, required modalities (`needs_visual`, `needs_gui`, or `tool_operation >= 3`), configured route restrictions and whether the model has data for every
 category the task demands (`>= 1`). It then scores eligible candidates: the fit of the model's four category scores
