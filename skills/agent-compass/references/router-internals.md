@@ -115,10 +115,10 @@ subscription bundle. A free pool (a free plan or a declared free allowance) is a
 
 A discovered plan supplies its window structure; its capacity comes only from community real-usage data per plan and window
 (`five-axis-scores.json`). A plan or window without a cited capacity is unknown, and its account stays out of automatic
-routing until the data has it. A family whose product does not report its tier locally uses the documented `<family>.default`
-plan's windows (Antigravity: Pro). A plan no template names, or a Claude/Codex
-account with no plan, is priced at the family's smallest paid plan with a warning
-(`plan_unknown`, `plan_priced_as`). Unknown quota is distinct from unlimited access. Intrinsically unmetered services (OpenCode
+routing until the data has it. Antigravity and Grok have no default plan: when their subscription tier cannot be read or is
+not in `plan-templates.json`, the account enters Mode B (`capacity_unknown` with `plan_unknown_reason`, surfaced in routing
+notes and on the tray quota card). An unrecognized Claude or Codex plan is priced at that family's smallest paid plan with a
+warning (`plan_unknown`, `plan_priced_as`). Unknown quota is distinct from unlimited access. Intrinsically unmetered services (OpenCode
 free models, Dot, the ChatGPT Pro web bridge) are marked so in the template; observed
 telemetry retains its source and freshness. Optional account `cadence` state
 (`window_seconds`, `limit`) measures dispatch frequency and never proves remaining quota.
@@ -249,7 +249,7 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 
 ### Antigravity plan tier
 
-`agy -p /usage` reports only bucket fractions, so the tier that sizes them is read from Google the way agy learns it: `scripts/antigravity_plan.py` takes agy's own sign-in from the OS keyring (service `gemini`, user `antigravity`), calls cloudcode `loadCodeAssist` and keeps `paidTier` (for example `g1-ultra-tier`, "Google AI Ultra") in `~/.agent-compass/antigravity-plan.json`. Discovery reads only that file, sets the account `plan` (which picks the plan template) and counts the read as a sign-in proof. `roll`, `plan`, `providers` and `select` refresh it in the background every 12 hours (30 minutes after a failure); an expired agy token or failed request keeps the last good tier, and with no tier yet the `antigravity.default` template (`pro`, the smallest paid tier, with a warning) applies. Off switch: `AGENTCOMPASS_ANTIGRAVITY_PLAN=off`. Google reports Ultra without a 5x/20x split, so Ultra routes on the Ultra 20x prior unless the account document names `Google AI Ultra (5x)`.
+`agy -p /usage` reports only bucket fractions, so the tier that sizes them is read from Google the way agy learns it: `scripts/antigravity_plan.py` takes agy's own sign-in from the OS keyring (service `gemini`, user `antigravity`), calls `daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` with `ideType: "ANTIGRAVITY"` metadata, and caches `paidTier` (`tier_id` and `plan`) in `~/.agent-compass/antigravity-plan.json`. Google returns `paidTier.name` `"Google AI Ultra"` for both Ultra variants and distinguishes all three paid plans by `paidTier.id`, which discovery resolves through `plan-templates.json` `tiers` (`g1-pro-tier` -> `pro`, `g1-ultra-lite-tier` -> `ultra5`, `g1-ultra-tier` -> `ultra20`) and counts as a sign-in proof. `roll`, `plan`, `providers` and `select` refresh the cache in the background every 12 hours (30 minutes after a failure); an expired agy token or failed request keeps the last good tier until `PLAN_MAX_AGE_HOURS` (48h). There is no default Antigravity plan and no unsplit `ultra` alias: when the tier cannot be read or is not in `plan-templates.json`, the account enters Mode B (`capacity_unknown` with `plan_unknown_reason`, out of automatic routing and shown on the tray card). Off switch: `AGENTCOMPASS_ANTIGRAVITY_PLAN=off`.
 
 ## 5. Public Reference Data (Updates Between Releases)
 

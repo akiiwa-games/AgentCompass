@@ -1262,11 +1262,13 @@ def verify_f05_antigravity_plan_tier(ctx: dict):
         "print(json.dumps({'tier': tier, 'off_tier': off_thread, 'cache': ap.cache_path(sdir).as_posix(), 'doc': doc}))"
     )
     env = base_cli_env(box, ctx, extra={"AGENTCOMPASS_ANTIGRAVITY_PLAN": "1"})
-    fx.google_tier_id = "g1-ultra-tier"
-    res = run_in_box(box, op, [box.python, "-X", "utf8", "-c", probe_code], env)
-    doc = parse_json(res.stdout)
-    op.check("antigravity_plan resolves 'ultra' from loadCodeAssist g1-ultra-tier",
-             res.returncode == 0 and doc.get("tier") == "ultra", {"rc": res.returncode, "doc": doc, "stderr": res.stderr[-300:]})
+    for tier_id, expected_plan in (("g1-pro-tier", "pro"), ("g1-ultra-lite-tier", "ultra5"), ("g1-ultra-tier", "ultra20")):
+        fx.google_tier_id = tier_id
+        res = run_in_box(box, op, [box.python, "-X", "utf8", "-c", probe_code], env)
+        doc = parse_json(res.stdout)
+        op.check(f"antigravity_plan resolves {expected_plan!r} from loadCodeAssist {tier_id}",
+                 res.returncode == 0 and doc.get("tier") == expected_plan,
+                 {"rc": res.returncode, "doc": doc, "stderr": res.stderr[-300:]})
     op.check("AGENTCOMPASS_ANTIGRAVITY_PLAN=off disables plan tier resolution",
              doc.get("off_tier") is None, doc)
     cache_file = box.state / "antigravity-plan.json"

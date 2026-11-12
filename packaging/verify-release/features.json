@@ -60,7 +60,7 @@
       "name": "Antigravity plan tier from Google loadCodeAssist",
       "harness": "packaging/foreign_machine_check.py::verify_f05_antigravity_plan_tier",
       "behaviors": [
-        "antigravity_plan resolves tier ('ultra') from loadCodeAssist using agy's keyring token",
+        "antigravity_plan resolves exact tier ('pro' / 'ultra5' / 'ultra20') from loadCodeAssist paidTier.id using agy's keyring token",
         "antigravity-plan.json is cached under ROUTER_STATE_DIR without leaking the OAuth token",
         "AGENTCOMPASS_ANTIGRAVITY_PLAN=off disables the Google tier lookup"
       ]

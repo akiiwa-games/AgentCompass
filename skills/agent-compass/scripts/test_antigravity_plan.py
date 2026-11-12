@@ -31,9 +31,16 @@ def blob(expiry, claims=None):
 
 FREE = {'currentTier': {'id': 'free-tier', 'name': 'Antigravity'}}
 
+PRO = {'currentTier': {'id': 'free-tier', 'name': 'Antigravity'},
+       'paidTier': {'id': 'g1-pro-tier', 'name': 'Google AI Pro'}}
+
+ULTRA5 = {'currentTier': {'id': 'free-tier', 'name': 'Antigravity'},
+          'paidTier': {'id': 'g1-ultra-lite-tier', 'name': 'Google AI Ultra',
+                       'upgradeSubscriptionText': 'You can upgrade to a higher Google AI Ultra plan to receive the highest rate limits.'}}
 
 ULTRA = {'currentTier': {'id': 'free-tier', 'name': 'Antigravity'},
-         'paidTier': {'id': 'g1-ultra-tier', 'name': 'Google AI Ultra'}}
+         'paidTier': {'id': 'g1-ultra-tier', 'name': 'Google AI Ultra',
+                      'upgradeSubscriptionText': 'You are subscribed to the best Google AI plan.'}}
 
 
 class AntigravityPlanTests(unittest.TestCase):
@@ -46,8 +53,28 @@ class AntigravityPlanTests(unittest.TestCase):
         document = plan.refresh(self.state, read_blob=self.fresh, fetch=lambda token, timeout: seen.append(token) or ULTRA)
         self.assertEqual(seen, ['SECRET'])
         self.assertEqual((document['plan'], document['tier_id'], document['source']), ('Google AI Ultra', 'g1-ultra-tier', 'paidTier'))
-        self.assertEqual(plan.cached_plan(self.state), 'Google AI Ultra')
+        self.assertEqual(plan.cached_plan(self.state), 'g1-ultra-tier')
+        self.assertIsNone(plan.cached_state(self.state)['plan_error'])
         self.assertNotIn('SECRET', (self.state / plan.CACHE_FILE).read_text(encoding='utf-8'))
+
+    def test_paid_tier_id_distinguishes_pro_ultra5_and_ultra20_and_surfaces_unreadable_reasons(self):
+        # Empty cache before any refresh has no tier and explains why.
+        empty_state = plan.cached_state(self.state)
+        self.assertIsNone(empty_state['plan'])
+        self.assertIn('loadCodeAssist', empty_state['plan_error'])
+
+        # Failed initial read surfaces the error code as plan_error.
+        plan.refresh(self.state, read_blob=lambda: None)
+        no_login_state = plan.cached_state(self.state)
+        self.assertIsNone(no_login_state['plan'])
+        self.assertIn('agy_not_signed_in', no_login_state['plan_error'])
+
+        # Both Ultra 5x and Ultra 20x carry paidTier.name "Google AI Ultra"; cached_plan returns paidTier.id.
+        for response, expected_id in ((PRO, 'g1-pro-tier'), (ULTRA5, 'g1-ultra-lite-tier'), (ULTRA, 'g1-ultra-tier')):
+            plan.refresh(self.state, read_blob=self.fresh, fetch=lambda *_, r=response: r)
+            st = plan.cached_state(self.state)
+            self.assertEqual(st['plan'], expected_id)
+            self.assertIsNone(st['plan_error'])
 
     def test_current_tier_is_used_without_a_paid_tier(self):
         response = {'currentTier': {'id': 'standard-tier', 'name': 'Antigravity'}}
@@ -64,7 +91,7 @@ class AntigravityPlanTests(unittest.TestCase):
             raise urllib.error.HTTPError(plan.ENDPOINT, 401, 'unauthorized', {}, None)
         document = plan.refresh(self.state, read_blob=self.fresh, fetch=rejected)
         self.assertEqual((document['plan'], document['error']), ('Google AI Ultra', 'http_401'))
-        self.assertEqual(plan.cached_plan(self.state), 'Google AI Ultra')
+        self.assertEqual(plan.cached_plan(self.state), 'g1-ultra-tier')
 
         checked = datetime.now(timezone.utc)
         failed = {'plan': 'Google AI Ultra', 'error': 'http_401', 'checked_at': plan._stamp(checked)}
@@ -84,8 +111,9 @@ class AntigravityPlanTests(unittest.TestCase):
         now = datetime(2026, 11, 7, tzinfo=timezone.utc)
         plan.refresh(self.state, read_blob=self.fresh, fetch=lambda *_: ULTRA, now=now)
         inside, outside = timedelta(hours=plan.PLAN_MAX_AGE_HOURS - 1), timedelta(hours=plan.PLAN_MAX_AGE_HOURS)
-        self.assertEqual(plan.cached_plan(self.state, now + inside), 'Google AI Ultra')
+        self.assertEqual(plan.cached_plan(self.state, now + inside), 'g1-ultra-tier')
         self.assertIsNone(plan.cached_plan(self.state, now + outside))
+        self.assertIn('expired', plan.cached_state(self.state, now + outside)['plan_error'])
 
     def test_a_tier_with_no_paid_plan_reads_as_free(self):
         now = plan._now()
@@ -109,10 +137,10 @@ class AntigravityPlanTests(unittest.TestCase):
         self.assertTrue(plan.due(plan.read_cache(self.state), later, reading=plan.reading_of(renewed())))
         plan.refresh(self.state, read_blob=renewed, fetch=lambda *_: response, now=later)
         self.assertEqual(plan.cached_plan(self.state, later), 'Free')
-        # standard-tier can be a paid Code Assist plan: it keeps the name Google gives it.
+        # standard-tier can be a paid Code Assist plan: it keeps its tier id so inventory evaluates it against plan-templates.json.
         response = {'paidTier': {'id': 'standard-tier', 'name': 'Gemini Code Assist Standard'}}
         plan.refresh(self.state, read_blob=renewed, fetch=lambda *_: response, now=later)
-        self.assertEqual(plan.cached_plan(self.state, later), 'Gemini Code Assist Standard')
+        self.assertEqual(plan.cached_plan(self.state, later), 'standard-tier')
 
     def test_the_cache_records_a_digest_of_the_keyring_account_never_the_address(self):
         now = datetime(2026, 11, 11, tzinfo=timezone.utc)
@@ -164,7 +192,7 @@ class AntigravityPlanTests(unittest.TestCase):
         settled = back + timedelta(seconds=LIFETIME + 60)
         plan.refresh(self.state, read_blob=signed_in('paid@example.com', generation=2), fetch=lambda *_: ULTRA, now=settled)
         self.assertIsNone(plan.flapping(plan.read_cache(self.state), settled))
-        self.assertEqual(plan.cached_plan(self.state, settled), 'Google AI Ultra')
+        self.assertEqual(plan.cached_plan(self.state, settled), 'g1-ultra-tier')
 
     def test_without_iat_exp_the_lifetime_is_the_step_between_two_tokens_and_until_then_a_data_error(self):
         now = datetime(2026, 11, 11, tzinfo=timezone.utc)

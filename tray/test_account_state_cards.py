@@ -252,6 +252,63 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertIn('capacity_unknown', card['usage_note'])
         self.assertIn('$1.85', card['usage_note'])
 
+    def test_plan_unknown_mode_b_card_shows_reason_and_excludes_auto_routing(self):
+        fake, router = Mock(), Mock()
+        inventory = Mock(quota_sources=real_inventory.quota_sources)
+        reason = "unrecognized Antigravity tier 'standard-tier'"
+        spec = {
+            'label': 'Antigravity',
+            'plan': 'unknown',
+            'capacity_unknown': True,
+            'plan_unknown_reason': reason,
+            'windows': {'gemini-weekly': {'hours': 168}, 'gemini-5h': {'hours': 5}},
+            'bundles': {},
+        }
+        fake.load_accounts.return_value = {
+            'accounts': {'antigravity': spec},
+            '_discovery': {'accounts': {'antigravity': {'family': 'antigravity', 'status': 'ready'}}},
+        }
+        fake.five_axis_overlay.side_effect = lambda doc, *a, **kw: doc
+        fake.host_policy.load_policy.return_value = None
+        fake.host_policy.account_allowed.return_value = True
+        fake.canonical_window_id.side_effect = lambda s, wid: wid
+        fake.capacity_usd.return_value = None
+        router.usage_snapshot.return_value = {
+            'accounts': {
+                'antigravity': {
+                    'status': 'ok',
+                    'available': True,
+                    'fetched_at': '2026-11-08T14:00:00+00:00',
+                    'observation_age_seconds': 30,
+                    'windows': [
+                        {'id': 'gemini-weekly', 'observed_remaining_pct': 82.0, 'seconds_until_reset': 86400},
+                        {'id': 'gemini-5h', 'observed_remaining_pct': 95.0, 'seconds_until_reset': 7200},
+                    ],
+                }
+            }
+        }
+        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+             patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
+             patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
+             patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
+             patch.object(quota_pools, 'canonical_window_id', fake.canonical_window_id), \
+             patch.object(quota_economy, 'capacity_usd', fake.capacity_usd), \
+             patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay), \
+             patch.dict(sys.modules, {'provider_inventory': inventory}), \
+             patch.object(router_data, '_read_json', return_value={}), \
+             patch.object(router_data, 'pool_reservations', return_value={}), \
+             patch.object(router_data.router_priority, 'targets', return_value=[]), \
+             patch.object(router_data.plugins, 'load', return_value={}):
+            card = router_data.account_cards()[0]
+        self.assertEqual(card['kind'], 'warn')
+        self.assertTrue(card.get('capacity_unknown'))
+        self.assertEqual(card.get('plan_unknown_reason'), reason)
+        self.assertEqual(panel_quota.card_title(card), 'Antigravity · 套餐未知（Mode B）')
+        self.assertIn('不参与自动路由', card['badge'])
+        self.assertIn(reason, card['badge'])
+        self.assertIn(reason, card['usage_note'])
+        self.assertEqual(len(card['windows']), 2)
+
 
 if __name__ == '__main__':
     unittest.main()

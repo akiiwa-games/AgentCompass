@@ -945,15 +945,20 @@ def _discover(home=None, environ=None, now=None):
     agy_state = antigravity_plan.cached_state(state_dir, now)
     agy_tier, agy_flapping = agy_state['plan'], agy_state['flapping']
     agy_data_error = agy_state['data_error']
+    agy_plan_error = agy_state['plan_error']
     agy_tier_read_at = antigravity_plan.read_cache(state_dir).get('read_at') if agy_tier else None
+    agy_resolved = configured_plan('antigravity', agy_tier) if agy_tier else None
+    agy_known = set(plan_table({}, 'antigravity'))
+    agy_plan = agy.get('plan_label') or (agy_resolved if agy_resolved in agy_known else agy_tier)
     result['accounts']['antigravity'] = {'family': 'antigravity', 'provider': 'antigravity-resilient',
         'home': str(home / '.gemini'), 'cli_installed': agy_cli,
         'sources': ['native'] + (['usage-cache'] if agy_read else []) + (['account-tier'] if agy_tier else []),
         'status': 'ready' if agy_present else 'missing_client',
-        'plan': agy.get('plan_label') or agy_tier,
+        'plan': agy_plan,
         'plan_source': 'usage_api' if agy.get('plan_label') else 'account-tier' if agy_tier else None,
         **({'plan_read_at': agy.get('fetched_at') if agy.get('plan_label') else agy_tier_read_at}
            if (agy.get('plan_label') or agy_tier_read_at) else {}),
+        **({'plan_error': str(agy_plan_error)} if agy_present and not agy_plan and agy_plan_error else {}),
         'billing': 'subscription', **({'data_error': agy_data_error} if agy_present and agy_data_error else {})}
     if agy_present and agy_flapping:
         # Two Google accounts take turns in agy's one keyring slot: no reading says which account a tier or a quota
@@ -964,6 +969,7 @@ def _discover(home=None, environ=None, now=None):
                     f"{agy_flapping['window_minutes']} min, since {agy_flapping['since']}"),
             plan_source=None, plan=None)
         result['accounts']['antigravity'].pop('plan_read_at', None)
+        result['accounts']['antigravity'].pop('plan_error', None)
     opencode = result['launchers']['opencode']
     installed = bool(_which('opencode', environ.get('PATH')))
     if opencode['status'] == 'ready' and not installed:
@@ -1571,11 +1577,8 @@ PLAN_NAMES = {
                'x20': 'max20', 'free': 'free', 'team': 'team', 'enterprise': 'enterprise'},
     'codex': {'plus': 'plus', 'pro': 'pro', 'pro100': 'pro100', 'pro 100': 'pro100', '100': 'pro100',
               'prolite': 'pro100', 'pro lite': 'pro100', 'free': 'free', 'team': 'team', 'enterprise': 'enterprise'},
-    'antigravity': {'pro': 'pro', 'ultra': 'ultra', 'ultra5': 'ultra5', 'ultra 5x': 'ultra5',
-                    'ultra x5': 'ultra5', 'ultra20': 'ultra20', 'ultra 20x': 'ultra20', 'ultra x20': 'ultra20',
-                    'free': 'free', 'free tier': 'free'},
 }
-UNKNOWN_PLAN_PRICED_AS = {'claude': 'pro', 'codex': 'plus', 'antigravity': 'pro'}
+UNKNOWN_PLAN_PRICED_AS = {'claude': 'pro', 'codex': 'plus'}
 
 
 def configured_plan(family, label, accounts=None, shipped=None):
@@ -1849,10 +1852,6 @@ def apply(accounts, inventory=None, *, live=None):
         if priced_as and not account_state.plan_is_inactive(quota_family, plan):
             template = plan_defaults(accounts, quota_family, priced_as, shipped=shipped_templates)
             spec.update(plan_unknown=str(plan or template_plan or 'not reported'), plan_priced_as=priced_as)
-        elif template is None and family not in ('claude', 'codex', 'grok'):
-            # A family with no known-plan table routes on its documented default plan, never on no capacity
-            # (plan-templates.json `<family>.default`).
-            template = plan_defaults(accounts, quota_family, 'default', shipped=shipped_templates)
         if plan:
             previous_plan = configured_plan(quota_family, spec.get('plan'), accounts=accounts, shipped=shipped_templates)
             spec['plan'] = plan
@@ -1876,6 +1875,14 @@ def apply(accounts, inventory=None, *, live=None):
                 for key in TEMPLATE_KEYS:
                     if key in template:
                         spec[key] = copy.deepcopy(template[key])
+        if family == 'antigravity' and template is None and not account_state.plan_is_inactive(quota_family, plan):
+            raw_label = str(plan or spec.get('plan') or '').strip()
+            is_placeholder = account_state.plan_without_vendor(raw_label) in ('', 'unknown', 'subscription')
+            spec['plan'] = 'unknown'
+            spec['plan_unknown'] = str(
+                row.get('plan_error')
+                or ('subscription tier not reported by loadCodeAssist' if is_placeholder else f'unrecognized Antigravity tier {raw_label!r}')
+            )
         if family == 'grok':
             window_ids = row.get('usage_windows') or []
             spec['unmetered'] = not bool(window_ids)

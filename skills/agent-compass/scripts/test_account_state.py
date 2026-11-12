@@ -856,14 +856,20 @@ class TemplateTests(Machine):
         row = self.agy_row()
         self.assertEqual((row['status'], row['reason']), (account_state.PLAN_INACTIVE, 'plan Free'))
 
-    def test_an_unknown_antigravity_tier_is_not_ultra(self):
+    def test_an_unknown_antigravity_tier_enters_mode_b_with_reason(self):
         accounts = account_fleet.load_accounts()
         snapshot = {'accounts': {'antigravity': {'family': 'antigravity', 'provider': 'antigravity-resilient', 'status': 'ready',
                                                  'plan': 'Gemini Code Assist Standard', 'billing': 'subscription',
                                                  'sources': ['native', 'usage-cache']}},
                     'launchers': {'antigravity-resilient': {'family': 'antigravity-resilient', 'status': 'ready'}}}
         spec = axis_scores.five_axis_overlay(inventory.apply(accounts, snapshot), axis_scores.load_five_axis())['accounts']['antigravity']
-        self.assertEqual((spec['capacity_usd'], spec['plan_priced_as']), ({}, 'pro'))
+        self.assertEqual(spec['capacity_usd'], {})
+        self.assertTrue(spec['capacity_unknown'])
+        self.assertNotIn('plan_priced_as', spec)
+        self.assertIn('Gemini Code Assist Standard', spec['plan_unknown_reason'])
+        warn_lines = account_state.warnings(snapshot, {'antigravity': spec})
+        self.assertTrue(any('capacity_unknown — plan unknown' in w and 'Gemini Code Assist Standard' in w for w in warn_lines),
+                        warn_lines)
 
     def test_the_plus_five_hour_window_is_a_feasibility_limit(self):
         self.codex_login('plus')

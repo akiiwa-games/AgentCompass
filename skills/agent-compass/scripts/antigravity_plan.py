@@ -109,28 +109,47 @@ def free_confirmed(document):
     return document.get('tier_id') not in FREE_TIER_IDS or bool(document.get('free_confirmed'))
 
 
+def plan_error(document, now=None):
+    """Why `cached_plan` is None on a non-flapping cache document."""
+    document = document if isinstance(document, dict) else {}
+    if document.get('tier_id') in FREE_TIER_IDS and not free_confirmed(document):
+        return 'free-tier reading awaiting confirmation on renewed token'
+    read_at = _parse(document.get('read_at'))
+    err = document.get('error')
+    if read_at is not None and (now or _now()) - read_at >= timedelta(hours=PLAN_MAX_AGE_HOURS):
+        return f'cached tier expired ({err})' if err else 'cached tier expired'
+    if err:
+        return f'loadCodeAssist: {err}'
+    return 'subscription tier not yet read from loadCodeAssist'
+
+
 def cached_state(state_dir, now=None):
-    """{'plan': cached_plan, 'flapping': flapping(...) or None, 'data_error': a lifetime error or None} from the cache."""
+    """{'plan': cached_plan, 'flapping': flapping(...) or None, 'data_error': ..., 'plan_error': ...} from the cache."""
     document = read_cache(state_dir)
-    return {'plan': cached_plan(state_dir, now, document), 'flapping': flapping(document, now),
-            'data_error': document.get('lifetime_error')}
+    plan = cached_plan(state_dir, now, document)
+    flap = flapping(document, now)
+    return {'plan': plan, 'flapping': flap, 'data_error': document.get('lifetime_error'),
+            'plan_error': None if (plan or flap) else plan_error(document, now)}
 
 
 def cached_plan(state_dir, now=None, document=None):
-    """The tier name last read from Google ("Google AI Ultra"), or None when there is none, it has expired, the keyring
-    account is flapping, or a free answer is not yet confirmed (module docstring)."""
+    """The tier id last read from Google ("g1-pro-tier", "g1-ultra-lite-tier", "g1-ultra-tier"; "Free" for free-tier),
+    or None when there is none, it has expired, the keyring account is flapping, or a free answer is not yet confirmed.
+    Google's `paidTier.name` is "Google AI Ultra" for both 5x and 20x, so the tier id is the authoritative identifier."""
     document = read_cache(state_dir) if document is None else document
     if flapping(document, now) or not free_confirmed(document):
         return None
+    tier_id = document.get('tier_id')
     plan = document.get('plan')
+    value = tier_id if isinstance(tier_id, str) and tier_id else (plan if isinstance(plan, str) and plan else None)
     read_at = _parse(document.get('read_at'))
-    if not isinstance(plan, str) or not plan or read_at is None:
+    if not value or read_at is None:
         return None
     if (now or _now()) - read_at >= timedelta(hours=PLAN_MAX_AGE_HOURS):
         return None
     # The tier id decides, whichever field carried it: Google returns `free-tier` under `paidTier` too
     # ("Antigravity Starter Quota", seen 2026-11-10), and that is still no paid plan.
-    return 'Free' if document.get('tier_id') in FREE_TIER_IDS else plan
+    return 'Free' if tier_id in FREE_TIER_IDS else value
 
 
 def _write_cache(state_dir, document):

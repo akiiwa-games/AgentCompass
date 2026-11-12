@@ -2098,6 +2098,35 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
                         self.assertNotIn(child.value, forbidden_monthly_prices,
                                          f'subscription price literal {child.value} in axis_scores.{node.name}:{child.lineno}')
 
+    def test_antigravity_tier_mapping_lives_only_in_plan_templates_with_no_default_plan(self):
+        import ast
+        refs_dir = Path(__file__).resolve().parent.parent / 'references'
+        scripts_dir = Path(__file__).resolve().parent
+        plan_templates = json.loads((refs_dir / 'plan-templates.json').read_text(encoding='utf-8'))
+        for family, plans in plan_templates.items():
+            self.assertNotIn('default', plans, f'{family} must not declare a default plan')
+        agy_plans = plan_templates['antigravity']
+        self.assertEqual(set(agy_plans), {'pro', 'ultra5', 'ultra20'})
+        for plan_key, tpl in agy_plans.items():
+            self.assertEqual(tpl['price_source']['kind'], 'vendor', plan_key)
+            self.assertTrue(tpl['price_source']['url'].startswith('https://'), plan_key)
+            self.assertTrue(tpl.get('tiers'), plan_key)
+
+        forbidden_agy_tiers = {
+            'g1-pro-tier', 'g1-ultra-lite-tier', 'g1-ultra-tier',
+            'google ai pro', 'google ai ultra', 'google ai ultra (5x)', 'google ai ultra (20x)',
+        }
+        for fname in ('antigravity_plan.py', 'provider_inventory.py', 'axis_scores.py', 'candidate_eval.py'):
+            path = scripts_dir / fname
+            tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    self.assertNotIn(node.value.strip().lower(), forbidden_agy_tiers, f'{fname}:{node.lineno}')
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'plan_defaults':
+                    for arg in node.args:
+                        if isinstance(arg, ast.Constant) and arg.value == 'default':
+                            self.fail(f'{fname}:{node.lineno} calls plan_defaults(..., "default")')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -34,7 +34,8 @@ def worker_cap_heading(limit: int) -> str:
 
 def card_title(card: dict) -> str:
     """A quota card's name; an account in trouble or excluded from dispatch says so on the card itself, with the reason on the hover."""
-    if card.get("status") not in ("plan_inactive", "usage_failing", "auth_failed", "agy_account_flapping") and not card.get("retry_hold"):
+    if (card.get("status") not in ("plan_inactive", "usage_failing", "auth_failed", "agy_account_flapping")
+            and not card.get("retry_hold") and not card.get("plan_unknown_reason")):
         return f'{card["label"]} · {_tr("不派发")}' if card.get("host_enabled") is False else card["label"]
     return f'{card["label"]} · {short_badge(card.get("badge")).split("，", 1)[0].split(", ", 1)[0]}'
 

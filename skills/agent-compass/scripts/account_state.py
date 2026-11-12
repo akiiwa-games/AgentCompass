@@ -193,6 +193,15 @@ def _free_pool_warning(name, spec):
     return f"{name}: capacity_unknown — quota unknown, spend unpriced{spend_note}; out of automatic routing (use --model to run)"
 
 
+def _mode_b_plan_warning(name, spec):
+    if not isinstance(spec, dict) or not spec.get('capacity_unknown') or spec.get('five_axis_free_pool'):
+        return None
+    reason = spec.get('plan_unknown_reason') or (spec.get('plan_unknown') if not spec.get('plan_priced_as') else None)
+    if not reason:
+        return None
+    return f"{name}: capacity_unknown — plan unknown ({reason}); out of automatic routing (use --model to run)"
+
+
 def warnings(inventory, specs=None, allowed=None):
     """Every account's state and plan warning, for `plan`/`roll`. `allowed(name)` skips accounts this host does not use."""
     found = []
@@ -202,15 +211,22 @@ def warnings(inventory, specs=None, allowed=None):
             continue
         found.extend(warning(name, row))
         spec = (specs or {}).get(name) or {}
-        if spec.get('plan_unknown'):
+        if spec.get('plan_unknown') and spec.get('plan_priced_as'):
             found.append(f"{name}: plan {spec['plan_unknown']!r} is not a known plan; priced at the conservative "
                          f"{spec.get('plan_priced_as')} capacity")
+        else:
+            plan_warn = _mode_b_plan_warning(name, spec)
+            if plan_warn:
+                found.append(plan_warn)
         free_warn = _free_pool_warning(name, spec)
         if free_warn:
             found.append(free_warn)
     for name, spec in (specs or {}).items():
         if name in rows or not isinstance(spec, dict) or (allowed is not None and not allowed(name)):
             continue
+        plan_warn = _mode_b_plan_warning(name, spec)
+        if plan_warn:
+            found.append(plan_warn)
         free_warn = _free_pool_warning(name, spec)
         if free_warn:
             found.append(free_warn)
@@ -273,8 +289,10 @@ def _latch_context(account, state_dir=None):
     if not found_plan and account == 'antigravity':
         try:
             tier_doc = json.loads((root / 'antigravity-plan.json').read_text(encoding='utf-8'))
-            if isinstance(tier_doc.get('plan'), str) and tier_doc['plan'].strip():
-                found_plan = tier_doc['plan'].strip()
+            for key in ('tier_id', 'plan'):
+                if isinstance(tier_doc.get(key), str) and tier_doc[key].strip():
+                    found_plan = tier_doc[key].strip()
+                    break
         except (OSError, ValueError, AttributeError):
             pass
     return found_key, found_plan

@@ -71,21 +71,55 @@ class CleanInstallParityTests(unittest.TestCase):
         self.assertEqual(priced_specs['codex']['capacity_usd'], {'usage': community('codex', 'pro', 'usage')})
         self.assertTrue(claude['verified'] and codex['verified'])
 
-    def test_antigravity_without_a_reported_tier_routes_on_the_documented_default(self):
+    def test_antigravity_without_a_reported_tier_enters_mode_b_with_reason(self):
         agy = self.specs['antigravity']
-        # The smallest paid tier's windows with a warning, never the largest; its capacity is unknown, not borrowed.
-        self.assertEqual(agy['plan_priced_as'], 'pro')
+        self.assertEqual(agy['plan'], 'unknown')
+        self.assertNotIn('plan_priced_as', agy)
+        self.assertIn('loadCodeAssist', agy['plan_unknown'])
         self.assertEqual(set(agy['windows']), {'gemini-weekly', 'gemini-5h', '3p-weekly', '3p-5h'})
         self.assertTrue(agy['verified'])  # a quota reading is the sign-in proof
-        self.assertEqual(priced(self.accounts)['antigravity']['capacity_usd'], {})
+        over = priced(self.accounts)['antigravity']
+        self.assertEqual(over['capacity_usd'], {})
+        self.assertTrue(over['capacity_unknown'])
+        self.assertIn('loadCodeAssist', over['plan_unknown_reason'])
+        now = datetime(2026, 11, 11, tzinfo=timezone.utc)
+        task_doc = {
+            'objective': 'Draft module notes', 'hours': 0.5,
+            'profile': {'work_kind': 'general_implementation', 'reasoning_depth': 1, 'code_complexity': 1,
+                        'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
+                        'read_only_review': False, 'access': 'write', 'expected_hours': 0.5,
+                        'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'engineering',
+                        'multi_task': False, 'task_count': '1',
+                        'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 0}},
+        }
+        decision = allocator.plan(task_doc, {'accounts': {}}, now, accounts=self.accounts, overrides=[],
+                                  host_policy_config=None, read_local_state=False)
+        agy_rows = [r for r in decision['ranking'] if r['bundle']['account'] == 'antigravity']
+        self.assertTrue(agy_rows)
+        for row in agy_rows:
+            self.assertTrue(any('capacity_unknown' in ex and 'plan unknown' in ex for ex in row['excluded']), row['excluded'])
+        # Explicit --model / bundle pin still allows running with a capacity_unknown note.
+        pinned_bundle = agy_rows[0]['id']
+        named = allocator.plan({**task_doc, 'constraints': {'bundle': pinned_bundle}}, {'accounts': {}}, now,
+                               accounts=self.accounts, overrides=[], host_policy_config=None, read_local_state=False)
+        self.assertEqual(named['choice'], pinned_bundle)
 
-    def test_a_named_antigravity_plan_beats_the_default(self):
-        template = shipped_template()
-        template['accounts']['antigravity']['plan'] = 'Google AI Ultra'
-        applied = inventory.apply(template, snapshot())
-        self.assertEqual(priced(applied)['antigravity']['capacity_usd']['gemini-weekly'], community('antigravity', 'ultra', 'gemini-weekly'))
-        agy = applied['accounts']['antigravity']
-        self.assertNotIn('plan_priced_as', agy)
+    def test_an_exact_antigravity_tier_resolves_its_plan_capacity(self):
+        for raw_tier, expected_plan in (
+                ('g1-pro-tier', 'pro'),
+                ('g1-ultra-lite-tier', 'ultra5'),
+                ('g1-ultra-tier', 'ultra20'),
+                ('Google AI Ultra (5x)', 'ultra5'),
+                ('Google AI Ultra (20x)', 'ultra20')):
+            with self.subTest(raw_tier=raw_tier):
+                snap = snapshot()
+                snap['accounts']['antigravity']['plan'] = raw_tier
+                applied = inventory.apply(shipped_template(), snap)
+                over = priced(applied)['antigravity']
+                self.assertEqual(over['capacity_usd']['gemini-weekly'], community('antigravity', expected_plan, 'gemini-weekly'))
+                self.assertFalse(over.get('capacity_unknown'))
+                self.assertNotIn('plan_priced_as', applied['accounts']['antigravity'])
+                self.assertNotIn('plan_unknown', applied['accounts']['antigravity'])
 
     def test_intrinsic_unmetered_accounts_and_the_pro_web_cadence(self):
         for name in ('opencode', 'dot'):

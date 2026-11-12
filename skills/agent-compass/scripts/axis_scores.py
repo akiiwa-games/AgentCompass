@@ -467,8 +467,17 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
             for wid in caps:
                 cap_sources[wid] = {'status': 'explicit', 'age_days': None, 'plan': plan or None}
         spec['capacity_usd'] = caps
-        spec['capacity_source'] = cap_sources
         unknown = [wid for wid in spec['windows'] if wid not in caps]
+        if (unknown and not plan_unknown_reason and not is_free_pool
+                and spec.get('billing') != 'metered' and not src_spec.get('plan_priced_as')):
+            table = provider_inventory.plan_table(out, cap_family, shipped=shipped_templates)
+            known_tpl = provider_inventory.plan_defaults(out, cap_family, plan, shipped=shipped_templates) if plan and plan in table else None
+            if known_tpl is None and table:
+                plan_unknown_reason = _plan_unknown_text(src_spec, raw_plan)
+                for wid in unknown:
+                    if cap_sources.get(wid, {}).get('status') == 'missing':
+                        cap_sources[wid] = {'status': 'plan_unknown', 'age_days': None, 'plan': None, 'reason': plan_unknown_reason}
+        spec['capacity_source'] = cap_sources
         if unknown:
             spec['capacity_unknown'] = True
             if plan_unknown_reason:

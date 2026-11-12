@@ -805,6 +805,14 @@ def account_cards() -> list[dict]:
             else usage_row.get("status")
         )
         free_unknown = bool(spec.get("capacity_unknown") and spec.get("five_axis_free_pool"))
+        plan_unknown_reason = (
+            str(spec["plan_unknown_reason"]).strip()
+            if isinstance(spec.get("plan_unknown_reason"), str) and spec["plan_unknown_reason"].strip()
+            else str(spec["plan_unknown"]).strip()
+            if not spec.get("plan_priced_as") and isinstance(spec.get("plan_unknown"), str) and spec["plan_unknown"].strip()
+            else None
+        )
+        plan_mode_b = bool(spec.get("capacity_unknown") and plan_unknown_reason and not free_unknown)
         raw_local = spec.get("local_spend_usd")
         local_spend = (raw_local if isinstance(raw_local, dict)
                        else {"used_usd": float(raw_local), "tokens": int(spec.get("local_spend_tokens") or 0),
@@ -812,12 +820,17 @@ def account_cards() -> list[dict]:
                        if isinstance(raw_local, (int, float)) and not isinstance(raw_local, bool) else None)
         if free_unknown and kind == "ok":
             text, kind = _tr("额度上限未知（不参与自动路由）"), "warn"
+        elif plan_mode_b and kind != "idle":
+            mode_b_text = _tr("套餐未知（Mode B），不参与自动路由：{0}").format(plan_unknown_reason)
+            text, kind = (mode_b_text if kind == "ok" else f"{text}；{mode_b_text}"), "warn"
         free_note = (
             _tr("额度上限未知（capacity_unknown），不参与自动路由；本地累计消耗下界 U ≥ ${0:.2f}（{1:,} tokens，{2}）").format(
                 float(local_spend["used_usd"]), int(local_spend.get("tokens") or 0), local_spend.get("source") or "opencode.db")
             if free_unknown and local_spend and local_spend.get("used_usd") is not None else
             _tr("额度上限未知（capacity_unknown），不参与自动路由")
-            if free_unknown else None
+            if free_unknown else
+            _tr("套餐未知（capacity_unknown：{0}），不参与自动路由").format(plan_unknown_reason)
+            if plan_mode_b else None
         )
         cards.append({"account": name, "label": spec.get("label") or account_label(name, account_family(name, row)),
                       "badge": text, "kind": kind,
@@ -830,6 +843,7 @@ def account_cards() -> list[dict]:
                       "usage_age_seconds": usage_row.get("observation_age_seconds"),
                       "pool_members": member_rows,
                       **({"capacity_unknown": True} if spec.get("capacity_unknown") else {}),
+                      **({"plan_unknown_reason": plan_unknown_reason} if plan_mode_b else {}),
                       **({"local_spend_usd": local_spend} if local_spend else {}),
                       "usage_note": venice_usage.note(api_usage) if name in ('omp', 'dsh') else
                           free_note if free_note is not None else

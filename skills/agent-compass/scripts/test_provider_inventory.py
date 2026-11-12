@@ -400,18 +400,36 @@ class DiscoveryTests(unittest.TestCase):
         snapshot = self.discover()
         self.assertFalse(inventory.sign_in_proven(snapshot['accounts']['antigravity']))
         read_at = self.now.isoformat()
-        self.write('.agent-compass/antigravity-plan.json', {'plan': 'Google AI Pro', 'tier_id': 'g1-pro-tier', 'read_at': read_at})
-        row = self.discover()['accounts']['antigravity']
-        self.assertEqual(row['plan'], 'Google AI Pro')
-        self.assertIn('account-tier', row['sources'])
-        self.assertTrue(inventory.sign_in_proven(row))
-        applied = self.apply(self.discover())
-        self.assertEqual(overlaid_capacity(applied, 'antigravity')['gemini-weekly'],
-                         community_capacity('antigravity', 'pro', 'gemini-weekly'))  # Pro, not the Ultra 20x default
-        self.write('.agent-compass/antigravity-plan.json', {'plan': 'Google AI Ultra', 'tier_id': 'g1-ultra-tier', 'read_at': read_at})
-        applied = self.apply(self.discover())
-        self.assertEqual(overlaid_capacity(applied, 'antigravity')['gemini-weekly'],
-                         community_capacity('antigravity', 'ultra', 'gemini-weekly'))
+        for tier_id, paid_name, expected_plan in (
+                ('g1-pro-tier', 'Google AI Pro', 'pro'),
+                ('g1-ultra-lite-tier', 'Google AI Ultra', 'ultra5'),
+                ('g1-ultra-tier', 'Google AI Ultra', 'ultra20')):
+            with self.subTest(tier_id=tier_id):
+                self.write('.agent-compass/antigravity-plan.json',
+                           {'plan': paid_name, 'tier_id': tier_id, 'read_at': read_at})
+                row = self.discover()['accounts']['antigravity']
+                self.assertEqual(row['plan'], expected_plan)
+                self.assertIn('account-tier', row['sources'])
+                self.assertTrue(inventory.sign_in_proven(row))
+                applied = self.apply(self.discover())
+                self.assertEqual(overlaid_capacity(applied, 'antigravity')['gemini-weekly'],
+                                 community_capacity('antigravity', expected_plan, 'gemini-weekly'))
+        # Ambiguous display label without tier_id ("Google AI Ultra" covers both 5x and 20x) and unrecognized
+        # tier IDs enter Mode B with a stated reason instead of assuming pro or ultra20.
+        for bad_doc, expected_substr in (
+                ({'plan': 'Google AI Ultra', 'read_at': read_at}, 'Google AI Ultra'),
+                ({'plan': 'Gemini Code Assist Standard', 'tier_id': 'standard-tier', 'read_at': read_at}, 'standard-tier')):
+            with self.subTest(bad_doc=bad_doc):
+                self.write('.agent-compass/antigravity-plan.json', bad_doc)
+                applied = self.apply(self.discover())
+                agy = applied['accounts']['antigravity']
+                self.assertEqual(agy['plan'], 'unknown')
+                self.assertNotIn('plan_priced_as', agy)
+                self.assertIn(expected_substr, agy['plan_unknown'])
+                over = axis_scores.five_axis_overlay(applied, axis_scores.load_five_axis())['accounts']['antigravity']
+                self.assertTrue(over['capacity_unknown'])
+                self.assertEqual(over['capacity_usd'], {})
+                self.assertIn(expected_substr, over['plan_unknown_reason'])
 
     def test_grok_no_usage_is_eligible_without_unlimited_bonus_and_launchable(self):
         self.paseo({'grok': {'extends': 'acp', 'enabled': True}})
@@ -1212,8 +1230,10 @@ class PlanTemplateTests(unittest.TestCase):
 
     def test_plan_labels_resolve_to_templates(self):
         for family, label, expected in (
+                ('antigravity', 'g1-ultra-tier', 'ultra20'), ('antigravity', 'g1-ultra-lite-tier', 'ultra5'),
+                ('antigravity', 'g1-pro-tier', 'pro'),
                 ('antigravity', 'Google AI Ultra (20x)', 'ultra20'), ('antigravity', 'Google AI Ultra (5x)', 'ultra5'),
-                ('antigravity', 'ultra5', 'ultra5'), ('antigravity', 'Google AI Ultra', 'ultra'),
+                ('antigravity', 'ultra5', 'ultra5'), ('antigravity', 'ultra20', 'ultra20'),
                 ('antigravity', 'Google AI Pro', 'pro'), ('codex', 'ChatGPT Pro 100', 'pro100'),
                 ('codex', 'pro100', 'pro100'), ('codex', 'Team', 'team'), ('claude', 'Claude Max 5x', 'max5')):
             with self.subTest(label=label):
@@ -1222,7 +1242,12 @@ class PlanTemplateTests(unittest.TestCase):
                 self.assertTrue(inventory.plan_defaults({}, family, plan))
         self.assertEqual(set(inventory.plan_defaults({}, 'codex', 'team')['windows']), {'usage', 'five_hour'})
         self.assertEqual(inventory.plan_defaults({}, 'claude', 'max'), inventory.plan_defaults({}, 'claude', 'max5'))
-        self.assertNotIn('alias', inventory.plan_defaults({}, 'antigravity', 'ultra'))
+        # Antigravity has no default plan and no unsplit 'ultra' -> 'ultra20' assumption.
+        self.assertNotIn('default', inventory.plan_table({}, 'antigravity'))
+        self.assertNotIn('ultra', inventory.plan_table({}, 'antigravity'))
+        self.assertNotIn('antigravity', inventory.UNKNOWN_PLAN_PRICED_AS)
+        self.assertEqual(inventory.configured_plan('antigravity', 'Google AI Ultra'), 'google ai ultra')
+        self.assertIsNone(inventory.plan_defaults({}, 'antigravity', 'google ai ultra'))
 
     def test_claude_max_plans_ship_a_five_hour_window(self):
         for plan in ('max5', 'max20'):

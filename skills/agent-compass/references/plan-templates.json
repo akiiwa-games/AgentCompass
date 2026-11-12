@@ -119,7 +119,20 @@
     "ultra20": {
       "provenance": "empirical_prior",
       "price_usd_per_month": 199.99,
-      "basis": "Google AI Ultra 20x: a five-hour and a weekly window for the Gemini pool and for the independent third-party pool. Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://one.google.com/intl/ALL_us/about/feeds/pricing_2026_07_28.json",
+        "as_of": "2026-11-12",
+        "statement": "\"PRICE_GEN_AI_ULTRA_200_MONTHLY\": 199.99 (\"COUNTRY_CODE\": \"US\", \"CURRENCY_CODE\": \"USD\"), rendered as the \"Google AI Ultra 20x\" column on https://one.google.com/about/google-ai-plans/"
+      },
+      "tiers": [
+        "g1-ultra-tier",
+        "Google AI Ultra 20x",
+        "Google AI Ultra (20x)",
+        "ultra 20x",
+        "ultra x20"
+      ],
+      "basis": "Google AI Ultra 20x ($199.99/mo, loadCodeAssist paidTier.id \"g1-ultra-tier\"): a five-hour and a weekly window for the Gemini pool and for the independent third-party pool. Google One Help (https://support.google.com/googleone/answer/16286513?hl=en, 2026-11-12) states: \"Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan.\" loadCodeAssist returns paidTier.name \"Google AI Ultra\" for both Ultra variants and distinguishes 20x by paidTier.id \"g1-ultra-tier\" (upgradeSubscriptionText: \"You are subscribed to the best Google AI plan.\", https://github.com/farion1231/cc-switch/pull/9319, 2026-11-10). Unread or unrecognized tiers have no default plan and enter Mode B (capacity_unknown). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
       "windows": {
         "gemini-5h": {
           "hours": 5,
@@ -150,7 +163,20 @@
     "ultra5": {
       "provenance": "empirical_prior",
       "price_usd_per_month": 99.99,
-      "basis": "Google AI Ultra 5x: the windows of Ultra 20x. Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://one.google.com/intl/ALL_us/about/feeds/pricing_2026_07_28.json",
+        "as_of": "2026-11-12",
+        "statement": "\"PRICE_GEN_AI_ULTRA_100_MONTHLY\": 99.99 (\"COUNTRY_CODE\": \"US\", \"CURRENCY_CODE\": \"USD\"), rendered as the \"Google AI Ultra 5x\" column (\"$99.99/mo - Ultra plans are billed monthly only\") on https://one.google.com/about/google-ai-plans/"
+      },
+      "tiers": [
+        "g1-ultra-lite-tier",
+        "Google AI Ultra 5x",
+        "Google AI Ultra (5x)",
+        "ultra 5x",
+        "ultra x5"
+      ],
+      "basis": "Google AI Ultra 5x ($99.99/mo, loadCodeAssist paidTier.id \"g1-ultra-lite-tier\"): the windows of Ultra 20x. loadCodeAssist returns paidTier.name \"Google AI Ultra\" for both Ultra variants and distinguishes 5x by paidTier.id \"g1-ultra-lite-tier\" (upgradeSubscriptionText: \"You can upgrade to a higher Google AI Ultra plan to receive the highest rate limits.\", https://github.com/farion1231/cc-switch/pull/9319, 2026-11-10). Unread or unrecognized tiers have no default plan and enter Mode B (capacity_unknown). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
       "windows": {
         "gemini-5h": {
           "hours": 5,
@@ -181,7 +207,17 @@
     "pro": {
       "provenance": "empirical_prior",
       "price_usd_per_month": 19.99,
-      "basis": "Google AI Pro: the windows of Ultra 20x. Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://one.google.com/intl/ALL_us/about/feeds/pricing_2026_07_28.json",
+        "as_of": "2026-11-12",
+        "statement": "\"PRICE_GEN_AI_PRO_MONTHLY\": 19.99 (\"COUNTRY_CODE\": \"US\", \"CURRENCY_CODE\": \"USD\"), rendered as \"Google AI Pro\" (\"Monthly ($19.99)\") on https://one.google.com/about/google-ai-plans/"
+      },
+      "tiers": [
+        "g1-pro-tier",
+        "Google AI Pro"
+      ],
+      "basis": "Google AI Pro ($19.99/mo, loadCodeAssist paidTier.id \"g1-pro-tier\"): the windows of Ultra 20x. Unread or unrecognized tiers have no default plan and enter Mode B (capacity_unknown). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
       "windows": {
         "gemini-5h": {
           "hours": 5,
@@ -208,14 +244,6 @@
           ]
         }
       }
-    },
-    "ultra": {
-      "alias": "ultra20",
-      "basis": "Ultra tier not reported as 5x or 20x; the windows of Ultra 20x apply and the capacity stays unknown until public data names one."
-    },
-    "default": {
-      "alias": "pro",
-      "basis": "Used until the tier is known: the smallest paid tier, with a warning, never the largest. `agy -p /usage` returns only bucket fractions; discovery reads the tier from Google's loadCodeAssist with agy's own sign-in (scripts/antigravity_plan.py, cached in <state dir>/antigravity-plan.json, refreshed beside routing runs), so this prior covers a first run, an expired agy token or a failed read. A plan can also be named in the account document's `plan` (for example \"Google AI Pro\") or in `plan_templates`."
     }
   },
   "chatgpt-web": {
