@@ -1167,6 +1167,74 @@ class HarnessCandidates(unittest.TestCase):
         self.assertEqual(row['billing'], 'subscription')
         self.assertNotIn('usd_candidate', row)
 
+    def test_auth_token_subscription_keeps_the_quota_read(self):
+        # docs/technical-reference.md Metered USD: ANTHROPIC_AUTH_TOKEN on a custom
+        # base is a subscription source until a probe records it as not Magpie.
+        # ANTHROPIC_API_KEY alone stays a dollar candidate.
+        import usage_magpie
+
+        self._clear_override()
+        self._clear_provider_cache()
+        home = self._home() / '.claude'
+        home.mkdir(parents=True, exist_ok=True)
+        (home / 'settings.json').write_text(json.dumps({'env': {
+            'ANTHROPIC_BASE_URL': 'https://gateway.example.test',
+            'ANTHROPIC_AUTH_TOKEN': 'fixture-gateway-token',
+        }}), encoding='utf-8')
+        self.assertNotIn('claude', usage_core.discover_metered_usd_accounts())
+        before = provider_inventory.discover()['accounts']['claude']
+        self.assertNotIn('usd_candidate', before)
+        now = datetime.now(timezone.utc).isoformat()
+        payload = {'data': [{
+            'provider': 'claude', 'kind': 'subscription', 'user': 'one@example.com',
+            'plan': 'pro', 'readAt': now,
+            'windows': [
+                {'name': '5 hours', 'used': 10, 'resetsAt': now},
+                {'name': '7 days', 'used': 20, 'resetsAt': now},
+            ],
+        }]}
+        calls = []
+
+        def fake(url, method='GET', headers=None, body=None, timeout=20):
+            calls.append((method, url))
+            return 200, payload
+
+        with patch.object(usage_core, 'http_json', side_effect=fake), \
+                patch.object(usage_core, 'http_json_response', side_effect=AssertionError('key info')):
+            [row] = usage_core.collect_local_usage(['claude'], force=True)
+        self.assertTrue(calls)
+        self.assertTrue(all('/v1/magpie/quotas' in url for _method, url in calls))
+        self.assertTrue(row.available)
+        self.assertIsNone(row.error)
+        self.assertEqual(sorted(window.id for window in row.windows), ['five_hour', 'seven_day'])
+        proved = provider_inventory.discover()['accounts']['claude']
+        self.assertNotIn('usd_candidate', proved)
+        self.assertEqual(proved['billing'], 'subscription')
+
+        source = usage_magpie.read_source(home)
+        self.assertIsNotNone(source)
+
+        def mark_not_magpie(cache):
+            cache.setdefault('non_magpie_gateways', {})['claude'] = source.credential_key
+            providers = cache.get('providers')
+            if isinstance(providers, dict):
+                providers.pop('claude', None)
+
+        usage_core.update_usage_cache(mark_not_magpie)
+        self.assertIn('claude', usage_core.discover_metered_usd_accounts())
+        self.assertTrue(provider_inventory.discover()['accounts']['claude'].get('usd_candidate'))
+        key_calls = []
+
+        def fake_key(url, method='GET', headers=None, body=None, timeout=20):
+            key_calls.append(url)
+            return 200, {'info': {'spend': 4}}, {}
+
+        with patch.object(usage_core, 'http_json_response', side_effect=fake_key), \
+                patch.object(usage_core, 'http_json', side_effect=AssertionError('magpie')):
+            [metered] = usage_core.collect_local_usage(['claude'], force=True)
+        self.assertEqual(key_calls, ['https://gateway.example.test/key/info'])
+        self.assertEqual((metered.usage_details or {}).get('spent_usd'), 4)
+
 
 if __name__ == '__main__':
     unittest.main()
