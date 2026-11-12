@@ -22,6 +22,7 @@ import dispatch_registry as registry
 import host_placement
 import provider_inventory
 import worker_context
+import worker_sessions
 from worker_context import NATIVE_HOSTS, harness_session, require_parent_id, resolve_parent
 
 # Launcher families a configured Paseo provider may use: the dispatch adapter's own table, so a ready Grok/ACP
@@ -879,7 +880,7 @@ def compact(result, status, detail_path):
                'worker_prompt_file as its prompt; if the host cannot reproduce that provider/account/model/effort, tell the '
                'user instead of substituting.')
     worker_summary = {k: bundle.get(k) for k in ('provider', 'account', 'model', 'effort') if bundle.get(k)}
-    if worker_summary and worker.get('agent_id'):
+    if worker.get('agent_id'):
         worker_summary['agent_id'] = worker['agent_id']
     if worker_summary and worker.get('resumed'):
         worker_summary['resumed'] = True
@@ -920,6 +921,8 @@ def compact(result, status, detail_path):
         out['assumptions'] = result['assumptions']
     if result.get('warnings'):
         out['warnings'] = [*out.get('warnings', []), *result['warnings']]
+    if result.get('continuation'):
+        out['continuation'] = result['continuation']
     out['details'] = detail_path
     return {k: v for k, v in out.items() if v is not None}
 
@@ -971,6 +974,9 @@ def run(args, judge):
     result, code = _run(args, judge)
     status = status_of(result, code)
     result = dict(result, status=status)
+    agent_id = (result.get('worker') or {}).get('agent_id')
+    if agent_id:
+        result['continuation'] = worker_sessions.continuation_verdict(agent_id)
     # The file on disk and --verbose carry the same cause and next action as the compact answer.
     summary = compact(result, status, None)
     result.update({k: summary[k] for k in ('cause', 'next_action') if summary.get(k) and k not in result})

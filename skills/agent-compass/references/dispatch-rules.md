@@ -16,6 +16,8 @@ The global rule block AgentCompass installs is a short pointer to this skill. Re
 
 ## 3. Continue a worker, or replace it
 
+Worker notifications carry the continuation verdict; host fields such as `contextWindowUsedTokens` and `contextWindowMaxTokens` are not the rotation measure.
+
 1. Follow-up work may go to the same worker (Paseo `send_agent_prompt`, a host's `SendMessage`) only while its accumulated uncompressed context is under the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray). Count `compacted_tokens + context_tokens`: the context before every earlier compaction plus the current window, never the current window alone.
 2. At or above `rotate_after_carried_tokens`, write the progress and the remaining work into a handoff brief and run `agentcompass roll --brief <handoff.md>` for a fresh worker. Changing the owner, model or effort also means rolling again.
 3. A correction or redesign of a worker's own task is the same task, not a new one. When the result is rejected or the design changes (wrong approach, a constraint was missed, scope moves), send the corrected task to that worker instead of cancelling it and rolling a fresh one. Its context about the code and the earlier attempt is what the redo needs. Replace it only when point 2 applies or its context window cannot hold the rest of the work. A different kind of task with little shared context still gets its own brief and its own roll.

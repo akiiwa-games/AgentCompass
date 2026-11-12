@@ -20,7 +20,8 @@ from agentcompass import locations
 
 STAGES = ("roll", "plan", "providers", "score", "scorer", "delegate", "select", "record", "override", "dispatch", "launch")
 
-RUNNERS = {"dot": ("dot-subagent", "run_dot_task.py"), "grok-bot": ("agent-compass", "run_grok_bot.py"),
+RUNNERS = {"continuation-verdict": ("agent-compass", "worker_sessions.py"),
+           "dot": ("dot-subagent", "run_dot_task.py"), "grok-bot": ("agent-compass", "run_grok_bot.py"),
            "herdr": ("agent-compass", "host_herdr.py"),
            "chatgpt-web": ("chatgpt-pro-consult", "consult_bridge.py")}
 

@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import roll
+import worker_sessions
 
 from router_test_support import isolated_router_state
 
@@ -15,6 +16,30 @@ def setUpModule():
 
 
 class RollNotificationTests(unittest.TestCase):
+    def test_continuation_uses_carried_sum_and_threshold(self):
+        with patch.object(worker_sessions, 'rotation_threshold', return_value=2000000):
+            for context, expected in ((999999, 'same worker'), (1000000, 'rotate')):
+                with self.subTest(context=context), patch.object(worker_sessions, 'session_state', return_value={
+                    'compacted_tokens': 1000000, 'context_tokens': context,
+                    'historical_context_tokens': 1, 'contextWindowUsedTokens': 99999999}):
+                    self.assertIn(expected, worker_sessions.continuation_verdict('worker'))
+            with patch.object(worker_sessions, 'session_state', return_value={
+                    'compacted_tokens': 765142, 'context_tokens': 78253}):
+                self.assertIn('carried 843,395', worker_sessions.continuation_verdict('worker'))
+
+    def test_unreadable_carried_context_is_unknown(self):
+        with patch.object(worker_sessions, 'session_state', return_value={
+                'telemetry_status': 'unknown', 'telemetry_reason': 'missing_log',
+                'contextWindowUsedTokens': 100, 'contextWindowMaxTokens': 200}):
+            result = worker_sessions.continuation_verdict('worker')
+        self.assertIn('Continuation: unknown (missing_log)', result)
+        self.assertNotIn('Continuation: same worker', result)
+        self.assertNotIn('Continuation: rotate', result)
+
+    def test_compact_includes_worker_verdict(self):
+        result = {'worker': {'agent_id': 'worker'}, 'continuation': 'Continuation: unknown (missing_log)'}
+        self.assertEqual(roll.compact(result, 'launched', None)['continuation'], result['continuation'])
+
     def test_paseo_only_promises_registered_notifications(self):
         args = SimpleNamespace(title='test', workspace=None, wait=0)
         decision = {'decision_id': 'decision', 'selected_bundle': {'provider': 'codex'}}

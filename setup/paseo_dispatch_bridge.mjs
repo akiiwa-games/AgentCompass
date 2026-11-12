@@ -70,6 +70,23 @@ export function runFallback(dispatchId, argv = fallbackArgv()) {
   });
 }
 
+// Read the router's session telemetry at notification time, never Paseo's window counters.
+export function continuationVerdict(agentId, env = process.env) {
+  const unknown = "Continuation: unknown (verdict_unavailable).\nA redo or correction of this worker's task goes back to it while the verdict says same worker.";
+  let argv;
+  try { argv = JSON.parse(env.AGENTCOMPASS_CONTINUATION_ARGV ?? ''); } catch { return Promise.resolve(unknown); }
+  if (!Array.isArray(argv) || !argv.length || !argv.every(a => typeof a === 'string' && a)) return Promise.resolve(unknown);
+  return new Promise(resolve => {
+    let output = '', child;
+    try { child = spawn(argv[0], [...argv.slice(1), agentId ?? ''], {windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'], env}); }
+    catch { resolve(unknown); return; }
+    const timer = setTimeout(() => child.kill(), 10000);
+    child.stdout.on('data', chunk => { if (output.length < 4096) output += chunk; });
+    child.once('error', () => {clearTimeout(timer); resolve(unknown);});
+    child.once('close', code => {clearTimeout(timer); resolve(code === 0 && output.startsWith('Continuation: ') ? output.trim() : unknown);});
+  });
+}
+
 const defaultFallback = record => runFallback(record.dispatch_id);
 
 // What dispatch_fallback.write_attempts_file left for a relaunched attempt: the parent's dispatch id and the attempts.
@@ -427,7 +444,8 @@ export async function notificationStep(client, record, persist, now = Date.now()
         .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'),
       text: `[AgentCompass worker notification]\nDispatch: ${root ?? record.dispatch_id}\n` +
         (root && root !== record.dispatch_id ? `Attempt dispatch: ${record.dispatch_id}\n` : '') +
-        `Worker: ${targetId}\nState: ${final ? record.fallback.result : event.reason}\n` + (final ? record.fallback.text
+        `Worker: ${targetId}\nState: ${final ? record.fallback.result : event.reason}\n` +
+        await continuationVerdict(targetId) + '\n' + (final ? record.fallback.text
           : (Array.isArray(attempts) && attempts.length > 1 && event.key === 'terminal'
             ? `Attempts:\n${attempts.map(l => `- ${l}`).join('\n')}\n` : '') + (event.reason === CREATE_FAILED
           ? 'Paseo created no worker for this dispatch and none can appear later; it is safe to roll this brief again.'

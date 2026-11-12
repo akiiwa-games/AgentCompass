@@ -221,6 +221,8 @@ test('finished and failed workers notify even without native messaging tools', a
     assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
     assert.equal(f.calls.length, 1);
     assert.equal(f.calls[0][0], 'parent');
+    assert.match(f.calls[0][1], /Continuation: (same worker|rotate|unknown)/);
+    assert.match(f.calls[0][1], /redo or correction/);
     assert.match(f.calls[0][1], /get_agent_activity.*child/);
     assert.equal(f.calls[0][2].activeTurnBehavior, 'steer');
     assert.equal(f.saved[0].pending.messageId, f.calls[0][2].messageId);
@@ -235,6 +237,7 @@ test('permissions notify once per request and do not consume the final callback'
   for (let i = 0; i < 4; i++) assert.equal(await notificationStep(f.client, f.record, f.persist, 10), false);
   assert.equal(f.calls.length, 2);
   assert.match(f.calls[0][1], /needs permission/);
+  assert.match(f.calls[0][1], /Continuation: (same worker|rotate|unknown)/);
   f.setAgent({status: 'idle', attentionReason: 'finished'});
   assert.equal(await notificationStep(f.client, f.record, f.persist, 20), true);
   assert.equal(f.calls.length, 3);

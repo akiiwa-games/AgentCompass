@@ -170,3 +170,32 @@ def worker_worn(worker, policy):
     if not isinstance(worker, dict):
         return False
     return worker_historical_tokens(worker) >= limit
+
+
+def continuation_verdict(agent_id):
+    """Describe the current carried-context decision without using host window telemetry."""
+    rule = 'A redo or correction of this worker\'s task goes back to it while the verdict says same worker.'
+    try:
+        state = session_state(agent_id)
+        if not isinstance(state, dict):
+            raise ValueError('session_state_unavailable')
+        if state.get('telemetry_status') == 'unknown':
+            raise ValueError(state.get('telemetry_reason') or 'session_state_unavailable')
+        compacted, context = state.get('compacted_tokens'), state.get('context_tokens')
+        if any(isinstance(n, bool) or not isinstance(n, (int, float)) or n < 0 for n in (compacted, context)):
+            raise ValueError('carried_context_unavailable')
+        carried, threshold = int(compacted + context), rotation_threshold()
+        def size(n):
+            return f'{n:,}'
+        if carried >= threshold:
+            verdict = f'Continuation: rotate — carried {size(carried)} ≥ {size(threshold)} rotate_after_carried_tokens; write a handoff brief and roll.'
+        else:
+            verdict = f'Continuation: same worker (carried {size(carried)} of {size(threshold)} rotate_after_carried_tokens).'
+    except Exception as exc:
+        verdict = f'Continuation: unknown ({exc or "session_state_unavailable"}).'
+    return verdict + '\n' + rule
+
+
+if __name__ == '__main__':
+    import sys
+    print(continuation_verdict(sys.argv[1] if len(sys.argv) > 1 else ''))

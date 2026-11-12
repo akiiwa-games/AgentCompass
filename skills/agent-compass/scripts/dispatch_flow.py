@@ -149,6 +149,7 @@ def bridge_env():
     """The bridge's environment. Its watcher (a detached child) hands a failed attempt to `agentcompass dispatch
     --dispatch-action fallback` before it tells the parent anything (paseo_dispatch_bridge.mjs runFallback)."""
     env = dict(os.environ)
+    env['AGENTCOMPASS_CONTINUATION_ARGV'] = json.dumps(entry.argv('continuation-verdict'))
     if dispatch_fallback.enabled():
         env['AGENTCOMPASS_FALLBACK_ARGV'] = json.dumps(entry.argv('dispatch', '--dispatch-action', 'fallback'))
     else:
