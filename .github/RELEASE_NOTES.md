@@ -1,21 +1,30 @@
 AgentCompass v0.4.6 scores every model on four categories and on quota economy, and nothing else. It builds on v0.4.5.
 
-- **One scoring.** The classifier states how much the task needs (0-3) of divergence, global rigor, module precision and vision & tools. The router fits each candidate's four category scores to that need and adds the quota economy: the part of the task's spend that lands over the recovery line of the account's quota window.
-  - The scoring on/off switch, the old per-model capability and preference rows, the per-model tier score, the ability and effort gates, the old exchange-rate pricing and the old demo output are removed. There is no second path.
-  - The classifier always returns `axis_demand`. The profile fields that only fed the old rows are gone.
-  - Hours come from the classifier's own `expected_hours`; there is no per-difficulty default.
-- **Tier only bridges missing type scores.** A model's tier is its position on the arena.ai Overall board, mapped onto the user's tier scale through six anchor rows. A model that board does not list takes its position on the Artificial Analysis Intelligence Index, interpolated through the models both list; a model on no overall board takes its nearest same-series sibling's tier. Routing never reads the tier.
-- **Missing type scores are estimated, not defaulted.**
-  - With a same-series sibling that measures the score, the estimate is the sibling's value moved along the fitted line of that score on tier by the two tiers' difference. Without one, it is the fit at the model's tier.
-  - A fit needs out-of-sample skill and enough points, and the value stays inside the measured range. Each estimate records its fit, tier, base and shift. Where a fit has no skill the tier does not predict that score, so the shift is 0 and the sibling's value stands (`shift 0: fit rejected, ...` in the record).
-  - A direct measurement replaces the estimate on the next data refresh.
-  - Estimated type scores and the categories built on them are marked in the capability catalog (`~`), in routing notes and in the tray.
-  - A category with some type scores missing is yellow: the missing ones count as 0 and the model stays in routing. A category with none leaves automatic routing for a task that demands it; naming the model still dispatches it, with the data error in the notes.
-- **One duration basis.** The hours a task takes, its spend and the window it needs all use Artificial Analysis Time/Task at the candidate's own effort. A model Artificial Analysis lacks uses its arena.ai Agent Time/Task, moved onto the Artificial Analysis scale by a fit over the models that have both (cited with its r and n); a model with no time of its own takes its nearest same-series measured sibling's per-effort time; an effort between two of the model's own efforts sits where the fleet puts it on the log-time scale between them (the median position over the models that list all three, with its n and IQR; the model's own endpoints are kept), and an effort outside its listed range takes the nearest same-series sibling's time ratio, or the fleet's median ratio from the nearest listed effort, never faster than a lower listed effort (under 3 fleet models the effort stays out; any bound that binds is named in the data). A model with no sibling and no time, or an effort left without a time, is out of automatic routing (a named dispatch still runs). USD per hour stays the arena.ai rate, so effort is in the hours and no packaged effort curve remains.
-- **Dot is Astra, as data.** `accounts.json` `same_model` declares that Dot is the model OpenAI's launch post names (GPT-6 Astra), with its url; Dot takes Astra's divergence, global rigor, module precision and Time/Task through the sibling path at tier difference 0. Vision and GUI stay its own and missing.
-- **Claude Fable 5.2** takes its scores and price from Fable 5.1 through the same conversion. Its fast-mode price (2x) and speed (2.5x) are its own.
-- **Quota capacity comes from public data only.** The packaged per-plan capacity figures and the packaged effort burn curve are removed. A plan or window without a cited capacity is unknown, and its account stays out of automatic routing until the data has it.
-- **Public data.** Installs that receive public routing data get the new scores from GitHub without updating. This release ships them in the installer as well.
+- **One scoring.**
+  - The classifier states how much the task needs (0–3) of four categories: creativity (`divergence`), coding, aesthetics and tool operation.
+  - The router fits each candidate's category scores to that need, capped at the task's target, and subtracts the quota economy: the part of the task's spend that lands over the recovery line of the account's quota window.
+  - Equal net scores go to the candidate that starts sooner, then finishes sooner, then costs fewer list-price USD.
+  - The old difficulty floors, per-model rows, tier gates and exchange-rate pricing are removed. There is no second path.
+- **Public data only.**
+  - Category scores come from cited public boards on one panel scale. A missing score is converted from the model's same-series sibling or bridged from its arena.ai Overall tier, and marked as estimated.
+  - Plan capacity comes from cited community data.
+  - Maintainer scores ship in `references/user-scores.json`, and you can override them locally from the tray.
+- **Plans are read from the account, never assumed.**
+  - Antigravity reads the exact tier (Pro, Ultra 5x, Ultra 20x) from `loadCodeAssist` `paidTier.id`.
+  - Grok reads its subscription tier from the Grok CLI endpoints. grok-bot's capacity is the Claude subscription at the same price, or the nearest one scaled by the price ratio.
+  - An account whose plan cannot be read leaves automatic routing with the reason shown. There is no default plan.
+- **`roll --workspace` takes a directory.**
+  - One writer per directory on every host.
+  - A request the host rejects stops the dispatch. It does not cool down or walk through healthy models.
+  - Only a failure with evidence against a model or account cools it down and falls back.
+- **Context rotation** follows `rotate_after_carried_tokens` from the tray settings.
+- **Completed dispatches record ground truth:** active time, tokens and diff size.
+- **Tray.**
+  - A scores page for the four categories with manual scores.
+  - Strategy presets 均衡 / 省额度 / 重置前蹬完.
+  - Quota-line views for every priced decision.
+  - English layout fixes.
+- **Unoffered models.** A model the provider no longer offers is excluded on its own. Other models on the account stay available.
 
 The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.4.6/packaging/SIGNING.md).
 
