@@ -1657,14 +1657,21 @@ def harness_model_rows() -> list[dict]:
             for p in row["providers"]
         ]
         unavail_provs = [d for d in unavail_provs if d]
-        if account_hold and kind == "ok":
-            row["badge"], row["kind"] = retry_hold_text({account: account_hold}, account), "warn"
-        elif pool_holds and kind == "ok":
-            row["badge"], row["kind"] = retry_hold_text(pool_holds, account), "warn"
-        elif failing and kind == "ok":
-            row["badge"], row["kind"] = _tr("{0} 个模型启动失败，已排除派发").format(failing), "warn"
-        elif unavail_provs and kind == "ok":
-            row["badge"], row["kind"] = _tr("模型列表暂不可用（{0}）").format(unavail_provs[0]), "warn"
+        if account_hold:
+            note = retry_hold_text({account: account_hold}, account)
+        elif pool_holds:
+            note = retry_hold_text(pool_holds, account)
+        elif failing:
+            note = _tr("{0} 个模型启动失败，已排除派发").format(failing)
+        elif unavail_provs:
+            note = _tr("模型列表暂不可用（{0}）").format(unavail_provs[0])
+        else:
+            note = None
+        # Account cards append a hold onto an existing warning and leave an idle badge alone.
+        # An unverified account is already warn (launch evidence); that must not hide a model failure or a hold.
+        if note and kind != "idle":
+            row["badge"] = note if kind == "ok" else f"{row['badge']}；{note}"
+            row["kind"] = "warn"
         rows.append(row)
     present = {row['account'] for row in rows}
     for account, spec in table.items():

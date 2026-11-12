@@ -60,7 +60,10 @@ def test_initial_probe_failure_is_cached_until_retry_interval(tmp_path):
 
 
 def test_probe_registry_dispatch_defaults_and_explicit_static_override():
-    assert model_catalog.probe_definition('custom', {'base_url': 'https://example.invalid'})['type'] == 'openai_compatible'
+    # A dollar account is probed from its endpoint (docs/technical-reference.md#metered-usd).
+    # base_url is not that field, so a non-Paseo provider with only base_url stays static.
+    assert model_catalog.probe_definition('custom', {'endpoint': 'https://example.invalid'})['type'] == 'openai_compatible'
+    assert model_catalog.probe_definition('custom', {'base_url': 'https://example.invalid'})['type'] == 'static'
     assert model_catalog.probe_definition('codex')['type'] == 'paseo_provider'
     assert model_catalog.probe_definition('remote-bot')['type'] == 'static'
     definition = {'endpoint': 'https://example.invalid', 'model_probe': 'static',

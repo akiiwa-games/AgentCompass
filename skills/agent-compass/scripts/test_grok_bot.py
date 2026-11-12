@@ -17,6 +17,7 @@ import pytest
 import provider_inventory
 import allocator
 import account_fleet
+import accounts_override
 import quota_pools
 import dispatch_registry
 import route_judge
@@ -429,8 +430,17 @@ class GrokBotTests(unittest.TestCase):
         self.assertFalse(any('image_input' in r for r in visual_row['excluded']), visual_row['excluded'])
         self.assertTrue(any('host policy' in r for c in plan(allowed=False)['ranking']
                             if c['id'] == 'grok_bot' for r in c['excluded']))
-        applied['accounts']['grok-bot']['bundles']['grok_bot']['disabled'] = 'user disabled'
-        self.assertNotEqual(plan(model='grok-bot')['choice'], 'grok_bot')      # the checkbox beats naming the model
+        # Settings store disabled only as true or false (router-internals.md, "Settings hold state only").
+        # An unchecked row stays out even when named (router-internals.md, Pins).
+        with self.assertRaises(ValueError) as rejected_flag:
+            accounts_override.normalize({'disabled': 'user disabled'})
+        self.assertIn('boolean', str(rejected_flag.exception))
+        applied['accounts']['grok-bot']['bundles']['grok_bot']['disabled'] = True
+        unchecked = plan(model='grok-bot')
+        self.assertNotEqual(unchecked['choice'], 'grok_bot')
+        self.assertTrue(any('unchecked in model management' in reason
+                            for candidate in unchecked['ranking'] if candidate['id'] == 'grok_bot'
+                            for reason in candidate['excluded']))
         applied['accounts']['grok-bot']['bundles']['grok_bot'].pop('disabled')
         now = datetime.now(timezone.utc)
         weekly = {'id': 'credits', 'remaining_pct_before_reset': 1,
