@@ -49,7 +49,11 @@ class UsageSafetyTests(unittest.TestCase):
         )
         p_codex.start()
         self.addCleanup(p_codex.stop)
-        p = patch.dict('os.environ', {'AGENTCOMPASS_ACTIVITY_FILE': str(self.root / 'capacity.json')})
+        p = patch.dict('os.environ', {
+            'AGENTCOMPASS_ACTIVITY_FILE': str(self.root / 'capacity.json'),
+            'ROUTER_PROVIDER_HOME': str(self.root),
+            'AGENTCOMPASS_ACCOUNTS_OVERRIDE': str(self.root / 'accounts-override.json'),
+        })
         p.start()
         self.addCleanup(p.stop)
         p = patch.object(usage, 'http_json', side_effect=AssertionError('Unexpected network'))

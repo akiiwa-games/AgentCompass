@@ -432,8 +432,10 @@ GROK_BILLING_URL = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCredits
 
 
 # A metered USD account is an accounts-override.json entry with billing "metered",
-# an endpoint and an api_key. Spend is that key's dollars. A budget, when the
-# account or the key states one, is a balance that does not reset.
+# an endpoint and an api_key, or a self-built API-key harness whose /key/info
+# reading is still pending. Spend is that key's dollars. A budget, when the
+# account or the key states one, is a balance that does not reset. The harness
+# key is read from the product config on each poll and is not stored.
 REFRESH_SECONDS = 300
 IDLE_REFRESH_SECONDS = 1800
 UNKNOWN_ACTIVITY_REFRESH_SECONDS = 900
@@ -599,6 +601,9 @@ def claude_magpie_source(provider_id: str):
 
 
 def provider_credential_key(provider_id: str) -> str | None:
+    metered = discover_metered_usd_accounts().get(provider_id)
+    if metered is not None and metered.source == "harness" and metered.credential_key:
+        return metered.credential_key
     remote = claude_magpie_source(provider_id)
     if remote is not None:
         return remote.credential_key
@@ -2494,6 +2499,9 @@ class MeteredUsdAccount:
     endpoint: str
     origin: str
     budget_usd: float | None
+    # "override" keeps the handwritten key. "harness" re-reads the product config; credential_key is its digest.
+    source: str = "override"
+    credential_key: str | None = None
 
 
 def _accounts_override_path() -> Path:
@@ -2525,43 +2533,83 @@ def _usd_number(value: Any, *, allow_zero: bool) -> float | None:
     return number
 
 
-def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
-    """Metered USD accounts from accounts-override.json only.
+def _harness_scan_home() -> Path:
+    """Home the candidate scan reads. ROUTER_PROVIDER_HOME wins; otherwise the collector home.
 
-    An entry counts when billing is metered and both endpoint and api_key are
+    configure_paths binds HOME at import. A later Path.home patch does not move it, so tests that
+    set ROUTER_PROVIDER_HOME are honored here and the real profile is not scanned.
+    """
+    configured = str(os.environ.get("ROUTER_PROVIDER_HOME") or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return HOME
+
+
+def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
+    """Handwritten dollar accounts, then self-built API-key harnesses not already covered.
+
+    An override entry counts when billing is metered and both endpoint and api_key are
     non-empty. Subscription-shaped metered accounts (no endpoint) are not these.
     Old proxy sections, environment variables and usage-config keys are not read.
+
+    A harness candidate is added only when its id and its origin are both absent from the
+    handwritten accounts. The key is the one just read from that harness; it is not copied out.
+    Official API hosts are not candidates.
     """
     path = _accounts_override_path()
+    found: dict[str, MeteredUsdAccount] = {}
     try:
         doc = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
-        return {}
+        doc = None
     accounts = doc.get("accounts") if isinstance(doc, dict) else None
-    if not isinstance(accounts, dict):
-        return {}
-    found: dict[str, MeteredUsdAccount] = {}
-    for pid, spec in accounts.items():
-        if not isinstance(pid, str) or not isinstance(spec, dict) or spec.get("disabled") is True:
+    if isinstance(accounts, dict):
+        for pid, spec in accounts.items():
+            if not isinstance(pid, str) or not isinstance(spec, dict) or spec.get("disabled") is True:
+                continue
+            if str(spec.get("billing") or "").strip().lower() != "metered":
+                continue
+            endpoint = str(spec.get("endpoint") or "").strip()
+            key = str(spec.get("api_key") or "").strip()
+            if not endpoint or not key:
+                continue
+            origin = _metered_usd_origin(endpoint)
+            if not origin:
+                continue
+            label = str(spec.get("label") or pid).strip() or pid
+            PROVIDER_LABELS.setdefault(pid, label)
+            found[pid] = MeteredUsdAccount(
+                provider_id=pid,
+                display_name=label,
+                api_key=key,
+                endpoint=endpoint,
+                origin=origin,
+                budget_usd=_usd_number(spec.get("budget_usd"), allow_zero=False),
+            )
+    origins = {account.origin for account in found.values()}
+    import provider_inventory
+    for item in provider_inventory.harness_usd_candidates(_harness_scan_home(), os.environ):
+        pid = item.get("provider_id")
+        if not isinstance(pid, str) or pid in found:
             continue
-        if str(spec.get("billing") or "").strip().lower() != "metered":
-            continue
-        endpoint = str(spec.get("endpoint") or "").strip()
-        key = str(spec.get("api_key") or "").strip()
-        if not endpoint or not key:
-            continue
+        endpoint = str(item.get("endpoint") or "").strip()
+        key = str(item.get("api_key") or "").strip()
         origin = _metered_usd_origin(endpoint)
-        if not origin:
+        if not endpoint or not key or not origin or origin in provider_inventory.OFFICIAL_API_ORIGINS:
             continue
-        label = str(spec.get("label") or pid).strip() or pid
-        PROVIDER_LABELS.setdefault(pid, label)
+        if origin in origins:
+            continue
+        digest_key = item.get("credential_key")
+        PROVIDER_LABELS.setdefault(pid, pid)
         found[pid] = MeteredUsdAccount(
             provider_id=pid,
-            display_name=label,
+            display_name=PROVIDER_LABELS.get(pid, pid),
             api_key=key,
             endpoint=endpoint,
             origin=origin,
-            budget_usd=_usd_number(spec.get("budget_usd"), allow_zero=False),
+            budget_usd=None,
+            source="harness",
+            credential_key=digest_key if isinstance(digest_key, str) and digest_key else None,
         )
     return found
 
@@ -2628,7 +2676,34 @@ def _cached_permission_usage(provider_id: str, raw: Any, key: str | None) -> Pro
     return item
 
 
-def _cache_metered_usd_failure(provider_id: str, *, query: str, read_error: str | None) -> None:
+def _cached_not_metered_usage(provider_id: str, raw: Any, key: str | None) -> ProviderUsage | None:
+    """A candidate whose /key/info did not prove a meter. Not a read failure."""
+    if not isinstance(raw, dict):
+        return None
+    details = raw.get("usage_details")
+    if not isinstance(details, dict) or details.get("query") != "not_metered" or details.get("kind") != "metered_usd":
+        return None
+    if raw.get("backend_kind") == "metered_usd" or raw.get("credential_key") not in (None, key):
+        return None
+    return ProviderUsage(
+        provider_id=provider_id,
+        display_name=str(raw.get("display_name") or provider_id),
+        available=True,
+        error=None,
+        windows=[],
+        credential_key=key,
+        usage_details={"kind": "metered_usd", "query": "not_metered"},
+        fetched_at=raw.get("fetched_at"),
+    )
+
+
+def _cache_metered_usd_failure(
+    provider_id: str,
+    *,
+    query: str,
+    read_error: str | None,
+    declare_billing: bool = True,
+) -> None:
     """Remember a /key/info miss. No spend number is stored, so routing keeps the data gap."""
     key = provider_credential_key(provider_id)
     details: dict[str, Any] = {"kind": "metered_usd", "query": query}
@@ -2642,10 +2717,11 @@ def _cache_metered_usd_failure(provider_id: str, *, query: str, read_error: str 
         "stale": False,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
         "backend_kind": "metered_usd",
-        "billing": "metered",
         "credential_key": key,
         "usage_details": details,
     }
+    if declare_billing:
+        snap["billing"] = "metered"
     if read_error:
         snap["error"] = read_error
 
@@ -2666,20 +2742,67 @@ def _public_read_error(text: str) -> str:
     return cleaned[:160]
 
 
-def _metered_usd_miss(provider_id: str, display_name: str, status: int, payload: Any) -> ProviderUsage:
-    """No spend number. 401/403 is a permission hover; every other miss is a normal read failure."""
+def _harness_quiet_miss(provider_id: str, display_name: str) -> ProviderUsage:
+    """A candidate /key/info that did not prove a meter. Drop a previous dollar row and store no number."""
+    key = provider_credential_key(provider_id)
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    snap: dict[str, Any] = {
+        "provider_id": provider_id,
+        "display_name": display_name,
+        "windows": [],
+        "available": True,
+        "stale": False,
+        "fetched_at": fetched_at,
+        "credential_key": key,
+        "usage_details": {"kind": "metered_usd", "query": "not_metered"},
+    }
+
+    def update(cache):
+        providers = cache.setdefault("providers", {})
+        providers[provider_id] = snap
+        snaps = cache.get("display_snapshots")
+        if isinstance(snaps, dict):
+            snaps.pop(provider_id, None)
+
+    try:
+        update_usage_cache(update)
+    except Exception:
+        pass
+    return ProviderUsage(
+        provider_id=provider_id,
+        display_name=display_name,
+        available=True,
+        windows=[],
+        usage_details={"kind": "metered_usd", "query": "not_metered"},
+        fetched_at=fetched_at,
+    )
+
+
+def _metered_usd_miss(
+    provider_id: str,
+    display_name: str,
+    status: int,
+    payload: Any,
+    *,
+    declare_billing: bool = True,
+) -> ProviderUsage:
+    """No spend number. 401/403 is a permission hover. A candidate's other miss stays unknown."""
     if status in (401, 403):
-        _cache_metered_usd_failure(provider_id, query="no_permission", read_error=None)
+        _cache_metered_usd_failure(
+            provider_id, query="no_permission", read_error=None, declare_billing=declare_billing,
+        )
         return ProviderUsage(
             provider_id=provider_id,
             display_name=display_name,
             available=False,
             windows=[],
             backend_kind="metered_usd",
-            billing="metered",
+            billing="metered" if declare_billing else None,
             usage_details={"kind": "metered_usd", "query": "no_permission"},
             fetched_at=datetime.now(timezone.utc).isoformat(),
         )
+    if not declare_billing:
+        return _harness_quiet_miss(provider_id, display_name)
     if status == 0:
         raw_reason = str(payload or "").strip()
         reason = "网络错误" if not raw_reason else _public_read_error(raw_reason)
@@ -2714,7 +2837,9 @@ def fetch_metered_usd_usage(provider_id: str) -> ProviderUsage:
     )
     spend, reported_budget = _parse_key_info(payload) if status == 200 else (None, None)
     if spend is None:
-        return _metered_usd_miss(provider_id, display_name, status, payload)
+        return _metered_usd_miss(
+            provider_id, display_name, status, payload, declare_billing=account.source != "harness",
+        )
     budget = _reading_budget(account, reported_budget)
     details: dict[str, Any] = {"kind": "metered_usd", "spent_usd": spend, "budget_usd": budget}
     windows: list[UsageWindow] = []
@@ -2878,8 +3003,11 @@ def provider_available(provider_id: str) -> bool:
 
     Providers without local credentials are hidden. Antigravity manages its
     secure login internally, so its installed CLI is checked by /usage instead.
+    A dollar account, including a self-built API-key harness, is available without OAuth.
     """
     provider_id = provider_fetch_id(provider_id)
+    if provider_id in discover_metered_usd_accounts():
+        return True
     remote = claude_magpie_source(provider_id)
     if remote is not None:
         return bool(remote.valid)
@@ -2893,8 +3021,6 @@ def provider_available(provider_id: str) -> bool:
         return read_claude_oauth(claude_account_home(provider_id))[0] is not None
     if provider_id == "grok":
         return read_grok_token() is not None
-    if provider_id in discover_metered_usd_accounts():
-        return True
     if provider_id == "pi":
         return read_pi_codex_auth()[0] is not None
     if provider_id == "opencode":
@@ -3211,7 +3337,7 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                         cached.stale = bool(raw.get('stale', True)) or time.time() - observed >= REFRESH_SECONDS
                         out.append(cached)
                     else:
-                        remembered = _cached_permission_usage(pid, raw, key)
+                        remembered = _cached_permission_usage(pid, raw, key) or _cached_not_metered_usage(pid, raw, key)
                         out.append(remembered or ProviderUsage(provider_id=pid, display_name=pid,
                                                  available=False, stale=True, error='更新失败'))
                     continue
@@ -3223,7 +3349,9 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                         failures=next_failures,
                         retry_seconds=failure_retry_seconds(next_failures, poll),
                     )
-                if pid == 'claude':
+                if pid in metered_accounts:
+                    item = fetch_metered_usd_usage(pid)
+                elif pid == 'claude':
                     item = fetch_claude_usage(force=force)
                 elif is_claude_provider(pid):
                     item = fetch_claude_usage(force=force, provider_id=pid)
@@ -3233,8 +3361,6 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                     item = fetch_pi_usage('pi')
                 elif pid == 'grok':
                     item = fetch_grok_usage()
-                elif pid in metered_accounts:
-                    item = fetch_metered_usd_usage(pid)
                 elif pid == 'antigravity':
                     item = fetch_antigravity_usage()
                 else:

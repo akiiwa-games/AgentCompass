@@ -687,6 +687,69 @@ class DiscoveryTests(unittest.TestCase):
         row = self.discover()['accounts']['claude']
         self.assertEqual((row['usage_binding'], row['billing'], row['plan']), ('matches', 'subscription', 'pro'))
 
+    def test_self_built_api_key_stays_unknown_until_spend_matches(self):
+        secret = 'SECRET-self-built'
+        self.paseo({'claude': {'enabled': True}})
+        self.write('.claude/settings.json', {'env': {
+            'ANTHROPIC_BASE_URL': 'https://proxy.example.test/v1',
+            'ANTHROPIC_API_KEY': secret,
+        }})
+        row = self.discover()['accounts']['claude']
+        self.assertTrue(row.get('usd_candidate'))
+        self.assertEqual(row['billing'], 'unknown')
+        self.assertIsNone(row.get('backend_kind'))
+        self.assertNotIn(secret, json.dumps(self.discover(publish=True)))
+        bound = row['credential_key']
+        self.write('.agent-compass/usage-cache.json', {'providers': {'claude': {
+            'credential_key': bound,
+            'usage_details': {'kind': 'metered_usd', 'query': 'no_permission'},
+            'backend_kind': 'metered_usd',
+        }}})
+        denied = self.discover()['accounts']['claude']
+        self.assertEqual(denied['billing'], 'unknown')
+        self.assertNotEqual(denied.get('backend_kind'), 'metered_usd')
+        self.write('.agent-compass/usage-cache.json', {'providers': {'claude': {
+            'credential_key': bound,
+            'usage_details': {'kind': 'metered_usd', 'query': 'not_metered'},
+        }}})
+        missed = self.discover()['accounts']['claude']
+        self.assertEqual(missed['billing'], 'unknown')
+        self.assertNotEqual(missed.get('backend_kind'), 'metered_usd')
+        self.write('.agent-compass/usage-cache.json', {'providers': {'claude': {
+            'credential_key': 'not-this-credential',
+            'usage_details': {'kind': 'metered_usd', 'spent_usd': 2.65, 'budget_usd': 10},
+        }}})
+        mismatch = self.discover()['accounts']['claude']
+        self.assertEqual(mismatch['billing'], 'unknown')
+        self.write('.agent-compass/usage-cache.json', {'providers': {'claude': {
+            'credential_key': bound,
+            'usage_details': {'kind': 'metered_usd', 'spent_usd': 2.65, 'budget_usd': 10},
+        }}})
+        promoted = self.discover()['accounts']['claude']
+        self.assertEqual(promoted['billing'], 'metered')
+        self.assertEqual(promoted['backend_kind'], 'metered_usd')
+        self.assertEqual(promoted['budget_usd'], 10.0)
+        self.assertNotIn(secret, json.dumps(promoted))
+        spec = self.apply(self.discover())['accounts']['claude']
+        self.assertEqual(spec['plan'], 'metered USD')
+        self.assertEqual(spec['billing'], 'metered')
+        self.assertEqual(spec['backend_kind'], 'metered_usd')
+        self.assertEqual(spec['windows'], {'balance': {}})
+        self.assertEqual(spec['capacity_usd']['balance'], 10.0)
+        self.write('.claude/settings.json', {'env': {'ANTHROPIC_API_KEY': secret}})
+        official = self.discover()['accounts']['claude']
+        self.assertNotIn('usd_candidate', official)
+        self.assertEqual(official['billing'], 'metered')
+        self.assertNotEqual(official.get('backend_kind'), 'metered_usd')
+        self.write('.claude/settings.json', {'env': {
+            'ANTHROPIC_BASE_URL': 'https://gateway.example.test/v1',
+            'ANTHROPIC_AUTH_TOKEN': secret,
+        }})
+        self.write('.claude/usage-float.json', {'source': 'magpie', 'account': 'private@example.test'})
+        magpie = self.discover()['accounts']['claude']
+        self.assertNotIn('usd_candidate', magpie)
+        self.assertEqual(magpie['billing'], 'subscription')
+
     def test_local_magpie_pause_revoke_restore_and_secret_free_snapshot(self):
         login = {'id': 'saved-A', 'agent': 'codex', 'user': 'private@example.test',
                  'auth': self.codex_auth('account-A'), 'plan': 'pro', 'on': False}

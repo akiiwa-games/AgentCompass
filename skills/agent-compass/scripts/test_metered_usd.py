@@ -606,5 +606,231 @@ class SetupCleanup(unittest.TestCase):
         self.assertNotIn('托盘', state_upgrade.LEGACY_METER_REASON)
 
 
+class HarnessCandidates(unittest.TestCase):
+    """A self-built harness key is read live. Display follows /key/info and the key stays off disk."""
+
+    SECRET = 'fixture-harness-key'
+    CODEX_SECRET = 'fixture-codex-harness-key'
+
+    def setUp(self):
+        self._saved = (
+            usage_core.HOME, usage_core.CLAUDE_HOME, usage_core.CLAUDE_HOME_2,
+            usage_core.CODEX_HOME, usage_core.CODEX_HOME_2, usage_core.GROK_HOME,
+            usage_core.STATE_DIR, usage_core.CONFIG_PATH, usage_core.CACHE_PATH,
+            usage_core.CLAUDE_CLI_PACKAGE_PATHS, usage_core.CODEX_ACCOUNTS,
+            dict(usage_core.CODEX_ACCOUNT_BY_ID),
+        )
+        usage_core.configure_paths(
+            home=Path(os.environ['ROUTER_PROVIDER_HOME']),
+            state_dir=Path(os.environ['ROUTER_STATE_DIR']),
+        )
+
+    def tearDown(self):
+        (usage_core.HOME, usage_core.CLAUDE_HOME, usage_core.CLAUDE_HOME_2,
+         usage_core.CODEX_HOME, usage_core.CODEX_HOME_2, usage_core.GROK_HOME,
+         usage_core.STATE_DIR, usage_core.CONFIG_PATH, usage_core.CACHE_PATH,
+         usage_core.CLAUDE_CLI_PACKAGE_PATHS, usage_core.CODEX_ACCOUNTS,
+         usage_core.CODEX_ACCOUNT_BY_ID) = self._saved
+
+    def _home(self):
+        return Path(os.environ['ROUTER_PROVIDER_HOME'])
+
+    def _write_claude(self, base, secret=None):
+        home = self._home() / '.claude'
+        home.mkdir(parents=True, exist_ok=True)
+        (home / 'settings.json').write_text(json.dumps({'env': {
+            'ANTHROPIC_BASE_URL': base,
+            'ANTHROPIC_API_KEY': secret or self.SECRET,
+        }}), encoding='utf-8')
+
+    def _write_codex(self, base, secret=None):
+        home = self._home() / '.codex'
+        home.mkdir(parents=True, exist_ok=True)
+        (home / 'config.toml').write_text(
+            'model_provider = "proxy"\nmodel = "gpt-test"\n\n'
+            '[model_providers.proxy]\n'
+            f'base_url = "{base}"\n'
+            f'experimental_bearer_token = "{secret or self.CODEX_SECRET}"\n',
+            encoding='utf-8')
+
+    def _override(self, accounts):
+        path = Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'schema_version': 2, 'accounts': accounts}), encoding='utf-8')
+
+    def _clear_override(self):
+        path = Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
+        if path.is_file():
+            path.unlink()
+
+    def _assert_secret_absent(self, *secrets):
+        blobs = [json.dumps(provider_inventory.discover(), ensure_ascii=False)]
+        cache_path = Path(os.environ['ROUTER_USAGE_CACHE'])
+        if cache_path.is_file():
+            blobs.append(cache_path.read_text(encoding='utf-8'))
+        override = Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
+        if override.is_file():
+            blobs.append(override.read_text(encoding='utf-8'))
+        inventory_path = Path(os.environ['ROUTER_STATE_DIR']) / 'provider-inventory.json'
+        if inventory_path.is_file():
+            blobs.append(inventory_path.read_text(encoding='utf-8'))
+        joined = '\n'.join(blobs)
+        for secret in secrets:
+            self.assertNotIn(secret, joined)
+
+    def _fetch(self, status, payload, provider='claude'):
+        calls = []
+
+        def fake(url, method='GET', headers=None, body=None, timeout=20):
+            calls.append((method, url, body, headers or {}))
+            return status, payload, {}
+
+        with patch.object(usage_core, 'http_json_response', side_effect=fake):
+            row = usage_core.fetch_metered_usd_usage(provider)
+        return row, calls
+
+    def test_permission_denial_stores_no_number_and_leaves_billing_unknown(self):
+        self._clear_override()
+        self._write_claude('https://proxy.example.test/v1')
+        for status in (401, 403):
+            with self.subTest(status=status):
+                row, calls = self._fetch(status, {})
+                self.assertEqual([call[0] for call in calls], ['GET'])
+                self.assertTrue(calls[0][1].endswith('/key/info'))
+                self.assertIsNone(calls[0][2])
+                self.assertEqual(row.usage_details, {'kind': 'metered_usd', 'query': 'no_permission'})
+                self.assertIsNone(row.billing)
+                self.assertIsNone(row.summary)
+                blob = json.dumps(usage_core.load_usage_cache(), ensure_ascii=False)
+                self.assertNotIn('$', blob)
+                self.assertNotIn('spent_usd', blob)
+                self.assertNotIn('已用', blob)
+                cached = usage_core.load_usage_cache()['providers']['claude']
+                self.assertNotIn('billing', cached)
+                self.assertEqual(cached['backend_kind'], 'metered_usd')
+                discovered = provider_inventory.discover()['accounts']['claude']
+                self.assertEqual(discovered['billing'], 'unknown')
+                self.assertNotEqual(discovered.get('backend_kind'), 'metered_usd')
+                self._assert_secret_absent(self.SECRET)
+
+    def test_404_and_other_misses_do_not_change_billing(self):
+        self._clear_override()
+        self._write_claude('https://proxy.example.test/v1')
+        proved, _calls = self._fetch(200, {'info': {'spend': 1.5, 'max_budget': 10}})
+        self.assertEqual(proved.summary, '已用 $1.50 / $10')
+        self.assertEqual(provider_inventory.discover()['accounts']['claude']['billing'], 'metered')
+        for status, payload in ((404, {'error': 'missing'}), (0, 'timed out'), (200, {'info': {}})):
+            with self.subTest(status=status):
+                row, calls = self._fetch(status, payload)
+                self.assertEqual(calls[0][0], 'GET')
+                self.assertEqual(row.usage_details, {'kind': 'metered_usd', 'query': 'not_metered'})
+                self.assertTrue(row.available)
+                self.assertIsNone(row.error)
+                self.assertIsNone(row.summary)
+                cached = usage_core.load_usage_cache()['providers']['claude']
+                self.assertNotEqual(cached.get('backend_kind'), 'metered_usd')
+                self.assertNotEqual(cached.get('usage_details', {}).get('query'), 'failed')
+                self.assertNotIn('billing', cached)
+                discovered = provider_inventory.discover()['accounts']['claude']
+                self.assertEqual(discovered['billing'], 'unknown')
+                self.assertTrue(discovered.get('usd_candidate'))
+                self._assert_secret_absent(self.SECRET)
+
+    def test_spend_promotes_billing_and_shows_budget_when_present(self):
+        self._clear_override()
+        self._write_claude('https://proxy.example.test/v1')
+        row, calls = self._fetch(200, {'info': {'spend': 2.65, 'max_budget': 10}})
+        self.assertEqual([call[0] for call in calls], ['GET'])
+        self.assertTrue(calls[0][1].endswith('/key/info'))
+        self.assertIsNone(calls[0][2])
+        self.assertEqual(row.summary, '已用 $2.65 / $10')
+        self.assertEqual(row.billing, 'metered')
+        self.assertEqual(row.usage_details['spent_usd'], 2.65)
+        self.assertEqual(row.usage_details['budget_usd'], 10)
+        cached = usage_core.load_usage_cache()['providers']['claude']
+        discovered = provider_inventory.discover()['accounts']['claude']
+        self.assertEqual(cached.get('credential_key'), discovered['credential_key'])
+        self.assertEqual(discovered['billing'], 'metered')
+        self.assertEqual(discovered['backend_kind'], 'metered_usd')
+        self.assertEqual(discovered['budget_usd'], 10.0)
+        fleet = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        spec = provider_inventory.apply(fleet, provider_inventory.discover())['accounts']['claude']
+        self.assertEqual(spec['plan'], 'metered USD')
+        self.assertEqual(spec['windows'], {'balance': {}})
+        self.assertEqual(spec['capacity_usd']['balance'], 10.0)
+        self._assert_secret_absent(self.SECRET)
+        plain, _calls = self._fetch(200, {'info': {'spend': 12.3}})
+        self.assertEqual(plain.summary, '已用 $12.30')
+        self.assertIsNone(plain.usage_details['budget_usd'])
+        uncapped = provider_inventory.discover()['accounts']['claude']
+        self.assertEqual(uncapped['billing'], 'metered')
+        self.assertNotIn('budget_usd', uncapped)
+        uncapped_spec = provider_inventory.apply(fleet, provider_inventory.discover())['accounts']['claude']
+        self.assertEqual(uncapped_spec['windows'], {})
+        self.assertNotIn('balance', uncapped_spec.get('capacity_usd') or {})
+
+    def test_codex_harness_is_read_with_one_get(self):
+        self._clear_override()
+        self._write_codex('https://codex-proxy.example.test/v1')
+        row, calls = self._fetch(200, {'info': {'spend': 4}}, provider='codex')
+        self.assertEqual([call[0] for call in calls], ['GET'])
+        self.assertEqual(calls[0][1], 'https://codex-proxy.example.test/key/info')
+        self.assertEqual(row.summary, '已用 $4')
+        self.assertEqual(provider_inventory.discover()['accounts']['codex']['billing'], 'metered')
+        self._assert_secret_absent(self.CODEX_SECRET)
+
+    def test_handwritten_account_wins_by_id_and_by_origin(self):
+        self._write_claude('https://proxy.example.test/v1')
+        self._override({'claude': {
+            'billing': 'metered',
+            'endpoint': 'https://handwritten.example.test/v1',
+            'api_key': 'fixture-handwritten-key',
+            'label': 'handwritten',
+        }})
+        found = usage_core.discover_metered_usd_accounts()
+        self.assertEqual(set(found), {'claude'})
+        self.assertEqual(found['claude'].source, 'override')
+        self.assertEqual(found['claude'].origin, 'https://handwritten.example.test')
+        self._override({'handwritten': {
+            'billing': 'metered',
+            'endpoint': 'https://proxy.example.test/v1',
+            'api_key': 'fixture-handwritten-key',
+            'label': 'handwritten',
+        }})
+        found = usage_core.discover_metered_usd_accounts()
+        self.assertEqual(set(found), {'handwritten'})
+        self.assertNotIn('claude', found)
+        self._assert_secret_absent(self.SECRET)
+
+    def test_official_hosts_are_not_probed(self):
+        self._clear_override()
+        self._write_claude('https://api.anthropic.com')
+        self.assertNotIn('claude', usage_core.discover_metered_usd_accounts())
+        with patch.object(usage_core, 'http_json_response', side_effect=AssertionError('probed')) as probe, \
+                patch.object(usage_core, 'fetch_claude_usage', return_value=usage_core.ProviderUsage('claude', 'claude')):
+            usage_core.collect_local_usage(['claude'])
+        probe.assert_not_called()
+        claude_settings = self._home() / '.claude' / 'settings.json'
+        claude_settings.unlink()
+        self._write_codex('https://api.openai.com')
+        self.assertNotIn('codex', usage_core.discover_metered_usd_accounts())
+        with patch.object(usage_core, 'http_json_response', side_effect=AssertionError('probed')) as probe, \
+                patch.object(usage_core, 'fetch_codex_usage', return_value=usage_core.ProviderUsage('codex', 'codex')):
+            usage_core.collect_local_usage(['codex'])
+        probe.assert_not_called()
+
+    def test_magpie_gateway_is_not_a_candidate(self):
+        self._clear_override()
+        self._write_claude('https://gateway.example.test/v1')
+        home = self._home() / '.claude'
+        (home / 'usage-float.json').write_text(json.dumps({
+            'source': 'magpie', 'account': 'private@example.test',
+        }), encoding='utf-8')
+        self.assertNotIn('claude', usage_core.discover_metered_usd_accounts())
+        row = provider_inventory.discover()['accounts']['claude']
+        self.assertEqual(row['billing'], 'subscription')
+        self.assertNotIn('usd_candidate', row)
+
+
 if __name__ == '__main__':
     unittest.main()
