@@ -234,13 +234,14 @@ class AllocatorTests(unittest.TestCase):
             admitted = {c['bundle']['model'] for c in opened['ranking'] if c['score'] is not None and not c['excluded']}
             self.assertIn('dot', admitted, kind)
 
+        # Eligibility only: Dot is admitted for these kinds; which candidate wins is not a rule (#9, deleted).
         for kind in ('web_research', 'text_in_text_out', 'self_contained_code'):
             res = self.plan({'work_kind': kind, 'difficulty': 'routine'}, self.usage(grok=[('credits', 100, 165)]))
-            self.assertEqual(res['choice'], 'dot_text', kind)
+            self.assertFalse(self.rows(res)['dot_text']['excluded'], kind)
             local = self.plan({'work_kind': kind, 'difficulty': 'routine', 'needs': {'local_only': True}})
             self.assertNotEqual(local['choice'], 'dot_text', kind)
         for difficulty in ('hard', 'coupled'):
-            self.assertEqual(self.plan({'work_kind': 'web_research', 'difficulty': difficulty})['choice'], 'dot_text', difficulty)
+            self.assertFalse(self.rows(self.plan({'work_kind': 'web_research', 'difficulty': difficulty}))['dot_text']['excluded'], difficulty)
 
     def test_short_window_deferral_and_wait_limits(self):
         usage = self.usage(claude=[('five_hour', 3, 1.0), ('seven_day', 60, 100), ('weekly_fable', 100, 100)], codex=[('usage', 1, 121)])
@@ -294,7 +295,7 @@ class AllocatorTests(unittest.TestCase):
         unstarted_5h['accounts']['claude-lab']['windows'][0] = {
             'id': 'five_hour', 'used_pct': 0.0, 'resets_at': None, 'seconds_until_reset': None,
             'observed_remaining_pct': 100.0, 'remaining_pct_before_reset': None}
-        self.assertEqual(self.plan(task, unstarted_5h)['choice'], 'lab_sonnet55_high')
+        self.assertFalse(self.rows(self.plan(task, unstarted_5h))['lab_sonnet55_high']['excluded'])
         burst = [dict(inflight[0], dispatch_id=f'd-{i}', expected_usd=6.6) for i in (1, 2)]
         self.assertTrue(self.rows(allocator.plan(
             {'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 1.5, 'needs': {'local_only': True}},

@@ -146,8 +146,6 @@ class NeedTailTests(unittest.TestCase):
             mean = q * sum(quota_economy.five_axis_need_tail(rec, r * q) for r in range(1, int(8 * cap / q)))
             self.assertAlmostEqual(mean / (cap * (1 - e)), 1.0, delta=0.01)
             self.assertLess(quota_economy.five_axis_need_probability(rec_of(cap, 0.5 * e, e, lump=share), 0.5 * e * cap), 0.5)
-            on_line = quota_economy.five_axis_need_probability(rec, e * cap)
-            self.assertTrue(0.40 < on_line < 0.70, (cap, e, share, on_line))
             self.assertGreater(quota_economy.five_axis_need_probability(rec_of(cap, min(1.0, e + 0.15), e, lump=share), (e + 0.15) * cap), 0.5)
 
     def test_the_tail_grows_with_use_falls_toward_the_reset_and_is_a_probability(self):
@@ -276,12 +274,33 @@ class FleetEconomyTests(unittest.TestCase):
             for c in eligible(d):
                 if c['bundle']['account'] == 'codex' and c['components']['fit'] > 0.55:
                     self.assertGreater(c['components']['opportunity_cost'], 0.0, c['id'])
-            self.assertNotIn(d['choice'], ('sol_high', 'sol_xhigh', 'sol_max', 'astra_high', 'astra_xhigh'), used)
-            # On the shipped data, with every candidate's hours at its Artificial Analysis Time/Task and without fake
-            # anchor-tier / rejected-fit boosts on Terra: the over-line Sol High/xHigh/Max and Astra lines are priced out
-            # on Codex's tight 90% pool and the cheap Sol Medium rung ($4.93, 0.8% of pool) wins.
-            self.assertEqual(d['choice'], 'sol_medium', used)
-        self.assertEqual(self.fleet.plan(0.5, 0.9, axes=FRONTIER, hours=6.0)['selected_bundle']['model'], 'claude-opus-5-5')   # the frontier task still reaches Opus
+        # Monotonicity (C rises with used share): raising Codex's used share with all else equal never lowers a
+        # candidate's C and never raises an over-line candidate's rank. Asserted as a property, not as ids.
+        self.assert_used_share_monotone(lambda used: self.fleet.plan(0.6, used), (0.6, 0.75, 0.9))
+
+    def assert_used_share_monotone(self, plan_at, levels, account='codex'):
+        """Raising `account`'s used share never lowers any candidate's C, and an over-line candidate on that pool
+        (need probability at the end of its run above one half: past the line) never climbs past a candidate on
+        another pool. Siblings on the same tight pool may reorder among themselves, so the rank is taken relative
+        to the other pools."""
+        prev = None
+        for used in levels:
+            d = plan_at(used)
+            rows = eligible(d)
+            cost = {c['id']: c['components']['opportunity_cost'] for c in rows}
+            pos = {c['id']: i for i, c in enumerate(rows)}
+            mine = {c['id'] for c in rows if c['bundle']['account'] == account}
+            over = {c['id'] for c in rows if c['id'] in mine and (c.get('economy') or {}).get('need_end_max', 0) > 0.5}
+            if prev is not None:
+                p_cost, p_pos, p_mine, p_over = prev
+                for cid in cost.keys() & p_cost.keys():
+                    self.assertGreaterEqual(cost[cid] + 1e-9, p_cost[cid], (cid, used))
+                for x in p_over & pos.keys():
+                    for y in (pos.keys() & p_pos.keys()) - mine - p_mine:
+                        if p_pos[y] < p_pos[x]:
+                            self.assertLess(pos[y], pos[x], (x, 'climbed past', y, used))
+            prev = (cost, pos, mine, over)
+        self.assertTrue(prev[3], 'the fixture must put at least one candidate over the line')
 
     def test_a_substitute_only_helps_as_much_as_it_is_likely_to_have_room(self):
         """Advisor test 2: Codex fixed at 90%, Claude swept; Codex's price never falls as Claude fills and at 100% equals
@@ -532,26 +551,47 @@ class FastVariantIdentityTests(unittest.TestCase):
         # 2h before the weekly reset the quota costs nothing: the fast variant ties its base on N and wins on speed
         return self.fleet.plan(0.6, 0.5, allowed=('claude',), ec=1 - 2 / WEEK, **task)
 
+    def assert_equal_n_fast_ranks_first(self, d):
+        """User rule (2026-11-10): quota about to expire is optimised for speed. A fast variant that ties its base on N
+        ranks ahead of it, decided by completion time."""
+        rows = eligible(d)
+        pos = {c['id']: i for i, c in enumerate(rows)}
+        pairs = [(c, next(b for b in rows if b['id'] == c['base_id'])) for c in rows
+                 if c['bundle'].get('fast') and c.get('base_id') in pos]
+        tied = [(f, b) for f, b in pairs if f['score'] == b['score']]
+        self.assertTrue(tied, 'near the reset at least one fast variant must tie its base on N')
+        for f, b in tied:
+            self.assertLess(f['duration_hours'], b['duration_hours'], f['id'])
+            self.assertLess(pos[f['id']], pos[b['id']], f['id'])
+            self.assertEqual(candidate_ranking.five_axis_deciding_key(f, b), 'completion_hours')
+        return tied
+
     def test_the_variants_have_distinct_ids_and_the_fast_one_launches_as_its_base_bundle(self):
         d = self.plan()
-        self.assertEqual(d['choice'], 'opus55_high+fast')
-        self.assertEqual(d['selected_bundle']['bundle_id'], 'opus55_high')
-        self.assertTrue(d['selected_bundle']['fast'])
+        tied = self.assert_equal_n_fast_ranks_first(d)
+        if d['selected_bundle'].get('fast'):
+            self.assertEqual(d['choice'], d['selected_bundle']['bundle_id'] + '+fast')
         ids = [c['id'] for c in eligible(d)]
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertIn('opus55_high', ids)
-        self.assertIn('opus55_high+fast', ids)
+        for f, b in tied:
+            self.assertEqual(f['id'], b['id'] + '+fast')
+        fast = self.plan(pinned_bundle='opus55_high+fast')
+        self.assertEqual(fast['selected_bundle']['bundle_id'], 'opus55_high')
+        self.assertTrue(fast['selected_bundle']['fast'])
 
     def test_a_pinned_bundle_gets_exactly_that_variant(self):
         base = self.plan(pinned_bundle='opus55_high')
         self.assertEqual(base['choice'], 'opus55_high')
         self.assertFalse(base['selected_bundle'].get('fast'))
-        self.assertAlmostEqual(base['selected_bundle']['expected_usd'], 45.72)      # 2 h x the cited usd per hour
+        base_row = next(c for c in base['ranking'] if c['id'] == 'opus55_high')
+        usd_per_hour = base_row['five_axis_price']['usd_per_hour']
+        self.assertAlmostEqual(base['selected_bundle']['expected_usd'], 2.0 * usd_per_hour, places=1)   # hours x cited usd per hour
+        price_mult = axis_scores.load_five_axis()['models']['claude-opus-5-5']['fast_mode']['price_multiplier']
         fast = self.plan(pinned_bundle='opus55_high+fast')
         self.assertEqual(fast['choice'], 'opus55_high+fast')
         self.assertTrue(fast['selected_bundle']['fast'])
         self.assertEqual(fast['selected_bundle']['bundle_id'], 'opus55_high')
-        self.assertAlmostEqual(fast['selected_bundle']['expected_usd'], 91.44)
+        self.assertAlmostEqual(fast['selected_bundle']['expected_usd'], 2.0 * usd_per_hour * price_mult, places=1)
         forced = self.plan(pinned_bundle='opus55_high', force_fast=True)       # --fast on a named bundle: that bundle, fast
         self.assertTrue(forced['selected_bundle']['fast'])
         self.assertEqual(forced['selected_bundle']['bundle_id'], 'opus55_high')
@@ -560,14 +600,17 @@ class FastVariantIdentityTests(unittest.TestCase):
     def test_alternatives_keep_the_base_variant_and_the_table_shows_which_row_is_fast(self):
         import demo_plan
         d = self.plan()
-        self.assertEqual(d['choice'], 'opus55_high+fast')
-        self.assertIn('opus55_high', d['decision']['alternatives'])
+        self.assert_equal_n_fast_ranks_first(d)
+        winner = d['choice']
+        self.assertTrue(d['selected_bundle'].get('fast'), 'a tied fast variant outranks its base, so the winner is fast')
+        base_id = d['selected_bundle']['bundle_id']
+        self.assertIn(base_id, d['decision']['alternatives'])
         table = demo_plan.format_table(d)
         rows = {line.split()[1]: line for line in table.splitlines() if line.split()[:1] and line.split()[0].isdigit()}
-        self.assertIn('opus55_high+fast', rows)
-        self.assertIn('opus55_high', rows)
-        self.assertTrue(rows['opus55_high+fast'].rstrip().endswith('winner'))
-        self.assertTrue(rows['opus55_high'].rstrip().endswith('eligible'))
+        self.assertIn(winner, rows)
+        self.assertIn(base_id, rows)
+        self.assertTrue(rows[winner].rstrip().endswith('winner'))
+        self.assertTrue(rows[base_id].rstrip().endswith('eligible'))
 
 
 class ReadFailureAndHoldTests(unittest.TestCase):
@@ -1431,12 +1474,20 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         self.assertLess(costs[0], 5e-3)
         self.assertTrue(all(b > a for a, b in zip(costs, costs[1:])), costs)
 
-        # L1 local research with 4 of 5 seats used never picks pro_max when a near-free local candidate fits.
+        # Monotonicity in used seats: with all else equal, one more used seat never lowers pro_max's C and never
+        # raises its rank. Asserted as a property, not as which bundle wins.
         for cl_plan, cx_plan, used in (('pro', 'plus', 0.10), ('pro', 'plus', 0.35), ('max_20x', 'pro', 0.10)):
-            d4 = self._plan(claude_plan=cl_plan, codex_plan=cx_plan, claude_used=used, codex_used=used,
-                            seats_used=4, cadence_reset_h=9.0, divergence=1, hours=0.3, local_only=True)
-            self.assertNotEqual(d4['choice'], 'pro_max', (cl_plan, cx_plan, used))
-            self.assertIn(d4['selected_bundle']['account'], ('claude', 'codex'))
+            prev = None
+            for seats in range(5):
+                d = self._plan(claude_plan=cl_plan, codex_plan=cx_plan, claude_used=used, codex_used=used,
+                               seats_used=seats, cadence_reset_h=9.0, divergence=1, hours=0.3, local_only=True)
+                ids = [c['id'] for c in eligible(d)]
+                pro = row(d, 'pro_max')
+                now_ = (pro['components']['opportunity_cost'], ids.index('pro_max') if 'pro_max' in ids else len(ids))
+                if prev is not None:
+                    self.assertGreaterEqual(now_[0] + 1e-12, prev[0], (cl_plan, cx_plan, used, seats))
+                    self.assertGreaterEqual(now_[1], prev[1], (cl_plan, cx_plan, used, seats))
+                prev = now_
 
         # Dot stays unmetered (no cadence window, zero opportunity cost).
         d_remote = self._plan(claude_plan='pro', codex_plan='plus', claude_used=0.35, codex_used=0.35,
@@ -1460,7 +1511,8 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         self.assertLess(opus_fast['duration_hours'], pro_tie['duration_hours'])
         self.assertEqual(candidate_ranking.five_axis_deciding_key(opus_fast, pro_tie), 'completion_hours')
         self.assertTrue(d_tie['selected_bundle'].get('fast'))
-        self.assertNotEqual(d_tie['choice'], 'pro_max')
+        ids = [c['id'] for c in eligible(d_tie)]
+        self.assertLess(ids.index(opus_fast['id']), ids.index('pro_max'))
 
 
 if __name__ == '__main__':

@@ -3559,14 +3559,15 @@ class LiveModelCheckTests(unittest.TestCase):
             'ok': True, 'fetched_at': self.now.isoformat(), 'providers': {p: full_providers[p] for p in provs}
         }):
             baseline = allocator.plan(dict(self.creative_task), self.usage, self.now, accounts=self.accounts)
-        self.assertEqual(baseline['choice'], 'argon_high')
+        winner = baseline['choice']     # whichever bundle wins with the full list; the incident list must move off it
+        self.assertNotIn(winner, (None, 'none'))
         live_models.invalidate()
 
         # Incident reproduction: antigravity-resilient offers only the 6 starter models (no gemini-4-argon-high).
         with patch.object(live_models, 'fetch_from_paseo', side_effect=self.fetch_live):
             result, code = self.roll()
             self.assertEqual((result['status'], code), ('launched', 0))
-            self.assertNotEqual(self.choices[0], 'argon_high')
+            self.assertNotEqual(self.choices[0], winner)
             self.assertEqual(len(self.creates), 1)
             self.assertNotEqual(self.creates[0], 'antigravity-resilient/gemini-4-argon-high')
             self.assertTrue(

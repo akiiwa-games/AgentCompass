@@ -298,7 +298,7 @@ class RouterGateHookTests(unittest.TestCase):
             ledger = self.write_ledger(tmp, [route] + [dict(heavy, n=i) for i in range(30)])
             self.assertGreater(ledger.stat().st_size, 64 * 1024 * 8)
             routes = gate.recent_routes(ledger, now=T0)
-            self.assertTrue(any(r.get("choice") == "sol_high" for r in routes))
+            self.assertTrue(any(r.get("choice") == route["choice"] for r in routes))
 
     def test_allows_subagent_when_recent_plan_select_or_record_exists(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -86,19 +86,21 @@ def test_model_reads_the_snapshot_as_recorded_and_never_mutates_it():
     data = quota_line.model(source)
     assert source == original
     # Every recorded window is a chart, in its recorded order.
-    assert [window["key"] for window in data["windows"]] == ["claude-a", "claude-b", "codex", "gemini"]
+    assert [window["key"] for window in data["windows"]] == list(source["quota_line"]["windows"])
     first, codex = data["windows"][0], data["windows"][2]
     assert first["at"] == pytest.approx(166 / 168) and first["period"] == 168 and first["reset"] == 2
     assert first["line"] > first["used"] and codex["line"] < codex["used"]
     # The task's own spend lies on the window the chosen candidate draws from: fast mode, less than the two hours.
     chosen, row = data["winner"], source["ranking"][0]
-    assert chosen["window"] == "claude-a" and chosen["spend"] == row["quota_line"]["spend_usd"]
+    assert chosen["window"] == row["quota_line"]["window"] and chosen["spend"] == row["quota_line"]["spend_usd"]
     assert chosen["hours"] == pytest.approx(demo.HOURS / demo.FAST_SPEED, abs=.01)
     assert chosen["share"] == pytest.approx(chosen["hours"] / 168)
     # The same accounts keep their order when another decision is replayed; that one runs on the other account.
-    before = quota_line.model(earlier())
-    assert [w["key"] for w in before["windows"]] == ["claude-a", "claude-b", "codex", "gemini"]
-    assert before["winner"]["window"] == "claude-b"
+    earlier_source = earlier()
+    before = quota_line.model(earlier_source)
+    assert [w["key"] for w in before["windows"]] == [w["key"] for w in data["windows"]]
+    earlier_row = next(r for r in earlier_source["ranking"] if r["id"] == earlier_source["choice"])
+    assert before["winner"]["window"] == earlier_row["quota_line"]["window"] != chosen["window"]
     assert before["windows"][0]["used"] > before["windows"][0]["line"]
 
 
@@ -115,7 +117,7 @@ def test_decisions_without_a_quota_line_record_show_an_empty_state_not_invented_
     # A chosen bundle that is not ranked first is still the one whose spend is shown.
     other = copy.deepcopy(source)
     other["choice"] = other["ranking"][3]["id"]
-    assert quota_line.model(other)["winner"]["window"] == "codex"
+    assert quota_line.model(other)["winner"]["window"] == other["ranking"][3]["quota_line"]["window"]
     renderer = quota_line.QuotaLineRenderer(quota_line.model(stripped), 400, 300, 1.)
     assert all(state["lit"] == 0 and state["spent"] == 0 for state in renderer.state(decision_theatre.DURATION)["cells"])
     renderer = quota_line.QuotaLineRenderer(None, 400, 300, 1.)
@@ -606,7 +608,7 @@ def test_a_malformed_snapshot_is_read_field_by_field_and_never_raises(monkeypatc
                 assert data["winner"] is None
                 continue
             winner = data["winner"]
-            assert winner["window"] == "a" and winner["hours"] == (2 if field == "spend_usd" else 0)
+            assert winner["window"] == row["window"] and winner["hours"] == (2 if field == "spend_usd" else 0)
             if field == "spend_usd":
                 assert winner["spend"] == (0 if value == -5 else None)
             renderer = quota_line.QuotaLineRenderer(data, 400, 300, 1.)
@@ -678,7 +680,7 @@ def test_the_chosen_window_is_always_shown_and_the_view_says_how_many_are_not(mo
     data = quota_line.model(plain(six_windows(), row))
     # The chosen window, its account's other window, then the others; shown in their recorded order.
     assert [window["key"] for window in data["windows"]] == ["acct0-5h", "acct0-7d", "acct2-5h", "acct2-7d"]
-    assert data["winner"]["window"] == "acct2-7d" and data["hidden"] == ["Account 1 5h", "Account 1 7d"]
+    assert data["winner"]["window"] == row["window"] and data["hidden"] == ["Account 1 5h", "Account 1 7d"]
     renderer, words = words_of(monkeypatch, data)
     assert renderer.cells[3]["task"] is data["winner"] and renderer.state(decision_theatre.DURATION)["cells"][3]["lit"] == 1
     note = quota_line._tr("另有 {0} 个窗口未显示").format(2)

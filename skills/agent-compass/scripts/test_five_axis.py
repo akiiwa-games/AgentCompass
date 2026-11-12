@@ -271,26 +271,30 @@ class FiveAxisTests(unittest.TestCase):
             return {'id': name, 'score': score, 'available_in_hours': wait or None,
                     'expected_hours': hours, 'duration_hours': hours, 'expected_usd': usd,
                     'components': {'five_axis_level': level, 'harness_place': place, 'earliest_reset_hours': reset}}
-        pool = [
-            cand('slower_expensive', hours=0.8, usd=20.0),
-            cand('faster_dear', hours=0.2, usd=20.0),
-            cand('faster_cheap', hours=0.2, usd=5.0),
-            cand('higher_n', score=0.50001, hours=2.0, usd=50.0, reset=160.0),
-            cand('sooner_reset_same_n', score=0.5, hours=1.5, usd=30.0, reset=2.0),
-            cand('waits_but_quick', hours=0.1, usd=1.0, wait=3.0, reset=1.0),
-            cand('faster_cheap_higher_level', hours=0.2, usd=5.0, level=0.9),
-            cand('faster_cheap_later_harness', hours=0.2, usd=5.0, level=0.9, place=1),
-        ]
-        self.assertEqual([c['id'] for c in sorted(pool, key=candidate_ranking.five_axis_order)],
-                         ['higher_n', 'faster_cheap_higher_level',
-                          'faster_cheap_later_harness', 'faster_cheap',
-                          'faster_dear', 'slower_expensive', 'sooner_reset_same_n', 'waits_but_quick'])
-        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[3], pool[4]), 'net_score')
-        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[2], pool[4]), 'completion_hours')
-        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[2], pool[1]), 'usd')
-        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[1], pool[0]), 'completion_hours')
-        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[6], pool[2]), 'axis_level')
-        self.assertEqual(candidate_ranking.five_axis_deciding_key(pool[6], pool[7]), 'harness_place')
+        # Pairwise properties of the docstring's tuple order: change one key in the better direction while every
+        # later key moves the other way; the changed key alone decides, and the better candidate sorts first.
+        base = dict(score=0.5, hours=1.0, usd=10.0, level=0.8, wait=0.0, place=0)
+        worse_later = {
+            'net_score': dict(wait=3.0, hours=5.0, usd=50.0, level=0.1, place=9),
+            'wait_hours': dict(hours=5.0, usd=50.0, level=0.1, place=9),
+            'completion_hours': dict(usd=50.0, level=0.1, place=9),
+            'usd': dict(level=0.1, place=9),
+            'axis_level': dict(place=9),
+            'harness_place': {},
+        }
+        better = {'net_score': dict(score=0.50001), 'wait_hours': dict(wait=0.0), 'completion_hours': dict(hours=0.2),
+                  'usd': dict(usd=5.0), 'axis_level': dict(level=0.9), 'harness_place': dict(place=0)}
+        start = {'wait_hours': dict(wait=1.0), 'harness_place': dict(place=1)}
+        self.assertEqual(tuple(better), candidate_ranking.FIVE_AXIS_ORDER_KEYS)
+        for key in candidate_ranking.FIVE_AXIS_ORDER_KEYS:
+            with self.subTest(key=key):
+                loser = cand('loser', **{**base, **start.get(key, {})})
+                winner = cand('winner', **{**base, **worse_later[key], **better[key]})
+                self.assertEqual(candidate_ranking.five_axis_deciding_key(winner, loser), key)
+                self.assertEqual([c['id'] for c in sorted([loser, winner], key=candidate_ranking.five_axis_order)],
+                                 ['winner', 'loser'])
+        # Reset timing alone never reorders: it enters only through C inside N.
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(cand('a', reset=1.0), cand('b', reset=160.0)), 'tie')
         self.assertEqual(axis_scores.FIVE_AXIS_DEFAULTS['weights']['fit'], 1.0)
         for gone in ('overqualification_weight', 'strong_level', 'pace', 'pace_smoothing'):
             self.assertNotIn(gone, axis_scores.FIVE_AXIS_DEFAULTS, gone)
