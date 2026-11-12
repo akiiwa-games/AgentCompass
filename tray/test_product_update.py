@@ -734,6 +734,33 @@ class IncrementalCodePackageUpdateTests(unittest.TestCase):
             self.assertEqual(updates.local_version(inst_root / "app" / "previous"), "0.3.18")
             self.assertTrue((inst_root / "app" / "packages" / "app-0.4.0.zip").is_file())
 
+    def test_a_failed_release_check_stops_the_update_instead_of_reinstalling_the_cached_release(self):
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            state_dir = base / "state"
+            state_dir.mkdir()
+            home = base / "home"
+            home.mkdir()
+            inst_root = _make_modular_installer_dir(base, version="0.3.18", runtime_fp="b" * 64, runtime_version="0.3.18")
+            (state_dir / updates.RELEASE_CACHE_NAME).write_text(json.dumps({
+                "checked_at": time.time(), "tag_name": "v0.3.18", "version": "0.3.18",
+                "html_url": "https://github.com/akiiwa-games/AgentCompass/releases/tag/v0.3.18", "assets": [],
+            }), encoding="utf-8")
+            requested = []
+
+            def opener(request, timeout=20):
+                requested.append(request.full_url)
+                raise OSError("HTTP Error 403: rate limit exceeded")
+
+            with self.assertRaises(RuntimeError) as raised:
+                updates.update_agentcompass(
+                    root=inst_root, home=home, state_dir=state_dir, which_path=None, frozen=False,
+                    opener=opener, runner=lambda *a, **k: self.fail("nothing may run"), restart_fn=lambda: self.fail("no restart"),
+                )
+            self.assertIn("rate limit exceeded", str(raised.exception))
+            self.assertEqual(len(requested), 1)          # only the release check; no package download
+            self.assertEqual(updates.local_version(inst_root), "0.3.18")
+
     def test_mismatched_runtime_fingerprint_or_legacy_install_falls_back_to_full_installer(self):
         with TemporaryDirectory() as tmp:
             base = Path(tmp)

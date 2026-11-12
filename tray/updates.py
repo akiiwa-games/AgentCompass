@@ -2027,6 +2027,9 @@ def update_agentcompass(
                 frozen=frozen,
                 network=True,
             )
+            if checked.get("error"):
+                # A failed read returns the cached release; updating from it would reinstall an old version and report success.
+                raise RuntimeError(_tr("检查更新失败：{0}").format(checked["error"]))
             release_info = checked.get("release") or {}
 
         steps: list[str] = []
