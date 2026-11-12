@@ -1288,7 +1288,7 @@ test('the relaunched attempt reports its finish under the parent dispatch with t
     assert.equal(attemptsNote(file).root_dispatch_id, 'root');
     const f = watchFixture();
     assert.equal(await notificationStep(f.client, f.record, f.persist, 10, null), true);
-    assert.match(f.calls[0][1], /Dispatch: root\nAttempt dispatch: child\nWorker: child\nState: finished\nAttempts:\n- attempt 1: m1 on a1 failed: create_failed:unknown:INVALID_MODEL; switched to m2 on a2\n/);
+    assert.match(f.calls[0][1], /Dispatch: root\nAttempt dispatch: child\nWorker: child\nState: finished\nContinuation: [^\n]+\n[^\n]+\nAttempts:\n- attempt 1: m1 on a1 failed: create_failed:unknown:INVALID_MODEL; switched to m2 on a2\n/);
   } finally {
     if (previous === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = previous;
     fs.rmSync(state, {recursive: true, force: true});

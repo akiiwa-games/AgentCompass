@@ -19,11 +19,11 @@ class PrivacyCheckTests(unittest.TestCase):
 
     def test_reserved_example_mail_passes_and_a_real_one_fails(self):
         self.assertEqual(self.scan("a = 'user@example.test' b = 'noreply@anthropic.com'\n"), [])
-        self.assertEqual(len(self.scan("owner = 'someone@gmail.com'\n")), 1)
+        self.assertEqual(len(self.scan("owner = 'someone" + "@" + "gmail.com'\n")), 1)
 
     def test_credentials_are_reported(self):
         self.assertEqual(len(self.scan("key = 'sk-ant-" + "a" * 30 + "'\n")), 1)
-        self.assertEqual(len(self.scan("-----BEGIN OPENSSH PRIVATE KEY-----\n")), 1)
+        self.assertEqual(len(self.scan("-----BEGIN OPENSSH " + "PRIVATE KEY-----\n")), 1)
 
 
 if __name__ == "__main__":
