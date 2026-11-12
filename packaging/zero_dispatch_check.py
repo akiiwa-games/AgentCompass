@@ -744,12 +744,16 @@ def step_quota_and_recovery(z: Zero):
             box.cache.write_text(json.dumps(cache), encoding="utf-8")
 
     def attempt(label, note):
-        workers, dirs, bridge = len(z.workers()), set(p.name for p in (box.state / "cli-workers").glob("*")) if (box.state / "cli-workers").is_dir() else set(), len(z.bridge_calls())
-        result = z.call(op, "roll", "--task", z.task("ok", note), "--parent-host", "paseo", "--parent-id", PARENT, "--verbose")
+        dirs, bridge = set(p.name for p in (box.state / "cli-workers").glob("*")) if (box.state / "cli-workers").is_dir() else set(), len(z.bridge_calls())
+        brief = z.task("ok", note)
+        # The brief opens the worker's prompt; its nonce names this roll's workers. A worker an earlier step started
+        # can write its record late, so a count before and after would charge it to this roll.
+        mine = lambda: [w for w in z.workers() if brief.split("\n")[0] in w.get("prompt_head", "")]
+        result = z.call(op, "roll", "--task", brief, "--parent-host", "paseo", "--parent-id", PARENT, "--verbose")
         doc = parse(result.stdout) or {}
         z.evidence(f"B3-{label}-roll-verbose.json", doc)
-        z.wait_for(lambda: len(z.workers()) > workers or doc.get("status") != "launched", 20, 0.5)
-        started = z.workers()[workers:]
+        z.wait_for(lambda: mine() or doc.get("status") != "launched", 20, 0.5)
+        started = mine()
         made = set(p.name for p in (box.state / "cli-workers").glob("*")) - dirs if (box.state / "cli-workers").is_dir() else set()
         return doc, started, made, len(z.bridge_calls()) - bridge, result
 

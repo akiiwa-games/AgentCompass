@@ -185,6 +185,25 @@ class FallbackTests(unittest.TestCase):
         self.assertIn('uncommitted changes', prompt)
         self.assertTrue(prompt.endswith('Only fixture work'))
 
+    def test_a_relaunched_worker_that_already_completed_is_the_relaunch_not_a_failure(self):
+        """A fast relaunched worker can end before the chain reads its row; completed is success, not a failure."""
+        import dispatch_flow
+        self.host.refuse['claude-lab/claude-sonnet-5-5'] = {'failure_class': 'unknown', 'failure_code': 'INVALID_MODEL'}
+        root = self.first()
+        real_launch = dispatch_flow.launch
+
+        def launch_then_finish(dispatch_id, *args, **kwargs):
+            receipt = real_launch(dispatch_id, *args, **kwargs)
+            self.host.end(dispatch_id, 'idle', terminal={'reason': 'finished', 'status': 'idle'})
+            registry.observe(dispatch_id, self.host.agents[dispatch_id], terminal=self.host.terminal[dispatch_id])
+            return receipt
+        with patch.object(dispatch_flow, 'launch', side_effect=launch_then_finish):
+            out = self.handle(root['dispatch_id'])
+        self.assertEqual(registry.inspect(out['dispatch_id'])['state'], 'completed')
+        self.assertEqual(out['action'], 'relaunched')
+        self.assertEqual(len(out['attempts']), 2)
+        self.assertNotIn('failed', out['lines'][-1])
+
     def test_a_bundle_refused_at_prepare_goes_to_the_next_candidate(self):
         """A live model list that dropped the model after the plan (any exclusion) refuses the bundle at prepare."""
         planned = allocator.plan(dict(self.task), self.usage, self.now, accounts=self.accounts)

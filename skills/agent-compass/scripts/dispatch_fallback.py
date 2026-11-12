@@ -406,7 +406,8 @@ class Chain:
                 row, bundle, failure = registry.inspect(new['dispatch_id']), new_bundle, refused(exc)
                 continue
             current = registry.inspect(new['dispatch_id'])
-            if current['state'] in registry.TERMINAL and current['state'] != 'expired':
+            # A relaunched worker can finish before this read: completed is this attempt's success, not its failure.
+            if current['state'] in registry.TERMINAL and current['state'] not in ('expired', 'completed'):
                 row, bundle, failure = current, new_bundle, failure_of(current)
                 continue
             self.save('relaunched', current=current['dispatch_id'])
