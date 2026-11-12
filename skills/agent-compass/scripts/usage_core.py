@@ -1951,6 +1951,67 @@ def _parse_grok_billing_payload(data: bytes, now_secs: int) -> tuple[float, str 
 
 
 GROK_CLI_BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits"
+GROK_CLI_SETTINGS_URL = "https://cli-chat-proxy.grok.com/v1/settings"
+GROK_CLI_USER_SUBSCRIPTION_URL = "https://cli-chat-proxy.grok.com/v1/user?include=subscription"
+_GROK_TIER_SAFE_RE = re.compile(r"[A-Za-z0-9 _+-]{1,64}")
+
+
+def _extract_grok_tier(payload: Any) -> str | None:
+    """Extract a safe subscription tier identifier from a Grok API JSON payload; never return emails or tokens."""
+    if not isinstance(payload, dict):
+        return None
+    blocks: list[dict[str, Any]] = [payload]
+    if isinstance(payload.get("config"), dict):
+        blocks.append(payload["config"])
+    for block in blocks:
+        for key in ("subscription_tier_display", "subscription_tier", "subscriptionTier"):
+            val = block.get(key)
+            if isinstance(val, str):
+                cleaned = val.strip()
+                if cleaned and "@" not in cleaned and _GROK_TIER_SAFE_RE.fullmatch(cleaned):
+                    return cleaned
+    return None
+
+
+def _fetch_grok_subscription_tier(token: str, user_id: str | None = None) -> tuple[str | None, str | None, str | None]:
+    """Read the signed-in Grok subscription tier from the account's own CLI proxy endpoints.
+
+    Returns (tier_label, plan_source, error_reason). Never logs or returns tokens or PII.
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-XAI-Token-Auth": "xai-grok-cli",
+        "Accept": "application/json",
+        "User-Agent": "usage-float",
+    }
+    if user_id:
+        headers["x-userid"] = str(user_id)
+    reasons: list[str] = []
+    for url, source, label in (
+        (GROK_CLI_SETTINGS_URL, "settings_api", "settings"),
+        (GROK_CLI_USER_SUBSCRIPTION_URL, "user_api", "user"),
+    ):
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = resp.read()
+                payload = _parse_grok_error_body(raw)
+                if resp.status != 200:
+                    reasons.append(f"{label} HTTP {int(resp.status)}")
+                    continue
+                tier = _extract_grok_tier(payload)
+                if tier:
+                    return tier, source, None
+                reasons.append(f"{label} response omitted tier")
+        except urllib.error.HTTPError as e:
+            try:
+                e.read()
+            except Exception:
+                pass
+            reasons.append(f"{label} HTTP {int(e.code)}")
+        except Exception:
+            reasons.append(f"{label} request failed")
+    return None, None, "; ".join(reasons) if reasons else "subscription tier unavailable"
 
 
 def read_grok_cli_login() -> dict[str, Any] | None:
@@ -2008,11 +2069,11 @@ def _parse_grok_error_body(raw: bytes | str | None) -> Any:
     return _parse_json_body(text)
 
 
-def _fetch_grok_cli_billing_detailed() -> tuple[tuple[float, str | None] | None, int | None, str | None]:
-    """Return (parsed_result, error_status, error_code). (None, None, None) when no unexpired CLI login exists."""
+def _fetch_grok_cli_billing_with_payload() -> tuple[tuple[float, str | None] | None, Any, dict[str, Any] | None, int | None, str | None]:
+    """Return (parsed_result, raw_payload, login_entry, error_status, error_code)."""
     login = read_grok_cli_login()
     if login is None:
-        return None, None, None
+        return None, None, None, None, None
     req = urllib.request.Request(
         GROK_CLI_BILLING_URL,
         headers={
@@ -2028,17 +2089,23 @@ def _fetch_grok_cli_billing_detailed() -> tuple[tuple[float, str | None] | None,
             raw = resp.read()
             payload = _parse_grok_error_body(raw)
             if resp.status != 200:
-                return None, int(resp.status), provider_error_code(payload)
-            return parse_grok_cli_billing(payload), None, None
+                return None, None, login, int(resp.status), provider_error_code(payload)
+            return parse_grok_cli_billing(payload), payload, login, None, None
     except urllib.error.HTTPError as e:
         raw = None
         try:
             raw = e.read()
         except Exception:
             pass
-        return None, int(e.code), provider_error_code(_parse_grok_error_body(raw))
+        return None, None, login, int(e.code), provider_error_code(_parse_grok_error_body(raw))
     except Exception:
-        return None, 0, None
+        return None, None, login, 0, None
+
+
+def _fetch_grok_cli_billing_detailed() -> tuple[tuple[float, str | None] | None, int | None, str | None]:
+    """Return (parsed_result, error_status, error_code). (None, None, None) when no unexpired CLI login exists."""
+    parsed, _, _, status, code = _fetch_grok_cli_billing_with_payload()
+    return parsed, status, code
 
 
 def fetch_grok_cli_billing() -> tuple[float, str | None] | None:
@@ -2057,16 +2124,28 @@ def _grok_failure_rank(status: int | None, code: str | None) -> tuple[int, int, 
 
 
 def fetch_grok_usage() -> ProviderUsage:
-    """SuperGrok credit window: the Grok CLI billing endpoint, else grok.com gRPC-web (same as CC Switch)."""
-    cli, cli_status, cli_code = _fetch_grok_cli_billing_detailed()
+    """Grok credit window and subscription tier: the Grok CLI endpoints, else grok.com gRPC-web."""
+    cli, cli_payload, cli_login, cli_status, cli_code = _fetch_grok_cli_billing_with_payload()
     if cli is not None:
         pct, resets_at = cli
+        inline_tier = _extract_grok_tier(cli_payload)
+        if inline_tier:
+            tier, plan_source, tier_err = inline_tier, "usage_api", None
+        elif cli_login and cli_login.get("key"):
+            tier, plan_source, tier_err = _fetch_grok_subscription_tier(
+                str(cli_login["key"]), str(cli_login.get("user_id") or "") or None
+            )
+        else:
+            tier, plan_source, tier_err = None, None, "missing Grok CLI token for tier lookup"
         result = ProviderUsage(
             provider_id="grok",
             display_name="grok",
+            plan_label=tier,
+            plan_source=plan_source,
             windows=[UsageWindow(id="credits", label=_tr("额度", 'Quota'), used_pct=pct, resets_at=resets_at)],
             available=True,
             fetched_at=datetime.now(timezone.utc).isoformat(),
+            usage_details={"plan_tier_error": tier_err} if tier is None and tier_err else None,
         )
         cache_put_provider(result)
         return result
@@ -2118,9 +2197,12 @@ def fetch_grok_usage() -> ProviderUsage:
                 web_code = provider_error_code(_parse_grok_error_body(raw))
             else:
                 pct, resets_at = _parse_grok_billing_payload(raw, int(time.time()))
+                tier, plan_source, tier_err = _fetch_grok_subscription_tier(token)
                 result = ProviderUsage(
                     provider_id="grok",
                     display_name="grok",
+                    plan_label=tier,
+                    plan_source=plan_source,
                     windows=[
                         UsageWindow(
                             id="credits",
@@ -2131,6 +2213,7 @@ def fetch_grok_usage() -> ProviderUsage:
                     ],
                     available=True,
                     fetched_at=datetime.now(timezone.utc).isoformat(),
+                    usage_details={"plan_tier_error": tier_err} if tier is None and tier_err else None,
                 )
                 cache_put_provider(result)
                 return result

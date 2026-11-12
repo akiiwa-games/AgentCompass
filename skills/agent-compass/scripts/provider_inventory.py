@@ -103,6 +103,10 @@ def apply_shared_quota(accounts):
         # An unread source meter is unknown, not free, for the account drawing on it.
         bot.pop('unmetered', None)
         bot.pop('unlimited', None)
+        if 'plan_unknown' in source:
+            bot['plan_unknown'] = source['plan_unknown']
+        else:
+            bot.pop('plan_unknown', None)
         source_row = obj(inv_accounts.get(source_name))
         unavail = account_state.unavailable_text(source_row)
         if unavail:
@@ -114,14 +118,7 @@ def apply_shared_quota(accounts):
                     bundle.setdefault('discovery_unavailable', reason)
 
 
-def plan_defaults(accounts, family, plan):
-    """Quota template for a subscription plan, independent of any configured account instance.
-
-    The account document's `plan_templates` overrides the shipped references/plan-templates.json
-    per family and plan. A template of `{"alias": "<plan>"}` resolves to that plan's template. Only
-    `windows`, `cadence` and `unmetered` are copied onto an account; other keys (provenance, basis, price) are
-    documentation. A plan's capacity is not in the template: it comes from the community capacity data by plan.
-    """
+def _shipped_plan_templates():
     global _SHIPPED_PLAN_TEMPLATES
     source = public_data.effective(PLAN_TEMPLATES)  # the fetched public copy when it is newer than the shipped one
     if _SHIPPED_PLAN_TEMPLATES is None or _SHIPPED_PLAN_TEMPLATES[0] != source or read_json is not _STDLIB_READ_JSON:
@@ -130,8 +127,28 @@ def plan_defaults(accounts, family, plan):
             _SHIPPED_PLAN_TEMPLATES = (source, shipped)
     else:
         shipped = _SHIPPED_PLAN_TEMPLATES[1]
+    return obj(shipped)
+
+
+def plan_table(accounts, family, shipped=None):
+    """Merged `{plan_id: entry}` for `family` from shipped plan-templates.json plus `accounts['plan_templates']`."""
+    shipped_all = _shipped_plan_templates() if shipped is None else obj(shipped)
+    base = obj(shipped_all.get(family))
     overrides = obj(obj(obj(accounts).get('plan_templates')).get(family))
-    base = obj(shipped.get(family))
+    return {**base, **overrides}
+
+
+def plan_defaults(accounts, family, plan, shipped=None):
+    """Quota template for a subscription plan, independent of any configured account instance.
+
+    The account document's `plan_templates` overrides the shipped references/plan-templates.json
+    per family and plan. A template of `{"alias": "<plan>"}` resolves to that plan's template. Only
+    `windows`, `cadence` and `unmetered` are copied onto an account; other keys (provenance, basis, price) are
+    documentation. A plan's capacity is not in the template: it comes from the community capacity data by plan.
+    """
+    shipped_all = _shipped_plan_templates() if shipped is None else obj(shipped)
+    overrides = obj(obj(obj(accounts).get('plan_templates')).get(family))
+    base = obj(shipped_all.get(family))
     template = None
     for _ in range(3):
         configured = overrides.get(plan)
@@ -981,11 +998,17 @@ def _discover(home=None, environ=None, now=None):
     if grok_cached and grok_matches and (grok_windows or not grok_has_failure):
         grok_sources.append('usage-cache')
     grok_status = 'disabled' if not grok_enabled else 'ready' if grok_defined or grok_native else 'missing_client'
+    grok_plan_raw = grok_cached.get('plan_label') if grok_matches else None
+    grok_plan = grok_plan_raw.strip() if isinstance(grok_plan_raw, str) and grok_plan_raw.strip() else None
+    grok_plan_err = ((grok_cached.get('usage_details') or {}).get('plan_tier_error')
+                     if grok_matches and isinstance(grok_cached.get('usage_details'), dict) else None)
     grok_row = {
         'family': 'grok', 'provider': 'grok',
         'sources': grok_sources, 'status': grok_status,
-        'plan': (grok_cached.get('plan_label') if grok_matches else None) or 'subscription',
+        'plan': grok_plan,
         'billing': 'subscription',
+        **({'plan_source': grok_cached.get('plan_source') or 'usage_api'} if grok_plan else {}),
+        **({'plan_read_at': grok_cached['fetched_at']} if grok_plan and grok_cached.get('fetched_at') else {}),
         **({'credential_key': grok_facts['credential_key'], 'identity': grok_facts['identity']}
            if grok_facts['present'] else {}),
     }
@@ -1000,6 +1023,8 @@ def _discover(home=None, environ=None, now=None):
         grok_row['usage_binding'] = 'matches'
         if grok_windows:
             grok_row['usage_windows'] = [w['id'] for w in grok_windows]
+        if not grok_plan:
+            grok_row['plan_error'] = str(grok_plan_err or 'subscription tier not reported by Grok API')
         if grok_has_failure:
             grok_row['usage_read_failed'] = True
         if grok_row['status'] == 'ready' and account_state.usage_refused_plan(grok_cached):
@@ -1553,18 +1578,37 @@ PLAN_NAMES = {
 UNKNOWN_PLAN_PRICED_AS = {'claude': 'pro', 'codex': 'plus', 'antigravity': 'pro'}
 
 
-def configured_plan(family, label):
+def configured_plan(family, label, accounts=None, shipped=None):
     raw = str(label or '').lower()
-    names = PLAN_NAMES.get(family)
-    if names is None:
+    if not raw.strip():
         return raw
-    for candidate in (raw, account_state.strip_pool_count(raw)):
-        words = account_state.plan_words(candidate)
-        if words in names:
-            return names[words]
-        without_vendor = account_state.plan_without_vendor(candidate)
-        if without_vendor in names:
-            return names[without_vendor]
+    names = PLAN_NAMES.get(family)
+    if names is not None:
+        for candidate in (raw, account_state.strip_pool_count(raw)):
+            words = account_state.plan_words(candidate)
+            if words in names:
+                return names[words]
+            without_vendor = account_state.plan_without_vendor(candidate)
+            if without_vendor in names:
+                return names[without_vendor]
+    table = plan_table(accounts, family, shipped=shipped)
+    if table:
+        tier_map = {}
+        for plan_id, entry in table.items():
+            if not isinstance(entry, dict):
+                continue
+            for token in (plan_id, *array(entry.get('tiers'))):
+                if isinstance(token, str) and token.strip():
+                    w = account_state.plan_words(token)
+                    if w:
+                        tier_map.setdefault(w, plan_id)
+        for candidate in (raw, account_state.strip_pool_count(raw)):
+            words = account_state.plan_words(candidate)
+            stripped_enum = words.removeprefix('subscription tier ').strip()
+            without_vendor = account_state.plan_without_vendor(candidate)
+            for key in (words, stripped_enum, without_vendor):
+                if key and key in tier_map:
+                    return tier_map[key]
     return raw
 
 
@@ -1696,6 +1740,7 @@ def apply(accounts, inventory=None, *, live=None):
                 specs.pop(name, None)
     known_models = accounts.get('models') if isinstance(accounts.get('models'), dict) else {}
     aliases = accounts.get('aliases') if isinstance(accounts.get('aliases'), dict) else {}
+    shipped_templates = _shipped_plan_templates()
 
     for name, row in inventory['accounts'].items():
         family = row['family']
@@ -1744,7 +1789,7 @@ def apply(accounts, inventory=None, *, live=None):
                 specs[name] = spec
             elif family == 'grok':
                 specs[name] = copy.deepcopy(templates.get('grok') or {
-                    'plan': 'subscription', 'billing': 'subscription', 'expires_at': None,
+                    'plan': 'unknown', 'billing': 'subscription', 'expires_at': None,
                     'unmetered': True, 'windows': {},
                     'bundles': {'grok47_high': {'provider': name, 'harness': 'grok', 'model': 'grok-4.7', 'effort': 'high'}},
                 })
@@ -1774,12 +1819,6 @@ def apply(accounts, inventory=None, *, live=None):
         spec = specs[name]
         spec['verified'] = launch_verified(row, spec.get('verified'))
         spec['discovery_status'] = row['status']
-        if family == 'grok':
-            window_ids = row.get('usage_windows') or []
-            spec['unmetered'] = not bool(window_ids)
-            if window_ids:
-                spec.setdefault('windows', {}).update({wid: {'hours': 168, 'launch_min_remaining_pct': 5}
-                                                       for wid in window_ids if wid not in spec.get('windows', {})})
         if row.get('allowed_cwd') and 'allowed_cwd' not in spec:
             spec['allowed_cwd'] = row['allowed_cwd']
         if row.get('cwd_regex') and 'cwd_regex' not in spec:
@@ -1795,32 +1834,37 @@ def apply(accounts, inventory=None, *, live=None):
         quota_family = row.get('quota_family') or family   # an omp OAuth login uses the plans of the family it signs in to
         # A plan the user wrote in the account document seeds the template when discovery reports none
         # (claude/codex without a discovered plan stay unknown below).
-        template_plan = configured_plan(quota_family, plan or (spec.get('plan') if family not in ('claude', 'codex') else None))
-        template = plan_defaults(accounts, quota_family, template_plan) if template_plan else None
+        template_plan = configured_plan(
+            quota_family,
+            plan or (spec.get('plan') if family not in ('claude', 'codex') else None),
+            accounts=accounts,
+            shipped=shipped_templates,
+        )
+        template = plan_defaults(accounts, quota_family, template_plan, shipped=shipped_templates) if template_plan else None
         # A plan no template names is unknown: it is priced at the family's smallest paid plan and warned about, never
         # at the largest. An account on a metered API key has no plan to know.
         priced_as = UNKNOWN_PLAN_PRICED_AS.get(quota_family) if template is None and row.get('billing') == 'subscription' else None
         spec.pop('plan_unknown', None)
         spec.pop('plan_priced_as', None)
         if priced_as and not account_state.plan_is_inactive(quota_family, plan):
-            template = plan_defaults(accounts, quota_family, priced_as)
+            template = plan_defaults(accounts, quota_family, priced_as, shipped=shipped_templates)
             spec.update(plan_unknown=str(plan or template_plan or 'not reported'), plan_priced_as=priced_as)
-        elif template is None and family not in ('claude', 'codex'):
+        elif template is None and family not in ('claude', 'codex', 'grok'):
             # A family with no known-plan table routes on its documented default plan, never on no capacity
             # (plan-templates.json `<family>.default`).
-            template = plan_defaults(accounts, quota_family, 'default')
+            template = plan_defaults(accounts, quota_family, 'default', shipped=shipped_templates)
         if plan:
-            previous_plan = configured_plan(quota_family, spec.get('plan'))
+            previous_plan = configured_plan(quota_family, spec.get('plan'), accounts=accounts, shipped=shipped_templates)
             spec['plan'] = plan
             if previous_plan == template_plan:
                 pass  # same named plan can have account-specific promotional capacity
-            elif template:
+            elif template and family != 'grok':
                 for key in TEMPLATE_KEYS:
                     if key in template:
                         spec[key] = copy.deepcopy(template[key])
                     else:
                         spec.pop(key, None)
-        if template and not (family in ('claude', 'codex') and not plan):
+        if template and family != 'grok' and not (family in ('claude', 'codex') and not plan):
             fill_template_gaps(spec, template)
         if row.get('billing') and row['billing'] != 'unknown':
             spec['billing'] = row['billing']
@@ -1832,6 +1876,20 @@ def apply(accounts, inventory=None, *, live=None):
                 for key in TEMPLATE_KEYS:
                     if key in template:
                         spec[key] = copy.deepcopy(template[key])
+        if family == 'grok':
+            window_ids = row.get('usage_windows') or []
+            spec['unmetered'] = not bool(window_ids)
+            if window_ids:
+                spec.setdefault('windows', {}).update({wid: {'hours': 168, 'launch_min_remaining_pct': 5}
+                                                       for wid in window_ids if wid not in spec.get('windows', {})})
+            if template is None:
+                raw_label = str(plan or '').strip()
+                is_placeholder = account_state.plan_without_vendor(raw_label) in ('', 'unknown', 'subscription')
+                spec['plan'] = 'unknown'
+                spec['plan_unknown'] = str(
+                    row.get('plan_error')
+                    or ('subscription tier not reported by Grok API' if is_placeholder else f'unrecognized tier {raw_label!r}')
+                )
         advertised = row.get('models')
         for bundle in spec.get('bundles', {}).values():
             reason = unavailable_reason(inventory, name, bundle.get('provider', name))

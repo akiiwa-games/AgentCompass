@@ -40,6 +40,40 @@ def _valid_public_declaration(entry):
     return entry.get('kind') == 'maintainer' and bool(_ISO_DATE.match(as_of))
 
 
+def _valid_capacity_rule(entry):
+    if not _valid_public_declaration(entry):
+        return False
+    for key in ('target_family', 'target_window', 'reference_family', 'reference_window'):
+        if not isinstance(entry.get(key), str) or not entry[key].strip():
+            return False
+    forbidden = {'plan', 'base_plan', 'plan_price_usd_per_month', 'base_plan_price_usd_per_month', 'capacity_usd'}
+    if forbidden & set(entry) or any(isinstance(v, (int, float)) and not isinstance(v, bool) for v in entry.values()):
+        return False
+    return True
+
+
+def _valid_vendor_price_source(entry):
+    if not isinstance(entry, dict) or entry.get('kind') != 'vendor':
+        return False
+    url = str(entry.get('url') or '').strip()
+    as_of = str(entry.get('as_of') or '').strip()
+    return url.startswith('https://') and bool(_ISO_DATE.match(as_of))
+
+
+def validate_plan_templates_provenance(doc):
+    """Ensure every `price_source` declared in plan-templates.json is a dated vendor https citation."""
+    if not isinstance(doc, dict):
+        raise ValueError('plan-templates.json must be a JSON object')
+    for family, plans in doc.items():
+        if not isinstance(plans, dict):
+            continue
+        for plan, tpl in plans.items():
+            if not isinstance(tpl, dict):
+                continue
+            if 'price_source' in tpl and not _valid_vendor_price_source(tpl.get('price_source')):
+                raise ValueError(f'plan-templates[{family!r}][{plan!r}].price_source requires kind="vendor", https url and ISO as_of')
+
+
 def validate_accounts_provenance(doc):
     """Ensure every capability/equivalence declaration in accounts.json has a public https URL or dated maintainer kind."""
     if not isinstance(doc, dict):
@@ -47,6 +81,12 @@ def validate_accounts_provenance(doc):
     for row, entry in (doc.get('same_model') or {}).items():
         if not _valid_public_declaration(entry):
             raise ValueError(f'same_model[{row!r}] requires an https url or dated kind="maintainer" (with as_of)')
+        if 'capacity' in entry:
+            raise ValueError(f'same_model[{row!r}].capacity may not hard-code a plan or price; use rule-only capacity_rule')
+        if 'capacity_rule' in entry and not _valid_capacity_rule(entry.get('capacity_rule')):
+            raise ValueError(
+                f'same_model[{row!r}].capacity_rule requires dated kind="maintainer" (or https url) and family/window rule fields without plan or price literals'
+            )
     for model, spec in (doc.get('models') or {}).items():
         if not isinstance(spec, dict):
             continue
@@ -202,6 +242,11 @@ def check_set(directory, manifest):
                 validate_accounts_provenance(json.loads(data.decode('utf-8-sig')))
             except Exception as exc:
                 return 'incomplete', f'accounts.json is invalid: {exc}'
+        if name == 'plan-templates.json':
+            try:
+                validate_plan_templates_provenance(json.loads(data.decode('utf-8-sig')))
+            except Exception as exc:
+                return 'incomplete', f'plan-templates.json is invalid: {exc}'
         if name == 'user-scores.json':
             try:
                 import user_scores

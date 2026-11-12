@@ -18,7 +18,7 @@ runner (like Dot), not a Paseo-native provider or an OpenAI-compatible endpoint.
 It uses third-party `grok-bot-cli` from the fixed, unreleased upstream PR158 commit
 below (base version 0.12.4), with a small dependency-level scope correction.
 Authentication and HTTP transport stay in upstream code.
-Underlying model identity and cost are unknown; usage-float may supply native quota observations.
+Underlying model capability, duration and hourly cost follow `accounts.json` `same_model` (`grok-bot` -> `claude-opus-5-5`, dated maintainer declaration); usage-float reads both the shared Grok `credits` meter and the signed-in Grok subscription tier, and runtime capacity matches the Claude subscription at the same monthly price (or scales the nearest Claude plan by monthly price ratio when no exact price match exists; an unreadable tier keeps `grok-bot` in Mode B with `plan unknown`).
 A canonical dispatch bundle participates in ordinary automatic routing when
 ready and enabled; explicit requests remain supported. The `grok` / Grok Build
 integration is a separate launcher; the shipped `quota_sources` binds the Bot to its meter.

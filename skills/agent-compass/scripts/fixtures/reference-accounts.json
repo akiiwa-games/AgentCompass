@@ -179,12 +179,22 @@
         "divergence",
         "coding",
         "aesthetics",
-        "duration"
+        "duration",
+        "usd_per_hour"
       ],
       "kind": "maintainer",
       "statement": "maintainer: grok-bot is Opus 5.5",
       "as_of": "2026-11-11",
-      "not_carried": "tool_operation: grok-bot's per-turn speed and image recognition are the web channel's own, so tool operation stays channel-specific rather than Opus 5.5's."
+      "not_carried": "tool_operation: grok-bot's per-turn speed and image recognition are the web channel's own, so tool operation stays channel-specific rather than Opus 5.5's.",
+      "capacity_rule": {
+        "kind": "maintainer",
+        "as_of": "2026-11-11",
+        "statement": "maintainer: grok-bot price and quota capacity follow the same-price Claude subscription",
+        "target_family": "grok",
+        "target_window": "credits",
+        "reference_family": "claude",
+        "reference_window": "seven_day"
+      }
     }
   },
   "models": {

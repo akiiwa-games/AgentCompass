@@ -1199,7 +1199,7 @@ class PlanTemplateTests(unittest.TestCase):
 
     def test_shipped_templates_are_plain_family_plan_dicts(self):
         shipped, _ = inventory.read_json(inventory.PLAN_TEMPLATES)
-        self.assertEqual(set(shipped), {'claude', 'codex', 'antigravity', 'chatgpt-web'})
+        self.assertEqual(set(shipped), {'claude', 'codex', 'antigravity', 'chatgpt-web', 'grok'})
         for family, plans in shipped.items():
             for plan, template in plans.items():
                 self.assertIsInstance(template, dict, (family, plan))

@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/2",
- "generated_at": "2026-11-11T16:38:17+00:00",
- "measurements_sha256": "091353f41d70283fd37d4abf88f3819e7c42248c7cb61182e85a06bf60e1ecff",
+ "generated_at": "2026-11-12T03:05:16+00:00",
+ "measurements_sha256": "d8e81f10953f8d1eb5c073dad093a1bd8ed8d9d1fb1ae9dbf8c3406fd2404c21",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
  "estimate_fits": {
@@ -81,7 +81,7 @@
      "capacity_usd": 11.92,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -92,7 +92,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       }
@@ -105,7 +105,7 @@
      "capacity_usd": 155.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -116,7 +116,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       }
@@ -131,7 +131,7 @@
      "capacity_usd": 110.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 32,
+     "age_days": 33,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -142,7 +142,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "midpoint of the two full Max 5x sessions the page measured at the 5-hour limit",
-       "age_days": 32,
+       "age_days": 33,
        "stale": true,
        "rung": 1
       }
@@ -161,7 +161,7 @@
      "capacity_usd": 1217.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 32,
+     "age_days": 33,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -172,7 +172,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-       "age_days": 32,
+       "age_days": 33,
        "stale": true,
        "rung": 1
       }
@@ -191,7 +191,7 @@
      "capacity_usd": 608.5,
      "status": "stale",
      "rung": 1,
-     "age_days": 32,
+     "age_days": 33,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -211,12 +211,12 @@
          "as_of": "2026-10-10",
          "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-         "age_days": 32,
+         "age_days": 33,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 32,
+       "age_days": 33,
        "stale": true,
        "rung": 1
       }
@@ -237,7 +237,7 @@
      "capacity_usd": 271.75,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -248,7 +248,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       }
@@ -261,7 +261,7 @@
      "capacity_usd": 1704.5,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -272,7 +272,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       },
@@ -284,7 +284,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "one heavy user's measured full week at API-equivalent prices",
-       "age_days": 32,
+       "age_days": 33,
        "stale": true,
        "rung": 1
       }
@@ -297,7 +297,7 @@
      "capacity_usd": 852.25,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -317,7 +317,7 @@
          "as_of": "2026-11-02",
          "fetched_at": "2026-11-09T05:34:15+00:00",
          "method": "median measured account week at API rates (cache included)",
-         "age_days": 9,
+         "age_days": 10,
          "stale": false,
          "rung": 1
         },
@@ -329,12 +329,12 @@
          "as_of": "2026-10-10",
          "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "one heavy user's measured full week at API-equivalent prices",
-         "age_days": 32,
+         "age_days": 33,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       }
@@ -349,7 +349,7 @@
      "capacity_usd": 110.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 32,
+     "age_days": 33,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -360,7 +360,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "midpoint of the two full Max 5x sessions the page measured at the 5-hour limit",
-       "age_days": 32,
+       "age_days": 33,
        "stale": true,
        "rung": 1
       }
@@ -380,7 +380,7 @@
      "capacity_usd": 1217.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 32,
+     "age_days": 33,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -391,7 +391,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-       "age_days": 32,
+       "age_days": 33,
        "stale": true,
        "rung": 1
       }
@@ -411,7 +411,7 @@
      "capacity_usd": 608.5,
      "status": "stale",
      "rung": 1,
-     "age_days": 32,
+     "age_days": 33,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -431,12 +431,12 @@
          "as_of": "2026-10-10",
          "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-         "age_days": 32,
+         "age_days": 33,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 32,
+       "age_days": 33,
        "stale": true,
        "rung": 1
       }
@@ -460,7 +460,7 @@
      "capacity_usd": 61.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -471,7 +471,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       },
@@ -483,7 +483,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of measured full weekly windows at API prices",
-       "age_days": 32,
+       "age_days": 33,
        "stale": true,
        "rung": 1
       }
@@ -496,7 +496,7 @@
      "capacity_usd": 10.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -507,7 +507,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       }
@@ -522,7 +522,7 @@
      "capacity_usd": 61.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -533,7 +533,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       },
@@ -545,7 +545,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of measured full weekly windows at API prices",
-       "age_days": 32,
+       "age_days": 33,
        "stale": true,
        "rung": 1
       }
@@ -559,7 +559,7 @@
      "capacity_usd": 10.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -570,7 +570,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       }
@@ -586,7 +586,7 @@
      "capacity_usd": 265.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 33,
+     "age_days": 34,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -597,7 +597,7 @@
        "as_of": "2026-10-09",
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of a heavy user's logged full weekly windows at API prices",
-       "age_days": 33,
+       "age_days": 34,
        "stale": true,
        "rung": 1
       },
@@ -609,7 +609,7 @@
        "as_of": "2026-10-04",
        "fetched_at": "2026-11-09T05:34:17+00:00",
        "method": "midpoint of the measured weekly range at API prices",
-       "age_days": 38,
+       "age_days": 39,
        "stale": true,
        "rung": 1
       }
@@ -630,7 +630,7 @@
      "capacity_usd": 615.5,
      "status": "ok",
      "rung": 1,
-     "age_days": 9,
+     "age_days": 10,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -641,7 +641,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 9,
+       "age_days": 10,
        "stale": false,
        "rung": 1
       },
@@ -653,7 +653,7 @@
        "as_of": "2026-10-04",
        "fetched_at": "2026-11-09T05:34:17+00:00",
        "method": "measured weekly window at API prices",
-       "age_days": 38,
+       "age_days": 39,
        "stale": true,
        "rung": 1
       }
@@ -670,7 +670,7 @@
      "capacity_usd": 400.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -690,12 +690,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -708,7 +708,7 @@
      "capacity_usd": 2580.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -728,12 +728,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -746,7 +746,7 @@
      "capacity_usd": 400.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -766,12 +766,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -784,7 +784,7 @@
      "capacity_usd": 2580.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -804,12 +804,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -824,7 +824,7 @@
      "capacity_usd": 100.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -844,12 +844,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -862,7 +862,7 @@
      "capacity_usd": 645.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -882,12 +882,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -900,7 +900,7 @@
      "capacity_usd": 100.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -920,12 +920,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -938,7 +938,7 @@
      "capacity_usd": 645.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -958,12 +958,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -978,7 +978,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -989,7 +989,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 1
       }
@@ -1002,7 +1002,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1013,7 +1013,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 1
       }
@@ -1026,7 +1026,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1037,7 +1037,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 1
       }
@@ -1050,7 +1050,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1061,7 +1061,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 1
       }
@@ -1076,7 +1076,7 @@
      "capacity_usd": 400.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -1096,12 +1096,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -1115,7 +1115,7 @@
      "capacity_usd": 2580.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -1135,12 +1135,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -1154,7 +1154,7 @@
      "capacity_usd": 400.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -1174,12 +1174,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -1193,7 +1193,7 @@
      "capacity_usd": 2580.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -1213,12 +1213,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 64,
+         "age_days": 65,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 3
       }
@@ -1234,7 +1234,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1245,7 +1245,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 1
       }
@@ -1259,7 +1259,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1270,7 +1270,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 1
       }
@@ -1284,7 +1284,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1295,7 +1295,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 1
       }
@@ -1309,7 +1309,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 64,
+     "age_days": 65,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -1320,7 +1320,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 64,
+       "age_days": 65,
        "stale": true,
        "rung": 1
       }
@@ -1344,7 +1344,7 @@
    "source": "community.eneasf.antigravity",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 64,
+   "age_days": 65,
    "as_of": "2026-09-08",
    "threshold_days": 21,
    "windows": [
@@ -1360,7 +1360,7 @@
    "source": "community.finops.claude_max20",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 32,
+   "age_days": 33,
    "as_of": "2026-10-10",
    "threshold_days": 21,
    "windows": [
@@ -1375,7 +1375,7 @@
    "source": "community.finops.codex_plus",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 32,
+   "age_days": 33,
    "as_of": "2026-10-10",
    "threshold_days": 21,
    "windows": [
@@ -1388,7 +1388,7 @@
    "source": "community.finops.codex_pro100",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 33,
+   "age_days": 34,
    "as_of": "2026-10-09",
    "threshold_days": 21,
    "windows": [
@@ -1401,7 +1401,7 @@
    "source": "community.inventive.codex",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 38,
+   "age_days": 39,
    "as_of": "2026-10-04",
    "threshold_days": 21,
    "windows": [
@@ -1417,7 +1417,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "aa.frontiercode_2": {
@@ -1425,7 +1425,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "aa.index": {
@@ -1433,7 +1433,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "aa.mmmu_pro": {
@@ -1441,7 +1441,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "aa.price": {
@@ -1449,7 +1449,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "aa.terminalbench_4": {
@@ -1457,7 +1457,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "aa.ttfa": {
@@ -1465,7 +1465,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "arena.agent_alignment": {
@@ -1473,7 +1473,7 @@
    "as_of": "2026-10-16",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:26:22+00:00",
-   "age_days": 26,
+   "age_days": 27,
    "stale": true
   },
   "arena.agent_code": {
@@ -1481,7 +1481,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:23:07+00:00",
-   "age_days": 3,
+   "age_days": 4,
    "stale": false
   },
   "arena.agent_sessions": {
@@ -1489,7 +1489,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:23:07+00:00",
-   "age_days": 3,
+   "age_days": 4,
    "stale": false
   },
   "community.eneasf.antigravity": {
@@ -1497,7 +1497,7 @@
    "as_of": "2026-09-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:49:38+00:00",
-   "age_days": 64,
+   "age_days": 65,
    "stale": true
   },
   "community.finops.claude_max20": {
@@ -1505,7 +1505,7 @@
    "as_of": "2026-10-10",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T06:36:08+00:00",
-   "age_days": 32,
+   "age_days": 33,
    "stale": true
   },
   "community.finops.codex_plus": {
@@ -1513,7 +1513,7 @@
    "as_of": "2026-10-10",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:16+00:00",
-   "age_days": 32,
+   "age_days": 33,
    "stale": true
   },
   "community.finops.codex_pro100": {
@@ -1521,7 +1521,7 @@
    "as_of": "2026-10-09",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:16+00:00",
-   "age_days": 33,
+   "age_days": 34,
    "stale": true
   },
   "community.inventive.codex": {
@@ -1529,7 +1529,7 @@
    "as_of": "2026-10-04",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:17+00:00",
-   "age_days": 38,
+   "age_days": 39,
    "stale": true
   },
   "community.wokey.claude": {
@@ -1537,7 +1537,7 @@
    "as_of": "2026-11-02",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:15+00:00",
-   "age_days": 9,
+   "age_days": 10,
    "stale": false
   },
   "community.wokey.codex": {
@@ -1545,7 +1545,7 @@
    "as_of": "2026-11-02",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:15+00:00",
-   "age_days": 9,
+   "age_days": 10,
    "stale": false
   },
   "derived.community_mix": {
@@ -1553,7 +1553,7 @@
    "as_of": "2026-11-02",
    "as_of_kind": "the older of the mix data date and the AA fetch date",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 9,
+   "age_days": 10,
    "stale": false
   },
   "designarena.3d": {
@@ -1561,7 +1561,7 @@
    "as_of": "2026-11-11",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-11T04:01:04+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "designarena.svg": {
@@ -1569,7 +1569,7 @@
    "as_of": "2026-11-11",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-11T04:01:05+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "designarena.website": {
@@ -1577,7 +1577,7 @@
    "as_of": "2026-11-11",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-11T04:01:03+00:00",
-   "age_days": 0,
+   "age_days": 1,
    "stale": false
   },
   "lmarena.creative_writing": {
@@ -1585,7 +1585,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:39+00:00",
-   "age_days": 3,
+   "age_days": 4,
    "stale": false
   },
   "lmarena.vision": {
@@ -1593,7 +1593,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:40+00:00",
-   "age_days": 3,
+   "age_days": 4,
    "stale": false
   },
   "lmarena.webdev": {
@@ -1601,7 +1601,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:37+00:00",
-   "age_days": 3,
+   "age_days": 4,
    "stale": false
   },
   "openrouter.modality": {
@@ -1609,7 +1609,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:50+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "openrouter.price": {
@@ -1617,7 +1617,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:50+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "tier.aa_index": {
@@ -1625,7 +1625,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "tier.arena_overall": {
@@ -1633,7 +1633,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:39+00:00",
-   "age_days": 3,
+   "age_days": 4,
    "stale": false
   },
   "vendor.anthropic.max": {
@@ -1641,7 +1641,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (no data date found on the page)",
    "fetched_at": "2026-11-09T06:36:12+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "vendor.fast_mode": {
@@ -1649,7 +1649,7 @@
    "as_of": "2026-11-10",
    "as_of_kind": "data date",
    "fetched_at": null,
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   },
   "vendor.google.ultra": {
@@ -1657,7 +1657,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (no data date found on the page)",
    "fetched_at": "2026-11-09T06:36:09+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "vendor.openai.pro100": {
@@ -1665,7 +1665,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (no data date found on the page)",
    "fetched_at": "2026-11-09T06:36:13+00:00",
-   "age_days": 2,
+   "age_days": 3,
    "stale": false
   },
   "vendor.price": {
@@ -1673,7 +1673,7 @@
    "as_of": "2026-11-10",
    "as_of_kind": "data date",
    "fetched_at": null,
-   "age_days": 1,
+   "age_days": 2,
    "stale": false
   }
  },
@@ -1684,7 +1684,7 @@
    "level": "yellow",
    "reason": "stale_source",
    "component": "coding.faithfulness",
-   "age_days": 26,
+   "age_days": 27,
    "as_of": "2026-10-16",
    "threshold_days": 21,
    "effect": "still used; refresh the source"
@@ -1975,73 +1975,6 @@
   }
  },
  "links": {
-  "tool_operation.responsiveness": {
-   "boards": [
-    "aa.ttfa"
-   ],
-   "scales": {
-    "aa.ttfa": 1.0
-   },
-   "offsets": {
-    "aa.ttfa": 0.0
-   },
-   "sd_at_high": {
-    "aa.ttfa": 1.0
-   },
-   "full_panel_boards": [
-    "aa.ttfa"
-   ],
-   "panel_n": 12
-  },
-  "tool_operation.image_recognition": {
-   "boards": [
-    "aa.mmmu_pro",
-    "lmarena.vision"
-   ],
-   "scales": {
-    "lmarena.vision": 0.9235,
-    "aa.mmmu_pro": 1.1032
-   },
-   "offsets": {
-    "aa.mmmu_pro": -0.1242,
-    "lmarena.vision": 0.1242
-   },
-   "sd_at_high": {
-    "lmarena.vision": 1.0
-   },
-   "full_panel_boards": [
-    "lmarena.vision"
-   ],
-   "panel_n": 12
-  },
-  "coding.execution": {
-   "boards": [
-    "aa.frontiercode_2",
-    "aa.terminalbench_4",
-    "arena.agent_code"
-   ],
-   "scales": {
-    "aa.frontiercode_2": 1.0,
-    "aa.terminalbench_4": 1.0,
-    "arena.agent_code": 1.2784
-   },
-   "offsets": {
-    "aa.frontiercode_2": -0.1525,
-    "aa.terminalbench_4": -0.1707,
-    "arena.agent_code": 0.3232
-   },
-   "sd_at_high": {
-    "aa.frontiercode_2": 1.0,
-    "aa.terminalbench_4": 1.0,
-    "arena.agent_code": 1.0
-   },
-   "full_panel_boards": [
-    "aa.frontiercode_2",
-    "aa.terminalbench_4",
-    "arena.agent_code"
-   ],
-   "panel_n": 12
-  },
   "aesthetics.design": {
    "boards": [
     "designarena.3d",
@@ -2073,21 +2006,31 @@
    ],
    "panel_n": 12
   },
-  "divergence.creative_writing": {
+  "coding.execution": {
    "boards": [
-    "lmarena.creative_writing"
+    "aa.frontiercode_2",
+    "aa.terminalbench_4",
+    "arena.agent_code"
    ],
    "scales": {
-    "lmarena.creative_writing": 0.9394
+    "aa.frontiercode_2": 1.0,
+    "aa.terminalbench_4": 1.0,
+    "arena.agent_code": 1.2784
    },
    "offsets": {
-    "lmarena.creative_writing": 0.0
+    "aa.frontiercode_2": -0.1525,
+    "aa.terminalbench_4": -0.1707,
+    "arena.agent_code": 0.3232
    },
    "sd_at_high": {
-    "lmarena.creative_writing": 1.0
+    "aa.frontiercode_2": 1.0,
+    "aa.terminalbench_4": 1.0,
+    "arena.agent_code": 1.0
    },
    "full_panel_boards": [
-    "lmarena.creative_writing"
+    "aa.frontiercode_2",
+    "aa.terminalbench_4",
+    "arena.agent_code"
    ],
    "panel_n": 12
   },
@@ -2106,6 +2049,63 @@
    },
    "full_panel_boards": [
     "arena.agent_alignment"
+   ],
+   "panel_n": 12
+  },
+  "divergence.creative_writing": {
+   "boards": [
+    "lmarena.creative_writing"
+   ],
+   "scales": {
+    "lmarena.creative_writing": 0.9394
+   },
+   "offsets": {
+    "lmarena.creative_writing": 0.0
+   },
+   "sd_at_high": {
+    "lmarena.creative_writing": 1.0
+   },
+   "full_panel_boards": [
+    "lmarena.creative_writing"
+   ],
+   "panel_n": 12
+  },
+  "tool_operation.image_recognition": {
+   "boards": [
+    "aa.mmmu_pro",
+    "lmarena.vision"
+   ],
+   "scales": {
+    "lmarena.vision": 0.9235,
+    "aa.mmmu_pro": 1.1032
+   },
+   "offsets": {
+    "aa.mmmu_pro": -0.1242,
+    "lmarena.vision": 0.1242
+   },
+   "sd_at_high": {
+    "lmarena.vision": 1.0
+   },
+   "full_panel_boards": [
+    "lmarena.vision"
+   ],
+   "panel_n": 12
+  },
+  "tool_operation.responsiveness": {
+   "boards": [
+    "aa.ttfa"
+   ],
+   "scales": {
+    "aa.ttfa": 1.0
+   },
+   "offsets": {
+    "aa.ttfa": 0.0
+   },
+   "sd_at_high": {
+    "aa.ttfa": 1.0
+   },
+   "full_panel_boards": [
+    "aa.ttfa"
    ],
    "panel_n": 12
   }
@@ -8079,11 +8079,50 @@
     "tool_operation"
    ],
    "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null,
-    "reason": "not listed on arena.ai Agent / Overall"
+    "value": 22.859,
+    "status": "ok",
+    "kind": "maintainer",
+    "method": "same_model",
+    "base_model": "claude-opus-5-5",
+    "fallback": false,
+    "merge": "same_model: usd_per_hour of claude-opus-5-5 (maintainer: grok-bot is Opus 5.5)",
+    "used": [
+     "arena.agent_sessions"
+    ],
+    "statement": "maintainer: grok-bot is Opus 5.5",
+    "as_of": "2026-11-11",
+    "sources": {
+     "base": {
+      "value": 22.859,
+      "status": "ok",
+      "merge": "arena.agent_sessions: median of the listed efforts ['max']",
+      "used": [
+       "arena.agent_sessions"
+      ],
+      "sources": {
+       "arena.agent_sessions": {
+        "value": 22.859,
+        "how": "median of the listed efforts ['max']",
+        "kind": "community",
+        "as_of": "2026-11-08",
+        "url": "https://arena.ai/leaderboard/agent",
+        "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+        "by_effort": {
+         "max": 22.859
+        },
+        "sessions": 14358
+       }
+      },
+      "kind": "community",
+      "fallback": false,
+      "model": "claude-opus-5-5"
+     },
+     "declaration": {
+      "kind": "maintainer",
+      "statement": "maintainer: grok-bot is Opus 5.5",
+      "as_of": "2026-11-11"
+     }
+    }
    },
    "duration_multiplier": {
     "status": "ok",
@@ -8183,13 +8222,6 @@
     "aa_only": true
    },
    "data_errors": [
-    {
-     "model": "grok-bot",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-    },
     {
      "model": "grok-bot",
      "field": "tool_operation",
@@ -28161,13 +28193,6 @@
    "reason": "no_cited_source",
    "level": "yellow",
    "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
-  },
-  {
-   "model": "grok-bot",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
   },
   {
    "model": "grok-bot",

@@ -36,7 +36,7 @@ LISTED_STATES = (READY, PLAN_INACTIVE, USAGE_FAILING, AUTH_FAILED, AGY_ACCOUNT_F
 INACTIVE_PLANS = frozenset(('free', 'free tier', 'expired', 'cancelled', 'canceled', 'inactive', 'lapsed', 'none',
                             'past due', 'payment failed', 'unpaid'))
 # Words that name the vendor or product in a plan label, not the plan: "Antigravity Free Tier" is `free tier`.
-PLAN_VENDOR_WORDS = frozenset(('antigravity', 'chatgpt', 'claude', 'google', 'ai', 'openai', 'plan'))
+PLAN_VENDOR_WORDS = frozenset(('antigravity', 'chatgpt', 'claude', 'google', 'ai', 'openai', 'plan', 'grok', 'xai'))
 # Families whose account is a paid subscription: a free plan there is a lapse. OpenCode's free models are its product.
 SUBSCRIPTION_FAMILIES = ('claude', 'codex', 'antigravity', 'pi', 'omp')
 LATCH_FILE = 'plan-inactive.json'
@@ -53,7 +53,7 @@ _LAUNCH_ERROR = re.compile(
     r'订阅(?:已)?(?:过期|到期|失效|取消)', re.I)
 
 
-ONLINE_PLAN_SOURCES = ('usage_api', 'usage_api_shared', 'profile_api', 'account-tier')
+ONLINE_PLAN_SOURCES = ('usage_api', 'usage_api_shared', 'profile_api', 'account-tier', 'settings_api', 'user_api')
 _POOL_SUFFIX = re.compile(r'\s*×\s*\d+\s*$')
 
 

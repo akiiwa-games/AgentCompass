@@ -1,0 +1,36 @@
+{
+  "billing_credits": {
+    "config": {
+      "currentPeriod": {
+        "type": "USAGE_PERIOD_TYPE_WEEKLY",
+        "start": "2026-11-10T08:26:58.149+00:00",
+        "end": "2026-11-17T08:26:58.149+00:00"
+      },
+      "creditUsagePercent": 4.0,
+      "productUsage": [
+        {
+          "product": "GrokBot",
+          "usagePercent": 4.0
+        }
+      ],
+      "isUnifiedBillingUser": true,
+      "prepaidBalance": {
+        "val": 0
+      },
+      "topUpMethod": "TOP_UP_METHOD_SAVED_PAYMENT_METHOD",
+      "billingPeriodStart": "2026-11-01T00:00:00.000+00:00",
+      "billingPeriodEnd": "2026-12-01T00:00:00.000+00:00"
+    }
+  },
+  "settings": {
+    "subscription_tier_display": "SuperGrok",
+    "on_demand_enabled": null,
+    "allow_access": true
+  },
+  "user_subscription": {
+    "subscriptionTier": "GrokPro",
+    "hasGrokCodeAccess": true,
+    "cursorMerged": false,
+    "isZdr": false
+  }
+}

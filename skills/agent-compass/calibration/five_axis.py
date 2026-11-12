@@ -49,7 +49,8 @@ scores on the four categories and the quota economy together. Nothing else score
   else `tier.aa_index`, else same-series sibling). Its one use is estimating a facet a model lacks.
 - A row that `accounts.json` `same_model` declares to be the very model another row names (a cited vendor statement with
   its `url`, or a dated `kind: "maintainer"` declaration) takes that model's facets as they stand, measured or
-  estimated (method `same_model`), for the categories the row `carries`, and its Time/Task.
+  estimated (method `same_model`), for the categories the row `carries`, plus its Time/Task (`duration`) and
+  `usd_per_hour` when carried.
 - usd_per_hour has one basis (rounds 8-9, user 2026-11-09 "全部都用arena"): `arena.agent_sessions` (arena.ai Agent / Overall
   real sessions, Cost/Task P50 / Time/Task P50 x 60, kind `community`), each source's value at High (else its effort-less
   listing, else the median of its listed efforts). For a model arena does not list with cost and time, the labelled
@@ -1388,6 +1389,24 @@ def convert_usd(usd, rows, scorer, meas, acc, tier):
                       'used': [],
                       'sources': {'base': {**usd[b], 'model': b}, 'ratio': round(ratio, 4), 'prices': prices, 'token_mix': mix}}
             break
+    for m, entry in sorted(same.items()):
+        base = entry.get('model')
+        if (m in usd and usd[m].get('value') is None
+                and 'usd_per_hour' in (entry.get('carries') or ())
+                and (usd.get(base) or {}).get('value') is not None):
+            decl = {k: entry[k] for k in ('kind', 'statement', 'url', 'as_of') if entry.get(k)}
+            usd[m] = {
+                'value': usd[base]['value'],
+                'status': 'ok',
+                'kind': entry.get('kind') or 'maintainer',
+                'method': 'same_model',
+                'base_model': base,
+                'fallback': False,
+                'merge': f"same_model: usd_per_hour of {base} ({entry.get('statement') or entry.get('url') or entry.get('kind')})",
+                'used': list(usd[base].get('used') or ()),
+                **({k: v for k, v in decl.items() if k != 'kind'}),
+                'sources': {'base': {**usd[base], 'model': base}, 'declaration': decl},
+            }
 
 
 def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None):

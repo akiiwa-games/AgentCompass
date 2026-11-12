@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import usage_core as usage
 
+FIXTURES = json.loads((Path(__file__).resolve().parent / "fixtures" / "grok-api-responses.json").read_text(encoding="utf-8"))
 PAYLOAD = {"config": {"currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY", "start": "2026-10-27T08:26:58.149+00:00",
                                         "end": "2026-11-03T08:26:58.149+00:00"},
                       "creditUsagePercent": 75.0, "productUsage": [{"product": "GrokBuild", "usagePercent": 71.0}],
@@ -56,13 +57,91 @@ class GrokCliBillingTests(unittest.TestCase):
 
     def test_an_unexpired_login_reads_the_cli_endpoint(self):
         self.write_login(datetime.now(timezone.utc) + timedelta(hours=1))
-        with patch.object(usage.urllib.request, "urlopen", return_value=Response(json.dumps(PAYLOAD).encode())) as call,                 patch.object(usage, "cache_put_provider"):
+        responses = [
+            Response(json.dumps(PAYLOAD).encode()),
+            Response(json.dumps(FIXTURES["settings"]).encode()),
+        ]
+        with patch.object(usage.urllib.request, "urlopen", side_effect=responses) as call,                 patch.object(usage, "cache_put_provider"):
             result = usage.fetch_grok_usage()
-        request = call.call_args.args[0]
+        request = call.call_args_list[0].args[0]
         self.assertEqual(request.full_url, usage.GROK_CLI_BILLING_URL)
         self.assertEqual(request.get_header("Authorization"), "Bearer access")
+        self.assertEqual(call.call_args_list[1].args[0].full_url, usage.GROK_CLI_SETTINGS_URL)
         self.assertTrue(result.available)
+        self.assertEqual(result.plan_label, "SuperGrok")
+        self.assertEqual(result.plan_source, "settings_api")
+        self.assertIsNone(result.usage_details)
         self.assertEqual([(w.id, w.used_pct) for w in result.windows], [("credits", 75.0)])
+
+    def test_settings_and_user_subscription_fixtures_detect_tier_or_surface_error(self):
+        self.write_login(datetime.now(timezone.utc) + timedelta(hours=1))
+        # 1) /v1/settings returns subscription_tier_display -> plan_label persisted, no user_api call needed.
+        with patch.object(
+            usage.urllib.request,
+            "urlopen",
+            side_effect=[
+                Response(json.dumps(FIXTURES["billing_credits"]).encode()),
+                Response(json.dumps(FIXTURES["settings"]).encode()),
+            ],
+        ) as call:
+            res_settings = usage.fetch_grok_usage()
+        self.assertEqual([c.args[0].full_url for c in call.call_args_list],
+                         [usage.GROK_CLI_BILLING_URL, usage.GROK_CLI_SETTINGS_URL])
+        self.assertEqual(res_settings.plan_label, "SuperGrok")
+        self.assertEqual(res_settings.plan_source, "settings_api")
+        self.assertEqual([(w.id, w.used_pct) for w in res_settings.windows], [("credits", 4.0)])
+        cached = usage.load_usage_cache()["providers"]["grok"]
+        self.assertEqual(cached["plan_label"], "SuperGrok")
+        self.assertEqual(cached["plan_source"], "settings_api")
+
+        # 2) /v1/settings fails -> falls back to /v1/user?include=subscription (subscriptionTier).
+        settings_500 = usage.urllib.error.HTTPError(
+            usage.GROK_CLI_SETTINGS_URL, 500, "Internal Server Error", {}, io.BytesIO(b"{}")
+        )
+        with patch.object(
+            usage.urllib.request,
+            "urlopen",
+            side_effect=[
+                Response(json.dumps(FIXTURES["billing_credits"]).encode()),
+                settings_500,
+                Response(json.dumps(FIXTURES["user_subscription"]).encode()),
+            ],
+        ) as call:
+            res_user = usage.fetch_grok_usage()
+        self.assertEqual(
+            [c.args[0].full_url for c in call.call_args_list],
+            [usage.GROK_CLI_BILLING_URL, usage.GROK_CLI_SETTINGS_URL, usage.GROK_CLI_USER_SUBSCRIPTION_URL],
+        )
+        self.assertEqual(res_user.plan_label, "GrokPro")
+        self.assertEqual(res_user.plan_source, "user_api")
+        self.assertIsNone(res_user.usage_details)
+
+        # 3) Both tier endpoints fail/omit -> plan_label stays None with surfaced plan_tier_error, never defaulted.
+        settings_empty = Response(b"{}")
+        user_503 = usage.urllib.error.HTTPError(
+            usage.GROK_CLI_USER_SUBSCRIPTION_URL, 503, "Service Unavailable", {}, io.BytesIO(b"{}")
+        )
+        with patch.object(
+            usage.urllib.request,
+            "urlopen",
+            side_effect=[
+                Response(json.dumps(FIXTURES["billing_credits"]).encode()),
+                settings_empty,
+                user_503,
+            ],
+        ):
+            res_unknown = usage.fetch_grok_usage()
+        self.assertTrue(res_unknown.available)
+        self.assertIsNone(res_unknown.plan_label)
+        self.assertIsNone(res_unknown.plan_source)
+        self.assertEqual(
+            res_unknown.usage_details,
+            {"plan_tier_error": "settings response omitted tier; user HTTP 503"},
+        )
+
+        # 4) Unsafe strings (emails/tokens) are rejected by _extract_grok_tier.
+        self.assertIsNone(usage._extract_grok_tier({"subscription_tier_display": "user@example.com"}))
+        self.assertIsNone(usage._extract_grok_tier({"subscriptionTier": "tok/" + "x" * 80}))
 
     def test_an_expired_login_is_neither_refreshed_nor_rewritten(self):
         self.write_login(datetime.now(timezone.utc) - timedelta(minutes=1))

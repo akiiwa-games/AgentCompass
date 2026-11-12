@@ -2051,6 +2051,18 @@
      "listed_effort": null
     }
    ],
+   "image_input": [
+    {
+     "source": "maintainer.image_input",
+     "kind": "maintainer",
+     "value": true,
+     "as_of": "2026-11-12",
+     "fetched_at": null,
+     "url": null,
+     "statement": "maintainer: claude-fable-5-2 accepts image input",
+     "method": "maintainer declaration of image-input modality"
+    }
+   ],
    "fast_mode": [
     {
      "source": "vendor.fast_mode",
@@ -2090,18 +2102,6 @@
      "url": "https://platform.claude.com/docs/en/about-claude/pricing",
      "method": "USD per million tokens (Anthropic API pricing documentation)",
      "listed_as": "claude-fable-5-2"
-    }
-   ],
-   "image_input": [
-    {
-     "source": "maintainer.image_input",
-     "kind": "maintainer",
-     "value": true,
-     "as_of": "2026-11-12",
-     "fetched_at": null,
-     "url": null,
-     "statement": "maintainer: claude-fable-5-2 accepts image input",
-     "method": "maintainer declaration of image-input modality"
     }
    ]
   },

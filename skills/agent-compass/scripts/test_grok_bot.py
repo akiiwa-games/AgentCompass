@@ -191,7 +191,7 @@ class GrokBotTests(unittest.TestCase):
                 bot = plan['usage']['accounts']['grok-bot']
                 self.assertEqual(bot['windows'], plan['usage']['accounts']['grok']['windows'])
                 self.assertEqual(bot['status'], plan['usage']['accounts']['grok']['status'])
-                self.assertIsNone(candidate['expected_usd'])  # No invented Bot dollar price.
+                self.assertGreater(candidate['expected_usd'], 0)
                 if blocked and not stale:
                     with self.assertRaisesRegex(ValueError, 'credits.*launch protection'):
                         dispatch_registry.check_launch_quota(candidate['bundle'], accounts, usage, now)
@@ -405,17 +405,20 @@ class GrokBotTests(unittest.TestCase):
                                   usage or {'accounts': {}},
                                   accounts=applied, records=[], overrides=[],
                                   host_policy_config={'allowed_accounts': ['grok-bot'] if allowed else []})
-        # No public source gives the shared Grok credits window a capacity: the bot is out of automatic routing with a
-        # surfaced data error, and a named dispatch still reaches it.
+        # Without a detected Grok subscription tier, the bot is out of automatic routing with a surfaced Mode-B
+        # plan-unknown error, while a named dispatch still reaches it.
         unnamed = plan()
         self.assertEqual(unnamed['choice'], 'none')
-        self.assertTrue(any('capacity_unknown' in r for c in unnamed['ranking'] if c['id'] == 'grok_bot' for r in c['excluded']))
+        excluded_text = ' '.join(r for c in unnamed['ranking'] if c['id'] == 'grok_bot' for r in c['excluded'])
+        self.assertIn('capacity_unknown', excluded_text)
+        self.assertIn('plan unknown', excluded_text)
         named = plan(model='grok-bot')
         self.assertEqual(named['choice'], 'grok_bot')
         candidate = next(c for c in named['ranking'] if c['id'] == 'grok_bot')
-        self.assertIsNone(candidate['expected_usd'])
+        self.assertGreater(candidate['expected_usd'], 0)
         self.assertIsNone(candidate['expected_pct'])
         self.assertIn('capacity_unknown', ' '.join(candidate['notes']))
+        self.assertIn('plan unknown', ' '.join(candidate['notes']))
         for needs, reason in [({'local_only': True}, 'local-only'), ({'file_transfer': True}, 'local files'),
                               ({'outbound_ok': False}, 'outbound')]:
             with self.subTest(needs=needs):
@@ -442,6 +445,94 @@ class GrokBotTests(unittest.TestCase):
         (runner.STATE / 'config.json').unlink()
         snapshot = provider_inventory.discover(home, env)
         self.assertEqual(snapshot['accounts']['grok-bot']['status'], 'missing_configuration')
+
+    def test_detected_plan_runtime_rules_scarcity_exhaustion_and_unknown_tier_exclusion(self):
+        import axis_scores
+        now = datetime(2026, 11, 12, 4, tzinfo=timezone.utc)
+        home = self.root / 'tier-home'
+        (home / '.grok').mkdir(parents=True, exist_ok=True)
+        (home / '.grok' / 'auth.json').write_text(json.dumps({
+            'https://auth.x.ai::client': {'key': 'tok-1', 'expires_at': (now + timedelta(hours=2)).isoformat()}
+        }))
+        fake_cli = self.root / 'tier-gbot.mjs'
+        fake_cli.touch()
+        (runner.STATE / 'config.json').write_text(json.dumps({'bot_id': 'bot-2'}))
+        cache_path = self.root / 'tier-usage.json'
+        env = {'PATH': '', 'ROUTER_STATE_DIR': str(self.root), 'ROUTER_USAGE_CACHE': str(cache_path)}
+        reset_iso = (now + timedelta(days=5)).isoformat()
+        task = {
+            'objective': 'Draft a multi-perspective architectural trade-off memo',
+            'expected_hours': 1.0,
+            'needs': {'local_only': False},
+            'profile': {
+                'work_kind': 'text_in_text_out', 'reasoning_depth': 3, 'code_complexity': 0,
+                'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
+                'read_only_review': False, 'access': 'read-only', 'expected_hours': 1.0,
+                'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'exploration',
+                'multi_task': False, 'task_count': '1',
+                'axis_demand': {'divergence': 2, 'coding': 0, 'aesthetics': 1, 'tool_operation': 0},
+            },
+        }
+
+        def evaluate_grok_bot(plan_label, used_pct, tier_error=None, *, host_policy_cfg=None, read_local=False):
+            grok_row = {
+                'provider_id': 'grok', 'available': True, 'stale': False, 'fetched_at': now.isoformat(),
+                'plan_label': plan_label, 'plan_source': 'settings_api' if plan_label else None,
+                'windows': [{'id': 'credits', 'used_pct': used_pct, 'resets_at': reset_iso}],
+            }
+            if tier_error:
+                grok_row['usage_details'] = {'plan_tier_error': tier_error}
+            cache_path.write_text(json.dumps({'providers': {
+                'grok': grok_row,
+                'claude': {
+                    'provider_id': 'claude', 'available': True, 'stale': False, 'fetched_at': now.isoformat(),
+                    'plan_label': 'pro', 'plan_source': 'profile_api',
+                    'windows': [
+                        {'id': 'five_hour', 'used_pct': 10.0, 'resets_at': (now + timedelta(hours=4)).isoformat()},
+                        {'id': 'seven_day', 'used_pct': 10.0, 'resets_at': reset_iso},
+                    ],
+                },
+            }}))
+            with patch.object(provider_inventory, 'GROK_BOT_CLI', fake_cli), \
+                    patch.object(provider_inventory.shutil, 'which', return_value='node'):
+                snap = provider_inventory.discover(home, env, now=now)
+            # Keep an outside alternative ('claude') active so opportunity_cost prices against a positive-fit rival.
+            snap['accounts']['claude'] = {
+                'family': 'claude', 'status': 'ready', 'billing': 'subscription',
+                'plan': 'pro', 'plan_source': 'profile_api', 'usage_binding': 'matches',
+                'credential_key': 'c1', 'identity': 'c1',
+            }
+            fleet = provider_inventory.apply(account_fleet.load_accounts(account_fleet.reference_fleet_path()), snap)
+            usage = route_judge.usage_snapshot(cache_path, accounts=['grok-bot', 'claude'], now=now)
+            res = allocator.plan(task, usage, now=now, accounts=fleet, records=[], overrides=[],
+                                 host_policy_config=host_policy_cfg, read_local_state=read_local)
+            return next(c for c in res['ranking'] if c['id'] == 'grok_bot'), fleet
+
+        # Rule: undetectable tier -> surfaced Mode-B exclusion naming unknown plan and the collector's reason.
+        unknown_cand, _ = evaluate_grok_bot(None, 4.0, tier_error='settings HTTP 500; user HTTP 503')
+        unknown_excl = ' '.join(unknown_cand['excluded'])
+        self.assertIn('capacity_unknown', unknown_excl)
+        self.assertIn('plan unknown', unknown_excl)
+        self.assertIn('settings HTTP 500', unknown_excl)
+
+        # Rule: detected tier -> eligible in public defaults even when local host-policy excludes grok-bot on disk;
+        # usd/h equals Opus 5.5's; nearest-Claude-plan scaling evidence is surfaced; higher used_pct -> higher opportunity cost.
+        local_policy = self.root / 'host-policy.json'
+        local_policy.write_text(json.dumps({'allowed_accounts': ['claude']}))
+        with patch.object(allocator.host_policy, 'POLICY_PATH', local_policy, create=True):
+            low_cand, low_fleet = evaluate_grok_bot('SuperGrok', 5.0, host_policy_cfg=None, read_local=False)
+            high_cand, _ = evaluate_grok_bot('SuperGrok', 85.0, host_policy_cfg=None, read_local=False)
+        self.assertEqual(low_cand['excluded'], [])
+        self.assertEqual(high_cand['excluded'], [])
+        overlaid = axis_scores.five_axis_overlay(low_fleet)
+        self.assertAlmostEqual(low_cand['five_axis_price']['usd_per_hour'],
+                               overlaid['models']['claude-opus-5-5']['usd_per_hour'], places=3)
+        self.assertIn('nearest plan by price is claude/pro', ' '.join(low_cand['notes']))
+        self.assertGreater(high_cand['components']['opportunity_cost'], low_cand['components']['opportunity_cost'])
+
+        # Rule: exhausted credits window excludes grok-bot.
+        exhausted_cand, _ = evaluate_grok_bot('SuperGrok', 99.0, host_policy_cfg=None, read_local=False)
+        self.assertTrue(any('credits' in r for r in exhausted_cand['excluded']), exhausted_cand['excluded'])
 
     def test_roll_delivery_preserves_receipts_without_replay(self):
         prompt = self.root / 'prompt.md'
@@ -540,7 +631,7 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
         self.assertEqual(decisions[0]['bundle']['bundle_id'], 'grok_bot')
         self.assertIsNone(decisions[0]['bundle']['effort'])
         ledger = json.loads(Path(env['ROUTER_LEDGER']).read_text().splitlines()[-1])
-        self.assertIsNone(ledger.get('expected_usd'))
+        self.assertGreater(ledger.get('expected_usd'), 0)
         # Ordinary automatic roll uses the same record/registry path, with only Bot transport mocked.
         host_policy.write_text(json.dumps({'allowed_accounts': ['grok-bot']}))
         automatic = list(command)

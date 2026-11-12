@@ -379,13 +379,14 @@ def evaluate_bundle(bundle, task, ctx):
                     result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
                     continue
                 err = f'{wid} capacity_unknown (quota unknown, spend unpriced)'
+                plan_suffix = f"; plan unknown ({spec['plan_unknown_reason']})" if spec.get('plan_unknown_reason') else ''
                 if named:
                     local_u = spec.get('local_spend_usd')
                     local_note = f'; local opencode.db lower-bound spend ~${local_u:.2f}' if isinstance(local_u, (int, float)) and local_u > 0 else ''
-                    result['notes'].append(f'data error: {err}; dispatched because it was named{local_note}')
-                    result.setdefault('data_errors', []).append(err)
+                    result['notes'].append(f'data error: {err}; dispatched because it was named{plan_suffix}{local_note}')
+                    result.setdefault('data_errors', []).append(f'{err}{plan_suffix}')
                 else:
-                    exclude(f'data error: {err} (out of automatic routing; name the model to dispatch it)')
+                    exclude(f'data error: {err}{plan_suffix} (out of automatic routing; name the model to dispatch it)')
                 continue
             if not state['known']:
                 if state['short']:
@@ -464,6 +465,10 @@ def evaluate_bundle(bundle, task, ctx):
                 if 100.0 - rem_need < policy['safety_margin_pct']:
                     task_exclude(f'{wid} full capacity (100%) is short of the ~{rem_need:.1f}% the work needs per period plus {policy["safety_margin_pct"]}% margin')
             five_window_states[wid] = (wspec, state, cap_usd_w, unit)
+            cap_ev = ((spec.get('capacity_source') or {}).get(wid) or {}).get('evidence')
+            if cap_ev:
+                result['notes'].append(f'{wid} capacity: {cap_ev}')
+                result['components'].setdefault('capacity_evidence', {})[wid] = cap_ev
             if state['stale'] and 'capacity from a stale observation' not in result['notes']:
                 result['notes'].append('capacity from a stale observation')
             if acct_usage.get('status') != 'fresh' and acct_usage.get('fetched_at') and not result['components'].get('reading_at'):
@@ -474,13 +479,14 @@ def evaluate_bundle(bundle, task, ctx):
                                        f"(the latest read did not succeed; it is the last good reading of this reset period)")
         if spec.get('capacity_unknown') and not result.get('_five_axis_windows'):
             err = 'capacity_unknown (quota unknown, spend unpriced)'
+            plan_suffix = f"; plan unknown ({spec['plan_unknown_reason']})" if spec.get('plan_unknown_reason') else ''
             if named:
                 local_u = spec.get('local_spend_usd')
                 local_note = f'; local opencode.db lower-bound spend ~${local_u:.2f}' if isinstance(local_u, (int, float)) and local_u > 0 else ''
-                result['notes'].append(f'data error: {err}; dispatched because it was named{local_note}')
-                result.setdefault('data_errors', []).append(err)
+                result['notes'].append(f'data error: {err}; dispatched because it was named{plan_suffix}{local_note}')
+                result.setdefault('data_errors', []).append(f'{err}{plan_suffix}')
             else:
-                exclude(f'data error: {err} (out of automatic routing; name the model to dispatch it)')
+                exclude(f'data error: {err}{plan_suffix} (out of automatic routing; name the model to dispatch it)')
         if (not spec.get('unlimited') and not account_out and not result.get('data_errors')
                 and not any(not st.get('short') for _, st, _, _ in five_window_states.values())):
             # Priced on the weekly window or not at all (round 15): a candidate with no long reset-period window in its
@@ -592,8 +598,8 @@ def evaluate_bundle(bundle, task, ctx):
     if dur_mult is not None:
         result['components']['duration_multiplier'] = round(dur_mult, 4)
     result['expected_pct'] = result['chain_pct'] = None
-    result['expected_usd'] = None if spec.get('billing') == 'unknown' else round(step_usd, 2)
-    result['chain_usd'] = None if spec.get('billing') == 'unknown' else round(chain_usd, 2)
+    result['expected_usd'] = None if billing == 'unknown' else round(step_usd, 2)
+    result['chain_usd'] = None if billing == 'unknown' else round(chain_usd, 2)
     result['available_in_hours'] = available_at
     action = 'start'
     if worker:
@@ -618,7 +624,7 @@ def evaluate_bundle(bundle, task, ctx):
                                                           / max(1, sum(r['demand'] for r in axis_rows.values())), 4))
     result['five_axis_demand'] = task['five_axis_demand']
     result['five_axis_fit'] = axis_rows
-    usd_rate = 0.0 if spec.get('unlimited') or spec.get('unmetered') or spec.get('billing') == 'unknown' else         quota_economy.model_usd_per_hour(model, info)       # dollars per hour of this candidate's own work; effort is in its duration
+    usd_rate = 0.0 if spec.get('unlimited') or spec.get('unmetered') or billing == 'unknown' else quota_economy.model_usd_per_hour(model, info)       # dollars per hour of this candidate's own work; effort is in its duration
     result['five_axis_price'] = {'usd_per_hour': round(usd_rate, 4)}
     result['components'].update({'fit': round(fit, 3), 'continuity': 0.0})
     if action == 'resume' and task['coupling'] in ('medium', 'high'):

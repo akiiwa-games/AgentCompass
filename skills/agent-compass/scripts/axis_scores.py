@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 
+import account_state
 import provider_inventory
 import public_data
 import user_scores
@@ -200,6 +201,116 @@ def opencode_local_spend(models_table, discovery=None, *, read_local_db=True):
     return spend, sorted(unpriced)
 
 
+def _capacity_rules(accounts):
+    """Map `(target_family, target_window) -> rule` for valid `same_model[row].capacity_rule` declarations."""
+    rules = {}
+    for model_key, entry in sorted((accounts.get('same_model') or {}).items()):
+        if not isinstance(entry, dict) or not public_data._valid_public_declaration(entry):
+            continue
+        rule = entry.get('capacity_rule')
+        if public_data._valid_capacity_rule(rule):
+            rules[(rule['target_family'].strip(), rule['target_window'].strip())] = {**rule, 'model': model_key}
+    return rules
+
+
+def _plan_unknown_text(src_spec, raw_plan):
+    if isinstance(src_spec, dict) and src_spec.get('plan_unknown'):
+        return str(src_spec['plan_unknown'])
+    raw_str = str(raw_plan or '').strip()
+    if account_state.plan_without_vendor(raw_str) in ('', 'unknown', 'subscription'):
+        return 'subscription tier not reported'
+    return f'unrecognized tier {raw_str!r}'
+
+
+def _resolve_rule_capacity(accounts, community, cap_family, raw_plan, plan, src_spec, rule, shipped=None):
+    """Apply a `same_model` monthly-price capacity rule at runtime from `plan-templates.json` and `community` ladder."""
+    table = provider_inventory.plan_table(accounts, cap_family, shipped=shipped)
+    target_tpl = provider_inventory.plan_defaults(accounts, cap_family, plan, shipped=shipped) if plan and plan in table else None
+    if target_tpl is None:
+        reason = _plan_unknown_text(src_spec, raw_plan)
+        return None, {'status': 'plan_unknown', 'age_days': None, 'plan': None, 'reason': reason}, reason
+    target_price = target_tpl.get('price_usd_per_month')
+    target_psrc = target_tpl.get('price_source')
+    if isinstance(target_price, bool) or not isinstance(target_price, (int, float)) or target_price <= 0:
+        reason = f'plan {plan!r} has no paid monthly price (${target_price or 0:g}/mo)'
+        return None, {'status': 'unpriced_plan', 'age_days': None, 'plan': plan, 'reason': reason}, reason
+    if not public_data._valid_vendor_price_source(target_psrc):
+        reason = f'plan {plan!r} has no cited vendor price_source'
+        return None, {'status': 'uncited_plan_price', 'age_days': None, 'plan': plan, 'reason': reason}, reason
+    ref_family = rule['reference_family'].strip()
+    ref_window = rule['reference_window'].strip()
+    candidates = []
+    for ref_plan, raw_ref in sorted(provider_inventory.plan_table(accounts, ref_family, shipped=shipped).items()):
+        if not isinstance(raw_ref, dict) or 'alias' in raw_ref:
+            continue
+        ref_tpl = provider_inventory.plan_defaults(accounts, ref_family, ref_plan, shipped=shipped)
+        if not isinstance(ref_tpl, dict):
+            continue
+        ref_price = ref_tpl.get('price_usd_per_month')
+        ref_psrc = ref_tpl.get('price_source')
+        ref_row = ((community.get(ref_family) or {}).get(ref_plan) or {}).get(ref_window) or {}
+        ref_cap = ref_row.get('capacity_usd')
+        if (isinstance(ref_price, bool) or not isinstance(ref_price, (int, float)) or ref_price <= 0
+                or not public_data._valid_vendor_price_source(ref_psrc)
+                or not isinstance(ref_cap, (int, float)) or ref_cap <= 0):
+            continue
+        candidates.append({
+            'plan': ref_plan,
+            'price': float(ref_price),
+            'url': str(ref_psrc['url']).strip(),
+            'cap': float(ref_cap),
+            'row': ref_row,
+        })
+    if not candidates:
+        return None, {'status': 'missing', 'age_days': None, 'plan': plan}, None
+    target_p = float(target_price)
+    exact_matches = [c for c in candidates if abs(c['price'] - target_p) < 1e-9]
+    if exact_matches:
+        chosen = min(exact_matches, key=lambda c: c['plan'])
+        exact = True
+        ratio = 1.0
+    else:
+        chosen = min(candidates, key=lambda c: (abs(c['price'] - target_p), c['price'], c['plan']))
+        exact = False
+        ratio = target_p / chosen['price']
+    scaled = round(ratio * chosen['cap'], 2)
+    target_url = str(target_psrc['url']).strip()
+    ref_url = chosen['url']
+    if exact:
+        evidence = (
+            f"same-price {ref_family} subscription: {ref_family}/{chosen['plan']} ({ref_window}, "
+            f"${chosen['price']:g}/mo [{ref_url}]) matches {cap_family}/{plan} "
+            f"(${target_p:g}/mo [{target_url}]) at 1x -> ${scaled:g}"
+        )
+    else:
+        evidence = (
+            f"no {ref_family} subscription at ${target_p:g}/mo; nearest plan by price is "
+            f"{ref_family}/{chosen['plan']} (${chosen['price']:g}/mo [{ref_url}]), scaled by price ratio "
+            f"{ratio:g}x (${target_p:g}/mo {cap_family}/{plan} [{target_url}] / "
+            f"${chosen['price']:g}/mo {ref_family}/{chosen['plan']}) -> ${scaled:g}"
+        )
+    meta = {
+        'status': chosen['row'].get('status', 'ok'),
+        'age_days': chosen['row'].get('age_days'),
+        'plan': plan,
+        'detected_tier': raw_plan,
+        'plan_price_usd_per_month': target_p,
+        'plan_price_url': target_url,
+        'match': 'exact_price' if exact else 'nearest_price_scaled',
+        'reference_family': ref_family,
+        'reference_plan': chosen['plan'],
+        'reference_window': ref_window,
+        'reference_price_usd_per_month': chosen['price'],
+        'reference_price_url': ref_url,
+        'price_ratio': round(ratio, 6),
+        'capacity_usd': scaled,
+        'rule': {k: rule[k] for k in ('kind', 'as_of', 'statement', 'model') if rule.get(k)},
+        'derived_from': chosen['row'].get('sources') or [],
+        'evidence': evidence,
+    }
+    return scaled, meta, None
+
+
 def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scores=None, local_scores=None):
     """A copy of `accounts` carrying the scoring data of references/five-axis-scores.json plus manual scores
     (`references/user-scores.json` maintainer layer, then local `user-scores.json` when `read_local_state=True`).
@@ -247,6 +358,16 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     local_spend, local_unpriced = opencode_local_spend(
         out.get('models') or {}, out.get('_discovery'), read_local_db=bool(read_local_state))
     community = data.get('capacity') or {}
+    cap_rules = _capacity_rules(out)
+    rule_families = {fam for fam, _ in cap_rules}
+    shipped_templates = provider_inventory._shipped_plan_templates()
+    families_by_account = {}
+    for name, spec in (out.get('accounts') or {}).items():
+        if not isinstance(spec, dict):
+            continue
+        family = str(provider_inventory.account_family(name, out, out.get('_discovery') or {}) or account_fleet.account_family(spec) or '')
+        family = family.removesuffix('-resilient')
+        families_by_account[name] = family
     for name, spec in (out.get('accounts') or {}).items():
         if not isinstance(spec, dict):
             continue
@@ -255,8 +376,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
         # free plan), never by its name. `unmetered` alone does not make one: Dot and ChatGPT Web are purpose-limited
         # channels that usually cannot be used up, and stay in automatic routing (owner, 2026-11-10).
         is_free_pool = bool(spec.get('free_allowance') or str(spec.get('plan') or '') == 'free')
-        family = str(provider_inventory.account_family(name, out, out.get('_discovery') or {}) or account_fleet.account_family(spec) or '')
-        family = family.removesuffix('-resilient')
+        family = families_by_account[name]
         if is_free_pool and spec.get('billing') != 'metered':
             # Round 11 (user 2026-11-10): "free" models are an ordinary quota pool (same C/U/t0/T; a starter allowance
             # has T = inf so recovery line is 0 and X = S). Remove unmetered / unlimited / $0 spend on the five-axis path.
@@ -290,33 +410,74 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
             if family == 'opencode' and local_unpriced:
                 # no cited list price for these models: their spend is a surfaced gap, not $0 and not a borrowed rate
                 spec['local_spend_gap'] = list(local_unpriced)
+        cap_family = family
+        raw_plan = spec.get('plan')
+        src_spec = spec
+        qsrc = provider_inventory.quota_source(name, out)
+        if qsrc != name and isinstance((out.get('accounts') or {}).get(qsrc), dict):
+            src_spec = out['accounts'][qsrc]
+            cap_family = families_by_account.get(qsrc) or cap_family
+            raw_plan = src_spec.get('plan')
         if not spec.get('windows') or spec.get('unmetered'):
+            if not spec.get('unmetered') and not spec.get('unlimited') and cap_family in rule_families:
+                probe_plan = provider_inventory.configured_plan(cap_family, raw_plan, accounts=out, shipped=shipped_templates)
+                probe_table = provider_inventory.plan_table(out, cap_family, shipped=shipped_templates)
+                probe_tpl = provider_inventory.plan_defaults(out, cap_family, probe_plan, shipped=shipped_templates) if probe_plan and probe_plan in probe_table else None
+                probe_price = (probe_tpl or {}).get('price_usd_per_month')
+                if probe_tpl is None or isinstance(probe_price, bool) or not isinstance(probe_price, (int, float)) or probe_price <= 0:
+                    spec['capacity_unknown'] = True
+                    spec['plan_unknown_reason'] = (
+                        _plan_unknown_text(src_spec, raw_plan) if probe_tpl is None
+                        else f'plan {probe_plan!r} has no paid monthly price (${probe_price or 0:g}/mo)'
+                    )
+                else:
+                    spec.pop('capacity_unknown', None)
+                    spec.pop('plan_unknown_reason', None)
             continue
-        plan = provider_inventory.configured_plan(family, spec.get('plan'))
-        if family == 'pi':      # Pi signs in with ChatGPT and spends the Codex account's allowance: its plan's windows
-            family, plan = 'codex', next((provider_inventory.configured_plan('codex', s.get('plan'))
-                                          for n, s in (out.get('accounts') or {}).items() if isinstance(s, dict)
-                                          and str(provider_inventory.account_family(n, out, out.get('_discovery') or {})
-                                                  or account_fleet.account_family(s) or '') == 'codex'), plan)
-        rows_ = (community.get(family) or {}).get(plan) or {}
+        plan = provider_inventory.configured_plan(cap_family, raw_plan, accounts=out, shipped=shipped_templates)
+        if cap_family == 'pi':      # Pi signs in with ChatGPT and spends the Codex account's allowance: its plan's windows
+            cap_family, plan = 'codex', next((provider_inventory.configured_plan('codex', s.get('plan'), accounts=out, shipped=shipped_templates)
+                                              for n, s in (out.get('accounts') or {}).items() if isinstance(s, dict)
+                                              and families_by_account.get(n) == 'codex'), plan)
+        rows_ = (community.get(cap_family) or {}).get(plan) or {}
         explicit_caps = spec.get('capacity_usd') if isinstance(spec.get('capacity_usd'), dict) else {}
         caps = {wid: float(rows_[wid]['capacity_usd']) for wid in spec['windows']
                 if isinstance((rows_.get(wid) or {}).get('capacity_usd'), (int, float))}
+        cap_sources = {wid: {'status': (rows_.get(wid) or {}).get('status', 'missing'),
+                             'age_days': (rows_.get(wid) or {}).get('age_days'), 'plan': plan or None}
+                       for wid in spec['windows']}
+        plan_unknown_reason = None
+        for wid in spec['windows']:
+            if wid in caps:
+                continue
+            rule = cap_rules.get((cap_family, wid))
+            if rule is not None:
+                scaled_val, rule_meta, err_reason = _resolve_rule_capacity(
+                    out, community, cap_family, raw_plan, plan, src_spec, rule, shipped=shipped_templates)
+                cap_sources[wid] = rule_meta
+                if scaled_val is not None:
+                    caps[wid] = scaled_val
+                elif err_reason and not plan_unknown_reason:
+                    plan_unknown_reason = err_reason
         # A free allowance or a metered account (a prepaid $200 proxy) states its own capacity: community data measures
         # subscription plans only. A subscription's packaged figure is not a declaration and stays unknown (round 11).
         if not caps and explicit_caps and (is_free_pool or spec.get('billing') == 'metered'):
             caps = {wid: float(v) for wid, v in explicit_caps.items()
                     if wid in spec['windows'] and isinstance(v, (int, float)) and v > 0}
+            for wid in caps:
+                cap_sources[wid] = {'status': 'explicit', 'age_days': None, 'plan': plan or None}
         spec['capacity_usd'] = caps
-        spec['capacity_source'] = {wid: {'status': ('explicit' if wid in caps and wid not in rows_
-                                                    else (rows_.get(wid) or {}).get('status', 'missing')),
-                                         'age_days': (rows_.get(wid) or {}).get('age_days'), 'plan': plan or None}
-                                   for wid in spec['windows']}
+        spec['capacity_source'] = cap_sources
         unknown = [wid for wid in spec['windows'] if wid not in caps]
         if unknown:
             spec['capacity_unknown'] = True
+            if plan_unknown_reason:
+                spec['plan_unknown_reason'] = plan_unknown_reason
+            else:
+                spec.pop('plan_unknown_reason', None)
         else:
             spec.pop('capacity_unknown', None)
+            spec.pop('plan_unknown_reason', None)
     anchor = data.get('anchor') or {}
     targets = anchor.get('targets') or {}
     if not anchor.get('model') or set(targets) != set(FIVE_AXES):

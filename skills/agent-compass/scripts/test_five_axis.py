@@ -1332,7 +1332,7 @@ class AnchorRelativeTests(unittest.TestCase):
         bot, opus = models['grok-bot'], models['claude-opus-5-5']
         self.assertEqual(bot['image_input']['status'], 'yes')
         self.assertEqual(bot['image_input']['value'], True)
-        self.assertEqual(sorted(declared['carries']), ['aesthetics', 'coding', 'divergence', 'duration'])
+        self.assertEqual(sorted(declared['carries']), ['aesthetics', 'coding', 'divergence', 'duration', 'usd_per_hour'])
         for axis in ('divergence', 'coding', 'aesthetics'):
             mine, theirs = bot['axes'][axis], opus['axes'][axis]
             self.assertEqual(mine['value'], theirs['value'], axis)
@@ -1928,6 +1928,174 @@ class ArenaCaptureTests(unittest.TestCase):
             builder.boards()
         for src in self.ms.ARENA_CAPTURES:
             self.assertIn('not captured', builder.missing[src]['reason'], src)
+
+
+class GrokPlanCapacityRuleTests(unittest.TestCase):
+    """Task 7 redo (user 2026-11-11): Grok tier -> plan & cited price via plan-templates.json, runtime Claude-price
+    capacity rule, Opus 5.5 usd_per_hour via same_model, and zero plan/price literals in Python code paths."""
+
+    def test_detected_tiers_map_to_plan_and_cited_vendor_price_via_data(self):
+        import provider_inventory
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        grok_table = provider_inventory.plan_table(accounts, 'grok')
+        claude_table = provider_inventory.plan_table(accounts, 'claude')
+        expected = [
+            ('SuperGrok', 'supergrok', 30),
+            ('GrokPro', 'supergrok', 30),
+            ('Grok Pro', 'supergrok', 30),
+            ('Premium', 'premium', 30),
+            ('The X Subscription Premium', 'premium', 30),
+            ('Super', 'super', 100),
+            ('SuperGrok Plus', 'super', 100),
+            ('Ultra', 'ultra', 200),
+            ('Plus', 'plus', 8),
+            ('Free', 'free', 0),
+        ]
+        for tier_label, plan_id, monthly_usd in expected:
+            with self.subTest(tier=tier_label):
+                resolved = provider_inventory.configured_plan('grok', tier_label, accounts=accounts)
+                self.assertEqual(resolved, plan_id)
+                self.assertEqual(grok_table[resolved]['price_usd_per_month'], monthly_usd)
+                src = grok_table[resolved]['price_source']
+                self.assertEqual(src['kind'], 'vendor')
+                self.assertTrue(str(src['url']).startswith('https://'))
+        for claude_plan, monthly_usd in (('pro', 20), ('max5', 100), ('max20', 200)):
+            self.assertEqual(claude_table[claude_plan]['price_usd_per_month'], monthly_usd)
+            self.assertEqual(claude_table[claude_plan]['price_source']['kind'], 'vendor')
+            self.assertTrue(str(claude_table[claude_plan]['price_source']['url']).startswith('https://'))
+        for bad in ('UnrecognizedFutureTier', 'subscription'):
+            self.assertIsNone(provider_inventory.plan_defaults(
+                accounts, 'grok', provider_inventory.configured_plan('grok', bad, accounts=accounts)))
+
+    def test_runtime_capacity_matches_same_price_or_scales_nearest_claude_plan_and_yields_to_measurements(self):
+        import provider_inventory
+        scores = axis_scores.load_five_axis()
+        claude_cap = {
+            p: float(scores['capacity']['claude'][p]['seven_day']['capacity_usd'])
+            for p in ('pro', 'max5', 'max20')
+        }
+
+        def overlay_for_tier(tier_label, extra_scores=None):
+            snap = {
+                'accounts': {
+                    'grok': {
+                        'family': 'grok', 'status': 'ready', 'billing': 'subscription',
+                        'plan': provider_inventory.configured_plan('grok', tier_label) if tier_label else None,
+                        'plan_source': 'settings_api' if tier_label else None,
+                        'usage_windows': ['credits'],
+                    },
+                    'grok-bot': {'family': 'grok-bot', 'status': 'ready', 'billing': 'unknown'},
+                },
+                'launchers': {},
+            }
+            fleet = provider_inventory.apply(account_fleet.load_accounts(account_fleet.reference_fleet_path()), snap)
+            return axis_scores.five_axis_overlay(fleet, extra_scores or scores)
+
+        # Exact-price matches: Super ($100) == claude/max5 ($100), Ultra ($200) == claude/max20 ($200).
+        for tier_label, ref_plan in (('Super', 'max5'), ('Ultra', 'max20')):
+            over = overlay_for_tier(tier_label)
+            for acct in ('grok', 'grok-bot'):
+                self.assertFalse(over['accounts'][acct].get('capacity_unknown'))
+                self.assertAlmostEqual(over['accounts'][acct]['capacity_usd']['credits'], claude_cap[ref_plan], places=2)
+                src = over['accounts'][acct]['capacity_source']['credits']
+                self.assertEqual((src['match'], src['price_ratio'], src['reference_plan']), ('exact_price', 1.0, ref_plan))
+                self.assertIn(f'same-price claude subscription: claude/{ref_plan}', src['evidence'])
+
+        # Nearest-price ratio scaling: SuperGrok ($30) -> 30/20 * claude/pro ($20); Plus ($8) -> 8/20 * claude/pro ($20).
+        for tier_label, ratio in (('SuperGrok', 30.0 / 20.0), ('Plus', 8.0 / 20.0)):
+            over = overlay_for_tier(tier_label)
+            expected = round(claude_cap['pro'] * ratio, 2)
+            for acct in ('grok', 'grok-bot'):
+                self.assertFalse(over['accounts'][acct].get('capacity_unknown'))
+                self.assertAlmostEqual(over['accounts'][acct]['capacity_usd']['credits'], expected, places=2)
+                src = over['accounts'][acct]['capacity_source']['credits']
+                self.assertEqual((src['match'], src['reference_plan']), ('nearest_price_scaled', 'pro'))
+                self.assertAlmostEqual(src['price_ratio'], ratio, places=4)
+                self.assertIn('nearest plan by price is claude/pro', src['evidence'])
+
+        # Free ($0) and missing tier stay capacity_unknown (never defaulted).
+        for unpriced in ('Free', None):
+            over = overlay_for_tier(unpriced)
+            self.assertTrue(over['accounts']['grok-bot'].get('capacity_unknown'))
+            self.assertEqual(over['accounts']['grok-bot']['capacity_usd'], {})
+
+        # Direct measurement on capacity['grok']['supergrok']['credits'] overrides the maintainer rule automatically.
+        measured_scores = json.loads(json.dumps(scores))
+        measured_scores.setdefault('capacity', {}).setdefault('grok', {}).setdefault('supergrok', {})['credits'] = {
+            'capacity_usd': 410.0, 'rung': 1, 'status': 'ok', 'sources': [{'source': 'community.test', 'value': 410.0}],
+        }
+        over_measured = overlay_for_tier('SuperGrok', extra_scores=measured_scores)
+        self.assertEqual(over_measured['accounts']['grok-bot']['capacity_usd']['credits'], 410.0)
+        self.assertNotIn('rule', over_measured['accounts']['grok-bot']['capacity_source']['credits'])
+
+    def test_grok_bot_usd_per_hour_matches_opus_5_5_and_yields_to_direct_measurement(self):
+        import five_axis
+        shipped = axis_scores.load_five_axis()['models']
+        self.assertEqual(shipped['grok-bot']['usd_per_hour']['value'], shipped['claude-opus-5-5']['usd_per_hour']['value'])
+        self.assertIn('same_model', shipped['grok-bot']['usd_per_hour']['merge'])
+        self.assertIn('claude-opus-5-5', shipped['grok-bot']['usd_per_hour']['merge'])
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        overlaid = axis_scores.five_axis_overlay(accounts)
+        self.assertEqual(overlaid['models']['grok-bot']['usd_per_hour'],
+                         overlaid['models']['claude-opus-5-5']['usd_per_hour'])
+        # Direct measurement overrides same_model inheritance.
+        meas = {'models': {
+            'claude-opus-5-5': {'usd_per_hour': [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high', 'value': 22.86}]},
+            'grok-bot': {'usd_per_hour': [{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high', 'value': 19.5}]},
+        }}
+        scorer = five_axis.Scorer(meas, accounts)
+        rows = {m: {'fields': f} for m, f in meas['models'].items()}
+        usd = five_axis.usd_community_mix(scorer, rows, meas)
+        five_axis.convert_usd(usd, rows, scorer, meas, accounts, {'claude-opus-5-5': {'value': 0.0}, 'grok-bot': {'value': 0.0}})
+        self.assertEqual(usd['grok-bot']['value'], 19.5)
+        self.assertNotIn('same_model', usd['grok-bot']['merge'])
+
+    def test_no_grok_plan_or_price_literals_appear_in_python_code_or_maintainer_rule(self):
+        import ast
+        accounts = json.loads((Path(__file__).resolve().parent.parent / 'references' / 'accounts.json').read_text(encoding='utf-8'))
+        rule = accounts['same_model']['grok-bot']['capacity_rule']
+        # Rule declaration contains no plan names and no numeric literals.
+        for key, val in rule.items():
+            self.assertNotIsInstance(val, (int, float), f'numeric literal in capacity_rule.{key}')
+            if isinstance(val, str):
+                self.assertNotIn(val.lower(), {'supergrok', 'grokpro', 'premium', 'super', 'ultra', 'plus', 'pro', 'max5', 'max20'})
+
+        scripts_dir = Path(__file__).resolve().parent
+        cal_dir = scripts_dir.parent / 'calibration'
+        forbidden_plan_strings = {
+            'supergrok', 'grokpro', 'grok pro', 'supergrok plus', 'supergrokplus', 'supergrok heavy',
+            'x subscription plus', 'x subscription premium', 'x subscription super', 'x subscription ultra',
+        }
+        target_files = [
+            scripts_dir / 'axis_scores.py',
+            scripts_dir / 'candidate_eval.py',
+            scripts_dir / 'provider_inventory.py',
+            scripts_dir / 'public_data.py',
+            cal_dir / 'five_axis.py',
+        ]
+        for path in target_files:
+            tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    self.assertNotIn(node.value.strip().lower(), forbidden_plan_strings, f'{path.name}:{node.lineno}')
+
+        # Also check the Grok tier extraction / resolution functions specifically for zero plan or monthly price literals.
+        usage_tree = ast.parse((scripts_dir / 'usage_core.py').read_text(encoding='utf-8'))
+        for node in ast.walk(usage_tree):
+            if isinstance(node, ast.FunctionDef) and 'grok' in node.name.lower():
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                        self.assertNotIn(child.value.strip().lower(), forbidden_plan_strings,
+                                         f'usage_core.py:{node.name}:{child.lineno}')
+
+        forbidden_monthly_prices = {8, 8.0, 20, 20.0, 30, 30.0, 100, 100.0, 200, 200.0, 300, 300.0}
+        axis_tree = ast.parse((scripts_dir / 'axis_scores.py').read_text(encoding='utf-8'))
+        for node in ast.walk(axis_tree):
+            if isinstance(node, ast.FunctionDef) and node.name in ('_capacity_rules', '_resolve_rule_capacity', '_plan_unknown_text'):
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Constant) and isinstance(child.value, (int, float)) and not isinstance(child.value, bool):
+                        self.assertNotIn(child.value, forbidden_monthly_prices,
+                                         f'subscription price literal {child.value} in axis_scores.{node.name}:{child.lineno}')
 
 
 if __name__ == '__main__':
