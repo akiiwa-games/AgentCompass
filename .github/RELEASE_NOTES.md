@@ -1,4 +1,4 @@
-AgentCompass v0.4.8 scores every model on four categories and on quota economy, and nothing else. It builds on v0.4.5.
+AgentCompass v0.4.9 scores every model on four categories and on quota economy, and nothing else. It builds on v0.4.5.
 
 - **One scoring.**
   - The classifier states how much the task needs (0–3) of four categories: creativity (`divergence`), coding, aesthetics and tool operation.
@@ -26,6 +26,6 @@ AgentCompass v0.4.8 scores every model on four categories and on quota economy, 
   - English layout fixes.
 - **Unoffered models.** A model the provider no longer offers is excluded on its own. Other models on the account stay available.
 
-The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.4.8/packaging/SIGNING.md).
+The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.4.9/packaging/SIGNING.md).
 
 Status: alpha. Customize the reference fleet for your own subscriptions.

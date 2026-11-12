@@ -628,6 +628,7 @@ def step_paseo_host(z: Zero):
     doc = parse(result.stdout) or {}
     attempts = doc.get("attempts") or details(doc).get("attempts") or (details(doc).get("worker") or {}).get("attempts") or []
     op.check("roll relaunches the rejected brief by itself and lists both attempts", doc.get("status") == "launched" and len(attempts) >= 2, json.dumps(doc)[:400])
+    relaunched = (details(doc).get("worker") or {}).get("dispatch_id")
     z.set_fault(create="reject")
     result = z.call(op, "roll", "--task", z.task("ok", "reject-fallback-off"), **{**env, "AGENTCOMPASS_ROLL_FALLBACK": "off"})
     doc = parse(result.stdout) or {}
@@ -637,6 +638,11 @@ def step_paseo_host(z: Zero):
     result = z.call(op, "roll", "--task", z.task("ok", "after-reject"), **env)
     doc = parse(result.stdout) or {}
     op.check("a new roll after the failure launches normally", doc.get("status") == "launched", json.dumps(doc)[:300])
+    # The step owns the workers it launched: both run to completion before the next step counts leftovers.
+    for did in (relaunched, (details(doc).get("worker") or {}).get("dispatch_id")):
+        if did:
+            row = settle(z, op, did, "completed", env)
+            op.check("the worker it launched completes", row.get("state") == "completed", row)
 
     op = run.operation("Paseo host: worker errors, crashes and quota", "the host reports the failure; the registry ends failed; a quota text marks the account exhausted for the next plan")
     for scenario in ("error", "crash", "quota"):
