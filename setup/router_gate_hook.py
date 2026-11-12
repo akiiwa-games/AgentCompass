@@ -841,6 +841,12 @@ def check_account_quota_exhausted(
                 records = registry.reservations(now=now, read_only=True)
             except Exception:
                 records = ()
+            # A watcher that died without sending still owes the parent one end notice. A failure here
+            # must not become a launch denial, and a second read does not send it again.
+            try:
+                router_module("dispatch_flow").deliver_end_notices(now=now)
+            except Exception:
+                pass
         if records and (exclude_dispatch_id or exclude_agent_id):
             records = [
                 r for r in records
@@ -1136,14 +1142,14 @@ def evaluate_payload(
 ) -> dict:
     tool_name, tool_input, harness_kind = extract_tool_call(payload)
     tool_name = base_tool_name(tool_name)
-    if os.environ.get("ROUTER_GATE_BYPASS") == "1":
-        return format_response(True, harness_kind)
-
     caller_id = str(payload.get("parent_agent_id") or payload.get("callerAgentId")
                     or os.environ.get("PASEO_AGENT_ID") or "").strip() or None
 
     calls = wrapped_agent_calls(tool_name, tool_input) or [(tool_name, tool_input)]
     calls.extend(cli_turn_calls(tool_name, tool_input))
+
+    if os.environ.get("ROUTER_GATE_BYPASS") == "1":
+        return format_response(True, harness_kind)
     if any(re.split(r'__|\.', name)[-1] in WORKER_QUESTION_TOOLS for name, _ in calls):
         worker = os.environ.get('AGENTCOMPASS_WORKER') == '1' or (
             caller_id and is_delegated_worker(caller_id, paseo_agents_dir))

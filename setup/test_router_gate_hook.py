@@ -997,6 +997,56 @@ class RouterGateHookTests(unittest.TestCase):
             "antigravity", cache, T0, accounts=accounts, bundles=candidates,
             records=[other_record], exclude_dispatch_id="other-dispatch"))
 
+    def test_a_final_report_marker_does_not_change_the_quota_hold(self):
+        registry = gate.router_module("dispatch_registry")
+        agent_id = "22222222-2222-4222-8222-222222222222"
+        row = {
+            "dispatch_id": "dispatch-final",
+            "decision_id": "decision-final",
+            "dispatch_mode": "paseo",
+            "parent_id": "parent-a",
+            "state": "started",
+            "agent_id": agent_id,
+            "created_at": T0.isoformat(),
+            "updated_at": T0.isoformat(),
+            "launched_at": T0.isoformat(),
+            "lease_until": (T0 + dt.timedelta(minutes=10)).isoformat(),
+            "hard_until": (T0 + dt.timedelta(hours=1)).isoformat(),
+            "bundle": {"bundle_id": "lab_sonnet55_high", "account": "claude-lab",
+                       "provider": "claude-lab", "model": "claude-sonnet-5-5"},
+            "expected_usd": 6.0,
+            "usage": {},
+            "request": {"provider": "claude-lab/claude-sonnet-5-5", "labels": {}, "settings": {}},
+            "events": [{"state": "started", "at": T0.isoformat()}],
+        }
+        with registry.transaction() as connection:
+            registry.save(connection, row)
+        quiet = {"tool_name": "send_agent_prompt",
+                 "tool_input": {"agentId": "parent-a", "prompt": "still working", "notifyOnFinish": False}}
+        report = {"tool_name": "send_agent_prompt",
+                  "tool_input": {"agentId": "parent-a", "prompt": "[Worker final report]\ndone", "notifyOnFinish": False}}
+        with mock.patch.dict(os.environ, {"PASEO_AGENT_ID": agent_id, "AGENTCOMPASS_WORKER": "1"}):
+            self.assertEqual(gate.evaluate_payload(quiet, now=T0), {})
+            self.assertEqual(registry.inspect("dispatch-final")["expected_usd"], 6.0)
+            self.assertEqual(gate.evaluate_payload(report, now=T0), {})
+        stored = registry.inspect("dispatch-final")
+        self.assertEqual(stored["state"], "started")
+        self.assertEqual(stored["expected_usd"], 6.0)
+        self.assertNotIn("quota_released_reason", stored)
+        self.assertTrue(registry.reservations(now=T0))
+        other = dict(row, dispatch_id="dispatch-other", decision_id="decision-other", agent_id="worker-b",
+                     expected_usd=6.0, quota_released_reason=None)
+        other.pop("quota_released_reason")
+        with registry.transaction() as connection:
+            registry.save(connection, other)
+        quoted = {"tool_name": "send_agent_prompt",
+                  "tool_input": {"agentId": "worker-b", "prompt": "see [Worker final report] in the contract",
+                                 "notifyOnFinish": False}}
+        with mock.patch.dict(os.environ, {"PASEO_AGENT_ID": "parent-a", "AGENTCOMPASS_WORKER": ""}):
+            gate.evaluate_payload(quoted, now=T0)
+        self.assertEqual(registry.inspect("dispatch-other")["expected_usd"], 6.0)
+        self.assertNotIn("quota_released_reason", registry.inspect("dispatch-other"))
+
     def test_without_router_modules_only_the_latch_is_checked(self):
         cache = self.quota_cache({"claude": {"windows": [self.window("five_hour", 100)]}})
         real = gate.router_module

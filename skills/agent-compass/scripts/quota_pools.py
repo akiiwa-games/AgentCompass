@@ -21,17 +21,45 @@ def canonical_window_id(spec, wid):
     return mapped if mapped in windows else wid
 
 
+def live_dispatch_holds(records):
+    """One live hold per worker. The newest row for an agent_id counts; a row with no agent_id still counts."""
+    bare = []
+    newest = {}
+    for rec in records or ():
+        if not isinstance(rec, dict):
+            continue
+        agent = rec.get('agent_id')
+        if not isinstance(agent, str) or not agent:
+            bare.append(rec)
+            continue
+        prev = newest.get(agent)
+        if prev is None or _hold_is_newer(rec, prev):
+            newest[agent] = rec
+    return bare + list(newest.values())
+
+
+def _hold_is_newer(rec, prev):
+    rec_at = parse_time(rec.get('at') or rec.get('created_at') or rec.get('updated_at'))
+    prev_at = parse_time(prev.get('at') or prev.get('created_at') or prev.get('updated_at'))
+    if rec_at is not None and (prev_at is None or rec_at >= prev_at):
+        return True
+    if rec_at is None and prev_at is None:
+        return str(rec.get('dispatch_id') or '') >= str(prev.get('dispatch_id') or '')
+    return False
+
+
 def inflight_reserved_usd(account, spec, wid, wspec, state, win_cap_usd, records, accounts, policy, now):
     """Hold API-equivalent budget only for live dispatch leases, once per dispatch ID.
 
     Active commitments remain fully reserved until terminal/release/lease expiry.
-    This is conservative while usage catches up; provider percentages cannot reliably
-    attribute consumption to one concurrent worker. Plan/select/record never reserve.
+    One worker's older open round is not added to its newer round. This is conservative
+    while usage catches up; provider percentages cannot reliably attribute consumption
+    to one concurrent worker. Plan/select/record never reserve.
     """
     if not win_cap_usd or win_cap_usd <= 0:
         return 0.0
     active = {}
-    for rec in records or ():
+    for rec in live_dispatch_holds(records):
         if not isinstance(rec, dict) or rec.get('stage') != 'dispatch' or not rec.get('dispatch_id'):
             continue
         expiry = parse_time(rec.get('lease_until'))
@@ -480,7 +508,7 @@ def cadence_window_state(account, spec, acct_usage, records, now):
         if rem_pct is not None and seconds is not None and float(seconds) > 0:
             fetched = parse_time(usage_row.get('fetched_at'))
             active_ids = set()
-            for r in records or ():
+            for r in live_dispatch_holds(records):
                 if not isinstance(r, dict) or r.get('stage') != 'dispatch' or not r.get('dispatch_id'):
                     continue
                 if (r.get('bundle') or {}).get('account') != account:
@@ -504,7 +532,7 @@ def cadence_window_state(account, spec, acct_usage, records, now):
             return wspec, state, cap
     by_dispatch = {}
     anon_times = []
-    for r in records or ():
+    for r in live_dispatch_holds(records):
         if not isinstance(r, dict) or (r.get('bundle') or {}).get('account') != account:
             continue
         stage = r.get('stage')

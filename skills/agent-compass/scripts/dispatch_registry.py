@@ -127,6 +127,10 @@ def event(row, state, now, reason=None):
 
 
 def expire(connection, now):
+    # An ended worker is settled before a lease lapse, so a dead watcher does not wait out the lease.
+    # A question that already went idle is reopened here when the host has started the parent's reply.
+    settle_ended_workers(connection, now)
+    refresh_live_rounds(connection, now)
     for row in rows(connection, 'dispatches'):
         if row['state'] in ACTIVE and parse(row['lease_until']) <= now:
             event(row, 'expired', now, 'lease_elapsed_without_fresh_host_observation')
@@ -294,27 +298,48 @@ def launch_request(bundle, launch):
 
 
 def active_records(connection, now):
-    return [{'stage': 'dispatch', 'dispatch_id': r['dispatch_id'], 'state': r['state'],
+    import quota_pools
+    live = [{'stage': 'dispatch', 'dispatch_id': r['dispatch_id'], 'state': r['state'],
              'at': r['created_at'], 'lease_until': r['lease_until'], 'choice': r['bundle']['bundle_id'],
              'bundle': r['bundle'], 'expected_usd': r['expected_usd'], 'usage': r['usage'],
              **({'agent_id': r['agent_id']} if r.get('agent_id') else {})}
             for r in rows(connection, 'dispatches')
             if r.get('dispatch_mode', 'paseo') == 'paseo' and r['state'] in ACTIVE and parse(r['lease_until']) > now]
+    return quota_pools.live_dispatch_holds(live)
+
+
+def _read_only(path):
+    connection = sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True)
+    return connection
 
 
 def reservations(now=None, path=None, read_only=False):
-    if not Path(path or db_path()).exists():
+    target = Path(path or db_path())
+    if not target.exists():
         return []
     now = now or utcnow()
     if read_only:
-        connection = sqlite3.connect(Path(path or db_path()).resolve().as_uri() + '?mode=ro', uri=True)
-        try:
-            return active_records(connection, now)
-        finally:
-            connection.close()
+        ended, pending = _reservation_maintenance(target, now)
+        if not ended:
+            # A dry read stays byte-identical unless a local agent record shows a worker already ended.
+            if pending:
+                _finish_pending_side_effects(path, now)
+                _record_pending_ground_truth(path, now)
+            connection = _read_only(target)
+            try:
+                return active_records(connection, now)
+            finally:
+                connection.close()
     with transaction(path) as connection:
-        expire(connection, now)
-        return active_records(connection, now)
+        if read_only:
+            settle_ended_workers(connection, now)
+            refresh_live_rounds(connection, now)
+        else:
+            expire(connection, now)
+        active = active_records(connection, now)
+    _finish_pending_side_effects(path, now)
+    _record_pending_ground_truth(path, now)
+    return active
 
 
 def paseo_agent_record(agent_id, paseo_home=None):
@@ -333,6 +358,540 @@ def paseo_agent_record(agent_id, paseo_home=None):
         except (OSError, ValueError):
             continue
     return None
+
+
+# Receipt reasons whose transition is recorded. Ordinary finished/error transitions stay unmarked: observers
+# already assert those events have no reason.
+WATCHER_TERMINAL_REASONS = frozenset({
+    'superseded by a later dispatch',
+    'worker unavailable',
+    'worker removed before it was observed',
+})
+
+
+def host_running_evidence(snapshot):
+    """The host snapshot shows this worker still running or waiting on a permission, not a stale idle read."""
+    if not isinstance(snapshot, dict) or snapshot.get('archivedAt') or snapshot.get('providerUnavailable'):
+        return False
+    status = snapshot.get('status')
+    if status in ('running', 'initializing'):
+        return True
+    attention = snapshot.get('attentionReason')
+    pending = snapshot.get('pendingPermissions') or ()
+    if attention == 'permission' or pending or (snapshot.get('pendingPermissionCount') or 0) > 0:
+        return status in ('idle', 'initializing', None) or attention == 'permission'
+    return False
+
+
+def running_evidence_reason(snapshot):
+    status = snapshot.get('status') or ''
+    updated = snapshot.get('updatedAt') or ''
+    attention = snapshot.get('attentionReason') or ''
+    pending = bool(snapshot.get('pendingPermissions') or (snapshot.get('pendingPermissionCount') or 0))
+    if status not in ('running', 'initializing') and (attention == 'permission' or pending):
+        return f'host_still_running status={status} attention=permission updated_at={updated}'
+    return f'host_still_running status={status} updated_at={updated}'
+
+
+def _turn_landed(row, doc):
+    last = doc.get('lastUserMessageAt') if isinstance(doc, dict) else None
+    launched = row.get('launched_at')
+    try:
+        return isinstance(last, str) and isinstance(launched, str) and parse(last) >= parse(launched)
+    except ValueError:
+        return False
+
+
+def _undelivered_resume(row, doc):
+    status = doc.get('status') if isinstance(doc, dict) else None
+    return (row.get('operation') == 'resume' and not row.get('started_at') and not _turn_landed(row, doc)
+            and status != 'running' and not (isinstance(doc, dict) and doc.get('archivedAt')))
+
+
+def _updated_before_launch(row, doc):
+    """True when the document carries a timestamp older than this launch. A missing timestamp says nothing."""
+    updated = doc.get('updatedAt') if isinstance(doc, dict) else None
+    launched = row.get('launched_at')
+    if not isinstance(updated, str) or not isinstance(launched, str):
+        return False
+    try:
+        return parse(updated) < parse(launched)
+    except ValueError:
+        return False
+
+
+def _bound_dispatch(doc):
+    labels = doc.get('labels') if isinstance(doc, dict) and isinstance(doc.get('labels'), dict) else {}
+    bound = labels.get('router.dispatch_id')
+    return bound if isinstance(bound, str) and bound else None
+
+
+def host_generation(row, doc, later_ids=()):
+    """Whether this host document is evidence for this dispatch.
+
+    `current` matches this round (or carries no dispatch label). `superseded` is a later dispatch that has taken
+    a round this dispatch already bound. None is not evidence: the timestamp is older than the launch, the row is
+    a resume the host has not bound yet (it still wears the previous round's label), or the other label is not a
+    later dispatch."""
+    if not isinstance(doc, dict) or _updated_before_launch(row, doc):
+        return None
+    bound = _bound_dispatch(doc)
+    if bound is None or bound == row.get('dispatch_id'):
+        return 'current'
+    if row.get('operation') == 'resume' and not row.get('started_at'):
+        return None
+    if bound in set(later_ids or ()):
+        return 'superseded'
+    return None
+
+
+def _open_for_disk_settle(row):
+    if row.get('dispatch_mode', 'paseo') != 'paseo':
+        return False
+    if row['state'] in ACTIVE:
+        return True
+    return row['state'] == 'expired' and bool(row.get('launched_at'))
+
+
+def terminal_from_agent_doc(row, doc, later_ids=()):
+    """The terminal state a local Paseo agent JSON proves, or (None, None) when it says nothing.
+
+    The document has to be this round's. Permission and a still-running status are not endings. A resume whose
+    turn has not landed is not ended by a stale idle or closed document. A missing document says nothing."""
+    if not isinstance(doc, dict):
+        return None, None
+    generation = host_generation(row, doc, later_ids)
+    if generation == 'superseded':
+        return 'canceled', f'paseo_agent_record: superseded by {_bound_dispatch(doc)}'
+    if generation != 'current':
+        return None, None
+    status = doc.get('status') if isinstance(doc.get('status'), str) else ''
+    attention = doc.get('attentionReason') if isinstance(doc.get('attentionReason'), str) else ''
+    pending = doc.get('pendingPermissions') or ()
+    if attention == 'permission' or pending or (doc.get('pendingPermissionCount') or 0) > 0:
+        return None, None
+    if status in ('running', 'initializing'):
+        return None, None
+    undelivered = _undelivered_resume(row, doc)
+    reason = f'paseo_agent_record: status={status} attention={attention}'
+    if doc.get('archivedAt') or status == 'closed':
+        if undelivered and not doc.get('archivedAt'):
+            return None, None
+        return ('completed' if attention == 'finished' else 'canceled'), reason
+    if undelivered:
+        return None, None
+    if status == 'error' or attention == 'error' or doc.get('providerUnavailable'):
+        return 'failed', reason
+    if status == 'idle' and (attention == 'finished' or row.get('started_at')):
+        return 'completed', reason
+    return None, None
+
+
+def _agent_doc_for(row):
+    agent_id = row.get('agent_id') or row.get('dispatch_id')
+    doc = paseo_agent_record(agent_id)
+    if doc is None and row.get('agent_id') and row['agent_id'] != row.get('dispatch_id'):
+        doc = paseo_agent_record(row['dispatch_id'])
+    return doc
+
+
+def _later_dispatch_ids(connection, row):
+    agent_id = row.get('agent_id')
+    if not agent_id:
+        return []
+    ref = row.get('launched_at') or row.get('created_at')
+    found = []
+    for other in rows(connection, 'dispatches'):
+        if other['dispatch_id'] == row['dispatch_id'] or other.get('agent_id') != agent_id:
+            continue
+        other_stamp = other.get('launched_at') or other.get('created_at')
+        if ref and later(other_stamp, ref):
+            found.append(other['dispatch_id'])
+    return found
+
+
+def _safe_dispatch_id(value):
+    return (isinstance(value, str) and 0 < len(value) <= 128 and value[0].isalnum()
+            and all(character.isalnum() or character in '-_' for character in value))
+
+
+def watcher_receipt(dispatch_id):
+    """The watcher's on-disk receipt, or None. A bad id never becomes a path."""
+    if not _safe_dispatch_id(dispatch_id):
+        return None
+    root = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass')
+    try:
+        document = json.loads((root / 'paseo-notifications' / f'{dispatch_id}.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def state_from_receipt(row, receipt):
+    """The terminal state the watcher's receipt proves for this row, or (None, None).
+
+    The reason is the ending. The receipt's raw host status is not read: a superseded row's receipt carries the
+    next round's `running`, and that must not renew the old row. A timestamp older than this launch is ignored."""
+    terminal = receipt.get('terminal') if isinstance(receipt, dict) else None
+    if not isinstance(terminal, dict) or not isinstance(terminal.get('reason'), str):
+        return None, None
+    reason = terminal['reason']
+    at = terminal.get('at')
+    launched = row.get('launched_at')
+    if isinstance(at, str) and isinstance(launched, str):
+        try:
+            if parse(at) < parse(launched):
+                return None, None
+        except ValueError:
+            return None, None
+    if reason == 'finished':
+        return 'completed', reason
+    if reason in ('error', 'provider retry stuck'):
+        return 'failed', reason
+    if reason in WATCHER_TERMINAL_REASONS:
+        return 'canceled', reason
+    if reason == 'closed':
+        return ('completed' if terminal.get('attentionReason') == 'finished' else 'canceled'), reason
+    return None, None
+
+
+def _queue_side_effects(row, receipt, target):
+    """Remember idempotent effects still owed. State and these flags are stored apart, so a row that is already
+    terminal can still clear a provider hold or record a failure the first writer skipped."""
+    due = list(row.get('side_effects_due') or [])
+    done = set(row.get('terminal_side_effects') or [])
+    terminal = receipt.get('terminal') if isinstance(receipt, dict) else None
+    launched = row.get('launched_at')
+
+    def add(name, include):
+        if include and name not in done and name not in due:
+            due.append(name)
+
+    add('provider_hold_clear', target == 'completed' and provider_replied(terminal, launched))
+    add('provider_failure_record', target == 'failed' and provider_failed(terminal, launched))
+    add('launch_latches', target == 'completed')
+    if due != list(row.get('side_effects_due') or []):
+        row['side_effects_due'] = due
+        return True
+    return False
+
+
+def _apply_terminal(row, target, now, reason):
+    if not target or row['state'] == target:
+        return False
+    if target == 'completed':
+        row['ground_truth_pending'] = True
+    event(row, target, now, reason)
+    return True
+
+
+def apply_ending(connection, row, now, receipt_only=False):
+    """Write this row's ending. A watcher receipt outranks the agent JSON. An existing real terminal is kept.
+
+    Returns True when the row was saved."""
+    if row.get('dispatch_mode', 'paseo') != 'paseo':
+        return False
+    open_row = _open_for_disk_settle(row)
+    already = row['state'] in TERMINAL and row['state'] != 'expired'
+    if not open_row and not already:
+        return False
+    receipt = watcher_receipt(row['dispatch_id'])
+    receipt_state, receipt_reason = state_from_receipt(row, receipt)
+    changed = False
+    if already:
+        target = row['state']
+    elif receipt_state:
+        target = receipt_state
+        if target == 'failed' and isinstance(receipt, dict):
+            terminal = receipt.get('terminal') or {}
+            code = terminal.get('failure_code')
+            if not isinstance(code, str) or not code:
+                code = 'provider_retry_stuck' if receipt_reason == 'provider retry stuck' else None
+            if code:
+                row['failure_code'] = code
+                row['failure_detail'] = {key: terminal[key] for key in ('partial_work', 'cancelled') if key in terminal}
+        reason = ('watcher_terminal: ' + receipt_reason) if receipt_reason in WATCHER_TERMINAL_REASONS else None
+        if target == 'completed':
+            row['ground_truth_other_ids'] = _later_dispatch_ids(connection, row)
+        changed = _apply_terminal(row, target, now, reason) or changed
+    elif receipt_only:
+        target = row['state']
+    else:
+        later_ids = _later_dispatch_ids(connection, row)
+        target, reason = terminal_from_agent_doc(row, _agent_doc_for(row), later_ids)
+        if target and target != row['state']:
+            if target == 'completed':
+                row['ground_truth_other_ids'] = later_ids
+            changed = _apply_terminal(row, target, now, reason) or changed
+        else:
+            target = row['state']
+    changed = _queue_side_effects(row, receipt, target) or changed
+    changed = _note_end_notice(row, receipt) or changed
+    if changed:
+        save(connection, row)
+    return changed
+
+
+_END_NOTICE_STATES = ('completed', 'failed', 'canceled', 'create_failed')
+# The watcher already decided not to send, or the parent's own notifyOnFinish is the message.
+_SKIP_CATCHUP_STATUS = frozenset({
+    'resumed', 'canceled', 'relaunched', 'parent_unavailable', 'creation_failed', 'continued',
+})
+
+
+def end_notice_message_id(dispatch_id):
+    """The same id the watcher uses for its terminal message, so a race is one message."""
+    return hashlib.sha256(f'router-finish:{dispatch_id}:terminal'.encode()).hexdigest()
+
+
+def _followed_up(row):
+    return any(isinstance(item, dict) and str(item.get('reason') or '').startswith('host_followup')
+               for item in row.get('events') or [])
+
+
+def _note_end_notice(row, receipt):
+    """Record the one end notice for a real terminal. A row that is still open, or that has no watcher receipt, is left alone.
+
+    `sent` is never sent again. A follow-up turn belongs to Paseo's notifyOnFinish. A receipt the watcher already
+    delivered, or one it intentionally did not send, is recorded as sent. Anything else is due for one catch-up."""
+    if row.get('state') not in _END_NOTICE_STATES:
+        return False
+    notice = row.get('end_notice')
+    if isinstance(notice, dict) and notice.get('state') == 'sent':
+        return False
+    message_id = end_notice_message_id(row['dispatch_id'])
+    if _followed_up(row):
+        row['end_notice'] = {'state': 'sent', 'message_id': message_id, 'source': 'notify_on_finish'}
+        return True
+    if not isinstance(receipt, dict):
+        return False
+    delivered = receipt.get('delivered')
+    status = receipt.get('status')
+    if status == 'delivered' or (isinstance(delivered, list) and 'terminal' in delivered):
+        row['end_notice'] = {'state': 'sent', 'message_id': message_id, 'source': 'watcher'}
+        return True
+    if status in _SKIP_CATCHUP_STATUS:
+        row['end_notice'] = {'state': 'sent', 'message_id': message_id, 'source': status}
+        return True
+    row['end_notice'] = {'state': 'due', 'message_id': message_id}
+    return True
+
+
+def due_end_notices(path=None):
+    """Terminal rows whose one end notice has not been sent. An open row is not due, even if an older flag remains."""
+    target = Path(path or db_path())
+    if not target.exists():
+        return []
+    with transaction(path) as connection:
+        found = []
+        for row in rows(connection, 'dispatches'):
+            notice = row.get('end_notice')
+            if row.get('state') not in _END_NOTICE_STATES or not isinstance(notice, dict) or notice.get('state') != 'due':
+                continue
+            found.append({'dispatch_id': row['dispatch_id'], 'parent_id': row.get('parent_id'),
+                          'agent_id': row.get('agent_id'), 'message_id': notice.get('message_id')})
+        return found
+
+
+def mark_end_notice_sent(dispatch_id, source, path=None):
+    """Record that this dispatch's one end notice was sent. A second call, or a row that is no longer due, changes nothing."""
+    if not _safe_dispatch_id(dispatch_id) or not Path(path or db_path()).exists():
+        return False
+    with transaction(path) as connection:
+        try:
+            row = get(connection, 'dispatches', dispatch_id)
+        except ValueError:
+            return False
+        notice = row.get('end_notice')
+        if not isinstance(notice, dict) or notice.get('state') != 'due':
+            return False
+        row['end_notice'] = dict(notice, state='sent', source=source)
+        save(connection, row)
+        return True
+
+
+def _message_after(doc, stamp_value):
+    last = doc.get('lastUserMessageAt') if isinstance(doc, dict) else None
+    if not isinstance(last, str) or not isinstance(stamp_value, str):
+        return False
+    try:
+        return parse(last) > parse(stamp_value)
+    except ValueError:
+        return False
+
+
+def authorized_followup(row, doc, later_ids):
+    """The parent answered an idle question: the same round is running again, with a user message after the release."""
+    if row.get('state') != 'completed' or host_generation(row, doc, later_ids) != 'current':
+        return False
+    if not isinstance(doc, dict) or doc.get('archivedAt') or doc.get('providerUnavailable'):
+        return False
+    if doc.get('status') not in ('running', 'initializing'):
+        return False
+    return _message_after(doc, row.get('released_at'))
+
+
+def refresh_live_rounds(connection, now):
+    """Re-count a round the host has been allowed to continue. Does not invent a new dispatch."""
+    for row in rows(connection, 'dispatches'):
+        if row.get('dispatch_mode', 'paseo') != 'paseo' or row['state'] != 'completed':
+            continue
+        try:
+            if now >= parse(row['hard_until']):
+                continue
+        except (TypeError, ValueError):
+            continue
+        doc = _agent_doc_for(row)
+        later_ids = _later_dispatch_ids(connection, row)
+        if not authorized_followup(row, doc, later_ids):
+            continue
+        row.pop('released_at', None)
+        row['lease_until'] = stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until'])))
+        row.setdefault('started_at', stamp(now))
+        event(row, 'started', now, f"host_followup status={doc.get('status') or ''}")
+        save(connection, row)
+
+
+def _round_needs_write(row, doc, later_ids, now):
+    try:
+        if now >= parse(row['hard_until']):
+            return False
+    except (TypeError, ValueError):
+        return False
+    return authorized_followup(row, doc, later_ids)
+
+
+def settle_ended_workers(connection, now):
+    """Finish open paseo rows from the watcher receipt, or else from a current agent JSON. Does not resurrect."""
+    for row in rows(connection, 'dispatches'):
+        if _open_for_disk_settle(row) or row.get('side_effects_due'):
+            apply_ending(connection, row, now)
+
+
+def _reservation_maintenance(path, now):
+    """Whether a read must write: an ending to record, a follow-up to count again, or effects still owed."""
+    connection = _read_only(path)
+    try:
+        ended = pending = False
+        stored = rows(connection, 'dispatches')
+        for row in stored:
+            if row.get('ground_truth_pending') or row.get('side_effects_due'):
+                pending = True
+            if ended:
+                continue
+            later_ids = _later_dispatch_ids(connection, row)
+            doc = _agent_doc_for(row)
+            if _open_for_disk_settle(row):
+                receipt_state, _reason = state_from_receipt(row, watcher_receipt(row['dispatch_id']))
+                if receipt_state and receipt_state != row['state']:
+                    ended = True
+                    continue
+                target, _reason = terminal_from_agent_doc(row, doc, later_ids)
+                if target and target != row['state']:
+                    ended = True
+                    continue
+            if _round_needs_write(row, doc, later_ids, now):
+                ended = True
+        return ended, pending
+    finally:
+        connection.close()
+
+
+def _finish_pending_side_effects(path, now):
+    """Run provider-hold and launch-latch effects flagged on a row, then clear the flag. A failure leaves it."""
+    target = Path(path or db_path())
+    if not target.exists():
+        return
+    connection = _read_only(target)
+    try:
+        pending = [row for row in rows(connection, 'dispatches') if row.get('side_effects_due')]
+    finally:
+        connection.close()
+    if not pending:
+        return
+    import provider_retry
+    for row in pending:
+        due = list(row.get('side_effects_due') or [])
+        receipt = watcher_receipt(row['dispatch_id']) or {}
+        terminal = receipt.get('terminal') if isinstance(receipt.get('terminal'), dict) else None
+        done = []
+        if 'provider_failure_record' in due:
+            try:
+                provider_retry.record(row.get('bundle'), terminal or {}, dispatch_id=row['dispatch_id'])
+                done.append('provider_failure_record')
+            except Exception:
+                pass
+        if 'provider_hold_clear' in due:
+            try:
+                provider_retry.clear(row['bundle'].get('account'), provider_retry.launch_model(row['bundle']),
+                                     include_account=True,
+                                     launched_at=row.get('launched_at') or row.get('created_at'),
+                                     bundle=row['bundle'])
+                done.append('provider_hold_clear')
+            except Exception:
+                pass
+        if 'launch_latches' in due:
+            try:
+                import account_state
+                import launch_failures
+                import model_latch
+                launch_failures.clear(row['bundle'].get('account'))
+                account_state.clear_latch(row['bundle'].get('account'),
+                                          launched_at=row.get('launched_at') or row.get('created_at'))
+                model_latch.clear(row['bundle'].get('account'), model_latch.launch_model(row['bundle']),
+                                  launched_at=row.get('launched_at') or row.get('created_at'))
+                done.append('launch_latches')
+            except Exception:
+                pass
+        if not done:
+            continue
+        try:
+            with transaction(path) as writing:
+                latest = get(writing, 'dispatches', row['dispatch_id'])
+                still = [item for item in (latest.get('side_effects_due') or []) if item not in done]
+                if still:
+                    latest['side_effects_due'] = still
+                else:
+                    latest.pop('side_effects_due', None)
+                latest['terminal_side_effects'] = list(dict.fromkeys([*(latest.get('terminal_side_effects') or []), *done]))
+                save(writing, latest)
+        except (OSError, sqlite3.Error, ValueError):
+            continue
+
+
+def _record_pending_ground_truth(path, now):
+    """Record ground truth only for rows this process just flagged. Never scan historical completions."""
+    target = Path(path or db_path())
+    if not target.exists():
+        return
+    connection = _read_only(target)
+    try:
+        pending = [row for row in rows(connection, 'dispatches')
+                   if row.get('ground_truth_pending') and row.get('state') == 'completed']
+    finally:
+        connection.close()
+    if not pending:
+        return
+    import dispatch_ground_truth
+    for row in pending:
+        try:
+            truth = dispatch_ground_truth.collect_ground_truth(
+                row, idle_threshold=RUN_LEASE, recorded_at=stamp(now),
+                agent_doc=paseo_agent_record(row.get('agent_id')),
+                other_dispatch_ids=set(row.get('ground_truth_other_ids') or ()))
+        except Exception:
+            continue
+        try:
+            with transaction(path) as writing:
+                latest = get(writing, 'dispatches', row['dispatch_id'])
+                if not latest.get('ground_truth_pending'):
+                    continue
+                latest.update(truth)
+                latest.pop('ground_truth_pending', None)
+                latest.pop('ground_truth_other_ids', None)
+                save(writing, latest)
+        except (OSError, sqlite3.Error, ValueError):
+            continue
 
 
 def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
@@ -766,6 +1325,8 @@ def resolve_creation(dispatch_id, creation, now=None, path=None):
         else:
             row['creation'] = {'phase': phase or 'not_admitted', 'in_flight': bool(phase)}
             transitioned = False
+        if transitioned:
+            _note_end_notice(row, watcher_receipt(row['dispatch_id']))
         save(connection, row)
         return row, transitioned
 
@@ -975,7 +1536,14 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
                                                       code=snapshot.get('lastErrorClass'), at=updated_error, source=agent_id)
                 except OSError:
                     pass
-        if row['state'] in TERMINAL and row['state'] != 'expired':
+        later_ids = _later_dispatch_ids(connection, row)
+        try:
+            within_life = now < parse(row['hard_until'])
+        except (TypeError, ValueError):
+            within_life = False
+        followup = within_life and authorized_followup(row, snapshot, later_ids)
+        # A real terminal stays, except an idle question whose parent has started another turn of this same round.
+        if row['state'] in TERMINAL and row['state'] != 'expired' and not followup:
             return row
         if row['state'] == 'prepared':
             raise ValueError('Agent observed without a launch claim')
@@ -998,9 +1566,13 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         undelivered = row.get('operation') == 'resume' and not row.get('started_at') and not delivered and status != 'running'
         if undelivered:
             reason = None
-        target = None
+        # Superseded, unavailable, and removed are this row's ending. The snapshot status can be the next round.
+        watcher_ending = isinstance(terminal, dict) and terminal.get('reason') in WATCHER_TERMINAL_REASONS
         stuck = provider_failed(terminal, row['launched_at'])
-        if stuck:
+        target = None
+        if watcher_ending:
+            target = 'canceled'
+        elif stuck:
             # The provider failed this turn (or the bridge stopped it retrying): whatever the host says after, it failed.
             target = 'failed'
             # A failed turn the classifier read as the worker's own error (or this task's input) is not the provider's.
@@ -1031,6 +1603,10 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
         # Without this every observation restored it, and release could never end one whose turn never came.
         if target in ACTIVE and undelivered and (row['state'] == 'expired' or now >= parse(row['lease_until'])):
             target = 'expired'
+        # An expired row returns to an active state only with evidence the worker is still running. A stale idle
+        # snapshot is not that evidence.
+        if target in ACTIVE and row['state'] == 'expired' and not host_running_evidence(snapshot):
+            target = 'expired'
         if target in ACTIVE:
             row.pop('released_at', None)
             if not undelivered:
@@ -1045,7 +1621,16 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
                     if ref_stamp and later(other_stamp, ref_stamp):
                         later_dispatch_ids.add(other['dispatch_id'])
         if row['state'] != target:
-            event(row, target, now)
+            reason_text = None
+            if followup and target in ACTIVE:
+                reason_text = f"host_followup status={snapshot.get('status') or ''}"
+            elif prev_state == 'expired' and target in ACTIVE:
+                reason_text = running_evidence_reason(snapshot)
+            elif target in TERMINAL and isinstance(terminal, dict) and terminal.get('reason') in WATCHER_TERMINAL_REASONS:
+                reason_text = 'watcher_terminal: ' + terminal['reason']
+            event(row, target, now, reason_text)
+        if row['state'] in _END_NOTICE_STATES:
+            _note_end_notice(row, watcher_receipt(dispatch_id))
         save(connection, row)
     if target == 'launched' and not row.get('started_at') and row.get('launch_commit') is None \
             and isinstance(row.get('cwd'), str) and row['cwd'].strip():
@@ -1129,6 +1714,21 @@ def release(dispatch_id, parent_id, reason, now=None, path=None, failed=False):
             event(row, 'failed' if failed else 'canceled', now, reason)
             save(connection, row)
         return dict(row, canceled_retry=canceled) if canceled else row
+
+
+def finalize_dispatch(dispatch_id, now=None, path=None, receipt_only=False):
+    """Apply this dispatch's watcher receipt, and the side effects still owed, without a host call.
+
+    `receipt_only` ignores the agent JSON. An ending the receipt does not carry leaves the row unchanged.
+    Safe to call again: a stored terminal is kept, and effects that already ran are not repeated."""
+    if not _safe_dispatch_id(dispatch_id) or not Path(path or db_path()).exists():
+        raise ValueError('invalid dispatch id')
+    now = now or utcnow()
+    with transaction(path) as connection:
+        apply_ending(connection, get(connection, 'dispatches', dispatch_id), now, receipt_only=receipt_only)
+    _finish_pending_side_effects(path, now)
+    _record_pending_ground_truth(path, now)
+    return inspect(dispatch_id, path)
 
 
 def pending(path=None):

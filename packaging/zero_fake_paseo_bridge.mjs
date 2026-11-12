@@ -144,6 +144,24 @@ function resume(input) {
   return { ok: true, sent: true, agent: project(existing), completion_notification: receipt(existing) };
 }
 
+function writeEndNotice(agent) {
+  // One inbox message for a watched finish. The worker does not write one itself.
+  if (!agent || agent.end_notice === 'sent') return;
+  if (!(agent.status === 'idle' && agent.attentionReason === 'finished')) return;
+  const parent = agent.parent_id;
+  if (typeof parent !== 'string' || !parent) return;
+  const outFile = path.join(STATE, 'agents', `${agent.id}.out.txt`);
+  let body = '';
+  try { body = fs.readFileSync(outFile, 'utf8'); } catch { body = ''; }
+  const text = `[AgentCompass worker notification]\nWorker: ${agent.id}\nFinal reply:\n${body}\nFull text: ${outFile}\n`;
+  const box = path.join(STATE, 'inbox', parent.replace(/[^\w.-]/g, '_'));
+  fs.mkdirSync(box, { recursive: true });
+  const n = fs.readdirSync(box).filter(name => name.endsWith('.json')).length + 1;
+  writeJson(path.join(box, `${n}.json`), { to: parent, text });
+  agent.end_notice = 'sent';
+  writeJson(agentFile(agent.id), agent);
+}
+
 function observe(input) {
   if (takeFault('observe') === 'unavailable') return { ok: false, error: 'bridge_unavailable' };
   let agent = input.agent_id ? observeAgent(input.agent_id) : null;
@@ -155,6 +173,7 @@ function observe(input) {
     agent = found[0] ? observeAgent(found[0].id) : null;
   }
   // Like the daemon: no record for a create that never reached this host.
+  if (agent) writeEndNotice(agent);
   return { ok: true, agent: project(agent), missing: Boolean(input.agent_id && !agent), ...(!agent && !input.agent_id ? { creation: null } : {}),
     completion_notification: receipt(agent) };
 }

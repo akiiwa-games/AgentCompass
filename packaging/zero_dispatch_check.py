@@ -15,7 +15,8 @@ What is substituted, and only that (external parties):
     as it starts the real CLI, reads the brief from stdin, and finishes, fails, hangs or crashes by itself;
   - the Paseo host: zero_fake_paseo_bridge.mjs, a stateful node process answering the same JSON contract as the real bridge,
     creating a real worker process per agent;
-  - the parent's mailbox: a directory the worker writes its final report into.
+  - the parent's mailbox: an unwatched worker (CLI) writes its own final report there; a watched Paseo worker does not,
+    and this fixture's bridge writes the one end notice when it observes that worker finished.
 A smoke with a real model or a real host is a different kind of evidence and is not produced here.
 """
 from __future__ import annotations
@@ -556,6 +557,7 @@ def step_paseo_host(z: Zero):
         return parse(result.stdout) or {}
 
     op = run.operation("Paseo host: roll creates one agent and it completes", "prepare -> create -> observe -> completed; the report reaches the parent; the registry is clean")
+    before_mail = len(z.inbox(PARENT))
     task = z.task("ok", "paseo")
     z.ctx["mark"] = time.time() - 1
     result = z.call(op, "roll", "--task", task, **env)
@@ -571,8 +573,13 @@ def step_paseo_host(z: Zero):
     row = settle(z, op, dispatch_id, "completed", env)
     op.check("the registry reaches completed through reconcile (observation), without anyone telling it the worker finished", row.get("state") == "completed", row)
     op.check("`dispatch status` alone is a read of the stored state; it is not what advances it", before.get("state") in ("started", "launched", "completed"), before)
-    mail = z.wait_for(lambda: z.inbox(PARENT), 20)
-    op.check("the worker's final report is in the parent's mailbox", any(m["text"].startswith("[Worker final report]") for m in mail), mail)
+    def new_notices():
+        fresh = z.inbox(PARENT)[before_mail:]
+        return [m for m in fresh if m["text"].startswith("[AgentCompass worker notification]") and "finished the fixture task (ok)" in m["text"]]
+    mail = z.wait_for(new_notices, 20)
+    op.check("one end notice carries the worker's final reply",
+             len(mail) == 1 and not any(m["text"].startswith("[Worker final report]") for m in z.inbox(PARENT)[before_mail:]),
+             z.inbox(PARENT)[before_mail:])
     ids = [r for r in (parse(z.call(op, "dispatch", "--dispatch-action", "reconcile", **env).stdout) or {}).get("active_reservations", [])]
     op.check("no active reservation remains after completion", not ids, ids)
 
@@ -923,7 +930,8 @@ def step_hooks_and_crash(z: Zero):
     op.check("this dispatch's worker finished on the host", agent.get("status") == "idle" and agent.get("attentionReason") == "finished",
              {k: agent.get(k) for k in ("status", "attentionReason", "lastError")})
     op.check("the worker's report is in the parent's mailbox (one new report)",
-             len(z.inbox()) == inbox + 1 and "(slow)" in z.inbox()[-1].get("text", ""), z.inbox()[inbox:])
+             len(z.inbox()) == inbox + 1 and z.inbox()[-1].get("text", "").startswith("[AgentCompass worker notification]")
+             and "(slow)" in z.inbox()[-1].get("text", ""), z.inbox()[inbox:])
 
 
 def step_entries(z: Zero):

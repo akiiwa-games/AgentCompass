@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -148,9 +149,11 @@ def host_call(payload):
 
 def bridge_env():
     """The bridge's environment. Its watcher (a detached child) hands a failed attempt to `agentcompass dispatch
-    --dispatch-action fallback` before it tells the parent anything (paseo_dispatch_bridge.mjs runFallback)."""
+    --dispatch-action fallback` before it tells the parent anything (paseo_dispatch_bridge.mjs runFallback), and
+    settles the registry with `--dispatch-action settle` before every exit."""
     env = dict(os.environ)
     env['AGENTCOMPASS_CONTINUATION_ARGV'] = json.dumps(entry.argv('continuation-verdict'))
+    env['AGENTCOMPASS_SETTLE_ARGV'] = json.dumps(entry.argv('dispatch', '--dispatch-action', 'settle'))
     if dispatch_fallback.enabled():
         env['AGENTCOMPASS_FALLBACK_ARGV'] = json.dumps(entry.argv('dispatch', '--dispatch-action', 'fallback'))
     else:
@@ -388,11 +391,52 @@ def workspace_holders(directory, parent_id, host=None, path=None):
     return holders, None, probe
 
 
+def deliver_end_notices(now=None, path=None, host=None):
+    """Send each due end notice once. Without an explicit daemon, and without an injected host, send nothing.
+
+    A failed send leaves the notice due so the next read retries it. The bridge computes the message id, the same
+    one the watcher uses, so a race with a late watcher is one message. A send, a receipt that already shows the
+    terminal was delivered (`evidence` `delivered`), an intentional skip (`evidence` `skipped`), and a parent that
+    can no longer be reached are recorded. `already` without that evidence is not a delivery: the notice stays due.
+    A second call sends nothing."""
+    del now
+    if host is None and 'daemon' not in paseo_config():
+        return []
+    sender = host or host_call
+    sent = []
+    for notice in registry.due_end_notices(path):
+        try:
+            response = sender({'operation': 'notify_end', 'dispatch_id': notice['dispatch_id'],
+                               'parent_id': notice.get('parent_id')})
+        except Exception:
+            continue
+        if not isinstance(response, dict) or not response.get('ok'):
+            continue
+        if response.get('error') == 'parent_unavailable':
+            registry.mark_end_notice_sent(notice['dispatch_id'], 'parent_unavailable', path=path)
+        elif response.get('sent'):
+            registry.mark_end_notice_sent(notice['dispatch_id'], 'catchup', path=path)
+            sent.append(notice['dispatch_id'])
+        elif response.get('already') and response.get('evidence') == 'delivered':
+            registry.mark_end_notice_sent(notice['dispatch_id'], 'watcher', path=path)
+        elif response.get('already') and response.get('evidence') == 'skipped':
+            source = response.get('skipped')
+            if not isinstance(source, str) or not source.isidentifier() or len(source) > 64:
+                source = 'skipped'
+            registry.mark_end_notice_sent(notice['dispatch_id'], source, path=path)
+    return sent
+
+
 def reservation_records(read_only=False):
     # Called automatically by plan/record and before prepare. No host query when no active launches exist.
     if not read_only:
         reconcile()
-    return registry.reservations(read_only=read_only)
+    records = registry.reservations(read_only=read_only)
+    try:
+        deliver_end_notices()
+    except Exception:
+        pass
+    return records
 
 
 def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5, path=None):
@@ -516,6 +560,65 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     return result
 
 
+_DISPATCH_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$')
+
+
+def notification_file(dispatch_id):
+    """The watcher's receipt. The id is checked before it becomes a path, so it cannot leave the notifications directory."""
+    if not isinstance(dispatch_id, str) or _DISPATCH_ID.fullmatch(dispatch_id) is None:
+        raise ValueError('invalid dispatch id')
+    root = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass')
+    return root / 'paseo-notifications' / f'{dispatch_id}.json'
+
+
+def read_notification(dispatch_id):
+    try:
+        document = json.loads(notification_file(dispatch_id).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def settle(dispatch_id, path=None, now=None):
+    """Write the watcher's ending into the registry without another host round trip. Idempotent.
+
+    The receipt's reason is the ending. Its raw host status is not applied, so a superseded receipt whose status
+    is the next round's `running` still closes this row. A receipt that is not an ending changes nothing.
+    `creation failed` with no agent settles through resolve_creation. A row that already has a terminal state keeps
+    it; side effects the first writer skipped still run."""
+    notification_file(dispatch_id)
+    now = now or registry.utcnow()
+    row = registry.inspect(dispatch_id, path)
+    receipt = read_notification(dispatch_id) or {}
+    terminal = receipt.get('terminal') if isinstance(receipt.get('terminal'), dict) else None
+    reason = terminal.get('reason') if terminal else None
+    creating_failed = reason == 'creation failed' or receipt.get('status') == 'creation_failed'
+    if creating_failed and not row.get('agent_id') and row['state'] in ('launching', 'expired'):
+        failure = terminal.get('failure_class') if terminal and isinstance(terminal.get('failure_class'), str) else 'unknown'
+        code = terminal.get('failure_code') if terminal and isinstance(terminal.get('failure_code'), str) else None
+        creation = {'phase': 'failed', 'failure_class': failure, **({'failure_code': code} if code else {})}
+        settled, _ended = registry.resolve_creation(dispatch_id, creation, now=now, path=path)
+        try:
+            deliver_end_notices(now=now, path=path)
+        except Exception:
+            pass
+        return public(settled, now)
+    if row['state'] in registry.TERMINAL and row['state'] != 'expired' and not row.get('side_effects_due'):
+        # Still let a stored receipt finish effects the state writer skipped. finalize keeps the terminal.
+        if reason is None:
+            try:
+                deliver_end_notices(now=now, path=path)
+            except Exception:
+                pass
+            return public(row, now)
+    settled = registry.finalize_dispatch(dispatch_id, now=now, path=path, receipt_only=True)
+    try:
+        deliver_end_notices(now=now, path=path)
+    except Exception:
+        pass
+    return public(settled, now)
+
+
 def stop_watcher(dispatch_id):
     """The marker the bridge's watcher stops at (stopWatcher in paseo_dispatch_bridge.mjs). Best effort: the watcher
     also ends at its watch limit, and what called this is already saved."""
@@ -539,6 +642,10 @@ def cli(args):
         if not args.dispatch_id:
             raise ValueError('fallback requires --dispatch-id')
         return dispatch_fallback.handle(args.dispatch_id)
+    if action == 'settle':
+        if not args.dispatch_id:
+            raise ValueError('settle requires --dispatch-id')
+        return settle(args.dispatch_id)
     if action == 'prepare':
         if not args.input:
             raise ValueError('dispatch prepare requires --input {decision_id, task, launch}')
@@ -552,7 +659,13 @@ def cli(args):
     if action == 'start' and not args.dispatch_id:
         raise ValueError('start acknowledgment requires --dispatch-id; it observes the host rather than trusting caller status')
     if action in ('reconcile', 'start'):
-        return {'observations': reconcile(args.dispatch_id), 'active_reservations': registry.reservations()}
+        observations = reconcile(args.dispatch_id)
+        records = registry.reservations()
+        try:
+            deliver_end_notices()
+        except Exception:
+            pass
+        return {'observations': observations, 'active_reservations': records}
     if not args.dispatch_id:
         raise ValueError('status/release requires --dispatch-id')
     if action == 'release':

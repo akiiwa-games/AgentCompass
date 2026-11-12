@@ -823,6 +823,438 @@ except ValueError as e:
         self.assertEqual(result['state'], 'completed')
         self.assertEqual(calls, ['observe'])
 
+    def test_expired_dispatch_is_not_revived_without_a_live_run(self):
+        # An expired launch whose host snapshot is merely idle is not evidence the worker is still running.
+        row = self.prepare()
+        registry.claim(row['request'], now=self.now)
+        registry.observe(row['dispatch_id'], self.snapshot(row, 'initializing'), now=self.now)
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'launched')
+        later = self.now + timedelta(seconds=registry.RUN_LEASE + 1)
+        registry.reservations(now=later)
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'expired')
+        revived = registry.observe(row['dispatch_id'], self.snapshot(
+            row, 'idle', updatedAt=(later + timedelta(seconds=1)).isoformat()), now=later + timedelta(seconds=1))
+        self.assertEqual(revived['state'], 'expired')
+        self.assertNotIn('started', [event['state'] for event in revived['events']])
+
+    def test_expired_dispatch_restarts_only_with_recorded_running_evidence(self):
+        row = self.launched()
+        later = self.now + timedelta(seconds=registry.RUN_LEASE + 1)
+        registry.reservations(now=later)
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'expired')
+        when = later + timedelta(seconds=1)
+        back = registry.observe(row['dispatch_id'], self.snapshot(row, 'running', updatedAt=when.isoformat()), now=when)
+        self.assertEqual(back['state'], 'started')
+        self.assertIn('host_still_running', back['events'][-1].get('reason', ''))
+        self.assertIn('status=running', back['events'][-1]['reason'])
+        self.assertNotIn('released_at', back)
+
+    def test_one_agent_holds_quota_once_when_an_older_dispatch_is_still_open(self):
+        # Resuming the same worker must not add its unreleased previous hold to the new round.
+        spec = self.accounts['accounts']['claude-lab']
+        window = spec['windows']['five_hour']
+        old = {'stage': 'dispatch', 'dispatch_id': 'old-round', 'state': 'started', 'agent_id': 'worker-1',
+               'at': self.now.isoformat(), 'lease_until': (self.now + timedelta(minutes=5)).isoformat(),
+               'bundle': dict(self.bundle), 'expected_usd': 4.0}
+        new = dict(old, dispatch_id='new-round', at=(self.now + timedelta(seconds=1)).isoformat(), expected_usd=5.0)
+        one = quota_pools.inflight_reserved_usd(
+            'claude-lab', spec, 'five_hour', window, {}, 100, [new], self.accounts, {}, self.now)
+        both = quota_pools.inflight_reserved_usd(
+            'claude-lab', spec, 'five_hour', window, {}, 100, [old, new], self.accounts, {}, self.now)
+        self.assertEqual(one, 5.0)
+        self.assertEqual(both, one)
+
+    def test_reservation_read_settles_a_worker_paseo_has_already_ended(self):
+        # The watcher can die after the worker is idle. The next reservation read must not wait out the lease.
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        folder = self.root / '.paseo' / 'agents' / 'workspace'
+        folder.mkdir(parents=True)
+        (folder / f"{stored['agent_id']}.json").write_text(json.dumps({
+            'id': stored['agent_id'], 'status': 'idle', 'attentionReason': 'finished',
+            'labels': {'router.dispatch_id': stored['dispatch_id']},
+        }), encoding='utf-8')
+        held = registry.reservations(now=self.now + timedelta(seconds=30))
+        self.assertEqual(held, [])
+        settled = registry.inspect(row['dispatch_id'])
+        self.assertEqual(settled['state'], 'completed')
+        self.assertTrue(settled.get('released_at'))
+        self.assertIn('paseo_agent_record', settled['events'][-1].get('reason', ''))
+
+    def test_readonly_reservation_settles_only_an_ended_worker(self):
+        # A read finishes a worker Paseo has already ended, and does not lapse a lease that is still running.
+        ended = self.launched()
+        live_task = dict(self.task, task_id='still-running')
+        live = self.prepare(self.issue(live_task), live_task)
+        registry.claim(live['request'], now=self.now)
+        registry.observe(live['dispatch_id'], self.snapshot(live, id='agent-live'), now=self.now)
+        soon = self.now + timedelta(seconds=30)
+        before = registry.db_path().read_bytes()
+        held = registry.reservations(now=soon, read_only=True)
+        self.assertEqual(sorted(item['dispatch_id'] for item in held),
+                         sorted([ended['dispatch_id'], live['dispatch_id']]))
+        self.assertEqual(registry.db_path().read_bytes(), before)
+        ended_row = registry.inspect(ended['dispatch_id'])
+        folder = self.root / '.paseo' / 'agents' / 'workspace'
+        folder.mkdir(parents=True)
+        (folder / f"{ended_row['agent_id']}.json").write_text(json.dumps({
+            'id': ended_row['agent_id'], 'status': 'idle', 'attentionReason': 'finished',
+            'labels': {'router.dispatch_id': ended_row['dispatch_id']},
+        }), encoding='utf-8')
+        after = registry.reservations(now=soon, read_only=True)
+        self.assertEqual([item['dispatch_id'] for item in after], [live['dispatch_id']])
+        self.assertEqual(registry.inspect(ended['dispatch_id'])['state'], 'completed')
+        self.assertEqual(registry.inspect(live['dispatch_id'])['state'], 'started')
+        past = self.now + timedelta(seconds=registry.RUN_LEASE + 5)
+        registry.reservations(now=past, read_only=True)
+        self.assertEqual(registry.inspect(live['dispatch_id'])['state'], 'started')
+
+    def test_reservation_read_does_not_finish_a_worker_waiting_on_permission(self):
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        folder = self.root / '.paseo' / 'agents' / 'workspace'
+        folder.mkdir(parents=True)
+        (folder / f"{stored['agent_id']}.json").write_text(json.dumps({
+            'id': stored['agent_id'], 'status': 'idle', 'attentionReason': 'permission',
+            'pendingPermissions': [{'tool': 'bash'}],
+            'labels': {'router.dispatch_id': stored['dispatch_id']},
+        }), encoding='utf-8')
+        held = registry.reservations(now=self.now + timedelta(seconds=30))
+        self.assertEqual([item['dispatch_id'] for item in held], [stored['dispatch_id']])
+        self.assertEqual(registry.inspect(stored['dispatch_id'])['state'], 'started')
+
+    def test_reservation_read_does_not_finish_a_resume_whose_turn_never_landed(self):
+        row = self.launched()
+        with registry.transaction() as connection:
+            stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+            stored['operation'] = 'resume'
+            stored.pop('started_at', None)
+            stored['state'] = 'launched'
+            registry.save(connection, stored)
+            agent_id = stored['agent_id']
+        folder = self.root / '.paseo' / 'agents' / 'workspace'
+        folder.mkdir(parents=True)
+        (folder / f'{agent_id}.json').write_text(json.dumps({
+            'id': agent_id, 'status': 'idle', 'attentionReason': 'finished',
+            'labels': {'router.dispatch_id': row['dispatch_id']},
+        }), encoding='utf-8')
+        held = registry.reservations(now=self.now + timedelta(seconds=30))
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'launched')
+        self.assertEqual([item['dispatch_id'] for item in held], [row['dispatch_id']])
+
+    def test_reservations_count_the_newest_open_round_of_one_worker(self):
+        first = self.launched()
+        stored = registry.inspect(first['dispatch_id'])
+        second_task = dict(self.task, task_id='round-2')
+        second = self.prepare(self.issue(second_task), second_task)
+        with registry.transaction() as connection:
+            old = registry.get(connection, 'dispatches', stored['dispatch_id'])
+            new = registry.get(connection, 'dispatches', second['dispatch_id'])
+            new.update(state='started', agent_id=old['agent_id'], expected_usd=5.0,
+                       launched_at=registry.stamp(self.now + timedelta(seconds=2)),
+                       started_at=registry.stamp(self.now + timedelta(seconds=2)),
+                       lease_until=registry.stamp(self.now + timedelta(minutes=5)))
+            old['expected_usd'] = 4.0
+            registry.save(connection, old)
+            registry.save(connection, new)
+        held = registry.reservations(now=self.now + timedelta(seconds=30))
+        self.assertEqual([item['dispatch_id'] for item in held], [second['dispatch_id']])
+        self.assertEqual(held[0]['expected_usd'], 5.0)
+        self.assertEqual(registry.inspect(stored['dispatch_id'])['state'], 'started')
+
+    def _agent_file(self, stored, document):
+        folder = self.root / '.paseo' / 'agents' / 'workspace'
+        folder.mkdir(parents=True, exist_ok=True)
+        body = {'id': stored['agent_id'], 'labels': {'router.dispatch_id': stored['dispatch_id']}}
+        body.update(document)
+        path = folder / f"{stored['agent_id']}.json"
+        path.write_text(json.dumps(body), encoding='utf-8')
+        return path
+
+    def _receipt(self, stored, document, state):
+        note = Path(state) / 'paseo-notifications' / f"{stored['dispatch_id']}.json"
+        note.parent.mkdir(parents=True, exist_ok=True)
+        note.write_text(json.dumps(document), encoding='utf-8')
+        return note
+
+    def test_unbound_resume_is_not_settled_from_the_previous_rounds_document(self):
+        old = self.launched()
+        stored = registry.inspect(old['dispatch_id'])
+        later = self.now + timedelta(minutes=1)
+        registry.observe(old['dispatch_id'], self.snapshot(
+            old, 'idle', attentionReason='finished', updatedAt=later.isoformat()), now=later)
+        self.assertEqual(registry.inspect(old['dispatch_id'])['state'], 'completed')
+        self._agent_file(stored, {
+            'status': 'idle', 'attentionReason': 'finished',
+            'updatedAt': (later + timedelta(seconds=5)).isoformat(),
+            'labels': {'router.dispatch_id': stored['dispatch_id']},
+        })
+        new_task = dict(self.task, task_id='resume-before-relabel')
+        when = later + timedelta(seconds=10)
+        prepared = registry.prepare(self.issue(new_task)['decision_id'], new_task, self.launch, self.usage,
+                                    accounts=self.accounts, now=when, resume_agent_id=stored['agent_id'])
+        held = registry.reservations(now=when + timedelta(seconds=5), read_only=True)
+        self.assertEqual(registry.inspect(prepared['dispatch_id'])['state'], 'prepared')
+        self.assertIn(prepared['dispatch_id'], [item['dispatch_id'] for item in held])
+        claimed = registry.claim(prepared['request'], parent_id='parent-a', now=when + timedelta(seconds=5))
+        self.assertEqual(claimed['state'], 'launching')
+
+    def test_agent_json_older_than_the_launch_does_not_finish_the_round(self):
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        self._agent_file(stored, {
+            'status': 'idle', 'attentionReason': 'finished',
+            'updatedAt': (self.now - timedelta(hours=1)).isoformat(),
+        })
+        registry.reservations(now=self.now + timedelta(seconds=30))
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'started')
+        fresh = self.now + timedelta(minutes=2)
+        seen = registry.observe(row['dispatch_id'], self.snapshot(row, 'running', updatedAt=fresh.isoformat()), now=fresh)
+        self.assertEqual(seen['state'], 'started')
+
+    def test_a_parent_reply_reopens_the_same_rounds_reservation(self):
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        hold = stored['expected_usd']
+        when = self.now + timedelta(seconds=30)
+        path = self._agent_file(stored, {
+            'status': 'idle', 'attentionReason': 'finished', 'updatedAt': when.isoformat(),
+        })
+        self.assertEqual(registry.reservations(now=when), [])
+        done = registry.inspect(row['dispatch_id'])
+        self.assertEqual(done['state'], 'completed')
+        self.assertEqual(done['expected_usd'], hold)
+        reply = when + timedelta(seconds=20)
+        path.write_text(json.dumps({
+            'id': stored['agent_id'], 'status': 'running', 'updatedAt': reply.isoformat(),
+            'lastUserMessageAt': reply.isoformat(),
+            'labels': {'router.dispatch_id': stored['dispatch_id']},
+        }), encoding='utf-8')
+        held = registry.reservations(now=reply)
+        again = registry.inspect(row['dispatch_id'])
+        self.assertEqual(again['state'], 'started')
+        self.assertEqual(again['expected_usd'], hold)
+        self.assertTrue(registry.unresolved(again, reply))
+        self.assertIn(again['dispatch_id'], [item['dispatch_id'] for item in held])
+        self.assertTrue(any(str(item.get('reason') or '').startswith('host_followup') for item in again['events']))
+        seen = registry.observe(row['dispatch_id'], self.snapshot(
+            row, 'running', updatedAt=reply.isoformat(), lastUserMessageAt=reply.isoformat()), now=reply)
+        self.assertEqual(seen['state'], 'started')
+
+    def test_a_failed_receipt_beats_a_later_idle_document_in_either_order(self):
+        import provider_retry
+        state = self.root / 'state'
+        when = self.now + timedelta(seconds=20)
+
+        def one(order):
+            row = self.launched()
+            stored = registry.inspect(row['dispatch_id'])
+            self._agent_file(stored, {
+                'status': 'idle', 'attentionReason': 'finished', 'updatedAt': when.isoformat(),
+            })
+            self._receipt(stored, {
+                'dispatch_id': stored['dispatch_id'], 'parent_id': 'parent-a', 'status': 'watching',
+                'delivered': [], 'terminal': {
+                    'reason': 'provider retry stuck', 'failure_code': 'provider_retry_stuck',
+                    'status': 'idle', 'at': when.isoformat(),
+                },
+            }, state)
+            with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}), \
+                    patch.object(provider_retry, 'classify_scope', return_value=('model', {})):
+                if order == 'disk_first':
+                    registry.reservations(now=when)
+                    flow.settle(stored['dispatch_id'], now=when)
+                else:
+                    flow.settle(stored['dispatch_id'], now=when)
+                    registry.reservations(now=when)
+            after = registry.inspect(stored['dispatch_id'])
+            self.assertEqual(after['state'], 'failed', order)
+            self.assertEqual(after['failure_code'], 'provider_retry_stuck', order)
+            self.assertEqual(registry.reservations(now=when + timedelta(seconds=1)), [])
+
+        one('disk_first')
+        one('watcher_first')
+
+    def test_a_replied_receipt_completes_and_clears_the_provider_hold_in_either_order(self):
+        import provider_retry
+        state = self.root / 'state'
+        when = self.now + timedelta(seconds=20)
+        cleared = []
+
+        def one(order):
+            row = self.launched()
+            stored = registry.inspect(row['dispatch_id'])
+            self._agent_file(stored, {
+                'status': 'idle', 'attentionReason': 'finished', 'updatedAt': when.isoformat(),
+            })
+            self._receipt(stored, {
+                'dispatch_id': stored['dispatch_id'], 'parent_id': 'parent-a', 'status': 'delivered',
+                'delivered': ['terminal'], 'terminal': {
+                    'reason': 'finished', 'status': 'idle', 'attentionReason': 'finished',
+                    'replied': True, 'at': when.isoformat(),
+                },
+            }, state)
+            with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}), \
+                    patch.object(provider_retry, 'clear', side_effect=lambda *args, **kwargs: cleared.append(kwargs)):
+                if order == 'disk_first':
+                    registry.reservations(now=when)
+                    flow.settle(stored['dispatch_id'], now=when + timedelta(seconds=1))
+                else:
+                    flow.settle(stored['dispatch_id'], now=when)
+                    registry.reservations(now=when + timedelta(seconds=1))
+            after = registry.inspect(stored['dispatch_id'])
+            self.assertEqual(after['state'], 'completed', order)
+            self.assertEqual(registry.reservations(now=when + timedelta(seconds=2)), [])
+
+        one('disk_first')
+        one('watcher_first')
+        self.assertTrue(any(item.get('include_account') for item in cleared))
+
+    def test_a_superseded_receipt_cancels_the_old_row(self):
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        state = self.root / 'state'
+        when = self.now + timedelta(seconds=20)
+        self._receipt(stored, {
+            'dispatch_id': stored['dispatch_id'], 'status': 'delivered', 'delivered': ['terminal'],
+            'terminal': {'reason': 'superseded by a later dispatch', 'status': 'running', 'at': when.isoformat()},
+        }, state)
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+            held = registry.reservations(now=when)
+        after = registry.inspect(row['dispatch_id'])
+        self.assertEqual(after['state'], 'canceled')
+        self.assertEqual(held, [])
+        self.assertIn('superseded', after['events'][-1].get('reason', ''))
+
+    def test_a_later_dispatch_label_cancels_only_a_bound_previous_round(self):
+        first = self.launched()
+        stored = registry.inspect(first['dispatch_id'])
+        second_task = dict(self.task, task_id='later-label')
+        second = self.prepare(self.issue(second_task), second_task)
+        with registry.transaction() as connection:
+            new = registry.get(connection, 'dispatches', second['dispatch_id'])
+            new.update(state='started', agent_id=stored['agent_id'],
+                       launched_at=registry.stamp(self.now + timedelta(seconds=2)),
+                       started_at=registry.stamp(self.now + timedelta(seconds=2)),
+                       lease_until=registry.stamp(self.now + timedelta(minutes=5)))
+            registry.save(connection, new)
+        when = self.now + timedelta(seconds=30)
+        self._agent_file(stored, {
+            'status': 'running', 'updatedAt': when.isoformat(),
+            'labels': {'router.dispatch_id': second['dispatch_id']},
+        })
+        registry.reservations(now=when)
+        self.assertEqual(registry.inspect(stored['dispatch_id'])['state'], 'canceled')
+        self.assertEqual(registry.inspect(second['dispatch_id'])['state'], 'started')
+
+    def test_a_killed_watcher_is_caught_up_once_and_a_missing_receipt_is_not(self):
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        state = self.root / 'state'
+        when = self.now + timedelta(seconds=20)
+        self._agent_file(stored, {
+            'status': 'idle', 'attentionReason': 'finished', 'updatedAt': when.isoformat(),
+        })
+        calls = []
+
+        def host(payload):
+            calls.append(payload)
+            return {'ok': True, 'sent': True}
+
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+            registry.reservations(now=when)
+            self.assertEqual(flow.deliver_end_notices(now=when, host=host), [])
+        self.assertEqual(calls, [])
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'completed')
+
+        watched = self.launched()
+        watched_row = registry.inspect(watched['dispatch_id'])
+        self._receipt(watched_row, {
+            'dispatch_id': watched_row['dispatch_id'], 'parent_id': 'parent-a', 'status': 'watching',
+            'delivered': [], 'terminal': {'reason': 'finished', 'status': 'idle', 'at': when.isoformat()},
+        }, state)
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+            registry.reservations(now=when)
+            sent = flow.deliver_end_notices(now=when, host=host)
+            self.assertEqual(sent, [watched_row['dispatch_id']])
+            notice = registry.inspect(watched_row['dispatch_id'])['end_notice']
+            self.assertEqual(notice['state'], 'sent')
+            self.assertEqual(notice['source'], 'catchup')
+            self.assertEqual(notice['message_id'], registry.end_notice_message_id(watched_row['dispatch_id']))
+            self.assertEqual(calls[0]['operation'], 'notify_end')
+            self.assertEqual(flow.deliver_end_notices(now=when + timedelta(seconds=1), host=host), [])
+            self.assertEqual(len(calls), 1)
+
+    def test_a_notice_without_delivery_evidence_stays_due(self):
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        state = self.root / 'state'
+        when = self.now + timedelta(seconds=20)
+        self._agent_file(stored, {
+            'status': 'idle', 'attentionReason': 'finished', 'updatedAt': when.isoformat(),
+        })
+        self._receipt(stored, {
+            'dispatch_id': stored['dispatch_id'], 'parent_id': 'parent-a', 'status': 'delivery_failed',
+            'delivered': [], 'pending': {'key': 'terminal', 'text': 'final answer'},
+            'terminal': {'reason': 'finished', 'status': 'idle', 'at': when.isoformat()},
+        }, state)
+
+        def host(_payload):
+            return {'ok': True, 'sent': False, 'already': True}
+
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+            registry.reservations(now=when)
+            self.assertEqual(flow.deliver_end_notices(now=when, host=host), [])
+            notice = registry.inspect(stored['dispatch_id'])['end_notice']
+            self.assertEqual(notice['state'], 'due')
+            self.assertNotIn('source', notice)
+
+    def test_one_report_channel_is_injected_and_a_watched_prompt_can_be_rebuilt_unwatched(self):
+        import roll
+        watched, _ = roll.prepare_worker_prompt('Do work', 'parent-a', watched=True)
+        plain, _ = roll.prepare_worker_prompt('Do work', 'parent-a', watched=False)
+        self.assertIn('本派发有完成监视', watched)
+        self.assertIn('不要发送 `[Worker final report]`', watched)
+        self.assertNotIn('## 无完成监视', watched)
+        self.assertIn('[Worker final report]', plain)
+        self.assertNotIn('## 有完成监视', plain)
+        self.assertIn('send_agent_prompt', watched)
+        self.assertIn('notifyOnFinish: false', watched)
+        again, _ = roll.prepare_worker_prompt(watched, 'parent-a', watched=True)
+        self.assertEqual(watched, again)
+        self.assertEqual(again.count('Parent session agent ID: `parent-a`.'), 1)
+        rebuilt, _ = roll.prepare_worker_prompt(watched, 'parent-a', watched=False)
+        self.assertIn('## 无完成监视', rebuilt)
+        self.assertNotIn('## 有完成监视', rebuilt)
+        self.assertEqual(rebuilt.count('Parent session agent ID: `parent-a`.'), 1)
+
+    def test_bridge_env_hands_the_watcher_a_settle_command(self):
+        argv = json.loads(flow.bridge_env()['AGENTCOMPASS_SETTLE_ARGV'])
+        self.assertIn('--dispatch-action', argv)
+        self.assertIn('settle', argv)
+
+    def test_settle_writes_completed_from_the_watcher_receipt_without_a_host_call(self):
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        state = self.root / 'state'
+        note = state / 'paseo-notifications' / f"{stored['dispatch_id']}.json"
+        note.parent.mkdir(parents=True)
+        when = self.now + timedelta(seconds=20)
+        note.write_text(json.dumps({
+            'dispatch_id': stored['dispatch_id'], 'status': 'delivered',
+            'terminal': {'reason': 'finished', 'status': 'idle', 'attentionReason': 'finished',
+                         'at': when.isoformat(), 'replied': True},
+        }), encoding='utf-8')
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}), \
+                patch.object(flow, 'host_call', side_effect=AssertionError('host')):
+            settled = flow.settle(stored['dispatch_id'], now=when)
+            self.assertEqual(settled['state'], 'completed')
+            self.assertEqual(registry.reservations(now=when), [])
+            again = flow.settle(stored['dispatch_id'], now=when + timedelta(seconds=1))
+            self.assertEqual(again['state'], 'completed')
+            with self.assertRaises(ValueError):
+                flow.settle('../outside', now=when)
+
     def test_argon_and_flash_budget_units_agree_in_both_windows(self):
         accounts = axis_scores.five_axis_overlay(self.accounts)
         account = accounts['accounts']['antigravity']
@@ -951,7 +1383,11 @@ class RollTests(unittest.TestCase):
         import roll
         prompt = Path(result['worker_prompt_file']).read_bytes().decode('utf-8')
         self.assertTrue(prompt.startswith(self.brief + '\n'))
-        self.assertIn(roll.WORKER_COMMUNICATION.read_text(encoding='utf-8'), prompt)
+        watched = '## 有完成监视' in prompt
+        unwatched = '## 无完成监视' in prompt
+        self.assertNotEqual(watched, unwatched)
+        self.assertIn(roll.communication_contract(watched).strip(), prompt)
+        self.assertEqual(prompt.count('## 有完成监视') + prompt.count('## 无完成监视'), 1)
         if parent:
             self.assertIn(f'Parent session agent ID: `{parent}`.', prompt)
         self.assertEqual((self.root / 'task.md').read_bytes().decode('utf-8'), self.brief)

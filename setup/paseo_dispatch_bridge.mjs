@@ -14,7 +14,9 @@ const POLL_MS = 5000;
 // `relaunched`: AgentCompass relaunched the brief after this attempt failed; the new attempt's watcher reports.
 // `canceled`: the parent released the brief while its retry was scheduled; the parent did that, so nothing is said.
 // `resumed`: the parent resumed the failed worker itself; that turn's own completion is the notification.
-const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed', 'relaunched', 'canceled', 'resumed']);
+// `delivery_failed` only stops this process when the send window ends. It is not a delivery: the pending text and
+// its message id stay on the receipt, and a later notifyEnd sends them. The other statuses are a decision to stop.
+const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed', 'relaunched', 'canceled', 'resumed', 'continued']);
 const CREATE_FAILED = 'creation failed';
 const WORKER_REMOVED = 'worker removed before it was observed';
 const AGENT_REMOVED_ERROR = 'Previously created agent no longer exists';
@@ -39,6 +41,10 @@ const RETRY_STUCK = 'provider retry stuck';
 // classifier's scope; this list only says which sightings to hand over before telling the parent anything).
 const FALLBACK_REASONS = new Set(['error', RETRY_STUCK, CREATE_FAILED]);
 const FALLBACK_TEXT_LIMIT = 6000;
+// A final reply at or under this length is in the one end notice. A longer one is written beside the receipt
+// and the notice carries a summary plus that path, so the parent does not call another tool to read it.
+export const REPORT_INLINE_LIMIT = 8000;
+export const REPORT_SUMMARY_LIMIT = 1500;
 // A scheduled same-model retry keeps its watcher at least this long past the retry time, to see the retry start.
 const RETRY_WATCH_MS = 30 * 60 * 1000;
 
@@ -49,6 +55,21 @@ export function fallbackArgv(env = process.env) {
     const argv = JSON.parse(env.AGENTCOMPASS_FALLBACK_ARGV ?? '');
     return Array.isArray(argv) && argv.length && argv.every(a => typeof a === 'string' && a) ? argv : null;
   } catch { return null; }
+}
+
+// The command dispatch_flow.bridge_env always hands down: `agentcompass dispatch --dispatch-action settle`.
+// Absent (an old parent that did not pass it), the watcher still exits and the next reservation read settles from disk.
+export function settleArgv(env = process.env) {
+  try {
+    const argv = JSON.parse(env.AGENTCOMPASS_SETTLE_ARGV ?? '');
+    return Array.isArray(argv) && argv.length && argv.every(a => typeof a === 'string' && a) ? argv : null;
+  } catch { return null; }
+}
+
+// Write the registry's terminal state before this watcher exits. Same spawn as a fallback, different argv.
+export function settleBeforeExit(record, argv = settleArgv()) {
+  if (!record?.dispatch_id) return Promise.resolve(null);
+  return runFallback(record.dispatch_id, argv);
 }
 
 // Run the fallback step for one failed attempt and read its JSON answer; null when it cannot be run or read.
@@ -175,6 +196,31 @@ export async function ensureNotification(input) {
   throw new Error('notification_not_ready');
 }
 
+// The first user-message time at or after this launch is this turn's own prompt. A later one is the parent
+// continuing the same worker. A timestamp from the previous turn is not a baseline.
+function noteUserMessage(record, agent) {
+  const created = record.created_at ?? (record.creation_deadline ?? 0) - CREATE_LIMIT_MS;
+  if (typeof agent?.lastUserMessageAt !== 'string') return;
+  const at = Date.parse(agent.lastUserMessageAt);
+  if (!Number.isFinite(at) || !(record.started || at >= created)) return;
+  if (!record.user_message_at) record.user_message_at = agent.lastUserMessageAt;
+  else if (at > Date.parse(record.user_message_at)) record.continued = true;
+}
+
+// One more read at the send point. A failed read is not a continuation; a continuation already stored stays stored.
+async function noteContinuation(client, record) {
+  if (!record || record.continued || !client || typeof client.fetchAgent !== 'function') return;
+  const targetId = record.agent_id ?? record.dispatch_id;
+  try { noteUserMessage(record, (await client.fetchAgent(targetId))?.agent); }
+  catch { /* a failed read is not a continuation */ }
+}
+
+function alreadyNotice(record, delivered) {
+  if (record.status === 'delivered' || delivered.includes('terminal'))
+    return {ok: true, sent: false, already: true, evidence: 'delivered'};
+  return {ok: true, sent: false, already: true, evidence: 'skipped', skipped: record.status};
+}
+
 // `creation` is the daemon's durable record for a created worker: an object, null when the daemon never admitted the
 // request, undefined when it was not read. Nothing is sent while a create can still succeed, however long it takes.
 // No agent means the daemon answered that it has none, in memory or in storage: a host that cannot answer throws.
@@ -194,6 +240,7 @@ export function notificationEvents(agent, record, now, creation) {
     return agent.archivedAt ? [{key: 'terminal', reason: 'worker unavailable'}] : [];
   if (agent.status === 'running') record.started = true;
   record.seen = true;
+  noteUserMessage(record, agent);
   // The watcher stopped a turn its provider kept retrying: the stop's idle or canceled state is not a finish.
   if (record.terminal?.failure_code === RETRY_STUCK_CODE) return [{key: 'terminal', reason: RETRY_STUCK}];
   if (agent.status === 'error' || agent.attentionReason === 'error' || agent.providerUnavailable)
@@ -204,8 +251,8 @@ export function notificationEvents(agent, record, now, creation) {
   if (agent.attentionReason === 'permission') return [{key: 'permission', reason: 'needs permission'}];
   // A resumed worker is relabeled before its turn is sent: until the turn is seen running or its message lands,
   // idle/finished is still the previous turn's.
-  const resumed = record.agent_id && record.agent_id !== record.dispatch_id;
   const created = record.created_at ?? (record.creation_deadline ?? 0) - CREATE_LIMIT_MS;
+  const resumed = record.agent_id && record.agent_id !== record.dispatch_id;
   const turnSeen = record.started || (typeof agent.lastUserMessageAt === 'string'
     && Date.parse(agent.lastUserMessageAt) >= created);
   if (agent.status === 'idle' && (resumed ? turnSeen : (agent.attentionReason === 'finished' || record.started)))
@@ -254,6 +301,84 @@ export function endedOnReply(entries) {
     if (type === 'error') return false;
   }
   return true;
+}
+
+// The model's last reply after the turn's prompt. A missing timeline method is no reply. A read that throws is not.
+export function finalReplyText(entries) {
+  const list = entries ?? [];
+  let start = 0;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i]?.item?.type === 'user_message') { start = i + 1; break; }
+  }
+  for (let i = list.length - 1; i >= start; i--) {
+    const text = list[i]?.item?.type === 'assistant_message' ? list[i].item.text : '';
+    if (typeof text === 'string' && text.trim()) return text;
+  }
+  return '';
+}
+
+export function reportSection(dispatchId, text) {
+  if (!text) return 'The worker ended without a final reply.\n';
+  if (text.length <= REPORT_INLINE_LIMIT) return `Final reply:\n${text}\n`;
+  const file = path.join(path.dirname(notificationFile(dispatchId)), `${dispatchId}.report.txt`);
+  fs.mkdirSync(path.dirname(file), {recursive: true});
+  fs.writeFileSync(file, text, {mode: 0o600});
+  return `Final reply is ${text.length} characters. Full text: ${file}\nSummary:\n${text.slice(0, REPORT_SUMMARY_LIMIT)}\n`;
+}
+
+async function loadFinalReply(client, agentId) {
+  if (!client || typeof client.fetchAgentTimeline !== 'function') return '';
+  let page;
+  try {
+    page = await client.fetchAgentTimeline(agentId, {direction: 'tail', limit: RETRY_TIMELINE_LIMIT, projection: 'canonical'});
+  } catch (error) {
+    const unread = new Error('timeline_unavailable');
+    unread.code = 'timeline_unavailable';
+    unread.cause = error;
+    throw unread;
+  }
+  return finalReplyText(page?.entries);
+}
+
+async function noticeBody(client, record, event) {
+  const targetId = record.agent_id ?? record.dispatch_id;
+  if (event.reason === CREATE_FAILED)
+    return 'Paseo created no worker for this dispatch and none can appear later; it is safe to roll this brief again.';
+  if (event.reason === WORKER_REMOVED)
+    return 'Paseo created this worker and it was removed before this dispatch observed it. It may have done part of the work: check that before rolling this brief again.';
+  if (event.reason === RETRY_STUCK) return retryStuckText(record.terminal, targetId);
+  if (event.reason === UNDELIVERED)
+    return `This worker carries this dispatch's labels, but its turn has not landed within the lease. Check it with get_agent_status ` +
+      `(agentId: ${targetId}). If it should not do this work any more, release this dispatch. A finish is still reported if the turn lands.`;
+  if (event.key !== 'terminal') return 'A permission is waiting. Use get_agent_status for the request.\n';
+  const classifier = record.terminal?.failure_code === TURN_FAILED_CODE
+    ? `The worker's turn ended with this error: ${record.terminal.provider_message}\nAgentCompass's classifier ` +
+      'reads it: when it is the provider refusing the model or the account, that is held out of dispatch; an ' +
+      "error of the worker's own work or of this task's input holds nothing.\n" : '';
+  return classifier + reportSection(record.dispatch_id, await loadFinalReply(client, targetId));
+}
+
+// One text for the watcher's send and for a catch-up send. The final reply is in it; the parent is not sent to read it elsewhere.
+export async function composeNotice(client, record, event) {
+  const targetId = record.agent_id ?? record.dispatch_id;
+  const note = attemptsNote(notificationFile(record.dispatch_id));
+  const root = record.fallback?.root_dispatch_id ?? note?.root_dispatch_id;
+  const attempts = record.fallback?.lines ?? note?.lines;
+  const final = event.key === 'terminal' && ['blocked', 'owner_named', 'retry_expired'].includes(record.fallback?.result)
+    && record.fallback?.text;
+  const attemptsText = !final && Array.isArray(attempts) && attempts.length > 1 && event.key === 'terminal'
+    ? `Attempts:\n${attempts.map(line => `- ${line}`).join('\n')}\n` : '';
+  let body;
+  try {
+    body = final ? record.fallback.text : attemptsText + await noticeBody(client, record, event);
+  } catch (error) {
+    if (error?.code === 'timeline_unavailable') return null;
+    throw error;
+  }
+  return `[AgentCompass worker notification]\nDispatch: ${root ?? record.dispatch_id}\n` +
+    (root && root !== record.dispatch_id ? `Attempt dispatch: ${record.dispatch_id}\n` : '') +
+    `Worker: ${targetId}\nState: ${final ? record.fallback.result : event.reason}\n` +
+    await continuationVerdict(targetId) + '\n' + body;
 }
 
 async function turnReplied(client, agentId) {
@@ -429,40 +554,35 @@ export async function notificationStep(client, record, persist, now = Date.now()
       persist();
     }
   }
+  // A parent reply while this watcher was still running owns the end message (notifyOnFinish). Permission notices
+  // are not that end. A terminal notice already composed is dropped at the send point once the continuation is known.
+  if (!record.pending && event?.key === 'terminal' && record.continued) {
+    record.status = 'continued';
+    persist();
+    return true;
+  }
   const parent = (await client.fetchAgent(record.parent_id))?.agent;
   if (!parent || parent.archivedAt || parent.status === 'closed') {
     record.status = 'parent_unavailable'; persist(); return true;
   }
   if (!record.pending) {
     if (event) {
-      const note = attemptsNote(notificationFile(record.dispatch_id));
-      const root = record.fallback?.root_dispatch_id ?? note?.root_dispatch_id;
-      const attempts = record.fallback?.lines ?? note?.lines;
-      const final = event.key === 'terminal' && ['blocked', 'owner_named', 'retry_expired'].includes(record.fallback?.result)
-        && record.fallback?.text;
+      const text = await composeNotice(client, record, event);
+      // A timeline that could not be read is not an empty reply. Leave the record and try on the next poll.
+      if (typeof text !== 'string') return false;
       record.pending = {...event, messageId: createHash('sha256')
-        .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'),
-      text: `[AgentCompass worker notification]\nDispatch: ${root ?? record.dispatch_id}\n` +
-        (root && root !== record.dispatch_id ? `Attempt dispatch: ${record.dispatch_id}\n` : '') +
-        `Worker: ${targetId}\nState: ${final ? record.fallback.result : event.reason}\n` +
-        await continuationVerdict(targetId) + '\n' + (final ? record.fallback.text
-          : (Array.isArray(attempts) && attempts.length > 1 && event.key === 'terminal'
-            ? `Attempts:\n${attempts.map(l => `- ${l}`).join('\n')}\n` : '') + (event.reason === CREATE_FAILED
-          ? 'Paseo created no worker for this dispatch and none can appear later; it is safe to roll this brief again.'
-          : event.reason === WORKER_REMOVED
-          ? 'Paseo created this worker and it was removed before this dispatch observed it. It may have done part of the work: check that before rolling this brief again.'
-          : event.reason === RETRY_STUCK ? retryStuckText(record.terminal, targetId)
-          : event.reason === UNDELIVERED
-          ? `This worker carries this dispatch's labels, but its turn has not landed within the lease. Check it with get_agent_status ` +
-            `(agentId: ${targetId}). If it should not do this work any more, release this dispatch. A finish is still reported if the turn lands.`
-          : (record.terminal?.failure_code === TURN_FAILED_CODE && event.key === 'terminal'
-            ? `The worker's turn ended with this error: ${record.terminal.provider_message}\nAgentCompass's classifier ` +
-              'reads it: when it is the provider refusing the model or the account, that is held out of dispatch; an ' +
-              "error of the worker's own work or of this task's input holds nothing. " : '') +
-            `Read the worker's final response and details with get_agent_activity ` +
-            `(agentId: ${targetId}); use get_agent_status for pending permissions.`))};
+        .update(`router-finish:${record.dispatch_id}:${event.key}`).digest('hex'), text};
     }
     persist();
+  }
+  if (record.pending?.key === 'terminal') {
+    await noteContinuation(client, record);
+    if (record.continued) {
+      record.pending = null;
+      record.status = 'continued';
+      persist();
+      return true;
+    }
   }
   if (!record.pending) return false;
   await client.sendMessage(record.parent_id, record.pending.text,
@@ -473,6 +593,54 @@ export async function notificationStep(client, record, persist, now = Date.now()
   record.status = terminal ? 'delivered' : 'watching';
   persist();
   return terminal;
+}
+
+// The one catch-up send. The message id is computed here, never taken from the caller, and matches the watcher's terminal id.
+export async function notifyEnd(client, input) {
+  let file;
+  try { file = notificationFile(input.dispatch_id); }
+  catch { return {ok: false, error: 'notification_unavailable'}; }
+  const record = readRecord(file);
+  if (!record) return {ok: false, error: 'notification_unavailable'};
+  if (input.parent_id && record.parent_id !== input.parent_id)
+    return {ok: false, error: 'notification_parent_mismatch'};
+  const delivered = Array.isArray(record.delivered) ? record.delivered : [];
+  // `delivery_failed` is the watcher stopping, not a delivery. Anything else in DONE was a decision not to send.
+  if (record.status === 'delivered' || delivered.includes('terminal')
+      || (DONE.has(record.status) && record.status !== 'delivery_failed'))
+    return alreadyNotice(record, delivered);
+  await noteContinuation(client, record);
+  if (record.continued) {
+    if (record.pending?.key === 'terminal') record.pending = null;
+    record.status = 'continued';
+    saveRecord(file, record);
+    return {ok: true, sent: false, already: true, evidence: 'skipped', skipped: 'continued'};
+  }
+  const parent = (await client.fetchAgent(record.parent_id))?.agent;
+  if (!parent || parent.archivedAt || parent.status === 'closed') {
+    record.status = 'parent_unavailable';
+    saveRecord(file, record);
+    return {ok: true, sent: false, error: 'parent_unavailable'};
+  }
+  const messageId = createHash('sha256').update(`router-finish:${record.dispatch_id}:terminal`).digest('hex');
+  const pendingEnd = record.pending?.key === 'terminal' && typeof record.pending.text === 'string' ? record.pending.text : '';
+  const text = pendingEnd || await composeNotice(client, record, {key: 'terminal', reason: record.terminal?.reason || 'finished'});
+  if (typeof text !== 'string') return {ok: false, error: 'timeline_unavailable'};
+  await noteContinuation(client, record);
+  if (record.continued) {
+    record.pending = null;
+    record.status = 'continued';
+    saveRecord(file, record);
+    return {ok: true, sent: false, already: true, evidence: 'skipped', skipped: 'continued'};
+  }
+  record.pending = {key: 'terminal', messageId, text};
+  saveRecord(file, record);
+  await client.sendMessage(record.parent_id, text, {messageId, activeTurnBehavior: 'steer'});
+  record.delivered = delivered.includes('terminal') ? delivered : [...delivered, 'terminal'];
+  record.pending = null;
+  record.status = 'delivered';
+  saveRecord(file, record);
+  return {ok: true, sent: true, message_id: messageId};
 }
 
 async function watch(dispatchId, parentId, agentId, createDeadline) {
@@ -500,8 +668,9 @@ async function watch(dispatchId, parentId, agentId, createDeadline) {
   }
   fs.writeFileSync(lockFd, String(process.pid));
   let client;
+  let record;
   try {
-    const record = readRecord(file) ?? {dispatch_id: dispatchId, parent_id: parentId,
+    record = readRecord(file) ?? {dispatch_id: dispatchId, parent_id: parentId,
       ...(agentId && agentId !== dispatchId ? {agent_id: agentId} : {}),
       deadline: Date.now() + WATCH_LIMIT_MS, created_at: Date.now(),
       creation_deadline: Date.parse(createDeadline) || Date.now() + CREATE_LIMIT_MS,
@@ -510,7 +679,12 @@ async function watch(dispatchId, parentId, agentId, createDeadline) {
     if (record.parent_id !== parentId) throw new Error('notification_parent_mismatch');
     if (DONE.has(record.status)) {process.send?.({ready: true}); return;}
     record.pid = process.pid;
-    const persist = () => saveRecord(file, record);
+    // A poll's save must not write `watching` back over the creator's stop. That stop is what lets the
+    // next create retire this process before starting another watcher for the same dispatch.
+    const persist = () => {
+      if (fs.existsSync(`${file}.creation-failed`)) record.status = 'creation_failed';
+      saveRecord(file, record);
+    };
     // Resolve dependencies before acknowledging readiness, never launch a worker
     // whose notifier cannot even load the SDK.
     client = await createClient();
@@ -531,10 +705,15 @@ async function watch(dispatchId, parentId, agentId, createDeadline) {
         await client.close().catch(() => {});
         client = await createClient();
       }
+      if (fs.existsSync(`${file}.creation-failed`)) {
+        record.status = 'creation_failed'; persist(); return;
+      }
       await pause(POLL_MS);
     }
     record.status = 'delivery_failed'; persist();
   } finally {
+    // The receipt is already on disk. Settle while this lock is still held, then unlock even if settle fails.
+    try { await settleBeforeExit(record); } catch { /* a failed settle must not keep the lock */ }
     if (client) await client.close().catch(() => {});
     fs.closeSync(lockFd);
     fs.unlinkSync(lock);
@@ -971,6 +1150,7 @@ export async function execute(client, input, notify = ensureNotification) {
     }));
     return {ok: true, fetched_at: new Date().toISOString(), providers: Object.fromEntries(entries)};
   }
+  if (input.operation === 'notify_end') return notifyEnd(client, input);
   if (input.operation !== 'observe') throw new Error('unsupported_operation');
   let agent = input.agent_id ? (await client.fetchAgent(input.agent_id))?.agent : null;
   if (!agent) {
