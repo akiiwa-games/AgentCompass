@@ -10,13 +10,11 @@ Every pytest run from the repository root is hermetic by default via `conftest.p
 
 Do not hand-write environment variable redirections (`HOME=...`, `USERPROFILE=...`, `ROUTER_STATE_DIR=...`) in test commands or worker briefs.
 
-Use the two standard commands from the repository root:
+When to test (user rule, 2026-11-12):
+- **A feature change within a version** (a worker brief, a fix, a merge) runs only the tests of the touched feature, for example `pytest skills/agent-compass/scripts/test_<feature>.py`. Never run the full suite or a regression pass for it, and never repeat runs to "confirm".
+- **Regression** (the full suite) runs only once, before a release:
 
 ```powershell
-# Inner loop (fast unit and contract suite)
-pytest -n auto -m "not slow"
-
-# Pre-merge (full suite, including real subprocesses, packaging, sandbox checks, and Tk UI loops)
 pytest -n auto
 ```
 

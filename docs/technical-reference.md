@@ -298,6 +298,6 @@ python tray\updates.py update                      # Fast-forward pull, rebuild,
 
 ```powershell
 # Hermetic pytest suites (isolated temp HOME/APPDATA per xdist worker; no manual env redirection needed)
-pytest -n auto -m "not slow"    # Inner loop (fast unit and contract tests)
-pytest -n auto                  # Pre-merge (full suite including subprocess, packaging, and Tk UI tests)
+pytest <test files of the touched feature>   # a feature change within a version: only its own tests
+pytest -n auto                              # regression: the full suite, only before a release
 ```
