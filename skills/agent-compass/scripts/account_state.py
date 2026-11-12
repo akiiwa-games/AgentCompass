@@ -155,7 +155,7 @@ def unavailable_text(row):
     if status == AGY_ACCOUNT_FLAPPING:
         return f"keyring account flapping ({row.get('reason')}); {AGY_FLAPPING_FIX}"
     if status == LEGACY_METER:
-        return str(row.get('reason') or '旧的额度字段残留。运行 agentcompass setup，或在托盘里对该账号操作一次，即可清掉这些字段。')
+        return str(row.get('reason') or '旧的额度字段残留。运行 agentcompass setup 清掉旧字段。')
     return None
 
 

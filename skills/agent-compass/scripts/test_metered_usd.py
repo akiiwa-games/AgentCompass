@@ -544,6 +544,67 @@ class SetupCleanup(unittest.TestCase):
         self.assertNotIn('llm_proxy_api_key', plugin_saved)
         self.assertNotIn('sk-test-key', plugin.read_text(encoding='utf-8'))
 
+    def test_setup_clears_old_fields_and_leaves_the_account_switch(self):
+        import sys
+        import tempfile
+        setup = Path(__file__).resolve().parents[3] / 'setup'
+        if str(setup) not in sys.path:
+            sys.path.insert(0, str(setup))
+        import onboard
+        home = Path(tempfile.mkdtemp(prefix='metered-policy-'))
+        self.addCleanup(lambda: __import__('shutil').rmtree(home, ignore_errors=True))
+        state = home / '.agent-compass'
+        state.mkdir(parents=True)
+        override = state / 'accounts-override.json'
+        override.write_text(json.dumps({
+            'schema_version': 2,
+            'accounts': {
+                'llmproxy': {
+                    'billing': 'metered',
+                    'endpoint': 'https://example.test/v1',
+                    'api_key': 'sk-team-proxy',
+                    'budget_usd': 200,
+                    'windows': {'spend': {'hours': 168}},
+                    'capacity_usd': {'spend': 200},
+                },
+                'claude': {'verified': True},
+            },
+        }), encoding='utf-8', newline='\n')
+        policy = state / 'host-policy.json'
+        policy.write_text(
+            json.dumps({'allowed_accounts': ['llmproxy', 'claude']}) + '\n',
+            encoding='utf-8', newline='\n')
+        before_policy = policy.read_bytes()
+        onboard.write_override(home, {'accounts': []}, set(), dry_run=False)
+        self.assertEqual(policy.read_bytes(), before_policy)
+        saved = json.loads(override.read_text(encoding='utf-8'))
+        spec = saved['accounts']['llmproxy']
+        self.assertNotIn('windows', spec)
+        self.assertNotIn('capacity_usd', spec)
+        self.assertEqual(spec['endpoint'], 'https://example.test/v1')
+        self.assertEqual(spec['api_key'], 'sk-team-proxy')
+        self.assertEqual(spec['budget_usd'], 200)
+        self.assertEqual(saved['accounts']['claude'], {'verified': True})
+        bare = Path(tempfile.mkdtemp(prefix='metered-policy-bare-'))
+        self.addCleanup(lambda: __import__('shutil').rmtree(bare, ignore_errors=True))
+        bare_state = bare / '.agent-compass'
+        bare_state.mkdir(parents=True)
+        (bare_state / 'accounts-override.json').write_text(json.dumps({
+            'schema_version': 2,
+            'accounts': {'llmproxy': {
+                'billing': 'metered',
+                'endpoint': 'https://example.test/v1',
+                'api_key': 'sk-team-proxy',
+                'windows': {'spend': {'hours': 168}},
+            }},
+        }), encoding='utf-8', newline='\n')
+        onboard.write_override(bare, {'accounts': []}, set(), dry_run=False)
+        self.assertFalse((bare_state / 'host-policy.json').exists())
+        bare_spec = json.loads((bare_state / 'accounts-override.json').read_text(encoding='utf-8'))['accounts']['llmproxy']
+        self.assertNotIn('windows', bare_spec)
+        self.assertIn('运行 agentcompass setup 清掉旧字段', state_upgrade.LEGACY_METER_REASON)
+        self.assertNotIn('托盘', state_upgrade.LEGACY_METER_REASON)
+
 
 if __name__ == '__main__':
     unittest.main()

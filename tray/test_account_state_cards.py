@@ -2,7 +2,6 @@
 from pathlib import Path
 import json
 import sys
-import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -376,52 +375,9 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertNotIn('仅手动使用', card['badge'])
         self.assertEqual(
             i18n.english(state_upgrade.LEGACY_METER_REASON),
-            'Old quota fields remain. Run agentcompass setup, or act on this account once in the tray, to clear them.',
+            'Old quota fields remain. Run agentcompass setup to clear the old fields.',
         )
-
-    def test_one_tray_action_strips_leftover_meter_fields(self):
-        with tempfile.TemporaryDirectory() as temp:
-            state = Path(temp)
-            target = state / 'accounts-override.json'
-            doc = {
-                'schema_version': 2,
-                'accounts': {
-                    'llmproxy': {
-                        'billing': 'metered',
-                        'endpoint': 'https://proxy.example.test/v1',
-                        'api_key': 'sk-team-proxy',
-                        'budget_usd': 200,
-                        'windows': {'spend': {'hours': 168}},
-                        'capacity_usd': {'spend': 200},
-                        'burn_pct_per_worker_hour': {'spend': 1},
-                        'burn_basis': 'old',
-                        'budget_duration': '7d',
-                        'timezone': 'UTC+8',
-                        'backend_kind': 'litellm',
-                    },
-                    'claude': {'verified': True},
-                },
-            }
-            target.write_text(json.dumps(doc), encoding='utf-8', newline='\n')
-            with patch.object(router_data, 'STATE_DIR', state):
-                names = router_data._clear_account_legacy_meter('llmproxy')
-            self.assertIn('windows', names)
-            self.assertIn('backend_kind=litellm', names)
-            saved = json.loads(target.read_text(encoding='utf-8'))
-            spec = saved['accounts']['llmproxy']
-            for field in (
-                'windows', 'capacity_usd', 'burn_pct_per_worker_hour', 'burn_basis',
-                'budget_duration', 'timezone', 'backend_kind',
-            ):
-                self.assertNotIn(field, spec)
-            self.assertEqual(spec['endpoint'], 'https://proxy.example.test/v1')
-            self.assertEqual(spec['api_key'], 'sk-team-proxy')
-            self.assertEqual(spec['budget_usd'], 200)
-            self.assertEqual(saved['accounts']['claude'], {'verified': True})
-            before = target.read_bytes()
-            with patch.object(router_data, 'STATE_DIR', state):
-                self.assertEqual(router_data._clear_account_legacy_meter('llmproxy'), [])
-            self.assertEqual(target.read_bytes(), before)
+        self.assertNotIn('托盘', card['badge'])
 
 
 if __name__ == '__main__':

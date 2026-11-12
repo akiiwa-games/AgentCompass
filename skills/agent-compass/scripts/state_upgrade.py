@@ -21,7 +21,7 @@ FIX_SETUP = 're-run "agentcompass setup"'
 FIX_TRAY = 're-toggle in the tray'
 # Shown on the account row, in doctor, and as the routing exclusion. The fields are not applied.
 LEGACY_METER_REASON = (
-    '旧的额度字段残留。运行 agentcompass setup，或在托盘里对该账号操作一次，即可清掉这些字段。'
+    '旧的额度字段残留。运行 agentcompass setup 清掉旧字段。'
 )
 LEGACY_SETTINGS_REASON = (
     '旧设置残留。在设置里保存一次即可清掉，或运行 agentcompass setup。'

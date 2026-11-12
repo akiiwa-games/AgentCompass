@@ -2093,36 +2093,12 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
     return _tr('{0} · {1} 已{2}').format(f'{account_label(account)}', f'{bundle_id}', f"{(_tr('启用') if enable_now else _tr('停用'))}")
 
 
-def _clear_account_legacy_meter(account: str) -> list[str]:
-    """One tray action on this account deletes its leftover meter fields. A clean account is not rewritten."""
-    modules()
-    import state_upgrade
-    target = STATE_DIR / "accounts-override.json"
-    if not target.is_file():
-        return []
-    try:
-        document = json.loads(target.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        return []
-    spec = (document.get("accounts") or {}).get(account) if isinstance(document, dict) else None
-    names = state_upgrade.legacy_meter_field_names(spec)
-    if not names:
-        return []
-
-    def change(doc):
-        entry = (doc.get("accounts") or {}).get(account)
-        state_upgrade.strip_legacy_meter_fields(entry)
-
-    _edit_preferences(change)
-    return names
-
-
 def toggle_account_host(account: str) -> str:
     """Toggle only user policy; discovery/readiness is not a user preference.
 
-    The same action clears leftover meter fields on this account when they are still in the file.
+    Leftover meter fields are not part of this click. `agentcompass setup` removes them
+    and leaves the account switch as it is.
     """
-    _clear_account_legacy_meter(account)
     state = host_policy_state()
     all_accounts = state["accounts"]
     allowed = set(all_accounts if state["allowed"] is None else state["allowed"])

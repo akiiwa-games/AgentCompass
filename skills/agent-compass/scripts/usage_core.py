@@ -447,10 +447,6 @@ def _obsolete_collector_keys(data: dict[str, Any]) -> list[str]:
     return state_upgrade.obsolete_usage_config_keys(data)
 
 
-def _obsolete_collector_message(keys: list[str]) -> str:
-    return state_upgrade.usage_config_issue(CONFIG_PATH, keys)
-
-
 def read_usage_config() -> dict[str, Any]:
     """Collector settings. Obsolete llm-proxy keys are returned so a caller can
     name them, and are not applied and not deleted by this read."""
@@ -2496,10 +2492,8 @@ class MeteredUsdAccount:
     display_name: str
     api_key: str
     endpoint: str
-    openai_base: str
     origin: str
     budget_usd: float | None
-    models: tuple[str, ...]
 
 
 def _accounts_override_path() -> Path:
@@ -2509,12 +2503,12 @@ def _accounts_override_path() -> Path:
     return STATE_DIR / "accounts-override.json"
 
 
-def _metered_usd_urls(endpoint: str) -> tuple[str, str]:
-    """(origin for /key/info, OpenAI base that ends in /v1)."""
+def _metered_usd_origin(endpoint: str) -> str:
+    """Origin for GET /key/info. A trailing /v1 is not part of the origin."""
     base = endpoint.strip().rstrip("/")
     if base.endswith("/v1"):
-        return base[:-3], base
-    return base, f"{base}/v1"
+        return base[:-3]
+    return base
 
 
 def _usd_number(value: Any, *, allow_zero: bool) -> float | None:
@@ -2529,13 +2523,6 @@ def _usd_number(value: Any, *, allow_zero: bool) -> float | None:
     if number < 0 or (number == 0 and not allow_zero):
         return None
     return number
-
-
-def _account_models(spec: dict[str, Any]) -> tuple[str, ...]:
-    raw = spec.get("models")
-    if not isinstance(raw, list):
-        return ()
-    return tuple(item.strip() for item in raw if isinstance(item, str) and item.strip())
 
 
 def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
@@ -2563,8 +2550,8 @@ def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
         key = str(spec.get("api_key") or "").strip()
         if not endpoint or not key:
             continue
-        origin, openai_base = _metered_usd_urls(endpoint)
-        if not origin or not openai_base:
+        origin = _metered_usd_origin(endpoint)
+        if not origin:
             continue
         label = str(spec.get("label") or pid).strip() or pid
         PROVIDER_LABELS.setdefault(pid, label)
@@ -2573,10 +2560,8 @@ def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
             display_name=label,
             api_key=key,
             endpoint=endpoint,
-            openai_base=openai_base,
             origin=origin,
             budget_usd=_usd_number(spec.get("budget_usd"), allow_zero=False),
-            models=_account_models(spec),
         )
     return found
 

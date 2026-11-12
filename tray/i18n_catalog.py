@@ -743,8 +743,8 @@ EN = {
     '已用 {0}': 'used {0}',
     '已用 {0} / {1}': 'used {0} / {1}',
     '无查询权限': 'No permission to query usage',
-    '旧的额度字段残留。运行 agentcompass setup，或在托盘里对该账号操作一次，即可清掉这些字段。':
-        'Old quota fields remain. Run agentcompass setup, or act on this account once in the tray, to clear them.',
+    '旧的额度字段残留。运行 agentcompass setup 清掉旧字段。':
+        'Old quota fields remain. Run agentcompass setup to clear the old fields.',
     '旧设置残留。在设置里保存一次即可清掉，或运行 agentcompass setup。':
         'Old settings remain. Save once in settings to clear them, or run agentcompass setup.',
     '{0} 小时后重置': 'resets in {0} h',
