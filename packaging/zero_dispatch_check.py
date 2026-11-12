@@ -442,7 +442,7 @@ def step_accounts_and_usage(z: Zero):
             "expected_hours": 0.5,
         }
     }), encoding="utf-8")
-    rt_res = z.call(op, "plan", "--dry-run", "--input", str(rt_input))
+    rt_res = z.call(op, "plan", "--dry-run", "--score", "--input", str(rt_input))  # a dry run classifies only with --score
     rt_plan = parse(rt_res.stdout) or {}
     rt_dec = rt_plan.get("decision") or {}
     rt_ranking = rt_plan.get("ranking") or []

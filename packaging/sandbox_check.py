@@ -169,6 +169,10 @@ class Fixture:
                                            "reset_at": int((now + dt.timedelta(hours=3)).timestamp())},
                         "secondary_window": {"used_percent": fixture.codex_weekly if fixture.codex_weekly is not None else fixture.codex_used / 2, "limit_window_seconds": 604800,
                                              "reset_at": int((now + dt.timedelta(days=4)).timestamp())}}})
+                if host == "api.anthropic.com" and path == "/api/oauth/profile":
+                    # The Claude plan is read only from the live OAuth profile, never from the login file.
+                    return self._reply(200, {"organization": {"organization_type": "claude_max",
+                                                              "rate_limit_tier": "default_claude_max_20x"}})
                 if host == "api.anthropic.com" and path == "/api/oauth/usage":
                     return self._reply(200, {
                         "five_hour": {"utilization": fixture.claude_used, "resets_at": (now + dt.timedelta(hours=2)).isoformat()},
