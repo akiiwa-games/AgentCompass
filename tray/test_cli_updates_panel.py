@@ -35,7 +35,7 @@ def row(harness='codex', account='codex', enabled=True, partial=False):
 
 CLI_ROWS = [{'id': 'codex', 'path': 'codex.cmd', 'source': 'npm', 'version': '0.165',
              'status': 'outdated', 'providers': ['codex']}]
-RESULT = {'summary': 'CLI：已更新 1 · 已是最新 0 · 延后 0 · 失败 0', 'updated': ['codex'], 'failed': []}
+RESULT = {'summary': 'CLI：已更新 1 · 已是最新 0 · 失败 0', 'updated': ['codex'], 'failed': []}
 
 
 class PanelTests(unittest.TestCase):

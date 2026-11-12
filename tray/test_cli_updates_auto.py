@@ -1,4 +1,4 @@
-"""Daily checks, deferred workers and notifications, with no real installers."""
+"""Daily checks, running sessions and notifications, with no real installers."""
 import json
 import os
 import sys
@@ -8,6 +8,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cli_updates as cli
 import owned_process
+import pytest
 
 
 class ImmediateThread:
@@ -27,7 +28,6 @@ def configure(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.time, 'time', lambda: 200000.)
     target = cli.Target('codex', 'Codex CLI', cli.Install(cli.BY_ID['codex'], tmp_path / 'codex.cmd', 'npm'), ['codex'])
     monkeypatch.setattr(cli, 'targets', lambda *args: [target])
-    monkeypatch.setattr(cli, 'target_running', lambda target: 0)
     return target
 
 
@@ -54,28 +54,21 @@ def test_automatic_is_opt_in_persisted_and_runs_at_most_daily(tmp_path, monkeypa
     assert not cli.get_auto_update()
 
 
-def test_busy_worker_is_deferred_then_retried_without_touching_other_clis(tmp_path, monkeypatch):
+def test_daily_update_runs_without_inspecting_sessions_and_has_no_retry_queue(tmp_path, monkeypatch):
     configure(tmp_path, monkeypatch)
     cli.set_auto_update(True)
-    monkeypatch.setattr(cli, 'target_running', lambda target: 2)
-    installer = mock.Mock()
-    monkeypatch.setattr(cli, 'update', installer)
-    notify = mock.Mock()
-    assert cli.maybe_trigger_auto_update(notify, now=200000, uptime=1000)
-    installer.assert_not_called()
-    assert cli._load_state()['deferred'] == ['codex']
-    notify.assert_not_called()
-    assert not cli.maybe_trigger_auto_update(notify, now=200059, uptime=1000)
-    monkeypatch.setattr(cli.time, 'time', lambda: 200060.)
-    monkeypatch.setattr(cli, 'target_running', lambda target: 0)
+    calls = []
     def update(ident, *args, outcome):
+        calls.append(ident)
         outcome.update(status='updated')
         return 'updated'
     monkeypatch.setattr(cli, 'update', update)
-    assert cli.maybe_trigger_auto_update(notify, now=200060, uptime=1000)
-    state = cli._load_state()
-    assert state['last_auto_update_at'] == 200000  # a retry does not postpone the daily check
-    assert state['deferred'] == []
+    monkeypatch.setattr('psutil.process_iter', mock.Mock(side_effect=AssertionError('session inspection')))
+    notify = mock.Mock()
+    assert cli.maybe_trigger_auto_update(notify, now=200000, uptime=1000)
+    assert calls == ['codex']
+    assert 'deferred' not in cli._load_state()
+    assert not cli.maybe_trigger_auto_update(notify, now=200060, uptime=1000)
     notify.assert_called_once()
 
 
@@ -102,24 +95,19 @@ def test_a_batch_in_another_process_defers_this_batch(tmp_path, monkeypatch):
     assert 'last_auto_update_at' not in cli._load_state()
 
 
-def test_node_script_process_is_detected_even_when_node_is_outside_package(tmp_path):
-    package = tmp_path / 'pi'
-    processes = [mock.Mock(info={'exe': str(tmp_path / 'node.exe'), 'cmdline': ['node', str(package / 'dist/cli.js')]}),
-                 mock.Mock(info={'exe': str(tmp_path / 'node.exe'), 'cmdline': ['node', str(tmp_path / 'pi-sibling/cli.js')]})]
-    with mock.patch('psutil.process_iter', return_value=processes):
-        assert cli.running_instances(package) == 1
-
-
-def test_native_cli_is_also_deferred_without_invoking_vendor_updater(tmp_path, monkeypatch):
+@pytest.mark.parametrize('ident', ['claude', 'opencode', 'agy', 'grok'])
+def test_native_updaters_run_without_inspecting_sessions(tmp_path, monkeypatch, ident):
     configure(tmp_path, monkeypatch)
-    native = cli.Target('grok', 'Grok', cli.Install(cli.BY_ID['grok'], tmp_path / 'grok.exe', 'native'), ['grok'])
+    native = cli.Target(ident, ident, cli.Install(cli.BY_ID[ident], tmp_path / f'{ident}.exe', 'native'), [ident])
     monkeypatch.setattr(cli, 'find', lambda *args: native)
-    monkeypatch.setattr(cli, 'target_running', lambda target: 1)
-    with mock.patch.object(cli, 'update_native') as installer:
+    monkeypatch.setattr(cli, 'local_version', mock.Mock(side_effect=['1.0.0', '2.0.0']))
+    monkeypatch.setattr(cli, 'resolve_command', lambda *args, **kwargs: native.install.path)
+    monkeypatch.setattr('psutil.process_iter', mock.Mock(side_effect=AssertionError('session inspection')))
+    with mock.patch.object(cli, 'update_native', return_value=('ok', 'done')) as installer:
         outcome = {}
-        cli.update('grok', outcome=outcome)
-    assert outcome['status'] == 'deferred'
-    installer.assert_not_called()
+        cli.update(ident, outcome=outcome)
+    assert outcome['status'] == 'updated'
+    installer.assert_called_once_with(native)
 
 
 def test_snapshot_restores_cached_remote_version_without_a_network_probe(tmp_path, monkeypatch):
@@ -198,108 +186,29 @@ def _hermetic_npm_fixture(tmp_path: Path, monkeypatch):
     return {'home': home, 'local': local, 'roaming': roaming, 'state': state, 'prefix': prefix, 'node_bin': node_bin}
 
 
-def test_externally_terminated_install_stays_queued_and_retries_on_next_deferred_cycle(tmp_path, monkeypatch):
+@pytest.mark.parametrize('result', [owned_process.Result(1073807364, '', ''),
+                                  owned_process.Result(-15, 'extracting', ''),
+                                  owned_process.Result(1, '', 'EACCES')])
+def test_failed_install_is_reported_and_does_not_schedule_a_session_retry(tmp_path, monkeypatch, result):
     env = _hermetic_npm_fixture(tmp_path, monkeypatch)
-    prefix = env['prefix']
-    pkg_dir = _write_npm_package(prefix, '@openai/codex', 'codex', '0.166.0', with_shim=True)
-    shim = prefix / ('codex.cmd' if os.name == 'nt' else 'bin/codex')
-    cli.set_auto_update(True)
-    notify = mock.Mock()
-    running = [mock.Mock(info={'exe': str(pkg_dir / 'vendor/codex.exe'), 'cmdline': [str(pkg_dir / 'vendor/codex.exe')]})]
-    monkeypatch.setattr('psutil.process_iter', lambda *args, **kwargs: list(running))
-
-    install_calls = []
-    mode = {'install': 'killed'}
-
+    _write_npm_package(env['prefix'], '@openai/codex', 'codex', '0.166.0')
+    calls = []
     def fake_run(argv, **kwargs):
         if 'view' in argv:
-            return owned_process.Result(0, '0.167.1\n', '')
+            return owned_process.Result(0, '0.167.1', '')
         if 'install' in argv:
-            install_calls.append(list(argv))
-            target_prefix = Path(argv[argv.index('--prefix') + 1])
-            spec_arg = next(part for part in argv if part.endswith('@latest'))
-            package = spec_arg[:-len('@latest')]
-            if mode['install'] == 'killed':
-                # Mimic logoff killing npm mid-install after extracting 0.167.1 and removing the old shim.
-                shim.unlink(missing_ok=True)
-                _write_npm_package(target_prefix, package, 'codex', '0.167.1', with_shim=False)
-                return owned_process.Result(1073807364, '', '')
-            _write_npm_package(target_prefix, package, 'codex', '0.167.1', with_shim=True)
-            return owned_process.Result(0, 'changed 1 package', '')
-        raise AssertionError(f'unexpected command: {argv}')
-
+            calls.append(argv)
+            return result
+        raise AssertionError(argv)
     monkeypatch.setattr(cli.owned_process, 'run', fake_run)
-
-    # 1. Running session defers the daily update.
-    monkeypatch.setattr(cli.time, 'time', lambda: 200000.0)
-    assert cli.maybe_trigger_auto_update(notify, now=200000.0, uptime=1000.0)
-    assert install_calls == []
-    assert cli._load_state()['deferred'] == ['codex']
-    notify.assert_not_called()
-
-    # 2. Session exits; deferred retry starts npm, which is killed externally (rc=1073807364, no output).
-    running.clear()
-    monkeypatch.setattr(cli.time, 'time', lambda: 200060.0)
-    assert cli.maybe_trigger_auto_update(notify, now=200060.0, uptime=1000.0)
-    assert len(install_calls) == 1
-    assert not shim.exists()
-    assert json.loads((pkg_dir / 'package.json').read_text(encoding='utf-8'))['version'] == '0.167.1'
-    state_after_kill = cli._load_state()
-    assert state_after_kill['deferred'] == ['codex']
-    assert state_after_kill['items']['codex']['kind'] == 'warn'
-    assert '1073807364' in state_after_kill['items']['codex']['message']
-    notify.assert_not_called()
-
-    # 3. Respects the deferred retry cadence, then retries on the next cycle and restores the missing shim.
-    assert not cli.maybe_trigger_auto_update(notify, now=200119.0, uptime=1000.0)
-    mode['install'] = 'ok'
-    monkeypatch.setattr(cli.time, 'time', lambda: 200120.0)
-    assert cli.maybe_trigger_auto_update(notify, now=200120.0, uptime=1000.0)
-    assert len(install_calls) == 2
-    assert shim.is_file()
-    final_state = cli._load_state()
-    assert final_state['deferred'] == []
-    assert final_state['last_auto_update_at'] == 200000.0
-    assert final_state['items']['codex']['kind'] == 'ok'
-    notify.assert_called_once()
-
-
-def test_signal_terminated_install_stays_queued_until_a_stable_error_is_reported(tmp_path, monkeypatch):
-    env = _hermetic_npm_fixture(tmp_path, monkeypatch)
-    _write_npm_package(env['prefix'], '@openai/codex', 'codex', '0.166.0', with_shim=True)
     cli.set_auto_update(True)
-    monkeypatch.setattr('psutil.process_iter', lambda *args, **kwargs: [])
-
-    outcomes = [
-        owned_process.Result(-15, 'extracting archive...', ''),
-        owned_process.Result(1, '', 'npm error code EACCES: permission denied'),
-    ]
-    install_calls = []
-
-    def fake_run(argv, **kwargs):
-        if 'view' in argv:
-            return owned_process.Result(0, '0.167.1\n', '')
-        if 'install' in argv:
-            install_calls.append(list(argv))
-            return outcomes.pop(0)
-        raise AssertionError(f'unexpected command: {argv}')
-
-    monkeypatch.setattr(cli.owned_process, 'run', fake_run)
-
-    monkeypatch.setattr(cli.time, 'time', lambda: 300000.0)
-    assert cli.maybe_trigger_auto_update(now=300000.0, uptime=1000.0)
-    assert len(install_calls) == 1
-    assert cli._load_state()['deferred'] == ['codex']
-
-    monkeypatch.setattr(cli.time, 'time', lambda: 300060.0)
-    assert cli.maybe_trigger_auto_update(now=300060.0, uptime=1000.0)
-    assert len(install_calls) == 2
-    state = cli._load_state()
-    assert state['deferred'] == []
-    assert 'EACCES' in state['items']['codex']['message']
-
-    monkeypatch.setattr(cli.time, 'time', lambda: 300120.0)
-    assert not cli.maybe_trigger_auto_update(now=300120.0, uptime=1000.0)
+    monkeypatch.setattr(cli.time, 'time', lambda: 300000.)
+    batch = cli.update_all(auto=True)
+    assert batch['failed'] == ['codex']
+    assert 'deferred' not in batch
+    assert 'deferred' not in cli._load_state()
+    assert len(calls) == 1
+    assert not cli.maybe_trigger_auto_update(now=300060, uptime=1000)
 
 
 def test_package_present_with_missing_command_triggers_reinstall_at_latest_version(tmp_path, monkeypatch):
