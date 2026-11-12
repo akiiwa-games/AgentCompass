@@ -250,3 +250,34 @@ def test_discovered_model_checkbox_matches_routing_and_writes_only_the_boolean(t
     saved = json.loads(target.read_text())['accounts']['codex']['bundles']
     assert saved == {'auto:codex:codex:gpt-5.6-sol@high': {'disabled': False},
                      'auto:codex:codex:gpt-9-new@high': {'disabled': True}}
+
+
+def test_family_shaped_discovered_model_keeps_its_own_checkbox(tmp_path, monkeypatch):
+    """A family guess is its own checkbox. Unchecking it does not uncheck the series target.
+
+    account_fleet.row_key keeps a family or unknown name; canonical folds it only for scoring.
+    router-internals: a level the user unchecked belongs to that row's own model.
+    """
+    target = settings(tmp_path, monkeypatch)
+    reference = account_fleet.REFERENCES / 'accounts.json'
+    doc = json.loads(reference.read_text(encoding='utf-8'))
+    doc['models'] = {'gpt-6-astra': {'api_family': 'codex'}}
+    reference.write_text(json.dumps(doc), encoding='utf-8')
+    inventory = {'accounts': {'codex': {'family': 'codex', 'status': 'ready', 'models': ['gpt-6-nova']}}}
+    monkeypatch.setattr(provider_inventory, 'apply',
+                        lambda data: provider_inventory._apply_auto_bundles(data, inventory, False))
+
+    def groups():
+        rows = router_data.harness_model_rows()
+        return {m['model']: m for row in rows if (row['account'], row['harness']) == ('codex', 'codex')
+                for m in row['models'] if m.get('routed', True)}
+
+    before = groups()
+    assert 'gpt-6-nova' in before and before['gpt-6-nova']['enabled'] is True
+    assert 'gpt-6-astra' not in before
+    assert router_data.toggle_harness_model('codex', 'codex', 'gpt-6-nova', False) is False
+    saved = json.loads(target.read_text(encoding='utf-8'))['accounts']['codex']['bundles']
+    assert saved == {'auto:codex:codex:gpt-6-nova@high': {'disabled': True}}
+    live = account_fleet.bundles(account_fleet.load_accounts())
+    assert not live['sol_high'].get('disabled')
+    assert groups()['gpt-6.1-sol']['enabled'] is True

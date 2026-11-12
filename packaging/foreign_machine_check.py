@@ -9,7 +9,7 @@ Designed the pstack way (behavior over implementation, prove it works from packa
   - Never touches the real user profile, real credentials, or external network (all HTTP goes through sandbox_check's
     sitecustomize netguard to local fixture servers; all CLIs are fixture executables in a throwaway PATH).
   - Covers every failure hit when syncing to a second host (LITTLESPRING / LS) and every 0.3.6 behavior:
-      F01  Stale install & public reference data channel (schema 2 fetch, sha256 & corrupt JSON rejection, 0.3.5 schema-2 compatibility, opt-out, doctor line)
+      F01  Stale install & public reference data channel (schema 3 fetch, sha256 & corrupt JSON rejection, schema-1 reader sees schema 3, opt-out, doctor line)
       F02  Fleet parity on a clean install with no accounts.local.json
       F03  Classifier cascade across families and multi-home accounts (jev absent, ~/.claude signed out, ~/.claude-2 signed in)
       F04  Quota, window scope, gate parity, control-message exemption, discovered model management, no twin bundles, and agy 3p pool-prior capacity
@@ -77,6 +77,10 @@ class ForeignFixtureServer:
         self.claude_used_7d = 30.0
         # Public reference data fixture state
         self.public_data_mode = "valid_update"  # valid_update | bad_sha | bad_json | future_schema | error
+        # Bearer token -> OAuth profile organization. The Claude plan is read only from this live profile.
+        self.claude_profiles: dict[str, dict] = {}
+        # plan-templates.json codex.pro has only the weekly `usage` window. A five-hour reading belongs to Plus.
+        self.codex_plan = "pro"
         self.updated_accounts_bytes = b""
         self.updated_manifest_bytes = b""
         self.updated_version = ""
@@ -118,21 +122,13 @@ class ForeignFixtureServer:
                 })
                 now = dt.datetime.now(dt.timezone.utc)
                 if host == "chatgpt.com" and path == "/backend-api/wham/usage":
-                    return self._reply(200, {
-                        "plan_type": "pro",
-                        "rate_limit": {
-                            "primary_window": {
-                                "used_percent": outer.codex_used_5h,
-                                "limit_window_seconds": 18000,
-                                "reset_at": int((now + dt.timedelta(hours=3)).timestamp()),
-                            },
-                            "secondary_window": {
-                                "used_percent": outer.codex_used_7d,
-                                "limit_window_seconds": 604800,
-                                "reset_at": int((now + dt.timedelta(days=4)).timestamp()),
-                            },
-                        },
-                    })
+                    return self._reply(200, outer.codex_usage_body(now))
+                if host == "api.anthropic.com" and path == "/api/oauth/profile":
+                    token = (self.headers.get("Authorization") or "").removeprefix("Bearer ").strip()
+                    org = outer.claude_profiles.get(token)
+                    if org is None:
+                        return self._reply(404, {"error": "unknown claude token"})
+                    return self._reply(200, {"organization": org})
                 if host == "api.anthropic.com" and path == "/api/oauth/usage":
                     return self._reply(200, {
                         "five_hour": {"utilization": outer.claude_used_5h, "resets_at": (now + dt.timedelta(hours=2)).isoformat()},
@@ -184,6 +180,29 @@ class ForeignFixtureServer:
 
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def codex_usage_body(self, now) -> dict:
+        """Codex usage payload for the signed-in plan.
+
+        Pro's template window is the weekly `usage` window (plan-templates.json). Reporting a
+        five-hour window on that plan is an observation the template does not price, and the
+        account then stays out of automatic routing (capacity_unknown). Plus and the other
+        plans that declare `five_hour` get the primary window as well.
+        """
+        rate = {
+            "secondary_window": {
+                "used_percent": self.codex_used_7d,
+                "limit_window_seconds": 604800,
+                "reset_at": int((now + dt.timedelta(days=4)).timestamp()),
+            }
+        }
+        if self.codex_plan != "pro":
+            rate["primary_window"] = {
+                "used_percent": self.codex_used_5h,
+                "limit_window_seconds": 18000,
+                "reset_at": int((now + dt.timedelta(hours=3)).timestamp()),
+            }
+        return {"plan_type": self.codex_plan, "rate_limit": rate}
 
     def _prepare_public_data(self):
         accounts_doc = json.loads((self.shipped_references / "accounts.json").read_text(encoding="utf-8"))
@@ -343,12 +362,35 @@ def sign_in_codex(box: sc.Sandbox, account_id: str = "sandbox-account") -> None:
     )
 
 
-def sign_in_claude(box: sc.Sandbox, plan: str = "max") -> None:
+def claude_organization(plan: str) -> dict:
+    """Organization block of the live OAuth profile for a signed-in plan.
+
+    usage_core.claude_profile_plan reads organization_type and rate_limit_tier. The login
+    file's subscriptionType is not the plan (router-internals: a discovered plan supplies
+    the window structure; Claude's plan comes from the profile API).
+    """
+    key = (plan or "max").strip().lower()
+    if key in {"pro", "claude_pro"}:
+        return {"organization_type": "claude_pro"}
+    if key in {"max20", "20x"}:
+        return {"organization_type": "claude_max", "rate_limit_tier": "default_claude_max_20x"}
+    if key in {"max5", "5x"}:
+        return {"organization_type": "claude_max", "rate_limit_tier": "default_claude_max_5x"}
+    return {"organization_type": "claude_max"}
+
+
+def remember_claude_plan(box: sc.Sandbox, token: str, plan: str) -> None:
+    box.fixture.claude_profiles[token] = claude_organization(plan)
+
+
+def sign_in_claude(box: sc.Sandbox, plan: str = "max", token: str | None = None) -> None:
+    token = token or sc.FIXTURE_TOKENS["claude"]
     box.claude.mkdir(parents=True, exist_ok=True)
     (box.claude / ".credentials.json").write_text(
-        json.dumps({"claudeAiOauth": {"accessToken": sc.FIXTURE_TOKENS["claude"], "subscriptionType": plan}}),
+        json.dumps({"claudeAiOauth": {"accessToken": token, "subscriptionType": plan}}),
         encoding="utf-8",
     )
+    remember_claude_plan(box, token, plan)
 
 
 def run_in_box(box: sc.Sandbox, op: sc.Operation, argv: list, env: dict) -> subprocess.CompletedProcess:
@@ -413,7 +455,7 @@ def parse_json(text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# F01: Stale install & Public reference data channel (schema 2 + 0.3.5 compatibility)
+# F01: Stale install & Public reference data channel (schema 3; a schema-1 reader still refuses a newer set)
 
 
 def verify_f01_public_data_and_installed_copy(ctx: dict):
@@ -422,22 +464,23 @@ def verify_f01_public_data_and_installed_copy(ctx: dict):
     box = make_profile(ctx, "f01-public-data")
     op = run.operation(
         "F01 stale-install & public reference data channel",
-        "Installed wheel runs from site-packages (not checkout), fetches sha256+schema-2 verified public reference data, rejects tampered/corrupt sets, preserves bundled set when a 0.3.5 install sees schema 2, reports in doctor, and honours AGENTCOMPASS_PUBLIC_DATA=off",
+        "Installed wheel runs from site-packages (not checkout), fetches sha256+schema-3 verified public reference data, rejects tampered/corrupt sets, preserves bundled set when a schema-1 reader sees schema 3, reports in doctor, and honours AGENTCOMPASS_PUBLIC_DATA=off",
     )
     env = base_cli_env(box, ctx, extra={"AGENTCOMPASS_PUBLIC_DATA": "1"})
 
-    # 1. Verify installed copy location (not repo checkout) and default bundled status (schema 2)
+    # 1. Verify installed copy location (not repo checkout) and default bundled status.
+    # Schema 3 is the only schema this install reads (router-internals, Public reference data).
     res_status = run_in_box(box, op, [box.agentcompass, "data"], env)
     doc_status = parse_json(res_status.stdout)
     op.check("agentcompass data exits 0", res_status.returncode == 0, res_status.stderr)
-    op.check("initial reference data source is bundled schema 2",
-             doc_status.get("source") == "bundled" and doc_status.get("schema_version") == 2,
+    op.check("initial reference data source is bundled schema 3",
+             doc_status.get("source") == "bundled" and doc_status.get("schema_version") == 3,
              doc_status)
     active_dir = Path(doc_status.get("dir") or "")
     op.check("active bundled dir is inside the venv's site-packages, never the repo checkout",
              "site-packages" in active_dir.parts and ROOT not in active_dir.parents, str(active_dir))
 
-    # 2. Refresh from GitHub main fixture (valid sha256 + valid schema 2)
+    # 2. Refresh from GitHub main fixture (valid sha256 + valid schema 3)
     fx.public_data_mode = "valid_update"
     res_refresh = run_in_box(box, op, [box.agentcompass, "data", "--refresh"], env)
     doc_refresh = parse_json(res_refresh.stdout)
@@ -456,12 +499,12 @@ def verify_f01_public_data_and_installed_copy(ctx: dict):
              cached_accounts.get("public_channel_verified") == "0.3.6-fetched",
              cached_accounts.get("public_channel_verified"))
 
-    # 3. Doctor reports Reference data: fetched ... schema 2
+    # 3. Doctor reports Reference data: fetched ... schema 3 (public_data.summary_line).
     res_doc = run_in_box(box, op, [box.agentcompass, "doctor"], env)
-    op.check("doctor reports Reference data: fetched <version> (..., schema 2, ...)",
+    op.check("doctor reports Reference data: fetched <version> (..., schema 3, ...)",
              res_doc.returncode == 0
              and f"Reference data: fetched {fx.updated_version}" in res_doc.stdout
-             and "schema 2" in res_doc.stdout,
+             and "schema 3" in res_doc.stdout,
              res_doc.stdout)
 
     # 4. Tampered sha256 is rejected and does not overwrite active fetched version
@@ -485,7 +528,7 @@ def verify_f01_public_data_and_installed_copy(ctx: dict):
              and doc_bad_json.get("version") == fx.updated_version,
              doc_bad_json)
 
-    # 6. A 0.3.5 install (schema 1 reader with bundled schema 1 data) fetching schema-2 public data keeps its bundled set without error
+    # 6. A schema-1 reader fetching the published schema-3 set keeps its bundled set without error
     fx.public_data_mode = "valid_update"
     scripts_dir = box.data / "skills" / "agent-compass" / "scripts"
     compat_dir = box.root / "v035-bundled-refs"
@@ -582,11 +625,29 @@ def verify_f02_fleet_parity(ctx: dict):
         doc = parse_json(res.stdout)
         selected = doc.get("selected_bundle") or {}
         ranking = doc.get("ranking") or []
-        eligible = [c for c in ranking if not c.get("excluded") and c.get("score") is not None]
-        op.check(f"clean foreign fleet plans {label} with a routable selected_bundle and positive score",
-                 res.returncode == 0 and bool(selected.get("account")) and len(eligible) >= 2 and (eligible[0].get("score") or 0) > 0,
-                 {"rc": res.returncode, "choice": doc.get("choice"), "selected": selected, "stderr": res.stderr[-200:],
-                  "ranking": [{k: c.get(k) for k in ("bundle", "id", "score", "excluded", "reason", "reasons")} for c in ranking[:8]]})
+        # Mode B (router-internals): a window without a cited capacity, or an account with no current
+        # reading, stays out of automatic routing. Both signed-in accounts must clear that, and a plan
+        # that still has an eligible candidate must select one. Do not pin the winner or the score.
+        def capacity_blocked(candidate: dict) -> bool:
+            text = " ".join(str(item) for item in (candidate.get("excluded") or []))
+            return "capacity_unknown" in text or "quota reading unavailable" in text
+        by_account: dict[str, list] = {}
+        for candidate in ranking:
+            by_account.setdefault((candidate.get("bundle") or {}).get("account"), []).append(candidate)
+        priced = all(
+            any(not capacity_blocked(candidate) for candidate in by_account.get(account, []))
+            for account in ("claude", "codex")
+        )
+        open_candidates = [candidate for candidate in ranking if not candidate.get("excluded")]
+        selected_when_open = (not open_candidates) or (res.returncode == 0 and bool(selected.get("account")))
+        op.check(f"clean foreign fleet keeps claude and codex out of mode B for {label}",
+                 priced and selected_when_open,
+                 {"rc": res.returncode, "choice": doc.get("choice"), "selected_account": selected.get("account"),
+                  "stderr": res.stderr[-200:],
+                  "blocked": {
+                      account: [candidate.get("excluded") for candidate in rows[:2]]
+                      for account, rows in by_account.items() if account in ("claude", "codex")
+                  }})
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -608,6 +669,7 @@ def verify_f03_classifier_cascade(ctx: dict):
         json.dumps({"claudeAiOauth": {"accessToken": "foreign-claude2-token", "subscriptionType": "pro"}}),
         encoding="utf-8",
     )
+    remember_claude_plan(box, "foreign-claude2-token", "pro")
     codex2 = box.home / ".codex-2"
     paseo_dir = box.home / ".paseo"
     paseo_dir.mkdir(parents=True, exist_ok=True)
@@ -689,6 +751,7 @@ def verify_f04_quota_gate_scope_and_twins(ctx: dict):
         json.dumps({"claudeAiOauth": {"accessToken": "foreign-claude2-token", "subscriptionType": "pro"}}),
         encoding="utf-8",
     )
+    remember_claude_plan(box, "foreign-claude2-token", "pro")
     codex_auth = json.loads((box.codex / "auth.json").read_text(encoding="utf-8"))
     shared_account_id = codex_auth["tokens"]["account_id"]
     pi_dir = box.home / ".pi" / "agent"
@@ -721,7 +784,7 @@ def verify_f04_quota_gate_scope_and_twins(ctx: dict):
     reset_7d = (now + dt.timedelta(days=5)).isoformat()
     cache_doc = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.is_file() else {"providers": {}}
     cache_doc.setdefault("providers", {})["antigravity"] = {
-        "provider_id": "antigravity", "display_name": "antigravity", "plan_label": "ultra",
+        "provider_id": "antigravity", "display_name": "antigravity", "plan_label": "ultra20",
         "available": True, "stale": False, "fetched_at": now_iso,
         "windows": [
             {"id": "gemini-weekly", "label": "Gemini 7d", "used_pct": 20.0, "resets_at": reset_7d},
@@ -778,6 +841,7 @@ sys.path.insert(0, {str(tray_dir)!r})
 
 import account_fleet
 import allocator
+import axis_scores
 import dispatch_registry
 import provider_inventory
 import route_judge
@@ -822,7 +886,7 @@ def write_ledger(choice, bundle, parent_id="parent-1", extra_rows=()):
 # --- Check A: agy with 3p-weekly used up (100%): Gemini launch allowed, Claude-model launch blocked ---
 write_cache({{
     "antigravity": {{
-        "provider_id": "antigravity", "available": True, "stale": False, "fetched_at": now.isoformat(),
+        "provider_id": "antigravity", "plan_label": "ultra20", "available": True, "stale": False, "fetched_at": now.isoformat(),
         "windows": [
             {{"id": "gemini-weekly", "used_pct": 28.4, "resets_at": reset_7d}},
             {{"id": "gemini-5h", "used_pct": 7.3, "resets_at": reset_5h}},
@@ -907,11 +971,15 @@ floor_blocks_75 = {{
     for acc in ("claude", "codex", "claude-2")
 }}
 
-# Active in-flight reservation check: Antigravity 3p-weekly ($88 on Ultra) at 93% used has 7% left (> 5% safety margin),
-# so a launch passes without reservations, and blocks when another dispatch's active $2.64 (~3%) reservation brings remaining to 4% <= 5%.
+# Keep the Claude subscription spec: the reservation cache replaces providers and drops Claude,
+# and a second home is priced as that spec (router-internals: plan capacity comes from the discovered plan).
+claude_subscription = copy.deepcopy(accounts["accounts"]["claude"])
+# 3p-weekly at 93% used leaves 7%, above the 5% safety margin. A reservation of 3% of the
+# priced capacity (public ultra20 figure from five-axis-scores, not a fixed dollar amount)
+# brings remaining to 4% and blocks. An unrecognized tier such as "ultra" is Mode B.
 write_cache({{
     "antigravity": {{
-        "provider_id": "antigravity", "plan_label": "ultra", "available": True, "stale": False, "fetched_at": now.isoformat(),
+        "provider_id": "antigravity", "plan_label": "ultra20", "available": True, "stale": False, "fetched_at": now.isoformat(),
         "windows": [
             {{"id": "gemini-weekly", "used_pct": 10.0, "resets_at": reset_7d}},
             {{"id": "gemini-5h", "used_pct": 10.0, "resets_at": reset_5h}},
@@ -927,6 +995,12 @@ write_cache({{
         ],
     }},
 }})
+accounts = account_fleet.load_accounts()
+priced_agy = axis_scores.five_axis_overlay(copy.deepcopy(accounts))
+weekly_cap = (((priced_agy.get("accounts") or {{}}).get("antigravity") or {{}}).get("capacity_usd") or {{}}).get("3p-weekly")
+if not isinstance(weekly_cap, (int, float)) or isinstance(weekly_cap, bool) or weekly_cap <= 0:
+    raise SystemExit("antigravity ultra20 3p-weekly has no priced capacity")
+reserve_usd = round(float(weekly_cap) * 0.03, 2)
 _, agy_opus_candidates = gate.resolve_target({{"bundle_id": "agy_opus55_high"}}, accounts)
 no_res_reason = gate.check_account_quota_exhausted(
     "antigravity", usage_cache_path=cache_path, now=now, accounts=accounts, bundles=agy_opus_candidates, records=()
@@ -939,15 +1013,16 @@ inflight_records = [{{
     "lease_until": (now + dt.timedelta(minutes=10)).isoformat(),
     "choice": "agy_opus55_high",
     "bundle": {{"account": "antigravity", "provider": "antigravity-resilient", "model": "claude-opus-5-5", "effort": "high"}},
-    "expected_usd": 2.64,
+    "expected_usd": reserve_usd,
 }}]
 with_res_reason = gate.check_account_quota_exhausted(
     "antigravity", usage_cache_path=cache_path, now=now, accounts=accounts, bundles=agy_opus_candidates, records=inflight_records
 )
 
-# Secondary Claude account not named claude-2 ('team-anthropic') resolved from bundle/labels without name inference
+# Secondary Claude account not named claude-2 ('team-anthropic') resolved from bundle/labels without name inference.
+# The spec is the one loaded with the Claude plan, not the reloaded cache that no longer carries Claude.
 accounts_team = copy.deepcopy(accounts)
-accounts_team.setdefault("accounts", {{}})["team-anthropic"] = copy.deepcopy(accounts["accounts"]["claude"])
+accounts_team.setdefault("accounts", {{}})["team-anthropic"] = copy.deepcopy(claude_subscription)
 accounts_team["accounts"]["team-anthropic"]["bundles"] = {{
     "team_sonnet55_high": {{"provider": "team-anthropic", "harness": "claude", "model": "claude-sonnet-5-5", "effort": "high", "modeId": "bypassPermissions"}}
 }}
@@ -1100,14 +1175,46 @@ after_alloc_superseded_disabled = (alloc_bundles_after.get(superseded_bid) or {{
 after_alloc_discovered_disabled = (alloc_bundles_after.get(discovered_bid) or {{}}).get("disabled")
 toggled_on = router_data.toggle_harness_model("claude", "claude", "claude-opus-6-0", True)
 
-# Metered last resort check: a checked metered bundle is excluded when subscription bundles are eligible,
-# and selected with metered_fallback=True when all subscription accounts are unavailable/exhausted.
+# Metered last resort (router-internals.md "Checked metered bundles stay a last resort";
+# docs/technical-reference.md Metered USD). Community capacity measures subscription plans
+# only, so a prepaid metered account states its own weekly window and capacity_usd
+# (axis_scores.five_axis_overlay). apply() names a Claude plan only from a cache row whose
+# plan_source is profile_api, and a Codex plan only from plan_label, both with this
+# credential. Write that cache before load_accounts(). The second snapshot is only the
+# windows those applied plans draw, at 10% used: claude pro is five_hour + seven_day
+# (plan-templates.json); codex pro is the weekly usage window. A window the plan does not
+# draw leaves the subscription unpriced, plan() lifts the last resort, and this row is
+# judged as a data error instead.
+write_cache({{
+    "claude": {{
+        "provider_id": "claude", "plan_label": "pro", "plan_source": "profile_api",
+        "available": True, "stale": False, "fetched_at": now.isoformat(),
+        "windows": [
+            {{"id": "five_hour", "used_pct": 10.0, "resets_at": reset_5h}},
+            {{"id": "seven_day", "used_pct": 10.0, "resets_at": reset_7d}},
+        ],
+    }},
+    "claude-2": {{
+        "provider_id": "claude-2", "plan_label": "pro", "plan_source": "profile_api",
+        "available": True, "stale": False, "fetched_at": now.isoformat(),
+        "windows": [
+            {{"id": "five_hour", "used_pct": 10.0, "resets_at": reset_5h}},
+            {{"id": "seven_day", "used_pct": 10.0, "resets_at": reset_7d}},
+        ],
+    }},
+    "codex": {{
+        "provider_id": "codex", "plan_label": "pro", "available": True, "stale": False, "fetched_at": now.isoformat(),
+        "windows": [
+            {{"id": "usage", "used_pct": 10.0, "resets_at": reset_7d}},
+        ],
+    }},
+}})
 accounts_metered = account_fleet.load_accounts()
 accounts_metered["accounts"]["litellm-test"] = {{
-    "family": "codex",
     "billing": "metered",
     "verified": True,
-    "windows": {{}},
+    "windows": {{"weekly": {{"hours": 168}}}},
+    "capacity_usd": {{"weekly": 200.0}},
     "bundles": {{
         "metered_sol_high": {{
             "provider": "litellm-test",
@@ -1117,32 +1224,72 @@ accounts_metered["accounts"]["litellm-test"] = {{
             "modeId": "full-access",
             "disabled": False,
             "billing": "metered",
-            "draws": [],
+            "draws": ["weekly"],
         }}
     }},
 }}
-write_cache({{
-    "codex": {{
-        "provider_id": "codex", "plan_label": "pro", "available": True, "stale": False, "fetched_at": now.isoformat(),
-        "windows": [{{"id": "seven_day", "used_pct": 10.0, "resets_at": reset_7d}}],
-    }},
-}})
+fresh_readings = {{}}
+for _name, _meta in (
+    ("claude", {{"provider_id": "claude", "plan_label": "pro", "plan_source": "profile_api"}}),
+    ("claude-2", {{"provider_id": "claude-2", "plan_label": "pro", "plan_source": "profile_api"}}),
+    ("codex", {{"provider_id": "codex", "plan_label": "pro"}}),
+):
+    _spec = (accounts_metered.get("accounts") or {{}}).get(_name) or {{}}
+    _rows = []
+    for _wid, _wspec in (_spec.get("windows") or {{}}).items():
+        _hours = _wspec.get("hours") if isinstance(_wspec, dict) else None
+        _rows.append({{
+            "id": _wid, "used_pct": 10.0,
+            "resets_at": reset_5h if isinstance(_hours, (int, float)) and _hours < 24 else reset_7d,
+        }})
+    if _rows:
+        fresh_readings[_name] = {{
+            **_meta, "available": True, "stale": False, "fetched_at": now.isoformat(), "windows": _rows,
+        }}
+fresh_readings["litellm-test"] = {{
+    "provider_id": "litellm-test", "available": True, "stale": False, "fetched_at": now.isoformat(),
+    "windows": [{{"id": "weekly", "used_pct": 10.0, "resets_at": reset_7d}}],
+}}
+write_cache(fresh_readings)
 usage_fresh = route_judge.usage_snapshot(
     cache_path, list((accounts_metered.get("accounts") or {{}}).keys()), now, inventory=accounts_metered.get("_discovery") or {{}}
 )
 usage_fresh = provider_inventory.merge_usage(usage_fresh, accounts_metered, now)
+# Caller profile is required (task_intake.normalize_task). Host policy must name every in-memory
+# account, including litellm-test, which setup never enrolled (host_policy.account_allowed).
+caller_profile = {{
+    "reasoning_depth": 2,
+    "code_complexity": 2,
+    "axis_demand": {{"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}},
+    "needs_visual": False,
+    "needs_gui": False,
+    "local_only": True,
+    "wants_fast": False,
+    "read_only_review": False,
+    "interaction_style": "engineering",
+    "multi_task": False,
+    "task_count": "1",
+}}
+metered_task = {{
+    "objective": "Fix a bug in parser.py",
+    "work_kind": "general_implementation",
+    "expected_hours": 0.5,
+    "profile": caller_profile,
+}}
+policy_names = sorted(accounts_metered.get("accounts") or {{}})
+metered_policy = {{"allowed_accounts": policy_names, "known_accounts": policy_names}}
 plan_with_sub = allocator.plan(
-    {{"objective": "Fix a bug in parser.py", "work_kind": "general_implementation", "expected_hours": 0.5}},
-    usage_fresh, now=now, accounts=accounts_metered, overrides=[], host_policy_config=None
+    metered_task,
+    usage_fresh, now=now, accounts=accounts_metered, overrides=[], host_policy_config=metered_policy
 )
 metered_cand_with_sub = next((c for c in plan_with_sub.get("ranking", []) if c.get("id") == "metered_sol_high"), {{}})
-# Now exhaust subscription accounts so no subscription can take the work
+# Subscriptions are unlaunchable by launch evidence. verified is not an on/off switch.
 for acc_name, acc_spec in list(accounts_metered.get("accounts", {{}}).items()):
     if acc_name != "litellm-test" and isinstance(acc_spec, dict):
         acc_spec["verified"] = False
 plan_no_sub = allocator.plan(
-    {{"objective": "Fix a bug in parser.py", "work_kind": "general_implementation", "expected_hours": 0.5}},
-    usage_fresh, now=now, accounts=accounts_metered, overrides=[], host_policy_config=None
+    metered_task,
+    usage_fresh, now=now, accounts=accounts_metered, overrides=[], host_policy_config=metered_policy
 )
 
 print(json.dumps({{
@@ -1477,13 +1624,18 @@ def verify_f07_stranger_topologies(ctx: dict):
     _verify_setup_discovery_uninstall_cycle(
         box_claude, op, env_claude, "only-Claude", {box_claude.claude}
     )
+    # A dry run does not call the classifier unless --score is set (route_judge.plan_stage).
+    # usage first so a missing reading is not what the plan reports.
+    u_claude = run_in_box(box_claude, op, [box_claude.agentcompass, "usage"], env_claude)
+    op.check("only-Claude usage reading is collected before planning", u_claude.returncode == 0, (u_claude.stdout + u_claude.stderr)[-300:])
     r_claude = run_in_box(box_claude, op, [
         box_claude.agentcompass, "roll",
         "--task", "Add a docstring to parse_header in http_utils.py and run its unit test across modules.",
-        "--parent-host", "native", "--parent-id", "stranger-claude-parent", "--parent-address", "stranger-claude-inbox", "--dry-run",
+        "--parent-host", "native", "--parent-id", "stranger-claude-parent", "--parent-address", "stranger-claude-inbox",
+        "--dry-run", "--score",
     ], env_claude)
     doc_claude = parse_json(r_claude.stdout)
-    op.check("only-Claude profile classifies with claude_haiku_low and selects claude without Paseo or API keys",
+    op.check("only-Claude machine classifies the task and selects the signed-in claude account",
              r_claude.returncode == 0
              and doc_claude.get("status") == "dry_run"
              and (doc_claude.get("worker") or {}).get("account") == "claude"
@@ -1497,13 +1649,16 @@ def verify_f07_stranger_topologies(ctx: dict):
     _verify_setup_discovery_uninstall_cycle(
         box_codex, op, env_codex, "only-Codex", {box_codex.codex}
     )
+    u_codex = run_in_box(box_codex, op, [box_codex.agentcompass, "usage"], env_codex)
+    op.check("only-Codex usage reading is collected before planning", u_codex.returncode == 0, (u_codex.stdout + u_codex.stderr)[-300:])
     r_codex = run_in_box(box_codex, op, [
         box_codex.agentcompass, "roll",
         "--task", "Add a docstring to parse_header in http_utils.py and run its unit test across modules.",
-        "--parent-host", "native", "--parent-id", "stranger-codex-parent", "--parent-address", "stranger-codex-inbox", "--dry-run",
+        "--parent-host", "native", "--parent-id", "stranger-codex-parent", "--parent-address", "stranger-codex-inbox",
+        "--dry-run", "--score",
     ], env_codex)
     doc_codex = parse_json(r_codex.stdout)
-    op.check("only-Codex profile classifies with codex_terra_low and selects codex without Paseo or API keys",
+    op.check("only-Codex machine classifies the task and selects the signed-in codex account",
              r_codex.returncode == 0
              and doc_codex.get("status") == "dry_run"
              and (doc_codex.get("worker") or {}).get("account") == "codex"
@@ -1540,9 +1695,17 @@ def verify_f07_stranger_topologies(ctx: dict):
         setup_extra_args=("--disable", "antigravity"),
     )
     ov_agy = json.loads((box_agy.state / "accounts-override.json").read_text(encoding="utf-8"))
-    op.check("when agy is not signed in and kept out of routing, accounts-override marks antigravity verified=False",
-             ov_agy.get("accounts", {}).get("antigravity", {}).get("verified") is False,
-             ov_agy)
+    policy_path = box_agy.state / "host-policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8")) if policy_path.is_file() else {}
+    allowed = policy.get("allowed_accounts") or []
+    agy_override = (ov_agy.get("accounts") or {}).get("antigravity") or {}
+    # router-internals: on/off lives only in host policy allowed_accounts. verified is launch
+    # evidence; setup/onboard.py strips a legacy verified:false and records the choice in host policy.
+    op.check(
+        "when agy is not signed in and kept out of routing, host policy omits antigravity and the override does not store verified=false",
+        "antigravity" not in allowed and agy_override.get("verified") is not False,
+        {"allowed": allowed, "override": ov_agy},
+    )
 
     # 5. Paseo provider with a custom CLAUDE_CONFIG_DIR and 2-hop extends chain (team-anthropic -> claude-base -> claude)
     #    Also give primary ~/.claude and secondary custom_claude_dir distinct model/effortLevel/env in settings.json
@@ -1560,6 +1723,7 @@ def verify_f07_stranger_topologies(ctx: dict):
         json.dumps({"claudeAiOauth": {"accessToken": "foreign-team-claude-token", "subscriptionType": "max"}}),
         encoding="utf-8",
     )
+    remember_claude_plan(box_paseo, "foreign-team-claude-token", "max")
     (custom_claude_dir / "settings.json").write_text(
         json.dumps({"model": "opus", "effortLevel": "medium", "env": {"B": "2"}}, indent=2),
         encoding="utf-8",
@@ -1791,13 +1955,15 @@ print(json.dumps({{
     )
     res_once = run_in_box(magpie_box, op, [magpie_box.python, "-X", "utf8", str(uf_plugin_dir / "usage_float.py"), "once"], env)
     once_out = res_once.stdout or ""
-    op.check("usage_float.py once CLI runs cleanly in the foreign profile and outputs fresh Magpie pool + Codex readings",
+    # Codex pro declares only the weekly usage window (plan-templates.json). A week-only account
+    # has no window tag, the same display rule as the grok card above. A five-hour row would mean
+    # the fixture reported a window this plan does not price.
+    op.check("usage_float.py once CLI runs cleanly and shows the Magpie pool plus a week-only Codex pro row",
              res_once.returncode == 0
              and "claude 7d×2" in once_out and "150%" in once_out
              and "claude 5h×2" in once_out and "100%" in once_out
-             # usage-float e293e77 shows each Codex window as its own row (80% / 85% left from the fake 20% / 15% used)
-             and any(line.startswith("codex 7d") and "80%" in line for line in once_out.splitlines())
-             and any(line.startswith("codex 5h") and "85%" in line for line in once_out.splitlines()),
+             and any(line.startswith("codex ") and "80%" in line and "5h" not in line for line in once_out.splitlines())
+             and not any(line.startswith("codex 5h") for line in once_out.splitlines()),
              {"rc": res_once.returncode, "stdout": once_out, "stderr": res_once.stderr[-200:]})
 
 

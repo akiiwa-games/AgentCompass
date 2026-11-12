@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -91,6 +93,29 @@ class ManifestTests(unittest.TestCase):
                          'references/public-data.json is stale: run `python -X utf8 public_data.py manifest --write`')
         self.assertEqual(public_data.check_set(public_data.BUNDLED, current), ('ok', ''))
         self.assertLessEqual(current['schema_version'], public_data.SCHEMA_VERSION)
+
+    def test_isolated_interpreter_validates_the_shipped_user_scores(self):
+        """`agentcompass data` runs public_data.py under python -I, which does not put the script directory on sys.path.
+        check_set must still import the sibling user_scores module and accept the shipped set."""
+        code = (
+            "import importlib.util, json, sys\n"
+            "from pathlib import Path\n"
+            "script = Path(sys.argv[1])\n"
+            "sys.path = [p for p in sys.path if Path(p or '.').resolve() != script.parent.resolve()]\n"
+            "spec = importlib.util.spec_from_file_location('public_data_isolated', script)\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(module)\n"
+            "bundled = script.parent.parent / 'references'\n"
+            "manifest = json.loads((bundled / 'public-data.json').read_text(encoding='utf-8'))\n"
+            "status, detail = module.check_set(bundled, manifest)\n"
+            "if status != 'ok':\n"
+            "    raise SystemExit(f'{status}: {detail}')\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", code, str(Path(public_data.__file__).resolve())],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-500:] or result.stdout[-500:])
 
     def test_published_at_moves_only_when_content_changes(self):
         with tempfile.TemporaryDirectory() as directory:

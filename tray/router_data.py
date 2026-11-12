@@ -1581,7 +1581,12 @@ HARNESS_LABELS = {"claude": "Claude Code", "codex": "Codex CLI", "pi": "Pi", "an
 
 
 def harness_model_rows() -> list[dict]:
-    """A compact row for each (harness, account), with effort bundles grouped by canonical model."""
+    """A compact row for each (harness, account), with effort bundles grouped by row_key.
+
+    `canonical` folds a family guess onto its series target for scoring. The checkbox is the
+    row's own model (`account_fleet.row_key`): unchecking one effort of a discovered family
+    name must not remove the target model. See router-internals, "Model names, efforts and pins".
+    """
     modules()
     import account_fleet
     import accounts_override
@@ -1604,7 +1609,7 @@ def harness_model_rows() -> list[dict]:
             if launcher and launcher.get("status") != "ready":
                 continue
             harness = accounts_override.harness(bundle, owner, bid, account_fleet.bundle_harness)
-            model = account_fleet.canonical(bundle.get("model") or bid, accounts)
+            model = account_fleet.row_key(bundle.get("model") or bid, accounts)
             groups.setdefault((account, harness), {}).setdefault(model, []).append((owner, bid, bundle))
     rows = []
     import model_catalog
