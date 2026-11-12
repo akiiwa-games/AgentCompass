@@ -34,39 +34,39 @@
 
 ### Why AgentCompass
 
-Even when you funnel all your work through a single main session or one GrokBot, the mental load is no lighter than managing a team of specialists in your head:
+Even with a single main session, delegating work across multiple subscriptions requires manual routing on every task:
 
-> *"Hand this new showcase UI straight to Opus 5.5 to design and build. Turn on `xhigh`—I want the result to really stand out."*
+> *"Assign the new showcase UI to Opus 5.5 on `xhigh`."*
 >
-> *"Ask Argon whether this caching strategy can be pushed any further. Proposal only, don't touch the code."*
+> *"Have Argon review this caching strategy for improvements—proposal only, no code changes."*
 >
-> *"Have Astra run the code review and end-to-end tests. If Plus quota runs low, let Sol or DeepSeek step in—and burn that Gemini weekly allowance before tonight's reset."*
+> *"Run code review and E2E tests on Astra; fall back to Sol or DeepSeek if Plus quota is low, and use the remaining Gemini weekly quota before tonight's reset."*
 
-Every model shines at different work, routine tasks burn through flagship quota if left on max effort, and 5-hour / weekly limits reset on separate clocks—leaving one account throttled mid-afternoon while another expires unused at midnight.
+Models differ by strength, routine tasks quickly drain flagship quota on high effort, and 5-hour / weekly windows reset on independent clocks—leaving one account rate-limited while another expires unused.
 
-**AgentCompass** takes that scheduling off your hands across the plans you already pay for (**Claude Max / Pro**, **ChatGPT / Codex**, **Google AI Ultra / Pro**, **Grok**, and OpenAI-compatible pools). Your main session delegates or asks for a second opinion with one command:
+**AgentCompass** schedules across your existing subscriptions (**Claude Max / Pro**, **ChatGPT / Codex**, **Google AI Ultra / Pro**, **Grok**, and OpenAI-compatible pools) through one command:
 
 ```bash
 agentcompass roll --task "<what the worker should do>"
 ```
 
-| Real-world situation (illustrative) | What `agentcompass roll` does automatically |
+| Scenario (illustrative) | How `agentcompass roll` routes it |
 | :-- | :-- |
-| *"Design an interactive showcase page with polished motion"* | Sees high **aesthetics** demand → picks a visual-leading frontier route (such as `Opus 5.5 xhigh`) where extra effort actually pays off. |
-| *"Brainstorm better ways to structure this retry pipeline, read-only"* | Sees high **creativity** (`divergence`) and read-only scope → dispatches an advisor strong at open-ended synthesis (such as `Argon high`) without editing files. |
-| *"Add `--timeout` to a Python CLI and run local `pytest`"* (`--demo`) | Sees routine **coding** + `local_only` → drops remote `Dot` and an `Astra xhigh` run that would eat ~85% of a weekly window, picking a target-meeting `Sol medium` (~6% spend) instead of over-spending. |
-| *Claude was hammered early in the week; Gemini resets in 2 hours* | Compares each window against its **quota recovery line** → holds back the over-pace Claude window and spends Gemini's expiring under-line allowance at `0` quota cost first (even in fast mode, as in the right-hand animation above). |
+| *"Design layout and motion for the showcase page"* | High **aesthetics** demand → selects a visually strong frontier route (e.g., `Opus 5.5 xhigh`). |
+| *"Propose improvements to the retry pipeline, read-only"* | High **creativity** (`divergence`) + read-only scope → dispatches an analytical advisor (e.g., `Argon high`) without modifying files. |
+| *"Add `--timeout` to a Python CLI and run local `pytest`"* (`--demo`) | Routine **coding** + `local_only` → excludes remote `Dot` and `Astra xhigh` (~85% of a weekly window), selecting target-meeting `Sol medium` (~6% spend). |
+| *Claude is ahead of pace this week; Gemini resets in 2 hours* | Per-window **quota recovery line** → holds back the over-pace Claude window and spends Gemini's under-line surplus first at `0` quota cost (right-hand animation above). |
 
-### How it stays predictable & under your control
+### Key Rules & Controls
 
-- **Calibrated capability fit, capped at target** — Scores healthy `model × effort × account` candidates across **creativity**, **coding**, **aesthetics**, and **tool operation** (`0–3`) using public-leaderboard standard scores; fit caps at the task target so simple work never wastes frontier effort (single-thread tasks stay in the main session; multi-deliverable briefs return `split`).
-- **Per-window quota recovery line** — Each 5h / weekly window recovers linearly on its own reset clock: spend **under** the line is about-to-expire surplus (`0` quota cost, used first); spend **over** the line borrows from the rest of the period and raises quota cost (held back). Pre-reset demand from other work is projected solely from that window's current-period usage—never from past periods or task history. Full math lives in [`docs/technical-reference.md`](docs/technical-reference.md#1-how-scoring--allocation-work).
-- **Explicit pins & offline preview** — Name a model or effort in chat and `--model ... --effort ... --basis "<your words>"` passes straight through untouched; `agentcompass plan --demo --dry-run` (or `--input examples/task.json --dry-run`) prints every candidate's score and exclusion reason without launching anything.
-- **Spawn gate & context rotation** — An optional `PreToolUse` hook blocks sub-agents that bypass the router, and workers reaching `rotate_after_carried_tokens` (configurable in the tray) hand off with a structured brief instead of compacting until they lose context.
+- **Calibrated capability fit, capped at target** — Scores healthy `model × effort × account` candidates across **creativity**, **coding**, **aesthetics**, and **tool operation** (`0–3`) on public-leaderboard standard scores; fit caps at the task target so routine tasks do not over-spend on frontier effort (single-thread work stays in the main session; multi-deliverable briefs return `split`).
+- **Per-window quota recovery line** — Each 5h / weekly window recovers linearly along its own reset clock: spend **under** the line is expiring surplus (`0` quota cost, used first); spend **over** the line borrows from the remainder of the period and raises quota cost (held back). Pre-reset demand from other work is projected solely from that window's current-period usage, never from past periods or task history. Full formulas live in [`docs/technical-reference.md`](docs/technical-reference.md#1-how-scoring--allocation-work).
+- **Explicit pins & offline preview** — Specify a model or effort in chat and `--model ... --effort ... --basis "<your words>"` passes straight through; `agentcompass plan --demo --dry-run` (or `--input examples/task.json --dry-run`) prints candidate scores and exclusion reasons offline.
+- **Spawn gate & context rotation** — An optional `PreToolUse` hook blocks sub-agent launches that bypass the router, and workers reaching `rotate_after_carried_tokens` (configurable in the tray) hand off via a structured brief rather than degrading through repeated compactions.
 
 ### Quickstart
 
-**Windows (installer, no Python or admin rights needed):** download `AgentCompass-tray-setup.exe` from [Releases](https://github.com/akiiwa-games/AgentCompass/releases), or run silently:
+**Windows (installer, no Python or admin rights needed):** download `AgentCompass-tray-setup.exe` from [Releases](https://github.com/akiiwa-games/AgentCompass/releases), or install silently:
 
 ```powershell
 AgentCompass-tray-setup.exe /VERYSILENT /SETUP=hooks      # /SETUP=nohooks to skip the spawn gate
@@ -82,7 +82,7 @@ agentcompass doctor                                       # check active install
 agentcompass roll --task "<what the worker should do>"    # route and launch a worker
 ```
 
-Or hand setup to your coding agent: *"Read this repository, run `agentcompass setup --dry-run` to show what it changes, then apply it and route this task: …"*
+Or delegate setup to your coding agent: *"Read this repository, run `agentcompass setup --dry-run` to preview changes, then apply it and route this task: …"*
 
 ### Hosts & Ecosystem
 
@@ -96,35 +96,35 @@ Or hand setup to your coding agent: *"Read this repository, run `agentcompass se
 
 ### 为什么需要 AgentCompass
 
-即使你把所有工作都收口到一个主会话或一个 GrokBot，脑子里的排班负担一点也没比亲手管十几个 Agent 轻：
+即便所有工作都经由单一主会话分发，跨订阅派活时仍需逐单人工权衡：
 
-> *“新加这个展柜界面，你直接派给 Opus 5.5 来设计落地。我需要惊艳一点的效果，开 `xhigh` 吧。”*
+> *“新加的展柜界面派给 Opus 5.5 设计落地，开 `xhigh`。”*
 >
-> *“你找 Argon 看看这套缓存策略还有没有什么优化空间，只出方案，别改代码。”*
+> *“让 Argon 评估这套缓存策略还有没有优化空间，只出方案，不改代码。”*
 >
-> *“让 Astra 做代码 review 和端到端测试；Plus 额度快见底的话让 Sol 或 DeepSeek 顶上——对了，Gemini 今晚周重置还剩小半管额度，能塞的活儿先塞过去花掉。”*
+> *“让 Astra 做代码审查和端到端测试；Plus 额度不足时切到 Sol 或 DeepSeek，另外把今晚重置前剩余的 Gemini 周额度先用掉。”*
 
-每个模型各有所长，常规小活儿忘了关高档位几轮就把旗舰号烧穿，而各家的 5 小时窗、周窗口又各走各的重置时钟——常常一边下午刚刷爆限流，另一边半夜到期白白清零。
+不同模型长板各异，常规任务误开高档位会迅速消耗旗舰配额；各家 5 小时窗与周窗口又按各自时钟重置，容易出现主力账号提前限流、另一账号到期作废。
 
-**AgentCompass** 直接复用你现有的订阅（**Claude Max / Pro**、**ChatGPT / Codex**、**Google AI Ultra / Pro**、**Grok** 及各类 OpenAI 兼容号池），把这套“看活选人 + 盯表算账”收口成主会话的一条命令：
+**AgentCompass** 接入你现有的订阅（**Claude Max / Pro**、**ChatGPT / Codex**、**Google AI Ultra / Pro**、**Grok** 及各类 OpenAI 兼容号池），主会话派发任务或征求顾问意见时通过一条命令完成调度：
 
 ```bash
 agentcompass roll --task "<交给子 Agent 的完整任务>"
 ```
 
-| 你日常派出的真实场景（示例） | `agentcompass roll` 在背后自动做什么 |
+| 典型场景（示例） | `agentcompass roll` 的处理 |
 | :-- | :-- |
-| *“给展柜页做一套交互惊艳的动效改版”* | 识别高**审美**需求 → 启用视觉表现拔尖的旗舰高档位（如 `Opus 5.5 xhigh`），把好钢用在刀刃上。 |
-| *“评估这套重试管线还能怎么优化，只给方案别改代码”* | 识别高**创意发散** + 只读范围 → 派发散推演强的顾问（如 `Argon high`）出方案，不碰仓库代码。 |
-| *“给 Python CLI 补个 `--timeout` 参数并跑通本地 `pytest`”*（`--demo`） | 识别常规**编码** + `local_only` → 排除远端 `Dot` 与会吃掉 ~85% 周额度的 `Astra xhigh`，选刚好达标、仅花 ~6% 额度的 `Sol medium`，到标即止不烧旗舰。 |
-| *Claude 前两天刷太猛超速了，而 Gemini 离周重置只剩 2 小时* | 对比各窗口**额度恢复线** → 自动避让透支的 Claude 窗口，把 Gemini 恢复线以下不用就作废的余量按 `0` 额度成本优先花掉（甚至直接开快档消纳，见页首右图）。 |
+| *“设计展柜页面的布局与交互动效”* | 识别高**审美**需求 → 选用视觉长板的旗舰高档位（如 `Opus 5.5 xhigh`）。 |
+| *“评估重试管线的优化方案，只读不改代码”* | 识别高**创意**（发散推演）与只读范围 → 派发分析见长的顾问（如 `Argon high`），不修改工作区。 |
+| *“为 Python CLI 增加 `--timeout` 参数并运行本地 `pytest`”*（`--demo`） | 识别常规**编码** + `local_only` → 排除远端 `Dot` 及需占用约 85% 周额度的 `Astra xhigh`，选择达标且仅占约 6% 额度的 `Sol medium`（到标封顶）。 |
+| *Claude 本周消耗过快，而 Gemini 距周重置仅剩 2 小时* | 对照各窗口**额度恢复线** → 降权超速消耗的 Claude 窗口，将 Gemini 恢复线以下的临期余量按 `0` 额度成本优先使用（见页首右图）。 |
 
 ### 关键规则与控制权
 
-- **公开榜单标准分，到标封顶** — 按**创意、编码、审美、工具操作**四类需求（`0–3`）对比各健康 `模型 × 档位 × 账号` 的公开榜单校准分；能力满足任务目标后不再加分（单线任务留在主会话自己做，多独立交付物退回拆分）。
-- **单窗口独立额度恢复线** — 每个 5h / 周窗口按各自重置时钟匀速恢复：**线下**差额是重置时不用即作废的已恢复额度（计 `0` 成本，优先使用）；**线上**花费是向本期后半段预支（抬高成本自动避让）。重置前其他任务的预计占用仅由该窗口本周期已发生的用量推算，不读历史周期或任务记录。完整公式见 [`docs/technical-reference.md`](docs/technical-reference.md#1-how-scoring--allocation-work)。
-- **点名即透传，离线可预览** — 对话里明确指定模型或档位时，`--model ... --effort ... --basis "<你的原话>"` 原样执行绝不篡改；`agentcompass plan --demo --dry-run`（或 `--input examples/task.json --dry-run`）可随时离线查看完整候选打分与淘汰原因。
-- **派工门禁与上下文轮换** — 可选 `PreToolUse` 门禁拦截绕过路由器的私自派工；worker 累计上下文达到 `rotate_after_carried_tokens`（可在托盘调节）时带着交接任务书换新 worker，避免反复压缩后失忆跑偏。
+- **公开榜单标准分，到标封顶** — 按**创意、编码、审美、工具操作**四类需求（`0–3`）评估各健康 `模型 × 档位 × 账号` 的公开榜单校准分；能力满足任务目标后不再加分（单线任务留在主会话执行，多独立交付物退回拆分）。
+- **单窗口独立额度恢复线** — 每个 5h / 周窗口按各自重置时钟线性恢复：**线下**差额为重置前未用即作废的已恢复余量（计 `0` 成本，优先使用）；**线上**花费为向本期剩余时间预支（计入成本自动降权）。重置前其他任务的预计占用仅由该窗口本周期当前用量推算，不依赖历史周期或任务记录。完整公式见 [`docs/technical-reference.md`](docs/technical-reference.md#1-how-scoring--allocation-work)。
+- **点名透传与离线预览** — 对话中指定模型或档位时，`--model ... --effort ... --basis "<原话>"` 原样透传；`agentcompass plan --demo --dry-run`（或 `--input examples/task.json --dry-run`）可离线查看候选得分与排除原因。
+- **派工门禁与上下文轮换** — 可选 `PreToolUse` 门禁拦截未经路由器的子 Agent 启动；worker 累计上下文达到 `rotate_after_carried_tokens`（可在托盘配置）时附带交接摘要轮换新实例，避免多轮压缩导致上下文退化。
 
 ### 快速开始
 
@@ -144,7 +144,7 @@ agentcompass doctor                                       # 查看安装状态�
 agentcompass roll --task "<交给子 Agent 的完整任务>"       # 自动分类、选型并启动 worker
 ```
 
-也可以直接交给主 Agent：*“读一下这个仓库，先跑 `agentcompass setup --dry-run` 给我看会改哪些配置，确认后执行安装并帮我路由这个任务：……”*
+或交由主 Agent 执行：*“阅读本仓库，先运行 `agentcompass setup --dry-run` 展示拟修改项，确认后完成安装并路由以下任务：……”*
 
 ### 支持宿主与生态
 
