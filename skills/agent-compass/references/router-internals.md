@@ -113,7 +113,7 @@ its model in `superseded` (`{old id: {by: newer id, basis}}`); efforts and harne
 model share the entry, and a model unknown to the data starts checked. The user's
 model-management checkbox (`disabled` in accounts-override.json) overrides that default.
 Checked metered bundles stay a last resort: explicit selection, `metered_ok`, or no eligible
-subscription bundle. A free pool (a free plan or a declared free allowance) is an ordinary quota pool priced by the quota economy like any other; a model with no data for a demanded category is out of automatic routing there too. Purpose-limited unmetered services (Dot, ChatGPT Web) have no quota to relieve.
+subscription bundle. A dollar-balance account is one of those metered accounts; the rule is [Metered USD](../../../docs/technical-reference.md#metered-usd). A free pool (a free plan or a declared free allowance) is an ordinary quota pool priced by the quota economy like any other; a model with no data for a demanded category is out of automatic routing there too. Purpose-limited unmetered services (Dot, ChatGPT Web) have no quota to relieve.
 
 A discovered plan supplies its window structure; its capacity comes only from community real-usage data per plan and window
 (`five-axis-scores.json`). A plan or window without a cited capacity is unknown, and its account stays out of automatic
@@ -177,7 +177,7 @@ When nothing clears the gate, `plan` returns `choice: none` with `decision.actio
 
 ### Distribution simulation and ledger replay
 
-`scripts/route_simulation.py` shows where work goes across usage states, and replays past decisions. Usage reaches `allocator.plan` the way `roll` feeds it: a collector cache document (`providers.<account>.windows[]` with `used_pct`, `resets_at`, `fetched_at`, `stale`) goes through `route_judge.usage_snapshot`, which produces `remaining_pct_before_reset`, the reset time and freshness. Then `plan` merges discovery and quota sources itself. Synthetic states are written as cache documents, never as hand-made allocator input. A raw ledger or cache row passed straight to `plan` has no `remaining_pct_before_reset`, so every window reads as unknown and the result ignores usage. The pre-2026-11-04 ad-hoc replays made exactly this mistake.
+`scripts/route_simulation.py` shows where work goes across usage states, and replays past decisions. Usage reaches `allocator.plan` the way `roll` feeds it: a collector cache document (`providers.<account>.windows[]` with `used_pct`, `resets_at`, `fetched_at`, `stale`) goes through `route_judge.usage_snapshot`, which produces `remaining_pct_before_reset`, the reset time and freshness. A metered USD reading follows [Metered USD](../../../docs/technical-reference.md#metered-usd). Then `plan` merges discovery and quota sources itself. Synthetic states are written as cache documents, never as hand-made allocator input. A raw ledger or cache row passed straight to `plan` has no `remaining_pct_before_reset`, so every window reads as unknown and the result ignores usage. The pre-2026-11-04 ad-hoc replays made exactly this mistake.
 
 ```bash
 python -X utf8 scripts/route_simulation.py grid [--mode machine|fresh|both] [--state NAME ...] [--json out.json]

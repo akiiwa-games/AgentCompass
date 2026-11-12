@@ -49,6 +49,7 @@ Hard gates run first: sign-in and credential health, host policy, modality (text
 several pools must clear every window; the tightest window binds. The same model on a different harness keeps its score
 (Codex vs Pi is only a tie-break step for read-heavy vs. edit-heavy work). Unknown capacity stays unknown: the account stays
 out of automatic routing until public data has it.
+A metered USD account is not one of those resetting windows. The account, the spend reading, the balance, and the leftover-field cleanup are defined in [Metered USD](#metered-usd).
 Category scores live in [`skills/agent-compass/references/five-axis-scores.json`](../skills/agent-compass/references/five-axis-scores.json),
 and plan window structure in [`skills/agent-compass/references/plan-templates.json`](../skills/agent-compass/references/plan-templates.json).
 
@@ -75,6 +76,18 @@ agentcompass doctor
 1. **Re-run `agentcompass setup`** (`agentcompass setup --yes --hooks`) — refreshes global rule blocks, skill links, and `PreToolUse` / `tool_call` hooks.
 2. **Re-toggle in the tray** — rewrites user preference files (`accounts-override.json`, `host-policy.json`, `user-scores.json`, `router-overrides.json`, plugin autostart) in the current schema.
 3. **Delete a named cache or state file** — clears stale derived caches (`provider-inventory.json`, `usage-activity.json`, `dispatch.sqlite3`, `~/.usage-float/usage-cache.json`, `~/.cache/agentcompass-calibration` without `fetch-manifest.json`, or old custom `host-rules/*.md` overlays) so the next run recreates them cleanly. Old-shape rows in `router-ledger.jsonl` are skipped during replay, audit, and tray display with a count note; delete `router-ledger.jsonl` when you want a clean ledger.
+
+Leftover fields on a dollar account do not fail the file. The check, the doctor text, and the setup cleanup are defined in [Metered USD](#metered-usd).
+
+### Metered USD
+
+A dollar account is an `accounts-override.json` entry with `billing: metered`, a non-empty `endpoint`, a non-empty `api_key`, and an optional `budget_usd` greater than 0. A metered account without an endpoint is not this account. Subscription windows are not this account.
+
+Spend is read only from `GET {origin}/key/info`. With a spend number, display is the spent dollars, and the budget when one exists. A 401 or 403 stores no spend number and shows no usage number; the hover says there is no permission to query usage. Any other miss is an ordinary read failure and the hover names that reason. Routing adds no rule for a permission denial: a missing spend number stays the existing data gap.
+
+With a budget, the in-memory fleet has `windows.balance` (no `hours`) and `capacity_usd.balance`. Remaining is budget minus spent. The existing starter safety margin excludes the account when that remaining is inside the margin. The balance does not reset (`resets_at` is null, `reset_in_hours` is null). A window whose `hours` is absent never moves its recovery clock (`elapsed_frac` stays 0). With no budget there is no window, the account is not excluded for exhaustion, and it stays a metered last resort (`quota_pools.metered_usd_uncapped`).
+
+Old meter fields on that account (`windows`, `capacity_usd`, `burn_pct_per_worker_hour`, `burn_basis`, `budget_duration`, `timezone`, a nested `litellm` object, or `backend_kind` of `litellm` / `proxy` / `api-proxy`) are not read and do not fail the rest of the file. `doctor` names the account. `agentcompass setup` removes the fields and does not change the account's on/off switch. A top-level `litellm_proxies` section, and the usage-config or Usage Float keys `llm_proxy_timezone`, `llm_proxy_budget_duration`, `llm_proxy_api_key`, `llm_proxy_endpoint`, `llm_proxy_provider_id`, and `litellm_proxies`, are named the same way. Setup removes them. Saving Usage Float settings once removes them from that file.
 
 ### Moving from a Git Checkout to the Installed Product
 

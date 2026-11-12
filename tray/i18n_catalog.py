@@ -746,6 +746,14 @@ EN = {
     '额度恢复线': 'Quota line',
     '快速': 'fast',
     '不重置': 'never resets',
+    '已用': 'used',
+    '已用 {0}': 'used {0}',
+    '已用 {0} / {1}': 'used {0} / {1}',
+    '无查询权限': 'No permission to query usage',
+    '旧的额度字段残留。运行 agentcompass setup 清掉旧字段。':
+        'Old quota fields remain. Run agentcompass setup to clear the old fields.',
+    '旧设置残留。在设置里保存一次即可清掉，或运行 agentcompass setup。':
+        'Old settings remain. Save once in settings to clear them, or run agentcompass setup.',
     '{0} 小时后重置': 'resets in {0} h',
     '{0} 天后重置': 'resets in {0} d',
     '额度恢复线记录无法读取': 'The quota-line record could not be read',

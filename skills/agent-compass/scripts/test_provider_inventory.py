@@ -494,7 +494,7 @@ class DiscoveryTests(unittest.TestCase):
                       'gateway/qwen3-coder-next:free', 'some-new-model', 'another-new-model',
                       'vendor-a/gpt-6.1-terra', 'vendor-b/gpt-6.1-terra']
         snapshot['accounts']['gateway'] = {'family': 'codex', 'provider': 'gateway', 'status': 'ready',
-            'backend_kind': 'litellm', 'billing': 'metered', 'models': raw_models}
+            'backend_kind': 'metered_usd', 'billing': 'metered', 'budget_usd': 50, 'models': raw_models}
         snapshot['launchers']['gateway'] = {'family': 'codex', 'status': 'ready'}
         accounts = self.apply(snapshot)
         bundles = list(accounts['accounts']['gateway']['bundles'].values())
@@ -1075,7 +1075,7 @@ class DiscoveryTests(unittest.TestCase):
             'schema_version': 2,
             'accounts': {
                 'team-proxy': {
-                    'backend_kind': 'litellm',
+                    'billing': 'metered',
                     'endpoint': 'https://proxy.example.test',
                     'api_key': 'sk-team-proxy',
                     'models': ['gpt-6.1-sol', 'claude-sonnet-5-5'],
@@ -1087,8 +1087,9 @@ class DiscoveryTests(unittest.TestCase):
             'providers': {
                 'team-proxy': {
                     'plan_label': '$300',
-                    'backend_kind': 'litellm',
+                    'backend_kind': 'metered_usd',
                     'billing': 'metered',
+                    'usage_details': {'kind': 'metered_usd', 'spent_usd': 12.0, 'budget_usd': 300},
                 },
                 'pi': {'credential_key': pi_key, 'fetched_at': self.now.isoformat(), 'windows': [{'id': 'usage', 'used_pct': 10}]},
             }
@@ -1104,7 +1105,9 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(accounts['pi']['bundles'])
         self.assertIn('team-proxy', accounts)
         self.assertEqual(accounts['team-proxy']['billing'], 'metered')
-        self.assertEqual(accounts['team-proxy']['capacity_usd']['spend'], 300.0)
+        self.assertEqual(accounts['team-proxy']['capacity_usd']['balance'], 300.0)
+        self.assertEqual(accounts['team-proxy']['windows'], {'balance': {}})
+        self.assertNotIn('hours', accounts['team-proxy']['windows']['balance'])
         self.assertIn('auto:team-proxy:codex:gpt-6.1-sol@high', accounts['team-proxy']['bundles'])
         self.assertIn('auto:team-proxy:claude:claude-sonnet-5-5@high', accounts['team-proxy']['bundles'])
         self.assertEqual(accounts['team-proxy']['bundles']['auto:team-proxy:codex:gpt-6.1-sol@high']['harness'], 'codex')

@@ -11,7 +11,7 @@ repository root. Usage Float keeps its own copy for its UI; the two are maintain
 cache file format.
 
 Differences from the upstream copy: no Tk/Windows UI, wallpaper or HUD code; the cache file location comes from
-usage_cache.py; proxy settings are read from ``~/.agent-compass/usage-config.json``.
+usage_cache.py; collector language is read from ``~/.agent-compass/usage-config.json``.
 """
 
 from __future__ import annotations
@@ -38,13 +38,13 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Callable, Iterable
-from zoneinfo import ZoneInfo
 
 _HERE = str(Path(__file__).resolve().parent)
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import usage_cache
 import usage_magpie as magpie_usage
+import state_upgrade
 
 
 # ---------------------------------------------------------------------------
@@ -431,69 +431,42 @@ def provider_fetch_id(item: str) -> str:
 GROK_BILLING_URL = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig"
 
 
-# Many LiteLLM virtual keys cannot call /key/info. Spend and budget come back
-# on actual LLM responses as x-litellm-key-spend / x-litellm-key-max-budget.
-# Probe models are overridable; leave empty unless env or config supplies an endpoint.
-LLM_PROXY_DEFAULT_ENDPOINT = ""
-LLM_PROXY_EMBED_MODEL = "gemini-embedding-2"
-LLM_PROXY_CHAT_FALLBACK_MODEL = "glm-5.3-flash"
-
-
-# Virtual keys often cannot call /key/info. Weekly (7d) budgets reset Monday
-# midnight in the proxy timezone (UTC+8 unless configured).
-LLM_PROXY_BUDGET_DURATION_DEFAULT = "7d"
-LLM_PROXY_TIMEZONE_DEFAULT = "UTC+8"
-
-
-LLM_PROXY_RESET_HEADERS = (
-    "x-litellm-key-budget-reset-at",
-    "x-litellm-budget-reset-at",
-    "x-litellm-key-reset-at",
-)
-
-
-LLM_PROXY_DURATION_HEADERS = (
-    "x-litellm-key-budget-duration",
-    "x-litellm-budget-duration",
-)
-
-
+# A metered USD account is an accounts-override.json entry with billing "metered",
+# an endpoint and an api_key. Spend is that key's dollars. A budget, when the
+# account or the key states one, is a balance that does not reset.
 REFRESH_SECONDS = 300
 IDLE_REFRESH_SECONDS = 1800
 UNKNOWN_ACTIVITY_REFRESH_SECONDS = 900
 CLAUDE_429_BACKOFF_SECONDS = 900
-
-
 COLLECTOR_CONFIG_KEYS: tuple[str, ...] = (
     "language",
-    "llm_proxy_timezone",
-    "llm_proxy_budget_duration",
-    "llm_proxy_api_key",
-    "llm_proxy_endpoint",
-    "llm_proxy_provider_id",
-    "litellm_proxies",
 )
 
 
+def _obsolete_collector_keys(data: dict[str, Any]) -> list[str]:
+    return state_upgrade.obsolete_usage_config_keys(data)
+
+
 def read_usage_config() -> dict[str, Any]:
-    """Collector settings (LLM proxy keys and budget); {} when the config file is absent or unparseable."""
+    """Collector settings. Obsolete llm-proxy keys are returned so a caller can
+    name them, and are not applied and not deleted by this read."""
     try:
         data = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return {}
-    return dict(data) if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        return {}
+    return data
 
 
 def write_usage_config(cfg: dict[str, Any]) -> None:
-    """Persist collector-relevant settings to CONFIG_PATH atomically."""
+    """Persist collector-relevant settings. An explicit save drops leftover llm-proxy keys."""
     global _ACTIVE_LANGUAGE
     if not isinstance(cfg, dict):
         return
     updates = {k: cfg[k] for k in COLLECTOR_CONFIG_KEYS if k in cfg}
     if "language" in updates:
         _ACTIVE_LANGUAGE = _lang(updates["language"])
-    if not updates:
-        return
     with file_lock(CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.lock"), timeout=2):
         existing: dict[str, Any] = {}
         try:
@@ -503,7 +476,14 @@ def write_usage_config(cfg: dict[str, Any]) -> None:
                     existing = loaded
         except (OSError, ValueError):
             pass
+        stale = _obsolete_collector_keys(existing)
+        for key in stale:
+            existing.pop(key, None)
+        if not updates and not stale:
+            return
         existing.update(updates)
+        for key in _obsolete_collector_keys(existing):
+            existing.pop(key, None)
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         temporary = CONFIG_PATH.with_name(f"{CONFIG_PATH.name}.{uuid.uuid4().hex}.tmp")
         try:
@@ -511,7 +491,6 @@ def write_usage_config(cfg: dict[str, Any]) -> None:
             temporary.replace(CONFIG_PATH)
         finally:
             temporary.unlink(missing_ok=True)
-
 
 def load_usage_cache(*, strict: bool = False) -> dict[str, Any]:
     try:
@@ -647,7 +626,10 @@ def provider_credential_key(provider_id: str) -> str | None:
             if not tokens.get("access_token"):
                 token = None
         else:
-            return None
+            metered = discover_metered_usd_accounts().get(provider_id)
+            if metered is None:
+                return None
+            return hashlib.sha256((metered.endpoint + "\0" + metered.api_key).encode()).hexdigest()
     if not token:
         return None
     return hashlib.sha256((str(home.resolve()) + '\0' + token).encode()).hexdigest()
@@ -823,13 +805,35 @@ def read_cached_usage(providers: Iterable[str], *, now: float | None = None) -> 
             out.append(_provider_to_dict(item))
             continue
         expected_key = provider_credential_key(pid)
+        details = raw.get("usage_details") if isinstance(raw, dict) else None
+        query = details.get("query") if isinstance(details, dict) else None
+        # A permission denial has no number. Do not put an older spend snapshot back on screen.
+        if isinstance(raw, dict) and raw.get("credential_key") in (None, expected_key) and query == "no_permission":
+            try:
+                denied = _provider_from_dict(raw)
+                denied.provider_id = pid
+                denied.stale = True
+                denied.credential_key = expected_key
+                denied.available = False
+                denied.error = None
+                denied.summary = None
+                denied.windows = []
+                denied.usage_details = {"kind": "metered_usd", "query": "no_permission"}
+                out.append(_provider_to_dict(denied))
+                continue
+            except (TypeError, ValueError):
+                pass
         snap = display_snapshot(pid, cache=cache)
         if snap is not None:
             if isinstance(raw, dict) and raw.get("credential_key") in (None, expected_key) and raw.get("error"):
                 snap.error = str(raw["error"])
             out.append(_provider_to_dict(snap))
             continue
-        if isinstance(raw, dict) and raw.get("credential_key") in (None, expected_key) and raw.get("error"):
+        details = raw.get("usage_details") if isinstance(raw, dict) else None
+        query = details.get("query") if isinstance(details, dict) else None
+        if isinstance(raw, dict) and raw.get("credential_key") in (None, expected_key) and (
+            raw.get("error") or query == "no_permission"
+        ):
             try:
                 err_item = _provider_from_dict(raw)
                 err_item.provider_id = pid
@@ -2483,554 +2487,257 @@ def fetch_antigravity_usage() -> ProviderUsage:
 
 
 @dataclass(frozen=True)
-class LiteLLMProxyConfig:
+class MeteredUsdAccount:
     provider_id: str
     display_name: str
     api_key: str
-    openai_base: str
-    embed_model: str = LLM_PROXY_EMBED_MODEL
-    chat_model: str = LLM_PROXY_CHAT_FALLBACK_MODEL
-    budget_duration: str | None = None
-    timezone_name: str | None = None
+    endpoint: str
+    origin: str
+    budget_usd: float | None
 
 
-def _llm_proxy_openai_base(endpoint: str) -> str:
-    base = (endpoint or LLM_PROXY_DEFAULT_ENDPOINT).strip().rstrip("/")
-    if not base:
-        return ""
-    if not base.endswith("/v1"):
-        base = f"{base}/v1"
+def _accounts_override_path() -> Path:
+    configured = str(os.environ.get("AGENTCOMPASS_ACCOUNTS_OVERRIDE") or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return STATE_DIR / "accounts-override.json"
+
+
+def _metered_usd_origin(endpoint: str) -> str:
+    """Origin for GET /key/info. A trailing /v1 is not part of the origin."""
+    base = endpoint.strip().rstrip("/")
+    if base.endswith("/v1"):
+        return base[:-3]
     return base
 
 
-def _extract_litellm_proxy_entry(pid: str, spec: dict[str, Any]) -> LiteLLMProxyConfig | None:
-    if not isinstance(spec, dict) or spec.get("enabled") is False:
-        return None
-    sub = spec.get("litellm") if isinstance(spec.get("litellm"), dict) else spec
-    kind = str(spec.get("backend_kind") or sub.get("backend_kind") or spec.get("probe") or "").strip().lower()
-    endpoint = str(
-        sub.get("endpoint")
-        or sub.get("base_url")
-        or spec.get("endpoint")
-        or spec.get("base_url")
-        or ""
-    ).strip()
-    key = str(sub.get("api_key") or spec.get("api_key") or "").strip()
-    key_env = str(sub.get("api_key_env") or spec.get("api_key_env") or "").strip()
-    if not key and key_env:
-        key = str(os.environ.get(key_env) or "").strip()
-    endpoint_env = str(sub.get("endpoint_env") or spec.get("endpoint_env") or "").strip()
-    if not endpoint and endpoint_env:
-        endpoint = str(os.environ.get(endpoint_env) or "").strip()
-    if not endpoint and kind not in {"litellm", "proxy", "api-proxy"} and not isinstance(spec.get("litellm"), dict):
-        return None
-    base = _llm_proxy_openai_base(endpoint)
-    if not key or not base:
-        return None
-    label = str(spec.get("label") or sub.get("label") or pid).strip() or pid
-    PROVIDER_LABELS.setdefault(pid, label)
-    return LiteLLMProxyConfig(
-        provider_id=pid,
-        display_name=pid,
-        api_key=key,
-        openai_base=base,
-        embed_model=str(sub.get("embed_model") or spec.get("embed_model") or LLM_PROXY_EMBED_MODEL).strip() or LLM_PROXY_EMBED_MODEL,
-        chat_model=str(sub.get("chat_model") or sub.get("probe_model") or spec.get("chat_model") or spec.get("probe_model") or LLM_PROXY_CHAT_FALLBACK_MODEL).strip() or LLM_PROXY_CHAT_FALLBACK_MODEL,
-        budget_duration=str(sub.get("budget_duration") or spec.get("budget_duration") or "").strip() or None,
-        timezone_name=str(sub.get("timezone") or spec.get("timezone") or "").strip() or None,
-    )
-
-
-def discover_litellm_proxies() -> dict[str, LiteLLMProxyConfig]:
-    """Discover LiteLLM/OpenAI-compatible proxy accounts configured in the router files, Paseo or the usage config."""
-    proxies: dict[str, LiteLLMProxyConfig] = {}
-    router_files = [
-        Path(os.environ.get("AGENTCOMPASS_ACCOUNTS_OVERRIDE") or STATE_DIR / "accounts-override.json"),
-        STATE_DIR / "provider-inventory.json",
-        Path(__file__).resolve().parent.parent / "references" / "accounts.json",
-    ]
-    for path in router_files:
-        try:
-            if not path.is_file():
-                continue
-            doc = json.loads(path.read_text(encoding="utf-8-sig"))
-            if not isinstance(doc, dict):
-                continue
-            for section in ("litellm_proxies", "accounts"):
-                block = doc.get(section)
-                if not isinstance(block, dict):
-                    continue
-                for pid, spec in block.items():
-                    if pid in proxies or not isinstance(pid, str):
-                        continue
-                    entry = _extract_litellm_proxy_entry(pid, spec)
-                    if entry is not None:
-                        proxies[pid] = entry
-        except Exception:
-            continue
-
-    for pid, spec in _read_paseo_providers().items():
-        if pid in proxies or spec.get("enabled") is False:
-            continue
-        if is_claude_provider(pid) and claude_magpie_source(pid) is not None:
-            continue
-        env = spec.get("env") if isinstance(spec.get("env"), dict) else {}
-        endpoint = str(
-            env.get("LLM_PROXY_ENDPOINT")
-            or env.get("LITELLM_BASE_URL")
-            or env.get("OPENAI_BASE_URL")
-            or ""
-        ).strip()
-        key = str(
-            env.get("LLM_PROXY_API_KEY")
-            or env.get("LITELLM_API_KEY")
-            or env.get("OPENAI_API_KEY")
-            or ""
-        ).strip()
-        if endpoint and key and "api.openai.com" not in endpoint.lower():
-            entry = _extract_litellm_proxy_entry(
-                pid,
-                {
-                    "backend_kind": "litellm",
-                    "endpoint": endpoint,
-                    "api_key": key,
-                    "label": spec.get("label") or pid,
-                },
-            )
-            if entry is not None:
-                proxies[pid] = entry
-
-    env_key = str(os.environ.get("LLM_PROXY_API_KEY") or "").strip()
-    env_endpoint = str(os.environ.get("LLM_PROXY_ENDPOINT") or "").strip()
-    cfg_key = ""
-    cfg_endpoint = ""
-    cfg_pid = str(os.environ.get("LLM_PROXY_PROVIDER_ID") or "").strip()
-    try:
-        cfg = read_usage_config()
-        cfg_key = str(cfg.get("llm_proxy_api_key") or "").strip()
-        cfg_endpoint = str(cfg.get("llm_proxy_endpoint") or "").strip()
-        cfg_pid = cfg_pid or str(cfg.get("llm_proxy_provider_id") or "").strip()
-        extra_proxies = cfg.get("litellm_proxies")
-        if isinstance(extra_proxies, dict):
-            for pid, spec in extra_proxies.items():
-                if isinstance(pid, str) and pid not in proxies and isinstance(spec, dict):
-                    entry = _extract_litellm_proxy_entry(pid, spec)
-                    if entry is not None:
-                        proxies[pid] = entry
-    except Exception:
-        pass
-    legacy_key = env_key or cfg_key
-    legacy_endpoint = env_endpoint or cfg_endpoint
-    if legacy_key and legacy_endpoint:
-        target_pid = cfg_pid or "api-proxy"
-        if target_pid not in proxies:
-            base = _llm_proxy_openai_base(legacy_endpoint)
-            if base:
-                PROVIDER_LABELS.setdefault(target_pid, "LLM Proxy" if target_pid == "api-proxy" else target_pid)
-                proxies[target_pid] = LiteLLMProxyConfig(
-                    provider_id=target_pid,
-                    display_name=target_pid,
-                    api_key=legacy_key,
-                    openai_base=base,
-                )
-    return proxies
-
-
-def read_llm_proxy_credentials(provider_id: str = "api-proxy") -> tuple[str, str] | tuple[None, None]:
-    """Return (api_key, openai_base) from router/Paseo discovery, env, or the usage config."""
-    discovered = discover_litellm_proxies()
-    if provider_id in discovered:
-        proxy = discovered[provider_id]
-        return proxy.api_key, proxy.openai_base
-    key = str(os.environ.get("LLM_PROXY_API_KEY") or "").strip()
-    endpoint = str(os.environ.get("LLM_PROXY_ENDPOINT") or "").strip()
-    if not key or not endpoint:
-        cfg = read_usage_config()
-        key = key or str(cfg.get("llm_proxy_api_key") or "").strip()
-        endpoint = endpoint or str(cfg.get("llm_proxy_endpoint") or "").strip()
-    if not key:
-        return None, None
-    base = _llm_proxy_openai_base(endpoint)
-    if not base:
-        return None, None
-    return key, base
-
-
-def _header_float(headers: dict[str, str], name: str) -> float | None:
-    raw = headers.get(name)
-    if raw is None or raw == "":
+def _usd_number(value: Any, *, allow_zero: bool) -> float | None:
+    if isinstance(value, bool) or value is None or value == "":
         return None
     try:
-        return float(raw)
+        number = float(value)
     except (TypeError, ValueError):
         return None
-
-
-def _spend_looks_like_this_request(spend: float | None, cost: float | None) -> bool:
-    """True when LiteLLM has not flushed cumulative key spend yet."""
-    if spend is None:
-        return False
-    if cost is None:
-        return spend <= 1e-5
-    return spend <= max(cost * 2.0, 1e-5)
-
-
-def parse_llm_proxy_spend_headers(
-    headers: dict[str, str],
-) -> tuple[float | None, float | None, float | None]:
-    lowered = {str(k).lower(): str(v) for k, v in headers.items()}
-    spend = _header_float(lowered, "x-litellm-key-spend")
-    budget = _header_float(lowered, "x-litellm-key-max-budget")
-    cost = _header_float(lowered, "x-litellm-response-cost")
-    return spend, budget, cost
-
-
-def _parse_utc_offset(text: str) -> timedelta | None:
-    raw = text.strip().upper().replace(" ", "")
-    if raw in {"UTC", "GMT", "Z"}:
-        return timedelta(0)
-    if raw.startswith("UTC"):
-        raw = raw[3:]
-    if not raw or raw[0] not in "+-":
+    if number != number or number == float("inf"):
         return None
-    sign = 1 if raw[0] == "+" else -1
-    rest = raw[1:]
-    hours = 0
-    minutes = 0
-    if ":" in rest:
-        hour_text, minute_text = rest.split(":", 1)
-        if not hour_text.isdigit() or not minute_text.isdigit():
-            return None
-        hours, minutes = int(hour_text), int(minute_text)
-    elif rest.isdigit():
-        if len(rest) <= 2:
-            hours = int(rest)
-        elif len(rest) == 4:
-            hours, minutes = int(rest[:2]), int(rest[2:])
-        else:
-            return None
-    else:
+    if number < 0 or (number == 0 and not allow_zero):
         return None
-    if hours > 14 or minutes > 59:
-        return None
-    return timedelta(hours=sign * hours, minutes=sign * minutes)
+    return number
 
 
-def _normalize_llm_proxy_timezone(value: Any) -> str:
-    text = str(value or "").strip() or LLM_PROXY_TIMEZONE_DEFAULT
-    aliases = {
-        "cst": "UTC+8",
-        "prc": "UTC+8",
-        "asia/shanghai": "UTC+8",
-        "asia/hong_kong": "UTC+8",
-        "asia/taipei": "UTC+8",
-        "asia/singapore": "UTC+8",
-        "asia/tokyo": "UTC+9",
-        "asia/seoul": "UTC+9",
-        "us/eastern": "UTC-5",
-        "us/pacific": "UTC-8",
-        "europe/london": "UTC",
-    }
-    mapped = aliases.get(text.lower())
-    if mapped:
-        return mapped
-    offset = _parse_utc_offset(text)
-    if offset is not None:
-        total_minutes = int(offset.total_seconds() // 60)
-        if total_minutes == 0:
-            return "UTC"
-        sign = "+" if total_minutes > 0 else "-"
-        hours, minutes = divmod(abs(total_minutes), 60)
-        if minutes:
-            return f"UTC{sign}{hours:02d}:{minutes:02d}"
-        return f"UTC{sign}{hours}"
-    return text
+def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
+    """Metered USD accounts from accounts-override.json only.
 
-
-def _llm_proxy_zoneinfo(name: str | None) -> timezone | ZoneInfo:
-    text = _normalize_llm_proxy_timezone(name)
-    offset = _parse_utc_offset(text)
-    if offset is not None:
-        return timezone(offset)
+    An entry counts when billing is metered and both endpoint and api_key are
+    non-empty. Subscription-shaped metered accounts (no endpoint) are not these.
+    Old proxy sections, environment variables and usage-config keys are not read.
+    """
+    path = _accounts_override_path()
     try:
-        return ZoneInfo(text)
-    except Exception:
-        return timezone(timedelta(hours=8))
+        doc = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    accounts = doc.get("accounts") if isinstance(doc, dict) else None
+    if not isinstance(accounts, dict):
+        return {}
+    found: dict[str, MeteredUsdAccount] = {}
+    for pid, spec in accounts.items():
+        if not isinstance(pid, str) or not isinstance(spec, dict) or spec.get("disabled") is True:
+            continue
+        if str(spec.get("billing") or "").strip().lower() != "metered":
+            continue
+        endpoint = str(spec.get("endpoint") or "").strip()
+        key = str(spec.get("api_key") or "").strip()
+        if not endpoint or not key:
+            continue
+        origin = _metered_usd_origin(endpoint)
+        if not origin:
+            continue
+        label = str(spec.get("label") or pid).strip() or pid
+        PROVIDER_LABELS.setdefault(pid, label)
+        found[pid] = MeteredUsdAccount(
+            provider_id=pid,
+            display_name=label,
+            api_key=key,
+            endpoint=endpoint,
+            origin=origin,
+            budget_usd=_usd_number(spec.get("budget_usd"), allow_zero=False),
+        )
+    return found
 
 
-def _normalize_llm_proxy_budget_duration(raw: str | None) -> str:
-    text = (raw or "").strip().lower()
-    aliases = {
-        "hourly": "1h",
-        "daily": "1d",
-        "weekly": "7d",
-        "monthly": "30d",
-        "24h": "1d",
-        "1w": "7d",
-        "1mo": "30d",
-    }
-    return aliases.get(text, text)
+def _parse_key_info(payload: Any) -> tuple[float | None, float | None]:
+    if not isinstance(payload, dict):
+        return None, None
+    info = payload.get("info") if isinstance(payload.get("info"), dict) else payload
+    spend = _usd_number(info.get("spend"), allow_zero=True)
+    if spend is None and info is not payload:
+        spend = _usd_number(payload.get("spend"), allow_zero=True)
+    budget = _usd_number(info.get("max_budget"), allow_zero=False)
+    if budget is None and info is not payload:
+        budget = _usd_number(payload.get("max_budget"), allow_zero=False)
+    return spend, budget
 
 
-def _parse_llm_proxy_duration(raw: str | None) -> tuple[int, str] | None:
-    text = _normalize_llm_proxy_budget_duration(raw)
-    if not text:
-        return None
-    index = 0
-    while index < len(text) and text[index].isdigit():
-        index += 1
-    if index == 0 or index == len(text):
-        return None
-    try:
-        value = int(text[:index])
-    except ValueError:
-        return None
-    unit = text[index:]
-    if unit not in {"s", "m", "h", "d", "w", "mo"}:
-        return None
-    return value, unit
+def format_usd_amount(value: float) -> str:
+    """Whole dollars without a decimal; otherwise two decimals, half-up."""
+    rounded = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if rounded == rounded.to_integral_value():
+        return f"${int(rounded)}"
+    return f"${rounded:.2f}"
 
 
-def next_llm_proxy_budget_reset(
-    duration: str | None,
-    *,
-    now: datetime | None = None,
-    timezone_name: str | None = None,
-) -> datetime | None:
-    """Next LiteLLM-style budget reset (1d midnight, 7d Monday, 30d 1st of month)."""
-    parsed = _parse_llm_proxy_duration(duration)
-    if parsed is None:
-        return None
-    value, unit = parsed
-    tzinfo = _llm_proxy_zoneinfo(timezone_name)
-    current = now or datetime.now(timezone.utc)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
-    current = current.astimezone(tzinfo)
-    midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
+def format_metered_usd(spend: float, budget: float | None = None) -> str:
+    """Spent-first readout. With a budget: 已用 $2.65 / $200. Without: 已用 $12.30."""
+    spent = format_usd_amount(spend)
+    if budget is None or budget <= 0:
+        return _tr(f"已用 {spent}", f"used {spent}")
+    cap = format_usd_amount(budget)
+    return _tr(f"已用 {spent} / {cap}", f"used {spent} / {cap}")
 
-    def at_midnight(moment: datetime) -> datetime:
-        return moment.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    if unit == "d" and value == 1:
-        candidate = midnight
-        return candidate + timedelta(days=1) if candidate <= current else candidate
-    if (unit == "d" and value == 7) or (unit == "w" and value == 1):
-        days_until_monday = (7 - current.weekday()) % 7
-        candidate = midnight + timedelta(days=days_until_monday)
-        return candidate + timedelta(days=7) if candidate <= current else candidate
-    if (unit == "d" and value == 30) or (unit == "mo" and value == 1):
-        candidate = midnight.replace(day=1)
-        if candidate <= current:
-            if candidate.month == 12:
-                candidate = candidate.replace(year=candidate.year + 1, month=1)
-            else:
-                candidate = candidate.replace(month=candidate.month + 1)
-        return candidate
-    if unit == "h":
-        return current.replace(minute=0, second=0, microsecond=0) + timedelta(hours=value)
-    if unit == "m":
-        return current.replace(second=0, microsecond=0) + timedelta(minutes=value)
-    if unit == "s":
-        return current.replace(microsecond=0) + timedelta(seconds=value)
-    if unit == "d":
-        return at_midnight(midnight + timedelta(days=value))
-    if unit == "w":
-        return at_midnight(midnight + timedelta(weeks=value))
+def _reading_budget(account: MeteredUsdAccount, reported: float | None) -> float | None:
+    """The account's budget_usd when set, otherwise the key's max_budget."""
+    if account.budget_usd is not None:
+        return account.budget_usd
+    if reported is not None and reported > 0:
+        return reported
     return None
 
 
-def _parse_llm_proxy_reset_timestamp(raw: str | None) -> str | None:
-    text = (raw or "").strip()
-    if not text:
+def _cached_permission_usage(provider_id: str, raw: Any, key: str | None) -> ProviderUsage | None:
+    """The last /key/info permission denial, within the poll, without turning it into a read failure."""
+    if not isinstance(raw, dict):
+        return None
+    details = raw.get("usage_details")
+    if not isinstance(details, dict) or details.get("query") != "no_permission" or details.get("kind") != "metered_usd":
+        return None
+    if raw.get("credential_key") not in (None, key):
         return None
     try:
-        stamp = float(text)
-        if stamp > 1e12:
-            stamp /= 1000.0
-        if stamp > 1e9:
-            return datetime.fromtimestamp(stamp, tz=timezone.utc).isoformat()
-    except ValueError:
-        pass
-    parsed = parse_iso(text)
-    if parsed is None:
+        item = _provider_from_dict(raw)
+    except (TypeError, ValueError):
         return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.isoformat()
+    item.provider_id = provider_id
+    item.credential_key = key
+    item.available = False
+    item.error = None
+    item.summary = None
+    item.windows = []
+    item.usage_details = {"kind": "metered_usd", "query": "no_permission"}
+    return item
 
 
-def _llm_proxy_budget_settings() -> tuple[str, str]:
-    duration = str(os.environ.get("LLM_PROXY_BUDGET_DURATION") or "").strip()
-    timezone_name = str(os.environ.get("LLM_PROXY_TIMEZONE") or "").strip()
-    data = read_usage_config()
-    duration = duration or str(data.get("llm_proxy_budget_duration") or "").strip()
-    timezone_name = timezone_name or str(data.get("llm_proxy_timezone") or "").strip()
-    return (
-        duration or LLM_PROXY_BUDGET_DURATION_DEFAULT,
-        _normalize_llm_proxy_timezone(timezone_name or LLM_PROXY_TIMEZONE_DEFAULT),
-    )
+def _cache_metered_usd_failure(provider_id: str, *, query: str, read_error: str | None) -> None:
+    """Remember a /key/info miss. No spend number is stored, so routing keeps the data gap."""
+    key = provider_credential_key(provider_id)
+    details: dict[str, Any] = {"kind": "metered_usd", "query": query}
+    if read_error:
+        details["read_error"] = read_error
+    snap: dict[str, Any] = {
+        "provider_id": provider_id,
+        "display_name": provider_id,
+        "windows": [],
+        "available": False,
+        "stale": False,
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "backend_kind": "metered_usd",
+        "billing": "metered",
+        "credential_key": key,
+        "usage_details": details,
+    }
+    if read_error:
+        snap["error"] = read_error
+
+    def update(cache):
+        cache.setdefault("providers", {})[provider_id] = snap
+
+    try:
+        update_usage_cache(update)
+    except Exception:
+        pass
 
 
-def resolve_llm_proxy_resets_at(
-    headers: dict[str, str] | None = None,
-    *,
-    now: datetime | None = None,
-    duration: str | None = None,
-    timezone_name: str | None = None,
-) -> str | None:
-    lowered = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
-    for key in LLM_PROXY_RESET_HEADERS:
-        parsed = _parse_llm_proxy_reset_timestamp(lowered.get(key))
-        if parsed:
-            return parsed
-    header_duration = None
-    for key in LLM_PROXY_DURATION_HEADERS:
-        raw = lowered.get(key)
-        if raw:
-            header_duration = raw
-            break
-    reset = next_llm_proxy_budget_reset(
-        header_duration or duration or LLM_PROXY_BUDGET_DURATION_DEFAULT,
-        now=now,
-        timezone_name=timezone_name,
-    )
-    return reset.isoformat() if reset is not None else None
+def _public_read_error(text: str) -> str:
+    """A hover reason that never repeats a key or a bearer token."""
+    cleaned = " ".join(str(text or "").split())
+    if not cleaned or "sk-" in cleaned or "Bearer " in cleaned:
+        return "读取失败"
+    return cleaned[:160]
 
 
-def _round_dollars(value: float) -> int:
-    """Half-up dollar rounding (2.5 → 3), not banker's rounding or truncation."""
-    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-
-
-def format_llm_proxy_spend(spend: float, budget: float | None = None) -> str:
-    """Compact dollar readout of what is left, e.g. $198/200 after $2 of a $200 budget.
-
-    Every other row reads what is left, so a budgeted key does too; with no budget
-    nothing is known to be left and the spend alone is shown ($12)."""
-    if budget is None or budget <= 0:
-        return f"${_round_dollars(spend)}"
-    return f"${_round_dollars(max(0.0, budget - spend))}/{_round_dollars(budget)}"
-
-
-def _llm_proxy_probe(
-    base: str, key: str, *, model: str, kind: str
-) -> tuple[int, dict[str, str]]:
-    headers = {"Authorization": f"Bearer {key}"}
-    if kind == "embeddings":
-        status, _payload, resp_headers = http_json_response(
-            f"{base}/embeddings",
-            method="POST",
-            headers=headers,
-            body={"model": model, "input": "usage"},
-        )
-        return status, resp_headers
-    status, _payload, resp_headers = http_json_response(
-        f"{base}/chat/completions",
-        method="POST",
-        headers=headers,
-        body={
-            "model": model,
-            "messages": [{"role": "user", "content": "."}],
-            "max_tokens": 1,
-        },
-    )
-    return status, resp_headers
-
-
-def fetch_api_proxy_usage(provider_id: str = "api-proxy") -> ProviderUsage:
-    proxy = discover_litellm_proxies().get(provider_id)
-    creds = read_llm_proxy_credentials(provider_id) if proxy is None else (proxy.api_key, proxy.openai_base)
-    display_name = proxy.display_name if proxy is not None else provider_id
-    if creds[0] is None:
+def _metered_usd_miss(provider_id: str, display_name: str, status: int, payload: Any) -> ProviderUsage:
+    """No spend number. 401/403 is a permission hover; every other miss is a normal read failure."""
+    if status in (401, 403):
+        _cache_metered_usd_failure(provider_id, query="no_permission", read_error=None)
         return ProviderUsage(
             provider_id=provider_id,
             display_name=display_name,
             available=False,
-            error="更新失败",
-        )
-    key, base = creds
-    embed_model = proxy.embed_model if proxy is not None else LLM_PROXY_EMBED_MODEL
-    chat_model = proxy.chat_model if proxy is not None else LLM_PROXY_CHAT_FALLBACK_MODEL
-    probes = (
-        ("embeddings", embed_model),
-        ("chat", chat_model),
-    )
-    spend: float | None = None
-    budget: float | None = None
-    headers: dict[str, str] = {}
-    for kind, model in probes:
-        status, headers = _llm_proxy_probe(base, key, model=model, kind=kind)
-        if status != 200:
-            continue
-        spend, budget, cost = parse_llm_proxy_spend_headers(headers)
-        if _spend_looks_like_this_request(spend, cost):
-            status, headers = _llm_proxy_probe(base, key, model=model, kind=kind)
-            if status == 200:
-                spend, budget, cost = parse_llm_proxy_spend_headers(headers)
-        if spend is not None:
-            break
-    if spend is None:
-        return ProviderUsage(
-            provider_id=provider_id,
-            display_name=display_name,
-            available=False,
-            error="更新失败",
-        )
-
-    duration, timezone_name = _llm_proxy_budget_settings()
-    if proxy is not None:
-        if proxy.budget_duration:
-            duration = proxy.budget_duration
-        if proxy.timezone_name:
-            timezone_name = _normalize_llm_proxy_timezone(proxy.timezone_name)
-    resets_at = resolve_llm_proxy_resets_at(
-        headers,
-        duration=duration,
-        timezone_name=timezone_name,
-    )
-
-    if budget is None or budget <= 0:
-        result = ProviderUsage(
-            provider_id=provider_id,
-            display_name=display_name,
-            summary=format_llm_proxy_spend(spend),
-            windows=[
-                UsageWindow(
-                    id="spend",
-                    label=_tr("额度", 'Quota'),
-                    used_pct=0.0,
-                    resets_at=resets_at,
-                )
-            ]
-            if resets_at
-            else [],
-            available=True,
-            fetched_at=datetime.now(timezone.utc).isoformat(),
-            backend_kind="litellm",
+            windows=[],
+            backend_kind="metered_usd",
             billing="metered",
+            usage_details={"kind": "metered_usd", "query": "no_permission"},
+            fetched_at=datetime.now(timezone.utc).isoformat(),
         )
-        cache_put_provider(result)
-        return result
+    if status == 0:
+        raw_reason = str(payload or "").strip()
+        reason = "网络错误" if not raw_reason else _public_read_error(raw_reason)
+    elif status != 200:
+        reason = f"/key/info 返回 {status}"
+    else:
+        reason = "/key/info 没有已用金额"
+    _cache_metered_usd_failure(provider_id, query="failed", read_error=reason)
+    return ProviderUsage(
+        provider_id=provider_id,
+        display_name=display_name,
+        available=False,
+        error=reason,
+        error_status=status or None,
+        windows=[],
+        backend_kind="metered_usd",
+        billing="metered",
+        usage_details={"kind": "metered_usd", "query": "failed", "read_error": reason},
+        fetched_at=datetime.now(timezone.utc).isoformat(),
+    )
 
-    used_pct = max(0.0, min(100.0, (spend / budget) * 100.0))
+
+def fetch_metered_usd_usage(provider_id: str) -> ProviderUsage:
+    """Read spent dollars for one metered USD account from GET {origin}/key/info only."""
+    account = discover_metered_usd_accounts().get(provider_id)
+    display_name = account.display_name if account is not None else provider_id
+    if account is None:
+        return ProviderUsage(provider_id=provider_id, display_name=display_name, available=False, error="更新失败")
+    status, payload, _headers = http_json_response(
+        f"{account.origin}/key/info",
+        headers={"Authorization": f"Bearer {account.api_key}"},
+    )
+    spend, reported_budget = _parse_key_info(payload) if status == 200 else (None, None)
+    if spend is None:
+        return _metered_usd_miss(provider_id, display_name, status, payload)
+    budget = _reading_budget(account, reported_budget)
+    details: dict[str, Any] = {"kind": "metered_usd", "spent_usd": spend, "budget_usd": budget}
+    windows: list[UsageWindow] = []
+    plan_label = None
+    if budget is not None and budget > 0:
+        plan_label = format_usd_amount(budget)
+        windows.append(UsageWindow(
+            id="balance",
+            label=_tr("已用", "used"),
+            used_pct=max(0.0, min(100.0, (spend / budget) * 100.0)),
+            resets_at=None,
+        ))
     result = ProviderUsage(
         provider_id=provider_id,
         display_name=display_name,
-        plan_label=f"${budget:.0f}",
-        summary=format_llm_proxy_spend(spend, budget),
-        windows=[
-            UsageWindow(
-                id="spend",
-                label=_tr("额度", 'Quota'),
-                used_pct=used_pct,
-                resets_at=resets_at,
-            )
-        ],
+        plan_label=plan_label,
+        summary=format_metered_usd(spend, budget),
+        windows=windows,
         available=True,
         fetched_at=datetime.now(timezone.utc).isoformat(),
-        backend_kind="litellm",
+        backend_kind="metered_usd",
         billing="metered",
+        usage_details=details,
     )
     cache_put_provider(result)
     return result
@@ -3186,8 +2893,8 @@ def provider_available(provider_id: str) -> bool:
         return read_claude_oauth(claude_account_home(provider_id))[0] is not None
     if provider_id == "grok":
         return read_grok_token() is not None
-    if provider_id in discover_litellm_proxies() or provider_id == "api-proxy":
-        return read_llm_proxy_credentials(provider_id)[0] is not None
+    if provider_id in discover_metered_usd_accounts():
+        return True
     if provider_id == "pi":
         return read_pi_codex_auth()[0] is not None
     if provider_id == "opencode":
@@ -3208,7 +2915,7 @@ def discovered_default_providers() -> list[str]:
         for sub in PROVIDER_DISPLAY_ITEMS.get(pid, (f"{pid}:fable", f"{pid}:7d", f"{pid}:5h")):
             if sub not in items:
                 items.append(sub)
-    for pid in discover_litellm_proxies():
+    for pid in discover_metered_usd_accounts():
         if pid not in items:
             items.append(pid)
     if read_pi_codex_auth()[0] is not None and pi_linked_codex_provider() is None:
@@ -3345,7 +3052,7 @@ def refresh_local_activity(output: Path | None = None, now: float | None = None)
         if oc_count > 0:
             active_workers["opencode"] = {"count": oc_count}
 
-    for pid in discover_litellm_proxies():
+    for pid in discover_metered_usd_accounts():
         if pid in accounts:
             continue
         pcount = paseo_counts.get(pid, 0)
@@ -3401,7 +3108,7 @@ def provider_poll_seconds(provider_id: str) -> int:
         tracked = {
             *discover_claude_homes(),
             *discover_codex_accounts(),
-            *discover_litellm_proxies(),
+            *discover_metered_usd_accounts(),
             'pi',
             'opencode',
             'grok',
@@ -3464,9 +3171,9 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
     polled = {}
     claude_homes = discover_claude_homes()
     codex_accounts = discover_codex_accounts()
-    litellm_proxies = discover_litellm_proxies()
+    metered_accounts = discover_metered_usd_accounts()
     for pid in dict.fromkeys(provider_fetch_id(item) for item in providers):
-        if pid not in {*PROVIDER_DISPLAY_ITEMS, *claude_homes, *codex_accounts, *litellm_proxies, 'pi', 'grok', 'api-proxy'}:
+        if pid not in {*PROVIDER_DISPLAY_ITEMS, *claude_homes, *codex_accounts, *metered_accounts, 'pi', 'grok'}:
             continue
         polled[pid] = poll = provider_poll_seconds(pid)
         cached = item = None
@@ -3504,7 +3211,8 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                         cached.stale = bool(raw.get('stale', True)) or time.time() - observed >= REFRESH_SECONDS
                         out.append(cached)
                     else:
-                        out.append(ProviderUsage(provider_id=pid, display_name=pid,
+                        remembered = _cached_permission_usage(pid, raw, key)
+                        out.append(remembered or ProviderUsage(provider_id=pid, display_name=pid,
                                                  available=False, stale=True, error='更新失败'))
                     continue
                 is_claude = pid == 'claude' or is_claude_provider(pid)
@@ -3525,13 +3233,16 @@ def collect_local_usage(providers: list[str], *, force: bool = False) -> list[Pr
                     item = fetch_pi_usage('pi')
                 elif pid == 'grok':
                     item = fetch_grok_usage()
-                elif pid == 'api-proxy':
-                    item = fetch_api_proxy_usage()
-                elif pid in litellm_proxies:
-                    item = fetch_api_proxy_usage(pid)
+                elif pid in metered_accounts:
+                    item = fetch_metered_usd_usage(pid)
                 elif pid == 'antigravity':
                     item = fetch_antigravity_usage()
                 else:
+                    continue
+                if isinstance(item.usage_details, dict) and item.usage_details.get('query') == 'no_permission':
+                    item.credential_key = key
+                    record_usage_attempt(pid, key, failures=0, retry_seconds=poll)
+                    out.append(item)
                     continue
                 if key != provider_credential_key(pid):
                     item = stale_provider_usage(pid, _tr('登录凭据已变化，等待下次更新', 'Login credentials changed; waiting for the next update'))

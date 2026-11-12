@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import host_policy
 import router_test_support as support
+import state_upgrade
 import usage_cache
 import usage_collector as collector
 import usage_core
@@ -350,16 +351,33 @@ class HostedCollectorEntryTests(CollectorBase):
         self.assertEqual(snap['error'], 'HTTP 502')
         self.assertEqual(snap['windows'][0]['used_pct'], 15.0)
 
-    def test_write_usage_config_updates_authoritative_collector_config(self):
-        (self.root / '.usage-float').mkdir(parents=True, exist_ok=True)
-        (self.root / '.usage-float' / 'config.json').write_text(json.dumps({'llm_proxy_timezone': 'UTC+8'}), encoding='utf-8')
+    def test_usage_config_keeps_language_and_strips_old_proxy_keys_on_write(self):
         self.state.mkdir(parents=True, exist_ok=True)
-        usage_core.CONFIG_PATH.write_text(json.dumps({'llm_proxy_timezone': 'UTC'}), encoding='utf-8')
-        usage_core.write_usage_config({'llm_proxy_timezone': 'UTC-8', 'card_width': 999})
+        usage_core.write_usage_config({'language': 'en', 'card_width': 999})
         saved = json.loads(usage_core.CONFIG_PATH.read_text(encoding='utf-8'))
-        self.assertEqual(saved['llm_proxy_timezone'], 'UTC-8')
-        self.assertNotIn('card_width', saved)
-        self.assertEqual(usage_core.read_usage_config()['llm_proxy_timezone'], 'UTC-8')
+        self.assertEqual(saved, {'language': 'en'})
+        self.assertEqual(usage_core.read_usage_config()['language'], 'en')
+        usage_core.write_usage_config({'llm_proxy_timezone': 'UTC-8'})
+        kept = json.loads(usage_core.CONFIG_PATH.read_text(encoding='utf-8'))
+        self.assertEqual(kept, {'language': 'en'})
+        self.assertNotIn('llm_proxy_timezone', kept)
+        usage_core.CONFIG_PATH.write_text(
+            json.dumps({'language': 'zh', 'llm_proxy_budget_duration': '7d', 'litellm_proxies': {}}),
+            encoding='utf-8',
+        )
+        raw = usage_core.CONFIG_PATH.read_text(encoding='utf-8')
+        loaded = usage_core.read_usage_config()
+        self.assertEqual(loaded['language'], 'zh')
+        self.assertIn('llm_proxy_budget_duration', loaded)
+        self.assertIn('litellm_proxies', loaded)
+        self.assertEqual(usage_core.CONFIG_PATH.read_text(encoding='utf-8'), raw)
+        issue = state_upgrade.check_usage_config(usage_core.CONFIG_PATH)
+        self.assertIn('llm_proxy_budget_duration', issue)
+        self.assertIn(state_upgrade.LEGACY_SETTINGS_REASON, issue)
+        self.assertIn(state_upgrade.FIX_SETUP, issue)
+        usage_core.write_usage_config({'language': 'zh'})
+        cleaned = json.loads(usage_core.CONFIG_PATH.read_text(encoding='utf-8'))
+        self.assertEqual(cleaned, {'language': 'zh'})
 
     def test_claude_session_reset_sets_and_obeys_429_backoff(self):
         self.sign_in('claude')

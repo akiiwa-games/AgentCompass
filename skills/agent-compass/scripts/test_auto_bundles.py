@@ -24,8 +24,8 @@ def public(accounts):
 
 def proxy_accounts():
     acc = public({
-        'llmproxy': {'billing': 'metered', 'backend_kind': 'litellm', 'family': 'codex',
-                     'windows': {'spend': {'hours': 168}}, 'bundles': {}}})
+        'llmproxy': {'billing': 'metered', 'backend_kind': 'metered_usd', 'family': 'codex',
+                     'windows': {'balance': {}}, 'bundles': {}}})
     return acc
 
 
@@ -71,7 +71,7 @@ class Derive(unittest.TestCase):
                          else rows['auto:llmproxy:codex:kimi-k3@high']['compatibility'], 'unverified')
         self.assertEqual([e['model'] for e in out['excluded']], ['gemini-embedding-001'])
         # `qwen-flash` resolves (alias) to the Qwen3 Flash snapshot row it serves
-        self.assertEqual(rows['auto:llmproxy:codex:qwen3-flash-2025-07-28@high']['draws'], ['spend'])
+        self.assertEqual(rows['auto:llmproxy:codex:qwen3-flash-2025-07-28@high']['draws'], ['balance'])
         self.assertEqual(rows['auto:llmproxy:codex:zzz-proxy-model@high']['score_source'], 'unmeasured')
 
     def test_user_checkbox_overrides_default_both_ways(self):
@@ -142,7 +142,7 @@ class Derive(unittest.TestCase):
         flat = account_fleet.bundles(merged)
         bid = 'auto:llmproxy:codex:zzz-unknown-9@high'
         self.assertIn(bid, flat)
-        self.assertEqual(quota_pools.bundle_pools(flat[bid], merged), ['spend'])
+        self.assertEqual(quota_pools.bundle_pools(flat[bid], merged), ['balance'])
         self.assertNotIn('zzz-unknown-9', merged['models'])     # no row is invented for an unmeasured name
 
 

@@ -574,7 +574,10 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     """(text, colour kind) of an account's status."""
     modules()
     import host_policy
+    import state_upgrade
     row = inventory_row or {}
+    if row.get("status") == "legacy_meter":
+        return _tr(state_upgrade.LEGACY_METER_REASON), "warn"
     plugin_id = {"dot": "dot2api", "chatgpt-web": "chatgpt-web"}.get(name)
     plugin_entry = (plugin_config or {}).get(plugin_id) if plugin_id and isinstance(plugin_config, dict) else None
     if isinstance(plugin_entry, dict) and plugin_entry.get("enabled") is False:
@@ -627,6 +630,41 @@ def read_time_text(value) -> str:
     """A reading's time in local time; '从未' when there has been no good reading."""
     moment = _iso_datetime(value)
     return moment.astimezone().strftime('%m-%d %H:%M') if moment else _tr('从未')
+
+
+def metered_spent_text(usage_row: dict) -> str:
+    """Spent-first dollar label for a metered USD reading. Empty for any other account."""
+    if not isinstance(usage_row, dict) or usage_row.get("backend_kind") != "metered_usd":
+        return ""
+    details = usage_row.get("usage_details") if isinstance(usage_row.get("usage_details"), dict) else {}
+    if details.get("query") == "no_permission":
+        return ""
+    spent = details.get("spent_usd")
+    if isinstance(spent, (int, float)) and not isinstance(spent, bool):
+        import usage_core
+        spent_text = usage_core.format_usd_amount(float(spent))
+        budget = details.get("budget_usd")
+        if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
+            return _tr("已用 {0} / {1}").format(spent_text, usage_core.format_usd_amount(float(budget)))
+        return _tr("已用 {0}").format(spent_text)
+    summary = usage_row.get("summary")
+    return summary if isinstance(summary, str) else ""
+
+
+def metered_usage_hover(usage_row: dict) -> str:
+    """Hover for a metered USD miss. A spend number has no extra hover."""
+    if not isinstance(usage_row, dict):
+        return ""
+    details = usage_row.get("usage_details") if isinstance(usage_row.get("usage_details"), dict) else {}
+    if usage_row.get("backend_kind") != "metered_usd" and details.get("kind") != "metered_usd":
+        return ""
+    if details.get("query") == "no_permission":
+        return _tr("无查询权限")
+    if details.get("query") == "failed":
+        reason = details.get("read_error")
+        if isinstance(reason, str) and reason.strip():
+            return reason.strip()
+    return ""
 
 
 def countdown(seconds) -> str:
@@ -757,7 +795,15 @@ def account_cards() -> list[dict]:
         spec = acc_table.get(name) or {}
         row = inv_accounts.get(name)
         usage_row = (usage.get("accounts") or {}).get(name) or {}
-        if isinstance(row, dict) and row.get("status") == "ready" and usage_row.get("available") is False:
+        metered_usd = usage_row.get("backend_kind") == "metered_usd" or spec.get("backend_kind") == "metered_usd"
+        usage_details = usage_row.get("usage_details") if isinstance(usage_row.get("usage_details"), dict) else {}
+        no_permission = metered_usd and usage_details.get("query") == "no_permission"
+        if (
+            isinstance(row, dict)
+            and row.get("status") == "ready"
+            and usage_row.get("available") is False
+            and not no_permission
+        ):
             row = {
                 **row,
                 "status": "usage_failing",
@@ -779,6 +825,8 @@ def account_cards() -> list[dict]:
         windows = []
         latched = set((row or {}).get("exhausted_windows") or ())  # Only these windows are latched out.
         member_rows = pool_member_rows(usage_row.get("pool_members"), now)
+        spent_text = "" if no_permission else (metered_spent_text(usage_row) if metered_usd else "")
+        usage_hover = metered_usage_hover(usage_row) if metered_usd else ""
         for window in usage_row.get("windows") or []:
             wid = window.get("id")
             c_wid = quota_pools.canonical_window_id(spec, wid)
@@ -799,13 +847,16 @@ def account_cards() -> list[dict]:
             # A pool counts down to its next partial refill; each account's own reset is on the hover.
             refill = None if reset_passed else pool_next_refill_seconds(member_rows, wid)
             windows.append({
-                "id": wid, "hours": hours, "remaining_pct": remaining, "accounts": window.get("accounts") or 1,
-                "remaining_usd": round(cap * remaining / 100, 1) if cap and remaining is not None else None,
+                "id": wid, "hours": None if metered_usd else hours, "remaining_pct": remaining,
+                "used_pct": window.get("used_pct"),
+                "accounts": window.get("accounts") or 1,
+                "remaining_usd": None if metered_usd else (round(cap * remaining / 100, 1) if cap and remaining is not None else None),
                 "reserved_pct": res.get("pct", 0.0), "reserved_usd": res.get("usd", 0.0),
                 "reserved_workers": list(res.get("workers") or ()),
                 "rate_3h": rates.get("pct_per_hour_3h"), "rate_24h": rates.get("pct_per_hour_24h"),
-                "reset_in": _tr("已重置") if reset_passed else countdown(
-                    refill if refill is not None else window.get("seconds_until_reset")),
+                "reset_in": "" if metered_usd else (_tr("已重置") if reset_passed else countdown(
+                    refill if refill is not None else window.get("seconds_until_reset"))),
+                **({"metered_usd": True, "spent_text": spent_text} if metered_usd else {}),
                 "stale": reset_passed or usage_row.get("status") != "fresh" or reading_failed})
         bundle_pills = []
         for bid, bspec in (spec.get("bundles") or {}).items():
@@ -867,7 +918,10 @@ def account_cards() -> list[dict]:
                       **({"local_spend_usd": local_spend} if local_spend else {}),
                       "usage_note": venice_usage.note(api_usage) if name in ('omp', 'dsh') else
                           free_note if free_note is not None else
+                          None if no_permission else
+                          spent_text if metered_usd and not windows else
                           _tr("API 余额未提供，非无限额度") if spec.get('billing') == 'metered' and not windows else None,
+                      "usage_hover": usage_hover,
                       "windows": windows, "bundles": bundle_pills,
                       "host_enabled": bool(pool_allowed(name)),
                       "verified": bool(spec.get("verified", True)),
@@ -983,7 +1037,7 @@ def usage_providers(names, accounts: dict | None = None) -> list[str]:
     for name in names:
         source = sources.get(name, name)
         row = rows.get(source) or {}
-        if row.get("family") in USAGE_FAMILIES or row.get("backend_kind") == "litellm":
+        if row.get("family") in USAGE_FAMILIES or row.get("backend_kind") == "metered_usd":
             result.append(source)
     result = list(dict.fromkeys(result))
     try:
@@ -1934,8 +1988,8 @@ def model_probe_definitions(rows: list[dict]) -> dict:
     modules()
     import accounts_override
     document = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {}
-    overrides = {name: spec for section in ("accounts", "litellm_proxies")
-                 for name, spec in (document.get(section) or {}).items() if isinstance(spec, dict)}
+    accounts = document.get("accounts") if isinstance(document.get("accounts"), dict) else {}
+    overrides = {name: spec for name, spec in accounts.items() if isinstance(spec, dict)}
     baseline = (_read_json(_accounts_path()).get("accounts") or {})
     paseo = _read_json(Path(os.environ.get("PASEO_HOME") or Path.home() / ".paseo") / "config.json")
     provider_settings = (paseo.get("agents") or {}).get("providers") or {}
@@ -2075,7 +2129,11 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
 
 
 def toggle_account_host(account: str) -> str:
-    """Toggle only user policy; discovery/readiness is not a user preference."""
+    """Toggle only user policy; discovery/readiness is not a user preference.
+
+    A leftover `verified: false` is cleared as cleanup. Leftover meter fields are not part of this
+    click: `agentcompass setup` removes them and leaves the account switch as it is.
+    """
     def clear_legacy(document):
         entry = (document.get("accounts") or {}).get(account) or {}
         if entry.get("verified") is False:

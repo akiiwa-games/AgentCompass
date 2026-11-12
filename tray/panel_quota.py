@@ -99,6 +99,8 @@ def short_window_name(window: dict, multi: bool = True) -> str:
         return f"{wid[:-3]} 5h"
     if wid == "credits":
         return span or _tr("订阅额度")
+    if wid == "balance":
+        return _tr("已用")
     if wid in ("usage", "spend", "default", ""):
         return span or wid or "7d"
     return f"{wid} {span}".strip() if span and not wid.endswith(span) else wid
@@ -173,7 +175,7 @@ def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool
             if reserved > 0:
                 tag = card_window_name(card, w_item) or short_window_name(w_item)
                 extra.append(f"{tag} " + _tr("在途 {0}%").format(f"{reserved:.0f}"))
-        return "\n".join([*table, *extra])
+        return _with_usage_hover("\n".join([*table, *extra]), card)
     head =" · ".join(str(v) for v in (card.get("label") or card.get("account") or "—", card.get("plan")) if v)
     if card.get("kind") not in (None, "ok") and card.get("badge"):
         head += f"  [{card['badge']}]"
@@ -196,7 +198,15 @@ def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool
         if reserved > 0:
             text += " · " + _tr("在途 {0}%").format(f"{reserved:.0f}")
         lines.append(text)
-    return "\n".join(lines)
+    return _with_usage_hover("\n".join(lines), card)
+
+
+def _with_usage_hover(text: str, card: dict) -> str:
+    """Append a metered miss reason when the badge does not already carry it."""
+    hover = str(card.get("usage_hover") or "").strip()
+    if not hover or hover in text:
+        return text
+    return f"{text}\n{hover}" if text else hover
 
 
 def ago_text(seconds) -> str:
@@ -774,6 +784,22 @@ class QuotaPage:
             remaining = window.get("remaining_pct")
             reserved = float(window.get("reserved_pct") or 0.0)
             is_stale = bool(window.get("stale") or card.get("usage_status") != "fresh" or is_failing)
+            if window.get("metered_usd"):
+                used = window.get("used_pct")
+                share = None if used is None else max(0.0, min(100.0, float(used)))
+                colour = "Red" if share is not None and share >= 90.0 else "Amber" if share is not None and share >= 70.0 else "Green"
+                fg = ("#64748B" if is_stale
+                      else theme.GREEN if colour == "Green"
+                      else theme.AMBER if colour == "Amber"
+                      else theme.RED)
+                w_name.configure(text="")
+                w_detail.configure(text=window.get("spent_text") or "")
+                w_share.configure(text="—" if used is None else f"{max(0.0, float(used)):.0f}%", fg=fg)
+                if hasattr(bar, "set_segments"):
+                    bar.set_segments(share, 0, colour=colour, stale=is_stale)
+                else:
+                    bar.configure(style=f"{colour}.Horizontal.TProgressbar", value=share or 0)
+                continue
             w_name.configure(text=card_window_name(card, window))
             # A pool counts down to its next partial refill; each account's own reset is on the hover.
             w_detail.configure(text=short_countdown(window.get("reset_in")))

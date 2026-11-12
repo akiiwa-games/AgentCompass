@@ -22,6 +22,8 @@ READY, PLAN_INACTIVE, USAGE_FAILING, AUTH_FAILED = 'ready', 'plan_inactive', 'us
 # Antigravity only: two Google accounts take turns in agy's single keyring slot (antigravity_plan), so no reading can be
 # attributed to one account. Not dispatchable, like every state but ready and usage_failing in grace.
 AGY_ACCOUNT_FLAPPING = 'agy_account_flapping'
+# One dollar account still has old meter fields. Listed, not dispatchable, and not a fleet-wide failure.
+LEGACY_METER = 'legacy_meter'
 AGY_FLAPPING_FIX = ("close every agy session still signed in to the other Google account (each refreshes its own token "
                     "into the shared keyring slot), then sign in to agy once with the account you want")
 DEFAULT_EXCLUDE_AFTER_HOURS = 6.0
@@ -31,7 +33,7 @@ EXCLUDE_AFTER_ENV = 'AGENTCOMPASS_USAGE_FAILING_EXCLUDE_HOURS'
 # error means nothing is reading the account any more.
 READING_TOO_OLD_SECONDS = 2 * 3600
 # States an account list must keep showing even when the account cannot take work.
-LISTED_STATES = (READY, PLAN_INACTIVE, USAGE_FAILING, AUTH_FAILED, AGY_ACCOUNT_FLAPPING)
+LISTED_STATES = (READY, PLAN_INACTIVE, USAGE_FAILING, AUTH_FAILED, AGY_ACCOUNT_FLAPPING, LEGACY_METER)
 # Plan names that mean the subscription gives no quota, whichever source reported them.
 INACTIVE_PLANS = frozenset(('free', 'free tier', 'expired', 'cancelled', 'canceled', 'inactive', 'lapsed', 'none',
                             'past due', 'payment failed', 'unpaid'))
@@ -152,6 +154,8 @@ def unavailable_text(row):
         return f"credentials rejected ({row.get('reason')}); sign in again in the account's own CLI"
     if status == AGY_ACCOUNT_FLAPPING:
         return f"keyring account flapping ({row.get('reason')}); {AGY_FLAPPING_FIX}"
+    if status == LEGACY_METER:
+        return str(row.get('reason') or '旧的额度字段残留。运行 agentcompass setup 清掉旧字段。')
     return None
 
 
@@ -171,6 +175,8 @@ def warning(name, row):
     elif status == AGY_ACCOUNT_FLAPPING:
         lines.append(f"{name}: agy_account_flapping ({row.get('reason')}); excluded from dispatch until one account "
                      f"stays signed in. Fix: {AGY_FLAPPING_FIX}")
+    elif status == LEGACY_METER:
+        lines.append(f"{name}: {row.get('reason') or LEGACY_METER}")
     if row.get('data_error'):
         lines.append(f"{name}: data error: {row['data_error']}")
     return lines

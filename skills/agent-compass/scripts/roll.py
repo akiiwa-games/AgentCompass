@@ -664,16 +664,16 @@ def _router_override_proxy_spec(provider):
     override_path = Path(override_env).expanduser() if override_env else state_dir / 'accounts-override.json'
     import accounts_override
     doc = accounts_override.load_override(override_path) or {}
-    for section in ('litellm_proxies', 'accounts'):
-        block = doc.get(section) if isinstance(doc, dict) else None
-        if isinstance(block, dict) and isinstance(block.get(provider), dict):
-            spec = block[provider]
-            bkind = str(spec.get('backend_kind') or spec.get('type') or '').strip().lower()
-            sub = spec.get('litellm') if isinstance(spec.get('litellm'), dict) else spec
-            ep = str(sub.get('endpoint') or sub.get('base_url') or spec.get('endpoint') or spec.get('base_url') or '').strip()
-            key = str(sub.get('api_key') or spec.get('api_key') or sub.get('api_key_env') or spec.get('api_key_env') or '').strip()
-            if section == 'litellm_proxies' or bkind in ('litellm', 'proxy', 'api-proxy') or (ep and key):
-                return spec
+    accounts = doc.get('accounts') if isinstance(doc, dict) else None
+    spec = accounts.get(provider) if isinstance(accounts, dict) else None
+    if not isinstance(spec, dict):
+        return None
+    if str(spec.get('billing') or '').strip().lower() != 'metered':
+        return None
+    endpoint = str(spec.get('endpoint') or '').strip()
+    key = str(spec.get('api_key') or '').strip()
+    if endpoint and key:
+        return spec
     return None
 
 
@@ -712,7 +712,6 @@ def provider_definition(provider, bundle=None):
     if provider not in CLI_RUNS:
         proxy_spec = _router_override_proxy_spec(orig_provider)
         if isinstance(proxy_spec, dict):
-            sub = proxy_spec.get('litellm') if isinstance(proxy_spec.get('litellm'), dict) else proxy_spec
             harness = str((bundle or {}).get('harness') or '').strip().lower()
             family = harness if harness in CLI_RUNS else ''
             if not family and (bundle or {}).get('model'):
@@ -724,9 +723,8 @@ def provider_definition(provider, bundle=None):
                     family = api_family
             if not family:
                 family = str(proxy_spec.get('family') or proxy_spec.get('extends') or 'codex').strip().lower()
-            ep = str(sub.get('endpoint') or sub.get('base_url') or proxy_spec.get('endpoint') or proxy_spec.get('base_url') or '').strip().rstrip('/')
-            key_env = str(sub.get('api_key_env') or proxy_spec.get('api_key_env') or '').strip()
-            key = str(sub.get('api_key') or proxy_spec.get('api_key') or (os.environ.get(key_env) if key_env else '') or '').strip()
+            ep = str(proxy_spec.get('endpoint') or '').strip().rstrip('/')
+            key = str(proxy_spec.get('api_key') or '').strip()
             if ep and key:
                 if family == 'claude':
                     provider = 'claude'

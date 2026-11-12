@@ -1,0 +1,610 @@
+"""Metered USD is spent dollars and an optional budget. It does not reset."""
+from datetime import datetime, timedelta, timezone
+import json
+import os
+from pathlib import Path
+import unittest
+from unittest.mock import patch
+
+import account_fleet
+import accounts_override
+import allocator
+import candidate_eval
+import provider_inventory
+import quota_economy
+import quota_pools
+import route_judge
+import state_upgrade
+import usage_core
+
+from router_test_support import isolated_router_state, profile, usage_windows
+
+
+def setUpModule():
+    isolated_router_state(unittest.addModuleCleanup)
+
+
+NOW = datetime(2026, 11, 12, 8, 0, tzinfo=timezone.utc)
+PROBE = 'probe-model'
+
+
+def _accounts(budget):
+    spec = {
+        'billing': 'metered',
+        'backend_kind': 'metered_usd',
+        'verified': True,
+        'windows': {},
+        'bundles': {
+            'usd_probe': {
+                'provider': 'usd', 'harness': 'codex', 'model': PROBE, 'effort': 'high',
+                'draws': [], 'billing': 'metered',
+            },
+        },
+    }
+    if budget is not None:
+        spec['windows'] = {'balance': {}}
+        spec['capacity_usd'] = {'balance': float(budget)}
+        spec['bundles']['usd_probe']['draws'] = ['balance']
+    return {
+        'models': {PROBE: {'usd_per_hour': 10, 'api_family': 'codex'}},
+        'aliases': {},
+        'accounts': {'usd': spec},
+        'scoring': {'safety_margin_pct': 5, 'short_window_hours': 24},
+        # Already priced. launch_blockers would otherwise overlay public scores and drop this rate.
+        '_five_axis': True,
+    }
+
+
+def _balance_usage(remaining):
+    return {'read_ok': True, 'accounts': {'usd': {
+        'status': 'fresh', 'fetched_at': NOW.isoformat(), 'available': True,
+        'windows': [{
+            'id': 'balance', 'used_pct': 100 - remaining, 'resets_at': None,
+            'observed_remaining_pct': remaining, 'remaining_pct_before_reset': None,
+            'seconds_until_reset': None,
+        }],
+    }}}
+
+
+def _bundle(accounts):
+    return {'account': 'usd', 'model': PROBE, 'id': 'usd_probe', 'draws': ['balance']}
+
+
+class BalanceGate(unittest.TestCase):
+    def test_spent_budget_excludes_and_names_no_reset(self):
+        accounts = _accounts(100)
+        blockers = quota_pools.launch_blockers(_bundle(accounts), accounts, _balance_usage(0), NOW)
+        reasons = [reason for _wid, reason in blockers]
+        self.assertTrue(reasons)
+        text = ' '.join(reasons)
+        self.assertIn('does not reset', text)
+        self.assertNotIn('resets in', text)
+        self.assertNotIn('for inf', text)
+        self.assertNotRegex(text, r'\d{4}-\d{2}-\d{2}')
+
+    def test_room_above_the_margin_is_not_an_exhausted_balance(self):
+        accounts = _accounts(100)
+        reasons = [reason for _wid, reason in quota_pools.launch_blockers(
+            _bundle(accounts), accounts, _balance_usage(80), NOW)]
+        self.assertFalse([reason for reason in reasons if 'balance' in reason])
+
+    def test_a_finite_window_still_names_its_wait(self):
+        accounts = {
+            'models': {PROBE: {'usd_per_hour': 10}},
+            'aliases': {},
+            'accounts': {'acme': {
+                'windows': {'seven_day': {'hours': 168}},
+                'capacity_usd': {'seven_day': 100},
+            }},
+            'scoring': {'safety_margin_pct': 5, 'short_window_hours': 24},
+            '_five_axis': True,
+        }
+        # Inside the margin, with a reset still ahead, so this is the wait wording and not "used up".
+        usage = usage_windows(NOW, {'acme': [('seven_day', 4, 40)]})
+        reasons = [reason for _wid, reason in quota_pools.launch_blockers(
+            {'account': 'acme', 'model': PROBE, 'id': 'acme_probe'}, accounts, usage, NOW)]
+        self.assertTrue(any('for ' in reason and 'h' in reason for reason in reasons))
+        self.assertFalse(any('does not reset' in reason for reason in reasons))
+
+
+class BalanceEconomy(unittest.TestCase):
+    def _recovery(self, remaining):
+        state = quota_pools.window_state(
+            'balance', {}, _balance_usage(remaining)['accounts']['usd']['windows'][0],
+            _accounts(100)['accounts']['usd'], NOW, 24)
+        rec = quota_economy.five_axis_window_recovery(state, 100)
+        self.assertIsNotNone(rec)
+        rec['lump_usd'] = 10
+        return state, rec
+
+    def test_a_balance_does_not_move_a_recovery_clock(self):
+        state, rec = self._recovery(20)
+        self.assertEqual(state['reset_hours'], float('inf'))
+        self.assertIsNone(state['reset_at'])
+        self.assertEqual(rec['elapsed_frac'], 0.0)
+        self.assertEqual(rec['reset_hours'], float('inf'))
+        self.assertIsNone(None if rec['reset_hours'] == float('inf') else rec['reset_hours'])
+
+    def test_need_rises_as_remaining_room_shrinks(self):
+        _state, tight = self._recovery(20)
+        _state, open_ = self._recovery(80)
+        tight_p = quota_economy.five_axis_need_probability(tight, tight['used_usd'])
+        open_p = quota_economy.five_axis_need_probability(open_, open_['used_usd'])
+        self.assertGreaterEqual(tight_p, open_p)
+
+
+class UncappedRouting(unittest.TestCase):
+    def test_no_budget_is_not_a_missing_long_window(self):
+        self.assertTrue(quota_pools.metered_usd_uncapped(_accounts(None)['accounts']['usd']))
+        self.assertFalse(quota_pools.metered_usd_uncapped(_accounts(100)['accounts']['usd']))
+        # omp is metered and has windows, and it is not this account.
+        self.assertFalse(quota_pools.metered_usd_uncapped(
+            {'billing': 'metered', 'windows': {'week': {'hours': 168}}}))
+
+    def test_plan_keeps_uncapped_as_last_resort_and_excludes_a_spent_balance(self):
+        base = account_fleet.load_accounts()
+        fleet = {**base, 'accounts': {'claude': base['accounts']['claude']}}
+        task = {'objective': 'Fix a bug in parser.py', 'expected_hours': 1, 'profile': profile()}
+        claude_usage = usage_windows(NOW, {'claude': [('five_hour', 80, 4), ('seven_day', 80, 100)]})
+
+        # A scored public model, so a missing score is not what excludes the dollar account.
+        uncapped = _accounts(None)
+        uncapped['accounts']['usd']['bundles']['usd_probe']['model'] = 'gpt-6.1-sol'
+        fleet['accounts']['usd'] = uncapped['accounts']['usd']
+        usage = {'read_ok': True, 'accounts': {
+            **claude_usage['accounts'],
+            'usd': {'status': 'fresh', 'fetched_at': NOW.isoformat(), 'available': True, 'windows': [],
+                    'summary': '已用 $12.30', 'backend_kind': 'metered_usd',
+                    'usage_details': {'kind': 'metered_usd', 'spent_usd': 12.3, 'budget_usd': None}},
+        }}
+        plan = allocator.plan(task, usage, NOW, accounts=fleet, overrides=[], records=[],
+                              host_policy_config=None, read_local_state=False)
+        usd = next(c for c in plan['ranking'] if c['id'] == 'usd_probe')
+        self.assertNotIn(candidate_eval.QUOTA_NO_LONG_WINDOW, ' '.join(map(str, usd['excluded'])))
+        subscription = [c for c in plan['ranking'] if c['bundle']['account'] == 'claude' and not c['excluded']]
+        if subscription:
+            self.assertEqual(usd['excluded'], [candidate_eval.METERED_LAST_RESORT])
+        self.assertNotIn('usd_probe', str(plan['decision'].get('next_reset') or ''))
+
+        spent = _accounts(100)
+        spent['accounts']['usd']['bundles']['usd_probe']['model'] = 'gpt-6.1-sol'
+        fleet['accounts']['usd'] = spent['accounts']['usd']
+        usage['accounts']['usd'] = _balance_usage(0)['accounts']['usd']
+        spent_plan = allocator.plan(task, usage, NOW, accounts=fleet, overrides=[], records=[],
+                                    host_policy_config=None, read_local_state=False)
+        row = next(c for c in spent_plan['ranking'] if c['id'] == 'usd_probe')
+        text = ' '.join(map(str, row['excluded']))
+        self.assertIn('does not reset', text)
+        self.assertNotIn('resets in', text)
+        self.assertNotRegex(text, r'\d{4}-\d{2}-\d{2}')
+        for window in (spent_plan['decision']['system'].get('quota_windows') or []):
+            if window.get('window') == 'balance':
+                self.assertIsNone(window.get('reset_in_hours'))
+
+
+class Doctor(unittest.TestCase):
+    def test_old_meter_fields_are_named_and_left_in_place(self):
+        path = Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc = {
+            'schema_version': 2,
+            'litellm_proxies': {'old': {}},
+            'accounts': {
+                'llmproxy': {
+                    'billing': 'metered',
+                    'endpoint': 'https://proxy.example.test',
+                    'api_key': 'sk-team-proxy',
+                    'windows': {'spend': {'hours': 168}},
+                    'capacity_usd': {'spend': 200},
+                    'burn_pct_per_worker_hour': {'spend': 1},
+                    'burn_basis': 'old',
+                    'budget_duration': '7d',
+                    'timezone': 'UTC+8',
+                },
+            },
+        }
+        path.write_text(json.dumps(doc), encoding='utf-8', newline='\n')
+        before = path.read_bytes()
+        issue = state_upgrade.check_accounts_override(path)
+        self.assertEqual(path.read_bytes(), before)
+        for field in ('windows', 'capacity_usd', 'burn_pct_per_worker_hour', 'burn_basis',
+                      'budget_duration', 'timezone'):
+            self.assertIn(field, issue)
+        self.assertIn(state_upgrade.LEGACY_METER_REASON, issue)
+        self.assertIn(state_upgrade.FIX_SETUP, issue)
+        self.assertNotIn('re-toggle in the tray', issue)
+        self.assertNotIn('Remove those fields', issue)
+        proxies = {'schema_version': 2, 'litellm_proxies': {'old': {}}, 'accounts': {}}
+        path.write_text(json.dumps(proxies), encoding='utf-8', newline='\n')
+        proxy_issue = state_upgrade.check_accounts_override(path)
+        self.assertIn('litellm_proxies', proxy_issue)
+        self.assertIn(state_upgrade.FIX_SETUP, proxy_issue)
+        self.assertEqual(path.read_text(encoding='utf-8'), json.dumps(proxies))
+
+        omp = {'schema_version': 2, 'accounts': {
+            'omp': {'billing': 'metered', 'windows': {'week': {'hours': 168}}},
+            'claude': {'billing': 'subscription', 'windows': {'seven_day': {'hours': 168}}},
+        }}
+        state_upgrade.validate_accounts_override_doc(omp, path)
+        self.assertEqual(state_upgrade.legacy_meter_field_names(omp['accounts']['omp']), [])
+        self.assertEqual(state_upgrade.legacy_meter_field_names(omp['accounts']['claude']), [])
+
+        kind = {'schema_version': 2, 'accounts': {
+            'old': {'backend_kind': 'litellm', 'endpoint': 'https://proxy.example.test', 'api_key': 'sk-team-proxy'},
+        }}
+        state_upgrade.validate_accounts_override_doc(kind, path)
+        path.write_text(json.dumps(kind), encoding='utf-8', newline='\n')
+        kind_issue = state_upgrade.check_accounts_override(path)
+        self.assertIn('backend_kind=litellm', kind_issue)
+        self.assertIn(state_upgrade.LEGACY_METER_REASON, kind_issue)
+        self.assertIn(state_upgrade.FIX_SETUP, kind_issue)
+
+
+class SpendRead(unittest.TestCase):
+    def _account(self, models):
+        path = Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            'schema_version': 2,
+            'accounts': {'usd': {
+                'billing': 'metered', 'label': 'USD',
+                'endpoint': 'https://proxy.example.test/v1',
+                'api_key': 'sk-team-proxy',
+                'budget_usd': 200,
+                'models': models,
+            }},
+        }), encoding='utf-8', newline='\n')
+
+    def test_key_info_is_enough(self):
+        self._account(['declared-model'])
+        calls = []
+
+        def fake(url, method='GET', headers=None, body=None, timeout=20):
+            calls.append((method, url, (body or {}).get('model')))
+            self.assertNotIn('sk-team-proxy', url)
+            return 200, {'info': {'spend': 2.65, 'max_budget': 50}}, {}
+
+        with patch.object(usage_core, 'http_json_response', side_effect=fake):
+            row = usage_core.fetch_metered_usd_usage('usd')
+        self.assertEqual(calls, [('GET', 'https://proxy.example.test/key/info', None)])
+        self.assertEqual(row.summary, '已用 $2.65 / $200')
+        self.assertEqual(row.windows[0].resets_at, None)
+        self.assertAlmostEqual(row.windows[0].used_pct, 1.325)
+        self.assertEqual(row.usage_details, {'kind': 'metered_usd', 'spent_usd': 2.65, 'budget_usd': 200})
+        self.assertEqual(row.backend_kind, 'metered_usd')
+
+    def test_permission_denial_is_one_get_and_stores_no_spend(self):
+        for status in (401, 403):
+            with self.subTest(status=status):
+                self._account(['declared-model'])
+                calls = []
+
+                def fake(url, method='GET', headers=None, body=None, timeout=20, status=status):
+                    calls.append((method, url, body))
+                    self.assertNotIn('sk-team-proxy', url)
+                    return status, {}, {}
+
+                with patch.object(usage_core, 'http_json_response', side_effect=fake):
+                    row = usage_core.fetch_metered_usd_usage('usd')
+                self.assertEqual([call[0] for call in calls], ['GET'])
+                self.assertTrue(calls[0][1].endswith('/key/info'))
+                self.assertIsNone(calls[0][2])
+                self.assertFalse(row.available)
+                self.assertIsNone(row.error)
+                self.assertIsNone(row.summary)
+                self.assertEqual(row.windows, [])
+                self.assertEqual(row.usage_details, {'kind': 'metered_usd', 'query': 'no_permission'})
+                blob = json.dumps(usage_core._provider_to_dict(row), ensure_ascii=False)
+                self.assertNotIn('已用', blob)
+                self.assertNotIn('$', blob)
+                self.assertNotIn('读不到', blob)
+                if status == 403:
+                    cached = usage_core.read_cached_usage(['usd'])
+                    self.assertEqual(cached[0]['usage_details']['query'], 'no_permission')
+                    self.assertEqual(cached[0]['windows'], [])
+                    self.assertIsNone(cached[0]['summary'])
+
+    def test_other_misses_stay_read_failures(self):
+        cases = (
+            (500, {'error': 'nope'}, '/key/info 返回 500'),
+            (0, 'timed out', 'timed out'),
+            (0, '', '网络错误'),
+            (0, 'reset sk-team-proxy Bearer secret', '读取失败'),
+            (200, {'info': {}}, '/key/info 没有已用金额'),
+        )
+        for status, payload, reason in cases:
+            with self.subTest(status=status, reason=reason):
+                self._account([])
+                calls = []
+
+                def fake(url, method='GET', headers=None, body=None, timeout=20, status=status, payload=payload):
+                    calls.append(method)
+                    return status, payload, {}
+
+                with patch.object(usage_core, 'http_json_response', side_effect=fake):
+                    row = usage_core.fetch_metered_usd_usage('usd')
+                self.assertEqual(calls, ['GET'])
+                self.assertEqual(row.usage_details['query'], 'failed')
+                self.assertEqual(row.usage_details['read_error'], reason)
+                self.assertNotIn('无查询权限', reason)
+                self.assertNotIn('sk-', row.usage_details['read_error'])
+                self.assertNotIn('Bearer', row.usage_details['read_error'])
+                self.assertEqual(row.windows, [])
+                self.assertIsNone(row.summary)
+
+    def test_spent_first_text_keeps_cents_and_has_no_countdown(self):
+        self.assertEqual(usage_core.format_metered_usd(2.65, 200), '已用 $2.65 / $200')
+        self.assertEqual(usage_core.format_metered_usd(12.3, None), '已用 $12.30')
+        self.assertEqual(usage_core.format_usd_amount(200), '$200')
+        self.assertNotIn('reset', usage_core.format_metered_usd(2.65, 200).lower())
+
+
+class Snapshot(unittest.TestCase):
+    def test_null_reset_is_still_a_current_balance(self):
+        path = Path(os.environ['ROUTER_USAGE_CACHE'])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'providers': {'usd': {
+            'provider_id': 'usd', 'backend_kind': 'metered_usd', 'billing': 'metered',
+            'available': True, 'stale': False, 'fetched_at': NOW.isoformat(),
+            'summary': '已用 $12.34 / $200', 'plan_label': '$200',
+            'windows': [{'id': 'balance', 'label': '已用', 'used_pct': 6.17, 'resets_at': None}],
+            'usage_details': {'kind': 'metered_usd', 'spent_usd': 12.34, 'budget_usd': 200,
+                              'api_key': 'sk-team-proxy'},
+        }}}), encoding='utf-8', newline='\n')
+        snap = route_judge.usage_snapshot(path, accounts=['usd'], now=NOW)
+        row = snap['accounts']['usd']
+        self.assertEqual(row['status'], 'fresh')
+        self.assertIsNone(row['windows'][0]['resets_at'])
+        self.assertIsNone(row['windows'][0]['remaining_pct_before_reset'])
+        self.assertEqual(row['summary'], '已用 $12.34 / $200')
+        self.assertEqual(row['usage_details'], {'kind': 'metered_usd', 'spent_usd': 12.34, 'budget_usd': 200})
+        self.assertNotIn('sk-team-proxy', json.dumps(row))
+
+    def test_a_permission_miss_adds_no_window_and_no_spend(self):
+        path = Path(os.environ['ROUTER_USAGE_CACHE'])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'providers': {'usd': {
+            'provider_id': 'usd', 'backend_kind': 'metered_usd', 'billing': 'metered',
+            'available': False, 'stale': False, 'fetched_at': NOW.isoformat(),
+            'windows': [],
+            'usage_details': {'kind': 'metered_usd', 'query': 'no_permission'},
+        }}}), encoding='utf-8', newline='\n')
+        snap = route_judge.usage_snapshot(path, accounts=['usd'], now=NOW)
+        row = snap['accounts']['usd']
+        self.assertFalse(row['available'])
+        self.assertEqual(row['status'], 'stale')
+        self.assertEqual(row['windows'], [])
+        self.assertEqual(row['usage_details'], {'kind': 'metered_usd', 'query': 'no_permission'})
+        self.assertNotIn('spent_usd', row['usage_details'])
+        self.assertNotIn('summary', row)
+        self.assertNotIn('无查询权限', json.dumps(row, ensure_ascii=False))
+
+
+class LegacyMeterFleet(unittest.TestCase):
+    def _write_dirty(self):
+        path = Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc = {
+            'schema_version': 2,
+            'litellm_proxies': {'old': {}},
+            'accounts': {
+                'llmproxy': {
+                    'billing': 'metered',
+                    'endpoint': 'https://example.test/v1',
+                    'api_key': 'sk-team-proxy',
+                    'budget_usd': 200,
+                    'windows': {'spend': {'hours': 168}},
+                    'capacity_usd': {'spend': 200},
+                    'burn_pct_per_worker_hour': {'spend': 1},
+                    'burn_basis': 'old',
+                    'budget_duration': '7d',
+                    'timezone': 'UTC+8',
+                    'backend_kind': 'litellm',
+                },
+                'usd': {
+                    'billing': 'metered',
+                    'endpoint': 'https://example.test/v1',
+                    'api_key': 'sk-team-proxy',
+                    'budget_usd': 40,
+                },
+                'omp': {'billing': 'metered', 'windows': {'week': {'hours': 168}}},
+            },
+        }
+        path.write_text(json.dumps(doc), encoding='utf-8', newline='\n')
+        return path
+
+    def test_one_dirty_account_does_not_block_the_fleet_and_stays_out_when_pinned(self):
+        path = self._write_dirty()
+        before = path.read_bytes()
+        loaded = accounts_override.load_override(path)
+        self.assertIn('llmproxy', loaded['accounts'])
+        self.assertEqual(path.read_bytes(), before)
+        found = provider_inventory.discover()
+        dirty = found['accounts']['llmproxy']
+        self.assertEqual(dirty['status'], 'legacy_meter')
+        self.assertIn('旧的额度字段残留', dirty['reason'])
+        self.assertEqual(found['accounts']['usd']['status'], 'ready')
+        # A native omp login is not this dollar account. Override windows on it are not a leftover meter.
+        omp = found['accounts'].get('omp') or {}
+        self.assertNotEqual(omp.get('status'), 'legacy_meter')
+        self.assertNotIn('旧的额度字段残留', str(omp.get('reason') or ''))
+        with patch.object(provider_inventory, 'current', return_value=found):
+            fleet = account_fleet.load_accounts()
+        self.assertEqual(path.read_bytes(), before)
+        self.assertIn('claude', fleet['accounts'])
+        spec = fleet['accounts']['llmproxy']
+        self.assertIn('旧的额度字段残留', spec['legacy_meter'])
+        self.assertEqual(spec['windows'], {})
+        self.assertNotIn('capacity_usd', spec)
+        self.assertNotIn('api_key', spec)
+        clean = fleet['accounts']['usd']
+        self.assertNotIn('legacy_meter', clean)
+        self.assertIn('balance', clean['windows'])
+        self.assertEqual(clean['capacity_usd']['balance'], 40)
+        spec['bundles'] = {'llmproxy_pin': {
+            'provider': 'llmproxy', 'harness': 'codex', 'model': 'gpt-6.1-sol',
+            'effort': 'high', 'draws': [], 'billing': 'metered',
+        }}
+        task = {
+            'objective': 'Fix a bug in parser.py', 'expected_hours': 1, 'profile': profile(),
+            'constraints': {'model': 'gpt-6.1-sol'},
+        }
+        plan = allocator.plan(
+            task, {'read_ok': True, 'accounts': {}}, NOW, accounts=fleet, overrides=[], records=[],
+            host_policy_config=None, read_local_state=False)
+        row = next(c for c in plan['ranking'] if c['id'] == 'llmproxy_pin')
+        self.assertTrue(any('旧的额度字段残留' in str(reason) for reason in row['excluded']))
+        self.assertNotEqual(plan.get('choice'), 'llmproxy_pin')
+        if plan.get('choice') not in (None, 'none'):
+            chosen = next(c for c in plan['ranking'] if c['id'] == plan['choice'])
+            self.assertNotEqual((chosen.get('bundle') or {}).get('account'), 'llmproxy')
+
+    def test_the_gate_names_that_account_and_does_not_allow_every_account(self):
+        import sys
+        setup = Path(__file__).resolve().parents[3] / 'setup'
+        if str(setup) not in sys.path:
+            sys.path.insert(0, str(setup))
+        import router_gate_hook
+        path = self._write_dirty()
+        before = path.read_bytes()
+        found = provider_inventory.discover()
+        with patch.object(provider_inventory, 'current', return_value=found):
+            accounts, _policy = router_gate_hook.load_dispatch_settings()
+        self.assertIsNotNone(accounts)
+        self.assertIn('claude', accounts['accounts'])
+        self.assertIn('llmproxy', accounts['accounts'])
+        self.assertEqual(path.read_bytes(), before)
+        cause = router_gate_hook.check_target_disabled(
+            {'agent_id': 'worker-1'}, 'llmproxy', [], accounts, None)
+        self.assertIn('旧的额度字段残留', cause)
+
+
+class SetupCleanup(unittest.TestCase):
+    def test_setup_strips_meter_fields_and_old_usage_keys_without_a_dry_run_write(self):
+        import sys
+        import tempfile
+        setup = Path(__file__).resolve().parents[3] / 'setup'
+        if str(setup) not in sys.path:
+            sys.path.insert(0, str(setup))
+        import onboard
+        home = Path(tempfile.mkdtemp(prefix='metered-setup-'))
+        self.addCleanup(lambda: __import__('shutil').rmtree(home, ignore_errors=True))
+        override = home / '.agent-compass' / 'accounts-override.json'
+        override.parent.mkdir(parents=True)
+        doc = {
+            'schema_version': 2,
+            'litellm_proxies': {'old': {}},
+            'accounts': {'llmproxy': {
+                'billing': 'metered',
+                'endpoint': 'https://example.test/v1',
+                'api_key': 'sk-team-proxy',
+                'budget_usd': 200,
+                'windows': {'spend': {'hours': 168}},
+                'capacity_usd': {'spend': 200},
+                'timezone': 'UTC+8',
+                'backend_kind': 'proxy',
+            }},
+        }
+        override.write_text(json.dumps(doc), encoding='utf-8', newline='\n')
+        before = override.read_bytes()
+        dry = onboard.write_override(home, {'accounts': []}, set(), dry_run=True)
+        self.assertEqual(override.read_bytes(), before)
+        self.assertTrue(dry['stripped'])
+        written = onboard.write_override(home, {'accounts': []}, set(), dry_run=False)
+        self.assertTrue(written['stripped'])
+        saved = json.loads(override.read_text(encoding='utf-8'))
+        spec = saved['accounts']['llmproxy']
+        self.assertEqual(spec['endpoint'], 'https://example.test/v1')
+        self.assertEqual(spec['api_key'], 'sk-team-proxy')
+        self.assertEqual(spec['budget_usd'], 200)
+        self.assertEqual(spec['billing'], 'metered')
+        for field in ('windows', 'capacity_usd', 'timezone', 'backend_kind'):
+            self.assertNotIn(field, spec)
+        self.assertNotIn('litellm_proxies', saved)
+        collector = home / '.agent-compass' / 'usage-config.json'
+        plugin = home / '.usage-float' / 'config.json'
+        plugin.parent.mkdir(parents=True)
+        collector.write_text(
+            json.dumps({'language': 'zh', 'llm_proxy_timezone': 'UTC+8'}),
+            encoding='utf-8', newline='\n')
+        plugin.write_text(
+            json.dumps({'language': 'en', 'llm_proxy_api_key': 'sk-test-key', 'card_width': 320}),
+            encoding='utf-8', newline='\n')
+        preview = onboard.clear_obsolete_usage_configs(home, dry_run=True)
+        self.assertIn('llm_proxy_timezone', preview[str(collector)])
+        self.assertIn('llm_proxy_api_key', preview[str(plugin)])
+        self.assertIn('llm_proxy_timezone', collector.read_text(encoding='utf-8'))
+        cleared = onboard.clear_obsolete_usage_configs(home, dry_run=False)
+        self.assertEqual(cleared[str(collector)], ['llm_proxy_timezone'])
+        self.assertEqual(cleared[str(plugin)], ['llm_proxy_api_key'])
+        self.assertEqual(json.loads(collector.read_text(encoding='utf-8'))['language'], 'zh')
+        plugin_saved = json.loads(plugin.read_text(encoding='utf-8'))
+        self.assertEqual(plugin_saved['language'], 'en')
+        self.assertEqual(plugin_saved['card_width'], 320)
+        self.assertNotIn('llm_proxy_api_key', plugin_saved)
+        self.assertNotIn('sk-test-key', plugin.read_text(encoding='utf-8'))
+
+    def test_setup_clears_old_fields_and_leaves_the_account_switch(self):
+        import sys
+        import tempfile
+        setup = Path(__file__).resolve().parents[3] / 'setup'
+        if str(setup) not in sys.path:
+            sys.path.insert(0, str(setup))
+        import onboard
+        home = Path(tempfile.mkdtemp(prefix='metered-policy-'))
+        self.addCleanup(lambda: __import__('shutil').rmtree(home, ignore_errors=True))
+        state = home / '.agent-compass'
+        state.mkdir(parents=True)
+        override = state / 'accounts-override.json'
+        override.write_text(json.dumps({
+            'schema_version': 2,
+            'accounts': {
+                'llmproxy': {
+                    'billing': 'metered',
+                    'endpoint': 'https://example.test/v1',
+                    'api_key': 'sk-team-proxy',
+                    'budget_usd': 200,
+                    'windows': {'spend': {'hours': 168}},
+                    'capacity_usd': {'spend': 200},
+                },
+                'claude': {'verified': True},
+            },
+        }), encoding='utf-8', newline='\n')
+        policy = state / 'host-policy.json'
+        policy.write_text(
+            json.dumps({'allowed_accounts': ['llmproxy', 'claude']}) + '\n',
+            encoding='utf-8', newline='\n')
+        before_policy = policy.read_bytes()
+        onboard.write_override(home, {'accounts': []}, set(), dry_run=False)
+        self.assertEqual(policy.read_bytes(), before_policy)
+        saved = json.loads(override.read_text(encoding='utf-8'))
+        spec = saved['accounts']['llmproxy']
+        self.assertNotIn('windows', spec)
+        self.assertNotIn('capacity_usd', spec)
+        self.assertEqual(spec['endpoint'], 'https://example.test/v1')
+        self.assertEqual(spec['api_key'], 'sk-team-proxy')
+        self.assertEqual(spec['budget_usd'], 200)
+        self.assertEqual(saved['accounts']['claude'], {'verified': True})
+        bare = Path(tempfile.mkdtemp(prefix='metered-policy-bare-'))
+        self.addCleanup(lambda: __import__('shutil').rmtree(bare, ignore_errors=True))
+        bare_state = bare / '.agent-compass'
+        bare_state.mkdir(parents=True)
+        (bare_state / 'accounts-override.json').write_text(json.dumps({
+            'schema_version': 2,
+            'accounts': {'llmproxy': {
+                'billing': 'metered',
+                'endpoint': 'https://example.test/v1',
+                'api_key': 'sk-team-proxy',
+                'windows': {'spend': {'hours': 168}},
+            }},
+        }), encoding='utf-8', newline='\n')
+        onboard.write_override(bare, {'accounts': []}, set(), dry_run=False)
+        self.assertFalse((bare_state / 'host-policy.json').exists())
+        bare_spec = json.loads((bare_state / 'accounts-override.json').read_text(encoding='utf-8'))['accounts']['llmproxy']
+        self.assertNotIn('windows', bare_spec)
+        self.assertIn('运行 agentcompass setup 清掉旧字段', state_upgrade.LEGACY_METER_REASON)
+        self.assertNotIn('托盘', state_upgrade.LEGACY_METER_REASON)
+
+
+if __name__ == '__main__':
+    unittest.main()

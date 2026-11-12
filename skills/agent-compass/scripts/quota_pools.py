@@ -286,8 +286,12 @@ def launch_blockers(bundle, accounts, usage, now, latched=None, records=None):
             # Priced work needs remaining - need >= safety margin; no task size passes at or under the margin.
             margin = policy.get('safety_margin_pct', 5)
             if state['known'] and state['remaining'] <= margin and quota_economy.unit_rate(spec, wid, model, account_fleet.model_spec(accounts, model)):
-                reason = (f"{wid} has {state['remaining']:.1f}% left, within the {margin:g}% safety margin, "
-                          f"for {state['reset_hours']:.1f}h")
+                if state['reset_hours'] == float('inf'):
+                    reason = (f"{wid} has {state['remaining']:.1f}% left, within the {margin:g}% safety margin "
+                              "(this balance does not reset)")
+                else:
+                    reason = (f"{wid} has {state['remaining']:.1f}% left, within the {margin:g}% safety margin, "
+                              f"for {state['reset_hours']:.1f}h")
         elif not state['known']:
             reset = parse_time((observed or {}).get('resets_at'))
             seconds = (observed or {}).get('seconds_until_reset')
@@ -327,6 +331,19 @@ def pool_size(observed):
     """How many accounts a window reading pools (a Magpie pool reports `accounts: N`); 1 for a single account."""
     count = (observed or {}).get('accounts')
     return count if isinstance(count, int) and not isinstance(count, bool) and count > 1 else 1
+
+
+def metered_usd_uncapped(spec):
+    """A dollar account with no budget has no window and is not excluded for exhaustion.
+
+    It stays a metered last resort. A missing reading is the existing data-gap path;
+    this predicate is only the account whose configuration states no budget.
+    """
+    if not isinstance(spec, dict) or spec.get('backend_kind') != 'metered_usd':
+        return False
+    cap = spec.get('capacity_usd')
+    balance = cap.get('balance') if isinstance(cap, dict) else None
+    return not isinstance(balance, (int, float)) or isinstance(balance, bool) or balance <= 0
 
 
 def window_is_short(wspec, policy):

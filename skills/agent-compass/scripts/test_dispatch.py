@@ -1388,7 +1388,7 @@ class RollTests(unittest.TestCase):
             'schema_version': 2,
             'accounts': {
                 'team-proxy': {
-                    'backend_kind': 'litellm',
+                    'billing': 'metered',
                     'endpoint': 'https://proxy.example.test',
                     'api_key': 'sk-proxy-test',
                     'models': ['gpt-6.1-sol'],

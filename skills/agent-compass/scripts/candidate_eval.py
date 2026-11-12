@@ -149,6 +149,10 @@ def evaluate_bundle(bundle, task, ctx):
         result['excluded'].append(reason)
         result.setdefault('_five_short_reasons', []).append(reason)
 
+    legacy = spec.get('legacy_meter')
+    if isinstance(legacy, str) and legacy:
+        exclude(legacy)
+
     execution_account = accounts_override.preference_account(bundle, bundle['account'], accounts)
     cwd_spec = accounts['accounts'].get(execution_account) or spec
     if spec.get('_legacy_disabled_flag') or cwd_spec.get('_legacy_disabled_flag'):
@@ -488,7 +492,9 @@ def evaluate_bundle(bundle, task, ctx):
                 result.setdefault('data_errors', []).append(f'{err}{plan_suffix}')
             else:
                 exclude(f'data error: {err}{plan_suffix} (out of automatic routing; name the model to dispatch it)')
-        if (not spec.get('unlimited') and not account_out and not result.get('data_errors')
+        if quota_pools.metered_usd_uncapped(spec):
+            pass  # no budget: not a window, not excluded for exhaustion, still a metered last resort
+        elif (not spec.get('unlimited') and not account_out and not result.get('data_errors')
                 and not any(not st.get('short') for _, st, _, _ in five_window_states.values())):
             # Priced on the weekly window or not at all (round 15): a candidate with no long reset-period window in its
             # state cannot be priced and cannot stand in for another account's work, so it leaves automatic routing as
