@@ -999,7 +999,7 @@ class RouterGateHookTests(unittest.TestCase):
             "antigravity", cache, T0, accounts=accounts, bundles=candidates,
             records=[other_record], exclude_dispatch_id="other-dispatch"))
 
-    def test_final_report_releases_the_worker_quota_hold(self):
+    def test_a_final_report_marker_does_not_change_the_quota_hold(self):
         registry = gate.router_module("dispatch_registry")
         agent_id = "22222222-2222-4222-8222-222222222222"
         row = {
@@ -1033,9 +1033,9 @@ class RouterGateHookTests(unittest.TestCase):
             self.assertEqual(gate.evaluate_payload(report, now=T0), {})
         stored = registry.inspect("dispatch-final")
         self.assertEqual(stored["state"], "started")
-        self.assertEqual(stored["expected_usd"], 0)
-        self.assertEqual(stored["quota_released_reason"], "worker_final_report")
-        self.assertEqual(registry.reservations(now=T0), [])
+        self.assertEqual(stored["expected_usd"], 6.0)
+        self.assertNotIn("quota_released_reason", stored)
+        self.assertTrue(registry.reservations(now=T0))
         other = dict(row, dispatch_id="dispatch-other", decision_id="decision-other", agent_id="worker-b",
                      expected_usd=6.0, quota_released_reason=None)
         other.pop("quota_released_reason")

@@ -9,7 +9,8 @@ import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, normalizeProviderModels, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
   creationFailureClass, creationFailureCode, creationRecord, resolvePaseoPlacement, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
   workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE, fallbackArgv, runFallback,
-  attemptsNote, notificationFile, agentResumed, settleArgv, settleBeforeExit} from './paseo_dispatch_bridge.mjs';
+  attemptsNote, notificationFile, agentResumed, settleArgv, settleBeforeExit,
+  finalReplyText, reportSection, composeNotice, notifyEnd, REPORT_INLINE_LIMIT, REPORT_SUMMARY_LIMIT} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -108,7 +109,7 @@ test('SDK resume sends message, updates labels, and watches target agent id', as
     id: workerId, status: 'idle', attentionReason: 'finished', lastUserMessageAt: '1969-12-31T23:00:00.000Z',
     labels: {'router.dispatch_id': dispatchId},
   }, {...record, creation_deadline: 0}, 10), []);
-  // Once bound and finished, notificationStep queries workerId and includes workerId in the message
+  // Once bound and finished, the one notice names the worker and carries the reply (or says there was none).
   workerState = {...workerState, status: 'idle', attentionReason: 'finished'};
   const parentMsgs = [];
   const stepClient = {
@@ -118,7 +119,8 @@ test('SDK resume sends message, updates labels, and watches target agent id', as
   assert.equal(await notificationStep(stepClient, record, () => {}, 20), true);
   assert.equal(parentMsgs.length, 1);
   assert.match(parentMsgs[0][1], new RegExp(`Worker: ${workerId}`));
-  assert.match(parentMsgs[0][1], new RegExp(`agentId: ${workerId}`));
+  assert.match(parentMsgs[0][1], /The worker ended without a final reply/);
+  assert.doesNotMatch(parentMsgs[0][1], /get_agent_activity/);
 });
 
 test('missing parent refuses creation even with a cwd', async () => {
@@ -223,7 +225,8 @@ test('finished and failed workers notify even without native messaging tools', a
     assert.equal(f.calls[0][0], 'parent');
     assert.match(f.calls[0][1], /Continuation: (same worker|rotate|unknown)/);
     assert.match(f.calls[0][1], /redo or correction/);
-    assert.match(f.calls[0][1], /get_agent_activity.*child/);
+    assert.match(f.calls[0][1], /The worker ended without a final reply/);
+    assert.doesNotMatch(f.calls[0][1], /get_agent_activity/);
     assert.equal(f.calls[0][2].activeTurnBehavior, 'steer');
     assert.equal(f.saved[0].pending.messageId, f.calls[0][2].messageId);
     await notificationStep(f.client, f.record, f.persist, 20);
@@ -233,14 +236,125 @@ test('finished and failed workers notify even without native messaging tools', a
 
 test('permissions notify once per request and do not consume the final callback', async () => {
   const f = watchFixture();
+  f.client.fetchAgentTimeline = async () => ({entries: [{item: {type: 'assistant_message', text: 'SECRET-REPORT'}}]});
   f.setAgent({status: 'idle', pendingPermissions: [{id: 'approval-1'}, {id: 'approval-2'}]});
   for (let i = 0; i < 4; i++) assert.equal(await notificationStep(f.client, f.record, f.persist, 10), false);
   assert.equal(f.calls.length, 2);
   assert.match(f.calls[0][1], /needs permission/);
+  assert.match(f.calls[0][1], /A permission is waiting/);
+  assert.doesNotMatch(f.calls[0][1], /SECRET-REPORT/);
+  assert.doesNotMatch(f.calls[0][1], /Final reply:/);
   assert.match(f.calls[0][1], /Continuation: (same worker|rotate|unknown)/);
   f.setAgent({status: 'idle', attentionReason: 'finished'});
   assert.equal(await notificationStep(f.client, f.record, f.persist, 20), true);
   assert.equal(f.calls.length, 3);
+  assert.match(f.calls[2][1], /Final reply:\nSECRET-REPORT/);
+});
+
+test('a finished worker sends one notice containing the final reply after its last prompt', async () => {
+  const f = watchFixture();
+  f.client.fetchAgentTimeline = async () => ({entries: [
+    {item: {type: 'user_message', text: 'older prompt'}},
+    {item: {type: 'assistant_message', text: 'older reply'}},
+    {item: {type: 'user_message', text: 'the brief'}},
+    {item: {type: 'assistant_message', text: '<the report>'}},
+  ]});
+  assert.equal(finalReplyText([
+    {item: {type: 'assistant_message', text: 'older reply'}},
+    {item: {type: 'user_message', text: 'the brief'}},
+    {item: {type: 'assistant_message', text: '<the report>'}},
+  ]), '<the report>');
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0][1], /^\[AgentCompass worker notification\]/);
+  assert.match(f.calls[0][1], /Final reply:\n<the report>/);
+  assert.doesNotMatch(f.calls[0][1], /older reply/);
+  assert.match(f.calls[0][1], /Continuation: (same worker|rotate|unknown)/);
+  assert.match(f.calls[0][1], /redo or correction/);
+  assert.doesNotMatch(f.calls[0][1], /get_agent_activity/);
+  await notificationStep(f.client, f.record, f.persist, 20);
+  assert.equal(f.calls.length, 1);
+});
+
+test('a parent reply while the watcher is running is the one end message', async () => {
+  const f = watchFixture();
+  f.client.fetchAgentTimeline = async () => ({entries: [{item: {type: 'assistant_message', text: 'should not be sent'}}]});
+  f.setAgent({status: 'running', lastUserMessageAt: '2026-11-12T00:00:00.000Z'});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), false);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.record.user_message_at, '2026-11-12T00:00:00.000Z');
+  f.setAgent({status: 'idle', attentionReason: 'finished', lastUserMessageAt: '2026-11-12T00:00:01.000Z'});
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 20), true);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.record.status, 'continued');
+});
+
+test('a long final reply is stored beside the receipt and the notice carries the path and a summary', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-notice-'));
+  const old = process.env.ROUTER_STATE_DIR;
+  process.env.ROUTER_STATE_DIR = root;
+  try {
+    const text = 'R'.repeat(REPORT_INLINE_LIMIT + 50);
+    const section = reportSection('child', text);
+    const file = path.join(root, 'paseo-notifications', 'child.report.txt');
+    assert.equal(fs.readFileSync(file, 'utf8'), text);
+    assert.match(section, /Full text: /);
+    assert.ok(section.includes(file));
+    assert.ok(section.includes('R'.repeat(REPORT_SUMMARY_LIMIT)));
+    assert.equal(section.includes(text), false);
+    const f = watchFixture();
+    f.client.fetchAgentTimeline = async () => ({entries: [{item: {type: 'assistant_message', text}}]});
+    assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+    assert.equal(f.calls.length, 1);
+    assert.ok(f.calls[0][1].includes(file));
+    assert.match(f.calls[0][1], /Summary:/);
+    assert.equal(f.calls[0][1].includes(text), false);
+    const composed = await composeNotice(f.client, f.record, {key: 'terminal', reason: 'finished'});
+    assert.match(composed, /\[AgentCompass worker notification\]/);
+  } finally {
+    if (old === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = old;
+    fs.rmSync(root, {recursive: true, force: true});
+  }
+});
+
+test('notify_end sends one catch-up notice and a second call sends nothing', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-notify-'));
+  const old = process.env.ROUTER_STATE_DIR;
+  process.env.ROUTER_STATE_DIR = root;
+  try {
+    const file = notificationFile('child');
+    fs.mkdirSync(path.dirname(file), {recursive: true});
+    const calls = [];
+    const client = {
+      fetchAgent: async id => ({agent: {id, status: 'running'}}),
+      fetchAgentTimeline: async () => { throw new Error('pending text is the notice'); },
+      sendMessage: async (...args) => calls.push(args),
+    };
+    fs.writeFileSync(file, JSON.stringify({
+      dispatch_id: 'child', parent_id: 'parent', status: 'watching', delivered: [],
+      pending: {key: 'terminal', messageId: 'ignored', text: 'PENDING-REPLY'},
+      terminal: {reason: 'finished'},
+    }));
+    const first = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'});
+    assert.equal(first.ok, true);
+    assert.equal(first.sent, true);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].slice(0, 2), ['parent', 'PENDING-REPLY']);
+    const again = await execute(client, {operation: 'notify_end', dispatch_id: 'child', parent_id: 'parent'});
+    assert.equal(again.already, true);
+    assert.equal(again.sent, false);
+    assert.equal(calls.length, 1);
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.status, 'delivered');
+    assert.equal(saved.pending, null);
+    assert.ok(saved.delivered.includes('terminal'));
+    const missing = await notifyEnd(client, {dispatch_id: 'no-such-dispatch', parent_id: 'parent'});
+    assert.equal(missing.ok, false);
+    assert.equal(missing.error, 'notification_unavailable');
+  } finally {
+    if (old === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = old;
+    fs.rmSync(root, {recursive: true, force: true});
+  }
 });
 
 test('lost acknowledgment reuses the persisted message id after restart', async () => {
@@ -1188,7 +1302,8 @@ test('a failure the fallback step declines or cannot read is reported as before'
     assert.equal(await notificationStep(f.client, f.record, f.persist, 10, async () => outcome), true);
     assert.equal(f.calls.length, 1);
     assert.match(f.calls[0][1], /State: error\n/);
-    assert.match(f.calls[0][1], /get_agent_activity/);
+    assert.match(f.calls[0][1], /The worker ended without a final reply/);
+    assert.doesNotMatch(f.calls[0][1], /get_agent_activity/);
   }
   // A finish never goes to the fallback step.
   const f = watchFixture();

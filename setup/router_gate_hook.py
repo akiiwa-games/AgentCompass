@@ -602,38 +602,6 @@ def is_delegated_worker(
     return True
 
 
-_FINAL_REPORT = "[Worker final report]"
-_REPORT_TEXT_KEYS = ("prompt", "text", "message", "initialPrompt", "initial_prompt", "code", "_raw")
-
-
-def payload_has_final_report(calls) -> bool:
-    """True when an outbound send carries the worker's final-report marker in its message text."""
-    def marked(value):
-        if isinstance(value, str):
-            return _FINAL_REPORT in value
-        if isinstance(value, dict):
-            return any(marked(value.get(key)) for key in _REPORT_TEXT_KEYS)
-        return False
-    return any(marked(args) for _name, args in calls)
-
-
-def release_worker_quota_on_final_report(caller_id, calls, paseo_agents_dir, now) -> None:
-    """A delegated worker's final report drops its own quota hold before this hook returns.
-
-    The send itself is never denied: a missing registry or a parent quoting the marker changes nothing.
-    """
-    if not caller_id or not payload_has_final_report(calls):
-        return
-    worker = os.environ.get("AGENTCOMPASS_WORKER") == "1" or is_delegated_worker(caller_id, paseo_agents_dir)
-    if not worker:
-        return
-    try:
-        registry = router_module("dispatch_registry")
-        registry.release_quota_on_final_report(caller_id, now=now)
-    except Exception:
-        return
-
-
 def detect_target_agent_ids(tool_name: str, tool_input: dict) -> list[str]:
     """Extract target Paseo agent ID(s) from a turn tool or codemode/shell wrapper."""
     tool_name = base_tool_name(tool_name)
@@ -872,6 +840,12 @@ def check_account_quota_exhausted(
                 records = registry.reservations(now=now, read_only=True)
             except Exception:
                 records = ()
+            # A watcher that died without sending still owes the parent one end notice. A failure here
+            # must not become a launch denial, and a second read does not send it again.
+            try:
+                router_module("dispatch_flow").deliver_end_notices(now=now)
+            except Exception:
+                pass
         if records and (exclude_dispatch_id or exclude_agent_id):
             records = [
                 r for r in records
@@ -1167,16 +1141,14 @@ def evaluate_payload(
 ) -> dict:
     tool_name, tool_input, harness_kind = extract_tool_call(payload)
     tool_name = base_tool_name(tool_name)
-    if os.environ.get("ROUTER_GATE_BYPASS") == "1":
-        return format_response(True, harness_kind)
-
     caller_id = str(payload.get("parent_agent_id") or payload.get("callerAgentId")
                     or os.environ.get("PASEO_AGENT_ID") or "").strip() or None
 
     calls = wrapped_agent_calls(tool_name, tool_input) or [(tool_name, tool_input)]
     calls.extend(cli_turn_calls(tool_name, tool_input))
-    # Committed before the send returns, so the parent can roll the next worker without waiting out the lease.
-    release_worker_quota_on_final_report(caller_id, calls, paseo_agents_dir, now)
+
+    if os.environ.get("ROUTER_GATE_BYPASS") == "1":
+        return format_response(True, harness_kind)
     if any(re.split(r'__|\.', name)[-1] in WORKER_QUESTION_TOOLS for name, _ in calls):
         worker = os.environ.get('AGENTCOMPASS_WORKER') == '1' or (
             caller_id and is_delegated_worker(caller_id, paseo_agents_dir))

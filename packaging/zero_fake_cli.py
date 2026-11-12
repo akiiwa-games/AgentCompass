@@ -116,7 +116,13 @@ def main() -> int:
         return 1
     print(f"WORKER-DONE {name} scenario={scenario}")
     sys.stdout.flush()
-    report(f"[Worker final report] {name} finished the fixture task ({scenario}); output sha {record['prompt_sha256'][:12]}")
+    body = f"{name} finished the fixture task ({scenario}); output sha {record['prompt_sha256'][:12]}"
+    if "本派发有完成监视" in prompt:
+        # The completion watcher sends the one notice. This process's stdout is the final reply.
+        print(body)
+        sys.stdout.flush()
+    else:
+        report(f"[Worker final report] {body}")
     agent("idle", attentionReason="finished")
     return 0
 

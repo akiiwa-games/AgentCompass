@@ -390,11 +390,44 @@ def workspace_holders(directory, parent_id, host=None, path=None):
     return holders, None, probe
 
 
+def deliver_end_notices(now=None, path=None, host=None):
+    """Send each due end notice once. Without an explicit daemon, and without an injected host, send nothing.
+
+    A failed send leaves the notice due so the next read retries it. The bridge computes the message id, the same
+    one the watcher uses, so a race with a late watcher is one message. Success, an already-sent receipt, and a
+    parent that can no longer be reached are all recorded, and a second call sends nothing."""
+    del now
+    if host is None and 'daemon' not in paseo_config():
+        return []
+    sender = host or host_call
+    sent = []
+    for notice in registry.due_end_notices(path):
+        try:
+            response = sender({'operation': 'notify_end', 'dispatch_id': notice['dispatch_id'],
+                               'parent_id': notice.get('parent_id')})
+        except Exception:
+            continue
+        if not isinstance(response, dict) or not response.get('ok'):
+            continue
+        if response.get('error') == 'parent_unavailable':
+            registry.mark_end_notice_sent(notice['dispatch_id'], 'parent_unavailable', path=path)
+        elif response.get('sent') or response.get('already'):
+            registry.mark_end_notice_sent(notice['dispatch_id'], 'watcher' if response.get('already') else 'catchup', path=path)
+            if response.get('sent'):
+                sent.append(notice['dispatch_id'])
+    return sent
+
+
 def reservation_records(read_only=False):
     # Called automatically by plan/record and before prepare. No host query when no active launches exist.
     if not read_only:
         reconcile()
-    return registry.reservations(read_only=read_only)
+    records = registry.reservations(read_only=read_only)
+    try:
+        deliver_end_notices()
+    except Exception:
+        pass
+    return records
 
 
 def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5, path=None):
@@ -519,16 +552,6 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
 
 
 _DISPATCH_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$')
-# Watcher receipt reasons that end the dispatch. Anything else (a permission, a still-running poll) is not an ending.
-_ENDING_RECEIPTS = {
-    'finished': ('idle', 'finished'),
-    'error': ('error', 'error'),
-    'closed': ('closed', None),
-    'worker unavailable': ('closed', None),
-    'worker removed before it was observed': ('closed', None),
-    'provider retry stuck': ('error', 'error'),
-    'superseded by a later dispatch': ('closed', None),
-}
 
 
 def notification_file(dispatch_id):
@@ -550,13 +573,13 @@ def read_notification(dispatch_id):
 def settle(dispatch_id, path=None, now=None):
     """Write the watcher's ending into the registry without another host round trip. Idempotent.
 
-    A row that is already terminal (other than expired) is returned as it is. A receipt that is not an ending
-    changes nothing. `creation failed` with no agent settles through resolve_creation."""
+    The receipt's reason is the ending. Its raw host status is not applied, so a superseded receipt whose status
+    is the next round's `running` still closes this row. A receipt that is not an ending changes nothing.
+    `creation failed` with no agent settles through resolve_creation. A row that already has a terminal state keeps
+    it; side effects the first writer skipped still run."""
     notification_file(dispatch_id)
     now = now or registry.utcnow()
     row = registry.inspect(dispatch_id, path)
-    if row['state'] in registry.TERMINAL and row['state'] != 'expired':
-        return public(row, now)
     receipt = read_notification(dispatch_id) or {}
     terminal = receipt.get('terminal') if isinstance(receipt.get('terminal'), dict) else None
     reason = terminal.get('reason') if terminal else None
@@ -566,44 +589,25 @@ def settle(dispatch_id, path=None, now=None):
         code = terminal.get('failure_code') if terminal and isinstance(terminal.get('failure_code'), str) else None
         creation = {'phase': 'failed', 'failure_class': failure, **({'failure_code': code} if code else {})}
         settled, _ended = registry.resolve_creation(dispatch_id, creation, now=now, path=path)
+        try:
+            deliver_end_notices(now=now, path=path)
+        except Exception:
+            pass
         return public(settled, now)
-    if reason not in _ENDING_RECEIPTS:
-        return public(row, now)
-    status, attention = _ENDING_RECEIPTS[reason]
-    if reason == 'finished':
-        status, attention = 'idle', 'finished'
-    elif reason != 'provider retry stuck' and isinstance(terminal.get('status'), str) and terminal['status']:
-        status = terminal['status']
-        if 'attentionReason' in terminal:
-            attention = terminal.get('attentionReason')
-    provider, _, model = row['request']['provider'].partition('/')
-    updated = terminal.get('at') if isinstance(terminal.get('at'), str) else None
-    launched = row.get('launched_at')
+    if row['state'] in registry.TERMINAL and row['state'] != 'expired' and not row.get('side_effects_due'):
+        # Still let a stored receipt finish effects the state writer skipped. finalize keeps the terminal.
+        if reason is None:
+            try:
+                deliver_end_notices(now=now, path=path)
+            except Exception:
+                pass
+            return public(row, now)
+    settled = registry.finalize_dispatch(dispatch_id, now=now, path=path, receipt_only=True)
     try:
-        if not (isinstance(updated, str) and isinstance(launched, str) and registry.parse(updated) >= registry.parse(launched)):
-            updated = registry.stamp(now)
-    except ValueError:
-        updated = registry.stamp(now)
-    if reason == 'provider retry stuck':
-        terminal = dict(terminal)
-        terminal.setdefault('failure_code', 'provider_retry_stuck')
-    settings = row['request'].get('settings') or {}
-    snapshot = {
-        'id': row.get('agent_id') or dispatch_id,
-        'provider': provider,
-        'model': model,
-        'status': status,
-        'updatedAt': updated,
-        'labels': (row.get('request') or {}).get('labels') or {},
-    }
-    if attention:
-        snapshot['attentionReason'] = attention
-    if settings.get('modeId'):
-        snapshot['currentModeId'] = settings['modeId']
-    if settings.get('thinkingOptionId'):
-        snapshot['thinkingOptionId'] = settings['thinkingOptionId']
-    observed = registry.observe(dispatch_id, snapshot, now=now, path=path, terminal=terminal)
-    return public(observed, now)
+        deliver_end_notices(now=now, path=path)
+    except Exception:
+        pass
+    return public(settled, now)
 
 
 def stop_watcher(dispatch_id):
@@ -646,7 +650,13 @@ def cli(args):
     if action == 'start' and not args.dispatch_id:
         raise ValueError('start acknowledgment requires --dispatch-id; it observes the host rather than trusting caller status')
     if action in ('reconcile', 'start'):
-        return {'observations': reconcile(args.dispatch_id), 'active_reservations': registry.reservations()}
+        observations = reconcile(args.dispatch_id)
+        records = registry.reservations()
+        try:
+            deliver_end_notices()
+        except Exception:
+            pass
+        return {'observations': observations, 'active_reservations': records}
     if not args.dispatch_id:
         raise ValueError('status/release requires --dispatch-id')
     if action == 'release':

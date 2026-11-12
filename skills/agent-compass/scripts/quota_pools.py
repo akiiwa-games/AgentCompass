@@ -22,14 +22,11 @@ def canonical_window_id(spec, wid):
 
 
 def live_dispatch_holds(records):
-    """One live hold per worker. The newest row for an agent_id counts; a row with no agent_id still counts.
-
-    A hold released because that worker sent its final report does not count, in dollars or in cadence.
-    """
+    """One live hold per worker. The newest row for an agent_id counts; a row with no agent_id still counts."""
     bare = []
     newest = {}
     for rec in records or ():
-        if not isinstance(rec, dict) or rec.get('quota_released_reason') == 'worker_final_report':
+        if not isinstance(rec, dict):
             continue
         agent = rec.get('agent_id')
         if not isinstance(agent, str) or not agent:

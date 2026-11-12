@@ -279,11 +279,25 @@ def recipient_footer(parent, host='paseo', address=None):
             f'Parent host: `{host}`. Parent message address: `{address or parent}`.')
 
 
-def prepare_worker_prompt(text, parent, host='paseo', address=None):
-    """One contract for every launch surface; retain the source brief and a durable native-fallback prompt."""
+def communication_contract(watched=False):
+    """The shared rules plus the one channel this dispatch uses. The markdown is the only copy of the rule."""
+    text = WORKER_COMMUNICATION.read_text(encoding='utf-8')
+    watched_heading = '## 有完成监视'
+    unwatched_heading = '## 无完成监视'
+    watched_at = text.find('\n' + watched_heading)
+    unwatched_at = text.find('\n' + unwatched_heading)
+    if watched_at < 0 or unwatched_at < watched_at:
+        raise ValueError('worker communication contract is missing a channel section')
+    shared = text[:watched_at].rstrip() + '\n'
+    section = text[watched_at:unwatched_at] if watched else text[unwatched_at:]
+    return shared + '\n' + section.strip() + '\n'
+
+
+def prepare_worker_prompt(text, parent, host='paseo', address=None, watched=False):
+    """One channel for this launch; retain the source brief and a durable native-fallback prompt."""
     base = strip_injected_contract(text)
     recipient = recipient_footer(parent, host, address)
-    prompt = base + '\n\n---\n\n' + WORKER_COMMUNICATION.read_text(encoding='utf-8') + '\n' + recipient + '\n'
+    prompt = base + '\n\n---\n\n' + communication_contract(watched) + '\n' + recipient + '\n'
     if host == 'herdr':
         prompt += ('\nHerdr core return channel: send questions and [Worker final report] with the argument vector '
                    f'`hc send {parent} <message>`; check the send result. Finish this turn after reporting. '
@@ -551,6 +565,9 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             )
         except registry.WorkspaceBusy as busy:
             return workspace_blocked(out, busy.workspace, busy.holders, dispatch_mode='cli')
+        # The Paseo parent was not on the host, so this launch has no completion watcher. Rebuild the unwatched contract.
+        text, prompt_file = prepare_worker_prompt(text, parent, 'cli', out.get('parent_address'))
+        out['worker_prompt_file'] = str(prompt_file)
         res, code = cli(args, out, decision['selected_bundle'], text, judge)
         if not res.get('launched'):
             registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
@@ -583,9 +600,9 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         return dict(out, launched=False, dispatch_mode='paseo', caller_action=action, next=receipt['next_action'],
                     worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 1
     notification = receipt.get('completion_notification') or {}
-    notice = ('A completion notification will be sent to the parent on finish/error/permission; '
-              'the bounded watcher PID, deadline and durable receipt are in worker.completion_notification. '
-              'Use worker.continuation_argv to recover observation if that watcher stops.') \
+    notice = ('A completion notification will be sent to the parent on finish/error/permission, and that notice '
+              'contains the worker\'s final reply. The bounded watcher PID, deadline and durable receipt are in '
+              'worker.completion_notification. Use worker.continuation_argv to recover observation if that watcher stops.') \
         if notification.get('status') == 'watching' else \
         ('The completion notification has been delivered to the parent.' if notification.get('status') == 'delivered' else
          'No active completion notification is confirmed. The caller must collect the result using '
@@ -1128,7 +1145,19 @@ def _run(args, judge):
         placed = host_placement.place(provider, canonical_ws)
         if not placed['ok']:
             return placement_refused(out, provider, placed)
-    text, prompt_file = prepare_worker_prompt(text, parent, parent_host, parent_address)
+    # Dot, ChatGPT web and Grok Bot return before a Paseo launch and never grow a completion watcher.
+    # Reachability is not asked for them, so a remote roll does not dial the daemon.
+    if provider in ('dot', 'chatgpt-web', 'grok-bot'):
+        use_paseo = False
+    else:
+        has_paseo_parent = bool(os.environ.get('PASEO_AGENT_ID', '').strip() or getattr(args, 'parent_id', None))
+        use_paseo = (
+            parent_host not in ('herdr', *NATIVE_HOSTS)
+            and can_launch_via_paseo(provider)
+            and has_paseo_parent
+            and (os.environ.get('PASEO_AGENT_ID', '').strip() or dispatch_flow.paseo_reachable())
+        )
+    text, prompt_file = prepare_worker_prompt(text, parent, parent_host, parent_address, watched=bool(use_paseo))
     out['worker_prompt_file'] = str(prompt_file)
     if provider == 'dot':
         return dot(args, out, prompt_file, task=task, decision=decision)
@@ -1142,13 +1171,6 @@ def _run(args, judge):
         or task.get('profile')
     )
     access = task_access(args, decision_profile if isinstance(decision_profile, dict) else None)
-    has_paseo_parent = bool(os.environ.get('PASEO_AGENT_ID', '').strip() or getattr(args, 'parent_id', None))
-    use_paseo = (
-        parent_host not in ('herdr', *NATIVE_HOSTS)
-        and can_launch_via_paseo(provider)
-        and has_paseo_parent
-        and (os.environ.get('PASEO_AGENT_ID', '').strip() or dispatch_flow.paseo_reachable())
-    )
     if use_paseo:
         return paseo(args, out, decision, task, text, parent, judge.usage_snapshot(args.usage_cache), judge=judge)
     surface = 'herdr' if parent_host == 'herdr' else parent_host if parent_host in NATIVE_HOSTS else 'cli'
