@@ -67,6 +67,56 @@ def test_first_write_is_sparse_and_partial_model_toggle_is_harness_scoped(tmp_pa
     assert not live['pi_sol_high'].get('disabled')
 
 
+
+def test_enabled_unverified_account_explains_exclusion(tmp_path, monkeypatch):
+    settings(tmp_path, monkeypatch)
+    row = next(row for row in router_data.harness_model_rows() if row['harness'] == 'codex')
+    assert row['host_enabled'] and row['enabled']
+    assert row['kind'] == 'warn'
+    assert 'CLI' in row['badge'] and 'setup' in row['badge']
+
+
+def test_legacy_flag_is_visible_and_checkbox_clears_it(tmp_path, monkeypatch):
+    target = settings(tmp_path, monkeypatch)
+    target.write_text(json.dumps({'schema_version': 2, 'accounts': {'codex': {'verified': False, 'cwd_regex': 'work'}}}), encoding='utf-8')
+    row = next(row for row in router_data.harness_model_rows() if row['account'] == 'codex' and row['harness'] == 'codex')
+    assert row['kind'] == 'warn' and '旧的关闭标记残留' in row['badge']
+    monkeypatch.setattr(router_data, 'host_policy_state', lambda: {'accounts': ['codex', 'other'], 'allowed': None, 'path': target.parent / 'host-policy.json', 'policy': None})
+    with mock.patch.object(router_data, 'toggle_account_host') as account_toggle:
+        router_data.toggle_harness('codex', 'codex', False)
+    saved = json.loads(target.read_text(encoding='utf-8'))
+    assert 'verified' not in saved['accounts']['codex']
+    assert saved['accounts']['codex']['cwd_regex'] == 'work'
+    # Cleanup does not widen the click: on a multi-harness account a row toggle stays row-scoped,
+    # so the sibling row and the account's host policy are untouched.
+    account_toggle.assert_not_called()
+    assert saved['harness_overrides']['codex'] == {'codex': {'disabled': True}}
+    rows = {row['harness']: row for row in router_data.harness_model_rows() if row['account'] == 'codex'}
+    assert not rows['codex']['enabled'] and rows['pi']['enabled']
+
+
+def test_legacy_flag_on_a_single_row_account_is_cleared_and_the_click_sets_host_policy(tmp_path, monkeypatch):
+    target = settings(tmp_path, monkeypatch)
+    target.write_text(json.dumps({'schema_version': 2, 'accounts': {'codex': {'verified': False}}}), encoding='utf-8')
+    rows = [row for row in router_data.harness_model_rows() if row['account'] == 'codex' and row['harness'] == 'codex']
+    monkeypatch.setattr(router_data, 'harness_model_rows', lambda: rows)
+    monkeypatch.setattr(router_data, 'host_policy_state', lambda: {'accounts': ['codex', 'other'], 'allowed': None, 'path': target.parent / 'host-policy.json', 'policy': None})
+    router_data.toggle_harness('codex', 'codex', False)
+    assert 'verified' not in json.loads(target.read_text(encoding='utf-8')).get('accounts', {}).get('codex', {})
+    policy = json.loads((target.parent / 'host-policy.json').read_text(encoding='utf-8'))
+    assert 'codex' not in policy['allowed_accounts'] and 'other' in policy['allowed_accounts']
+
+
+def test_unavailable_account_stays_visible_with_reason(tmp_path, monkeypatch):
+    settings(tmp_path, monkeypatch)
+    def discover(data):
+        data['_discovery'] = {'accounts': {'codex': {'family': 'codex', 'status': 'auth_failed', 'reason': 'expired login'}}}
+    monkeypatch.setattr(provider_inventory, 'apply', discover)
+    row = next(row for row in router_data.harness_model_rows() if row['account'] == 'codex')
+    assert row['host_enabled'] and row['kind'] == 'warn'
+    assert 'expired login' in row['badge']
+    assert 'CLI' in row['badge']
+
 def test_old_shape_override_and_string_disabled_are_rejected(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
     for bad in (

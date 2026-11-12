@@ -688,8 +688,7 @@ class RouterGateHookTests(unittest.TestCase):
                                                             "lab_sonnet55_medium": {"disabled": True},
                                                             "lab_opus55_high": {"disabled": False}}}}}, "档位 lab_sonnet55_high",
                      resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet), (turn("opus"), launch("opus"))),
-                    ({"accounts": {"claude-lab": {"verified": False}}}, "verified: false",
-                     (turn("bare"), launch("sonnet")), (turn("codex"),))):
+                    ):
                 self.write_settings(**settings)
                 for payload in blocked:
                     with self.subTest(cause=cause, blocked=payload):
@@ -736,7 +735,6 @@ class RouterGateHookTests(unittest.TestCase):
         worker_sessions = gate.router_module('worker_sessions')
         for settings, tokens, cause in (
                 ({'allowed': []}, 0, 'host-policy.json'),
-                ({'accounts': {'claude-lab': {'verified': False}}}, 0, 'verified: false'),
                 ({'accounts': {'claude-lab': {'bundles': {'lab_sonnet55_high': {'disabled': True}}}}}, 0, '档位 lab_sonnet55_high'),
                 ({}, 2_000_000, 'historical_context_tokens=2,000,000/2,000,000'),
                 ({}, 0, 'five_hour')):
@@ -1782,3 +1780,18 @@ class ConfiguredRotationThresholdGateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_legacy_account_flag_does_not_break_rotation_check(tmp_path, monkeypatch):
+    import account_fleet
+    import host_policy
+    import worker_sessions
+    path = tmp_path / 'accounts-override.json'
+    path.write_text(json.dumps({'schema_version': 2, 'accounts': {'codex': {'verified': False}}}), encoding='utf-8')
+    monkeypatch.setattr(account_fleet, 'accounts_override_path', lambda: path)
+    monkeypatch.setattr(host_policy, 'sync_discovered', lambda accounts: {})
+    monkeypatch.setattr(gate, 'is_delegated_worker', lambda *args, **kwargs: True)
+    monkeypatch.setattr(gate, 'owns_running_worker', lambda *args: False)
+    monkeypatch.setattr(gate, 'load_paseo_agent', lambda *args: {})
+    monkeypatch.setattr(worker_sessions, 'session_state', lambda *args, **kwargs: {})
+    assert gate.check_worker_compaction_limit('worker', paseo_agents_dir=tmp_path / 'agents') is None

@@ -128,6 +128,10 @@ def check_accounts_override(path: Path) -> str | None:
         validate_accounts_override_doc(doc, path)
     except ValueError as exc:
         return str(exc)
+    for name, spec in (doc.get('accounts') or {}).items():
+        if spec.get('verified') is False:
+            return format_issue(path, f'legacy disabled flag remains for {name}',
+                                f'toggle {name} in the tray or re-run "agentcompass setup"')
     return None
 
 

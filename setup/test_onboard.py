@@ -431,25 +431,31 @@ class OverrideTests(HomeCase):
         return {"accounts": [{"name": "claude", "signed_in": True}, {"name": "opencode", "signed_in": None},
                              {"name": "codex", "signed_in": False}]}
 
-    def test_disabled_account_is_written_and_user_entries_are_never_overwritten(self):
+    def test_disabled_accounts_only_update_host_policy(self):
         path = self.write(".agent-compass/accounts-override.json", {"schema_version": 2, "accounts": {
             "claude": {"bundles": {"x": {"disabled": True}}}, "opencode": {"verified": True}}})
-        result = onboard.write_override(self.home, self.detection(), {"opencode", "claude"})
-        document = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(document["accounts"]["claude"]["bundles"], {"x": {"disabled": True}})
-        self.assertIs(document["accounts"]["claude"]["verified"], False)
-        self.assertIs(document["accounts"]["opencode"]["verified"], True)   # set by the user: left alone
-        self.assertEqual(result["added"], ["claude"])
-        self.assertTrue(Path(result["backup"]).is_file())
+        before = json.loads(path.read_text(encoding="utf-8"))
+        onboard.write_override(self.home, self.detection(), {"opencode", "claude"})
+        policy_path = onboard.disable_in_host_policy(self.home, self.detection(), {"opencode", "claude"})
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), before)
+        policy = json.loads(policy_path.read_text(encoding="utf-8"))
+        self.assertEqual(policy["allowed_accounts"], ["codex"])
+        self.assertEqual(set(policy["known_accounts"]), {"claude", "opencode", "codex"})
 
-    def test_re_enabling_removes_only_what_onboarding_added(self):
-        onboard.write_override(self.home, self.detection(), {"opencode"})
-        state = {"disabled_by_onboarding": ["opencode"]}
-        self.write(".agent-compass/onboarding.json", state)
-        result = onboard.write_override(self.home, self.detection(), set())
-        self.assertEqual(result["removed"], ["opencode"])
-        document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
-        self.assertIs(document["accounts"]["opencode"]["verified"], True)
+    def test_disable_preserves_existing_policy_and_custom_path(self):
+        target = self.write("custom/policy.json", {"allowed_accounts": ["claude", "opencode", "other"], "judges": ["codex"]})
+        onboard.disable_in_host_policy(self.home, self.detection(), {"opencode"}, path=target)
+        policy = json.loads(target.read_text(encoding="utf-8"))
+        self.assertEqual(policy, {"allowed_accounts": ["claude", "other"], "judges": ["codex"]})
+        self.assertFalse((self.home / ".agent-compass/host-policy.json").exists())
+
+    def test_new_policy_keeps_other_inventory_accounts(self):
+        detection = self.detection()
+        detection["inventory"] = {"accounts": {"dot": {}, "claude": {}, "opencode": {}}}
+        target = onboard.disable_in_host_policy(self.home, detection, {"opencode"})
+        policy = json.loads(target.read_text(encoding="utf-8"))
+        self.assertIn("dot", policy["allowed_accounts"])
+        self.assertNotIn("opencode", policy["allowed_accounts"])
 
     def test_an_accepted_unverifiable_account_is_marked_verified(self):
         result = onboard.write_override(self.home, self.detection(), set())
@@ -458,11 +464,10 @@ class OverrideTests(HomeCase):
         self.assertIs(document["accounts"]["opencode"]["verified"], True)
         self.assertNotIn("claude", document["accounts"])
 
-    def test_a_user_disabled_unverifiable_account_stays_off(self):
-        self.write(".agent-compass/accounts-override.json", {"schema_version": 2, "accounts": {"opencode": {"verified": False}}})
+    def test_setup_cleans_legacy_flags_even_for_absent_accounts(self):
+        path = self.write(".agent-compass/accounts-override.json", {"schema_version": 2, "accounts": {"absent": {"verified": False, "cwd_regex": "work"}}})
         onboard.write_override(self.home, self.detection(), set())
-        document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
-        self.assertIs(document["accounts"]["opencode"]["verified"], False)
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["accounts"]["absent"], {"cwd_regex": "work"})
 
     def test_dry_run_writes_nothing(self):
         onboard.write_override(self.home, self.detection(), {"opencode"}, dry_run=True)
@@ -539,7 +544,8 @@ class SetupFlowTests(HomeCase):
         self.write(".claude/.credentials.json", CLAUDE_CREDENTIALS)
         self.run_setup("--disable", "opencode")
         override = onboard.override_path(self.home)
-        self.assertIs(json.loads(override.read_text(encoding="utf-8"))["accounts"]["opencode"]["verified"], False)
+        policy = json.loads((self.home / ".agent-compass/host-policy.json").read_text(encoding="utf-8"))
+        self.assertNotIn("opencode", policy["allowed_accounts"])
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(onboard.main(["uninstall", "--home", str(self.home)]), 0)
         self.assertFalse(override.exists())
@@ -562,6 +568,15 @@ class SetupFlowTests(HomeCase):
         self.assertIn("opencode     installed, sign-in unverified", output)
         document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
         self.assertIs(document["accounts"]["opencode"]["verified"], True)
+
+    def test_setup_disable_then_accept_restores_host_policy(self):
+        self.cli = {"claude": "claude", "opencode": "opencode"}
+        self.write(".claude/.credentials.json", CLAUDE_CREDENTIALS)
+        self.run_setup("--disable", "opencode", "--no-docs", "--no-skills")
+        path = self.home / ".agent-compass/host-policy.json"
+        self.assertNotIn("opencode", json.loads(path.read_text(encoding="utf-8"))["allowed_accounts"])
+        self.run_setup("--no-docs", "--no-skills")
+        self.assertIn("opencode", json.loads(path.read_text(encoding="utf-8"))["allowed_accounts"])
 
     def test_no_signed_in_cli_says_so(self):
         _, output = self.run_setup("--no-docs", "--no-skills")

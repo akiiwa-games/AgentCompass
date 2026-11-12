@@ -129,7 +129,7 @@ def _candidates(accounts):
         account, model = bundle.get('account'), bundle.get('model')
         spec = (accounts.get('accounts') or {}).get(account) or {}
         if (not account or not model or bundle.get('disabled') or bundle.get('discovery_unavailable')
-                or spec.get('verified') is False or not host_policy.account_allowed(policy, account)):
+                or spec.get('verified') is False or spec.get('_legacy_disabled_flag') or not host_policy.account_allowed(policy, account)):
             continue
         if (account, model) not in pairs:
             pairs.append((account, model))
