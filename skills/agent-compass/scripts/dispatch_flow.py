@@ -125,7 +125,8 @@ def host_call(payload):
             stdin.write(json.dumps(payload).encode('utf-8'))
             stdin.seek(0)
             process = subprocess.Popen(['node', str(bridge)], stdin=stdin, stdout=stdout, stderr=subprocess.DEVNULL,
-                                       env=bridge_env())
+                                       env=bridge_env(),
+                                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
             try:
                 process.wait(timeout)
             except subprocess.TimeoutExpired:
