@@ -62,7 +62,7 @@ In the animation above (synthetic data), each chart tracks one window on its own
 Three rules keep this predictable:
 - Multi-window accounts (such as 5-hour + weekly) are checked against every applicable window; the tightest one binds.
 - Non-resetting starter allowances never recover, so every dollar spent is over the line rather than treated as unlimited.
-- Only current-period usage is read—no usage history and no demand forecasting.
+- Only current-period usage is read: the demand other work will place on a window before its reset is projected from that window's own usage in the current period, never from earlier periods or task history.
 
 ### Staying in control
 
@@ -147,7 +147,7 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 三点规则保证行为可预期：
 - 同时拥有 5 小时窗口和周窗口的账号会同时检查所有适用窗口，由最紧的窗口约束。
 - 永不重置的入门赠额不会随时间恢复，因此每一美元花费都计为越线，不会被当作无限额度。
-- 只读取各账号本周期的当前用量，不依赖历史用量，也不做需求预测。
+- 只读取各账号本周期的当前用量：其他任务在重置前还会用掉多少，只按该窗口本周期已发生的用量推算，不读以前的周期，也不读任务历史。
 
 ### 你始终可以做主
 

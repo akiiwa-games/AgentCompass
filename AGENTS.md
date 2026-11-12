@@ -53,8 +53,7 @@ There are no compatibility re-exports across split modules. Always import `modul
 
 ## Change & Regeneration Checklist (Blast Radius)
 
-- **Calibrated scores, capacities, or `references/user-scores.json`**: run `python -X utf8 agentcompass data refresh --no-fetch` (omit `--no-fetch` only when fetching new upstream boards) to rebuild `public-measurements.json`, `five-axis-scores.json`, `model-capabilities.{json,md}`, and `public-data.json` in topological order and validate schemas.
-- **Hand-edits to `accounts.json`, `plan-templates.json`, or `classifier-cases.json`**: run `python -X utf8 skills/agent-compass/scripts/capability_catalog.py` (when accounts or models change) and `python -X utf8 skills/agent-compass/scripts/public_data.py manifest --write`.
+- **Any shipped reference data** (calibrated scores, capacities, `references/user-scores.json`, or hand-edits to `accounts.json`, `plan-templates.json`, `classifier-cases.json`): run `python -X utf8 agentcompass data refresh --no-fetch` (omit `--no-fetch` only when fetching new upstream boards) to rebuild `public-measurements.json`, `five-axis-scores.json`, `model-capabilities.{json,md}`, and `public-data.json` in topological order and validate schemas.
 - **Skill / reference Markdown or documented CLI commands**: run `python -X utf8 skills/agent-compass/scripts/check_router_contract.py` and `pytest agentcompass/test_docs.py` (never teach direct `route_judge.py` script calls; keep `packaging/sandbox_check.py` `DOC_RUNS` aligned if documented commands change).
 - **Tray UI text**: update `tray/i18n_catalog.py` alongside `tray/panel_*.py`.
 
@@ -62,7 +61,7 @@ There are no compatibility re-exports across split modules. Always import `modul
 
 - **Data provenance**: Shipped reference data comes only from cited public sources (`vendor`, `benchmark`, `community`, dated with URL) or dated `maintainer` declarations. Never place hand-tuned constants, model-name/keyword rules, or machine-local settings (`~/.agent-compass/*`) in public defaults.
 - **Classifier authority**: Never override classifier outputs in code or hand-populate `work_kind`, `difficulty`, or `profile`.
-- **No compatibility debt**: No compatibility aliases, re-export shims, silent literal fallbacks on missing config keys, or dead code (`ledger_snapshot.ledger_profile` for reading historical ledger rows is the sole exception).
+- **No compatibility debt**: No compatibility aliases, re-export shims, silent literal fallbacks on missing config keys, or dead code. The one allowed exception is `ledger_snapshot.ledger_profile`, which reads ledger rows recorded before the four categories.
 - **Credentials & privacy**: Read-only toward provider OAuth tokens; never print, log, or commit credentials, tokens, raw transcripts, or unredacted API responses.
 - **Documentation single source of truth**: Define scoring formulas, tie-break rules, and operational internals once (`docs/technical-reference.md` for repository/UI/operations reference; `skills/agent-compass/references/router-internals.md` for packaged skill runtime contracts). Keep `README.md` and `llms.txt` as high-level entry guides that link to the reference instead of duplicating formulas or numeric walkthroughs.
 
