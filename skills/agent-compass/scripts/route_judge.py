@@ -306,11 +306,20 @@ def cache_paths(explicit=None):
 
 
 def _metered_usd_details(details):
-    """Spent and budget dollars from a collector row. None when this is not that reading."""
+    """Spent and budget dollars from a collector row. None when this is not that reading.
+
+    A permission or other miss carries no spend number. Routing still sees no window.
+    """
     if not isinstance(details, dict) or details.get('kind') != 'metered_usd':
         return None
     spent = details.get('spent_usd')
     if isinstance(spent, bool) or not isinstance(spent, (int, float)):
+        query = details.get('query')
+        if query == 'no_permission':
+            return {'kind': 'metered_usd', 'query': 'no_permission'}
+        read_error = details.get('read_error')
+        if query == 'failed' and isinstance(read_error, str) and read_error.strip():
+            return {'kind': 'metered_usd', 'query': 'failed', 'read_error': read_error.strip()}
         return None
     budget = details.get('budget_usd')
     budget_usd = float(budget) if isinstance(budget, (int, float)) and not isinstance(budget, bool) else None

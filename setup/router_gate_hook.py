@@ -731,7 +731,10 @@ def check_target_disabled(
     if not account:
         return None
     where = f" (agent_id={target['agent_id']})" if target.get("agent_id") else ""
-    if policy is not None and account not in (policy.get("allowed_accounts") or []):
+    legacy = ((accounts or {}).get("accounts") or {}).get(account, {}).get("legacy_meter")
+    if isinstance(legacy, str) and legacy.strip():
+        cause = legacy
+    elif policy is not None and account not in (policy.get("allowed_accounts") or []):
         cause = f"账号 {account} 已在本机禁用（不在 host-policy.json 的 allowed_accounts 中）"
     elif ((accounts or {}).get("accounts") or {}).get(account, {}).get("verified") is False:
         cause = f"账号 {account} 已标记 verified: false（accounts-override.json / accounts.json）"

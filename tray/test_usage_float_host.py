@@ -926,6 +926,71 @@ class HostedSingleReaderTests(unittest.TestCase):
             self.assertNotIn(key, saved_collector)
         self.assertEqual(self.usage_core.read_usage_config()["language"], "en")
 
+    def test_hosted_float_reads_metered_spend_from_the_collector_cache(self):
+        """New collector writes the cache; the hosted float reads it. The fake endpoint sees one GET."""
+        if not hasattr(self.native, "fetch_metered_usd_usage") or not hasattr(self.usage_core, "fetch_metered_usd_usage"):
+            self.skipTest("usage-float checkout has no metered USD reader")
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        calls = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                calls.append((self.command, self.path.split("?", 1)[0]))
+                if self.path.split("?", 1)[0] != "/key/info":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                body = b'{"info":{"spend":12.5,"max_budget":40}}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_POST(self):
+                calls.append(("POST", self.path.split("?", 1)[0]))
+                self.send_response(500)
+                self.end_headers()
+
+            def log_message(self, _format, *_args):
+                return
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 5)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+        state = self.home / ".agent-compass"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "accounts-override.json").write_text(json.dumps({
+            "schema_version": 2,
+            "accounts": {"usd": {
+                "billing": "metered",
+                "label": "USD",
+                "endpoint": f"http://127.0.0.1:{port}/v1",
+                "api_key": "sk-test-key",
+                "budget_usd": 200,
+            }},
+        }), encoding="utf-8")
+        row = self.usage_core.fetch_metered_usd_usage("usd")
+        self.assertEqual(row.summary, "已用 $12.50 / $200")
+        self.assertEqual(row.usage_details["budget_usd"], 200)
+        self.assertIsNone(row.windows[0].resets_at)
+        host.bind_usage(self.native)
+        self._poison_plugin_fetchers_and_writers()
+        shown = self.native.iter_display_rows(self.native.get_usage(["usd"]))
+        self.assertEqual(calls, [("GET", "/key/info")])
+        self.assertTrue(shown)
+        self.assertEqual(shown[0].summary, "已用 $12.50 / $200")
+        self.assertIsNone(shown[0].resets_at)
+        self.assertEqual(self.native.format_remaining(shown[0].resets_at), "")
+        self.assertNotIn("reset", (shown[0].summary or "").lower())
+        blob = json.dumps([item.__dict__ for item in shown], default=str, ensure_ascii=False)
+        self.assertNotIn("sk-test-key", blob)
+
     def test_hosted_reset_popups_route_through_product_and_respect_429_backoff(self):
         from tkinter import messagebox
         import tkinter as tk

@@ -175,7 +175,7 @@ def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool
             if reserved > 0:
                 tag = card_window_name(card, w_item) or short_window_name(w_item)
                 extra.append(f"{tag} " + _tr("在途 {0}%").format(f"{reserved:.0f}"))
-        return "\n".join([*table, *extra])
+        return _with_usage_hover("\n".join([*table, *extra]), card)
     head =" · ".join(str(v) for v in (card.get("label") or card.get("account") or "—", card.get("plan")) if v)
     if card.get("kind") not in (None, "ok") and card.get("badge"):
         head += f"  [{card['badge']}]"
@@ -198,7 +198,15 @@ def quota_tooltip_text(card: dict, window: dict | None = None, refreshable: bool
         if reserved > 0:
             text += " · " + _tr("在途 {0}%").format(f"{reserved:.0f}")
         lines.append(text)
-    return "\n".join(lines)
+    return _with_usage_hover("\n".join(lines), card)
+
+
+def _with_usage_hover(text: str, card: dict) -> str:
+    """Append a metered miss reason when the badge does not already carry it."""
+    hover = str(card.get("usage_hover") or "").strip()
+    if not hover or hover in text:
+        return text
+    return f"{text}\n{hover}" if text else hover
 
 
 def ago_text(seconds) -> str:

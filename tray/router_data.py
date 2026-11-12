@@ -574,7 +574,10 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     """(text, colour kind) of an account's status."""
     modules()
     import host_policy
+    import state_upgrade
     row = inventory_row or {}
+    if row.get("status") == "legacy_meter":
+        return _tr(state_upgrade.LEGACY_METER_REASON), "warn"
     plugin_id = {"dot": "dot2api", "chatgpt-web": "chatgpt-web"}.get(name)
     plugin_entry = (plugin_config or {}).get(plugin_id) if plugin_id and isinstance(plugin_config, dict) else None
     if isinstance(plugin_entry, dict) and plugin_entry.get("enabled") is False:
@@ -622,6 +625,8 @@ def metered_spent_text(usage_row: dict) -> str:
     if not isinstance(usage_row, dict) or usage_row.get("backend_kind") != "metered_usd":
         return ""
     details = usage_row.get("usage_details") if isinstance(usage_row.get("usage_details"), dict) else {}
+    if details.get("query") == "no_permission":
+        return ""
     spent = details.get("spent_usd")
     if isinstance(spent, (int, float)) and not isinstance(spent, bool):
         import usage_core
@@ -632,6 +637,22 @@ def metered_spent_text(usage_row: dict) -> str:
         return _tr("已用 {0}").format(spent_text)
     summary = usage_row.get("summary")
     return summary if isinstance(summary, str) else ""
+
+
+def metered_usage_hover(usage_row: dict) -> str:
+    """Hover for a metered USD miss. A spend number has no extra hover."""
+    if not isinstance(usage_row, dict):
+        return ""
+    details = usage_row.get("usage_details") if isinstance(usage_row.get("usage_details"), dict) else {}
+    if usage_row.get("backend_kind") != "metered_usd" and details.get("kind") != "metered_usd":
+        return ""
+    if details.get("query") == "no_permission":
+        return _tr("无查询权限")
+    if details.get("query") == "failed":
+        reason = details.get("read_error")
+        if isinstance(reason, str) and reason.strip():
+            return reason.strip()
+    return ""
 
 
 def countdown(seconds) -> str:
@@ -762,7 +783,15 @@ def account_cards() -> list[dict]:
         spec = acc_table.get(name) or {}
         row = inv_accounts.get(name)
         usage_row = (usage.get("accounts") or {}).get(name) or {}
-        if isinstance(row, dict) and row.get("status") == "ready" and usage_row.get("available") is False:
+        metered_usd = usage_row.get("backend_kind") == "metered_usd" or spec.get("backend_kind") == "metered_usd"
+        usage_details = usage_row.get("usage_details") if isinstance(usage_row.get("usage_details"), dict) else {}
+        no_permission = metered_usd and usage_details.get("query") == "no_permission"
+        if (
+            isinstance(row, dict)
+            and row.get("status") == "ready"
+            and usage_row.get("available") is False
+            and not no_permission
+        ):
             row = {
                 **row,
                 "status": "usage_failing",
@@ -784,8 +813,8 @@ def account_cards() -> list[dict]:
         windows = []
         latched = set((row or {}).get("exhausted_windows") or ())  # Only these windows are latched out.
         member_rows = pool_member_rows(usage_row.get("pool_members"), now)
-        metered_usd = usage_row.get("backend_kind") == "metered_usd" or spec.get("backend_kind") == "metered_usd"
-        spent_text = metered_spent_text(usage_row) if metered_usd else ""
+        spent_text = "" if no_permission else (metered_spent_text(usage_row) if metered_usd else "")
+        usage_hover = metered_usage_hover(usage_row) if metered_usd else ""
         for window in usage_row.get("windows") or []:
             wid = window.get("id")
             c_wid = quota_pools.canonical_window_id(spec, wid)
@@ -877,8 +906,10 @@ def account_cards() -> list[dict]:
                       **({"local_spend_usd": local_spend} if local_spend else {}),
                       "usage_note": venice_usage.note(api_usage) if name in ('omp', 'dsh') else
                           free_note if free_note is not None else
+                          None if no_permission else
                           spent_text if metered_usd and not windows else
                           _tr("API 余额未提供，非无限额度") if spec.get('billing') == 'metered' and not windows else None,
+                      "usage_hover": usage_hover,
                       "windows": windows, "bundles": bundle_pills,
                       "host_enabled": bool(pool_allowed(name)),
                       "verified": bool(spec.get("verified", True)),
@@ -2062,8 +2093,36 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
     return _tr('{0} · {1} 已{2}').format(f'{account_label(account)}', f'{bundle_id}', f"{(_tr('启用') if enable_now else _tr('停用'))}")
 
 
+def _clear_account_legacy_meter(account: str) -> list[str]:
+    """One tray action on this account deletes its leftover meter fields. A clean account is not rewritten."""
+    modules()
+    import state_upgrade
+    target = STATE_DIR / "accounts-override.json"
+    if not target.is_file():
+        return []
+    try:
+        document = json.loads(target.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return []
+    spec = (document.get("accounts") or {}).get(account) if isinstance(document, dict) else None
+    names = state_upgrade.legacy_meter_field_names(spec)
+    if not names:
+        return []
+
+    def change(doc):
+        entry = (doc.get("accounts") or {}).get(account)
+        state_upgrade.strip_legacy_meter_fields(entry)
+
+    _edit_preferences(change)
+    return names
+
+
 def toggle_account_host(account: str) -> str:
-    """Toggle only user policy; discovery/readiness is not a user preference."""
+    """Toggle only user policy; discovery/readiness is not a user preference.
+
+    The same action clears leftover meter fields on this account when they are still in the file.
+    """
+    _clear_account_legacy_meter(account)
     state = host_policy_state()
     all_accounts = state["accounts"]
     allowed = set(all_accounts if state["allowed"] is None else state["allowed"])

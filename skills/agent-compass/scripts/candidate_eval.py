@@ -149,6 +149,10 @@ def evaluate_bundle(bundle, task, ctx):
         result['excluded'].append(reason)
         result.setdefault('_five_short_reasons', []).append(reason)
 
+    legacy = spec.get('legacy_meter')
+    if isinstance(legacy, str) and legacy:
+        exclude(legacy)
+
     execution_account = accounts_override.preference_account(bundle, bundle['account'], accounts)
     cwd_spec = accounts['accounts'].get(execution_account) or spec
     if not account_fleet.account_cwd_allowed(cwd_spec, task.get('cwd')):

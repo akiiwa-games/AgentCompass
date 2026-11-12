@@ -1,6 +1,8 @@
 """The account list says each account's state, its reason and its last good reading."""
 from pathlib import Path
+import json
 import sys
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -17,14 +19,15 @@ import provider_inventory as real_inventory
 
 
 class AccountStateCardTests(unittest.TestCase):
-    def card(self, row):
+    def card(self, row, *, name='codex', spec=None, usage=None, allowed=True):
         fake, router = Mock(), Mock()
         inventory = Mock(quota_sources=real_inventory.quota_sources)
-        fake.load_accounts.return_value = {'accounts': {'codex': {'windows': {}, 'bundles': {}}},
-                                                '_discovery': {'accounts': {'codex': row}}}
+        account_spec = {'windows': {}, 'bundles': {}} if spec is None else spec
+        fake.load_accounts.return_value = {'accounts': {name: account_spec},
+                                                '_discovery': {'accounts': {name: row}}}
         fake.host_policy.load_policy.return_value = None
-        fake.host_policy.account_allowed.return_value = True
-        router.usage_snapshot.return_value = {'accounts': {}}
+        fake.host_policy.account_allowed.return_value = allowed
+        router.usage_snapshot.return_value = {'accounts': {}} if usage is None else {'accounts': {name: usage}}
         with patch.object(router_data, 'modules', return_value=(fake, router)), \
              patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
              patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
@@ -308,6 +311,117 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertIn(reason, card['badge'])
         self.assertIn(reason, card['usage_note'])
         self.assertEqual(len(card['windows']), 2)
+
+    def _usd_row(self, status='ready'):
+        return {
+            'family': 'openai', 'status': status, 'plan': 'metered USD',
+            'billing': 'metered', 'backend_kind': 'metered_usd',
+        }
+
+    def _usd_spec(self):
+        return {
+            'label': 'USD', 'billing': 'metered', 'backend_kind': 'metered_usd',
+            'verified': True, 'windows': {'balance': {}}, 'bundles': {},
+        }
+
+    def test_permission_denial_shows_no_number_and_the_hover_says_why(self):
+        import i18n
+        card = self.card(
+            self._usd_row(), name='usd', spec=self._usd_spec(),
+            usage={
+                'backend_kind': 'metered_usd', 'available': False, 'status': 'stale',
+                'windows': [], 'summary': None,
+                'usage_details': {'kind': 'metered_usd', 'query': 'no_permission'},
+            },
+        )
+        shown = json.dumps({
+            'badge': card['badge'], 'usage_note': card['usage_note'], 'windows': card['windows'],
+            'status': card['status'],
+        }, ensure_ascii=False)
+        self.assertNotEqual(card['status'], 'usage_failing')
+        self.assertIsNone(card['usage_note'])
+        self.assertEqual(card['windows'], [])
+        self.assertNotIn('$', shown)
+        self.assertNotIn('已用', shown)
+        self.assertNotIn('读不到', shown)
+        self.assertEqual(card['usage_hover'], '无查询权限')
+        self.assertIn('无查询权限', panel_quota.quota_tooltip_text(card))
+        self.assertEqual(i18n.english('无查询权限'), 'No permission to query usage')
+
+    def test_a_read_failure_hover_is_the_reason_and_not_permission(self):
+        reason = '/key/info 返回 500'
+        card = self.card(
+            self._usd_row(), name='usd', spec=self._usd_spec(),
+            usage={
+                'backend_kind': 'metered_usd', 'available': False, 'error': reason,
+                'windows': [],
+                'usage_details': {'kind': 'metered_usd', 'query': 'failed', 'read_error': reason},
+            },
+        )
+        self.assertEqual(card['status'], 'usage_failing')
+        self.assertEqual(card['usage_hover'], reason)
+        tip = panel_quota.quota_tooltip_text(card)
+        self.assertIn(reason, tip)
+        self.assertNotIn('无查询权限', tip)
+        self.assertNotIn('无查询权限', card['usage_hover'])
+
+    def test_legacy_meter_badge_wins_over_manual_only(self):
+        import i18n
+        import state_upgrade
+        card = self.card(
+            self._usd_row('legacy_meter'), name='usd', spec=self._usd_spec(), allowed=False,
+        )
+        self.assertEqual(card['kind'], 'warn')
+        self.assertIn('旧的额度字段残留', card['badge'])
+        self.assertNotIn('仅手动使用', card['badge'])
+        self.assertEqual(
+            i18n.english(state_upgrade.LEGACY_METER_REASON),
+            'Old quota fields remain. Run agentcompass setup, or act on this account once in the tray, to clear them.',
+        )
+
+    def test_one_tray_action_strips_leftover_meter_fields(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp)
+            target = state / 'accounts-override.json'
+            doc = {
+                'schema_version': 2,
+                'accounts': {
+                    'llmproxy': {
+                        'billing': 'metered',
+                        'endpoint': 'https://proxy.example.test/v1',
+                        'api_key': 'sk-team-proxy',
+                        'budget_usd': 200,
+                        'windows': {'spend': {'hours': 168}},
+                        'capacity_usd': {'spend': 200},
+                        'burn_pct_per_worker_hour': {'spend': 1},
+                        'burn_basis': 'old',
+                        'budget_duration': '7d',
+                        'timezone': 'UTC+8',
+                        'backend_kind': 'litellm',
+                    },
+                    'claude': {'verified': True},
+                },
+            }
+            target.write_text(json.dumps(doc), encoding='utf-8', newline='\n')
+            with patch.object(router_data, 'STATE_DIR', state):
+                names = router_data._clear_account_legacy_meter('llmproxy')
+            self.assertIn('windows', names)
+            self.assertIn('backend_kind=litellm', names)
+            saved = json.loads(target.read_text(encoding='utf-8'))
+            spec = saved['accounts']['llmproxy']
+            for field in (
+                'windows', 'capacity_usd', 'burn_pct_per_worker_hour', 'burn_basis',
+                'budget_duration', 'timezone', 'backend_kind',
+            ):
+                self.assertNotIn(field, spec)
+            self.assertEqual(spec['endpoint'], 'https://proxy.example.test/v1')
+            self.assertEqual(spec['api_key'], 'sk-team-proxy')
+            self.assertEqual(spec['budget_usd'], 200)
+            self.assertEqual(saved['accounts']['claude'], {'verified': True})
+            before = target.read_bytes()
+            with patch.object(router_data, 'STATE_DIR', state):
+                self.assertEqual(router_data._clear_account_legacy_meter('llmproxy'), [])
+            self.assertEqual(target.read_bytes(), before)
 
 
 if __name__ == '__main__':

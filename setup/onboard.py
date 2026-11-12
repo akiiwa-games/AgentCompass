@@ -176,9 +176,12 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
             enabled.append(name)
     if not accounts:
         document.pop("accounts")
-    changed = bool(added or removed or enabled) or not existed
+    import state_upgrade
+    stripped = state_upgrade.strip_legacy_meter_document(document)
+    changed = bool(added or removed or enabled or stripped) or not existed
     result = {"path": str(path), "created": not existed or bool(previous_state.get("override_created")),
-              "added": added, "removed": removed, "enabled": enabled, "disabled": sorted(wanted_off), "backup": None}
+              "added": added, "removed": removed, "enabled": enabled, "disabled": sorted(wanted_off),
+              "stripped": stripped, "backup": None}
     if changed and not dry_run:
         if existed:
             backup = home / ".agent-compass" / "backups" / f"onboard-{datetime.now().strftime('%Y%m%d-%H%M%S')}" / path.name
@@ -327,6 +330,29 @@ def setup_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def clear_obsolete_usage_configs(home: Path, dry_run: bool = False) -> dict:
+    """Drop leftover llm-proxy keys from the collector file and the Usage Float file. Other keys stay."""
+    import state_upgrade
+    cleared = {}
+    for path in (
+        home / ".agent-compass" / "usage-config.json",
+        home / ".usage-float" / "config.json",
+    ):
+        if dry_run:
+            if not path.is_file():
+                cleared[str(path)] = []
+                continue
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8-sig"))
+            except (OSError, UnicodeError, ValueError):
+                cleared[str(path)] = []
+                continue
+            cleared[str(path)] = state_upgrade.obsolete_usage_config_keys(doc)
+            continue
+        cleared[str(path)] = state_upgrade.clear_obsolete_usage_file(path)
+    return cleared
+
+
 def setup_main(argv: list[str] | None = None) -> int:
     args = setup_parser().parse_args(argv)
     home = Path(args.home).expanduser().resolve() if args.home else Path.home()
@@ -364,6 +390,7 @@ def setup_main(argv: list[str] | None = None) -> int:
                 disabled.add(row["name"])
     override = write_override(home, detection, disabled, dry)
     summary["override"] = override
+    summary["usage_config_cleanup"] = clear_obsolete_usage_configs(home, dry)
     _line(f"\nAccounts the router may use: {', '.join(r['name'] for r in usable if r['name'] not in disabled) or 'none'}")
     if disabled:
         _line(f"Kept out of routing: {', '.join(sorted(disabled))}")
