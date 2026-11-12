@@ -602,6 +602,38 @@ def is_delegated_worker(
     return True
 
 
+_FINAL_REPORT = "[Worker final report]"
+_REPORT_TEXT_KEYS = ("prompt", "text", "message", "initialPrompt", "initial_prompt", "code", "_raw")
+
+
+def payload_has_final_report(calls) -> bool:
+    """True when an outbound send carries the worker's final-report marker in its message text."""
+    def marked(value):
+        if isinstance(value, str):
+            return _FINAL_REPORT in value
+        if isinstance(value, dict):
+            return any(marked(value.get(key)) for key in _REPORT_TEXT_KEYS)
+        return False
+    return any(marked(args) for _name, args in calls)
+
+
+def release_worker_quota_on_final_report(caller_id, calls, paseo_agents_dir, now) -> None:
+    """A delegated worker's final report drops its own quota hold before this hook returns.
+
+    The send itself is never denied: a missing registry or a parent quoting the marker changes nothing.
+    """
+    if not caller_id or not payload_has_final_report(calls):
+        return
+    worker = os.environ.get("AGENTCOMPASS_WORKER") == "1" or is_delegated_worker(caller_id, paseo_agents_dir)
+    if not worker:
+        return
+    try:
+        registry = router_module("dispatch_registry")
+        registry.release_quota_on_final_report(caller_id, now=now)
+    except Exception:
+        return
+
+
 def detect_target_agent_ids(tool_name: str, tool_input: dict) -> list[str]:
     """Extract target Paseo agent ID(s) from a turn tool or codemode/shell wrapper."""
     tool_name = base_tool_name(tool_name)
@@ -1143,6 +1175,8 @@ def evaluate_payload(
 
     calls = wrapped_agent_calls(tool_name, tool_input) or [(tool_name, tool_input)]
     calls.extend(cli_turn_calls(tool_name, tool_input))
+    # Committed before the send returns, so the parent can roll the next worker without waiting out the lease.
+    release_worker_quota_on_final_report(caller_id, calls, paseo_agents_dir, now)
     if any(re.split(r'__|\.', name)[-1] in WORKER_QUESTION_TOOLS for name, _ in calls):
         worker = os.environ.get('AGENTCOMPASS_WORKER') == '1' or (
             caller_id and is_delegated_worker(caller_id, paseo_agents_dir))

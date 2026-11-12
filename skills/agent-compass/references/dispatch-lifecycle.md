@@ -11,7 +11,8 @@ prepared ──► launching ──► launched ──► started ──► comp
    │             ├──► create_failed
    │             └──► failed (never sent)
    └──► canceled
-any open state ──lease lapses──► expired ──a later observation──► the state the host reports
+any open state ──lease lapses──► expired ──a later observation that the worker is still running──► that active state, with the evidence recorded
+any open state ──host already ended, or the watcher exits──► completed | failed | canceled | create_failed
 ```
 
 | State | Active Reservation? | Lease | Meaning |
@@ -23,7 +24,7 @@ any open state ──lease lapses──► expired ──a later observation─�
 | `failed` | No | Released | The worker errored, or the host refused before sending (no parent, no notifier). |
 | `create_failed` | No | Released | Paseo created no worker and none can appear later. Candidate-attributed refusals cool down and fall back; request-scoped or unclassified refusals stop immediately as a request error. |
 | `canceled` | No | Released | Released before launch, or the host's worker was closed or removed unfinished. |
-| `expired` | No | Released | The lease lapsed without a fresh observation. Not an outcome: a launched row stays open until a later observation settles it. |
+| `expired` | No | Released | The lease lapsed without a fresh observation. Not an outcome: a launched row stays open for a later observation. That observation restores an active state only when the snapshot shows the worker still running or waiting on permission, and the event records that evidence (`host_still_running`). An idle snapshot does not. |
 
 `roll`, `launch` and `reconcile` observe and settle these; `release` only ever ends what is already over (section 3).
 
@@ -77,8 +78,10 @@ A cooldown is best effort. If its store cannot be written, the dispatch still se
 ## 2. In-Flight Quota Deduction
 
 When `allocator.plan()` evaluates an account window from the effective account fleet:
-1. Active dispatches (`prepared`, `launching`, `launched` or `started` with `lease_until > now`) whose `at` timestamp is newer than `usage[account].fetched_at` (or where `used_pct` has not yet moved past the dispatch baseline) reserve their `expected_usd` (or `expected_pct`) against remaining window capacity.
+1. Active dispatches (`prepared`, `launching`, `launched` or `started` with `lease_until > now`) whose `at` timestamp is newer than `usage[account].fetched_at` (or where `used_pct` has not yet moved past the dispatch baseline) reserve their `expected_usd` (or `expected_pct`) against remaining window capacity. One worker counts once: the newest open row for its `agent_id`. A row with no `agent_id` still counts on its own.
 2. Once the dispatch ends (`completed`, `failed`, `create_failed`, `canceled`) or `usage-cache.json` reflects the spent quota, the reservation is released so quota is never double-counted.
+3. The notification watcher runs `dispatch --dispatch-action settle` before every exit (the command `bridge_env` passes as `AGENTCOMPASS_SETTLE_ARGV`). Settle reads that dispatch's receipt under `paseo-notifications/` and writes the terminal state with no further host call. A receipt that is not an ending changes nothing. If the watcher crashes or is killed before that, the next reservation read — including the gate's read-only read — settles an open row whose local Paseo agent JSON already shows the worker ended (`paseo_agent_record`). A still-running worker is not expired by a read-only read; only the write path lapses a lease. Permission, and a resume whose turn has not landed, are not endings.
+4. When a delegated worker sends `[Worker final report]`, the gate in that worker's session sets its hold to zero (`quota_released_reason: worker_final_report`) before the send returns. The row stays `started` until settle or the agent JSON writes the real terminal state, so the workspace writer is unchanged, and neither the dollar hold nor the cadence count includes it. A parent quoting the marker does not release some other worker. Re-dispatching the same worker therefore does not add the old hold to the new round.
 
 ## 3. CLI Commands
 

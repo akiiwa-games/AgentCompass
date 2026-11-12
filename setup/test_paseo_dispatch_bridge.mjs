@@ -9,7 +9,7 @@ import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, normalizeProviderModels, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
   creationFailureClass, creationFailureCode, creationRecord, resolvePaseoPlacement, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
   workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE, fallbackArgv, runFallback,
-  attemptsNote, notificationFile, agentResumed} from './paseo_dispatch_bridge.mjs';
+  attemptsNote, notificationFile, agentResumed, settleArgv, settleBeforeExit} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -1311,6 +1311,28 @@ test('the fallback command comes only from AGENTCOMPASS_FALLBACK_ARGV and its JS
     assert.equal(await runFallback('d1', [process.execPath, silent]), null);
   } finally { fs.rmSync(folder, {recursive: true, force: true}); }
   assert.equal(await runFallback('d1', [path.join(os.tmpdir(), 'no-such-agentcompass-binary')]), null);
+});
+
+test('the watcher settles the registry from AGENTCOMPASS_SETTLE_ARGV before it unlocks', async () => {
+  assert.equal(settleArgv({}), null);
+  assert.equal(settleArgv({AGENTCOMPASS_SETTLE_ARGV: 'not json'}), null);
+  assert.equal(settleArgv({AGENTCOMPASS_SETTLE_ARGV: '[]'}), null);
+  assert.deepEqual(settleArgv({AGENTCOMPASS_SETTLE_ARGV: '["agentcompass","dispatch"]'}), ['agentcompass', 'dispatch']);
+  assert.equal(await settleBeforeExit(null), null);
+  assert.equal(await settleBeforeExit({}), null);
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-settle-'));
+  try {
+    const answer = path.join(folder, 'answer.mjs');
+    fs.writeFileSync(answer, 'const i = process.argv.indexOf("--dispatch-id"); ' +
+      'console.log(JSON.stringify({state: "completed", dispatch_id: process.argv[i + 1]}));');
+    assert.deepEqual(await settleBeforeExit({dispatch_id: 'd5706c25'}, [process.execPath, answer]),
+      {state: 'completed', dispatch_id: 'd5706c25'});
+  } finally { fs.rmSync(folder, {recursive: true, force: true}); }
+  const source = fs.readFileSync(fileURLToPath(new URL('./paseo_dispatch_bridge.mjs', import.meta.url)), 'utf8');
+  const body = source.slice(source.indexOf('async function watch('), source.indexOf('export function canonicalPath'));
+  const exit = body.slice(body.lastIndexOf('finally {'));
+  assert.match(exit, /await settleBeforeExit\(record\)/);
+  assert.ok(exit.indexOf('await settleBeforeExit(record)') < exit.indexOf('unlinkSync(lock)'));
 });
 
 test('Paseo placement sends workspaceId only when verified for that exact cwd and refuses ancestor-only directories before create', async () => {

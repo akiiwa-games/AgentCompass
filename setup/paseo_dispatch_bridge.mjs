@@ -51,6 +51,21 @@ export function fallbackArgv(env = process.env) {
   } catch { return null; }
 }
 
+// The command dispatch_flow.bridge_env always hands down: `agentcompass dispatch --dispatch-action settle`.
+// Absent (an old parent that did not pass it), the watcher still exits and the next reservation read settles from disk.
+export function settleArgv(env = process.env) {
+  try {
+    const argv = JSON.parse(env.AGENTCOMPASS_SETTLE_ARGV ?? '');
+    return Array.isArray(argv) && argv.length && argv.every(a => typeof a === 'string' && a) ? argv : null;
+  } catch { return null; }
+}
+
+// Write the registry's terminal state before this watcher exits. Same spawn as a fallback, different argv.
+export function settleBeforeExit(record, argv = settleArgv()) {
+  if (!record?.dispatch_id) return Promise.resolve(null);
+  return runFallback(record.dispatch_id, argv);
+}
+
 // Run the fallback step for one failed attempt and read its JSON answer; null when it cannot be run or read.
 export function runFallback(dispatchId, argv = fallbackArgv()) {
   if (!argv) return Promise.resolve(null);
@@ -500,8 +515,9 @@ async function watch(dispatchId, parentId, agentId, createDeadline) {
   }
   fs.writeFileSync(lockFd, String(process.pid));
   let client;
+  let record;
   try {
-    const record = readRecord(file) ?? {dispatch_id: dispatchId, parent_id: parentId,
+    record = readRecord(file) ?? {dispatch_id: dispatchId, parent_id: parentId,
       ...(agentId && agentId !== dispatchId ? {agent_id: agentId} : {}),
       deadline: Date.now() + WATCH_LIMIT_MS, created_at: Date.now(),
       creation_deadline: Date.parse(createDeadline) || Date.now() + CREATE_LIMIT_MS,
@@ -535,6 +551,8 @@ async function watch(dispatchId, parentId, agentId, createDeadline) {
     }
     record.status = 'delivery_failed'; persist();
   } finally {
+    // The receipt is already on disk. Settle while this lock is still held, then unlock even if settle fails.
+    try { await settleBeforeExit(record); } catch { /* a failed settle must not keep the lock */ }
     if (client) await client.close().catch(() => {});
     fs.closeSync(lockFd);
     fs.unlinkSync(lock);

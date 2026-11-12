@@ -2810,7 +2810,7 @@ def main():
     parser.add_argument('--fallback-to-agy', choices=('on', 'off'), help='scorer set: fall back to agy when the chosen scorer fails.')
     parser.add_argument('--objective', help='scorer test: the sample task to classify.')
     parser.add_argument('--input', type=Path)
-    parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release', 'fallback'), default='prepare')
+    parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release', 'fallback', 'settle'), default='prepare')
     parser.add_argument('--dispatch-id')
     parser.add_argument('--parent-id')
     parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native', 'orca', 't3', 'herdr'), help='roll: host owning the parent session (default: auto-detected from environment)')

@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -147,9 +148,11 @@ def host_call(payload):
 
 def bridge_env():
     """The bridge's environment. Its watcher (a detached child) hands a failed attempt to `agentcompass dispatch
-    --dispatch-action fallback` before it tells the parent anything (paseo_dispatch_bridge.mjs runFallback)."""
+    --dispatch-action fallback` before it tells the parent anything (paseo_dispatch_bridge.mjs runFallback), and
+    settles the registry with `--dispatch-action settle` before every exit."""
     env = dict(os.environ)
     env['AGENTCOMPASS_CONTINUATION_ARGV'] = json.dumps(entry.argv('continuation-verdict'))
+    env['AGENTCOMPASS_SETTLE_ARGV'] = json.dumps(entry.argv('dispatch', '--dispatch-action', 'settle'))
     if dispatch_fallback.enabled():
         env['AGENTCOMPASS_FALLBACK_ARGV'] = json.dumps(entry.argv('dispatch', '--dispatch-action', 'fallback'))
     else:
@@ -515,6 +518,94 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     return result
 
 
+_DISPATCH_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$')
+# Watcher receipt reasons that end the dispatch. Anything else (a permission, a still-running poll) is not an ending.
+_ENDING_RECEIPTS = {
+    'finished': ('idle', 'finished'),
+    'error': ('error', 'error'),
+    'closed': ('closed', None),
+    'worker unavailable': ('closed', None),
+    'worker removed before it was observed': ('closed', None),
+    'provider retry stuck': ('error', 'error'),
+    'superseded by a later dispatch': ('closed', None),
+}
+
+
+def notification_file(dispatch_id):
+    """The watcher's receipt. The id is checked before it becomes a path, so it cannot leave the notifications directory."""
+    if not isinstance(dispatch_id, str) or _DISPATCH_ID.fullmatch(dispatch_id) is None:
+        raise ValueError('invalid dispatch id')
+    root = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass')
+    return root / 'paseo-notifications' / f'{dispatch_id}.json'
+
+
+def read_notification(dispatch_id):
+    try:
+        document = json.loads(notification_file(dispatch_id).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return document if isinstance(document, dict) else None
+
+
+def settle(dispatch_id, path=None, now=None):
+    """Write the watcher's ending into the registry without another host round trip. Idempotent.
+
+    A row that is already terminal (other than expired) is returned as it is. A receipt that is not an ending
+    changes nothing. `creation failed` with no agent settles through resolve_creation."""
+    notification_file(dispatch_id)
+    now = now or registry.utcnow()
+    row = registry.inspect(dispatch_id, path)
+    if row['state'] in registry.TERMINAL and row['state'] != 'expired':
+        return public(row, now)
+    receipt = read_notification(dispatch_id) or {}
+    terminal = receipt.get('terminal') if isinstance(receipt.get('terminal'), dict) else None
+    reason = terminal.get('reason') if terminal else None
+    creating_failed = reason == 'creation failed' or receipt.get('status') == 'creation_failed'
+    if creating_failed and not row.get('agent_id') and row['state'] in ('launching', 'expired'):
+        failure = terminal.get('failure_class') if terminal and isinstance(terminal.get('failure_class'), str) else 'unknown'
+        code = terminal.get('failure_code') if terminal and isinstance(terminal.get('failure_code'), str) else None
+        creation = {'phase': 'failed', 'failure_class': failure, **({'failure_code': code} if code else {})}
+        settled, _ended = registry.resolve_creation(dispatch_id, creation, now=now, path=path)
+        return public(settled, now)
+    if reason not in _ENDING_RECEIPTS:
+        return public(row, now)
+    status, attention = _ENDING_RECEIPTS[reason]
+    if reason == 'finished':
+        status, attention = 'idle', 'finished'
+    elif reason != 'provider retry stuck' and isinstance(terminal.get('status'), str) and terminal['status']:
+        status = terminal['status']
+        if 'attentionReason' in terminal:
+            attention = terminal.get('attentionReason')
+    provider, _, model = row['request']['provider'].partition('/')
+    updated = terminal.get('at') if isinstance(terminal.get('at'), str) else None
+    launched = row.get('launched_at')
+    try:
+        if not (isinstance(updated, str) and isinstance(launched, str) and registry.parse(updated) >= registry.parse(launched)):
+            updated = registry.stamp(now)
+    except ValueError:
+        updated = registry.stamp(now)
+    if reason == 'provider retry stuck':
+        terminal = dict(terminal)
+        terminal.setdefault('failure_code', 'provider_retry_stuck')
+    settings = row['request'].get('settings') or {}
+    snapshot = {
+        'id': row.get('agent_id') or dispatch_id,
+        'provider': provider,
+        'model': model,
+        'status': status,
+        'updatedAt': updated,
+        'labels': (row.get('request') or {}).get('labels') or {},
+    }
+    if attention:
+        snapshot['attentionReason'] = attention
+    if settings.get('modeId'):
+        snapshot['currentModeId'] = settings['modeId']
+    if settings.get('thinkingOptionId'):
+        snapshot['thinkingOptionId'] = settings['thinkingOptionId']
+    observed = registry.observe(dispatch_id, snapshot, now=now, path=path, terminal=terminal)
+    return public(observed, now)
+
+
 def stop_watcher(dispatch_id):
     """The marker the bridge's watcher stops at (stopWatcher in paseo_dispatch_bridge.mjs). Best effort: the watcher
     also ends at its watch limit, and what called this is already saved."""
@@ -538,6 +629,10 @@ def cli(args):
         if not args.dispatch_id:
             raise ValueError('fallback requires --dispatch-id')
         return dispatch_fallback.handle(args.dispatch_id)
+    if action == 'settle':
+        if not args.dispatch_id:
+            raise ValueError('settle requires --dispatch-id')
+        return settle(args.dispatch_id)
     if action == 'prepare':
         if not args.input:
             raise ValueError('dispatch prepare requires --input {decision_id, task, launch}')
