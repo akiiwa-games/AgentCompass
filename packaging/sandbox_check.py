@@ -134,6 +134,8 @@ class Fixture:
         self.codex_used = 12.0
         self.claude_used = 20.0
         self.proxy_spend = 2.5
+        self.proxy_budget = 10
+        self.proxy_status = 200
         self.codex_weekly = None     # None: half of the five-hour figure
         self.claude_weekly = None
         self.requests: list[dict] = []
@@ -156,7 +158,7 @@ class Fixture:
             def do_GET(self):
                 host, _, rest = self.path.lstrip("/").partition("/")
                 path = "/" + rest.split("?", 1)[0]
-                fixture.requests.append({"host": host, "path": path, "authorization": self.headers.get("Authorization")})
+                fixture.requests.append({"method": "GET", "host": host, "path": path, "authorization": self.headers.get("Authorization")})
                 mode = fixture.mode.get(host, "ok")
                 if mode == "error":
                     return self._reply(500, {"error": "fixture failure"})
@@ -174,7 +176,12 @@ class Fixture:
                     return self._reply(200, {"organization": {"organization_type": "claude_max",
                                                               "rate_limit_tier": "default_claude_max_20x"}})
                 if host == "litellm" and path == "/key/info":
-                    return self._reply(200, {"info": {"spend": fixture.proxy_spend, "max_budget": 10}})
+                    if fixture.proxy_status != 200:
+                        return self._reply(fixture.proxy_status, {"error": "fixture key info"})
+                    info = {"spend": fixture.proxy_spend}
+                    if fixture.proxy_budget is not None:
+                        info["max_budget"] = fixture.proxy_budget
+                    return self._reply(200, {"info": info})
                 if host == "api.anthropic.com" and path == "/api/oauth/usage":
                     return self._reply(200, {
                         "five_hour": {"utilization": fixture.claude_used, "resets_at": (now + dt.timedelta(hours=2)).isoformat()},
@@ -186,7 +193,7 @@ class Fixture:
                 self.rfile.read(int(self.headers.get("Content-Length") or 0))
                 host, _, rest = self.path.lstrip("/").partition("/")
                 path = "/" + rest.split("?", 1)[0]
-                fixture.requests.append({"host": host, "path": path, "authorization": self.headers.get("Authorization")})
+                fixture.requests.append({"method": "POST", "host": host, "path": path, "authorization": self.headers.get("Authorization")})
                 if self.path.endswith("/chat/completions"):
                     profile = {"work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
                                "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0},
@@ -203,6 +210,7 @@ class Fixture:
     def reset(self):
         self.mode = {"chatgpt.com": "ok", "api.anthropic.com": "ok"}
         self.codex_used, self.claude_used = 12.0, 20.0
+        self.proxy_spend, self.proxy_budget, self.proxy_status = 2.5, 10, 200
         self.codex_weekly = self.claude_weekly = None
 
     @property
@@ -850,6 +858,123 @@ def scenario_hook_and_setup(ctx, box: Sandbox):
     del fresh_home
 
 
+def _harness_card(box: Sandbox, op: Operation, repo: Path) -> dict:
+    """Tray card for the sandbox Claude harness. The snippet prints no key."""
+    code = (
+        "import json, os\n"
+        "from pathlib import Path\n"
+        "import provider_inventory\n"
+        "import router_data\n"
+        "inv = provider_inventory.discover()\n"
+        "row = (inv.get('accounts') or {}).get('claude') or {}\n"
+        "cards = router_data.account_cards()\n"
+        "card = next((item for item in cards if item.get('account') == 'claude'), {})\n"
+        "spent = [window.get('spent_text') for window in (card.get('windows') or []) if window.get('spent_text')]\n"
+        "home = Path(os.environ['HOME'])\n"
+        "state = Path(os.environ['ROUTER_STATE_DIR'])\n"
+        "settings = home / '.claude' / 'settings.json'\n"
+        "secret = ''\n"
+        "if settings.is_file():\n"
+        "    secret = str(((json.loads(settings.read_text(encoding='utf-8')).get('env')) or {}).get('ANTHROPIC_API_KEY') or '')\n"
+        "files = [state / 'accounts-override.json', state / 'usage-cache.json', state / 'provider-inventory.json']\n"
+        "leaked = [path.name for path in files if path.is_file() and secret and secret in path.read_text(encoding='utf-8')]\n"
+        "print(json.dumps({\n"
+        "    'billing': row.get('billing'), 'backend_kind': row.get('backend_kind'),\n"
+        "    'status': card.get('status'), 'usage_note': card.get('usage_note'),\n"
+        "    'usage_hover': card.get('usage_hover'), 'spent_text': spent,\n"
+        "    'secret_absent': bool(secret) and not leaked,\n"
+        "}, ensure_ascii=False))\n"
+    )
+    result = box.py(
+        op, code, isolated=False, python=TRAY_PYTHON,
+        PYTHONPATH=box.pythonpath(box.scripts, repo / "tray"),
+    )
+    parsed = parse_json(result.stdout) if result.returncode == 0 else None
+    op.check("tray card snippet exits 0", result.returncode == 0 and isinstance(parsed, dict), result.stderr[-500:] + result.stdout[-500:])
+    return parsed or {}
+
+
+def _age_usage(box: Sandbox, provider: str) -> None:
+    if not box.cache.is_file():
+        return
+    document = box.read_cache()
+    row = (document.get("providers") or {}).get(provider)
+    if isinstance(row, dict):
+        row["fetched_at"] = at(-3600)
+    document.get("attempts", {}).pop(provider, None)
+    box.cache.write_text(json.dumps(document), encoding="utf-8")
+
+
+def _drop_provider_usage(box: Sandbox, provider: str) -> None:
+    """Remove one provider's stored reading so the next poll is a first read."""
+    if not box.cache.is_file():
+        return
+    document = box.read_cache()
+    for key in ("providers", "display_snapshots", "attempts"):
+        rows = document.get(key)
+        if isinstance(rows, dict):
+            rows.pop(provider, None)
+    box.cache.write_text(json.dumps(document), encoding="utf-8")
+
+
+def scenario_harness_api_key(ctx):
+    """A new machine whose Claude harness points at a local self-built key. The tray shows the /key/info result."""
+    box = Sandbox(ctx["base"], "harness-api-key", ctx["venv"], ctx["fixture"], ctx["run"])
+    fixture = ctx["fixture"]
+    fixture.reset()
+    fixture.requests.clear()
+    box.claude.mkdir(parents=True, exist_ok=True)
+    (box.claude / "settings.json").write_text(json.dumps({"env": {
+        "ANTHROPIC_BASE_URL": fixture.url + "/litellm",
+        "ANTHROPIC_API_KEY": "sandbox-harness-key",
+    }}), encoding="utf-8")
+    op = ctx["run"].operation("harness setup", "agentcompass setup --yes --no-hooks on a home whose Claude harness has a self-built key")
+    result = box.run_command(op, [box.agentcompass, "setup", "--yes", "--no-hooks", "--home", box.home], stdin="")
+    op.check("setup exits 0", result.returncode == 0, result.stderr[-400:] + result.stdout[-400:])
+
+    def collect(title, spend, budget, status, note, hover, billing):
+        fixture.proxy_spend = spend
+        fixture.proxy_budget = budget
+        fixture.proxy_status = status
+        _age_usage(box, "claude")
+        before = len(fixture.requests)
+        op = ctx["run"].operation(title, "one usage collection, then the tray card")
+        collected = box.run_command(op, [box.agentcompass, "usage"])
+        op.check("usage collection exits 0", collected.returncode == 0, collected.stderr[-400:] + collected.stdout[-300:])
+        hits = fixture.requests[before:]
+        op.check(
+            "only GET /key/info on the local fixture",
+            bool(hits) and all(hit.get("method") == "GET" and hit.get("host") == "litellm" and hit.get("path") == "/key/info" for hit in hits)
+            and not any(hit.get("host") in ("chatgpt.com", "api.anthropic.com") for hit in hits),
+            [(hit.get("method"), hit.get("host"), hit.get("path")) for hit in hits],
+        )
+        card = _harness_card(box, op, ctx["repo"])
+        shown = " ".join(str(part) for part in [card.get("usage_note"), card.get("usage_hover"), *(card.get("spent_text") or [])] if part)
+        shows_amount = (note in shown) if note else ("已用" not in shown)
+        shows_hover = (hover in shown) if hover else ("无查询权限" not in shown)
+        op.check("tray shows the /key/info result", shows_amount and shows_hover, card)
+        op.check("billing follows the reading", card.get("billing") == billing, card)
+        op.check("the key is not in the override, the cache, or the inventory", card.get("secret_absent") is True, card.get("status"))
+        if status == 403:
+            op.check("a permission miss stays off the failure badge", card.get("status") != "usage_failing", card.get("status"))
+
+    collect("harness dollars with a budget", 2.5, 10, 200, "已用 $2.50 / $10", "", "metered")
+    collect("harness dollars without a budget", 12.3, None, 200, "已用 $12.30", "", "metered")
+    # A 403 hides the proved amount and keeps the billing category.
+    collect("a permission miss hides the amount", 2.5, 10, 403, "", "无查询权限", "metered")
+    _drop_provider_usage(box, "claude")
+    collect("harness key without query permission", 2.5, 10, 403, "", "无查询权限", "unknown")
+    op = ctx["run"].operation("harness requests stay on the fixture", "the whole scenario never called a completion or an official host")
+    op.check(
+        "every recorded request is GET /key/info on litellm",
+        bool(fixture.requests) and all(
+            hit.get("method") == "GET" and hit.get("host") == "litellm" and hit.get("path") == "/key/info"
+            for hit in fixture.requests
+        ),
+        [(hit.get("method"), hit.get("host"), hit.get("path")) for hit in fixture.requests],
+    )
+
+
 def scenario_frozen(ctx, skip: bool):
     """The packaged tray executable: built from the isolated copy, then its helper entry is run like the tray runs it."""
     if skip:
@@ -1072,6 +1197,7 @@ def main(argv=None) -> int:
                         help="Parent directory of the per-run report directories (nothing in it is deleted).")
     parser.add_argument("--keep", action="store_true", help="Keep the sandbox directory for inspection.")
     parser.add_argument("--skip-frozen", action="store_true", help="Do not build and run the PyInstaller tray (recorded as not executed).")
+    parser.add_argument("--only", action="append", default=[], help="Run only these scenarios (clean, entry, freshness, tray, network, usage-float, hook, harness, frozen, payload). Default runs every scenario. PyInstaller runs only when frozen is included or no --only is set.")
     args = parser.parse_args(argv)
     names = registry_clean()
     if names:
@@ -1103,16 +1229,32 @@ def main(argv=None) -> int:
         with Fixture() as fixture:
             write_netguard([sites, NETGUARD], fixture.url, [fixture.server.server_address[1]], base / "net-default.jsonl")
             ctx = {"base": base, "venv": venv, "fixture": fixture, "run": run, "wheel": wheel, "repo": repo, "fixture_built": built}
-            clean = scenario_clean_install(ctx)
-            ctx["wheel_skill"] = clean.data / "skills" / "agent-compass"
-            scenario_entry_and_docs(ctx, clean)
-            scenario_freshness(ctx, clean)
-            tray = scenario_tray(ctx)
-            scenario_network(ctx, tray)
-            scenario_usage_float(ctx, tray)
-            scenario_hook_and_setup(ctx, tray)
-            scenario_frozen(ctx, args.skip_frozen)
-            scenario_payload(ctx)
+            selected = set(args.only)
+            def want(name):
+                return not selected or name in selected
+            if want("clean"):
+                clean = scenario_clean_install(ctx)
+                ctx["wheel_skill"] = clean.data / "skills" / "agent-compass"
+            if want("entry"):
+                scenario_entry_and_docs(ctx, clean)
+            if want("freshness"):
+                scenario_freshness(ctx, clean)
+            if want("tray"):
+                tray = scenario_tray(ctx)
+            if want("network"):
+                scenario_network(ctx, tray)
+            if want("usage-float"):
+                scenario_usage_float(ctx, tray)
+            if want("hook"):
+                scenario_hook_and_setup(ctx, tray)
+            if want("harness"):
+                scenario_harness_api_key(ctx)
+            if want("frozen"):
+                scenario_frozen(ctx, args.skip_frozen)
+            elif not selected:
+                scenario_frozen(ctx, args.skip_frozen)
+            if want("payload"):
+                scenario_payload(ctx)
         op = run.operation("real machine untouched", "the user's own cache, activity and receipt files did not change")
         after = real_state_snapshot()
         # Usage Float, when it runs on this machine, rewrites its own cache and the activity file every few minutes; those two

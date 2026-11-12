@@ -224,6 +224,10 @@ def endpoint(value):
     return value
 
 
+# Official hosts have no /key/info. A self-built base is only a dollar candidate until a reading says so.
+OFFICIAL_API_ORIGINS = frozenset({'https://api.anthropic.com', 'https://api.openai.com'})
+
+
 def plan_name(family, value, tier=''):
     value = value.lower() if isinstance(value, str) else ''
     tier = tier if isinstance(tier, str) else ''
@@ -745,6 +749,164 @@ def consult_configuration(web_home):
     return 'ready' if valid else 'invalid_configuration'
 
 
+def _harness_slots(home, environ, definitions):
+    """Claude and Codex homes shared by discovery and the dollar-candidate scan. Consult homes stay out."""
+    home = Path(home)
+    slots = {'claude': ('claude', home / '.claude'), 'codex': ('codex', home / '.codex')}
+    for family in ('claude', 'codex'):
+        for other in sorted(home.glob(f'.{family}-*')):
+            if not other.is_dir():
+                continue
+            if family == 'codex' and is_consult_home(other, home, environ):
+                continue
+            slot_name = other.name.lstrip('.')
+            slots[slot_name] = (family, other)
+    for name in definitions:
+        family, env, _enabled = resolve_definition(name, definitions)
+        if family in ('claude', 'codex'):
+            root_key = 'CLAUDE_CONFIG_DIR' if family == 'claude' else 'CODEX_HOME'
+            candidate = home / f'.{name}'
+            fallback_home = candidate if candidate.is_dir() else home / ('.' + family)
+            raw_root = env.get(root_key)
+            target_home = _expand_home(raw_root, home) if raw_root else fallback_home
+            if family == 'codex' and is_consult_home(target_home, home, environ):
+                continue
+            slots[name] = (family, target_home)
+    orca_slots = set()
+    seen_codex_homes = {_resolved(slot_home) for family, slot_home in slots.values() if family == 'codex'}
+    for orca_home in orca_codex_homes(home):
+        if is_consult_home(orca_home, home, environ) or _resolved(orca_home) in seen_codex_homes:
+            continue
+        slot_name = f'orca-{orca_home.parent.name}'
+        slots[slot_name] = ('codex', orca_home)
+        orca_slots.add(slot_name)
+        seen_codex_homes.add(_resolved(orca_home))
+    return slots, orca_slots
+
+
+def _slot_layout(name, family, default_home, home, definitions):
+    _family, env, enabled = resolve_definition(name, definitions)
+    root_key = 'CLAUDE_CONFIG_DIR' if family == 'claude' else 'CODEX_HOME'
+    raw_root = env.get(root_key)
+    account_home = _expand_home(raw_root, home) if raw_root else default_home
+    raw_sec = env.get('CLAUDE_SECURESTORAGE_CONFIG_DIR') if family == 'claude' else ''
+    credential_home = _expand_home(raw_sec, home) if raw_sec else account_home
+    return env, enabled, account_home, credential_home
+
+
+def _product_reading(family, account_home, env, auth):
+    """Base URL and API key as the product stores them. Nothing is written."""
+    settings, _error = read_json(account_home / 'settings.json') if family == 'claude' else ({}, None)
+    if family == 'claude':
+        config = {**settings, 'env': {**obj(settings.get('env')), **env}}
+    else:
+        try:
+            config = {'auth': auth, 'config': (account_home / 'config.toml').read_text(encoding='utf-8-sig')}
+        except (OSError, UnicodeError):
+            # One unreadable Codex file is that harness only. UnicodeError is not an OSError.
+            config = {'auth': auth}
+    base, token, models = product_config(family, config)
+    return config, base, token if isinstance(token, str) else '', models
+
+
+def _magpie_state(family, account_home, config, token, is_api, cached):
+    """Explicit Magpie, or a cache row already bound to one. An unbound custom base is not Magpie."""
+    source, _error = read_json(account_home / 'usage-float.json') if family == 'claude' else ({}, None)
+    collector_base = str(config.get('env', {}).get('ANTHROPIC_BASE_URL') or '').rstrip('/') if family == 'claude' else ''
+    magpie_candidates = set()
+    override = None
+    if is_api and family == 'claude':
+        if source.get('source') == 'magpie':
+            acct = source.get('account') if isinstance(source.get('account'), str) else ''
+            override = digest('magpie', collector_base, token, source.get('provider') or family, acct)
+            magpie_candidates.add(override)
+        elif (not source.get('source') and collector_base.startswith('https://')
+              and collector_base != 'https://api.anthropic.com'):
+            magpie_candidates.add(digest('magpie', collector_base, token, family, ''))
+    if cached.get('credential_key') in magpie_candidates:
+        override = cached['credential_key']
+    is_magpie = (
+        source.get('source') == 'magpie'
+        or cached.get('credential_key') in magpie_candidates
+        or cached.get('backend_kind') == 'gateway'
+    )
+    return is_magpie, override
+
+
+def _metered_category_evidence(cached, credential_key):
+    """Billing category proved for this digest. The latest read's amount is separate."""
+    if _metered_spend_evidence(cached, credential_key) is not None:
+        return True
+    if not credential_key or not isinstance(cached, dict) or cached.get('credential_key') != credential_key:
+        return False
+    details = cached.get('usage_details')
+    return isinstance(details, dict) and details.get('kind') == 'metered_usd' and details.get('category') == 'metered'
+
+
+def _metered_spend_evidence(cached, credential_key):
+    """A /key/info spend for this credential. A permission miss or a 404 is not an amount."""
+    if not credential_key or not isinstance(cached, dict) or cached.get('credential_key') != credential_key:
+        return None
+    details = cached.get('usage_details')
+    if not isinstance(details, dict) or details.get('kind') != 'metered_usd':
+        return None
+    spend = details.get('spent_usd')
+    if isinstance(spend, bool) or not isinstance(spend, (int, float)):
+        return None
+    if spend != spend or spend in (float('inf'), float('-inf')) or spend < 0:
+        return None
+    budget = details.get('budget_usd')
+    budget_usd = None
+    if (isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0
+            and budget == budget and budget != float('inf')):
+        budget_usd = float(budget)
+    return {'spent_usd': float(spend), 'budget_usd': budget_usd}
+
+
+def harness_usd_candidates(home=None, environ=None):
+    """Self-built API-key harnesses that a usage poll may read with GET /key/info.
+
+    Zero network. The key stays in the returned records and is not written to a file.
+    Official API hosts and explicit Magpie gateways are not candidates.
+    """
+    environ = os.environ if environ is None else environ
+    home = Path(home) if home is not None else Path(environ.get('ROUTER_PROVIDER_HOME') or Path.home())
+    paseo_path = Path(environ.get('PASEO_HOME') or home / '.paseo') / 'config.json'
+    paseo, _error = read_json(paseo_path)
+    agents = paseo.get('agents') if isinstance(paseo.get('agents'), dict) else {}
+    definitions = agents.get('providers') if isinstance(agents.get('providers'), dict) else {}
+    cache = usage_cache.read(None, home, environ)[0] or {}
+    cache_rows = cache.get('providers') if isinstance(cache.get('providers'), dict) else {}
+    slots, _orca_slots = _harness_slots(home, environ, definitions)
+    found = []
+    for name, (family, default_home) in slots.items():
+        try:
+            env, enabled, account_home, credential_home = _slot_layout(name, family, default_home, home, definitions)
+            if not enabled:
+                continue
+            auth = {}
+            if family == 'codex':
+                auth, _auth_error = read_json(credential_home / 'auth.json')
+            config, base, token, _models = _product_reading(family, account_home, env, auth)
+        except UnicodeError:
+            continue
+        if not (base and token) or base in OFFICIAL_API_ORIGINS:
+            continue
+        cached = obj(cache_rows.get(name))
+        is_magpie, _magpie_key = _magpie_state(family, account_home, config, token, True, cached)
+        if is_magpie:
+            continue
+        found.append({
+            'provider_id': name,
+            'family': family,
+            'home': str(account_home),
+            'endpoint': base,
+            'api_key': token,
+            'credential_key': digest('api', _resolved(account_home), base, token),
+        })
+    return found
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
@@ -803,64 +965,22 @@ def _discover(home=None, environ=None, now=None):
               'accounts': {}, 'launchers': {}, 'saved': [], 'source_paths': {},
               'sources': {'paseo': paseo_error or 'read'}}
     # Conventional alternate homes (.claude-*, .codex-*) are also shown when they have no launcher.
-    slots = {'claude': ('claude', home / '.claude'), 'codex': ('codex', home / '.codex')}
-    for family in ('claude', 'codex'):
-        for other in sorted(home.glob(f'.{family}-*')):
-            if not other.is_dir():
-                continue
-            if family == 'codex' and is_consult_home(other, home, environ):
-                continue
-            slot_name = other.name.lstrip('.')
-            slots[slot_name] = (family, other)
-    for name in definitions:
-        family, env, _ = resolve_definition(name, definitions)
-        if family in ('claude', 'codex'):
-            root_key = 'CLAUDE_CONFIG_DIR' if family == 'claude' else 'CODEX_HOME'
-            candidate = home / f'.{name}'
-            fallback_home = candidate if candidate.is_dir() else home / ('.' + family)
-            raw_root = env.get(root_key)  # the account's configuration only, never the caller's environment
-            target_home = _expand_home(raw_root, home) if raw_root else fallback_home
-            if family == 'codex' and is_consult_home(target_home, home, environ):
-                continue
-            slots[name] = (family, target_home)
-    orca_slots = set()
-    seen_codex_homes = {_resolved(h) for fam, h in slots.values() if fam == 'codex'}
-    for orca_home in orca_codex_homes(home):
-        if is_consult_home(orca_home, home, environ) or _resolved(orca_home) in seen_codex_homes:
-            continue
-        slot_name = f'orca-{orca_home.parent.name}'
-        slots[slot_name] = ('codex', orca_home)
-        orca_slots.add(slot_name)
-        seen_codex_homes.add(_resolved(orca_home))
+    slots, orca_slots = _harness_slots(home, environ, definitions)
     # Sources retain private binding material only until this function returns.
     bindings = {}
     for name, (family, default_home) in slots.items():
-        _, env, enabled = resolve_definition(name, definitions)
-        root_key = 'CLAUDE_CONFIG_DIR' if family == 'claude' else 'CODEX_HOME'
-        raw_root = env.get(root_key)
-        account_home = _expand_home(raw_root, home) if raw_root else default_home
-        raw_sec = env.get('CLAUDE_SECURESTORAGE_CONFIG_DIR') if family == 'claude' else ''
-        credential_home = _expand_home(raw_sec, home) if raw_sec else account_home
+        env, enabled, account_home, credential_home = _slot_layout(name, family, default_home, home, definitions)
         auth, error = read_json(credential_home / ('.credentials.json' if family == 'claude' else 'auth.json'))
         profile_path = home / '.claude.json' if credential_home == home / '.claude' else credential_home / '.claude.json'
         profile, _ = read_json(profile_path) if family == 'claude' else ({}, None)
         facts = auth_facts(family, auth, credential_home, profile.get('oauthAccount'))
-        settings, _ = read_json(account_home / 'settings.json') if family == 'claude' else ({}, None)
-        config = settings
+        config, base, token, models = _product_reading(family, account_home, env, auth)
         if family == 'claude':
-            config = {**settings, 'env': {**obj(settings.get('env')), **env}}
             oauth_token = config['env'].get('CLAUDE_CODE_OAUTH_TOKEN')
             if isinstance(oauth_token, str) and oauth_token:
                 facts.update(present=True, identity=digest('claude', oauth_token),
                              credential_identity=digest('claude', oauth_token), credential_version=digest(oauth_token, ''),
                              credential_key=digest(_resolved(credential_home), oauth_token), plan=None)
-        else:
-            try:
-                config = {'auth': auth, 'config': (account_home / 'config.toml').read_text(encoding='utf-8-sig')}
-            except OSError:
-                config = {'auth': auth}
-        base, token, models = product_config(family, config)
-        token = token if isinstance(token, str) else ''
         is_api = bool(base and token)
         is_orca = name in orca_slots
         bound = name == family or name in definitions or is_orca
@@ -872,7 +992,7 @@ def _discover(home=None, environ=None, now=None):
                # No plan from the login: a live reading sets it below (usage_api / profile_api), else it is unknown.
                'plan': None, 'plan_source': None,
                'credential_key': facts['credential_key'],
-               'identity': facts['identity'], 'billing': ('metered' if base in ('https://api.anthropic.com', 'https://api.openai.com')
+               'identity': facts['identity'], 'billing': ('metered' if base in OFFICIAL_API_ORIGINS
                                                          else 'unknown') if is_api else 'subscription'}
         bindings[name] = {'identity': facts['identity'], 'base': base, 'key': digest(token) if token else None}
         bindings[name]['credential_identity'] = facts.get('credential_identity')
@@ -884,21 +1004,11 @@ def _discover(home=None, environ=None, now=None):
             bindings[name].update(identity=row['identity'], credential_identity=None, credential_version=None)
             if models:
                 row['models'] = models
-        source, _ = read_json(account_home / 'usage-float.json') if family == 'claude' else ({}, None)
         # This is the collector's local cache binding, not a gateway request.
-        collector_base = str(config.get('env', {}).get('ANTHROPIC_BASE_URL') or '').rstrip('/') if family == 'claude' else ''
-        magpie_candidates = set()
-        if is_api and family == 'claude':
-            if source.get('source') == 'magpie':
-                acct = source.get('account') if isinstance(source.get('account'), str) else ''
-                row['credential_key'] = digest('magpie', collector_base, token, source.get('provider') or family, acct)
-                magpie_candidates.add(row['credential_key'])
-            elif not source.get('source') and collector_base.startswith('https://') and collector_base != 'https://api.anthropic.com':
-                magpie_candidates.add(digest('magpie', collector_base, token, family, ''))
         cached = obj(cache_rows.get(name))
-        if cached.get('credential_key') in magpie_candidates:
-            row['credential_key'] = cached['credential_key']
-        is_magpie = (source.get('source') == 'magpie') or (cached.get('credential_key') in magpie_candidates) or (cached.get('backend_kind') == 'gateway')
+        is_magpie, magpie_key = _magpie_state(family, account_home, config, token, is_api, cached)
+        if magpie_key:
+            row['credential_key'] = magpie_key
         if is_api and is_magpie:
             row['billing'] = 'subscription'
         if (cached.get('credential_key') and cached.get('credential_key') == row.get('credential_key')):
@@ -928,6 +1038,21 @@ def _discover(home=None, environ=None, now=None):
                 row.update(plan=online, plan_source='collector', plan_read_at=cached.get('fetched_at'))
         elif cached:
             row['usage_binding'] = 'changed'
+        # A self-built key is a candidate only. Billing becomes metered when this credential's /key/info spend is cached.
+        if is_api and not is_magpie and enabled and base not in OFFICIAL_API_ORIGINS:
+            row['usd_candidate'] = True
+            evidence = _metered_spend_evidence(cached, row.get('credential_key'))
+            if evidence is not None:
+                row['billing'] = 'metered'
+                row['backend_kind'] = 'metered_usd'
+                row['plan'] = 'metered USD'
+                if evidence['budget_usd'] is not None:
+                    row['budget_usd'] = evidence['budget_usd']
+            elif _metered_category_evidence(cached, row.get('credential_key')):
+                # The category stays. The latest read did not supply an amount, so no budget is copied from it.
+                row['billing'] = 'metered'
+                row['backend_kind'] = 'metered_usd'
+                row['plan'] = 'metered USD'
         result['accounts'][name] = row
         result['launchers'][name] = {'family': family, 'status': row['status']}
     # Existing independent harnesses keep their established account association.
@@ -1858,6 +1983,9 @@ def apply(accounts, inventory=None, *, live=None):
         if is_metered_usd:
             spec['billing'] = 'metered'
             spec['backend_kind'] = 'metered_usd'
+            row_plan = row.get('plan')
+            if isinstance(row_plan, str) and row_plan.strip():
+                spec['plan'] = row_plan
             if row.get('status') == account_state.LEGACY_METER:
                 import state_upgrade
                 spec['legacy_meter'] = row.get('reason') or state_upgrade.LEGACY_METER_REASON
