@@ -793,7 +793,7 @@ class Builder:
         for name, row in self.manifest.items():
             if row.get('status') != 'ok':
                 missing_sources.setdefault(name, {'file': name, 'url': row.get('url'), 'reason': row.get('error')})
-        stamp = (getattr(self, 'now', None) or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        stamp = (self.now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         return {'schema': SCHEMA, 'generated_at': stamp.isoformat(timespec='seconds'),
                 'conversion': f'z = (x - x_anchor) / sd_panel per board, anchor {ANCHOR}; see calibration/measurements.py',
                 'panel': self.panel_doc, 'checks': self.checks,
