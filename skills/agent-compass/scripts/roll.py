@@ -19,6 +19,7 @@ import dispatch_fallback
 import dispatch_flow
 import entry
 import dispatch_registry as registry
+import host_placement
 import provider_inventory
 import worker_context
 from worker_context import NATIVE_HOSTS, harness_session, require_parent_id, resolve_parent
@@ -105,7 +106,7 @@ def build_task(args, text, parent):
             raise ValueError('--local-only requires a non-empty reason.')
         task['needs'] = {'local_only': True, 'local_only_reason': local_only_reason}
     elif getattr(args, 'workspace', None):
-        ws = str(args.workspace).strip()
+        ws = host_placement.canonical_dir(args.workspace)
         if ws:
             task['needs'] = {'local_only': True, 'local_only_reason': f'inferred from --workspace {ws}'}
     if getattr(args, 'file', None) or getattr(args, 'apply_to', None):
@@ -410,10 +411,10 @@ def parent_cwd():
     return os.environ.get('PASEO_AGENT_CWD') or os.getcwd()
 
 
-def same_cwd_warning(out, cwd, parent, workspace):
-    """The writer rule goes by workspace ID. Too many rolls with no ID, or with several IDs on one checkout, run in
-    parallel on purpose to block them, so other unsettled writers in the directory this one lands in are only named."""
-    others = registry.writers_at(cwd, parent, other_than=workspace)
+def same_cwd_warning(out, cwd, parent):
+    """Without `--workspace`, parallel workers commonly start in one checkout and create their own worktrees, so
+    other unsettled writers in `cwd` are reported as a warning and block nothing."""
+    others = registry.writers_at(cwd, caller=parent)
     if not others:
         return out
     named = '; '.join(f"{h.get('state')} dispatch {h.get('dispatch_id')} ({h.get('title')})" for h in others)
@@ -421,12 +422,17 @@ def same_cwd_warning(out, cwd, parent, workspace):
     return dict(out, assumptions=[*out.get('assumptions', []), note], warnings=[*out.get('warnings', []), note])
 
 
-def workspace_blocked(out, workspace, holders):
+def workspace_blocked(out, workspace, holders, dispatch_mode='paseo'):
     named = '; '.join(f"{h.get('state')} dispatch {h.get('dispatch_id')} (agent {h.get('agent_id') or 'not created yet'})" for h in holders)
-    return dict(out, launched=False, dispatch_mode='paseo', caller_action='resolve_workspace_writer',
+    return dict(out, launched=False, dispatch_mode=dispatch_mode, caller_action='resolve_workspace_writer',
                 error='workspace_has_active_writer', blocked_by=holders,
                 next=f'Nothing was launched: workspace {workspace} already has a writer: {named}. Wait for it to finish, then roll '
                      'this brief again, or create a separate worktree for parallel work. If this brief only reads, roll it with --access read-only.'), 2
+
+
+def placement_refused(out, dispatch_mode, placed):
+    return dict(out, launched=False, dispatch_mode=dispatch_mode, caller_action=placed['caller_action'],
+                error=placed['error'], next=placed['next']), 1
 
 
 def paseo(args, out, decision, task, text, parent, usage, judge=None):
@@ -438,15 +444,22 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     )
     is_ro_review = is_readonly_review_profile(decision_profile)
     access = task_access(args, decision_profile if isinstance(decision_profile, dict) else None)
-    workspace = args.workspace
-    landing = None
-    if workspace and access == 'write':
-        holders, unavailable, landing = dispatch_flow.workspace_holders(workspace, parent)
-        if unavailable:
-            out = dict(out, assumptions=[*out.get('assumptions', []),
-                                         f'Running agents in workspace {workspace} could not be read ({unavailable}); only recorded dispatches were checked.'])
-        if holders:
-            return workspace_blocked(out, workspace, holders)
+    workspace = host_placement.canonical_dir(getattr(args, 'workspace', None))
+    probe = None
+    if workspace:
+        if access == 'write':
+            holders, unavailable, probe = dispatch_flow.workspace_holders(workspace, parent)
+            if probe and probe.get('placeable') is False:
+                return placement_refused(out, 'paseo', host_placement.place('paseo', workspace, paseo_probe=probe))
+            if unavailable:
+                out = dict(out, assumptions=[*out.get('assumptions', []),
+                                             f'Running agents in workspace {workspace} could not be read ({unavailable}); only recorded dispatches were checked.'])
+            if holders:
+                return workspace_blocked(out, workspace, holders, dispatch_mode='paseo')
+        else:
+            probe = dispatch_flow.paseo_placement_probe(workspace, parent)
+            if probe and probe.get('placeable') is False:
+                return placement_refused(out, 'paseo', host_placement.place('paseo', workspace, paseo_probe=probe))
     resume_agent_id = None
     explicit_id = (getattr(args, 'resume', None) or '').strip()
     if explicit_id and getattr(args, 'new_worker', False):
@@ -489,33 +502,32 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             matched = match_reusable_worker(args, task, text, parent, workers=compatible)
             if matched:
                 resume_agent_id = matched['agent_id']
-    if not workspace:
-        # A resumed worker stays where it lives, whatever the parent's directory.
-        landing = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or parent_cwd()
-    if landing and access == 'write':
-        out = same_cwd_warning(out, landing, parent, workspace)
+    # A resumed worker without --workspace stays where it lives, whatever the parent's directory.
+    default_cwd = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or parent_cwd()
+    placed = host_placement.place('paseo', workspace, default_cwd=default_cwd, paseo_probe=probe)
+    if not placed['ok']:
+        return placement_refused(out, 'paseo', placed)
+    landing = placed['cwd']
+    if not workspace and landing and access == 'write':
+        out = same_cwd_warning(out, landing, parent)
     prompt_for_launch = (prepare_resume_prompt(text, parent, out.get('parent_host') or 'paseo', out.get('parent_address'))
                          if resume_agent_id else text)
-    launch = {'title': args.title or title_of(text), 'initialPrompt': prompt_for_launch}
-    if args.workspace:
-        launch['workspaceId'] = args.workspace
+    launch = {'title': args.title or title_of(text), 'initialPrompt': prompt_for_launch, **placed['launch']}
     try:
         row = registry.prepare(decision['decision_id'], task, launch, usage,
                                resume_agent_id=resume_agent_id, fallback_prompt=text if resume_agent_id else None,
                                access=access,
                                new_worker=bool(getattr(args, 'new_worker', False)),
-                               cwd=landing)
+                               workspace=workspace, cwd=landing)
     except registry.WorkspaceBusy as busy:
-        return workspace_blocked(out, busy.workspace, busy.holders)
+        return workspace_blocked(out, busy.workspace, busy.holders, dispatch_mode='paseo')
     except registry.CapacityChanged as refused:
         if not dispatch_fallback.enabled() or judge is None:
             raise
         # The routed bundle could no longer start (e.g. its live model list dropped it): the next candidate does.
         fresh = dict(launch, initialPrompt=text)
-        if args.workspace:
-            fresh['workspaceId'] = args.workspace
         outcome = dispatch_fallback.after_refusal(decision['decision_id'], fresh, refused, access=access,
-                                                  cwd=landing, judge=judge)
+                                                  workspace=workspace, cwd=landing, judge=judge)
         return fallback_result(out, outcome, decision, parent, args)
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=0)
     if (receipt.get('state') == 'create_failed' or (receipt.get('state') == 'failed' and receipt.get('agent_id'))) \
@@ -530,7 +542,18 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         and not os.environ.get('PASEO_AGENT_ID', '').strip()
         and judge is not None
     ):
-        return cli(args, out, decision['selected_bundle'], text, judge)
+        try:
+            claim_row = registry.record_host_claim(
+                'cli', decision, task, decision['selected_bundle'],
+                label=args.title or title_of(text),
+                usage=usage, access=access, workspace=workspace, cwd=landing, launched=True,
+            )
+        except registry.WorkspaceBusy as busy:
+            return workspace_blocked(out, busy.workspace, busy.holders, dispatch_mode='cli')
+        res, code = cli(args, out, decision['selected_bundle'], text, judge)
+        if not res.get('launched'):
+            registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
+        return res, code
     failed = receipt.get('state') in ('failed', 'create_failed')
     # launched_at records the single-use claim, before create is sent. Only a
     # validated host observation binds agent_id/observed_at to this dispatch.
@@ -555,7 +578,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         return dict(out, launched=False, dispatch_mode='paseo', caller_action='check_error', next=receipt['next_action'],
                     worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 2
     if receipt.get('state') == 'create_failed':
-        return dict(out, launched=False, dispatch_mode='paseo', caller_action='roll_again_safe', next=receipt['next_action'],
+        action = 'check_error' if receipt.get('next_action') == dispatch_flow.REQUEST_CREATE_FAILED_NEXT else 'roll_again_safe'
+        return dict(out, launched=False, dispatch_mode='paseo', caller_action=action, next=receipt['next_action'],
                     worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 1
     notification = receipt.get('completion_notification') or {}
     notice = ('A completion notification will be sent to the parent on finish/error/permission; '
@@ -652,25 +676,7 @@ def _router_override_proxy_spec(provider):
     return None
 
 
-def native_next(host, bundle, address):
-    """What the calling session does to start the routed worker with its own host's orchestrator."""
-    provider, model, effort = bundle.get('provider'), bundle.get('model'), bundle.get('effort')
-    if host == 'orca':
-        flags = f'--agent {provider} --worktree current' + (f' --model {model}' if model else '') + (f' --effort {effort}' if effort else '')
-        return ('Start the worker with Orca orchestration, once, using the executable you ran `skills get` with: '
-                f'`orca orchestration worker-start --spec "<contents of worker_prompt_file>" {flags} --json` (run `run-create` first if no '
-                f'Run is bound). Use no other sub-agent tool. The worker reports to {address} through its injected preamble; collect it with '
-                '`orca orchestration check --wait --types worker_done,escalation,question --json`. If Orca cannot run this '
-                'provider/model/effort, reroute instead of substituting.')
-    if host == 't3':
-        return ('Start the worker with the T3 Code MCP tool `delegate_task` (`orchestrator_capabilities` first, once per thread): '
-                f'task = the full text of worker_prompt_file, target.driverKind/model from route.bundle ({provider} / {model}), mode `async`. '
-                'T3 delivers the result to this parent thread; do not poll `task_status` or use another sub-agent tool. If T3 offers no '
-                'provider/model matching route.bundle, reroute instead of substituting.')
-    return ('Launch the native host worker with exactly route.bundle '
-            'and the contents of worker_prompt_file as --spec (not the filename). First verify that '
-            'the host can reproduce the routed provider/account/model/effort; otherwise reroute. Preserve '
-            'the live coordinator inbox, parent session ID and injected worker preamble; do not switch hosts.')
+native_next = host_placement.native_next
 
 
 def can_launch_via_paseo(provider):
@@ -773,8 +779,12 @@ def cli_command(family, provider, judge):
 
 def cli(args, out, bundle, text, judge):
     """No Paseo here: run the routed bundle through its own CLI, on the account its provider definition selects."""
+    workspace = host_placement.canonical_dir(getattr(args, 'workspace', None))
+    placed = host_placement.place('cli', workspace, default_cwd=str(Path.cwd()))
+    cwd = placed['cwd']
     family, provider_env = provider_definition(bundle['provider'], bundle=bundle)
-    native = '; start it natively with exactly route.bundle and the contents of worker_prompt_file as its prompt.'
+    ws_note = f' in directory `{workspace}`' if workspace else ''
+    native = f'; start it natively{ws_note} with exactly route.bundle and the contents of worker_prompt_file as its prompt.'
     if family not in CLI_RUNS:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     next=f'No Paseo daemon and no CLI here for {bundle["provider"]!r}' + native), 0
@@ -785,7 +795,6 @@ def cli(args, out, bundle, text, judge):
         model = account_fleet.canonical(bundle['model'], accounts)
         validate(family, model, account_fleet.model_spec(accounts, model))
     executable, flags = CLI_RUNS[family]
-    cwd = str(Path.cwd())
     env = {k: v for k, v in judge.subscription_env().items() if not k.startswith(HOST_SESSION_ENV)}
     env.update(provider_env)
     env.update(ROUTER_WORKER='1', ROUTER_PARENT_AGENT_ID=out['parent_id'],
@@ -829,7 +838,7 @@ def status_of(result, code):
         return 'blocked'
     if mode in ('self', 'split'):
         return mode
-    if mode == 'native':
+    if mode == 'native' and code == 0:
         return 'native'
     if mode == 'dry_run':
         return 'dry_run'
@@ -865,7 +874,8 @@ def compact(result, status, detail_path):
     elif status == 'pending' and argv:
         nxt = worker.get('next_action') or 'Run next_argv to observe the same operation; do not roll again.'
     elif status == 'native':
-        nxt = ('Launch one native worker with exactly route_bundle (its modeId is the permission mode) and the full contents of '
+        ws_clause = f" in directory `{result['workspace']}`" if result.get('workspace') else ''
+        nxt = (f'Launch one native worker{ws_clause} with exactly route_bundle (its modeId is the permission mode) and the full contents of '
                'worker_prompt_file as its prompt; if the host cannot reproduce that provider/account/model/effort, tell the '
                'user instead of substituting.')
     worker_summary = {k: bundle.get(k) for k in ('provider', 'account', 'model', 'effort') if bundle.get(k)}
@@ -900,6 +910,8 @@ def compact(result, status, detail_path):
             out['caller_action'] = 'wait_for_reset'
     if result.get('retry_at'):
         out['retry_at'] = result['retry_at']
+    if result.get('workspace'):
+        out['workspace'] = result['workspace']
     if result.get('blocked_by'):
         out['blocked_by'] = result['blocked_by']
     if result.get('attempts'):
@@ -926,6 +938,12 @@ def run_batch(args, judge):
     alone = [f"--{name.replace('_', '-')}" for name in BATCH_ONLY_ALONE if getattr(args, name, None) not in (None, False, [], 0)]
     if alone:
         raise ValueError('Several --brief files take only shared flags; roll a brief on its own for ' + ', '.join(alone) + '.')
+    try:
+        host_placement.validate_workspace(getattr(args, 'workspace', None))
+    except host_placement.InvalidWorkspace as exc:
+        return ({'status': 'error', 'error': 'invalid_workspace_directory', 'cause': 'invalid_workspace_directory',
+                 'workspace': getattr(args, 'workspace', None),
+                 'next_action': f'Nothing was launched: {exc}'}, 1)
     each = [argparse.Namespace(**{**vars(args), 'brief': Path(b)}) for b in briefs]
     if not args.dry_run:
         judge.prefetch_scores([build_task(one, read_task_text(one), None) for one in each], args.score_timeout)
@@ -975,6 +993,18 @@ def _run(args, judge):
     text = read_task_text(args)
     if not text.strip():
         raise ValueError('The task is empty.')
+    try:
+        canonical_ws = host_placement.validate_workspace(getattr(args, 'workspace', None))
+    except host_placement.InvalidWorkspace as exc:
+        return ({
+            'stage': 'roll',
+            'launched': False,
+            'dispatch_mode': 'none',
+            'caller_action': 'check_error',
+            'error': 'invalid_workspace_directory',
+            'workspace': getattr(args, 'workspace', None),
+            'next': f'Nothing was launched: {exc}',
+        }, 1)
     # Resolve before classification/ledger writes: never launch an orphan as a fallback.
     if args.dry_run and not (os.environ.get('PASEO_AGENT_ID', '').strip() or args.parent_id):
         parent, parent_host, parent_address = None, None, None
@@ -1044,7 +1074,8 @@ def _run(args, judge):
                     time.monotonic(),
                 )
     out = {'stage': 'roll', 'route': summary(decision), 'parent_id': parent,
-           'parent_host': parent_host, 'parent_address': parent_address}
+           'parent_host': parent_host, 'parent_address': parent_address,
+           **({'workspace': canonical_ws} if canonical_ws else {})}
     if decision.get('choice') == 'split':
         out['route']['reason'] = decision.get('reason')
         return dict(out, launched=False, dispatch_mode='split', caller_action='roll_each_line',
@@ -1087,6 +1118,10 @@ def _run(args, judge):
         return dict(out, launched=False, dispatch_mode='defer', caller_action='wait_for_reset',
                     start_after_hours=wait,
                     next=f"Defer {bundle.get('id') or decision.get('choice')} for {wait}h until its quota window resets; do not launch now."), 2
+    if provider in host_placement.REMOTE_SURFACES:
+        placed = host_placement.place(provider, canonical_ws)
+        if not placed['ok']:
+            return placement_refused(out, provider, placed)
     text, prompt_file = prepare_worker_prompt(text, parent, parent_host, parent_address)
     out['worker_prompt_file'] = str(prompt_file)
     if provider == 'dot':
@@ -1095,15 +1130,53 @@ def _run(args, judge):
         return consult(args, out, prompt_file)
     if provider == 'grok-bot':
         return grok_bot(args, out, prompt_file, task, bundle, decision=decision)
-    if parent_host == 'herdr':
-        import host_herdr
-        return host_herdr.launch(out, bundle, prompt_file, task['task_id'], judge)
-    if parent_host in NATIVE_HOSTS:
-        return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
-                    next=native_next(parent_host, bundle, parent_address)), 0
+    decision_profile = (
+        decision.get('task_profile')
+        or ((decision.get('decision') or {}).get('task') or {}).get('profile')
+        or task.get('profile')
+    )
+    access = task_access(args, decision_profile if isinstance(decision_profile, dict) else None)
     has_paseo_parent = bool(os.environ.get('PASEO_AGENT_ID', '').strip() or getattr(args, 'parent_id', None))
-    if can_launch_via_paseo(provider) and has_paseo_parent and (
-        os.environ.get('PASEO_AGENT_ID', '').strip() or dispatch_flow.paseo_reachable()
-    ):
+    use_paseo = (
+        parent_host not in ('herdr', *NATIVE_HOSTS)
+        and can_launch_via_paseo(provider)
+        and has_paseo_parent
+        and (os.environ.get('PASEO_AGENT_ID', '').strip() or dispatch_flow.paseo_reachable())
+    )
+    if use_paseo:
         return paseo(args, out, decision, task, text, parent, judge.usage_snapshot(args.usage_cache), judge=judge)
-    return cli(args, out, bundle, text, judge)
+    surface = 'herdr' if parent_host == 'herdr' else parent_host if parent_host in NATIVE_HOSTS else 'cli'
+    placed = host_placement.place(surface, canonical_ws, default_cwd=str(Path.cwd()),
+                                  bundle=bundle, address=parent_address)
+    if not placed['ok']:
+        return placement_refused(out, surface, placed)
+    landing = placed['cwd']
+    if not canonical_ws and landing and access == 'write':
+        out = same_cwd_warning(out, landing, parent)
+    usage = judge.usage_snapshot(getattr(args, 'usage_cache', None)) if hasattr(judge, 'usage_snapshot') else {}
+    try:
+        claim_row = registry.record_host_claim(
+            surface, decision, task, bundle,
+            label=getattr(args, 'title', None) or title_of(text),
+            usage=usage, access=access,
+            workspace=canonical_ws, cwd=landing,
+            launched=surface in ('herdr', 'cli'),
+        )
+    except registry.WorkspaceBusy as busy:
+        return workspace_blocked(out, busy.workspace, busy.holders,
+                                 dispatch_mode='native' if surface in NATIVE_HOSTS else surface)
+    if surface == 'herdr':
+        import host_herdr
+        res, code = host_herdr.launch(out, bundle, prompt_file, task['task_id'], judge,
+                                      cwd=landing, dispatch_id=claim_row['dispatch_id'])
+        if code != 0 and res.get('launched') is False:
+            registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'herdr_preflight_failed')
+        return res, code
+    if surface in NATIVE_HOSTS:
+        return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
+                    **({'dispatch_id': claim_row['dispatch_id']} if canonical_ws else {}),
+                    next=placed['next']), 0
+    res, code = cli(args, out, bundle, text, judge)
+    if not res.get('launched'):
+        registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
+    return res, code

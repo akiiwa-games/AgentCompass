@@ -18,6 +18,15 @@ const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(f
 const writeJson = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value, null, 1)); };
 const agentFile = id => path.join(STATE, 'agents', `${id.replace(/[^\w.-]/g, '_')}.json`);
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const canonicalPath = p => {
+  if (typeof p !== 'string' || !p.trim()) return null;
+  const resolved = path.resolve(p.trim());
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+};
+const samePath = (a, b) => {
+  const left = canonicalPath(a), right = canonicalPath(b);
+  return Boolean(left && right && left === right);
+};
 
 function takeFault(kind) {
   const file = path.join(STATE, 'faults.json');
@@ -29,7 +38,7 @@ function takeFault(kind) {
 
 function project(agent) {
   if (!agent) return null;
-  const keys = ['id', 'provider', 'model', 'status', 'updatedAt', 'createdAt', 'attentionReason', 'archivedAt',
+  const keys = ['id', 'provider', 'model', 'status', 'cwd', 'updatedAt', 'createdAt', 'attentionReason', 'archivedAt',
     'providerUnavailable', 'currentModeId', 'thinkingOptionId', 'effectiveThinkingOptionId', 'labels', 'lastError'];
   return Object.fromEntries(keys.filter(k => agent[k] !== undefined).map(k => [k, agent[k]]));
 }
@@ -61,7 +70,9 @@ function create(input) {
     return { ok: false, sent: false, error: 'addressable_parent_required' };
   if (!parents.includes(input.parent_id)) return { ok: false, sent: false, error: 'parent_agent_not_found' };
   const fault = takeFault('create');
-  if (fault === 'reject') return { ok: false, sent: false, error: 'host_creation_failed' };
+  if (fault === 'reject') return { ok: false, sent: false, error: 'host_creation_failed', failure_class: 'model_unavailable' };
+  if (fault === 'reject_request') return { ok: false, sent: false, error: 'host_creation_failed', failure_class: 'request_invalid' };
+  if (fault === 'reject_unknown') return { ok: false, sent: false, error: 'host_creation_failed', failure_class: 'unknown' };
   const existing = observeAgent(input.dispatch_id);
   if (existing) return { ok: true, sent: true, agent: project(existing), completion_notification: receipt(existing) };
   const request = input.request;
@@ -70,6 +81,7 @@ function create(input) {
   const now = new Date().toISOString();
   const agent = {
     id: input.dispatch_id, provider, model, title: request.title, status: 'running', createdAt: now, updatedAt: now,
+    cwd: request.cwd || process.cwd(),
     labels: request.labels, currentModeId: request.settings?.modeId, thinkingOptionId: request.settings?.thinkingOptionId,
     effectiveThinkingOptionId: request.settings?.thinkingOptionId, parent_id: input.parent_id,
   };
@@ -147,6 +159,23 @@ function observe(input) {
     completion_notification: receipt(agent) };
 }
 
+function workspaceAgents(input) {
+  if (!input.cwd) return { ok: false, error: 'workspace_directory_required' };
+  const dir = path.join(STATE, 'agents');
+  const agents = [];
+  if (fs.existsSync(dir)) {
+    for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) {
+      const a = readJson(path.join(dir, file), null);
+      const latest = a?.id ? observeAgent(a.id) : null;
+      if (!latest || !['running', 'initializing'].includes(latest.status)) continue;
+      if (latest.labels?.['router.dispatch_id'] && samePath(latest.cwd, input.cwd)) {
+        agents.push({ id: latest.id, status: latest.status, dispatch_id: latest.labels['router.dispatch_id'] });
+      }
+    }
+  }
+  return { ok: true, agents, placeable: true };
+}
+
 let raw = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { raw += chunk; });
@@ -158,7 +187,11 @@ process.stdin.on('end', () => {
   fs.appendFileSync(log, JSON.stringify({ at: new Date().toISOString(), operation: input.operation, dispatch_id: input.dispatch_id, parent_id: input.parent_id }) + '\n');
   let result;
   try {
-    result = input.operation === 'create' ? create(input) : input.operation === 'resume' ? resume(input) : input.operation === 'observe' ? observe(input) : { ok: false, sent: false, error: 'unsupported_operation' };
+    result = input.operation === 'create' ? create(input)
+      : input.operation === 'resume' ? resume(input)
+      : input.operation === 'observe' ? observe(input)
+      : input.operation === 'workspace_agents' ? workspaceAgents(input)
+      : { ok: false, sent: false, error: 'unsupported_operation' };
   } catch (error) {
     result = { ok: false, sent: input.operation === 'create' || input.operation === 'resume', error: String(error.message || error) };
   }

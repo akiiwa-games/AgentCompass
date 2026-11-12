@@ -52,6 +52,9 @@ STALLED_NEXT = ('Paseo still reports this create as running past its deadline an
 CREATE_FAILED_NEXT = ('Paseo confirms it created no worker for this attempt and none can appear later. AgentCompass '
                       'relaunches this brief on the next candidate by itself and notifies the parent once the dispatch '
                       'reaches a final state: do not roll it again.')
+REQUEST_CREATE_FAILED_NEXT = ('Paseo refused to create this worker and none can appear later. The refusal was not '
+                              'attributed to the model or account, so AgentCompass did not cool down or switch '
+                              'candidates: check cause and your launch arguments before rolling again.')
 MODEL_LATCHED_NEXT = (' The provider reported that model {model} does not exist on {account} ({code}), so routing excludes it '
                       'until {retry} and the relaunch picks another model. Tell the user it is unavailable.')
 WORKER_FAILED_NEXT = ('Paseo created this worker and it ended in error, so it no longer runs this brief. AgentCompass '
@@ -161,7 +164,10 @@ def public(row, now=None):
     if row.get('operation') == 'resume':
         out['resumed'] = True
     if row['state'] == 'create_failed':
-        out['next_action'] = CREATE_FAILED_NEXT if auto else MANUAL_NEXT['create_failed']
+        import launch_failures
+        candidate_scoped = bool(launch_failures.candidate_failure_class(row.get('failure_class'), row.get('failure_code')))
+        out['next_action'] = (REQUEST_CREATE_FAILED_NEXT if not candidate_scoped
+                              else CREATE_FAILED_NEXT if auto else MANUAL_NEXT['create_failed'])
         import model_latch
         if model_latch.means_unavailable(row.get('failure_code')):
             out['next_action'] += (MODEL_LATCHED_NEXT if auto else MANUAL_NEXT['model_latched']).format(
@@ -247,27 +253,30 @@ def require_actual_parent(parent_id):
 
 def settle_create(row, creation, now, path):
     settled, transitioned = registry.resolve_creation(row['dispatch_id'], creation, now=now, path=path)
-    if transitioned and settled.get('failure_class'):
-        import account_state
+    if transitioned:
         import launch_failures
-        import model_latch
-        try:
-            launch_failures.record(settled['bundle'], settled['failure_class'])
-            account_state.record_launch_error(settled['bundle']['account'], None, code=settled['failure_class'],
-                                              source=settled['dispatch_id'])
-        except OSError:
-            pass  # A cooldown is best effort: a busy store must not stop this observation or the roll that made it.
-        try:
-            model_latch.record(settled['bundle'], settled.get('failure_code'), source=settled['dispatch_id'])
-        except OSError:
-            pass
-        if model_latch.means_unavailable(settled.get('failure_code')):
-            # The provider just refused this model: drop its cached live list so the next roll reads it afresh.
-            import live_models
+        effective_class = launch_failures.candidate_failure_class(settled.get('failure_class'), settled.get('failure_code'))
+        if effective_class:
+            import account_state
+            import model_latch
             try:
-                live_models.invalidate(live_models.bundle_provider(settled.get('bundle')))
+                launch_failures.record(settled['bundle'], settled.get('failure_class'),
+                                       failure_code=settled.get('failure_code'))
+                account_state.record_launch_error(settled['bundle']['account'], None, code=effective_class,
+                                                  source=settled['dispatch_id'])
+            except OSError:
+                pass  # A cooldown is best effort: a busy store must not stop this observation or the roll that made it.
+            try:
+                model_latch.record(settled['bundle'], settled.get('failure_code'), source=settled['dispatch_id'])
             except OSError:
                 pass
+            if model_latch.means_unavailable(settled.get('failure_code')):
+                # The provider just refused this model: drop its cached live list so the next roll reads it afresh.
+                import live_models
+                try:
+                    live_models.invalidate(live_models.bundle_provider(settled.get('bundle')))
+                except OSError:
+                    pass
     return settled
 
 
@@ -294,6 +303,8 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None):
     targets = [registry.inspect(dispatch_id, path)] if dispatch_id else registry.pending(path)
     results = []
     for row in targets:
+        if row.get('dispatch_mode', 'paseo') != 'paseo':
+            continue
         if row['state'] in registry.TERMINAL and row['state'] != 'expired':
             pending_chain = registry.fallback_guard(row, now)
             candidates = (failed_attempts(row, path) if pending_chain
@@ -338,14 +349,23 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None):
     return results
 
 
-def workspace_holders(workspace, parent_id, host=None, path=None):
-    """Writers in a workspace: open write dispatches, and router-launched agents running there whatever their last
-    dispatch says (a worker can be sent a follow-up after it completed). The caller itself is not its own conflict.
-    Returns (holders, error, the workspace's directory if Paseo gave one); a host that cannot be read leaves the recorded
-    dispatches as the whole answer."""
+def paseo_placement_probe(directory, parent_id, host=None):
+    """Query Paseo's adapter for whether canonical `directory` can be placed for `parent_id`."""
     host = host or host_call
-    holders = registry.workspace_writers(workspace, caller=parent_id, path=path)
-    response = host({'operation': 'workspace_agents', 'workspace_id': workspace})
+    response = host({'operation': 'workspace_agents', 'cwd': directory, 'parent_id': parent_id})
+    if not response.get('ok'):
+        return None
+    return {k: response[k] for k in ('placeable', 'error', 'enclosing_directories') if k in response} or None
+
+
+def workspace_holders(directory, parent_id, host=None, path=None):
+    """Writers in canonical `directory`: open write dispatches across all hosts, plus router-launched Paseo agents
+    running in `directory` whatever their last dispatch says (a worker can be sent a follow-up after it completed).
+    The caller itself is not its own conflict. Returns (holders, host_error, placement_probe); a host that cannot be
+    read leaves the recorded dispatches as the whole answer."""
+    host = host or host_call
+    holders = registry.writers_at(directory, caller=parent_id, path=path)
+    response = host({'operation': 'workspace_agents', 'cwd': directory, 'parent_id': parent_id})
     if not response.get('ok'):
         return holders, response.get('error') or 'host_unavailable', None
     known = {h['dispatch_id'] for h in holders}
@@ -362,7 +382,8 @@ def workspace_holders(workspace, parent_id, host=None, path=None):
         holders.append({'dispatch_id': dispatch_id, 'state': (row or {}).get('state'), 'agent_id': agent.get('id'),
                         'task_id': (row or {}).get('task_id'), 'title': ((row or {}).get('request') or {}).get('title'),
                         'agent_status': agent.get('status')})
-    return holders, None, response.get('cwd')
+    probe = {k: response[k] for k in ('placeable', 'error', 'enclosing_directories') if k in response} or None
+    return holders, None, probe
 
 
 def reservation_records(read_only=False):

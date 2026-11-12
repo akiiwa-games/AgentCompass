@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import sqlite3
 import uuid
+from host_placement import canonical_dir
 import provider_inventory
 
 
@@ -263,8 +264,8 @@ def launch_request(bundle, launch):
         raise ValueError('launch.initialPrompt must contain the reviewed assignment')
     if not isinstance(launch.get('title'), str) or not 0 < len(launch['title']) <= 60:
         raise ValueError('launch.title must contain 1..60 characters')
-    if set(launch) - {'title', 'initialPrompt', 'workspaceId', 'cwd', 'labels', 'notifyOnFinish'}:
-        raise ValueError('Launch configuration comes from the decision; only title/prompt/workspace/cwd/labels/notify are inputs')
+    if set(launch) - {'title', 'initialPrompt', 'cwd', 'labels', 'notifyOnFinish'}:
+        raise ValueError('Launch configuration comes from the decision; only title/prompt/cwd/labels/notify are inputs')
     if 'cwd' in launch and not (isinstance(launch['cwd'], str) and os.path.isabs(launch['cwd'])):
         raise ValueError('launch.cwd must be an absolute directory')
     if any(k.startswith('router.') for k in launch.get('labels', {})):
@@ -298,7 +299,7 @@ def active_records(connection, now):
              'bundle': r['bundle'], 'expected_usd': r['expected_usd'], 'usage': r['usage'],
              **({'agent_id': r['agent_id']} if r.get('agent_id') else {})}
             for r in rows(connection, 'dispatches')
-            if r['state'] in ACTIVE and parse(r['lease_until']) > now]
+            if r.get('dispatch_mode', 'paseo') == 'paseo' and r['state'] in ACTIVE and parse(r['lease_until']) > now]
 
 
 def reservations(now=None, path=None, read_only=False):
@@ -476,8 +477,12 @@ def fallback_guard(row, now):
 
 
 def unresolved(row, now, exempt_chain=None):
-    """A launch whose worker may be alive or may still appear; an expired lease stays open until a later observation.
-    A brief AgentCompass is relaunching is open too, except to that relaunch itself (`exempt_chain`, its first dispatch)."""
+    """A launch whose worker may be alive or may still appear; an expired Paseo lease stays open until a later
+    observation. For non-Paseo host claims (`orca`, `t3`, `native`, `herdr`, `cli`) where roll has no daemon
+    reconcile channel, the claim holds while its lease is live. A brief AgentCompass is relaunching is open too,
+    except to that relaunch itself (`exempt_chain`, its first dispatch)."""
+    if row.get('dispatch_mode', 'paseo') != 'paseo':
+        return row['state'] in ACTIVE and parse(row['lease_until']) > now
     return row['state'] in ACTIVE or (row['state'] == 'expired' and bool(row.get('launched_at')) and parse(row['hard_until']) > now) \
         or (fallback_guard(row, now) and chain_root(row) != exempt_chain)
 
@@ -493,40 +498,43 @@ def is_writer(row, now, caller, exempt_chain=None):
         and unresolved(row, now, exempt_chain)
 
 
-def writers_in(connection, workspace, now, caller=None, exempt_chain=None):
+def row_directories(row):
+    request = row.get('request') if isinstance(row.get('request'), dict) else {}
+    return {d for d in (canonical_dir(row.get('workspace')),
+                        canonical_dir(row.get('cwd')),
+                        canonical_dir(request.get('cwd'))) if d}
+
+
+def writers_in(connection, directory, now, caller=None, exempt_chain=None):
+    place = canonical_dir(directory)
+    if not place:
+        return []
     return [holder(r) for r in rows(connection, 'dispatches')
-            if (r.get('request') or {}).get('workspaceId') == workspace and is_writer(r, now, caller, exempt_chain)]
+            if place in row_directories(r) and is_writer(r, now, caller, exempt_chain)]
 
 
-def workspace_writers(workspace, caller=None, now=None, path=None):
+def writers_at(directory, caller=None, now=None, path=None):
+    """Unsettled writers recorded in canonical `directory` across all hosts."""
     now = now or utcnow()
-    if not Path(path or db_path()).exists():
+    if not directory or not Path(path or db_path()).exists():
         return []
     with transaction(path) as connection:
         expire(connection, now)
-        return writers_in(connection, workspace, now, caller)
-
-
-def writers_at(cwd, caller=None, other_than=None, now=None, path=None):
-    """Unsettled writers recorded in a directory, leaving out workspace `other_than`, whose writers the writer rule has
-    already dealt with. A roll records where it will land, and an observation where the worker is."""
-    now = now or utcnow()
-    if not Path(path or db_path()).exists():
-        return []
-    place = os.path.normcase(os.path.normpath(cwd))
-    with transaction(path) as connection:
-        expire(connection, now)
-        return [holder(r) for r in rows(connection, 'dispatches') if r.get('cwd')
-                and os.path.normcase(os.path.normpath(r['cwd'])) == place and is_writer(r, now, caller)
-                and not (other_than and (r.get('request') or {}).get('workspaceId') == other_than)]
+        return writers_in(connection, directory, now, caller)
 
 
 def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None,
-            access='write', new_worker=False, cwd=None, attempt=None):
+            access='write', new_worker=False, workspace=None, cwd=None, attempt=None):
     """`attempt` ({attempt_of, attempt, previous_attempt}) prepares an automatic relaunch of a brief whose earlier
     attempt failed (dispatch_fallback): that chain's own rows do not block it, its own live rows still do."""
     require_parent_id(task.get('parent_agent_id'))
+    if isinstance(launch, dict) and 'workspaceId' in launch:
+        raise ValueError('launch cannot carry a host workspaceId; pass canonical directory workspace instead')
     exempt = (attempt or {}).get('attempt_of')
+    canon_ws = canonical_dir(workspace)
+    cwd = canon_ws or cwd
+    if canon_ws and isinstance(launch, dict):
+        launch = dict(launch, cwd=canon_ws)
     import allocator
     import account_fleet
     import candidate_ranking
@@ -534,13 +542,15 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
     import ledger_snapshot
     now = now or utcnow()
     accounts = accounts or account_fleet.load_accounts()
-    launch_git = dispatch_ground_truth.capture_launch_git(cwd)
+    launch_git = dispatch_ground_truth.capture_launch_git(cwd or (launch.get('cwd') if isinstance(launch, dict) else None))
     with transaction(path) as connection:
         expire(connection, now)
         decision = get(connection, 'decisions', decision_id)
         if not decision['bound'] or decision['task_hash'] != digest(task):
             raise ValueError('Decision is unbound or belongs to another task/parent/input')
         request = launch_request(decision['bundle'], launch)
+        if cwd is None and request.get('cwd'):
+            cwd = request['cwd']
         request_hash = bound_hash(request)
         previous = connection.execute('SELECT data FROM dispatches WHERE decision_id=?', (decision_id,)).fetchone()
         if previous:
@@ -549,18 +559,19 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                 # Re-preparing revises the assignment text in place; the bound launch fields cannot differ.
                 request['labels'].update({k: row['request']['labels'][k] for k in LABELS})
                 row['request'] = request
+                if canon_ws:
+                    row['workspace'] = canon_ws
                 if cwd and row.get('launch_commit') is None:
                     row.update(cwd=cwd, **launch_git)
                 save(connection, row)
             return row
         if parse(decision['valid_until']) <= now or not decision['dispatchable']:
             raise ValueError('Decision expired, deferred or requires a new route; run plan/select/record again')
-        workspace = request.get('workspaceId')
-        if workspace and access != 'read_only':
+        if canon_ws and access != 'read_only':
             # Same transaction as the insert: of two concurrent rolls only the first becomes the writer.
-            holders = writers_in(connection, workspace, now, task['parent_agent_id'], exempt)
+            holders = writers_in(connection, canon_ws, now, task['parent_agent_id'], exempt)
             if holders:
-                raise WorkspaceBusy(workspace, holders)
+                raise WorkspaceBusy(canon_ws, holders)
         busy_agents = set()
         for old in rows(connection, 'dispatches'):
             if not unresolved(old, now, exempt):
@@ -645,6 +656,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)),
                'operation': 'resume' if resume_agent_id else 'create',
                'agent_id': resume_agent_id, 'access': access,
+               **({'workspace': canon_ws} if canon_ws else {}),
                **({'cwd': cwd} if cwd else {}),
                **launch_git,
                'fallback_prompt': fallback_prompt if resume_agent_id else None,
@@ -1112,8 +1124,82 @@ def pending(path=None):
     if not Path(path or db_path()).exists():
         return []
     with transaction(path) as connection:
-        # Include expired started/uncertain launches so a later observation can repair them.
-        return [r for r in rows(connection, 'dispatches') if unresolved(r, utcnow())]
+        # Include expired started/uncertain Paseo launches so a later observation can repair them.
+        return [r for r in rows(connection, 'dispatches')
+                if r.get('dispatch_mode', 'paseo') == 'paseo' and unresolved(r, utcnow())]
+
+
+def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None, access='write',
+                      workspace=None, cwd=None, launched=False, now=None, path=None):
+    """Record a non-Paseo host dispatch (`orca`, `t3`, `native`, `herdr`, `cli`) in `dispatches` under the same
+    canonical-directory writer rule and SQLite BEGIN IMMEDIATE transaction as Paseo."""
+    parent_id = task.get('parent_agent_id')
+    require_parent_id(parent_id)
+    now = now or utcnow()
+    canon_ws = canonical_dir(workspace)
+    landing = canon_ws or cwd
+    decision_id = decision.get('decision_id') or f'{surface}-{uuid.uuid4()}'
+    bundle_copy = dict(bundle or {})
+    bundle_copy.setdefault('bundle_id', bundle_copy.get('id') or decision.get('choice') or f'{surface}:unknown')
+    raw_usd = (decision.get('expected_usd') if isinstance(decision.get('expected_usd'), (int, float))
+               else bundle_copy.get('expected_usd'))
+    expected_usd = float(raw_usd) if isinstance(raw_usd, (int, float)) and not isinstance(raw_usd, bool) else None
+    lease_secs = RUN_LEASE if launched else PREPARE_LEASE
+    state = 'launched' if launched else 'prepared'
+    with transaction(path) as connection:
+        expire(connection, now)
+        by_dec = connection.execute('SELECT data FROM dispatches WHERE decision_id=?', (decision_id,)).fetchone()
+        if by_dec:
+            existing_row = json.loads(by_dec[0])
+            if existing_row['state'] in ACTIVE:
+                return existing_row
+            decision_id = f'{surface}:{decision_id}:{uuid.uuid4().hex[:8]}'
+        if canon_ws and access != 'read_only':
+            holders = writers_in(connection, canon_ws, now, parent_id)
+            if holders:
+                raise WorkspaceBusy(canon_ws, holders)
+        dispatch_id = str(uuid.uuid4())
+        row = {
+            'dispatch_id': dispatch_id,
+            'decision_id': decision_id,
+            'dispatch_mode': surface,
+            'parent_id': parent_id,
+            'task_id': task.get('task_id'),
+            'request': {**({'title': label} if label else {}), **({'cwd': landing} if landing else {})},
+            'bundle': bundle_copy,
+            'expected_usd': expected_usd,
+            'usage': (usage or {}).get('accounts', {}),
+            'created_at': stamp(now),
+            **({'launched_at': stamp(now)} if launched else {}),
+            'lease_until': stamp(now + timedelta(seconds=lease_secs)),
+            'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)),
+            'operation': 'create',
+            'agent_id': None,
+            'access': access,
+            **({'workspace': canon_ws} if canon_ws else {}),
+            **({'cwd': landing} if landing else {}),
+            **({'profile': task['profile']} if isinstance(task.get('profile'), dict) else {}),
+            **({'brief_path': task['brief_path']} if task.get('brief_path') else {}),
+        }
+        event(row, state, now)
+        save(connection, row)
+        return row
+
+
+def settle_host_claim(dispatch_id, target_state='canceled', note=None, *, now=None, path=None):
+    """Settle a non-Paseo host claim (`completed`, `failed`, or `canceled`) when its adapter observes completion or failure."""
+    if not dispatch_id or target_state not in TERMINAL or not Path(path or db_path()).exists():
+        return None
+    now = now or utcnow()
+    with transaction(path) as connection:
+        found = connection.execute('SELECT data FROM dispatches WHERE id=?', (dispatch_id,)).fetchone()
+        if not found:
+            return None
+        row = json.loads(found[0])
+        if row['state'] not in TERMINAL:
+            event(row, target_state, now, note)
+            save(connection, row)
+        return row
 
 
 def record_external_launch(dispatch_mode, external_id, decision_id, bundle, *, parent_id=None, task_id=None,

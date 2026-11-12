@@ -1616,7 +1616,7 @@ class BoundDispatchGateTests(unittest.TestCase):
         self.now = dt.datetime.now(UTC)
         decision = dispatch_registry.issue({'choice': 'argon_high', 'selected_bundle': bundle}, self.task, self.now)
         self.row = dispatch_registry.prepare(decision['decision_id'], self.task,
-            {'title': 'fixture', 'initialPrompt': 'do fixture work', 'workspaceId': 'workspace'},
+            {'title': 'fixture', 'initialPrompt': 'do fixture work', 'cwd': str(root)},
             {'read_ok': True, 'accounts': {'antigravity': {'windows': [
                 {'id': wid, 'remaining_pct_before_reset': 80, 'observed_remaining_pct': 80, 'seconds_until_reset': hours * 3600,
                  'resets_at': (self.now + dt.timedelta(hours=hours)).isoformat()}

@@ -681,6 +681,10 @@ class RollFallbackTests(unittest.TestCase):
     """The roll process itself relaunches when the create fails while it waits for it."""
     setUp = FallbackTests.setUp
     setUp_dispatch = test_dispatch.DispatchTests.setUp
+    snapshot = test_dispatch.DispatchTests.snapshot
+    issue = test_dispatch.DispatchTests.issue
+    first = FallbackTests.first
+    handle = FallbackTests.handle
 
     def test_roll_answers_with_the_relaunched_worker_and_its_attempts(self):
         import argparse
@@ -733,6 +737,60 @@ class RollFallbackTests(unittest.TestCase):
         self.assertEqual(answer['retry_at'], retry_at)
         self.assertIn(retry_at, answer['next_action'])
         self.assertIn('root-1', answer['next_argv'])
+
+    def test_unclassified_or_request_invalid_create_refusal_stops_with_no_cooldown_and_no_fallback(self):
+        import argparse
+        import launch_failures
+        import roll
+        cooldown_store = self.root / 'launch-failures.json'
+        for idx, refusal in enumerate((
+            {'failure_class': 'unknown'},
+            {'failure_class': 'request_invalid'},
+        )):
+            with self.subTest(refusal=refusal):
+                self.host.creates.clear()
+                self.host.refuse = {'claude-lab/claude-sonnet-5-5': refusal}
+                brief = self.root / f'task-{idx}.md'
+                brief.write_bytes(b'# Fixture brief\n\nKeep only the current rules.\n')
+                args = argparse.Namespace(brief=brief, file=[], apply_to=None, local_only=None, hours=0.5, title=None,
+                                          workspace=None, task_id=f'no-walk-{idx}', wait=0, parent_id=None, parent_host=None,
+                                          parent_address=None, provider=None, model=None, effort=None, basis=None,
+                                          usage_cache=None, dry_run=False, verbose=False, task=None, new_worker=True,
+                                          resume=None, fast=False, keep_whole=None, access=None, allow_concurrent=None,
+                                          account=None, can_wait_hours=None)
+                test = self
+
+                def plan_stage(document, _):
+                    planned = allocator.plan(dict(document['task'], pinned_bundle='lab_sonnet55_high'),
+                                             test.usage, registry.utcnow(),
+                                             unavailable=document.get('unavailable') or (), accounts=test.accounts)
+                    return dict(planned, **registry.issue(planned, document['task'])), 0
+                judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage),
+                                           'usage_snapshot': staticmethod(lambda _: test.usage),
+                                           'append_ledger': staticmethod(test.ledger.append),
+                                           'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
+                                           'cli_prefix': staticmethod(lambda name: [name])})
+                with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a', 'ROUTER_PARENT_AGENT_ID': '',
+                                             'ROUTER_LAUNCH_FAILURES': str(cooldown_store)}), \
+                        patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'worker-prompts'), \
+                        patch.object(roll, 'RESULTS_DIR', self.root / 'roll-results'), \
+                        patch.object(flow, 'paseo_reachable', return_value=True), \
+                        patch.object(flow, 'host_call', self.host):
+                    result, code = roll.run(args, judge)
+                self.assertEqual((result['status'], code), ('error', 1))
+                self.assertEqual(len(self.host.creates), 1)
+                self.assertEqual(launch_failures.active(path=cooldown_store), {})
+                self.assertFalse(cooldown_store.exists())
+
+        # Contrast property: a candidate-scoped refusal DOES record cooldown and fall back to the next candidate.
+        self.host.creates.clear()
+        self.host.refuse = {'claude-lab/claude-sonnet-5-5': {'failure_class': 'model_unavailable'}}
+        with patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(cooldown_store)}):
+            root = self.first(task=dict(self.task, task_id='cand-walk'))
+            out = self.handle(root['dispatch_id'])
+            self.assertEqual(out['action'], 'relaunched')
+            self.assertEqual(len(self.host.creates), 2)
+            self.assertTrue(launch_failures.active(path=cooldown_store))
 
 
 if __name__ == '__main__':

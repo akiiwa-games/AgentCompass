@@ -135,7 +135,7 @@ class DispatchTests(unittest.TestCase):
     def snapshot(self, row, status='running', **changes):
         value = {'id': 'agent-fixture', 'provider': 'claude-lab', 'model': 'claude-sonnet-5-5',
                  'currentModeId': 'bypassPermissions', 'thinkingOptionId': 'high',
-                 'status': status, 'updatedAt': (self.now + timedelta(seconds=10)).isoformat(),
+                 'status': status, 'updatedAt': (max(self.now, registry.utcnow()) + timedelta(seconds=10)).isoformat(),
                  'labels': row['request']['labels']}
         value.update(changes)
         return value
@@ -2018,11 +2018,14 @@ class CreateLifecycleTests(unittest.TestCase):
     REMOVED = {'phase': 'completed', 'outcome_unknown': False, 'agent_id': None, 'agent_created': True}
 
     def test_a_worker_removed_before_it_was_observed_ends_the_dispatch_and_frees_the_workspace(self):
+        ws_dir = self.root / 'W'
+        ws_dir.mkdir()
         task = dict(self.task, task_id='removed', expected_hours=0.001)
-        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'workspaceId': 'W'}
-        row = registry.prepare(self.issue(task)['decision_id'], task, launch, self.usage, accounts=self.accounts, now=self.now)
+        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'cwd': str(ws_dir)}
+        row = registry.prepare(self.issue(task)['decision_id'], task, launch, self.usage, accounts=self.accounts,
+                               now=self.now, workspace=str(ws_dir))
         claimed = self.claim_row(row)
-        self.assertTrue(registry.workspace_writers('W', now=self.now))
+        self.assertTrue(registry.writers_at(str(ws_dir), now=self.now))
         # An expired lease that once saw the create in flight: the state the review found stuck.
         with registry.transaction() as connection:
             stored = registry.get(connection, 'dispatches', claimed['dispatch_id'])
@@ -2031,7 +2034,7 @@ class CreateLifecycleTests(unittest.TestCase):
         settled = flow.reconcile(claimed['dispatch_id'], self.observe_only(self.REMOVED), now=self.now)
         self.assertEqual(settled[0]['state'], 'canceled')
         self.assertIn('removed', settled[0]['next_action'])
-        self.assertEqual(registry.workspace_writers('W', now=self.now), [])
+        self.assertEqual(registry.writers_at(str(ws_dir), now=self.now), [])
         self.assertEqual(registry.release(claimed['dispatch_id'], 'parent-a', 'give up')['state'], 'canceled')
 
     def test_a_worker_that_failed_at_its_prompt_and_was_removed_is_not_reported_as_never_created(self):
@@ -2050,9 +2053,15 @@ class CreateLifecycleTests(unittest.TestCase):
         creation = {'phase': 'failed', 'outcome_unknown': True, 'agent_id': row['dispatch_id'], 'agent_created': False, 'failure_class': 'unknown'}
         settled = flow.reconcile(row['dispatch_id'], self.observe_only(creation), now=self.now)
         self.assertEqual(settled[0]['state'], 'create_failed')
-        self.assertEqual(settled[0]['next_action'], flow.CREATE_FAILED_NEXT)
+        self.assertEqual(settled[0]['next_action'], flow.REQUEST_CREATE_FAILED_NEXT)
+        cand_row = self.claim_row(self.prepare(self.issue(dict(self.task, task_id='cand-fail', expected_hours=0.001)),
+                                               dict(self.task, task_id='cand-fail', expected_hours=0.001)))
+        cand_settled = flow.reconcile(cand_row['dispatch_id'],
+                                      self.observe_only({'phase': 'failed', 'outcome_unknown': False, 'agent_created': False,
+                                                         'failure_class': 'model_unavailable'}), now=self.now)
+        self.assertEqual(cand_settled[0]['next_action'], flow.CREATE_FAILED_NEXT)
         with patch.dict(os.environ, {'AGENTCOMPASS_ROLL_FALLBACK': 'off'}):
-            self.assertIn('safe to roll', flow.public(registry.inspect(row['dispatch_id']))['next_action'])
+            self.assertIn('safe to roll', flow.public(registry.inspect(cand_row['dispatch_id']))['next_action'])
 
     def test_roll_reports_a_removed_worker_as_over_not_as_an_unconfirmed_delivery(self):
         import roll
@@ -2083,13 +2092,18 @@ class CreateLifecycleTests(unittest.TestCase):
         store = self.root / 'cooldowns.json'
         return store, patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(store)})
 
-    def test_an_unknown_outcome_ends_the_dispatch_but_cools_nothing_down(self):
+    def test_an_unknown_or_request_invalid_create_refusal_ends_the_dispatch_but_cools_nothing_down(self):
         store, scope = self.cooldowns()
         with scope:
-            row = self.claimed()
-            settled = flow.settle_create(row, {'phase': 'failed', 'outcome_unknown': True, 'failure_class': 'unknown'}, self.now, None)
-        self.assertEqual(settled['state'], 'create_failed')
-        self.assertEqual(settled['events'][-1]['reason'], 'host_creation_failed:outcome_unknown')
+            for idx, creation in enumerate((
+                {'phase': 'failed', 'outcome_unknown': True, 'failure_class': 'unknown'},
+                {'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'unknown'},
+                {'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'request_invalid'},
+            )):
+                task = dict(self.task, task_id=f'nocool-{idx}', expected_hours=0.001)
+                row = self.claim_row(self.prepare(self.issue(task), task))
+                settled = flow.settle_create(row, creation, self.now, None)
+                self.assertEqual(settled['state'], 'create_failed')
         self.assertFalse(store.exists())
 
     def test_two_processes_settling_one_row_count_one_failure(self):
@@ -2097,7 +2111,7 @@ class CreateLifecycleTests(unittest.TestCase):
         with scope:
             stale = self.claimed()  # Both read the row while it was still open.
             for _ in range(2):
-                flow.settle_create(stale, {'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'unknown'}, self.now, None)
+                flow.settle_create(stale, {'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'model_unavailable'}, self.now, None)
         entries = json.loads(store.read_text(encoding='utf-8'))['entries']
         self.assertEqual([entry['streak'] for entry in entries.values()], [1])
 
@@ -2108,7 +2122,7 @@ class CreateLifecycleTests(unittest.TestCase):
             rows.append(self.claim_row(self.prepare(self.issue(task), task)))
         import launch_failures
         with patch.object(launch_failures, 'record', side_effect=PermissionError(5, 'denied')):
-            settled = flow.reconcile(host=self.observe_only({'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'unknown'}), now=self.now)
+            settled = flow.reconcile(host=self.observe_only({'phase': 'failed', 'outcome_unknown': False, 'failure_class': 'model_unavailable'}), now=self.now)
         self.assertEqual({row['dispatch_id'] for row in settled}, {row['dispatch_id'] for row in rows})
         self.assertEqual({row['state'] for row in settled}, {'create_failed'})
 
@@ -2162,12 +2176,12 @@ class CreateLifecycleTests(unittest.TestCase):
         import launch_failures
         import override_store
         store = self.root / 'denied.json'
-        launch_failures.record(self.bundle, 'unknown', path=store)
+        launch_failures.record(self.bundle, 'model_unavailable', path=store)
         before = store.read_text(encoding='utf-8')
         with patch.object(Path, 'read_text', side_effect=PermissionError(5, 'denied')), patch.object(override_store.time, 'sleep'):
             self.assertEqual(launch_failures.active(path=store), {})
             with self.assertRaises(PermissionError):
-                launch_failures.record(self.bundle, 'unknown', path=store)
+                launch_failures.record(self.bundle, 'model_unavailable', path=store)
         self.assertEqual(store.read_text(encoding='utf-8'), before)
 
     def sent_create(self, pause, **prepare):
@@ -2540,14 +2554,20 @@ class WatchLimitTests(unittest.TestCase):
 
 
 class WorkspaceWriterTests(unittest.TestCase):
-    """One writer per workspace, decided from recorded dispatches, the host's running agents and the classifier field."""
+    """One writer per canonical workspace directory, decided from recorded dispatches, the host's running agents and the classifier field."""
     setUp, snapshot, issue = DispatchTests.setUp, DispatchTests.snapshot, DispatchTests.issue
 
-    def prepare_in(self, workspace='W', task_id='writer', **options):
+    def ws_dir(self, name='W'):
+        target = self.root / name
+        target.mkdir(parents=True, exist_ok=True)
+        return str(target)
+
+    def prepare_in(self, workspace=None, task_id='writer', **options):
+        ws = workspace if workspace is not None else self.ws_dir('W')
         task = dict(self.task, task_id=task_id, expected_hours=0.001)
-        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'workspaceId': workspace}
+        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'cwd': ws}
         return registry.prepare(self.issue(task)['decision_id'], task, launch, self.usage,
-                                accounts=self.accounts, now=self.now, **options)
+                                accounts=self.accounts, now=self.now, workspace=ws, **options)
 
     def test_each_open_state_of_a_writer_holds_the_workspace_and_terminal_ones_do_not(self):
         first = self.prepare_in()
@@ -2572,13 +2592,14 @@ class WorkspaceWriterTests(unittest.TestCase):
 
     def test_other_workspaces_and_no_workspace_are_unaffected(self):
         self.prepare_in()
-        self.assertEqual(self.prepare_in('other', task_id='elsewhere')['state'], 'prepared')
+        self.assertEqual(self.prepare_in(self.ws_dir('other'), task_id='elsewhere')['state'], 'prepared')
 
     def test_read_only_coexists_both_ways(self):
-        reader = self.prepare_in(task_id='reader', access='read_only')
-        writer = self.prepare_in(task_id='writer')
-        self.assertEqual(self.prepare_in(task_id='reader-2', access='read_only')['state'], 'prepared')
-        self.assertEqual(registry.workspace_writers('W', now=self.now)[0]['dispatch_id'], writer['dispatch_id'])
+        ws = self.ws_dir('W')
+        reader = self.prepare_in(ws, task_id='reader', access='read_only')
+        writer = self.prepare_in(ws, task_id='writer')
+        self.assertEqual(self.prepare_in(ws, task_id='reader-2', access='read_only')['state'], 'prepared')
+        self.assertEqual(registry.writers_at(ws, now=self.now)[0]['dispatch_id'], writer['dispatch_id'])
         self.assertEqual(reader['access'], 'read_only')
 
     def test_a_row_recorded_before_access_existed_counts_as_a_writer(self):
@@ -2606,7 +2627,7 @@ class WorkspaceWriterTests(unittest.TestCase):
                 self.assertEqual(roll.task_access(args, field), expected)
 
     def holders(self, agents, parent='parent-a'):
-        return flow.workspace_holders('W', parent, host=lambda _: {'ok': True, 'agents': agents})
+        return flow.workspace_holders(self.ws_dir('W'), parent, host=lambda _: {'ok': True, 'agents': agents, 'placeable': True})
 
     def test_a_running_router_agent_holds_the_workspace_even_after_its_dispatch_completed(self):
         row = self.prepare_in()
@@ -2638,36 +2659,39 @@ class WorkspaceWriterTests(unittest.TestCase):
     def test_the_callers_own_dispatch_does_not_hold_its_workspace_for_it(self):
         own = self.started_as('parent-a', 'coordinator')
         running = [{'id': 'parent-a', 'status': 'running', 'dispatch_id': own['dispatch_id']}]
-        self.assertEqual(flow.workspace_holders('W', 'parent-a', host=lambda _: {'ok': True, 'agents': running}), ([], None, None))
+        self.assertEqual(flow.workspace_holders(self.ws_dir('W'), 'parent-a', host=lambda _: {'ok': True, 'agents': running}), ([], None, None))
         self.assertEqual(self.prepare_in(task_id='next')['state'], 'prepared')
 
     def test_anothers_dispatch_still_holds_it_and_so_do_the_callers_own_workers(self):
+        ws = self.ws_dir('W')
         self.started_as('parent-a', 'coordinator')
         other = self.started_as('someone-else', 'other')
-        holders, _, _ = flow.workspace_holders('W', 'parent-a', host=lambda _: {'ok': True, 'agents': []})
+        holders, _, _ = flow.workspace_holders(ws, 'parent-a', host=lambda _: {'ok': True, 'agents': []})
         self.assertEqual([h['dispatch_id'] for h in holders], [other['dispatch_id']])
         with self.assertRaises(registry.WorkspaceBusy) as caught:
-            self.prepare_in(task_id='next')
+            self.prepare_in(ws, task_id='next')
         self.assertEqual([h['dispatch_id'] for h in caught.exception.holders], [other['dispatch_id']])
         # As seen by the other agent, the coordinator is the one in its way.
-        self.assertEqual(len(registry.workspace_writers('W', caller='someone-else', now=self.now)), 1)
+        self.assertEqual(len(registry.writers_at(ws, caller='someone-else', now=self.now)), 1)
 
     def test_an_unreadable_host_leaves_recorded_writers_in_force(self):
         row = self.prepare_in()
-        holders, error, _ = flow.workspace_holders('W', 'parent-a', host=lambda _: {'ok': False, 'error': 'host_timeout'})
+        holders, error, _ = flow.workspace_holders(self.ws_dir('W'), 'parent-a', host=lambda _: {'ok': False, 'error': 'host_timeout'})
         self.assertEqual(error, 'host_timeout')
         self.assertEqual(holders[0]['dispatch_id'], row['dispatch_id'])
 
     def test_concurrent_prepare_lets_exactly_one_writer_in(self):
+        ws = self.ws_dir('W')
         decisions = []
         for index in range(2):
             task = dict(self.task, task_id=f'racer-{index}', expected_hours=0.001)
             decisions.append((self.issue(task)['decision_id'], task))
-        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'workspaceId': 'W'}
+        launch = {'title': 'A task', 'initialPrompt': 'Only fixture work', 'cwd': ws}
         with ThreadPoolExecutor(2) as pool:
             def attempt(item):
                 try:
-                    return registry.prepare(item[0], item[1], dict(launch), self.usage, accounts=self.accounts, now=self.now)['state']
+                    return registry.prepare(item[0], item[1], dict(launch), self.usage,
+                                            accounts=self.accounts, now=self.now, workspace=ws)['state']
                 except registry.WorkspaceBusy:
                     return 'busy'
             self.assertEqual(sorted(pool.map(attempt, decisions)), ['busy', 'prepared'])
@@ -2679,18 +2703,36 @@ class RollLifecycleTests(unittest.TestCase):
     roll = RollTests.roll
     brief = RollTests.brief
 
+    def cooldowns(self):
+        store = self.root / 'cooldowns.json'
+        return store, patch.dict(os.environ, {'ROUTER_LAUNCH_FAILURES': str(store)})
+
     def setUp(self):
         DispatchTests.setUp(self)
         self.creates = []
+        self.create_requests = []
         self.running = []
-        self.directories = {}
+        self.placeable = True
+        self.placement_error = None
+        self.enclosing_directories = []
+
+    def ws_dir(self, name='W'):
+        target = self.root / name
+        target.mkdir(parents=True, exist_ok=True)
+        return str(target)
 
     def host(self, request):
         operation = request['operation']
         if operation == 'workspace_agents':
-            return {'ok': True, 'agents': list(self.running), 'cwd': self.directories.get(request['workspace_id'])}
+            out = {'ok': True, 'agents': list(self.running), 'cwd': request.get('cwd'), 'placeable': self.placeable}
+            if not self.placeable and self.placement_error:
+                out['error'] = self.placement_error
+            if self.enclosing_directories:
+                out['enclosing_directories'] = list(self.enclosing_directories)
+            return out
         if operation == 'create':
             self.creates.append(request['dispatch_id'])
+            self.create_requests.append(dict(request['request']))
             return {'ok': False, 'sent': True, 'error': 'host_timeout'}
         return {'ok': True, 'agent': None, 'creation': {'phase': 'accepted'}}
 
@@ -2720,11 +2762,12 @@ class RollLifecycleTests(unittest.TestCase):
 
     def test_no_interaction_style_exempts_a_brief_from_the_writer_rule(self):
         # text_only on a real ledger entry was a brief that committed code and synced it.
-        first = self.go(workspace='W')
+        ws = self.ws_dir('W')
+        first = self.go(workspace=ws)
         for style in ('exploration', 'text_only', 'advisory'):
             with self.subTest(style=style), patch.object(self, 'decision', lambda: {
                     **RollLifecycleTests.decision(self), 'task_profile': {'interaction_style': style}}):
-                result = self.go(workspace='W', new_worker=True)
+                result = self.go(workspace=ws, new_worker=True)
                 self.assertEqual(result['status'], 'blocked')
                 self.assertEqual(result['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
         self.assertEqual(len(self.creates), 1)
@@ -2733,10 +2776,10 @@ class RollLifecycleTests(unittest.TestCase):
                            {'interaction_style': 'engineering', 'read_only_review': True}):
             with self.subTest(profile=ro_profile), patch.object(self, 'decision', lambda: {
                     **RollLifecycleTests.decision(self), 'task_profile': ro_profile}):
-                ro_result = self.go(workspace='W', new_worker=True)
+                ro_result = self.go(workspace=ws, new_worker=True)
                 self.assertEqual(ro_result['status'], 'pending')
                 self.assertEqual(ro_result['worker']['access'], 'read_only')
-                forced_write = self.go(workspace='W', new_worker=True, access='write')
+                forced_write = self.go(workspace=ws, new_worker=True, access='write')
                 self.assertEqual(forced_write['status'], 'blocked')
         self.assertEqual(len(self.creates), 3)
 
@@ -2744,7 +2787,8 @@ class RollLifecycleTests(unittest.TestCase):
         return patch.dict(os.environ, {'PASEO_AGENT_CWD': cwd})
 
     def test_no_workspace_names_other_writers_in_the_same_directory_and_blocks_nothing(self):
-        with self.in_cwd('C:/work/A'):
+        dir_a = self.ws_dir('work-A')
+        with self.in_cwd(dir_a):
             first = self.go()
             second = self.go(new_worker=True)
         self.assertEqual(second['status'], 'pending')
@@ -2752,7 +2796,8 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertNotIn('warnings', first)
         self.assertTrue(any(first['worker']['dispatch_id'] in note for note in second['warnings']))
         self.assertTrue(any(first['worker']['dispatch_id'] in note for note in second['assumptions']))
-        with self.in_cwd('c:\\work\\A\\' if os.name == 'nt' else 'C:/work/A/'):
+        alt = (dir_a.replace('/', '\\').lower() + '\\') if os.name == 'nt' else (dir_a + '/')
+        with self.in_cwd(alt):
             compact = self.go(new_worker=True, verbose=False)
         self.assertEqual(compact['status'], 'pending')
         self.assertIn(first['worker']['dispatch_id'], compact['warnings'][0])
@@ -2766,21 +2811,25 @@ class RollLifecycleTests(unittest.TestCase):
                 patch.object(registry, 'paseo_agent_record', return_value={'cwd': cwd} if cwd else None))
 
     def test_a_resume_with_no_workspace_warns_about_where_the_worker_lives_not_the_parent(self):
-        with self.in_cwd('C:/work/Y'):
+        dir_y = self.ws_dir('work-Y')
+        dir_p = self.ws_dir('work-P')
+        with self.in_cwd(dir_y):
             there = self.go(task_id='writer-there')['worker']['dispatch_id']
-        with self.in_cwd('C:/work/P'):
+        with self.in_cwd(dir_p):
             here = self.go(task_id='writer-here')['worker']['dispatch_id']
-            workers, matches, match, record = self.resuming('C:/work/Y')
+            workers, matches, match, record = self.resuming(dir_y)
             with workers, matches, match, record:
                 resumed = self.go(task_id='follow-up')
         row = registry.inspect(resumed['worker']['dispatch_id'])
-        self.assertEqual((row['operation'], row['cwd']), ('resume', 'C:/work/Y'))
+        self.assertEqual(row['operation'], 'resume')
+        self.assertEqual(Path(row['cwd']).resolve(), Path(dir_y).resolve())
         self.assertEqual(resumed['status'], 'pending')
         self.assertTrue(any(there in note for note in resumed['warnings']))
         self.assertFalse(any(here in note for note in resumed['warnings']))
 
     def test_a_resumed_worker_of_unknown_directory_is_taken_to_be_in_the_parents(self):
-        with self.in_cwd('C:/work/P'):
+        dir_p = self.ws_dir('work-P2')
+        with self.in_cwd(dir_p):
             here = self.go(task_id='writer-here')['worker']['dispatch_id']
             workers, matches, match, record = self.resuming(None)
             with workers, matches, match, record:
@@ -2789,61 +2838,131 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertTrue(any(here in note for note in resumed['warnings']))
 
     def test_no_warning_elsewhere_for_a_reader_or_once_the_writer_has_ended(self):
-        with self.in_cwd('C:/work/A'):
+        dir_a = self.ws_dir('warn-A')
+        dir_b = self.ws_dir('warn-B')
+        with self.in_cwd(dir_a):
             self.go()
             reader = self.go(new_worker=True, access='read-only')
         self.assertNotIn('warnings', reader)
-        with self.in_cwd('C:/work/B'):
+        with self.in_cwd(dir_b):
             self.assertNotIn('warnings', self.go(new_worker=True))
         with registry.transaction() as connection:
             for row in registry.rows(connection, 'dispatches'):
                 row['state'] = 'completed'
                 registry.save(connection, row)
-        with self.in_cwd('C:/work/A'):
+        with self.in_cwd(dir_a):
             self.assertNotIn('warnings', self.go(new_worker=True))
 
     def test_an_observed_worker_counts_in_the_directory_it_runs_in(self):
-        first = self.go(workspace='W')
+        ws = self.ws_dir('W')
+        moved = self.ws_dir('moved-W')
+        first = self.go(workspace=ws)
         row = registry.inspect(first['worker']['dispatch_id'])
-        snapshot = self.snapshot(row, updatedAt=registry.stamp(registry.utcnow()), cwd='C:/work/W', status='running')
+        snapshot = self.snapshot(row, updatedAt=registry.stamp(registry.utcnow()), cwd=moved, status='running')
         registry.observe(row['dispatch_id'], snapshot)
-        with self.in_cwd('C:/work/W'):
+        with self.in_cwd(moved):
             result = self.go(new_worker=True)
         self.assertIn(first['worker']['dispatch_id'], result['warnings'][0])
 
-    def test_workspace_ids_on_one_checkout_warn_about_each_other_and_block_nothing(self):
-        self.directories = {'W': 'C:/work/checkout', 'X': 'c:\\work\\checkout' if os.name == 'nt' else 'C:/work/checkout', 'Y': 'C:/work/other'}
-        first = self.go(workspace='W')
-        self.assertNotIn('warnings', first)
-        second = self.go(workspace='X', new_worker=True)
-        self.assertEqual(second['status'], 'pending')
-        self.assertEqual(len(self.creates), 2)
-        for field in ('warnings', 'assumptions'):
-            self.assertTrue(any(first['worker']['dispatch_id'] in note for note in second[field]))
-        self.assertNotIn('warnings', self.go(workspace='Y', new_worker=True))
-        # The same ID is still the writer rule's to refuse.
-        self.assertEqual(self.go(workspace='W', new_worker=True)['status'], 'blocked')
+    def test_same_canonical_directory_across_spellings_and_hosts_blocks_second_writer(self):
+        import host_placement
+        ws_path = self.root / 'MixedCaseDir'
+        ws_path.mkdir(parents=True, exist_ok=True)
+        canon = host_placement.canonical_dir(str(ws_path))
+        slash_variant = str(ws_path).replace('\\', '/') + '/'
+        case_variant = (str(ws_path).upper() + '\\') if os.name == 'nt' else slash_variant
+
+        # First writer claimed on Paseo with slash variant -> blocks Paseo with case/backslash variant, and holds zero host IDs.
+        first = self.go(workspace=slash_variant)
+        self.assertEqual(first['status'], 'pending')
+        stored = registry.inspect(first['worker']['dispatch_id'])
+        self.assertEqual(stored['workspace'], canon)
+        self.assertNotIn('workspaceId', stored['request'])
+
+        blocked_paseo = self.go(workspace=case_variant, new_worker=True)
+        self.assertEqual(blocked_paseo['status'], 'blocked')
+        self.assertEqual(blocked_paseo['error'], 'workspace_has_active_writer')
+        self.assertEqual(blocked_paseo['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
+
+        # Same canonical directory also blocks writers on native/orca/t3/herdr/cli, and vice versa.
+        for surface, parent_host, parent_id, parent_addr in (
+            ('orca', 'orca', 'orca-sess', 'orca_session_id:orca-sess'),
+            ('t3', 't3', 't3-thread', 't3-thread'),
+            ('native', 'native', 'cindy-sess', 'run:1'),
+        ):
+            with self.subTest(blocked_surface=surface):
+                (native_res, native_code), _ = self.roll(
+                    self.fresh_decision(), parent='', reachable=False, workspace=case_variant, new_worker=True,
+                    parent_host=parent_host, parent_id=parent_id, parent_address=parent_addr,
+                    hours=0.001, task=None, task_id=None, resume=None, fast=False, keep_whole=None,
+                    access=None, account=None, verbose=True)
+                self.assertEqual((native_res['status'], native_code), ('blocked', 2))
+                self.assertEqual(native_res['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
+
+        # Conversely, a writer claimed on a native host blocks a subsequent Paseo writer in the same directory.
+        ws_native = self.ws_dir('native-held')
+        (held_native, held_code), _ = self.roll(
+            self.fresh_decision(), parent='', reachable=False, workspace=ws_native, new_worker=True,
+            parent_host='orca', parent_id='orca-owner', parent_address='orca_session_id:orca-owner',
+            hours=0.001, task=None, task_id='native-writer', resume=None, fast=False, keep_whole=None,
+            access=None, account=None, verbose=True)
+        self.assertEqual((held_native['dispatch_mode'], held_code), ('native', 0))
+        self.assertEqual(held_native['workspace'], host_placement.canonical_dir(ws_native))
+        after_native = self.go(workspace=ws_native.replace('\\', '/') + '/', new_worker=True)
+        self.assertEqual(after_native['status'], 'blocked')
+        self.assertEqual(after_native['error'], 'workspace_has_active_writer')
+
+    def test_invalid_workspace_directory_or_host_id_launches_nothing_and_records_no_cooldown(self):
+        missing = str(self.root / 'does-not-exist')
+        regular_file = self.root / 'not-a-dir.txt'
+        regular_file.write_text('x', encoding='utf-8')
+        store, scope = self.cooldowns()
+        with scope:
+            for bad in (missing, str(regular_file), 'wks_c40ae4f1bd0432d3'):
+                with self.subTest(bad=bad), patch.object(flow, 'host_call', side_effect=AssertionError('must not touch host')):
+                    (res, code), seen = self.roll(
+                        self.fresh_decision(), reachable=True, workspace=bad,
+                        hours=0.001, task=None, task_id=None, new_worker=False, resume=None, fast=False,
+                        keep_whole=None, access=None, account=None, verbose=True)
+                self.assertEqual((res['status'], code), ('error', 1))
+                self.assertEqual(res['error'], 'invalid_workspace_directory')
+                self.assertEqual(res['caller_action'], 'check_error')
+                self.assertEqual(seen, {})
+        self.assertEqual(self.creates, [])
+        self.assertFalse(store.exists())
+
+    def test_paseo_unplaceable_directory_refuses_before_create_with_no_cooldown_or_fallback(self):
+        ws = self.ws_dir('lajishouyou/whiteout_survival')
+        enclosing = str(self.root / 'lajishouyou')
+        self.placeable = False
+        self.placement_error = 'paseo_workspace_not_found_for_directory'
+        self.enclosing_directories = [enclosing]
+        store, scope = self.cooldowns()
+        with scope:
+            res = self.go(workspace=ws)
+        self.assertEqual(res['status'], 'error')
+        self.assertEqual(res['error'], 'paseo_workspace_not_found_for_directory')
+        self.assertEqual(res['caller_action'], 'check_error')
+        self.assertIn(enclosing, res['next'])
+        self.assertEqual(self.creates, [])
+        self.assertFalse(store.exists())
 
     def test_a_writer_in_a_workspace_is_named_to_a_roll_with_none_before_its_worker_exists(self):
-        self.directories = {'W': 'C:/work/checkout'}
-        first = self.go(workspace='W')
-        with self.in_cwd('C:/work/checkout'):
+        checkout = self.ws_dir('checkout')
+        first = self.go(workspace=checkout)
+        with self.in_cwd(checkout):
             result = self.go(new_worker=True)
         self.assertIn(first['worker']['dispatch_id'], result['warnings'][0])
 
-    def test_a_directory_paseo_does_not_give_warns_about_nothing(self):
-        self.go(workspace='W')
-        self.assertNotIn('warnings', self.go(workspace='X', new_worker=True))
-
-    def test_an_unreadable_host_lets_the_roll_through_and_says_so(self):
-        host = self.host
-
-        def unreadable(request):
-            return {'ok': False, 'error': 'host_timeout'} if request['operation'] == 'workspace_agents' else host(request)
-        with patch.object(self, 'host', unreadable):
-            result = self.go(workspace='W')
-        self.assertEqual(result['status'], 'pending')
-        self.assertTrue(any('host_timeout' in note for note in result['assumptions']))
+    def test_an_unreadable_host_refuses_a_workspace_roll_instead_of_failing_open(self):
+        ws = self.ws_dir('W')
+        self.placeable = False
+        self.placement_error = 'paseo_workspaces_unreadable'
+        self.enclosing_directories = []
+        result = self.go(workspace=ws)
+        self.assertEqual(result['status'], 'error')
+        self.assertEqual(result['error'], 'paseo_workspaces_unreadable')
+        self.assertEqual(self.creates, [])
 
     def test_new_worker_beats_the_open_dispatch_of_the_same_brief(self):
         first = self.go()
@@ -2855,9 +2974,10 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertEqual(len(self.creates), 2)
 
     def test_second_writer_in_a_workspace_is_blocked_even_with_new_worker(self):
-        first = self.go(workspace='W')
+        ws = self.ws_dir('W')
+        first = self.go(workspace=ws)
         self.assertEqual(first['status'], 'pending')
-        result = self.go(workspace='W', new_worker=True)
+        result = self.go(workspace=ws, new_worker=True)
         self.assertEqual(result['status'], 'blocked')
         self.assertEqual(result['error'], 'workspace_has_active_writer')
         self.assertEqual(result['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
@@ -2867,8 +2987,9 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertEqual(len(self.creates), 1)
 
     def test_compact_blocked_names_the_holder_and_the_way_out(self):
-        first = self.go(workspace='W')
-        compact = self.go(workspace='W', new_worker=True, verbose=False)
+        ws = self.ws_dir('W')
+        first = self.go(workspace=ws)
+        compact = self.go(workspace=ws, new_worker=True, verbose=False)
         self.assertEqual(compact['status'], 'blocked')
         self.assertEqual(compact['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
         self.assertIn('--access read-only', compact['next_action'])
@@ -2876,38 +2997,54 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertEqual(compact['cause'], 'workspace_has_active_writer')
 
     def test_a_running_router_agent_blocks_a_workspace_with_no_open_dispatch(self):
+        ws = self.ws_dir('W')
         self.running = [{'id': 'old-worker', 'status': 'running', 'dispatch_id': 'unknown'}]
-        result = self.go(workspace='W')
+        result = self.go(workspace=ws)
         self.assertEqual(result['status'], 'blocked')
         self.assertEqual(result['blocked_by'][0]['agent_id'], 'old-worker')
         self.assertEqual(self.creates, [])
 
     def test_read_only_flag_gets_through_and_workspace_infers_local_only_reason(self):
+        import host_placement
         import roll
-        self.go(workspace='W')
-        reader = self.go(workspace='W', new_worker=True, access='read-only')
+        ws = self.ws_dir('W')
+        canon = host_placement.canonical_dir(ws)
+        self.go(workspace=ws)
+        reader = self.go(workspace=ws, new_worker=True, access='read-only')
         self.assertEqual(reader['status'], 'pending')
         self.assertEqual(reader['worker']['access'], 'read_only')
-        args = SimpleNamespace(hours=0.5, task_id='t-ws', local_only=None, workspace='W', keep_whole=None,
+        args = SimpleNamespace(hours=0.5, task_id='t-ws', local_only=None, workspace=canon, keep_whole=None,
                                file=[], provider=None, account=None, model=None, effort=None, basis=None,
                                fast=False, can_wait_hours=None)
         task = roll.build_task(args, 'implement feature', 'parent-a')
-        self.assertEqual(task['needs'], {'local_only': True, 'local_only_reason': 'inferred from --workspace W'})
+        self.assertEqual(task['needs'], {'local_only': True, 'local_only_reason': f'inferred from --workspace {canon}'})
         explicit = SimpleNamespace(**{**vars(args), 'local_only': 'needs local DB'})
         self.assertEqual(roll.build_task(explicit, 'implement feature', 'parent-a')['needs'],
                          {'local_only': True, 'local_only_reason': 'needs local DB'})
 
-    def test_exit_status_of_a_settled_create_is_an_error_with_a_safe_next_step(self):
+    def test_exit_status_of_a_settled_create_separates_candidate_from_request_refusal(self):
         import roll
-        first = self.go()
 
-        def settled(request):
+        def settled_unclassified(request):
             return {'ok': True, 'agent': None, 'creation': {'phase': 'failed', 'failure_class': 'unknown'}}
+
+        def settled_candidate(request):
+            return {'ok': True, 'agent': None, 'creation': {'phase': 'failed', 'failure_class': 'model_unavailable'}}
+
         args = SimpleNamespace(title='fixture', workspace=None)
         decision = {'decision_id': 'unused', 'selected_bundle': self.bundle}
-        # With automatic relaunch off the parent is told to roll again; with it on, roll relaunches (FallbackTests).
-        with patch.object(flow, 'host_call', settled), patch.dict(os.environ, {'AGENTCOMPASS_ROLL_FALLBACK': 'off'}), \
+
+        first = self.go()
+        with patch.object(flow, 'host_call', settled_unclassified), \
                 patch.object(registry, 'prepare', return_value=registry.inspect(first['worker']['dispatch_id'])):
+            req_result, req_code = roll.paseo(args, {}, decision, self.task, 'fixture', 'parent-a', self.usage)
+        self.assertEqual((roll.status_of(req_result, req_code), req_code), ('error', 1))
+        self.assertEqual(req_result['caller_action'], 'check_error')
+
+        # Unclassified refusal recorded no cooldown, so the same bundle can still be prepared and launched next.
+        second = self.go(new_worker=True)
+        with patch.object(flow, 'host_call', settled_candidate), patch.dict(os.environ, {'AGENTCOMPASS_ROLL_FALLBACK': 'off'}), \
+                patch.object(registry, 'prepare', return_value=registry.inspect(second['worker']['dispatch_id'])):
             result, code = roll.paseo(args, {}, decision, self.task, 'fixture', 'parent-a', self.usage)
         self.assertEqual((roll.status_of(result, code), code), ('error', 1))
         self.assertEqual(result['caller_action'], 'roll_again_safe')

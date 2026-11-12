@@ -67,10 +67,12 @@ def failure_of(row):
     """What ended one attempt: {covered, kind ('switch' | 'transient' | None), label, scope}."""
     state, code = row.get('state'), row.get('failure_code')
     if state == 'create_failed':
+        import launch_failures
         creation = row.get('creation') or {}
         cause = row.get('failure_class') or ('outcome_unknown' if creation.get('phase') == 'failed'
                                              else creation.get('phase') or 'unknown')
-        return {'covered': True, 'kind': 'switch', 'scope': None,
+        covered = bool(launch_failures.candidate_failure_class(row.get('failure_class'), code))
+        return {'covered': covered, 'kind': 'switch' if covered else None, 'scope': None,
                 'label': ':'.join(str(p) for p in ('create_failed', cause, code) if p)}
     if state != 'failed' or not row.get('agent_id'):
         reason = next((e.get('reason') for e in reversed(row.get('events') or ()) if e.get('reason')), None)
@@ -164,7 +166,7 @@ class AlreadyHandled(Exception):
 class Chain:
     """The attempts of one brief, from its first dispatch (`root`) or, before any row exists, from its decision."""
 
-    def __init__(self, decision, launch, *, root=None, access='write', cwd=None,
+    def __init__(self, decision, launch, *, root=None, access='write', workspace=None, cwd=None,
                  judge=None, host=None):
         if judge is None:
             import route_judge as judge
@@ -176,7 +178,7 @@ class Chain:
         self.task = task
         self.parent = decision['parent_id']
         self.launch = launch
-        self.access, self.cwd = access, cwd
+        self.access, self.workspace, self.cwd = access, workspace, cwd
         self.root = root
         fallback = (root or {}).get('fallback') or {}
         self.attempts = [dict(a) for a in fallback.get('attempts') or ()]
@@ -188,9 +190,9 @@ class Chain:
         request = root['request']
         base = root.get('fallback_prompt') or request['initialPrompt']
         launch = {'title': request['title'], 'initialPrompt': base,
-                  **({'workspaceId': request['workspaceId']} if request.get('workspaceId') else {})}
+                  **({'cwd': request['cwd']} if request.get('cwd') else {})}
         return cls(registry.decision_record(root['decision_id']), launch, root=root, access=root.get('access', 'write'),
-                   cwd=root.get('cwd'), **kwargs)
+                   workspace=root.get('workspace'), cwd=root.get('cwd') or request.get('cwd'), **kwargs)
 
     @property
     def root_id(self):
@@ -365,8 +367,9 @@ class Chain:
                 new = registry.prepare(decision['decision_id'], self.task, dict(
                     self.launch, initialPrompt=relaunch_prompt(self.launch['initialPrompt'], self.attempts)),
                     self.judge.usage_snapshot(None), access=self.access,
-                    cwd=self.cwd, attempt={'attempt_of': self.root_id, 'attempt': len(self.attempts) + 1,
-                                           'previous_attempt': (row or {}).get('dispatch_id')} if self.root else None)
+                    workspace=self.workspace, cwd=self.cwd,
+                    attempt={'attempt_of': self.root_id, 'attempt': len(self.attempts) + 1,
+                             'previous_attempt': (row or {}).get('dispatch_id')} if self.root else None)
             except registry.CapacityChanged as exc:
                 row, bundle, failure = None, new_bundle, refused(exc)
                 continue
@@ -619,8 +622,8 @@ def resume_due(dispatch_id, *, host=None, now=None):
     return handle(fallback['retry_of'], host=host)
 
 
-def after_refusal(decision_id, launch, reason, *, access='write', cwd=None, judge=None, host=None):
+def after_refusal(decision_id, launch, reason, *, access='write', workspace=None, cwd=None, judge=None, host=None):
     """roll's first prepare was refused (registry.CapacityChanged) before any row existed: go on to the next candidate."""
     decision = registry.decision_record(decision_id)
-    chain = Chain(decision, launch, access=access, cwd=cwd, judge=judge, host=host)
+    chain = Chain(decision, launch, access=access, workspace=workspace, cwd=cwd, judge=judge, host=host)
     return chain.run(refused(reason), bundle=decision['bundle'])

@@ -108,12 +108,12 @@ def receipt_result(out, request, path):
                      'run next_argv to read terminal status/output. Do not repeat an uncertain launch.'), 0
 
 
-def launch(out, bundle, prompt_file, task_id, judge):
+def launch(out, bundle, prompt_file, task_id, judge, *, cwd=None, dispatch_id=None):
     with receipt_lock():
-        return _launch(out, bundle, prompt_file, task_id, judge)
+        return _launch(out, bundle, prompt_file, task_id, judge, cwd=cwd, dispatch_id=dispatch_id)
 
 
-def _launch(out, bundle, prompt_file, task_id, judge):
+def _launch(out, bundle, prompt_file, task_id, judge, *, cwd=None, dispatch_id=None):
     try:
         interactive(bundle, judge)  # validate before a terminal or durable launch intent exists
         hc('server', 'status', '--json')  # non-starting on Windows; upstream may autostart on Unix
@@ -130,9 +130,11 @@ def _launch(out, bundle, prompt_file, task_id, judge):
     path = root / f'{key}.json'
     if path.exists():
         return receipt_result(out, json.loads(path.read_text(encoding='utf-8')), path)
+    landing = cwd or str(Path.cwd())
     request = {'version': 1, 'state': 'launching', 'name': 'ac-' + key,
-               'parent': out['parent_address'], 'bundle': bundle, 'cwd': str(Path.cwd()),
-               'prompt_file': str(prompt_file), 'hc_session': os.environ.get('HC_SESSION', 'default')}
+               'parent': out['parent_address'], 'bundle': bundle, 'cwd': landing,
+               'prompt_file': str(prompt_file), 'hc_session': os.environ.get('HC_SESSION', 'default'),
+               **({'dispatch_id': dispatch_id} if dispatch_id else {})}
     save(path, request)  # durable intent before the external send, under the process lock
     try:
         reply = hc('run', '--bg', '--json', '--name', request['name'], '--cwd', request['cwd'],
@@ -223,6 +225,14 @@ def _inspect_request(path, cleanup=False):
         request['output'] = str(output)
         request['output_complete'] = read.get('complete', False)
     save(path, request)
+    if request.get('dispatch_id') and request['state'] in ('completed', 'failed', 'cleaned'):
+        import dispatch_registry as registry
+        target_state = ('completed' if request['state'] == 'completed'
+                        else 'failed' if request['state'] == 'failed' else 'canceled')
+        try:
+            registry.settle_host_claim(request['dispatch_id'], target_state, f"herdr:{request['state']}")
+        except OSError:
+            pass
     return {'status': request['state'], 'terminal': request.get('terminal'), 'observed': term,
             'worker_output': request.get('output'), 'request': str(path),
             'output_complete': request.get('output_complete'),

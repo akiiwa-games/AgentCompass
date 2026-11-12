@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, normalizeProviderModels, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
-  creationFailureClass, creationRecord, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
+  creationFailureClass, creationFailureCode, creationRecord, resolvePaseoPlacement, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
   workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE, fallbackArgv, runFallback,
   attemptsNote, notificationFile, agentResumed} from './paseo_dispatch_bridge.mjs';
 
@@ -527,49 +527,53 @@ test('a resume target that never becomes readable still gets its watch-limit not
   assert.match(f.calls[0][1], /watch expired/);
 });
 
-test('a resume never lands in a workspace other than the one asked for', async () => {
+test('a resume never lands in a directory other than the one asked for', async () => {
   let notified = 0, updated = 0;
   const fake = {
     fetchAgent: async id => id === 'parent'
       ? {agent: {cwd: 'E:/fixture'}}
-      : {agent: {id, provider: 'claude', model: 'x', status: 'idle', workspaceId: 'Y', labels: {'router.parent_id': 'parent'}}},
+      : {agent: {id, provider: 'claude', model: 'x', status: 'idle', cwd: 'E:\\repo\\Y', labels: {'router.parent_id': 'parent'}}},
     updateAgent: async () => {updated++;}, sendMessage: async () => {},
   };
   const notify = async () => {notified++; return {status: 'watching'};};
   const input = {operation: 'resume', dispatch_id: 'resume-workspace', parent_id: 'parent', agent_id: 'old', request: {provider: 'claude/x', labels: {}, initialPrompt: 'p', title: 't'}};
-  const elsewhere = await execute(fake, {...input, request: {...input.request, workspaceId: 'W'}}, notify);
+  const elsewhere = await execute(fake, {...input, request: {...input.request, cwd: 'E:/repo/W'}}, notify);
   assert.deepEqual([elsewhere.ok, elsewhere.sent, elsewhere.error, notified, updated], [false, false, 'worker_workspace_mismatch', 0, 0]);
-  assert.equal((await execute(fake, {...input, request: {...input.request, workspaceId: 'Y'}}, notify)).ok, true);
+  assert.equal((await execute(fake, {...input, request: {...input.request, cwd: 'e:/repo/y/'}}, notify)).ok, true);
   assert.equal((await execute(fake, input, notify)).ok, true);
 });
 
-test('workspace_agents says where the workspace is, across pages, and an unreadable list costs only that', async () => {
+test('workspace_agents probes directory placeability across pages and reports unreadable workspace lists without leaking host IDs', async () => {
   const pages = {
-    undefined: {entries: [{id: 'other', projectRootPath: 'E:/other'}], pageInfo: {hasMore: true, nextCursor: 'next'}},
-    next: {entries: [{id: 'W', projectRootPath: 'E:/repo', workspaceDirectory: 'E:/repo/tree'}], pageInfo: {hasMore: false, nextCursor: null}},
+    undefined: {entries: [{id: 'wks_other', projectRootPath: 'E:/other'}], pageInfo: {hasMore: true, nextCursor: 'next'}},
+    next: {entries: [{id: 'wks_tree', projectRootPath: 'E:/repo', workspaceDirectory: 'E:\\repo\\tree'}], pageInfo: {hasMore: false, nextCursor: null}},
   };
   const seen = [];
-  const fake = {fetchAgents: async () => ({entries: [], pageInfo: {hasMore: false}}),
+  const fake = {
+    fetchAgent: async () => ({agent: {cwd: 'E:/repo', workspaceId: 'wks_root'}}),
+    fetchAgents: async () => ({entries: [], pageInfo: {hasMore: false}}),
     fetchWorkspaces: async options => {
       seen.push(options);
       return pages[options.page.cursor];
-    }};
-  const found = await execute(fake, {operation: 'workspace_agents', workspace_id: 'W'});
-  assert.deepEqual([found.ok, found.cwd], [true, 'E:/repo/tree']);
+    },
+  };
+  const found = await execute(fake, {operation: 'workspace_agents', cwd: 'e:/repo/tree/', parent_id: 'parent'});
+  assert.deepEqual([found.ok, found.placeable, found.cwd], [true, true, 'e:/repo/tree/']);
+  assert(!JSON.stringify(found).includes('wks_'));
   SessionInboundMessageSchema.parse({type: 'fetch_workspaces_request', requestId: 'fixture-request', ...seen[0]});
-  const denied = await execute({...fake, fetchWorkspaces: async () => {throw new Error('boom');}}, {operation: 'workspace_agents', workspace_id: 'W'});
-  assert.deepEqual([denied.ok, denied.agents, denied.cwd], [true, [], null]);
+  const denied = await execute({...fake, fetchWorkspaces: async () => {throw new Error('boom');}}, {operation: 'workspace_agents', cwd: 'E:/repo/tree', parent_id: 'parent'});
+  assert.deepEqual([denied.ok, denied.agents, denied.placeable, denied.error], [true, [], false, 'paseo_workspaces_unreadable']);
 });
 
-test('a workspace lookup that hangs costs only the directory, within seconds', async () => {
+test('a workspace lookup that hangs still returns running directory agents within seconds', async () => {
   const fake = {
-    fetchAgents: async () => ({entries: [{agent: {id: 'a', status: 'running', workspaceId: 'W', labels: {'router.dispatch_id': 'd'}}}],
+    fetchAgents: async () => ({entries: [{agent: {id: 'a', status: 'running', cwd: 'E:/repo/tree', labels: {'router.dispatch_id': 'd'}}}],
       pageInfo: {hasMore: false}}),
     fetchWorkspaces: () => new Promise(() => {}),
   };
   const started = Date.now();
-  const found = await execute(fake, {operation: 'workspace_agents', workspace_id: 'W'});
-  assert.deepEqual([found.ok, found.agents, found.cwd], [true, [{id: 'a', status: 'running', dispatch_id: 'd'}], null]);
+  const found = await execute(fake, {operation: 'workspace_agents', cwd: 'e:\\repo\\tree\\'});
+  assert.deepEqual([found.ok, found.agents, found.cwd], [true, [{id: 'a', status: 'running', dispatch_id: 'd'}], 'e:\\repo\\tree\\']);
   assert(Date.now() - started < 10000);
 });
 
@@ -588,17 +592,20 @@ test('a create past its send window is never sent', async () => {
   assert.equal(created, 1);
 });
 
-test('workspace_agents lists only router agents of that workspace, across pages', async () => {
+test('workspace_agents lists only router agents in that canonical directory across pages', async () => {
   const filters = [];
-  const fake = {fetchAgents: async ({filter, page}) => {
-    filters.push(filter);
-    return page.cursor
-      ? {entries: [{agent: {id: 'c', status: 'initializing', workspaceId: 'W', labels: {'router.dispatch_id': 'dc'}}}], pageInfo: {hasMore: false, nextCursor: null}}
-      : {entries: [{agent: {id: 'a', status: 'running', workspaceId: 'W', labels: {'router.dispatch_id': 'da'}}},
-          {agent: {id: 'b', status: 'running', workspaceId: 'other', labels: {'router.dispatch_id': 'db'}}},
-          {agent: {id: 'h', status: 'running', workspaceId: 'W', labels: {}}}], pageInfo: {hasMore: true, nextCursor: 'next'}};
-  }};
-  const result = await execute(fake, {operation: 'workspace_agents', workspace_id: 'W'});
+  const fake = {
+    fetchWorkspaces: async () => ({entries: [{id: 'wks_w', workspaceDirectory: 'E:/repo/W'}], pageInfo: {hasMore: false, nextCursor: null}}),
+    fetchAgents: async ({filter, page}) => {
+      filters.push(filter);
+      return page.cursor
+        ? {entries: [{agent: {id: 'c', status: 'initializing', workspaceId: 'wks_w', labels: {'router.dispatch_id': 'dc'}}}], pageInfo: {hasMore: false, nextCursor: null}}
+        : {entries: [{agent: {id: 'a', status: 'running', cwd: 'e:\\repo\\w\\', labels: {'router.dispatch_id': 'da'}}},
+            {agent: {id: 'b', status: 'running', cwd: 'E:/repo/other', labels: {'router.dispatch_id': 'db'}}},
+            {agent: {id: 'h', status: 'running', cwd: 'E:/repo/W', labels: {}}}], pageInfo: {hasMore: true, nextCursor: 'next'}};
+    },
+  };
+  const result = await execute(fake, {operation: 'workspace_agents', cwd: 'E:/repo/W'});
   assert.deepEqual(result.agents.map(a => [a.id, a.dispatch_id]), [['a', 'da'], ['c', 'dc']]);
   assert.deepEqual(filters[0].statuses, ['initializing', 'running']);
   SessionInboundMessageSchema.parse({type: 'fetch_agents_request', requestId: 'fixture-request', filter: filters[0], page: {limit: 200}});
@@ -1301,4 +1308,89 @@ test('the fallback command comes only from AGENTCOMPASS_FALLBACK_ARGV and its JS
     assert.equal(await runFallback('d1', [process.execPath, silent]), null);
   } finally { fs.rmSync(folder, {recursive: true, force: true}); }
   assert.equal(await runFallback('d1', [path.join(os.tmpdir(), 'no-such-agentcompass-binary')]), null);
+});
+
+test('Paseo placement sends workspaceId only when verified for that exact cwd and refuses ancestor-only directories before create', async () => {
+  const seenOptions = [];
+  const id = '22334455-6677-4888-9999-aabbccddeeff';
+  const baseRequest = {provider: 'claude/claude-sonnet-4-6', title: 'fixture', initialPrompt: 'p', labels: {'router.dispatch_id': id}};
+
+  // 1. Exact workspace match (across slash/case/trailing-separator differences) -> sends matching workspaceId + cwd.
+  const exactClient = {
+    fetchAgent: async () => ({agent: {cwd: 'E:\\PROJECTS\\lajishouyou', workspaceId: 'wks_c40ae4f1bd0432d3'}}),
+    fetchWorkspaces: async () => ({
+      entries: [
+        {id: 'wks_c40ae4f1bd0432d3', workspaceDirectory: 'E:\\PROJECTS\\lajishouyou'},
+        {id: 'wks_exact', workspaceDirectory: 'E:\\PROJECTS\\lajishouyou\\whiteout_survival'},
+      ],
+      pageInfo: {hasMore: false, nextCursor: null},
+    }),
+    createAgent: async options => {seenOptions.push(options); return {id, provider: 'claude', model: 'claude-sonnet-4-6', status: 'running', labels: options.labels};},
+  };
+  const exact = await execute(exactClient, {operation: 'create', dispatch_id: id, parent_id: 'parent',
+    request: {...baseRequest, cwd: 'e:/projects/lajishouyou/whiteout_survival/'}}, notifier);
+  assert.equal(exact.ok, true);
+  assert.equal(seenOptions.length, 1);
+  assert.equal(seenOptions[0].workspaceId, 'wks_exact');
+  assert.equal(seenOptions[0].cwd, 'e:/projects/lajishouyou/whiteout_survival/');
+
+  // 2. Only enclosing workspace exists -> refuses before createAgent; never sends ancestor workspaceId.
+  let ancestorCreates = 0;
+  const ancestorOnlyClient = {
+    fetchAgent: async () => ({agent: {cwd: 'E:\\PROJECTS\\lajishouyou', workspaceId: 'wks_c40ae4f1bd0432d3'}}),
+    fetchWorkspaces: async () => ({
+      entries: [{id: 'wks_c40ae4f1bd0432d3', workspaceDirectory: 'E:\\PROJECTS\\lajishouyou'}],
+      pageInfo: {hasMore: false, nextCursor: null},
+    }),
+    createAgent: async () => {ancestorCreates++; return {};},
+  };
+  const refused = await execute(ancestorOnlyClient, {operation: 'create', dispatch_id: id, parent_id: 'parent',
+    request: {...baseRequest, cwd: 'E:/PROJECTS/lajishouyou/whiteout_survival'}}, notifier);
+  assert.deepEqual([refused.ok, refused.sent, refused.error, ancestorCreates],
+    [false, false, 'paseo_workspace_not_found_for_directory', 0]);
+  assert.deepEqual(refused.enclosing_directories, ['E:\\PROJECTS\\lajishouyou']);
+  assert(!JSON.stringify(refused).includes('wks_'));
+
+  // 3. Parent has no workspaceId and parent.cwd === target cwd -> omits workspaceId and sends cwd.
+  const noWksOptions = [];
+  const cwdOnlyClient = {
+    fetchAgent: async () => ({agent: {cwd: 'E:\\PROJECTS\\standalone'}}),
+    fetchWorkspaces: async () => ({entries: [], pageInfo: {hasMore: false, nextCursor: null}}),
+    createAgent: async options => {noWksOptions.push(options); return {id, provider: 'claude', model: 'claude-sonnet-4-6', status: 'running', labels: options.labels};},
+  };
+  const cwdOnly = await execute(cwdOnlyClient, {operation: 'create', dispatch_id: id, parent_id: 'parent',
+    request: {...baseRequest, cwd: 'e:/projects/standalone'}}, notifier);
+  assert.equal(cwdOnly.ok, true);
+  assert.equal(noWksOptions.length, 1);
+  assert.equal('workspaceId' in noWksOptions[0], false);
+  assert.equal(noWksOptions[0].cwd, 'e:/projects/standalone');
+
+  // 4. Unreadable workspace list refuses before createAgent instead of failing open.
+  let unreadableCreates = 0;
+  const unreadableClient = {
+    fetchAgent: async () => ({agent: {cwd: 'E:/other', workspaceId: 'wks_other'}}),
+    fetchWorkspaces: async () => {throw new Error('socket closed');},
+    createAgent: async () => {unreadableCreates++; return {};},
+  };
+  const unreadable = await execute(unreadableClient, {operation: 'create', dispatch_id: id, parent_id: 'parent',
+    request: {...baseRequest, cwd: 'E:/target'}}, notifier);
+  assert.deepEqual([unreadable.ok, unreadable.sent, unreadable.error, unreadableCreates],
+    [false, false, 'paseo_workspaces_unreadable', 0]);
+});
+
+test('creationFailureCode strips generic unknown wire code and creationFailureClass separates request from candidate refusals without leaking text', () => {
+  assert.deepEqual(creationFailureCode({errorCode: 'unknown'}), {});
+  assert.deepEqual(creationFailureCode({errorCode: 'INVALID_MODEL'}), {failure_code: 'INVALID_MODEL'});
+
+  // Paseo workspace/request refusals map to request_invalid, never candidate failure classes.
+  assert.equal(creationFailureClass({failedStage: 'workspace', errorCode: 'unknown', error: 'secret path canary'}), 'request_invalid');
+  assert.equal(creationFailureClass({errorCode: 'branch_already_checked_out', error: 'secret branch canary'}), 'request_invalid');
+  assert.equal(creationFailureClass({errorCode: 'unknown', error: 'Workspace E:/PROJECTS/lajishouyou/whiteout_survival not found'}), 'request_invalid');
+  const snap = creationRecord;
+  assert.equal(typeof snap, 'function');
+  // Structured candidate codes map to candidate classes; unclassified errors stay unknown.
+  assert.equal(creationFailureClass({errorCode: 'INVALID_MODEL'}), 'model_unavailable');
+  assert.equal(creationFailureClass({errorCode: 'QUOTA_EXCEEDED'}), 'quota');
+  assert.equal(creationFailureClass({errorCode: 'PROVIDER_UNAVAILABLE'}), 'provider_unavailable');
+  assert.equal(creationFailureClass({errorCode: 'unknown', error: 'opaque internal failure'}), 'unknown');
 });

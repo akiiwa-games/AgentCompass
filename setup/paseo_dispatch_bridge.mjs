@@ -529,6 +529,49 @@ async function watch(dispatchId, parentId, agentId, createDeadline) {
 const INACTIVE_CODES = new Set(['subscription_inactive', 'subscription_expired', 'subscription_canceled',
   'subscription_cancelled', 'plan_expired', 'plan_inactive', 'payment_required', 'payment_failed']);
 const INACTIVE_TEXT = /subscription(?:_| (?:has |is |was )?)(?:expired|cancel+ed|inactive|lapsed)|plan (?:has |is )?(?:expired|cancel+ed|inactive)|payment[_ ](?:required|failed)|past[_ ]due|订阅(?:已)?(?:过期|到期|失效|取消)/i;
+const REQUEST_FAILURE_CODES = new Set([
+  'directory_not_found', 'source_required', 'unknown_project', 'archived_project',
+  'branch_already_checked_out', 'missing_checkout_target', 'unknown_branch',
+  'workspace_not_found', 'unknown_workspace', 'invalid_request', 'invalid_argument',
+]);
+const MODEL_UNAVAILABLE_CODES = new Set([
+  'invalid_model', 'model_not_found', 'unknown_model', 'unsupported_model', 'model_unavailable',
+]);
+const PROVIDER_UNAVAILABLE_CODES = new Set([
+  'provider_unavailable', 'provider_disabled', 'provider_not_ready', 'not_authenticated', 'auth_failed',
+]);
+const PROVIDER_TIMEOUT_CODES = new Set(['provider_refresh_timeout']);
+const QUOTA_CODES = new Set([
+  'quota_exceeded', 'rate_limited', 'rate_limit_exceeded', 'insufficient_quota', 'usage_limit_reached',
+]);
+
+export function canonicalPath(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const trimmed = value.trim();
+  if (/^[A-Za-z]:[\\/]/.test(trimmed)) {
+    const full = process.platform === 'win32' ? path.resolve(trimmed) : trimmed;
+    const unified = full.replace(/\\/g, '/');
+    const drive = unified.slice(0, 2).toLowerCase();
+    const rest = path.posix.normalize(unified.slice(2));
+    const clean = rest.length > 1 ? rest.replace(/\/+$/, '') : rest;
+    return `${drive}${clean}`.toLowerCase();
+  }
+  const resolved = path.resolve(trimmed).replace(/\\/g, '/');
+  const clean = resolved.length > 1 ? resolved.replace(/\/+$/, '') : resolved;
+  return process.platform === 'win32' ? clean.toLowerCase() : clean;
+}
+
+function samePath(a, b) {
+  const left = canonicalPath(a), right = canonicalPath(b);
+  return Boolean(left && right && left === right);
+}
+
+function isStrictAncestorPath(ancestor, child) {
+  const anc = canonicalPath(ancestor), kid = canonicalPath(child);
+  if (!anc || !kid || anc === kid) return false;
+  const prefix = anc.endsWith('/') ? anc : `${anc}/`;
+  return kid.startsWith(prefix);
+}
 
 export function subscriptionLapsed(code, status, text) {
   if (code || status) return status === 402 || INACTIVE_CODES.has(String(code ?? '').trim().toLowerCase());
@@ -536,8 +579,19 @@ export function subscriptionLapsed(code, status, text) {
 }
 
 export function creationFailureClass(creation) {
+  const rawCode = typeof creation?.errorCode === 'string' ? creation.errorCode.trim().toLowerCase() : '';
+  // Paseo's toWorktreeWireError converts any Error without a worktree code (including "Workspace ... not found")
+  // into errorCode: "unknown"; that sentinel is not a provider error code.
+  const code = rawCode === 'unknown' ? '' : rawCode;
   const text = typeof creation?.error === 'string' ? creation.error : '';
-  if (subscriptionLapsed(creation?.errorCode, creation?.statusCode, text)) return 'subscription_inactive';
+  if (creation?.failedStage === 'workspace' || (code && REQUEST_FAILURE_CODES.has(code))) return 'request_invalid';
+  if (subscriptionLapsed(code || undefined, creation?.statusCode, text)) return 'subscription_inactive';
+  if (code && PROVIDER_TIMEOUT_CODES.has(code)) return 'provider_refresh_timeout';
+  if (code && PROVIDER_UNAVAILABLE_CODES.has(code)) return 'provider_unavailable';
+  if (code && QUOTA_CODES.has(code)) return 'quota';
+  if (code && MODEL_UNAVAILABLE_CODES.has(code)) return 'model_unavailable';
+  if (/^workspace\s+\S+\s+not found$/i.test(text.trim())
+      || /^working directory\b.*(?:not found|does not exist)/i.test(text.trim())) return 'request_invalid';
   if (/timed out refreshing|refresh(?:ing)? timed out/i.test(text)) return 'provider_refresh_timeout';
   if (/unavailable provider|provider (?:is )?unavailable|not (?:installed|signed in)|sign in/i.test(text)) return 'provider_unavailable';
   if (/quota|usage limit|rate.?limit/i.test(text)) return 'quota';
@@ -546,10 +600,11 @@ export function creationFailureClass(creation) {
 }
 
 // The provider's own error code as the daemon recorded it (a plugin's ProviderActionError code, e.g. INVALID_MODEL).
-// An identifier, not text: anything else stays private. The router decides what a code means.
+// Paseo's generic wire fallback `errorCode: "unknown"` is stripped here so only real structured codes leave the bridge.
 export function creationFailureCode(creation) {
-  const code = creation?.errorCode;
-  return typeof code === 'string' && /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/.test(code) ? {failure_code: code} : {};
+  const code = typeof creation?.errorCode === 'string' ? creation.errorCode.trim() : '';
+  if (!code || code.toLowerCase() === 'unknown') return {};
+  return /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/.test(code) ? {failure_code: code} : {};
 }
 
 // The daemon owns a create across socket lifetimes and keeps its outcome under the idempotency key, so the answer the
@@ -568,25 +623,72 @@ export async function creationRecord(client, key) {
     ...(snapshot.phase === 'failed' ? {failure_class: creationFailureClass(snapshot), ...creationFailureCode(snapshot)} : {})};
 }
 
-async function findWorkspaceDirectory(client, workspaceId) {
+function workspaceDirOf(workspace) {
+  return workspace?.workspaceDirectory ?? workspace?.projectRootPath ?? null;
+}
+
+async function fetchAllWorkspaces(client) {
+  const out = [];
   let cursor;
   do {
     const page = await client.fetchWorkspaces({page: {limit: 200, ...(cursor ? {cursor} : {})}});
-    const found = page.entries?.find(workspace => workspace.id === workspaceId);
-    if (found) return found.workspaceDirectory ?? found.projectRootPath ?? null;
-    cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
+    for (const workspace of page?.entries ?? []) {
+      if (workspace && !workspace.archivedAt) out.push(workspace);
+    }
+    cursor = page?.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
   } while (cursor);
-  return null;
+  return {ok: true, workspaces: out};
 }
 
-// Only feeds a warning, so failing here must not cost the caller the agents it did read. Nor must hanging: the SDK's
-// own limit is longer than the caller's, which kills this bridge and loses them.
-async function workspaceDirectory(client, workspaceId) {
+// Bound the SDK lookup so a stalled daemon cannot outlive the caller's bridge timeout.
+async function listWorkspacesBounded(client) {
+  if (typeof client.fetchWorkspaces !== 'function') return {ok: false, workspaces: [], missingMethod: true};
   let timer;
-  const limit = new Promise(resolve => { timer = setTimeout(resolve, WORKSPACE_LOOKUP_MS, null); });
-  try { return await Promise.race([findWorkspaceDirectory(client, workspaceId), limit]); }
-  catch { return null; }
+  const limit = new Promise(resolve => { timer = setTimeout(resolve, WORKSPACE_LOOKUP_MS, {ok: false, workspaces: []}); });
+  try { return await Promise.race([fetchAllWorkspaces(client), limit]); }
+  catch { return {ok: false, workspaces: []}; }
   finally { clearTimeout(timer); }
+}
+
+async function workspaceDirectory(client, workspaceId) {
+  if (!workspaceId) return null;
+  const listed = await listWorkspacesBounded(client);
+  const found = listed.workspaces.find(workspace => workspace.id === workspaceId);
+  return found ? workspaceDirOf(found) : null;
+}
+
+// Paseo's createSessionAgent + resolveCreateAgentIntent ignores config.cwd whenever callerAgentId is passed unless a
+// matching workspaceId is also supplied (or parent.cwd already equals targetCwd with no conflicting workspaceId).
+// Never send a workspaceId that is not a real Paseo workspace for that exact cwd.
+export async function resolvePaseoPlacement(client, targetCwd, parentAgent, preloaded = null) {
+  const requested = typeof targetCwd === 'string' && targetCwd.trim() ? targetCwd.trim() : null;
+  if (!requested) {
+    return {
+      ok: true,
+      cwd: parentAgent?.cwd,
+      ...(typeof parentAgent?.workspaceId === 'string' && parentAgent.workspaceId.trim()
+        ? {workspaceId: parentAgent.workspaceId}
+        : {}),
+    };
+  }
+  const listed = preloaded ?? await listWorkspacesBounded(client);
+  const matches = listed.workspaces.filter(workspace => samePath(workspaceDirOf(workspace), requested));
+  if (matches.length > 0) {
+    const chosen = (parentAgent?.workspaceId && matches.find(workspace => workspace.id === parentAgent.workspaceId))
+      ?? matches[0];
+    return {ok: true, cwd: requested, workspaceId: chosen.id};
+  }
+  if (parentAgent?.cwd && samePath(parentAgent.cwd, requested) && !parentAgent.workspaceId) {
+    return {ok: true, cwd: requested};
+  }
+  const enclosing = [...new Set(
+    listed.workspaces.map(workspaceDirOf).filter(dir => dir && isStrictAncestorPath(dir, requested))
+  )];
+  return {
+    ok: false,
+    error: listed.ok ? 'paseo_workspace_not_found_for_directory' : 'paseo_workspaces_unreadable',
+    enclosing_directories: enclosing,
+  };
 }
 
 // The creator knows the outcome: stop only this dispatch's watcher, without replacing its receipt.
@@ -646,12 +748,21 @@ export async function execute(client, input, notify = ensureNotification) {
       return {ok: false, sent: false, error: 'addressable_parent_required'};
     const parent = await client.fetchAgent(input.parent_id);
     if (!parent?.agent) return {ok: false, sent: false, error: 'parent_agent_not_found'};
+    const placement = await resolvePaseoPlacement(client, r.cwd, parent.agent);
+    if (!placement.ok) {
+      return {
+        ok: false,
+        sent: false,
+        error: placement.error,
+        failure_class: 'request_invalid',
+        ...(placement.enclosing_directories?.length ? {enclosing_directories: placement.enclosing_directories} : {}),
+      };
+    }
     let completion_notification;
     try {
       await retireRefusedResume(input);
       completion_notification = await notify(input);
     } catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
-    const cwd = parent.agent.cwd, workspaceId = r.workspaceId ?? parent.agent.workspaceId;
     const slash = r.provider.indexOf('/');
     // The caller stops waiting for a create it never sent and may settle it as failed, so sending later is forbidden.
     if (input.send_by && Date.now() > Date.parse(input.send_by)) {
@@ -662,7 +773,8 @@ export async function execute(client, input, notify = ensureNotification) {
     let creation;
     const options = {
       provider: r.provider.slice(0, slash), model: r.provider.slice(slash + 1),
-      title: r.title, cwd, workspaceId,
+      title: r.title, cwd: placement.cwd,
+      ...(placement.workspaceId ? {workspaceId: placement.workspaceId} : {}),
       callerAgentId: input.parent_id,
       modeId: r.settings?.modeId, thinkingOptionId: r.settings?.thinkingOptionId,
       featureValues: r.settings?.features, initialPrompt: r.initialPrompt, labels: r.labels,
@@ -708,9 +820,12 @@ export async function execute(client, input, notify = ensureNotification) {
     if ((r.settings?.modeId && existing.currentModeId && existing.currentModeId !== r.settings.modeId)
         || (r.settings?.thinkingOptionId && effort && effort !== r.settings.thinkingOptionId))
       return {ok: false, sent: false, error: 'worker_settings_mismatch'};
-    // The writer rule checked the workspace that was asked for, so the work must land there.
-    if (r.workspaceId && existing.workspaceId !== r.workspaceId)
-      return {ok: false, sent: false, error: 'worker_workspace_mismatch'};
+    // The writer rule checked the directory that was asked for, so a resumed worker must live in that directory.
+    if (typeof r.cwd === 'string' && r.cwd.trim()) {
+      const existingDir = existing.cwd ?? (existing.workspaceId ? await workspaceDirectory(client, existing.workspaceId) : null);
+      if (!existingDir || !samePath(existingDir, r.cwd))
+        return {ok: false, sent: false, error: 'worker_workspace_mismatch'};
+    }
     const alreadyBound = labels['router.dispatch_id'] === input.dispatch_id;
     if (!alreadyBound && (existing.status === 'running' || existing.status === 'initializing'
         || existing.status === 'error' || existing.attentionReason === 'error'
@@ -755,6 +870,12 @@ export async function execute(client, input, notify = ensureNotification) {
     }
   }
   if (input.operation === 'workspace_agents') {
+    const targetCwd = typeof input.cwd === 'string' && input.cwd.trim() ? input.cwd.trim() : null;
+    if (!targetCwd) return {ok: false, error: 'workspace_directory_required'};
+    const listed = await listWorkspacesBounded(client);
+    const matchingWorkspaceIds = new Set(
+      listed.workspaces.filter(workspace => samePath(workspaceDirOf(workspace), targetCwd)).map(workspace => workspace.id)
+    );
     const agents = [];
     let cursor;
     do {
@@ -762,12 +883,32 @@ export async function execute(client, input, notify = ensureNotification) {
         page: {limit: 200, ...(cursor ? {cursor} : {})}});
       for (const entry of page.entries ?? []) {
         const agent = entry.agent ?? entry;
-        if (agent.workspaceId === input.workspace_id && agent.labels?.['router.dispatch_id'])
+        if (!agent.labels?.['router.dispatch_id']) continue;
+        const inDir = agent.cwd
+          ? samePath(agent.cwd, targetCwd)
+          : Boolean(agent.workspaceId && matchingWorkspaceIds.has(agent.workspaceId));
+        if (inDir)
           agents.push({id: agent.id, status: agent.status, dispatch_id: agent.labels['router.dispatch_id']});
       }
       cursor = page.pageInfo?.hasMore ? page.pageInfo.nextCursor : null;
     } while (cursor);
-    return {ok: true, agents, cwd: await workspaceDirectory(client, input.workspace_id)};
+    let placement = null;
+    if (typeof input.parent_id === 'string' && input.parent_id.trim() && typeof client.fetchAgent === 'function') {
+      const parent = await client.fetchAgent(input.parent_id).catch(() => null);
+      if (parent?.agent) placement = await resolvePaseoPlacement(client, targetCwd, parent.agent, listed);
+    }
+    return {
+      ok: true,
+      cwd: targetCwd,
+      agents,
+      ...(placement ? {
+        placeable: placement.ok,
+        ...(placement.ok ? {} : {
+          error: placement.error,
+          ...(placement.enclosing_directories?.length ? {enclosing_directories: placement.enclosing_directories} : {}),
+        }),
+      } : {}),
+    };
   }
   if (input.operation === 'provider_models') {
     const cwd = typeof input.cwd === 'string' && input.cwd.trim() ? input.cwd.trim() : undefined;

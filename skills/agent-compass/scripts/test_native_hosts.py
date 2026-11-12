@@ -99,6 +99,21 @@ class NativeHandOffTests(unittest.TestCase):
         self.assertIn('--spec', roll.native_next('native', self.bundle, 'run:r'))
         self.assertEqual(roll.NATIVE_HOSTS, wc.NATIVE_HOSTS)
 
+    def test_host_placement_expresses_workspace_directory_per_host_and_refuses_remote_surfaces(self):
+        import tempfile
+        import host_placement
+        with tempfile.TemporaryDirectory() as tmp:
+            canon = host_placement.validate_workspace(tmp)
+            for host in ('orca', 't3', 'native'):
+                placed = host_placement.place(host, canon, bundle=self.bundle, address='addr-1')
+                self.assertTrue(placed['ok'])
+                self.assertEqual(placed['cwd'], canon)
+                self.assertEqual(placed['workspace'], canon)
+                self.assertIn(canon, placed['next'])
+            for remote in ('dot', 'chatgpt-web', 'grok-bot'):
+                refused = host_placement.place(remote, canon)
+                self.assertEqual((refused['ok'], refused['error']), (False, 'host_cannot_place_directory'))
+
 
 if __name__ == '__main__':
     unittest.main()
