@@ -33,6 +33,23 @@ def setUpModule():
     isolated_router_state(unittest.addModuleCleanup, policy=False)
 
 
+def test_host_bridge_does_not_open_a_console():
+    """The panel's live-model refresh starts the bridge without a Windows console."""
+    calls = []
+
+    def launch(args, **kwargs):
+        calls.append(kwargs)
+        kwargs['stdout'].write(b'{"ok": true}')
+        return SimpleNamespace(wait=lambda timeout: None)
+
+    with patch.object(flow.subprocess, 'Popen', side_effect=launch):
+        assert flow.host_call({'operation': 'models'})['ok']
+    if os.name == 'nt':
+        assert calls[0]['creationflags'] & subprocess.CREATE_NO_WINDOW
+    else:
+        assert calls[0]['creationflags'] == 0
+
+
 class DispatchTests(unittest.TestCase):
     def test_fast_opt_out_after_record_is_rechecked_at_prepare(self):
         # Claude fast mode has cited pricing and speed; the fixture's Opus bundle is switched on.
