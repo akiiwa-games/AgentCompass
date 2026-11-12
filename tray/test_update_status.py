@@ -71,14 +71,40 @@ class UpdateProgressTests(unittest.TestCase):
 
             with mock.patch.object(cli_updates, "state_dir", return_value=state_path), \
                     mock.patch.object(cli_updates, "targets", return_value=[target]), \
-                    mock.patch.object(cli_updates, "target_running", return_value=0), \
-                    mock.patch.object(cli_updates, "update", side_effect=fake_update):
+                    mock.patch.object(cli_updates, "update", side_effect=fake_update) as installer:
                 result = cli_updates.update_all()
+            installer.assert_called_once()
+            self.assertNotIn("deferred", result)
             status = update_status.read_status(state_path)
             self.assertFalse(status["running"])
             self.assertEqual(status["targets"], ["Codex CLI"])
             self.assertIn("已是最新", status["results"]["Codex CLI"])
             self.assertIn("CLI：", result["summary"])
+
+    def test_unverified_and_failed_cli_results_remain_visible_as_needing_attention(self):
+        import cli_updates
+        import i18n
+        for language in ("zh", "en"):
+            for outcome_status in ("unverified", "failed"):
+                with self.subTest(language=language, status=outcome_status), tempfile.TemporaryDirectory() as directory, \
+                        mock.patch.object(i18n, "get_language", return_value=language):
+                    state_path = Path(directory)
+                    target = cli_updates.Target("agy", "Antigravity", cli_updates.Install(
+                        cli_updates.BY_ID["agy"], state_path / "agy.exe", "native"), ["agy"])
+                    def fake_update(ident, *args, outcome):
+                        outcome.update(status=outcome_status, message="opaque vendor result")
+                        return "opaque vendor result"
+                    with mock.patch.object(cli_updates, "state_dir", return_value=state_path), \
+                            mock.patch.object(cli_updates, "targets", return_value=[target]), \
+                            mock.patch.object(cli_updates, "update", side_effect=fake_update):
+                        batch = cli_updates.update_all()
+                    state = update_status.read_status(state_path)
+                    self.assertEqual(batch[outcome_status], ["agy"])
+                    self.assertEqual(batch["current"], [])
+                    self.assertEqual(batch["updated"], [])
+                    self.assertEqual(state["statuses"]["Antigravity"], outcome_status)
+                    self.assertNotEqual(update_status.completion_heading(state), update_status.completion_heading(
+                        {"statuses": {"Antigravity": "current"}}))
 
 
 if __name__ == "__main__":

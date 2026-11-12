@@ -143,10 +143,15 @@ class MpvProvisionTests(unittest.TestCase):
                 self.assertEqual([e['status'] for e in events if e['kind'] == 'result'], ['failed'])
                 target = SimpleNamespace(id='codex', name='Codex')
                 modules = [SimpleNamespace(override_store=SimpleNamespace(locked=lambda *a, **k: nullcontext()))]
-                with mock.patch('router_priority.modules', return_value=modules), mock.patch.object(cli_updates, 'targets', return_value=[target]), mock.patch.object(cli_updates, 'unsupported', return_value=False), mock.patch.object(cli_updates, 'target_running', return_value=True), mock.patch.object(cli_updates, 'state_dir', return_value=self.root), mock.patch.object(cli_updates, '_change_state'), mock.patch.object(cli_updates, 'log'), mock.patch.object(cli_updates, '_record_status', side_effect=events.append):
+                def failed_update(ident, *args, outcome):
+                    outcome.update(status='failed', message='opaque vendor error')
+                    return 'opaque vendor error'
+                with mock.patch('router_priority.modules', return_value=modules), mock.patch.object(cli_updates, 'targets', return_value=[target]), mock.patch.object(cli_updates, 'unsupported', return_value=False), mock.patch.object(cli_updates, 'update', side_effect=failed_update) as installer, mock.patch('psutil.process_iter', side_effect=AssertionError('must not inspect running sessions')), mock.patch.object(cli_updates, 'state_dir', return_value=self.root), mock.patch.object(cli_updates, '_change_state'), mock.patch.object(cli_updates, 'log'), mock.patch.object(cli_updates, '_record_status', side_effect=events.append):
                     events.clear()
-                    cli_updates.update_all(home=self.root)
-                self.assertEqual([e['status'] for e in events if e['kind'] == 'result'], ['deferred'])
+                    result = cli_updates.update_all(home=self.root)
+                installer.assert_called_once()
+                self.assertEqual([e['status'] for e in events if e['kind'] == 'result'], ['failed'])
+                self.assertNotIn('deferred', result)
 
     def test_missing_result_status_never_means_success(self):
         import update_status

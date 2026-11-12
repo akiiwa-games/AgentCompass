@@ -331,6 +331,34 @@ class NativeUpdateTests(NativeUpdateFixture):
 
 
 
+    def test_check_reports_update_but_successful_noop_is_failed(self):
+        original = self.fake
+        def unchanged(argv, **options):
+            if argv[1:] == ["update"]:
+                self.commands.append(argv[1:])
+                return owned_process.Result(0, "success", "")
+            return original(argv, **options)
+        outcome = {}
+        with mock.patch.object(cli_updates.owned_process, "run", side_effect=unchanged):
+            cli_updates.update("grok", self.home, self.environ, outcome=outcome)
+        # Rule: a known available update must be verified on disk, regardless of exit code.
+        self.assertEqual(outcome["status"], "failed")
+        self.assertIn(["update"], self.commands)
+        self.assertNotEqual(self.version, self.latest)
+
+    def test_no_check_and_no_version_change_is_unverified_including_later_snapshot(self):
+        folder = self.home / "AppData" / "Local" / "agy" / "bin"
+        folder.mkdir(parents=True)
+        (folder / "agy.exe").write_bytes(b"MZ")
+        self.environ.update(PATH=str(folder), LOCALAPPDATA=str(self.home / "AppData" / "Local"))
+        self.latest = self.version  # successful vendor command leaves the binary unchanged
+        outcome = {}
+        cli_updates.update("agy", self.home, self.environ, outcome=outcome)
+        self.assertEqual(outcome["status"], "unverified")
+        self.assertIn(["update"], self.commands)
+        self.assertEqual(self.row("agy")["status"], "unverified")
+        self.assertNotIn("agy", cli_updates._latest)  # no invented latest-version proof
+
     def test_a_cli_without_a_check_command_just_runs_its_own_updater(self):
         folder = self.home / "AppData" / "Local" / "agy" / "bin"
         folder.mkdir(parents=True)

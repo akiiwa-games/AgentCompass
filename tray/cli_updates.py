@@ -498,6 +498,8 @@ def describe(target: Target, probe: bool = True) -> dict:
         status = "manual"
     elif not resolve_command(install):
         status = "outdated"
+    elif cached.get("kind") == "unverified":
+        status = "unverified"
     elif latest and version and version_key(latest) > version_key(version):
         status = "outdated"
     elif latest and version:
@@ -617,12 +619,8 @@ def update(cli_id: str, home=None, environ=None, *, outcome: dict | None = None)
             after = package_version(target.install.package_dir)
             status = ("updated" if (before != after or not had_command) else "current") if kind == "ok" else "failed"
         else:
-            before = local_version(target.install)
-            had_command = resolve_command(target.install, fresh=True) is not None
-            kind, message = update_native(target)
-            after = local_version(target.install)
-            status = ("updated" if kind == "ok" and ((before and after and before != after) or not had_command)
-                      else ("current" if kind == "ok" else "failed"))
+            status, message = update_native(target)
+            kind = "ok" if status in ("updated", "current") else ("unverified" if status == "unverified" else "warn")
     except (RuntimeError, OSError, ValueError) as error:
         message = _tr("{0} 更新失败：{1}").format(target.name, error)
         status = "failed"
@@ -661,6 +659,7 @@ def update_npm(target: Target) -> tuple[str, str]:
 
 
 def update_native(target: Target) -> tuple[str, str]:
+    """Return a verified outcome, keeping successful command exit separate from version proof."""
     install, name = target.install, target.name
     before = local_version(install)
     resolved_before = resolve_command(install, fresh=True)
@@ -669,21 +668,24 @@ def update_native(target: Target) -> tuple[str, str]:
         with _lock:
             _latest[target.id] = latest
         if resolved_before is not None and not available:
-            return "ok", _tr("{0} 已是最新（{1}）").format(name, before or latest)
+            return "current", _tr("{0} 已是最新（{1}）").format(name, before or latest)
     result = run_tool([str(install.path), *install.spec.update], UPDATE_TIMEOUT, install)
     if result.returncode != 0:
-        return "warn", fail_text(name, result)
+        return "failed", fail_text(name, result)
     resolved_after = resolve_command(install, fresh=True)
     if resolved_after is None:
-        return "warn", _tr("{0} 更新命令已结束，但命令 {1} 仍无法解析，详见日志").format(
+        return "failed", _tr("{0} 更新命令已结束，但命令 {1} 仍无法解析，详见日志").format(
             name, install.configured or install.spec.command)
     after = local_version(install)
-    if not install.spec.check and (after or before):
-        with _lock:
-            _latest[target.id] = after or before
     if after and before and after != before:
-        return "ok", _tr("{0} 已更新：{1} → {2}；新版本在下次启动该 CLI 时生效，未重启任何会话").format(name, before, after)
-    return "ok", _tr("{0} 的更新命令已完成，版本仍为 {1}（可能已是最新）").format(name, after or before or "?")
+        if not install.spec.check:
+            with _lock:
+                _latest[target.id] = after
+        return "updated", _tr("{0} 已更新：{1} → {2}；新版本在下次启动该 CLI 时生效，未重启任何会话").format(name, before, after)
+    if install.spec.check and available:
+        return "failed", _tr("{0} 更新失败：更新命令返回成功但版本未变（当前 {1}，目标 {2}）").format(
+            name, after or before or "?", latest)
+    return "unverified", _tr("{0} 的更新命令返回成功，版本仍为 {1}；无法确认是否已是最新").format(name, after or before or "?")
 
 
 def open_log() -> str:
@@ -760,7 +762,7 @@ def update_all(progress=None, *, auto: bool = False, home=None, environ=None) ->
 
     Returns structured results so notifications never depend on translated text.
     """
-    result = {key: [] for key in ("updated", "current", "failed")}
+    result = {key: [] for key in ("updated", "current", "unverified", "failed")}
     result["messages"] = []
     if not _batch_lock.acquire(blocking=False):
         result["summary"] = _tr("另一个 CLI 正在更新，请等它结束后再更新")
@@ -799,8 +801,8 @@ def update_all(progress=None, *, auto: bool = False, home=None, environ=None) ->
             if status in result:
                 result[status].append(target.id)
             result["messages"].append(message)
-        result["summary"] = _tr("CLI：已更新 {0} · 已是最新 {1} · 失败 {2}").format(
-            *(len(result[key]) for key in ("updated", "current", "failed")))
+        result["summary"] = _tr("CLI：已更新 {0} · 已是最新 {1} · 未确认 {2} · 失败 {3}").format(
+            *(len(result[key]) for key in ("updated", "current", "unverified", "failed")))
         if not auto:
             _record_status({"kind": "finish", "component": "", "message": result["summary"]})
         def persist(state):

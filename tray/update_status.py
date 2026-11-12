@@ -331,6 +331,12 @@ def active_targets(state: dict) -> list[str]:
     return names or list(DEFAULT_TARGETS)
 
 
+def completion_heading(state: dict) -> str:
+    needs_attention = any(status in ("failed", "warning", "deferred", "interrupted", "unverified")
+                          for status in state.get("statuses", {}).values())
+    return _tr("更新结束，部分项目需要处理") if needs_attention else _tr("更新检查已完成")
+
+
 def main() -> None:
     import tkinter as tk
     from tkinter import ttk
@@ -391,9 +397,7 @@ def main() -> None:
             current = state.get("component") or state.get("title") or _tr("组件")
             heading.set(_tr("正在更新 {0} · {1}分{2}秒").format(current, f"{elapsed // 60}", f"{elapsed % 60:02d}"))
         elif state:
-            failed = any(status in ("failed", "warning", "deferred", "interrupted")
-                         for status in state.get("statuses", {}).values())
-            heading.set(_tr("更新结束，部分项目需要处理") if failed else _tr("更新检查已完成"))
+            heading.set(completion_heading(state))
         if running != spinning:
             progress.start(15) if running else progress.stop()
             spinning = running

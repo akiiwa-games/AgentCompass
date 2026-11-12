@@ -100,10 +100,9 @@ def test_native_updaters_run_without_inspecting_sessions(tmp_path, monkeypatch, 
     configure(tmp_path, monkeypatch)
     native = cli.Target(ident, ident, cli.Install(cli.BY_ID[ident], tmp_path / f'{ident}.exe', 'native'), [ident])
     monkeypatch.setattr(cli, 'find', lambda *args: native)
-    monkeypatch.setattr(cli, 'local_version', mock.Mock(side_effect=['1.0.0', '2.0.0']))
     monkeypatch.setattr(cli, 'resolve_command', lambda *args, **kwargs: native.install.path)
     monkeypatch.setattr('psutil.process_iter', mock.Mock(side_effect=AssertionError('session inspection')))
-    with mock.patch.object(cli, 'update_native', return_value=('ok', 'done')) as installer:
+    with mock.patch.object(cli, 'update_native', return_value=('updated', 'done')) as installer:
         outcome = {}
         cli.update(ident, outcome=outcome)
     assert outcome['status'] == 'updated'

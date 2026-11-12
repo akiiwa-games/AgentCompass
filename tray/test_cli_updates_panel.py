@@ -35,7 +35,7 @@ def row(harness='codex', account='codex', enabled=True, partial=False):
 
 CLI_ROWS = [{'id': 'codex', 'path': 'codex.cmd', 'source': 'npm', 'version': '0.165',
              'status': 'outdated', 'providers': ['codex']}]
-RESULT = {'summary': 'CLI：已更新 1 · 已是最新 0 · 失败 0', 'updated': ['codex'], 'failed': []}
+RESULT = {'summary': 'CLI：已更新 1 · 已是最新 0 · 未确认 0 · 失败 0', 'updated': ['codex'], 'failed': []}
 
 
 class PanelTests(unittest.TestCase):
@@ -174,6 +174,30 @@ class PanelTests(unittest.TestCase):
             done(work())
         self.assertFalse(panel.cli_update_button.instate(['disabled']))
         self.assertIn('offline', panel.cli_status.get())
+
+    def test_unverified_and_failed_results_do_not_turn_green_after_snapshot_refresh(self):
+        panel = self.open()
+        for language in ('zh', 'en'):
+            i18n.set_language(language)
+            for outcome in ('unverified', 'failed'):
+                with self.subTest(language=language, outcome=outcome):
+                    result = {'summary': 'opaque summary', 'updated': [], 'current': [], 'unverified': [], 'failed': []}
+                    result[outcome] = ['agy']
+                    with mock.patch.object(cli_updates, 'update_all', return_value=result):
+                        panel.run.reset_mock()
+                        panel.update_all_cli()
+                        work, done = panel.run.call_args.args[:2]
+                        done(work())
+                        before = panel.cli_pill.cget('text')
+                        self.assertEqual(panel.cli_pill.cget('bg'), router_window.theme.STATUS_COLORS['warn'][1])
+                        # Completion launches a snapshot read; even an older cached row cannot erase its warning.
+                        fresh = panel.run.call_args.args[1]
+                        fresh([{**CLI_ROWS[0], 'status': 'current'}])
+                        self.assertEqual(panel.cli_pill.cget('text'), before)
+                        self.assertEqual(panel.cli_status.get(), result['summary'])
+            # A later independent snapshot also preserves a persisted unverified outcome.
+            panel.cli_loaded([{**CLI_ROWS[0], 'status': 'unverified'}])
+            self.assertEqual(panel.cli_pill.cget('bg'), router_window.theme.STATUS_COLORS['warn'][1])
 
     def test_daily_checkbox_persists_the_actual_selected_value(self):
         panel = self.open()
