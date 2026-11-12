@@ -488,7 +488,7 @@ def warnings(live_doc: dict | None, accounts: dict | None = None, allowed=None, 
                 add(f'{acct}/{mod}: provider no longer offers {mod}; excluded from dispatch')
             elif len(unoffered_mods) > 1:
                 clauses = '; '.join(f'provider no longer offers {m}' for m in unoffered_mods)
-                add(f'{acct}: {clauses}; excluded from dispatch')
+                add(f'{acct}: {clauses}; only these models are excluded from dispatch')
         return out
 
     for prov, entry in sorted(providers.items()):
