@@ -2031,7 +2031,9 @@ def toggle_harness(harness: str, account: str, enabled: bool) -> str:
                     preferences.setdefault(row["harness"], {})["disabled"] = True
         preferences.setdefault(harness, {})["disabled"] = not enabled
     _edit_preferences(change)
-    if len(rows) == 1 or rows[0].get("legacy_disabled_flag") or (enabled and not rows[0]["host_enabled"]):
+    # Clearing a legacy flag above is cleanup only; the click keeps its row/account meaning, so a
+    # multi-harness account changes host policy only when a row is enabled on a denied account.
+    if len(rows) == 1 or (enabled and not rows[0]["host_enabled"]):
         if rows[0]["host_enabled"] != enabled:
             toggle_account_host(account)
     return f"{HARNESS_LABELS.get(harness, harness)} · {account_label(account)} · {_tr('启用') if enabled else _tr('停用')}"
