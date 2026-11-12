@@ -1614,8 +1614,8 @@ class RotationThresholdEndToEndTests(unittest.TestCase):
 
         shipped = json.loads(CATALOG_JSON.read_text(encoding="utf-8-sig"))["scoring"]["rotate_after_carried_tokens"]
         self.assertEqual(router_data.TUNING_DEFAULTS["rotate_after_carried_tokens"], shipped)
-        self.assertEqual(router_data.STRATEGY_PRESETS["均衡默认"]["rotate_after_carried_tokens"], shipped)
-        self.assertEqual(router_data.STRATEGY_PRESETS["消纳临期"]["rotate_after_carried_tokens"], shipped)
+        self.assertEqual(router_data.STRATEGY_PRESETS["均衡"]["rotate_after_carried_tokens"], shipped)
+        self.assertEqual(router_data.STRATEGY_PRESETS["重置前蹬完"]["rotate_after_carried_tokens"], shipped)
 
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp)
