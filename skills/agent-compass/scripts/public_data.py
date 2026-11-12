@@ -27,6 +27,11 @@ import threading
 import urllib.request
 import uuid
 
+# `agentcompass data` launches this file with `python -I`. Isolated mode does not put the
+# script directory on sys.path, so the sibling import of user_scores would fail and a valid
+# fetched set would be rejected. Same insertion as route_judge.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 _ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
 

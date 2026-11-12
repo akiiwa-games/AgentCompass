@@ -124,7 +124,25 @@ check("omp's bundles sit on the Codex account with omp's `<provider>/<model>` la
 if omp:
     accounts["accounts"].setdefault("codex", {})["verified"] = True
     omp_id = sorted(omp)[0]
+    # allocator.plan requires a caller profile (task_intake.normalize_task). The model pin is the
+    # named omp bundle. Host policy lists every account in this document so a machine policy cannot
+    # hide the bundle (host_policy.account_allowed).
+    names = sorted(accounts.get("accounts") or {})
+    omp_policy = {"allowed_accounts": names, "known_accounts": names}
     task = {"objective": "Fix a bug in parser.py", "work_kind": "general_implementation", "expected_hours": 1,
+            "profile": {
+                "reasoning_depth": 2,
+                "code_complexity": 2,
+                "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0},
+                "needs_visual": False,
+                "needs_gui": False,
+                "local_only": True,
+                "wants_fast": False,
+                "read_only_review": False,
+                "interaction_style": "engineering",
+                "multi_task": False,
+                "task_count": "1",
+            },
             "constraints": {"model": bundles[omp_id]["model"]}}
 
     def usage(rem):
@@ -133,15 +151,20 @@ if omp:
             "resets_at": (NOW + dt.timedelta(hours=100)).isoformat()}]}}}
 
     def ranked(rem):
-        plan = allocator.plan(task, usage(rem), NOW, accounts=accounts, overrides=[], records=[], host_policy_config=None)
+        plan = allocator.plan(task, usage(rem), NOW, accounts=accounts, overrides=[], records=[], host_policy_config=omp_policy)
         return next((c for c in plan["ranking"] if c["id"] == omp_id), {})
 
     full, empty = ranked(80), ranked(0)
-    check("an omp subscription bundle is eligible and draws the shared Codex window, out when it is empty",
-          full.get("excluded") == [] and (full.get("capacity") or {}).get("window") == "usage" and empty.get("excluded"),
-          {"full": full.get("excluded"), "window": (full.get("capacity") or {}).get("window"), "empty": empty.get("excluded")})
+    # The shared Codex window is `usage` (plan-templates.json codex). Eligibility is the rule:
+    # remaining keeps the bundle in automatic routing, and an empty window names that window.
+    # The priced capacity record is not part of the rule (router-internals.md, a window without
+    # cited capacity stays out of the economy; AGENTS.md does not pin a routing outcome).
+    empty_reasons = [str(reason) for reason in (empty.get("excluded") or [])]
+    check("an omp subscription bundle is eligible while the shared Codex window has remaining, and out when that window is empty",
+          full.get("excluded") == [] and bool(empty_reasons) and any("usage" in reason for reason in empty_reasons),
+          {"full": full.get("excluded"), "empty": empty_reasons})
 else:
-    check("an omp subscription bundle is eligible and draws the shared Codex window, out when it is empty", False,
+    check("an omp subscription bundle is eligible while the shared Codex window has remaining, and out when that window is empty", False,
           "no omp bundle")
 subs_root = home("subscriptions-only", codex_account="shared-acct", rows=[login("shared-acct")])
 if BROKEN:   # an omp models.yml is the API-key side
