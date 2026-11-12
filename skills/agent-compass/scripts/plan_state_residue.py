@@ -53,34 +53,6 @@ def inventory_findings(rows):
     return found
 
 
-def cache_findings(paths):
-    labels = {}
-    for path in paths:
-        for name, row in (_read(path).get('providers') or {}).items():
-            if isinstance(row, dict) and isinstance(row.get('plan_label'), str):
-                labels.setdefault(name, {})[str(path)] = (row['plan_label'], row.get('fetched_at'))
-    found, changed = [], set()
-    for name, seen in labels.items():
-        if len({label.strip().lower() for label, _ in seen.values()}) > 1:
-            changed.add(name)
-            detail = ', '.join(f'{Path(path).parent.name}: {label} ({at})' for path, (label, at) in seen.items())
-            found.append(_finding('cache_copies_disagree', name, detail,
-                                  'nothing reads the older copy: the newest fetched_at wins per account'))
-    return found, changed
-
-
-def rate_findings(capacity, plan_changed):
-    found = []
-    for name in sorted(plan_changed):
-        for window, row in (capacity.get('observed', {}).get(name) or {}).items():
-            long_rate = row.get('pct_per_hour_24h') if isinstance(row, dict) else None
-            if long_rate and not row.get('pct_per_hour_3h'):
-                found.append(_finding('rate_across_plan_change', f'{name}.{window}',
-                                      f'24h rate {long_rate} with no rate in the last 3h',
-                                      'rolls out 24h after the change; new rates stop at a plan change'))
-    return found
-
-
 def ledger_findings(path, own_rows):
     """Ledger rows where an account with no pool of its own carries a pooled reading: another account's numbers."""
     counts = {}
@@ -114,9 +86,6 @@ def scan(home, state_dir):
     rows = _read(state_dir / 'provider-inventory.json').get('accounts') or {}
     canonical = state_dir / 'usage-cache.json'
     found = inventory_findings(rows)
-    cache_found, changed = cache_findings([canonical, home / '.usage-float/usage-cache.json'])
-    found += cache_found
-    found += rate_findings(_read(state_dir / 'capacity.json'), changed)
     current = _read(canonical).get('providers') or {}
     own = {name for name, row in current.items() if isinstance(row, dict) and not any(
         isinstance(w, dict) and (w.get('accounts') or 0) > 1 for w in row.get('windows') or [])}

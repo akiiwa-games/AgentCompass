@@ -110,6 +110,22 @@ class StageTests(unittest.TestCase):
         setup.stage_files(self.source, self.config, hook)
         self.assertEqual((self.home / "private" / "pre-start.ps1").read_text(), "# host policy")
 
+    def test_a_planted_junction_at_the_home_is_refused(self):
+        with mock.patch.object(setup, "is_reparse_point", side_effect=lambda path: path == self.home):
+            with self.assertRaisesRegex(RuntimeError, "联接"):
+                setup.prepare_home()
+
+    def test_the_programdata_parent_is_locked_before_the_home(self):
+        program_data = Path(self.temp.name) / "PD"
+        saved = setup.HOME
+        self.addCleanup(setup.use_home, saved)
+        setup.use_home(program_data / "AgentCompass" / "easytier")
+        with mock.patch.dict(os.environ, {"ProgramData": str(program_data)}):
+            os.environ.pop(setup.easytier_paths.OVERRIDE, None)
+            setup.prepare_home()
+        locked = [call.args[0] for call in setup.lock_down.call_args_list]
+        self.assertEqual(locked[:2], [program_data / "AgentCompass", program_data / "AgentCompass" / "easytier"])
+
 
     @pytest.mark.slow
     def test_the_supervisor_guards_single_instance_runs_the_hook_and_returns_the_core_exit_code(self):
@@ -229,128 +245,5 @@ class MiscTests(unittest.TestCase):
         self.assertEqual(setup.without_option(["install", "--log", "x", "--switch"], "--log"), ["install", "--switch"])
 
 
-
 if __name__ == "__main__":
     unittest.main()
-
-
-class MigrationTests(unittest.TestCase):
-    """install --migrate-from moves a checkout-era node to the per-machine home."""
-
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        base = Path(self.temp.name)
-        self.old = base / "checkout" / "easytier"
-        (self.old / "bin").mkdir(parents=True)
-        for name in (*setup.REQUIRED, "easytier-supervisor.ps1"):
-            (self.old / "bin" / name).write_bytes(name.encode())
-        (self.old / "private").mkdir()
-        (self.old / "private" / "node.toml").write_text("network_secret = 'x'\n")
-        (self.old / "private" / "pre-start.ps1").write_text("# host policy")
-        (self.old / "state").mkdir()
-        (self.old / "state" / "legacy.json").write_text('{"task": "Old"}')
-        self.new = base / "ProgramData" / "AgentCompass" / "easytier"
-        self.registered = []
-        self.calls = []
-        self.healthy = True
-        saved = setup.HOME
-        self.addCleanup(setup.use_home, saved)
-        setup.use_home(self.new)
-        patches = [
-            mock.patch.dict(os.environ, {setup.easytier_paths.OVERRIDE: str(self.new)}),
-            mock.patch.object(setup, "PINNED", {"easytier-core.exe": setup.hashlib.sha256(b"easytier-core.exe").hexdigest()}),
-            mock.patch.object(setup, "lock_down"),
-            mock.patch.object(setup, "check_config"),
-            mock.patch.object(setup, "task_exists", return_value=True),
-            mock.patch.object(setup, "cores", return_value=[]),
-            mock.patch.object(setup, "wait_until", side_effect=lambda predicate, *a, **k: predicate()),
-            mock.patch.object(setup, "healthy", side_effect=lambda expect: self.healthy),
-            mock.patch.object(setup, "run", side_effect=lambda args, **k: self.calls.append(" ".join(args))),
-            mock.patch.object(setup, "register_main_task",
-                              side_effect=lambda sid, bin_dir=None: self.registered.append(bin_dir or setup.BIN)),
-            mock.patch.object(setup, "delete_task", side_effect=lambda name, end=True: self.calls.append(f"delete {name}")),
-            mock.patch.object(setup, "log"),
-        ]
-        for patch in patches:
-            patch.start()
-            self.addCleanup(patch.stop)
-
-    def migrate(self, *extra):
-        args = setup.argparse.Namespace(migrate_from=str(self.old), dry_run=False, keep_old=False, hook=None,
-                                        user_sid="S-1-5-21-1", expect_peer=["PEER"], switch=False)
-        for name in extra:
-            setattr(args, name, True)
-        return setup.command_install(args)
-
-    def test_a_healthy_move_carries_bin_config_hook_and_state_and_retargets_the_task(self):
-        self.assertEqual(self.migrate(), 0)
-        self.assertTrue((self.new / "bin" / "easytier-core.exe").is_file())
-        self.assertEqual((self.new / "private" / "node.toml").read_text(), "network_secret = 'x'\n")
-        self.assertEqual((self.new / "private" / "pre-start.ps1").read_text(), "# host policy")
-        self.assertEqual((self.new / "state" / "legacy.json").read_text(), '{"task": "Old"}')
-        self.assertEqual(self.registered, [self.new / "bin"])
-        for name in setup.LEGACY_TASKS:
-            self.assertIn(f"delete {name}", self.calls)
-        self.assertTrue(any(call.startswith("schtasks /End /TN Route Manager EasyTier") for call in self.calls))
-        self.assertFalse(self.old.exists())
-
-    def test_keep_old_leaves_the_checkout_copy(self):
-        self.assertEqual(self.migrate("keep_old"), 0)
-        self.assertTrue((self.old / "private" / "node.toml").is_file())
-
-    def test_an_unhealthy_node_points_the_task_back_and_removes_the_new_copy(self):
-        self.healthy = False
-        self.assertEqual(self.migrate(), 1)
-        self.assertEqual(self.registered, [self.new / "bin", self.old.resolve() / "bin"])
-        self.assertFalse(self.new.exists())
-        self.assertTrue((self.old / "private" / "node.toml").is_file())
-
-    def test_a_rerun_after_success_is_a_no_op(self):
-        self.assertEqual(self.migrate("keep_old"), 0)
-        self.registered.clear()
-        with mock.patch.object(setup, "task_supervisor", return_value=str(self.new / "bin" / "easytier-supervisor.ps1").lower()):
-            self.assertEqual(self.migrate(), 0)
-        self.assertEqual(self.registered, [])
-        self.assertFalse(self.old.exists())
-
-    def test_a_second_node_the_task_does_not_run_is_refused(self):
-        self.assertEqual(self.migrate("keep_old"), 0)
-        with mock.patch.object(setup, "task_supervisor", return_value=r"-file e:\checkout\easytier\bin\easytier-supervisor.ps1"):
-            with self.assertRaisesRegex(RuntimeError, "没有指向它"):
-                self.migrate()
-        self.assertTrue(self.old.exists())
-
-    def test_dry_run_changes_nothing_and_needs_no_elevation(self):
-        output = io.StringIO()
-        with mock.patch.object(setup, "is_admin", return_value=False), \
-                mock.patch.object(setup, "relaunch_elevated") as elevate, redirect_stdout(output):
-            code = setup.main(["install", "--migrate-from", str(self.old), "--dry-run"])
-        self.assertEqual(code, 0)
-        elevate.assert_not_called()
-        self.assertFalse(self.new.exists())
-        self.assertEqual(self.registered, [])
-        self.assertIn(str(self.new), output.getvalue())
-        self.assertIn("private/node.toml: 有", output.getvalue())
-
-    def test_install_always_targets_the_product_home(self):
-        setup.use_home(self.old)
-        with mock.patch.object(setup, "is_admin", return_value=True), \
-                mock.patch.object(setup, "command_install", return_value=0) as install:
-            setup.main(["install", "--migrate-from", str(self.old)])
-        install.assert_called_once()
-        self.assertEqual(setup.HOME, self.new)
-
-    def test_a_planted_junction_at_the_home_is_refused(self):
-        with mock.patch.object(setup, "is_reparse_point", side_effect=lambda path: path == self.new):
-            with self.assertRaisesRegex(RuntimeError, "联接"):
-                setup.prepare_home()
-
-    def test_the_programdata_parent_is_locked_before_the_home(self):
-        program_data = Path(self.temp.name) / "PD"
-        setup.use_home(program_data / "AgentCompass" / "easytier")
-        with mock.patch.dict(os.environ, {"ProgramData": str(program_data)}):
-            os.environ.pop(setup.easytier_paths.OVERRIDE, None)
-            setup.prepare_home()
-        locked = [call.args[0] for call in setup.lock_down.call_args_list]
-        self.assertEqual(locked[:2], [program_data / "AgentCompass", program_data / "AgentCompass" / "easytier"])

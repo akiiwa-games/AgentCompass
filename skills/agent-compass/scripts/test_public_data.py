@@ -242,7 +242,7 @@ class LoaderPrecedenceTests(ChannelCase):
         write_json(self.remote_dir / 'five-axis-scores.json', five)
         write_json(self.remote_dir / 'user-scores.json', {
             'schema_version': 1,
-            'scores': {'grok-bot': {'coding': {'level': 2.0, 'date': '2026-11-11', 'kind': 'maintainer'}}},
+            'scores': {'grok-bot': {'coding': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}}},
         })
         self.publish(safety_margin_pct=0.5, at=T0 + timedelta(days=2))
         self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'updated')
@@ -259,14 +259,14 @@ class LoaderPrecedenceTests(ChannelCase):
     def test_user_override_beats_fetched_data(self):
         with patch.object(account_fleet, 'REFERENCES', self.bundled):
             self.assertEqual(account_fleet.load_accounts()['scoring']['safety_margin_pct'], 0.5)
-            write_json(Path(os.environ['ROUTER_ACCOUNTS_OVERRIDE']), {'schema_version': 2, 'scoring': {'safety_margin_pct': 0.9}})
+            write_json(Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE']), {'schema_version': 2, 'scoring': {'safety_margin_pct': 0.9}})
             self.assertEqual(account_fleet.load_accounts()['scoring']['safety_margin_pct'], 0.9)
             before = (self.bundled / 'accounts.json').read_bytes()
             local = self.state / 'accounts.local.json'
             write_json(local, json.loads(before.decode('utf-8-sig')))
             self.assertNotEqual(account_fleet.fleet_document_path(), local)  # no machine-local fleet replaces public data
         self.assertEqual((self.bundled / 'accounts.json').read_bytes(), before)  # fetched data never writes user files
-        self.assertEqual(json.loads(Path(os.environ['ROUTER_ACCOUNTS_OVERRIDE']).read_text(encoding='utf-8')),
+        self.assertEqual(json.loads(Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE']).read_text(encoding='utf-8')),
                          {'schema_version': 2, 'scoring': {'safety_margin_pct': 0.9}})
 
 

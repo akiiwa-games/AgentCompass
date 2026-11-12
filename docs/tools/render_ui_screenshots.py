@@ -37,7 +37,7 @@ def isolate(state: Path) -> None:
                       encoding="utf-8")
     os.environ.update({
         "ROUTER_STATE_DIR": str(state), "ROUTER_ACCOUNTS_FILE": str(accounts),
-        "ROUTER_ACCOUNTS_OVERRIDE": str(state / "accounts-override.json"), "ROUTER_HOST_POLICY": str(policy),
+        "AGENTCOMPASS_ACCOUNTS_OVERRIDE": str(state / "accounts-override.json"), "ROUTER_HOST_POLICY": str(policy),
         "ROUTER_LEDGER": str(state / "ledger.jsonl"), "ROUTER_CAPACITY": str(state / "capacity.json"),
         "USERPROFILE": str(state), "HOME": str(state),
     })

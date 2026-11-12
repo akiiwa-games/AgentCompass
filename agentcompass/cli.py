@@ -220,12 +220,7 @@ def readiness_notice() -> str | None:
         import route_judge
 
         accounts = json.loads(account_fleet.fleet_document_path().read_text(encoding="utf-8-sig"))
-        user_file = account_fleet.accounts_override_path()
-        user_doc = None
-        if user_file.is_file():
-            loaded = json.loads(user_file.read_text(encoding="utf-8-sig"))
-            if isinstance(loaded, dict):
-                user_doc = accounts_override.migrate(loaded, accounts)
+        user_doc = accounts_override.load_override(account_fleet.accounts_override_path())
         provider_inventory.apply(accounts, provider_inventory.discover())
         if user_doc is not None:
             accounts_override.apply(accounts, user_doc)

@@ -674,26 +674,6 @@ class FiveAxisTests(unittest.TestCase):
         # An all-zero answer asks nothing of the categories; it is taken as it is.
         self.assertEqual(axis_scores.five_axis_demand({'profile': {**PROFILE, 'axis_demand': demand(0, 0, 0, 0)}}), demand(0, 0, 0, 0))
 
-    def test_an_in_flight_ledger_record_is_mapped_once_onto_the_four_categories(self):
-        """The one read-side mapping (user, 2026-11-11): divergence as is, coding = max(global_rigor, module_precision),
-        tool_operation from vision_tools 0->0, 1->2, 2->3, 3->3 (at least 2 when it marked realtime_loop), aesthetics 0.
-        A fresh classifier answer in the old shape is still invalid: only recorded profiles are mapped."""
-        old = {**PROFILE, 'realtime_loop': False,
-               'axis_demand': {'divergence': 2, 'global_rigor': 1, 'module_precision': 3, 'vision_tools': 1}}
-        mapped = ledger_snapshot.ledger_profile(old)
-        self.assertEqual(mapped['axis_demand'], demand(2, 3, 0, 2))
-        self.assertNotIn('realtime_loop', mapped)
-        self.assertEqual(task_intake.validate_profile(mapped)['axis_demand'], demand(2, 3, 0, 2))
-        for vision, tool in ((0, 0), (1, 2), (2, 3), (3, 3)):
-            rec = {**old, 'axis_demand': {**old['axis_demand'], 'vision_tools': vision}}
-            self.assertEqual(ledger_snapshot.ledger_profile(rec)['axis_demand']['tool_operation'], tool)
-        live = {**old, 'realtime_loop': True, 'axis_demand': {**old['axis_demand'], 'vision_tools': 0}}
-        self.assertEqual(ledger_snapshot.ledger_profile(live)['axis_demand']['tool_operation'], 2)
-        current = {**PROFILE, 'axis_demand': demand(1, 2, 0, 0)}
-        self.assertIs(ledger_snapshot.ledger_profile(current), current)
-        with self.assertRaises(ValueError):
-            task_intake.validate_profile(old)
-
     def test_the_scorer_always_asks_for_axis_demand(self):
         caps = {'routes': {'general_implementation': {}, 'other_or_mixed': {}}}
         schema = route_judge.scorer_schema(caps)
@@ -1924,6 +1904,7 @@ class ArenaCaptureTests(unittest.TestCase):
     def test_a_tab_that_was_never_captured_is_a_surfaced_missing_source(self):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'fetch-manifest.json').write_text('{"files": {}}', encoding='utf-8')
             builder = self.ms.Builder(Path(tmp), {'models': {}})
             builder.boards()
         for src in self.ms.ARENA_CAPTURES:

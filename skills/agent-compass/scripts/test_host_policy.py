@@ -187,14 +187,12 @@ class HostPolicyTests(unittest.TestCase):
                 'accounts': {name: {'billing': 'subscription', 'verified': state == 'ready', 'bundles': {
                     name: {'provider': name, 'model': 'service'}}} for name, state in states.items()}}
 
-    def test_legacy_migration_preserves_exclusions_and_new_ready_accounts_enroll_once(self):
-        self.write({'allowed_accounts': ['codex'], 'judges': ['codex'], 'usage_providers': ['codex']})
+    def test_known_accounts_preserves_exclusions_and_new_ready_accounts_enroll_once(self):
         baseline = self.registered(codex='ready', claude='ready')
-        before = self.path.read_bytes()
-        self.assertEqual(host_policy.sync_discovered(baseline)['mode'], 'legacy')
-        self.assertEqual(self.path.read_bytes(), before)
-        result = host_policy.sync_discovered(baseline, enable=True)
-        self.assertEqual(result['ready_but_excluded'], ['claude'])
+        self.write({'allowed_accounts': ['codex'], 'known_accounts': ['codex', 'claude'],
+                    'judges': ['codex'], 'usage_providers': ['codex']})
+        result = host_policy.sync_discovered(baseline)
+        self.assertEqual(result['added'], [])
         self.assertEqual(host_policy.load_policy()['allowed_accounts'], ['codex'])
         next_accounts = self.registered(codex='ready', claude='ready', **{'grok-bot': 'missing_configuration', 'codex-work': 'ready'})
         # First observation need not be ready: it must not become a permanent manual deny.
@@ -222,7 +220,7 @@ class HostPolicyTests(unittest.TestCase):
                                    expired='ready', unregistered='ready', no_bundles='ready', banned_bundle='ready')
         del accounts['accounts']['unregistered']
         accounts['accounts']['no_bundles']['bundles'] = {}
-        accounts['accounts']['banned_bundle']['bundles']['banned_bundle']['disabled'] = 'user disabled'
+        accounts['accounts']['banned_bundle']['bundles']['banned_bundle']['disabled'] = True
         accounts['accounts']['expired']['expires_at'] = '2000-01-01T00:00:00Z'
         self.assertEqual(host_policy.sync_discovered(accounts)['added'], [])
         self.assertEqual(host_policy.load_policy()['known_accounts'], ['codex'])

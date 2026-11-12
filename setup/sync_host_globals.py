@@ -407,13 +407,6 @@ def merge_block(existing: str | None, content: str, recorded_whole_sha: str | No
     if existing.replace(CRLF, LF) == content or (recorded_whole_sha is not None and sha256(existing) == recorded_whole_sha):
         return content, "whole"
     span = _block_span(existing)
-    if span is None and existing.lstrip().splitlines()[0] == content.splitlines()[0]:
-        # An earlier generation of this very document, written before markers existed: replace it as a whole.
-        return content, "whole"
-    if span is None and host_rules.is_legacy_generated(existing.replace(CRLF, LF)):
-        # A changed one-line daemon prompt has no stable first line. Migrate the
-        # known generated text to one block instead of preserving a stale copy.
-        return make_block(content), "block"
     block = make_block(content)
     if span is not None:
         return existing[: span[0]] + block + existing[span[1] :], "block"

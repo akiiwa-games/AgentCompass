@@ -60,7 +60,7 @@ class RoutingTests(unittest.TestCase):
                 **extra}
 
     def write_cache(self, directory, providers):
-        path = Path(directory) / '.usage-float' / 'usage-cache.json'
+        path = Path(directory) / '.agent-compass' / 'usage-cache.json'
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({'providers': providers}), encoding='utf-8')
         return path
@@ -131,12 +131,14 @@ class RoutingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = self.write_cache(directory, {'codex': self.row()})
             missing = str(Path(directory) / 'missing.json')
-            with patch.object(router.Path, 'home', return_value=Path(directory)), \
+            with patch.dict(router.os.environ, {'ROUTER_STATE_DIR': '', 'ROUTER_USAGE_CACHE': ''}), \
+                    patch.object(router.Path, 'home', return_value=Path(directory)), \
                     patch.object(router, 'user_env', return_value=None):
                 res = router.usage_snapshot(now=self.now)
             self.assertEqual((res['read_ok'], res['accounts']['codex']['status'],
                               res['accounts']['codex']['windows'][0]['remaining_pct_before_reset']), (True, 'fresh', 65))
-            with patch.object(router.Path, 'home', return_value=Path(directory)), \
+            with patch.dict(router.os.environ, {'ROUTER_STATE_DIR': '', 'ROUTER_USAGE_CACHE': ''}), \
+                    patch.object(router.Path, 'home', return_value=Path(directory)), \
                     patch.object(router, 'user_env', return_value=missing):
                 fallback = router.usage_snapshot(now=self.now)
             # A named cache file is the only one read: it must not quietly fall back to another copy of the data.
@@ -333,7 +335,7 @@ class RoutingTests(unittest.TestCase):
         session_vars = [*worker_context.HOST_SESSION_ID_VARS, 'PASEO_AGENT_ID']
         cases = (
             # A roll-launched CLI worker: roll hands it the parent link, its own host sets its session.
-            ({'ROUTER_WORKER': '1', 'ROUTER_PARENT_AGENT_ID': 'P', 'CLAUDE_CODE_SESSION_ID': 'W'}, ['W']),
+            ({'AGENTCOMPASS_WORKER': '1', 'ROUTER_PARENT_AGENT_ID': 'P', 'CLAUDE_CODE_SESSION_ID': 'W'}, ['W']),
             # A main Claude session under Paseo: its host session and its own Paseo agent.
             ({'CLAUDE_CODE_SESSION_ID': 'S1', 'PASEO_AGENT_ID': 'A1'}, ['S1', 'A1']),
             ({'ROUTER_PARENT_AGENT_ID': 'P'}, None),     # only a parent link: no writer identity at all

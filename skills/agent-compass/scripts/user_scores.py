@@ -176,8 +176,10 @@ def validate_document(doc, *, expected_kind: str | None = None) -> dict:
             parse_target(target)
             if not isinstance(rec, dict):
                 raise ValueError(f'Invalid score record for {m_name} {target}')
+            if 'date' in rec:
+                raise ValueError(f'Legacy field "date" is no longer supported for {m_name} {target}; use "as_of"')
             lv = normalize_level(rec.get('level'))
-            as_of = normalize_date(rec.get('as_of') or rec.get('date'))
+            as_of = normalize_date(rec.get('as_of'))
             kind = str(rec.get('kind') or (expected_kind or 'user')).strip()
             if kind not in ('user', 'maintainer'):
                 raise ValueError(f'Invalid manual score kind {kind!r} for {m_name} {target}')
@@ -193,18 +195,23 @@ def validate_document(doc, *, expected_kind: str | None = None) -> dict:
 
 
 def load_local(path=None, environ=None) -> dict:
-    """Load and validate `<ROUTER_STATE_DIR>/user-scores.json`; raises `ValueError` if an existing file is corrupt."""
+    """Load and validate `<ROUTER_STATE_DIR>/user-scores.json`; raises `ValueError` if an existing file is corrupt or old-shape."""
     target = local_scores_path(path, environ)
     if not target.is_file():
         return empty_document()
+    import state_upgrade
     try:
         raw = json.loads(target.read_text(encoding='utf-8-sig'))
-    except (OSError, ValueError) as exc:
-        raise ValueError(f'Corrupt local user-scores file {target}: {exc}') from exc
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise ValueError(state_upgrade.format_issue(
+            target, f'corrupt local user-scores file ({exc})', state_upgrade.FIX_TRAY,
+        )) from exc
     try:
         return validate_document(raw, expected_kind='user')
     except ValueError as exc:
-        raise ValueError(f'Invalid local user-scores file {target}: {exc}') from exc
+        raise ValueError(state_upgrade.format_issue(
+            target, f'older or invalid local user-scores file ({exc})', state_upgrade.FIX_TRAY,
+        )) from exc
 
 
 def load_public(path=None, *, effective: bool = True, environ=None) -> dict:

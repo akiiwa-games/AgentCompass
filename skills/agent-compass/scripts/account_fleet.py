@@ -19,8 +19,7 @@ REFERENCES = Path(__file__).resolve().parents[1] / 'references'
 
 def accounts_override_path(environ=None):
     env = os.environ if environ is None else environ
-    configured = (env.get('ROUTER_ACCOUNTS_OVERRIDE') or env.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE')
-                  or env.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE'))
+    configured = env.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE')
     if configured:
         return Path(configured).expanduser()
     state_dir = env.get('ROUTER_STATE_DIR')
@@ -58,17 +57,8 @@ def load_accounts(path=None):
     source = Path(path) if path is not None else fleet_document_path()
     accounts = accounts_override.normalize(json.loads(source.read_text(encoding='utf-8-sig')))
     if path is None:
-        user_file = accounts_override_path()
-        user_doc = None
-        if user_file.is_file():
-            try:
-                loaded = json.loads(user_file.read_text(encoding='utf-8-sig'))
-                if isinstance(loaded, dict):
-                    user_doc = loaded
-            except (OSError, ValueError):
-                user_doc = None
+        user_doc = accounts_override.load_override(accounts_override_path())
         if user_doc is not None:
-            user_doc = accounts_override.migrate(user_doc, accounts)
             if isinstance(user_doc.get('scoring'), dict):
                 accounts['scoring'] = accounts_override.merge(accounts['scoring'], user_doc['scoring'])
         provider_inventory.apply(accounts)
@@ -280,29 +270,7 @@ def harness_accepts_visual(harness, model, needs_attachment=False):
 
 
 def account_cwd_allowed(spec, cwd=None):
-    """True when the account has no allowed_cwd restriction or when cwd falls within one of its allowed_cwd paths."""
-    if not cwd_policy.matches((spec or {}).get('cwd_regex'), cwd):
-        return False
-    allowed = (spec or {}).get('allowed_cwd')
-    if not allowed:
-        return True
-    entries = [allowed] if isinstance(allowed, str) else [x for x in allowed if isinstance(x, str) and x.strip()]
-    if not entries:
-        return True
-    raw_actual = Path(str(cwd or Path.cwd())).expanduser()
-    abs_actual = Path(os.path.abspath(str(raw_actual)))
-    abs_parts = tuple(p.lower().rstrip('\\/') for p in abs_actual.parts if p not in ('\\', '/'))
-    for raw in entries:
-        item = raw.strip()
-        cand = Path(item).expanduser()
-        if cand.is_absolute() or ':' in item or item.startswith(('/', '\\')):
-            abs_cand = Path(os.path.abspath(str(cand)))
-            cand_parts = tuple(p.lower().rstrip('\\/') for p in abs_cand.parts if p not in ('\\', '/'))
-            if cand_parts and len(abs_parts) >= len(cand_parts) and abs_parts[:len(cand_parts)] == cand_parts:
-                return True
-        else:
-            cand_parts = tuple(p.lower().rstrip('\\/') for p in cand.parts if p not in ('\\', '/'))
-            n = len(cand_parts)
-            if n and any(abs_parts[i:i + n] == cand_parts for i in range(len(abs_parts) - n + 1)):
-                return True
-    return False
+    """True when the account has no cwd_regex restriction or when cwd matches cwd_regex."""
+    if isinstance(spec, dict) and 'allowed_cwd' in spec:
+        raise ValueError('allowed_cwd is no longer supported; use cwd_regex')
+    return cwd_policy.matches((spec or {}).get('cwd_regex'), cwd)

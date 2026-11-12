@@ -33,7 +33,6 @@ import accounts_override  # noqa: E402
 import allocator  # noqa: E402
 import account_fleet
 import axis_scores
-import ledger_snapshot
 import quota_economy
 import task_intake
 import host_policy  # noqa: E402
@@ -195,14 +194,13 @@ LIVE_PATHS = None    # set by the CLI sandbox to the real cache copies before th
 
 
 def live_document():
-    """The collector cache as `roll` reads it (newest provider row across its copies)."""
-    documents = []
+    """The collector cache as `roll` reads it."""
     for path in LIVE_PATHS or usage_cache.read_paths():
         try:
-            documents.append((path, usage_cache.read_document(path)))
+            return usage_cache.read_document(path)
         except (OSError, ValueError, UnicodeError):
             continue
-    return usage_cache.merge(documents)[0] if documents else {'providers': {}}
+    return {'providers': {}}
 
 
 def pool_counts(document):
@@ -295,14 +293,14 @@ def _fresh_state_env():
             target = Path(empty_root) / '.agent-compass'
             target.mkdir(parents=True)
             keys = ('ROUTER_STATE_DIR', 'ROUTER_HOST_POLICY', 'ROUTER_CAPACITY',
-                    'ROUTER_OVERRIDES', 'ROUTER_ACCOUNTS_OVERRIDE', 'ROUTER_USER_SCORES')
+                    'ROUTER_OVERRIDES', 'AGENTCOMPASS_ACCOUNTS_OVERRIDE', 'ROUTER_USER_SCORES')
             saved = {k: os.environ.get(k) for k in keys}
             os.environ.update(
                 ROUTER_STATE_DIR=str(target),
                 ROUTER_HOST_POLICY=str(target / 'host-policy.json'),
                 ROUTER_CAPACITY=str(target / 'capacity.json'),
                 ROUTER_OVERRIDES=str(target / 'router-overrides.json'),
-                ROUTER_ACCOUNTS_OVERRIDE=str(target / 'accounts-override.json'),
+                AGENTCOMPASS_ACCOUNTS_OVERRIDE=str(target / 'accounts-override.json'),
                 ROUTER_USER_SCORES=str(target / 'user-scores.json'),
             )
             try:
@@ -394,29 +392,26 @@ def ledger_records(path=None, last=None):
 
 def replay_task(row):
     task = dict(row['decision_snapshot']['task'])
-    task['profile'] = ledger_snapshot.ledger_profile(task.get('profile'))      # records written before the four categories
     if row.get('hours'):
         task.setdefault('hours', row['hours'])
     return task
 
 
-def replay(last=None, path=None, accounts=None):
+def replay(last=None, path=None, accounts=None, warnings=None):
     """Re-plan each ledger decision with the usage it saw, read through the roll pipeline at its own time.
 
-    The ledger keeps fetched_at, stale, each window's used_pct/resets_at and a pooled window's account count; records
-    older than that count take the live cache's pool sizes (ledger_document).
+    Rows recorded in an older profile shape are skipped (never mapped), with their count reported in `warnings`.
     """
     accounts = accounts or machine_accounts()
     pools = pool_counts(live_document())
     out = []
+    skipped = 0
     for row in ledger_records(path, last):
         task = replay_task(row)
         try:
             task_intake.validate_profile(task.get('profile') if isinstance(task.get('profile'), dict) else {})
         except ValueError:
-            out.append({'at': row['at'], 'kind': row.get('kind'), 'difficulty': row.get('difficulty'),
-                        'ledger_choice': row.get('choice'), 'choice': None, 'model': None,
-                        'unreplayable': True, 'replay_note': "the record's profile is not valid under the current schema"})
+            skipped += 1
             continue
         now = datetime.fromisoformat(row['at'])
         usage = snapshot(ledger_document(row['usage'], pools), accounts, now)
@@ -424,6 +419,8 @@ def replay(last=None, path=None, accounts=None):
         selected = decision.get('selected_bundle') or {}
         out.append({'at': row['at'], 'kind': row.get('kind'), 'difficulty': row.get('difficulty'),
                     'ledger_choice': row.get('choice'), 'choice': decision.get('choice'), 'model': selected.get('model')})
+    if skipped and isinstance(warnings, list):
+        warnings.append(f'skipped {skipped} older-shape ledger row(s)')
     return out
 
 
@@ -450,7 +447,7 @@ def sandbox_state(folder, *, include_local=True):
             shutil.copy2(policy_path, target / 'host-policy.json')
     os.environ.update(ROUTER_STATE_DIR=str(target), ROUTER_HOST_POLICY=str(target / 'host-policy.json'),
                       ROUTER_CAPACITY=str(target / 'capacity.json'), ROUTER_OVERRIDES=str(target / 'router-overrides.json'),
-                      ROUTER_ACCOUNTS_OVERRIDE=str(target / 'accounts-override.json'),
+                      AGENTCOMPASS_ACCOUNTS_OVERRIDE=str(target / 'accounts-override.json'),
                       ROUTER_USER_SCORES=str(target / 'user-scores.json'))
     return live, ledger
 
@@ -511,8 +508,10 @@ def run(args, ledger):
         for row in result:
             print(row['id'], row['score'], row['excluded'] or '', {k: v for k, v in row['components'].items() if v})
     else:
-        result = replay(args.last, ledger)
-        print(len(result), Counter(r['choice'] for r in result).most_common())
+        replay_warnings = []
+        result = replay(args.last, ledger, warnings=replay_warnings)
+        note = f" ({'; '.join(replay_warnings)})" if replay_warnings else ''
+        print(f'{len(result)}{note}', Counter(r['choice'] for r in result).most_common())
     if args.json:
         Path(args.json).write_text(json.dumps(result, indent=1, ensure_ascii=False, default=str), encoding='utf-8')
     return 0

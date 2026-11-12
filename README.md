@@ -84,6 +84,8 @@ agentcompass roll --task "<what the worker should do>"    # route and launch a w
 
 Or delegate setup to your coding agent: *"Read this repository, run `agentcompass setup --dry-run` to preview changes, then apply it and route this task: …"*
 
+**Upgrading:** After an update, run `agentcompass doctor` to flag any old-shape local state and apply the listed fix (`re-run "agentcompass setup"`, `re-toggle in the tray`, or `delete "<file>"`; see [`docs/technical-reference.md`](docs/technical-reference.md#after-an-update)).
+
 ### Hosts & Ecosystem
 
 - **Hosts**: Claude Code, Codex CLI, Google Antigravity (`agy`), Paseo, Pi, OpenCode, Orca, T3 Code, and Herdr core (`hc`).
@@ -145,6 +147,8 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"       # 自动分�
 ```
 
 或交由主 Agent 执行：*“阅读本仓库，先运行 `agentcompass setup --dry-run` 展示拟修改项，确认后完成安装并路由以下任务：……”*
+
+**升级说明：** 更新版本后运行 `agentcompass doctor` 检查本地是否有旧格式状态文件，并按提示执行对应修复（重跑 `agentcompass setup`、在托盘重新切换开关、或删除指定缓存文件；详见 [`docs/technical-reference.md`](docs/technical-reference.md#after-an-update)）。
 
 ### 支持宿主与生态
 

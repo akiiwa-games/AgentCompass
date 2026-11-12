@@ -202,6 +202,75 @@ class FindingTests(unittest.TestCase):
         routed = [row(5 * 1440 + 5, "plan", choice="sol_high", source="deterministic_allocator")]
         self.assertNotIn("unrouted", self.keys(context(routed, spawns=spawns)))
 
+    def test_old_shape_ledger_rows_are_skipped_with_count_in_report(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "router-ledger.jsonl"
+            old_row = {
+                "at": (T0 + dt.timedelta(minutes=5)).isoformat(),
+                "stage": "plan",
+                "choice": "sol_high",
+                "source": "deterministic_allocator",
+                "profile": {
+                    "axis_demand": {
+                        "reasoning": 2,
+                        "coding": 3,
+                        "instruction": 2,
+                        "vision": 0,
+                        "agentic_tool": 1,
+                        "speed": 1,
+                    }
+                },
+            }
+            current_row = {
+                "at": (T0 + dt.timedelta(minutes=10)).isoformat(),
+                "stage": "plan",
+                "choice": "sol_high",
+                "source": "deterministic_allocator",
+                "profile": {
+                    "work_kind": "general_implementation",
+                    "reasoning_depth": 2,
+                    "code_complexity": 2,
+                    "needs_visual": False,
+                    "needs_gui": False,
+                    "local_only": False,
+                    "wants_fast": False,
+                    "read_only_review": False,
+                    "interaction_style": "engineering",
+                    "multi_task": False,
+                    "task_count": "1",
+                    "axis_demand": {
+                        "divergence": 1,
+                        "coding": 3,
+                        "aesthetics": 0,
+                        "tool_operation": 2,
+                    },
+                },
+            }
+            ledger.write_text(json.dumps(old_row) + "\n" + json.dumps(current_row) + "\n", encoding="utf-8")
+            skipped: list[int] = []
+            rows = audit.from_ledger(ledger, skipped=skipped)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(skipped, [1])
+        ctx = context(
+            rows,
+            now=T0 + dt.timedelta(minutes=20),
+            ledger_rows=rows,
+            ledger_skipped=skipped[0],
+            transcript_rows=[],
+            spawns=[],
+            codex_days={},
+            claude_days={},
+            capacity=None,
+            agent_days={},
+        )
+        ctx["findings"] = audit.build_findings(ctx)
+        report = audit.render(ctx, days=7, detail_days=2, commentary="")
+        self.assertIn("(已跳过旧格式 1 条)", report)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -96,7 +96,7 @@ function create(input) {
     const child = spawn(path.join(BIN, `${family}.exe`), ['exec', '-m', model, '-'], {
       detached: true, windowsHide: true, stdio: [fs.openSync(promptFile, 'r'), out, err],
       env: { ...process.env, FIXTURE_AGENT_ID: input.dispatch_id, ROUTER_PARENT_AGENT_ID: input.parent_id,
-        ROUTER_PARENT_ADDRESS: input.parent_id, ROUTER_PARENT_HOST: 'paseo', ROUTER_WORKER: '1' },
+        ROUTER_PARENT_ADDRESS: input.parent_id, ROUTER_PARENT_HOST: 'paseo', AGENTCOMPASS_WORKER: '1' },
     });
     agent.pid = child.pid;
     child.unref();
@@ -136,7 +136,7 @@ function resume(input) {
   const child = spawn(path.join(BIN, `${family}.exe`), ['exec', '-m', model, '-'], {
     detached: true, windowsHide: true, stdio: [fs.openSync(promptFile, 'r'), out, err],
     env: { ...process.env, FIXTURE_AGENT_ID: existing.id, ROUTER_PARENT_AGENT_ID: input.parent_id,
-      ROUTER_PARENT_ADDRESS: input.parent_id, ROUTER_PARENT_HOST: 'paseo', ROUTER_WORKER: '1' },
+      ROUTER_PARENT_ADDRESS: input.parent_id, ROUTER_PARENT_HOST: 'paseo', AGENTCOMPASS_WORKER: '1' },
   });
   existing.pid = child.pid;
   child.unref();

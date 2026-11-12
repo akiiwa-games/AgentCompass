@@ -1190,10 +1190,10 @@ def _discover(home=None, environ=None, now=None):
             'plan': None,
             'billing': 'subscription',
         }
-    override_env = (environ.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE') or environ.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE')
-                    or environ.get('ROUTER_ACCOUNTS_OVERRIDE'))
+    override_env = environ.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE')
     override_path = Path(override_env).expanduser() if override_env else state_dir / 'accounts-override.json'
-    override_doc, _ = read_json(override_path)
+    import accounts_override
+    override_doc = accounts_override.load_override(override_path) or {}
     for section in ('litellm_proxies', 'accounts'):
         for pname, pspec in obj(override_doc.get(section)).items():
             if pname in result['accounts'] or not isinstance(pspec, dict) or pspec.get('enabled') is False:
@@ -1229,7 +1229,6 @@ def _discover(home=None, environ=None, now=None):
                     'backend_kind': 'litellm',
                     **({'budget_usd': budget_usd} if budget_usd is not None else {}),
                     **({'models': pmodels} if pmodels else {}),
-                    **({'allowed_cwd': pspec['allowed_cwd']} if pspec.get('allowed_cwd') else {}),
                     **({'cwd_regex': pspec['cwd_regex']} if pspec.get('cwd_regex') else {}),
                 }
                 result['launchers'][pname] = {'family': pfamily, 'status': pstatus}
@@ -1286,7 +1285,13 @@ def _discover(home=None, environ=None, now=None):
         result['saved'].append({**entry, 'bound_to': matched, 'models': models,
                                 'plan': facts.get('plan'), 'status': 'paused' if entry.get('healthy') is False else 'bound' if matched else 'saved'})
     read_magpie(home, environ, result, bindings)
-    previous, _ = read_json(state_dir / 'provider-inventory.json')
+    inv_path = state_dir / 'provider-inventory.json'
+    if inv_path.exists():
+        import state_upgrade
+        inv_issue = state_upgrade.check_provider_inventory(inv_path)
+        if inv_issue:
+            raise ValueError(inv_issue)
+    previous, _ = read_json(inv_path)
     apply_removals(result, previous)
     # A plugin the user switched off in the AgentCompass panel takes its account out of routing at once.
     plugin_state, _ = read_json(state_dir / 'plugins.json')
@@ -1822,8 +1827,6 @@ def apply(accounts, inventory=None, *, live=None):
         spec = specs[name]
         spec['verified'] = launch_verified(row, spec.get('verified'))
         spec['discovery_status'] = row['status']
-        if row.get('allowed_cwd') and 'allowed_cwd' not in spec:
-            spec['allowed_cwd'] = row['allowed_cwd']
         if row.get('cwd_regex') and 'cwd_regex' not in spec:
             spec['cwd_regex'] = row['cwd_regex']
         if is_litellm or spec.get('backend_kind') in ('litellm', 'proxy'):

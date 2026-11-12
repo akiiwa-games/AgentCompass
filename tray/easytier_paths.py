@@ -6,16 +6,12 @@ directory (a reinstall or uninstall replaces the app directory; the per-user ins
 ``%ProgramData%\\AgentCompass\\easytier`` is that home: machine-wide like the task, not inside any user profile,
 and untouched by the installer. easytier_setup.py locks it (and its AgentCompass parent) to SYSTEM and
 Administrators.
-
-Before this home existed the node lived in ``<checkout or app dir>\\easytier``. ``home()`` still finds a node
-there until ``easytier_setup.py install --migrate-from`` has moved it.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
 OVERRIDE = "AGENTCOMPASS_EASYTIER_HOME"      # tests and isolated checks only
 CORE_NAME = "easytier-core.exe"
 
@@ -42,21 +38,10 @@ def product_parent(environ=None) -> Path | None:
     return product_home(environ).parent
 
 
-def legacy_home(root: Path | None = None) -> Path:
-    """The checkout-era (or app-directory) location: <root>\\easytier."""
-    return Path(root or ROOT) / "easytier"
-
-
 def installed_at(home: Path) -> bool:
     return (Path(home) / "bin" / CORE_NAME).is_file()
 
 
-def home(environ=None, root: Path | None = None) -> Path:
-    """The product home when a node is there, else a node still at the legacy location, else the product home."""
-    product = product_home(environ)
-    if installed_at(product):
-        return product
-    legacy = legacy_home(root)
-    if installed_at(legacy):
-        return legacy
-    return product
+def home(environ=None) -> Path:
+    """The fixed per-machine EasyTier home."""
+    return product_home(environ)

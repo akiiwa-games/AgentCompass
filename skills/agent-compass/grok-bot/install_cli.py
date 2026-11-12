@@ -26,7 +26,7 @@ def pin():
 
 
 def check(directory=None):
-    directory = directory or grok_bot_paths.runtime_dir(ROOT)
+    directory = directory or grok_bot_paths.runtime_dir()
     spec = pin()
     expected = {**spec['artifact_sha256'], **spec['patched_sha256']}
     for name, checksum in expected.items():

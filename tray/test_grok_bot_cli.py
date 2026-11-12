@@ -39,7 +39,7 @@ class GrokBotIntegrationTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.package = Path(self.directory.name)
-        self.binary = self.package / 'runtime/bin/gbot.mjs'
+        self.binary = self.package / 'state/grok-bot/runtime/bin/gbot.mjs'
         self.binary.parent.mkdir(parents=True)
         self.binary.write_text('synthetic', encoding='utf-8')
         state = {'ROUTER_STATE_DIR': str(self.package / 'state'), 'AGENTCOMPASS_GROK_BOT_RUNTIME': ''}

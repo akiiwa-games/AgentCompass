@@ -1,9 +1,10 @@
 """Model settings preferences use temporary files, never the user's host policy."""
-import copy
 import json
 import sys
 from pathlib import Path
 from unittest import mock
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
@@ -24,43 +25,11 @@ def document():
                 'experimental': {'model': 'other', 'disabled': True}}}}}
 
 
-def test_migration_preserves_explicit_choices_and_reports_ambiguity():
-    base = document()
-    base['accounts']['codex']['bundles']['experimental']['disabled'] = 'Reserved for the primary quota account'
-    legacy = copy.deepcopy(base)
-    legacy['accounts']['codex']['bundles']['sol_high']['disabled'] = 'User selected off'
-    legacy['accounts']['codex']['bundles']['sol_medium']['disabled'] = False
-    legacy['accounts']['codex']['bundles']['experimental'].pop('disabled')
-    legacy['scoring']['safety_margin_pct'] = 9
-    migrated = accounts_override.migrate(legacy, base)
-    assert migrated['schema_version'] == 2
-    assert migrated['scoring'] == {'safety_margin_pct': 9}
-    assert migrated['accounts']['codex']['bundles'] == {
-        'sol_medium': {'disabled': False}, 'sol_high': {'disabled': True}}
-    assert migrated['migration_ambiguous_enabled'] == [{'account': 'codex', 'bundle': 'experimental'}]
-    accounts_override.apply(base, migrated)
-    assert base['accounts']['codex']['bundles']['experimental']['disabled'] is True
-    assert 'disabled' not in base['accounts']['codex']['bundles']['pi_sol_high']
-
-
-def test_migration_preserves_custom_provider_definitions_and_extensions():
-    base = document()
-    original = copy.deepcopy(base)
-    custom = {'backend_kind': 'litellm', 'endpoint': 'https://example.invalid',
-              'api_key_env': 'PROXY_KEY', 'models': ['gpt-5.6-sol'], 'allowed_cwd': ['E:/workspace'],
-              'bundles': {'custom_model': {'model': 'gpt-5.6-sol', 'disabled': False}}}
-    original['accounts']['local-proxy'] = custom
-    original['litellm_proxies'] = {'another-proxy': {'api_key_env': 'SECOND_KEY'}}
-    migrated = accounts_override.migrate(original, base)
-    assert migrated['accounts']['local-proxy'] == custom
-    assert migrated['litellm_proxies'] == original['litellm_proxies']
-
-
 def test_omitted_disabled_never_removes_new_default():
     base = document()
-    accounts_override.apply(base, {'accounts': {'codex': {'bundles': {'experimental': {'model': 'other'}}}}})
+    accounts_override.apply(base, {'schema_version': 2, 'accounts': {'codex': {'bundles': {'experimental': {'model': 'other'}}}}})
     assert base['accounts']['codex']['bundles']['experimental']['disabled'] is True
-    accounts_override.apply(base, {'accounts': {'codex': {'bundles': {'experimental': {'disabled': False}}}}})
+    accounts_override.apply(base, {'schema_version': 2, 'accounts': {'codex': {'bundles': {'experimental': {'disabled': False}}}}})
     assert base['accounts']['codex']['bundles']['experimental']['disabled'] is False
 
 
@@ -71,7 +40,7 @@ def settings(tmp_path, monkeypatch):
     state = tmp_path / 'state'
     state.mkdir()
     monkeypatch.setattr(account_fleet, 'REFERENCES', reference)
-    monkeypatch.setenv('ROUTER_ACCOUNTS_OVERRIDE', str(state / 'accounts-override.json'))
+    monkeypatch.setenv('AGENTCOMPASS_ACCOUNTS_OVERRIDE', str(state / 'accounts-override.json'))
     monkeypatch.setenv('ROUTER_CAPACITY', str(state / 'capacity.json'))
     monkeypatch.setattr(provider_inventory, 'apply', lambda data: None)
     monkeypatch.setattr(host_policy, 'sync_discovered', lambda data: {})
@@ -98,46 +67,29 @@ def test_first_write_is_sparse_and_partial_model_toggle_is_harness_scoped(tmp_pa
     assert not live['pi_sol_high'].get('disabled')
 
 
-def test_legacy_disabled_strings_load_and_save_as_boolean_state(tmp_path, monkeypatch):
+def test_old_shape_override_and_string_disabled_are_rejected(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
-    for version in (1, 2):
-        for old_value in ('Legacy explanation', ''):
-            original = {'schema_version': version, 'accounts': {'codex': {'bundles': {
-                'sol_high': {'disabled': old_value}, 'sol_medium': {'disabled': False}}}},
-                'harness_overrides': {'codex': {'pi': {'disabled': old_value}}}}
-            target.write_text(json.dumps(original))
-            live = account_fleet.load_accounts()['accounts']['codex']['bundles']
-            assert live['sol_high']['disabled'] is True
-            assert live['sol_medium']['disabled'] is False
-            assert live['pi_sol_high']['disabled'] is True
-            assert live['pi_sol_high']['_model_disabled'] is False
-            rows = router_data.harness_model_rows()
-            assert not next(row for row in rows if row['harness'] == 'pi')['enabled']
-            # An unrelated save must not carry legacy explanations back to disk.
-            router_data.save_tuning({'safety_margin_pct': 7})
-            saved = json.loads(target.read_text())
-            assert saved['accounts']['codex']['bundles'] == {
-                'sol_high': {'disabled': True}, 'sol_medium': {'disabled': False}}
-            assert saved['harness_overrides']['codex']['pi']['disabled'] is True
-            assert old_value == '' or old_value not in target.read_text()
+    for bad in (
+        {'schema_version': 1, 'accounts': {'codex': {'bundles': {'sol_high': {'disabled': True}}}}},
+        {'schema_version': 2, 'accounts': {'codex': {'bundles': {'sol_high': {'disabled': 'Legacy explanation'}}}}},
+        {'schema_version': 2, 'harness_overrides': {'codex': {'pi': {'disabled': 'off'}}}},
+    ):
+        target.write_text(json.dumps(bad), encoding='utf-8')
+        with pytest.raises(ValueError, match=r'accounts-override\.json'):
+            account_fleet.load_accounts()
 
 
-def test_direct_file_toggle_normalizes_other_flags_and_writes_explicit_state(tmp_path, monkeypatch):
+def test_direct_file_toggle_writes_explicit_boolean_state(tmp_path, monkeypatch):
     settings(tmp_path, monkeypatch)
     target = tmp_path / 'custom-accounts.json'
     data = document()
-    data['accounts']['codex']['bundles']['experimental']['disabled'] = 'Legacy explanation'
-    data['accounts']['codex']['bundles']['sol_high']['disabled'] = ''
     target.write_text(json.dumps(data))
     router_data.toggle_bundle('codex', 'sol_high', target)
     saved = json.loads(target.read_text())['accounts']['codex']['bundles']
-    assert saved['sol_high']['disabled'] is False
+    assert saved['sol_high']['disabled'] is True
     assert saved['experimental']['disabled'] is True
     router_data.toggle_bundle('codex', 'sol_high', target)
-    assert json.loads(target.read_text())['accounts']['codex']['bundles']['sol_high']['disabled'] is True
-    data = json.loads(target.read_text())
-    data['accounts']['codex']['bundles']['experimental']['disabled'] = 'Legacy explanation'
-    target.write_text(json.dumps(data))
+    assert json.loads(target.read_text())['accounts']['codex']['bundles']['sol_high']['disabled'] is False
     router_data.save_tuning({'safety_margin_pct': 7}, target)
     assert json.loads(target.read_text())['accounts']['codex']['bundles']['experimental']['disabled'] is True
 
@@ -165,16 +117,15 @@ def test_enabling_one_harness_on_a_denied_account_keeps_its_siblings_off(tmp_pat
     assert preferences == {'codex': {'disabled': True}, 'pi': {'disabled': False}}
 
 
-def test_backup_precedes_migration_and_tuning_restore_preserves_choices(tmp_path, monkeypatch):
+def test_backup_and_tuning_restore_preserves_choices(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
-    legacy = document()
-    legacy['accounts']['codex']['bundles']['sol_medium']['disabled'] = True
-    original = json.dumps(legacy).encode()
+    initial = {'schema_version': 2, 'accounts': {'codex': {'bundles': {'sol_medium': {'disabled': True}}}}}
+    original = json.dumps(initial).encode()
     target.write_bytes(original)
     router_data.save_tuning({'safety_margin_pct': 7})
     assert any(path.read_bytes() == original for path in (target.parent / 'backups').iterdir())
-    migrated = json.loads(target.read_text())
-    assert migrated['schema_version'] == 2 and 'models' not in migrated
+    saved = json.loads(target.read_text())
+    assert saved['schema_version'] == 2 and 'models' not in saved
     assert router_data.read_tuning()['safety_margin_pct'] == 7
     router_data.restore_tuning()
     assert router_data.read_tuning()['safety_margin_pct'] == 5

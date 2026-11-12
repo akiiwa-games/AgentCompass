@@ -31,12 +31,12 @@ FEATURES = {
 }
 
 ENV_KEYS = {
-    "dot2api": ("AGENTCOMPASS_PORT_DOT2API", "DOT2API_PORT"),
+    "dot2api": ("AGENTCOMPASS_PORT_DOT2API",),
     "chatgpt_web": ("AGENTCOMPASS_PORT_CHATGPT_WEB",),
-    "gemini_web": ("AGENTCOMPASS_PORT_GEMINI_WEB", "GEMINI_WEB_CDP_PORT"),
+    "gemini_web": ("AGENTCOMPASS_PORT_GEMINI_WEB",),
     "account_login": ("AGENTCOMPASS_PORT_ACCOUNT_LOGIN",),
     "easytier_rpc": ("AGENTCOMPASS_PORT_EASYTIER",),
-    "muse2api": ("AGENTCOMPASS_PORT_MUSE2API", "MUSE2API_PORT"),
+    "muse2api": ("AGENTCOMPASS_PORT_MUSE2API",),
 }
 
 

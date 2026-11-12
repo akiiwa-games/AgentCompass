@@ -771,11 +771,9 @@ def g_installer():
     (OUT / "release").mkdir(exist_ok=True)
     shutil.copy2(setup_exe, OUT / "release" / setup_exe.name)
 
-    # State a person would already have: the pre-rename task, the old startup shortcuts, the three user variables, a router setup with hooks.
-    run(["schtasks", "/Create", "/TN", "Route Manager", "/TR", "cmd /c exit", "/SC", "ONLOGON", "/F"], label="legacy-task")
+    # State a person would already have: startup shortcut, the three user variables, a router setup with hooks.
     STARTUP.mkdir(parents=True, exist_ok=True)
-    for name in ("Route Manager.lnk", "AgentCompass.lnk"):
-        (STARTUP / name).write_text("placeholder", encoding="utf-8")
+    (STARTUP / "AgentCompass.lnk").write_text("placeholder", encoding="utf-8")
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE)
     for name in ENV_NAMES:
         winreg.SetValueEx(key, name, 0, winreg.REG_SZ, "guest-" + name)
@@ -785,7 +783,6 @@ def g_installer():
         (HOME / ".codex" / "auth.json").write_text(json.dumps({"tokens": {"access_token": "guest-dummy-codex-token", "account_id": "guest-account"}}), encoding="utf-8")
     hooks = agentcompass("setup", "--yes", "--hooks")
     check("router setup with hooks is in place before the installer runs", hooks.returncode == 0 and (HOME / ".codex" / "skills" / "agent-compass").exists(), (hooks.stdout + hooks.stderr)[-300:])
-    check("the pre-rename 'Route Manager' task exists before install", schtasks_xml("Route Manager") is not None)
 
     installed = run([setup_exe, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={LOGS / 'agentcompass-install.log'}"], label="agentcompass-setup", timeout=600)
     exe = INSTALL_DIR / "AgentCompass.exe"
@@ -805,7 +802,6 @@ def g_installer():
     check("the per-user Add/Remove Programs entry exists", registered)
     xml = schtasks_xml("AgentCompass") or ""
     check("scheduled task 'AgentCompass' exists, logon trigger, runs the installed exe", "LogonTrigger" in xml and str(exe).lower() in xml.lower().replace("&amp;", "&"), xml[:600])
-    check("the pre-rename 'Route Manager' task was removed by the install", schtasks_xml("Route Manager") is None)
 
     run_task = run(["schtasks", "/Run", "/TN", "AgentCompass"], label="task-run")
     started = wait_for(lambda: tray_processes(), 40)
@@ -1256,7 +1252,7 @@ def g_installer():
             pass
     winreg.CloseKey(key)
     check("the three user environment variables were removed", not leftovers, leftovers)
-    check("the Startup shortcuts were removed", not [n for n in ("Route Manager.lnk", "AgentCompass.lnk") if (STARTUP / n).exists()], list(STARTUP.glob("*")))
+    check("the Startup shortcut was removed", not (STARTUP / "AgentCompass.lnk").exists(), list(STARTUP.glob("*")))
     check("the uninstaller ran 'agentcompass uninstall' (router skill links and hook files are gone)",
           not (HOME / ".codex" / "skills" / "agent-compass").exists() and not (HOME / ".claude" / "skills" / "agent-compass").exists(),
           [str(p) for p in (HOME / ".codex" / "skills" / "agent-compass", HOME / ".claude" / "skills" / "agent-compass") if p.exists()])
@@ -1266,7 +1262,6 @@ def g_installer():
     except OSError:
         still = False
     check("the Add/Remove Programs entry is gone", not still)
-    run(["schtasks", "/Delete", "/TN", "Route Manager", "/F"], label="cleanup-legacy")
 
 
 def registry_path(root, subkey):

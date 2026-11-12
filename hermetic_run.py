@@ -50,12 +50,12 @@ def _protected_roots():
 
 PROTECTED = _protected_roots()
 # State locations a shell may carry into the run; under test they come from the temporary home.
-STATE_VARIABLES = ('ROUTER_STATE_DIR', 'AGENTCOMPASS_STATE_DIR', 'AGENTCOMPASS_APP_DIR',
-                   'AGENTCOMPASS_CHATGPT_CODEX_HOME', 'ROUTE_MANAGER_CHATGPT_CODEX_HOME',
+STATE_VARIABLES = ('ROUTER_STATE_DIR', 'AGENTCOMPASS_APP_DIR',
+                   'AGENTCOMPASS_CHATGPT_CODEX_HOME',
                    'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PASEO_HOME', 'PRO_CONSULT_HOME')
 # Session and worker markers a parent/worker shell may carry into pytest; cleared at startup and before every test.
 WORKER_VARIABLES = (
-    'PASEO_AGENT_ID', 'ROUTER_WORKER', 'PASEO_AGENT_CWD',
+    'PASEO_AGENT_ID', 'AGENTCOMPASS_WORKER', 'PASEO_AGENT_CWD',
     'ROUTER_PARENT_AGENT_ID', 'ROUTER_PARENT_HOST', 'ROUTER_PARENT_ADDRESS',
     'ANTIGRAVITY_CONVERSATION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDECODE',
     'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CODEX_SANDBOX', 'CODEX_CI',

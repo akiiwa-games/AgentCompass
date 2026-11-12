@@ -29,7 +29,6 @@ import plugins
 
 SOURCE = plugins.plugin_root("chatgpt-web")
 MARK = "agent-compass:"
-LEGACY_MARKS = ("route-manager:",)      # trees patched before the AgentCompass rename; renamed on the next apply
 CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 MAIN = "launcher/electron/main.cjs"
@@ -143,20 +142,13 @@ def write(path: Path, text: str) -> None:
 
 
 def marked(source: str) -> bool:
-    return any(mark in source for mark in (MARK, *LEGACY_MARKS))
-
-
-def current_marks(source: str) -> str:
-    for mark in LEGACY_MARKS:
-        source = source.replace(mark, MARK)
-    return source
+    return MARK in source
 
 
 def patch_source(source: str, edits: list[tuple[str, str]]) -> str:
-    """The file with the edits applied; only the markers renamed when they already are; ValueError when an anchor
-    has moved."""
+    """The file with the edits applied; unchanged when already marked; ValueError when an anchor has moved."""
     if marked(source):
-        return current_marks(source)
+        return source
     eol = "\r\n" if "\r\n" in source else "\n"
     for anchor, replacement in edits:
         if source.count(anchor) != 1:
@@ -197,11 +189,6 @@ def apply(root: Path = SOURCE) -> str:
     """Patch the tree. Nothing is written unless every file patches."""
     targets = target_edits(root)
     current = status(root)
-    if current == "patched":
-        for name in targets:
-            text = read(root / name)
-            if current_marks(text) != text:
-                write(root / name, current_marks(text))
     if current in ("patched", "missing"):
         return current
     if current == "partial":
@@ -224,7 +211,7 @@ def revert(root: Path = SOURCE) -> str:
         path = root / name
         if not path.is_file() or not marked(read(path)):
             continue
-        source = current_marks(read(path))
+        source = read(path)
         eol = "\r\n" if "\r\n" in source else "\n"
         for original, replacement in reversed(edits):
             candidates = [

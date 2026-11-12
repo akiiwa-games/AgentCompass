@@ -252,7 +252,7 @@ def worker(path):
     env = {key: value for key, value in judge.subscription_env().items()
            if not key.startswith(('CLAUDE', 'CODEX_', 'PASEO_', 'ORCA_', 'T3_', 'CINDY_', 'ROUTER_PARENT_'))}
     env.update(provider_env)
-    env.update(ROUTER_WORKER='1', ROUTER_PARENT_AGENT_ID=request['parent'],
+    env.update(AGENTCOMPASS_WORKER='1', ROUTER_PARENT_AGENT_ID=request['parent'],
                ROUTER_PARENT_HOST='herdr', ROUTER_PARENT_ADDRESS=request['parent'])
     # Bound argv size while preserving every byte of the full assignment on disk.
     bootstrap = ('Read the entire UTF-8 assignment file ' + json.dumps(request['prompt_file']) +

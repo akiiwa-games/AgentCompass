@@ -195,7 +195,7 @@ def test_account_cards_and_model_rows_surface_live_model_exclusions_and_unreadab
     target = settings(tmp_path, monkeypatch)
     live_store = target.parent / live_models.FILE
     retry_store = target.parent / provider_retry.FILE
-    monkeypatch.setenv('ROUTER_LIVE_MODELS', str(live_store))
+    monkeypatch.setenv('AGENTCOMPASS_LIVE_MODELS', str(live_store))
     monkeypatch.setenv('ROUTER_PROVIDER_RETRY', str(retry_store))
     monkeypatch.setattr(router_data, 'account_badge', lambda *args: ('就绪', 'ok'))
     monkeypatch.setattr(router_data, 'pool_reservations', lambda **kw: {})
@@ -315,7 +315,7 @@ def test_the_tray_never_calls_the_bridge_on_its_own_thread(tmp_path, monkeypatch
     import live_models
     target = settings(tmp_path, monkeypatch)
     live_store = target.parent / live_models.FILE
-    monkeypatch.setenv('ROUTER_LIVE_MODELS', str(live_store))
+    monkeypatch.setenv('AGENTCOMPASS_LIVE_MODELS', str(live_store))
     alloc, _ = router_data.modules()
     accounts = {'accounts': {'antigravity': {'verified': True, 'bundles': {
         'argon_high': {'provider': 'antigravity-resilient', 'model': 'gemini-4-argon-high'}}}}}

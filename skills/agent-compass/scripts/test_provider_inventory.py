@@ -96,7 +96,7 @@ class DiscoveryTests(unittest.TestCase):
         the plan."""
         bound = self.discover()['accounts']
         window = lambda wid: [{'id': wid, 'label': wid, 'used_pct': 10.0, 'resets_at': '2026-10-28T00:00:00+00:00'}]
-        self.write('.usage-float/usage-cache.json', {'providers': {name: {
+        self.write('.agent-compass/usage-cache.json', {'providers': {name: {
             'provider_id': name, 'display_name': name, 'available': True, 'stale': False,
             'fetched_at': self.now.isoformat(), 'credential_key': bound[name]['credential_key'], 'plan_label': label,
             **({'plan_source': 'profile_api'} if bound[name]['family'] == 'claude' else {}),
@@ -104,12 +104,17 @@ class DiscoveryTests(unittest.TestCase):
             for name, label in plans.items()}})
 
     def test_new_launcher_later_signin_enrolls_via_real_account_loading(self):
-        policy = self.write('host-policy.json', {'allowed_accounts': ['codex']})
+        policy = self.write('host-policy.json', {'allowed_accounts': ['codex'], 'known_accounts': ['codex', 'claude']})
         env = {'ROUTER_PROVIDER_HOME': str(self.home), 'ROUTER_STATE_DIR': str(self.home / '.agent-compass'),
                'PASEO_HOME': str(self.home / '.paseo'), 'ROUTER_HOST_POLICY': str(policy),
                'ROUTER_CAPACITY': str(self.home / 'capacity.json'), 'PATH': ''}
         with patch.dict(inventory.os.environ, env):
-            host_policy.sync_discovered(account_fleet.load_accounts(), enable=True)
+            first = account_fleet.load_accounts()
+            policy.write_text(json.dumps({
+                'allowed_accounts': ['codex'],
+                'known_accounts': sorted(first['_discovery']['accounts']),
+            }))
+            host_policy.sync_discovered(account_fleet.load_accounts())
             self.paseo({'codex': {'enabled': True}, 'codex-work': {'extends': 'codex', 'enabled': True, 'env': {'CODEX_HOME': str(self.home / '.codex-work')}}})
             waiting = account_fleet.load_accounts()
             self.assertNotIn('codex-work', host_policy.load_policy()['known_accounts'])
@@ -142,7 +147,7 @@ class DiscoveryTests(unittest.TestCase):
                 self.home = parent / label
                 self.home.mkdir()
                 if cached:
-                    self.write('.usage-float/usage-cache.json', {'providers': {'grok': {'plan_label': 'SuperGrok'}}})
+                    self.write('.agent-compass/usage-cache.json', {'providers': {'grok': {'plan_label': 'SuperGrok'}}})
                 if native:
                     (self.home / '.grok').mkdir()
                 if enabled is not None:
@@ -464,7 +469,7 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_reported_grok_quota_is_used_instead_of_unmetered(self):
         self.paseo({'grok': {'extends': 'acp', 'enabled': True}})
-        self.write('.usage-float/usage-cache.json', {'providers': {'grok': {
+        self.write('.agent-compass/usage-cache.json', {'providers': {'grok': {
             'windows': [{'id': 'credits', 'used_pct': 99}], 'available': True}}})
         accounts = self.apply(self.discover())
         spec = accounts['accounts']['grok']
@@ -583,7 +588,7 @@ class DiscoveryTests(unittest.TestCase):
         second = account_fleet.bundles(accounts)['work_sol_xhigh']
         self.assertEqual((second['account'], second['provider']), ('codex', 'codex-work'))
         self.assertFalse(accounts['accounts']['codex-work']['bundles'])
-        self.write('.usage-float/usage-cache.json', {'providers': {'codex': {
+        self.write('.agent-compass/usage-cache.json', {'providers': {'codex': {
             'credential_key': snapshot['accounts']['codex']['credential_key']}}})
         self.paseo({'codex': {'enabled': False}, 'codex-work': {'extends': 'codex', 'enabled': True,
                     'env': {'CODEX_HOME': str(self.home / '.codex-work')}}})
@@ -593,7 +598,7 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_changed_credentials_clear_old_quota_and_unknown_plan_capacity(self):
         old = self.discover()['accounts']['codex']['credential_key']
-        self.write('.usage-float/usage-cache.json', {'providers': {'codex': {'credential_key': old}}})
+        self.write('.agent-compass/usage-cache.json', {'providers': {'codex': {'credential_key': old}}})
         self.native_codex('codex', 'account-B', plan='unknown-plan')
         snapshot = self.discover()
         accounts = self.apply(snapshot)
@@ -677,7 +682,7 @@ class DiscoveryTests(unittest.TestCase):
                                                     'ANTHROPIC_AUTH_TOKEN': 'SECRET-gateway'}})
         self.write('.claude/usage-float.json', {'source': 'magpie', 'account': 'private@example.test'})
         fingerprint = inventory.digest('magpie', 'https://gateway.example.test/v1', 'SECRET-gateway', 'claude', 'private@example.test')
-        self.write('.usage-float/usage-cache.json', {'providers': {'claude': {
+        self.write('.agent-compass/usage-cache.json', {'providers': {'claude': {
             'credential_key': fingerprint, 'plan_label': 'pro'}}})
         row = self.discover()['accounts']['claude']
         self.assertEqual((row['usage_binding'], row['billing'], row['plan']), ('matches', 'subscription', 'pro'))
@@ -826,10 +831,10 @@ class DiscoveryTests(unittest.TestCase):
         bound = self.discover()['accounts']['codex']['credential_key']
         reading = {'fetched_at': self.now.isoformat(), 'windows': [{'id': 'usage', 'used_pct': 10}]}
         for error, status in (('登录凭据需由 Codex 更新', 'auth_failed'), ('更新失败', 'usage_failing'), (None, 'ready')):
-            self.write('.usage-float/usage-cache.json', {'providers': {'codex': {
+            self.write('.agent-compass/usage-cache.json', {'providers': {'codex': {
                 'credential_key': bound, 'error': error, 'stale': bool(error), **reading}}})
             self.assertEqual(self.discover(publish=True)['accounts']['codex']['status'], status)
-        self.write('.usage-float/usage-cache.json', {'providers': {'codex': {
+        self.write('.agent-compass/usage-cache.json', {'providers': {'codex': {
             'credential_key': bound, 'error': '登录凭据需由 Codex 更新', 'stale': True}}})
         self.native_codex('codex', 'account-B')
         row = self.discover(publish=True)['accounts']['codex']
@@ -856,7 +861,7 @@ class DiscoveryTests(unittest.TestCase):
             },
         })
         fingerprint = inventory.digest('magpie', 'https://gateway.example.test/v1', 'SECRET-magpie-gw', 'claude', '')
-        self.write('.usage-float/usage-cache.json', {'providers': {'claude-magpie': {
+        self.write('.agent-compass/usage-cache.json', {'providers': {'claude-magpie': {
             'credential_key': fingerprint, 'plan_label': 'pro', 'backend_kind': 'gateway'}}})
         snapshot = self.discover()
         self.assertNotIn('claude-2', snapshot['accounts'])
@@ -881,10 +886,11 @@ class DiscoveryTests(unittest.TestCase):
         self.assertNotIn('disabled', magpie_spec['bundles']['claude-magpie__opus55_high'])
         self.assertNotIn('disabled', magpie_spec['bundles']['claude-magpie__sonnet55_high'])
         override_path = self.write('.agent-compass/accounts-override.json', {
+            'schema_version': 2,
             'accounts': {
                 'claude-magpie': {
                     'bundles': {
-                        'claude-magpie__sonnet55_high': {'disabled': 'user disabled'}
+                        'claude-magpie__sonnet55_high': {'disabled': True}
                     }
                 }
             }
@@ -1066,6 +1072,7 @@ class DiscoveryTests(unittest.TestCase):
             }
         })
         self.write('.agent-compass/accounts-override.json', {
+            'schema_version': 2,
             'accounts': {
                 'team-proxy': {
                     'backend_kind': 'litellm',
@@ -1076,7 +1083,7 @@ class DiscoveryTests(unittest.TestCase):
             }
         })
         pi_key = self.discover()['accounts']['pi']['credential_key']
-        self.write('.usage-float/usage-cache.json', {
+        self.write('.agent-compass/usage-cache.json', {
             'providers': {
                 'team-proxy': {
                     'plan_label': '$300',
@@ -1104,9 +1111,9 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(accounts['team-proxy']['bundles']['auto:team-proxy:codex:gpt-6.1-sol@high']['modeId'], 'full-access')
         self.assertEqual(accounts['team-proxy']['bundles']['auto:team-proxy:claude:claude-sonnet-5-5@high']['harness'], 'claude')
         self.assertEqual(accounts['team-proxy']['bundles']['auto:team-proxy:claude:claude-sonnet-5-5@high']['modeId'], 'bypassPermissions')
-        override_file = self.home / '.agent-compass/accounts-override.json'
-        self.assertEqual(account_fleet.accounts_override_path({'ROUTE_MANAGER_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
-        self.assertEqual(account_fleet.accounts_override_path({'ROUTER_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
+        override_file = self.home / 'custom-override.json'
+        self.assertEqual(account_fleet.accounts_override_path({'AGENTCOMPASS_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
+        self.assertNotEqual(account_fleet.accounts_override_path({'ROUTER_ACCOUNTS_OVERRIDE': str(override_file)}), override_file)
 
 
 class FreshPathTests(unittest.TestCase):

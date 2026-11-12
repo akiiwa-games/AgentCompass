@@ -31,13 +31,18 @@ class RuntimePathsTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 rp.uv_path()
 
-    def test_the_pre_rename_variable_still_names_the_executable(self):
+    def test_the_pre_rename_variable_is_ignored(self):
         with tempfile.TemporaryDirectory() as td:
-            uv = Path(td) / 'uv.exe'
-            uv.touch()
-            with patch.dict(rp.os.environ, {'ROUTE_MANAGER_UV': str(uv)}):
-                rp.os.environ.pop('AGENTCOMPASS_UV', None)
-                self.assertEqual(rp.uv_path(), uv)
+            old_uv = Path(td) / 'old-uv.exe'
+            old_uv.touch()
+            scripts = Path(td) / 'Python399' / 'Scripts'
+            scripts.mkdir(parents=True)
+            active_uv = scripts / 'uv.exe'
+            active_uv.touch()
+            with patch.dict(rp.os.environ, {'USERPROFILE': td, 'ROUTE_MANAGER_UV': str(old_uv)}, clear=True), \
+                    patch.object(rp.shutil, 'which', return_value=None), \
+                    patch.object(rp.sysconfig, 'get_path', return_value=str(scripts)):
+                self.assertEqual(rp.uv_path(), active_uv)
 
 
 if __name__ == '__main__':

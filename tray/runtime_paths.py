@@ -39,17 +39,12 @@ def _hint(name: str) -> dict:
     return hint(name)
 
 
-def legacy_name(variable: str) -> str:
-    """The pre-rename spelling of an AgentCompass variable, still honoured: AGENTCOMPASS_X -> ROUTE_MANAGER_X."""
-    return variable.replace("AGENTCOMPASS_", "ROUTE_MANAGER_", 1) if variable.startswith("AGENTCOMPASS_") else variable
-
-
 def executable(name: str, override: str, candidates=(), *, prefer_candidates: bool = False) -> Path:
     def missing(detail: str = "") -> ToolMissing:
         info = _hint(name)
         return ToolMissing(info["tool"], info["feature"], info["install"], override, detail=detail)
 
-    configured = os.environ.get(override) or os.environ.get(legacy_name(override))
+    configured = os.environ.get(override)
     if configured:
         path = Path(configured).expanduser()
         if not path.is_file():

@@ -18,10 +18,18 @@ def overrides_path():
 def load_overrides(now, path=None, usage=None, accounts=None, prune=True):
     """Overrides the user asked for that have not yet run out (`until`) or landed their reset, written by `agentcompass override`."""
     target = path or overrides_path()
+    if not target.exists():
+        return []
+    import state_upgrade
+    issue = state_upgrade.check_router_overrides(target)
+    if issue:
+        raise ValueError(issue)
     try:
         document = json.loads(target.read_text(encoding='utf-8-sig'))
-    except (OSError, ValueError):
-        return []
+    except (OSError, ValueError) as exc:
+        raise ValueError(state_upgrade.format_issue(
+            target, f'router overrides invalid JSON ({exc})', state_upgrade.fix_delete(target),
+        )) from exc
     rows = document.get('overrides') if isinstance(document, dict) else None
     active, landed, depleted = [], {}, {}
     for o in rows or []:

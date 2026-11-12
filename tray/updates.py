@@ -744,32 +744,10 @@ def _is_installer_dir(path: Path) -> bool:
 
 
 def _installer_version(root: Path) -> str:
-    """Since 0.4.0, installer folders keep the active code package under app/current/ (with app-manifest.json and
-    agentcompass/__init__.py) plus runtime-info.json at the install root, so local_version(root) reads the installed
-    version directly on disk even from non-frozen processes. Fall back to the running process version or cli --version
-    only for legacy (<0.4.0) single-bundle installs that had no version file on disk."""
+    """Read the installed version directly on disk from app/current/ or runtime-info.json."""
     ver = local_version(root)
     if ver == "0.0.0" and component_launch.frozen() and _norm_root(Path(sys.executable).parent) == _norm_root(root):
         ver = local_version()
-    if ver == "0.0.0":
-        cli_exe = Path(root) / "cli" / ("agentcompass.exe" if os.name == "nt" else "agentcompass")
-        try:
-            if cli_exe.is_file() and cli_exe.stat().st_size > 4096:
-                res = subprocess.run(
-                    [str(cli_exe), "--version"],
-                    capture_output=True,
-                    text=True,
-                    errors="replace",
-                    timeout=5,
-                    creationflags=services.CREATE_NO_WINDOW if os.name == "nt" else 0,
-                    check=False,
-                )
-                if res.returncode == 0:
-                    match = re.search(r"(\d+\.\d+\.\d+)", res.stdout or "")
-                    if match:
-                        return match.group(1)
-        except Exception:
-            pass
     return ver
 
 
@@ -1355,7 +1333,7 @@ def _download_verified_installer(
 
 
 def read_local_runtime_info(root: Path) -> dict | None:
-    """Read <root>/runtime-info.json (or fallback runtime_fingerprint from <root>/manifest.json)."""
+    """Read <root>/runtime-info.json."""
     root = Path(root)
     rt_file = root / RUNTIME_INFO_FILENAME
     if rt_file.is_file():
@@ -1363,17 +1341,6 @@ def read_local_runtime_info(root: Path) -> dict | None:
             payload = json.loads(rt_file.read_text(encoding="utf-8", errors="replace"))
             if isinstance(payload, dict) and str(payload.get("runtime_fingerprint") or "").strip():
                 return payload
-        except Exception:
-            pass
-    manifest_file = root / RELEASE_MANIFEST_FILENAME
-    if manifest_file.is_file():
-        try:
-            payload = json.loads(manifest_file.read_text(encoding="utf-8", errors="replace"))
-            if isinstance(payload, dict) and str(payload.get("runtime_fingerprint") or "").strip():
-                return {
-                    "runtime_fingerprint": str(payload.get("runtime_fingerprint")).strip(),
-                    "runtime_version": str(payload.get("version") or "0.0.0").strip(),
-                }
         except Exception:
             pass
     return None
@@ -1482,41 +1449,6 @@ def _remove_dir_or_link(path: Path) -> None:
         except OSError:
             pass
     shutil.rmtree(path, ignore_errors=True)
-
-
-def _ensure_legacy_cli_data_links(install_root: Path, active_dir: Path) -> None:
-    """Keep <install_root>/cli/_internal/agentcompass/data/{skills,setup} pointing to <active_dir>/{skills,setup}."""
-    cli_internal = install_root / "cli" / "_internal"
-    if not cli_internal.is_dir():
-        return
-    data_root = cli_internal / "agentcompass" / "data"
-    try:
-        data_root.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        return
-    for name in ("skills", "setup"):
-        target = active_dir / name
-        if not target.is_dir():
-            continue
-        link = data_root / name
-        try:
-            if link.exists() and link.resolve() == target.resolve():
-                continue
-        except OSError:
-            pass
-        _remove_dir_or_link(link)
-        if os.name == "nt":
-            subprocess.run(
-                ["cmd", "/c", "mklink", "/J", str(link), str(target)],
-                check=False,
-                capture_output=True,
-                creationflags=services.CREATE_NO_WINDOW,
-            )
-        if not link.exists():
-            try:
-                os.symlink(str(target), str(link), target_is_directory=True)
-            except OSError:
-                shutil.copytree(target, link, dirs_exist_ok=True)
 
 
 def _validate_extracted_app_dir(
@@ -1655,7 +1587,6 @@ def rollback_code_package(root: Path, reason: str = "") -> Path | None:
         shutil.rmtree(broken_dir, ignore_errors=True)
         _sync_dir_in_place(previous_dir, current_dir)
         shutil.rmtree(previous_dir, ignore_errors=True)
-    _ensure_legacy_cli_data_links(root, current_dir)
     state_file = app_root / "state.json"
     state: dict = {}
     if state_file.is_file():
@@ -1788,7 +1719,6 @@ def _apply_code_package(
         pkg_target = packages_dir / f"app-{new_version}.zip"
         if zip_path.resolve() != pkg_target.resolve():
             shutil.copy2(zip_path, pkg_target)
-        _ensure_legacy_cli_data_links(root, current_dir)
         state_payload = {
             "current_version": new_version,
             "active_version": new_version,
@@ -1827,11 +1757,9 @@ def _apply_code_package(
                     shutil.rmtree(previous_dir, ignore_errors=True)
                 else:
                     previous_dir.replace(current_dir)
-                _ensure_legacy_cli_data_links(root, current_dir)
             except OSError:
                 try:
                     _sync_dir_in_place(previous_dir, current_dir)
-                    _ensure_legacy_cli_data_links(root, current_dir)
                 except OSError:
                     pass
         if moved_previous_to_backup and backup_prev.exists() and not previous_dir.exists():

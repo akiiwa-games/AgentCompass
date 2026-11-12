@@ -43,12 +43,10 @@ class PluginStoreTests(unittest.TestCase):
         self.assertTrue(config["chatgpt-web"]["enabled"])
         self.assertNotIn("unknown", config)
 
-    def test_the_old_usage_float_marker_migrates_until_plugins_json_exists(self):
+    def test_old_usage_float_marker_is_ignored(self):
         (self.path.parent / "usage-float-autostart-disabled").write_text("", encoding="utf-8")
-        self.assertFalse(plugins.load(self.path)["usage-float"]["autostart"])
-        self.assertTrue(plugins.load(self.path)["usage-float"]["enabled"])
-        plugins.set_flag("usage-float", "autostart", True, self.path)
         self.assertTrue(plugins.load(self.path)["usage-float"]["autostart"])
+        self.assertTrue(plugins.load(self.path)["usage-float"]["enabled"])
 
     def test_save_is_atomic_and_round_trips(self):
         plugins.set_flag("easytier", "enabled", False, self.path)
@@ -166,8 +164,7 @@ class LifecycleTests(unittest.TestCase):
 class SiblingRepoTests(unittest.TestCase):
     def _env(self, **extra):
         env = os.environ.copy()
-        for key in ("AGENTCOMPASS_GITHUB_ORG", "AGENTCOMPASS_USAGE_FLOAT_REPO", "ROUTE_MANAGER_GITHUB_ORG",
-                    "ROUTE_MANAGER_USAGE_FLOAT_REPO"):
+        for key in ("AGENTCOMPASS_GITHUB_ORG", "AGENTCOMPASS_USAGE_FLOAT_REPO"):
             env.pop(key, None)
         env.update(extra)
         return env

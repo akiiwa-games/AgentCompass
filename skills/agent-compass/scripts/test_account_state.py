@@ -269,8 +269,9 @@ class StateTests(Machine):
         self.assertFalse(self.row()['usage_excluded'])
         with patch.dict(os.environ, {account_state.EXCLUDE_AFTER_ENV: '2'}):
             self.assertTrue(self.row()['usage_excluded'])
-        self.write('.agent-compass/accounts-override.json', {'scoring': {'usage_failing_exclude_hours': 2}})
-        with patch.dict(os.environ, {'ROUTER_ACCOUNTS_OVERRIDE': str(self.state / 'accounts-override.json')}):
+        self.write('.agent-compass/accounts-override.json',
+                   {'schema_version': 2, 'scoring': {'usage_failing_exclude_hours': 2}})
+        with patch.dict(os.environ, {'AGENTCOMPASS_ACCOUNTS_OVERRIDE': str(self.state / 'accounts-override.json')}):
             self.assertTrue(self.row()['usage_excluded'])
 
     def test_two_hours_applies_only_when_no_error_came_back(self):
@@ -431,6 +432,7 @@ class StateTests(Machine):
 
             # 10-day-old Antigravity error with verified override must be excluded from dispatch
             self.write('.agent-compass/accounts-override.json', {
+                'schema_version': 2,
                 'accounts': {'antigravity': {'enabled': True, 'verified': True, 'plan': 'pro'}}})
             providers['antigravity']['fetched_at'] = (self.now - timedelta(days=10)).isoformat()
             self.write('.agent-compass/usage-cache.json', {'providers': providers})
@@ -753,22 +755,24 @@ class LaunchLatchTests(Machine):
         self.assertEqual(inv_6h['claude']['status'], account_state.READY)
         self.assertNotIn('claude', account_state.latched())
 
-        # 4c: usage_cache.merge preserves canonical minimal error row over legacy ~/.usage-float row with same credential
+        # 4c: usage_cache.read reads only canonical ~/.agent-compass/usage-cache.json and ignores ~/.usage-float
         import usage_cache
         self.write('.agent-compass/usage-cache.json', {'fetched_at': self.now.isoformat(), 'providers': {
             'codex': {'provider_id': 'codex', 'credential_key': 'ck-same', 'fetched_at': None,
                       'error_at': self.now.isoformat(), 'available': False, 'error': 'HTTP 402',
                       'error_status': 402, 'windows': []},
         }})
-        self.write('.usage-float/usage-cache.json', {'fetched_at': (self.now - timedelta(days=2)).isoformat(), 'providers': {
+        self.write('.usage-float/usage-cache.json', {'fetched_at': self.now.isoformat(), 'providers': {
             'codex': {'provider_id': 'codex', 'credential_key': 'ck-same',
-                      'fetched_at': (self.now - timedelta(days=2)).isoformat(), 'available': True,
+                      'fetched_at': self.now.isoformat(), 'available': True,
                       'plan_label': 'plus', 'windows': self.windows()},
+            'grok': {'provider_id': 'grok', 'fetched_at': self.now.isoformat(), 'available': True, 'windows': []},
         }})
         with patch.dict(os.environ, {'ROUTER_USAGE_CACHE': ''}):
             merged_doc, _, _ = usage_cache.read(None, home=self.home, environ={'ROUTER_STATE_DIR': str(self.state)})
         self.assertEqual(merged_doc['providers']['codex'].get('error_status'), 402)
         self.assertIsNone(merged_doc['providers']['codex'].get('fetched_at'))
+        self.assertNotIn('grok', merged_doc['providers'])
 
     def test_the_latch_reaches_the_other_login_on_the_subscription(self):
         self.codex_login('pro')
@@ -898,8 +902,6 @@ class ResidueTests(Machine):
         own = [{'id': 'seven_day', 'used_pct': 18}]
         self.write('.agent-compass/usage-cache.json', {'providers': {
             'codex': {'plan_label': 'plus', 'fetched_at': 'new', 'credential_key': 'DIGEST'}, 'claude': {'windows': own}}})
-        self.write('.usage-float/usage-cache.json', {'providers': {'codex': {'plan_label': 'pro', 'fetched_at': 'old'}}})
-        self.write('.agent-compass/capacity.json', {'observed': {'codex': {'usage': {'pct_per_hour_3h': 0, 'pct_per_hour_24h': 0.4583}}}})
         (self.state / 'router-ledger.jsonl').write_text('\n'.join(json.dumps(line) for line in (
             {'at': 't1', 'usage': {'claude': {'windows': own}}}, {'at': 't2', 'usage': {'claude': {'windows': pooled}}},
             {'at': 't3', 'usage': {'claude': {'windows': pooled}}})) + '\nnot json\n', encoding='utf-8')
@@ -909,7 +911,6 @@ class ResidueTests(Machine):
         kinds = {(row['kind'], row['account']) for row in found}
         self.assertEqual(kinds, {('plan_differs_from_owner', 'codex-2'), ('plan_differs_from_owner', 'pi'),
                                  ('plan_not_verified', 'chatgpt-web'), ('home_rewritten_by_caller', 'claude'),
-                                 ('cache_copies_disagree', 'codex'), ('rate_across_plan_change', 'codex.usage'),
                                  ('ledger_readings_from_another_account', 'claude')})
         self.assertNotIn('DIGEST', json.dumps(found))
         ledger = next(row for row in found if row['kind'].startswith('ledger'))

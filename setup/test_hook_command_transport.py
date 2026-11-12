@@ -44,7 +44,7 @@ class HookCommandTransportTests(unittest.TestCase):
             env.update(HOME=str(home),USERPROFILE=str(home),APPDATA=str(home/'appdata'),LOCALAPPDATA=str(home/'local'),
                 PATH=str(python.parent),ROUTER_PROVIDER_HOME=str(home),ROUTER_STATE_DIR=str(home/'.agent-compass'),
                 ROUTER_LEDGER=str(home/'ledger.jsonl'),ROUTER_SKILL_ROOT=str(setup.parent/'skills/agent-compass'),
-                ROUTER_USAGE_CACHE=str(home/'usage.json'),ROUTER_ACCOUNTS_OVERRIDE=str(home/'accounts.json'),
+                ROUTER_USAGE_CACHE=str(home/'usage.json'),AGENTCOMPASS_ACCOUNTS_OVERRIDE=str(home/'accounts.json'),
                 ROUTER_PASEO_AGENTS_DIR=str(home/'agents'),ROUTER_HOST_POLICY=str(home/'policy.json'),
                 PASEO_HOME=str(home/'.paseo'),CODEX_HOME=str(home/'.codex'),CLAUDE_CONFIG_DIR=str(home/'.claude'),
                 ROUTER_GATE_BYPASS='0')

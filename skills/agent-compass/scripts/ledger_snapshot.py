@@ -1,39 +1,8 @@
-"""The decision snapshot recorded in the ledger, and reading old ledger profiles."""
+"""The decision snapshot recorded in the ledger."""
 
 import copy
 
 import axis_scores
-
-
-# The demand fields of the four-axis taxonomy before 2026-11-11, read only from in-flight ledger records.
-LEGACY_AXES = ('divergence', 'global_rigor', 'module_precision', 'vision_tools')
-LEGACY_VISION_TO_TOOL = {0: 0, 1: 2, 2: 3, 3: 3}
-
-
-def ledger_profile(profile):
-    """A recorded profile in the current shape: the one read-side mapping for in-flight ledger records written before the
-    four categories (user, 2026-11-11). divergence as is; coding = max(global_rigor, module_precision); tool_operation
-    from vision_tools 0->0, 1->2, 2->3, 3->3, and at least 2 when the record marked `realtime_loop` (its live loop is
-    tool_operation level 2 now); aesthetics 0 (the old record carries nothing about it). A profile already in the current
-    shape, or not a dict, comes back unchanged; validation stays with validate_profile."""
-    if not isinstance(profile, dict):
-        return profile
-    old = profile.get('axis_demand')
-    if not (isinstance(old, dict) and set(old) == set(LEGACY_AXES)) and 'realtime_loop' not in profile:
-        return profile
-    out = {k: v for k, v in profile.items() if k != 'realtime_loop'}
-    if isinstance(old, dict) and set(old) == set(LEGACY_AXES):
-        try:
-            vision = LEGACY_VISION_TO_TOOL[int(old['vision_tools'])]
-            out['axis_demand'] = {'divergence': old['divergence'],
-                                  'coding': max(int(old['global_rigor']), int(old['module_precision'])),
-                                  'aesthetics': 0,
-                                  'tool_operation': max(vision, 2) if profile.get('realtime_loop') is True else vision}
-        except (KeyError, TypeError, ValueError):
-            return out
-    elif profile.get('realtime_loop') is True and isinstance(old, dict) and isinstance(old.get('tool_operation'), int):
-        out['axis_demand'] = {**old, 'tool_operation': max(old['tool_operation'], 2)}
-    return out
 
 
 SNAPSHOT_FULL, SNAPSHOT_COMPACT, SNAPSHOT_EXCLUDED = 6, 8, 16

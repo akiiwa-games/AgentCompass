@@ -22,11 +22,11 @@ _connection = None
 
 
 def runtime_dir() -> Path:
-    """The installed CLI (skills/agent-compass/scripts/grok_bot_paths.py: per user, legacy copy in the skill)."""
+    """The installed CLI (skills/agent-compass/scripts/grok_bot_paths.py: per user)."""
     if str(RUNNER.parent) not in sys.path:
         sys.path.append(str(RUNNER.parent))
     import grok_bot_paths
-    return grok_bot_paths.runtime_dir(PACKAGE)
+    return grok_bot_paths.runtime_dir()
 _probe_lock = threading.Lock()
 
 

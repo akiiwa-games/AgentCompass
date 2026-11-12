@@ -166,7 +166,6 @@ def _accounts_fingerprint() -> tuple | None:
         STATE_DIR / "quota-exhaustion.json",
         STATE_DIR / "plan-inactive.json",
         STATE_DIR / "venice-usage.json",
-        Path.home() / ".usage-float" / "usage-cache.json",
         paseo_home / "config.json",
     )
     stamps = []
@@ -234,17 +233,28 @@ def profile_invalid(profile) -> bool:
 
 def unreplayable(row: dict) -> bool:
     from decision_theatre import snapshot_result
-    modules()
-    import ledger_snapshot
-    return snapshot_result(row) is None and profile_invalid(ledger_snapshot.ledger_profile(row.get("profile")))
+    return snapshot_result(row) is None and profile_invalid(row.get("profile"))
+
+
+def recent_ledger_with_skipped(limit: int = 30, path: Path | None = None) -> tuple[list[dict], int]:
+    """The latest valid plan decisions (newest first) and the count of skipped older-shape rows."""
+    _, router = modules()
+    import state_upgrade
+    rows = router.read_ledger(path) if path else router.read_ledger()
+    plans = [r for r in rows if isinstance(r, dict) and r.get("stage") == "plan" and r.get("choice")]
+    valid = []
+    skipped = 0
+    for r in plans:
+        if state_upgrade.row_has_old_profile(r) or unreplayable(r):
+            skipped += 1
+        else:
+            valid.append(r)
+    return list(reversed(valid[-limit:])), skipped
 
 
 def recent_ledger(limit: int = 30, path: Path | None = None) -> list[dict]:
-    """The latest plan decisions, newest first."""
-    _, router = modules()
-    rows = router.read_ledger(path) if path else router.read_ledger()
-    plans = [r for r in rows if isinstance(r, dict) and r.get("stage") == "plan" and r.get("choice")]
-    return list(reversed(plans[-limit:]))
+    """The latest plan decisions, newest first (skipping older-shape rows)."""
+    return recent_ledger_with_skipped(limit, path)[0]
 
 
 def ledger_summary(row: dict) -> dict:
@@ -354,14 +364,12 @@ def replay(row: dict) -> dict:
             except (router_priority.RouterMissing, ImportError):
                 pass        # without the router the snapshot replays as recorded
         return with_usage_readings(snapshot, row.get("at"))
-    modules()
-    import ledger_snapshot
-    mapped_profile = ledger_snapshot.ledger_profile(row.get("profile"))
-    if profile_invalid(mapped_profile):
+    profile = row.get("profile")
+    if profile_invalid(profile):
         return {"choice": None, "ranking": [], "theatre_source": "unreplayable", "replay_note": _tr(UNREPLAYABLE_NOTE)}
     task = build_task(row.get("objective") or "", float(row.get("hours") or 1.0), bool(row.get("local_only")),
-                      bool((mapped_profile or {}).get("needs_visual")), row.get("kind"), row.get("difficulty"),
-                      mapped_profile, row.get("local_only_reason"))
+                      bool((profile or {}).get("needs_visual")), row.get("kind"), row.get("difficulty"),
+                      profile, row.get("local_only_reason"))
     return {**plan_task(task), "theatre_source": "recomputed"}
 
 
@@ -1332,22 +1340,18 @@ def _user_accounts_path(create: bool = False) -> Path:
     user_file = STATE_DIR / "accounts-override.json"
     if create:
         modules()  # Install the router scripts path before importing the shared transaction helper.
+        import accounts_override
         import override_store
         with override_store.locked(user_file):
             if user_file.is_file():
-                original = json.loads(user_file.read_text(encoding="utf-8-sig"))
-                if not isinstance(original, dict):
-                    raise ValueError("Invalid accounts override document")
-                import accounts_override
-                baseline = {} if original.get("schema_version") == 2 else _read_json(_accounts_path())
-                migrated = accounts_override.migrate(original, baseline)
-                if migrated != original:
-                    _backup(user_file, "accounts-legacy")
-                    _atomic_json(user_file, migrated)
+                accounts_override.load_override(user_file)
             else:
                 _atomic_json(user_file, {"schema_version": 2})
         return user_file
     if user_file.is_file():
+        modules()
+        import accounts_override
+        accounts_override.load_override(user_file)
         return user_file
     return _accounts_path()
 
@@ -1357,7 +1361,9 @@ def read_tuning(path: Path | None = None) -> dict:
     if path is None:
         modules()
         import accounts_override
-        document = accounts_override.merge(document, _read_json(STATE_DIR / "accounts-override.json"))
+        override = accounts_override.load_override(STATE_DIR / "accounts-override.json")
+        if override is not None:
+            document = accounts_override.merge(document, override)
     scoring = document.get("scoring") or {}
     return {key: scoring.get(key) for key in TUNING_DEFAULTS}
 
@@ -1518,7 +1524,7 @@ def harness_model_rows() -> list[dict]:
     import provider_inventory
     accounts = _cached_accounts()
     policy = host_policy.load_policy()
-    preferences = accounts_override.normalize(_read_json(STATE_DIR / "accounts-override.json"))
+    preferences = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {"schema_version": 2}
     inventory = (accounts.get("_discovery") or {}).get("accounts") or {}
     table = accounts.get("accounts") or {}
     groups = {}
@@ -1555,9 +1561,7 @@ def harness_model_rows() -> list[dict]:
                "verified": bool(spec.get("verified", False)), "badge": badge, "kind": kind, "models": []}
         account_preferences = (preferences.get("accounts") or {}).get(account) or {}
         row["cwd_regex"] = account_preferences.get("cwd_regex", spec.get("cwd_regex")) or ""
-        row["allowed_cwd"] = spec.get("allowed_cwd") or []
-        import cwd_policy
-        row["cwd_pattern"] = row["cwd_regex"] or cwd_policy.from_prefixes(row["allowed_cwd"])
+        row["cwd_pattern"] = row["cwd_regex"]
         row["providers"] = list(dict.fromkeys(bundle.get("provider") or owner for entries in models.values()
                                               for owner, _, bundle in entries)) or [harness if harness == "pi" else account]
         for model, bundles in models.items():
@@ -1598,7 +1602,7 @@ def harness_model_rows() -> list[dict]:
                 'harness_label': HARNESS_LABELS.get(family, family), 'plan': spec.get('plan'),
                 'host_enabled': bool(host_policy.account_allowed(policy, account)),
                 'enabled': False, 'verified': False, 'badge': _tr('仅手动使用'), 'kind': 'warn',
-                'models': [], 'providers': [account], 'cwd_regex': '', 'allowed_cwd': [], 'cwd_pattern': ''})
+                'models': [], 'providers': [account], 'cwd_regex': '', 'cwd_pattern': ''})
     order = {name: index for index, name in enumerate(HARNESS_ORDER)}
     rows = sorted(rows, key=lambda row: (order.get(row["harness"], len(order)), row["account"]))
     return decorate_model_rows(rows, accounts, model_catalog.read(STATE_DIR / "model-catalog.json"))
@@ -1897,7 +1901,9 @@ def _persist_auto_seen() -> None:
 
 def model_probe_definitions(rows: list[dict]) -> dict:
     """Private in-memory connection settings; these never enter row data or the model cache."""
-    document = _read_json(STATE_DIR / "accounts-override.json")
+    modules()
+    import accounts_override
+    document = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {}
     overrides = {name: spec for section in ("accounts", "litellm_proxies")
                  for name, spec in (document.get(section) or {}).items() if isinstance(spec, dict)}
     baseline = (_read_json(_accounts_path()).get("accounts") or {})
@@ -1936,12 +1942,13 @@ def set_harness_models(account: str, harness: str, action: str) -> str:
 
 def read_account_cwd(account: str) -> str:
     modules()
-    import cwd_policy
+    import accounts_override
     spec = _cached_accounts().get("accounts", {}).get(account) or {}
-    saved = ((_read_json(STATE_DIR / "accounts-override.json").get("accounts") or {}).get(account) or {})
+    override_doc = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {}
+    saved = ((override_doc.get("accounts") or {}).get(account) or {})
     if "cwd_regex" in saved:
         return saved["cwd_regex"] or ""
-    return spec.get("cwd_regex") or cwd_policy.from_prefixes(spec.get("allowed_cwd"))
+    return spec.get("cwd_regex") or ""
 
 
 def preview_account_cwd(pattern: str, directories: list[str]) -> list[tuple[str, bool]]:
@@ -1957,7 +1964,6 @@ def save_account_cwd(account: str, pattern: str) -> str:
     value = cwd_policy.validate(pattern)
     def change(document):
         spec = document.setdefault("accounts", {}).setdefault(account, {})
-        spec.pop("allowed_cwd", None)
         spec["cwd_regex"] = value
     _edit_preferences(change)
     return _tr("账号目录限制已保存")

@@ -90,32 +90,37 @@ class UsageAwareSimulationTests(unittest.TestCase):
         usage = sim.snapshot(sim.ledger_document(old), self.accounts, at)    # old record, no live pool: one account
         self.assertEqual(quota_pools.pool_size(window(usage, 'claude', 'seven_day')), 1)
 
-    def test_a_ledger_row_whose_profile_is_not_valid_now_is_marked_unreplayable(self):
+    def test_old_shape_ledger_rows_are_skipped_with_a_warning_count(self):
         import json
         from pathlib import Path
         import tempfile
         from router_test_support import profile
         current_profile = profile(local_only=True, expected_hours=0.5)
-        old_profile = {k: v for k, v in current_profile.items() if k != 'axis_demand'}
+        missing_axis = {k: v for k, v in current_profile.items() if k != 'axis_demand'}
+        pre_four_category = {
+            **current_profile,
+            'realtime_loop': True,
+            'axis_demand': {'divergence': 1, 'global_rigor': 2, 'module_precision': 3, 'vision_tools': 1},
+        }
         base_row = {
             'stage': 'plan', 'at': NOW.isoformat(), 'choice': 'sol_high',
             'kind': 'general_implementation', 'difficulty': 'hard', 'hours': 1.0,
             'usage': {'accounts': {}},
         }
+        warnings = []
         with tempfile.TemporaryDirectory() as d:
             ledger_file = Path(d) / 'ledger.jsonl'
             rows = [
-                {**base_row, 'decision_snapshot': {'task': {'objective': 'old row', 'expected_hours': 1.0, 'profile': old_profile}}},
+                {**base_row, 'decision_snapshot': {'task': {'objective': 'missing axis', 'expected_hours': 1.0, 'profile': missing_axis}}},
+                {**base_row, 'decision_snapshot': {'task': {'objective': 'pre four category', 'expected_hours': 1.0, 'profile': pre_four_category}}},
                 {**base_row, 'decision_snapshot': {'task': {'objective': 'current row', 'expected_hours': 1.0, 'profile': current_profile}}},
             ]
             ledger_file.write_text('\n'.join(json.dumps(r) for r in rows) + '\n', encoding='utf-8')
-            out = sim.replay(path=ledger_file, accounts=self.accounts)
-        self.assertEqual(len(out), 2)
-        self.assertTrue(out[0].get('unreplayable'))
-        self.assertIsNone(out[0]['choice'])
-        self.assertIn('not valid under the current schema', out[0]['replay_note'])
-        self.assertFalse(out[1].get('unreplayable', False))
-        self.assertIsNotNone(out[1]['choice'])
+            out = sim.replay(path=ledger_file, accounts=self.accounts, warnings=warnings)
+        self.assertEqual(len(out), 1)
+        self.assertFalse(out[0].get('unreplayable', False))
+        self.assertIsNotNone(out[0]['choice'])
+        self.assertTrue(any('skipped 2 older-shape ledger row(s)' in w for w in warnings), warnings)
 
 
 if __name__ == '__main__':

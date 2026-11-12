@@ -49,7 +49,7 @@ class UsageSafetyTests(unittest.TestCase):
         )
         p_codex.start()
         self.addCleanup(p_codex.stop)
-        p = patch.dict('os.environ', {'ROUTE_MANAGER_ACTIVITY_FILE': str(self.root / 'capacity.json')})
+        p = patch.dict('os.environ', {'AGENTCOMPASS_ACTIVITY_FILE': str(self.root / 'capacity.json')})
         p.start()
         self.addCleanup(p.stop)
         p = patch.object(usage, 'http_json', side_effect=AssertionError('Unexpected network'))
@@ -181,7 +181,7 @@ class UsageSafetyTests(unittest.TestCase):
 
     def activity(self, workers, age=0):
         (self.root / 'capacity.json').write_text(json.dumps({
-            'schema': 'route-manager.activity.v1',
+            'schema': 'agent-compass.activity.v1',
             'accounts': {pid: {'state': 'active' if workers.get(pid, 0) else 'idle'}
                          for pid in ('claude', 'claude-2', 'codex', 'codex-2', 'grok', 'antigravity')},
             'generated_at': (datetime.now(timezone.utc) - timedelta(seconds=age)).isoformat(),

@@ -1,17 +1,20 @@
 """Sparse account preferences shared by the tray and allocator; no discovery or disk writes."""
 from copy import deepcopy
+import json
+from pathlib import Path
+
+import state_upgrade
 
 
 def normalize(document):
-    """Normalize disabled flags in place; settings hold state only, never reasons.
-
-    Every legacy string means disabled, including an empty string. Other old
-    non-boolean values retain their truth value as a plain boolean.
-    """
+    """Validate disabled flags in place; only boolean values are accepted."""
     if isinstance(document, dict):
         for key, value in document.items():
             if key == 'disabled':
-                document[key] = True if isinstance(value, str) else bool(value)
+                if not isinstance(value, bool):
+                    raise ValueError(f'disabled flag must be a boolean, got {value!r}')
+            elif key == 'allowed_cwd':
+                raise ValueError('allowed_cwd is no longer supported; use cwd_regex')
             else:
                 normalize(value)
     elif isinstance(document, list):
@@ -20,9 +23,28 @@ def normalize(document):
     return document
 
 
+def load_override(path):
+    """Load and validate a v2 accounts-override.json file, or return None when absent."""
+    target = Path(path)
+    if not target.exists():
+        return None
+    try:
+        raw = target.read_text(encoding='utf-8-sig')
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(state_upgrade.format_issue(
+            target, f'accounts-override unreadable ({exc})', state_upgrade.FIX_TRAY,
+        )) from exc
+    try:
+        doc = json.loads(raw)
+    except ValueError as exc:
+        raise ValueError(state_upgrade.format_issue(
+            target, f'accounts-override invalid JSON ({exc})', state_upgrade.FIX_TRAY,
+        )) from exc
+    state_upgrade.validate_accounts_override_doc(doc, target)
+    return doc
+
+
 def harness(bundle, account, bundle_id, resolver):
-    # Older allocators default unknown providers to Codex. These providers have
-    # their own execution channels and must remain separate in the preferences.
     provider = bundle.get('provider') or account
     if not bundle.get('harness') and provider in ('grok', 'grok-bot'):
         return provider
@@ -70,61 +92,6 @@ def merge(base, override):
     return normalize(result)
 
 
-def _delta(value, baseline):
-    if not isinstance(value, dict) or not isinstance(baseline, dict):
-        return deepcopy(value)
-    return {key: _delta(item, baseline.get(key)) for key, item in value.items()
-            if key not in baseline or item != baseline[key]}
-
-
-def migrate(document, baseline):
-    """Return v2 without guessing whether an absent legacy disabled flag was a user action.
-
-    Callers that persist this result must back up the original first. Explicit false
-    is an enduring enable choice, even if the current baseline is already enabled.
-    """
-    document = normalize(deepcopy(document))
-    if document.get('schema_version') == 2:
-        return document
-    result = {'schema_version': 2}
-    # Locally defined providers are user configuration, not a copy of defaults.
-    # In particular a proxy may carry its endpoint/model contract here.
-    for key, value in document.items():
-        if key not in baseline and key not in ('schema_version', 'accounts', 'models', 'scoring'):
-            result[key] = deepcopy(value)
-    if isinstance(document.get('scoring'), dict):
-        scoring = _delta(document['scoring'], baseline.get('scoring', {}))
-        if scoring:
-            result['scoring'] = scoring
-    ambiguous = []
-    for account, spec in (document.get('accounts') or {}).items():
-        if not isinstance(spec, dict):
-            continue
-        entry = {}
-        base = (baseline.get('accounts') or {}).get(account) or {}
-        if account not in (baseline.get('accounts') or {}):
-            result.setdefault('accounts', {})[account] = deepcopy(spec)
-            continue
-        for key, value in spec.items():
-            if key not in base and key not in ('bundles', 'verified', 'allowed_cwd'):
-                entry[key] = deepcopy(value)
-        for key in ('verified', 'allowed_cwd', 'cwd_regex'):
-            if key in spec and spec[key] != base.get(key):
-                entry[key] = deepcopy(spec[key])
-        for bid, bundle in (spec.get('bundles') or {}).items():
-            if not isinstance(bundle, dict):
-                continue
-            if 'disabled' in bundle:
-                entry.setdefault('bundles', {})[bid] = {'disabled': bundle['disabled']}
-            elif ((base.get('bundles') or {}).get(bid) or {}).get('disabled'):
-                ambiguous.append({'account': account, 'bundle': bid})
-        if entry:
-            result.setdefault('accounts', {})[account] = entry
-    if ambiguous:
-        result['migration_ambiguous_enabled'] = ambiguous
-    return result
-
-
 def apply(accounts, document):
     """Apply only explicit preferences, after live discovery has supplied bundles."""
     normalize(accounts)
@@ -139,8 +106,6 @@ def apply(accounts, document):
         elif (spec.get('verified') is True and target.get('discovery_status') in (None, 'ready', 'usage_failing')
               and not discovery.get('usage_excluded')):
             target['verified'] = True
-        if 'allowed_cwd' in spec:
-            target['allowed_cwd'] = spec['allowed_cwd']
         if 'cwd_regex' in spec:
             target['cwd_regex'] = spec['cwd_regex']
         for bid, bundle in (spec.get('bundles') or {}).items():

@@ -60,9 +60,10 @@ REPO = Path(__file__).resolve().parents[1]
 ACCOUNTS = REPO / 'references' / 'accounts.json'
 
 
-def data_dir(arg=None):
+def data_dir(arg=None, *, create=True):
     path = Path(arg or os.environ.get('AGENTCOMPASS_CALIBRATION_DATA') or Path.home() / '.cache' / 'agentcompass-calibration')
-    path.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -94,18 +95,14 @@ def fetch(target, only=None):
 
 
 def manifest(target):
-    """{file name: manifest row}. Downloads made before the manifest existed get their url and file time."""
-    path = target / MANIFEST
-    if path.exists():
-        return json.loads(path.read_text(encoding='utf-8'))['files']
-    urls = {f'{b}.parquet': HF.format(b) for b in ARENA_BOARDS} | PAGES
-    out = {}
-    for name, url in urls.items():
-        f = target / name
-        out[name] = ({'url': url, 'status': 'ok', 'bytes': f.stat().st_size, 'sha256': hashlib.sha256(f.read_bytes()).hexdigest(),
-                      'fetched_at': datetime.fromtimestamp(f.stat().st_mtime, timezone.utc).isoformat(timespec='seconds')}
-                     if f.exists() else {'url': url, 'status': 'missing', 'error': 'not downloaded'})
-    return out
+    """{file name: manifest row} read from `fetch-manifest.json`."""
+    path = Path(target) / MANIFEST
+    if not path.is_file():
+        raise FileNotFoundError(
+            f'{path}: missing {MANIFEST} in {target}; run `agentcompass data refresh` (without --no-fetch) '
+            f'to fetch calibration sources first, or delete "{target}".'
+        )
+    return json.loads(path.read_text(encoding='utf-8'))['files']
 
 
 def accounts():

@@ -186,68 +186,6 @@ def read_runtime_info(install_root: Path) -> dict | None:
     return read_json(Path(install_root) / "runtime-info.json")
 
 
-def _make_junction_or_copy(link: Path, target: Path) -> None:
-    try:
-        is_reparse = bool(os.lstat(link).st_file_attributes & 0x400) if os.name == "nt" else link.is_symlink()
-    except OSError:
-        is_reparse = False
-    if is_reparse:
-        try:
-            if link.resolve() == target.resolve():
-                return
-        except OSError:
-            pass
-        try:
-            os.rmdir(link) if os.name == "nt" else link.unlink()
-        except OSError:
-            return
-    elif link.exists():
-        try:
-            if link.is_dir():
-                shutil.rmtree(link)
-            else:
-                link.unlink()
-        except OSError:
-            return
-    link.parent.mkdir(parents=True, exist_ok=True)
-    if os.name == "nt":
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        done = subprocess.run(
-            ["cmd", "/d", "/c", "mklink", "/J", str(link), str(target)],
-            capture_output=True,
-            creationflags=creationflags,
-            check=False,
-        )
-        if done.returncode == 0:
-            return
-    try:
-        link.symlink_to(target, target_is_directory=True)
-    except OSError:
-        pass
-
-
-def ensure_legacy_data_links(install_root: Path, active_dir: Path) -> None:
-    """Keep ``cli\\_internal\\agentcompass\\data\\{skills,setup}`` resolving into ``active_dir``.
-
-    Clients that ran ``agentcompass setup`` on <=0.3.18 created skill junctions pointing at
-    ``cli\\_internal\\agentcompass\\data\\skills\\agent-compass``. Linking ``data\\skills`` and
-    ``data\\setup`` into ``app\\current`` keeps those junctions working across upgrades without
-    duplicating the files in the installer.
-    """
-    install_root = Path(install_root)
-    active_dir = Path(active_dir)
-    if not (install_root / "cli").is_dir():
-        return
-    data_dir = install_root / "cli" / "_internal" / "agentcompass" / "data"
-    for sub in ("skills", "setup"):
-        target = active_dir / sub
-        if target.is_dir():
-            try:
-                _make_junction_or_copy(data_dir / sub, target)
-            except Exception:
-                pass
-
-
 def _replace_or_copy_file(tmp_target: Path, target: Path) -> None:
     last_err: Exception | None = None
     for attempt in range(3):
@@ -399,7 +337,6 @@ def rollback_to_previous(install_root: Path, reason: str = "", *, allow_same_ver
             write_app_state(install_root, new_state)
         except OSError:
             pass
-        ensure_legacy_data_links(install_root, restored)
     return restored
 
 
@@ -409,7 +346,6 @@ def activate_app_dir(install_root: Path) -> Path:
     current_dir = install_root / "app" / "current"
     ok, reason = validate_app_dir(current_dir, install_root=install_root)
     if ok:
-        ensure_legacy_data_links(install_root, current_dir)
         return current_dir
     restored = rollback_to_previous(install_root, reason=reason, allow_same_version=not current_dir.exists())
     if restored is not None:

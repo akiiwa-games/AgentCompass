@@ -142,7 +142,7 @@ def write_override(home: Path, detection: dict, disabled: set[str], dry_run: boo
     previous_state = _read_json(onboarding_path(home))
     ours_before = set(previous_state.get("disabled_by_onboarding") or [])
     existed = path.is_file()
-    document = _read_json(path) if existed else {}
+    document = (accounts_override.load_override(path) or {}) if existed else {}
     document.setdefault("schema_version", 2)
     accounts = document.setdefault("accounts", {})
     detected = {row["name"]: row for row in detection["accounts"]}

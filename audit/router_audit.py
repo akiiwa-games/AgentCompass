@@ -135,16 +135,25 @@ def from_transcripts(files):
     return [row for row in found.values() if row["at"]]
 
 
-def from_ledger(path: Path):
+def from_ledger(path: Path, skipped: list[int] | None = None):
     rows = []
     try:
         lines = path.read_text(encoding="utf-8-sig").splitlines()
     except OSError:
         return rows
+    if str(SKILL_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SKILL_SCRIPTS))
+    import state_upgrade
+    skipped_count = 0
     for line in lines:
         try:
             r = json.loads(line)
         except ValueError:
+            continue
+        if not isinstance(r, dict):
+            continue
+        if state_upgrade.row_has_old_profile(r):
+            skipped_count += 1
             continue
         at = parse_ts(r.get("at"))
         if at:
@@ -158,6 +167,8 @@ def from_ledger(path: Path):
                          "needs_user_decision": r.get("needs_user_decision"), "reason_category": r.get("reason_category"),
                          "objective": r.get("objective") or "", "task_count": r.get("task_count"),
                          "keep_whole": r.get("keep_whole")})
+    if isinstance(skipped, list):
+        skipped.append(skipped_count)
     return rows
 
 
@@ -826,7 +837,8 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
     lines += ["", "## 7. Dot / 数据来源与局限", ""]
     if dot:
         lines.append(f"- dot2api:任务 {dot['tasks']} 条(非续期 {dot['non_renewal']}),状态 {dict(dot['statuses'])},审计动作 {dict(dot['audit_actions'])}。")
-    lines += [f"- 决策来源:账本 {len(ctx['ledger_rows'])} 条 + 会话回溯 {len(ctx['transcript_rows'])} 条,合并后 {len(rows)} 条。",
+    skipped_note = f"(已跳过旧格式 {ctx['ledger_skipped']} 条)" if ctx.get("ledger_skipped") else ""
+    lines += [f"- 决策来源:账本 {len(ctx['ledger_rows'])} 条{skipped_note} + 会话回溯 {len(ctx['transcript_rows'])} 条,合并后 {len(rows)} 条。",
               f"- 显式 `route_judge.py delegate/select` 调用的 `--judge` 取值:{dict(ctx['pinned'])}(仅统计能在日志里看到命令行的调用)。",
               "- token 数含缓存读取,不等于额度消耗;额度只能看用量快照的百分比。Pro 网页用量与 Dot 的 ChatGPT 轮次不在任何快照里。",
               "- 本报告判定“规则是否触发”,不判定研究成果好坏;价值是否合理需结合上面的证据由人判断。", ""]
@@ -884,7 +896,8 @@ def main() -> int:
     claude_files = under(homes["claude"], "*/*.jsonl") + claude_subagent_files
     pi_files = pick(".pi/agent/sessions/**/*.jsonl")
     paseo_files = pick(".paseo/creations/*.json")
-    ledger_rows = from_ledger(LEDGER)
+    skipped_ledger: list[int] = []
+    ledger_rows = from_ledger(LEDGER, skipped=skipped_ledger)
     transcript_rows = from_transcripts(codex_files + claude_files + pi_files)
     rows = [r for r in merge(ledger_rows, transcript_rows) if r["at"] >= since_dt]
     sessions, codex_days = scan_codex(codex_files)
@@ -898,7 +911,8 @@ def main() -> int:
                 heavy_detail[day].append(f"{s['model']}/{s['effort']}×{n}")
     usage_now = router.usage_snapshot()
     now_row = {"usage": usage_points(usage_now)}
-    ctx = {"now": now, "rows": rows, "ledger_rows": ledger_rows, "transcript_rows": transcript_rows, "router": router,
+    ctx = {"now": now, "rows": rows, "ledger_rows": ledger_rows, "ledger_skipped": skipped_ledger[0] if skipped_ledger else 0,
+           "transcript_rows": transcript_rows, "router": router,
            "usage_now": usage_now, "now_row": now_row, "sessions": sessions, "spawns": spawns,
            "pinned": count_pinned(codex_files + claude_files),
            "codex_days": {d: v for d, v in codex_days.items() if d >= since_day}, "claude_days": scan_claude(claude_files, since_day),

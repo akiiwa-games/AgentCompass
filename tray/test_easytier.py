@@ -53,24 +53,6 @@ class HomeResolutionTests(unittest.TestCase):
         self.assertEqual(easytier_paths.product_home(self.env), self.product)
         self.assertEqual(easytier_paths.product_parent(self.env), self.product.parent)
 
-    def test_a_frozen_or_wheel_install_never_resolves_into_its_own_directory(self):
-        for shape in ("frozen", "wheel"):
-            with self.subTest(shape=shape):
-                root = self.base / shape
-                if shape == "frozen":
-                    (root / "_internal").mkdir(parents=True)
-                    (root / "AgentCompass.exe").write_bytes(b"")
-                else:
-                    (root / "agentcompass-0.0.0.dist-info").mkdir(parents=True)
-                self.assertEqual(easytier_paths.home(self.env, root=root), self.product)
-
-    def test_a_node_left_in_the_checkout_is_found_until_it_is_migrated(self):
-        checkout = self.base / "checkout"
-        self.node(checkout / "easytier")
-        self.assertEqual(easytier_paths.home(self.env, root=checkout), checkout / "easytier")
-        self.node(self.product)
-        self.assertEqual(easytier_paths.home(self.env, root=checkout), self.product)
-
     def test_plugin_root_follows_the_same_resolution(self):
         import plugins
 
@@ -79,7 +61,7 @@ class HomeResolutionTests(unittest.TestCase):
             easytier_paths.os.environ.pop(easytier_paths.OVERRIDE, None)
             self.assertEqual(plugins.plugin_root("easytier", repo_root=checkout), self.product)
             self.node(checkout / "easytier")
-            self.assertEqual(plugins.plugin_root("easytier", repo_root=checkout), checkout / "easytier")
+            self.assertEqual(plugins.plugin_root("easytier", repo_root=checkout), self.product)
 
     def test_the_override_moves_the_home_and_disables_the_parent_lock(self):
         env = {**self.env, easytier_paths.OVERRIDE: str(self.base / "isolated")}

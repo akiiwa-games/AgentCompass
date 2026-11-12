@@ -24,10 +24,6 @@ class OriginTests(unittest.TestCase):
         config = '[remote "origin"]\n\turl = git@github.com:fork-org/AgentCompass.git\n'
         self.assertEqual(sibling_repo("usage-float", {}, config), "https://github.com/fork-org/usage-float.git")
 
-    def test_pre_rename_variables_still_work(self):
-        self.assertEqual(github_org({"ROUTE_MANAGER_GITHUB_ORG": "old-org"}), "old-org")
-        self.assertEqual(github_org({"AGENTCOMPASS_GITHUB_ORG": "new-org", "ROUTE_MANAGER_GITHUB_ORG": "old-org"}), "new-org")
-
 
 
 if __name__ == "__main__":

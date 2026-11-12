@@ -71,7 +71,7 @@ def blob_sha(data):
 
 
 def find_executable(name, override, candidates):
-    configured = os.environ.get(override) or os.environ.get(override.replace("AGENTCOMPASS_", "ROUTE_MANAGER_", 1))
+    configured = os.environ.get(override)
     if configured:
         executable = Path(configured).expanduser()
         if not executable.is_file():

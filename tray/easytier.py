@@ -33,7 +33,6 @@ CLI = BIN / "easytier-cli.exe"
 SUPERVISOR = BIN / "easytier-supervisor.ps1"
 CONFIG = PRIVATE / "node.toml"
 TASK_NAME = "AgentCompass EasyTier"
-LEGACY_TASK_NAME = "Route Manager EasyTier"      # registered before the rename; easytier_setup install replaces it
 RPC_PORTAL = f"127.0.0.1:{service_ports.get('easytier_rpc')}"
 # Task Scheduler's TASK_STATE values.
 TASK_DISABLED, TASK_QUEUED, TASK_READY, TASK_RUNNING = 1, 2, 3, 4
@@ -57,10 +56,7 @@ def _scheduler_task():
         service = win32com.client.Dispatch("Schedule.Service")
         service.Connect()
         folder = service.GetFolder("\\")
-        try:
-            return folder.GetTask(TASK_NAME)
-        except Exception:
-            return folder.GetTask(LEGACY_TASK_NAME)
+        return folder.GetTask(TASK_NAME)
     except Exception:
         pythoncom.CoUninitialize()
         raise

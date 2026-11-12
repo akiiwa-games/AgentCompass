@@ -471,7 +471,7 @@ def check_cli_worker(z: Zero, op, tag: str, result, scenario: str, expect_exit: 
         op.check(f"[{tag}] it was started with the routed model and the brief on stdin ('-')", bundle.get("model") and bundle["model"] in flags and flags[-1] == "-" or
                  recorded["cli"] == "claude" and bundle.get("model") in flags, {"argv": flags, "bundle": bundle})
         op.check(f"[{tag}] the worker's environment says it is a worker of this parent and carries no host session variables",
-                 recorded["router_env"]["ROUTER_WORKER"] == "1" and recorded["router_env"]["ROUTER_PARENT_AGENT_ID"] == PARENT and
+                 recorded["router_env"]["AGENTCOMPASS_WORKER"] == "1" and recorded["router_env"]["ROUTER_PARENT_AGENT_ID"] == PARENT and
                  not recorded["host_session_vars_present"], recorded["router_env"] | {"host": recorded["host_session_vars_present"]})
         op.check(f"[{tag}] the prompt carries the task unchanged and the worker communication contract",
                  TASK_BODY in recorded["prompt_head"] and recorded["prompt_has_contract"], recorded["prompt_head"][:200])

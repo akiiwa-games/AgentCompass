@@ -65,8 +65,7 @@ Name: "{%USERPROFILE}\.agent-compass"; Flags: uninsneveruninstall
 Source: "..\dist\AgentCompass\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
-Filename: "{cmd}"; Parameters: "/D /C ""if not exist ""{app}\cli\_internal\agentcompass\data"" mkdir ""{app}\cli\_internal\agentcompass\data"" & if exist ""{app}\cli\_internal\agentcompass\data\skills"" (rmdir ""{app}\cli\_internal\agentcompass\data\skills"" >nul 2>&1 & if exist ""{app}\cli\_internal\agentcompass\data\skills"" rmdir /S /Q ""{app}\cli\_internal\agentcompass\data\skills"" >nul 2>&1) & mklink /J ""{app}\cli\_internal\agentcompass\data\skills"" ""{app}\app\current\skills"" >nul 2>&1 & if exist ""{app}\cli\_internal\agentcompass\data\setup"" (rmdir ""{app}\cli\_internal\agentcompass\data\setup"" >nul 2>&1 & if exist ""{app}\cli\_internal\agentcompass\data\setup"" rmdir /S /Q ""{app}\cli\_internal\agentcompass\data\setup"" >nul 2>&1) & mklink /J ""{app}\cli\_internal\agentcompass\data\setup"" ""{app}\app\current\setup"" >nul 2>&1"""; Flags: runhidden waituntilterminated
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Register-ScheduledTask -TaskName 'AgentCompass' -Description 'AgentCompass tray' -Action (New-ScheduledTaskAction -Execute '{app}\{#MyAppExeName}') -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) -Force | Out-Null; Unregister-ScheduledTask -TaskName 'Route Manager' -Confirm:$false -ErrorAction SilentlyContinue"""; Flags: runhidden waituntilterminated
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Register-ScheduledTask -TaskName 'AgentCompass' -Description 'AgentCompass tray' -Action (New-ScheduledTaskAction -Execute '{app}\{#MyAppExeName}') -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) -Force | Out-Null"""; Flags: runhidden waituntilterminated
 Filename: "{cmd}"; Parameters: "/D /C """"{app}\cli\agentcompass.exe"" setup --yes {code:SetupHookFlag} >> ""{%USERPROFILE}\.agent-compass\installer-setup.log"" 2>&1"""; Check: SetupRequested; Flags: runhidden waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait
 
@@ -166,13 +165,10 @@ end;
 Filename: "taskkill.exe"; Parameters: "/F /IM {#MyAppExeName}"; RunOnceId: "AcStopTray"; Flags: runhidden waituntilterminated
 Filename: "{app}\cli\agentcompass.exe"; Parameters: "uninstall --yes"; RunOnceId: "AcUninstallCli"; Flags: runhidden waituntilterminated skipifdoesntexist
 Filename: "schtasks.exe"; Parameters: "/Delete /TN ""AgentCompass"" /F"; RunOnceId: "AcDeleteTask"; Flags: runhidden waituntilterminated
-Filename: "schtasks.exe"; Parameters: "/Delete /TN ""Route Manager"" /F"; RunOnceId: "AcDeleteLegacyTask"; Flags: runhidden waituntilterminated
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""foreach ($n in 'PRO_CONSULT_LAUNCHER','PRO_CONSULT_LAUNCHER_ARGS','CODEX_WEB_GPT_EXTERNAL_TRAY') {{ Remove-ItemProperty -Path 'HKCU:\Environment' -Name $n -ErrorAction SilentlyContinue }"""; RunOnceId: "AcRemoveEnv"; Flags: runhidden waituntilterminated
 
 [UninstallDelete]
-Type: files; Name: "{userstartup}\Route Manager.lnk"
 Type: files; Name: "{userstartup}\AgentCompass.lnk"
 Type: filesandordirs; Name: "{app}\app"
-Type: filesandordirs; Name: "{app}\cli\_internal\agentcompass"
 Type: files; Name: "{app}\manifest.json"
 Type: files; Name: "{app}\runtime-info.json"

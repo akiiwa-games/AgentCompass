@@ -22,7 +22,6 @@ STATE_DIR = Path.home() / ".agent-compass"
 PATH = STATE_DIR / "plugins.json"
 PLUGINS_DIR = STATE_DIR / "plugins"
 ROOT = Path(__file__).resolve().parents[1]
-LEGACY_UF_AUTOSTART_OFF = STATE_DIR / "usage-float-autostart-disabled"
 
 
 def _sibling_repo(name: str) -> str:
@@ -51,7 +50,7 @@ class Plugin:
     autostart: bool = True
     color: str = "#4F46E5"
     repo: str | None = None
-    legacy_dir: str | None = None
+    bundled_dir: str | None = None
     enabled_by_default: bool = True    # False: opt-in, nothing is downloaded until the user enables it
 
     @property
@@ -62,18 +61,17 @@ class Plugin:
 # Fixed order: the tray menu and the panel list plugins in this order.
 PLUGINS = (
     Plugin("usage-float", "Usage Float", "UF", "桌面额度悬浮窗", True, color="#10B981",
-           repo=_sibling_repo("usage-float"), legacy_dir="usage-float"),
+           repo=_sibling_repo("usage-float")),
     Plugin("chatgpt-web", "ChatGPT Web", "Web", "ChatGPT Pro 网页桥", True, color="#0EA5E9",
-           repo="https://github.com/miuuyy/codex-chatgpt-web.git", legacy_dir="codex-chatgpt-web"),
+           repo="https://github.com/miuuyy/codex-chatgpt-web.git"),
     Plugin("gemini-web", "Gemini Web", "Gemini", "Gemini / AI Studio 专用浏览器", True,
-           autostart=False, color="#6366F1", repo=_sibling_repo("gemini-web"),
-           legacy_dir="gemini-web"),
+           autostart=False, color="#6366F1", repo=_sibling_repo("gemini-web")),
     Plugin("easytier", "EasyTier", "ET", "虚拟局域网节点", True, color="#14B8A6",
-           repo=None, legacy_dir="easytier"),
+           repo=None),
     Plugin("dot2api", "Dot2API", "Dot", "Dot 远端任务队列与隧道", False, color="#8B5CF6",
-           repo="https://github.com/Pluviobyte/dot2api.git", legacy_dir="dot2api"),
+           repo="https://github.com/Pluviobyte/dot2api.git"),
     Plugin("grok-bot", "Grok Bot CLI", "Bot", "Grok Bot 远端任务", False,
-           autostart=False, color="#111827", legacy_dir="skills/agent-compass/grok-bot"),
+           autostart=False, color="#111827", bundled_dir="skills/agent-compass/grok-bot"),
     Plugin("muse2api", "Muse2API", "Muse", "muse.ai 聊天、出图、视频网关", False, color="#EC4899",
            repo="https://github.com/www222fff/muse2api.git", enabled_by_default=False),
 )
@@ -81,22 +79,16 @@ BY_ID = {plugin.id: plugin for plugin in PLUGINS}
 
 
 def plugin_root(plugin_id: str, plugins_dir: Path | None = None, repo_root: Path | None = None) -> Path:
-    """Resolve plugin directory in ~/.agent-compass/plugins/<id> (falling back to legacy checkout if present)."""
+    """Resolve plugin directory in ~/.agent-compass/plugins/<id> (or the bundled path for shipped plugins)."""
     plugin = BY_ID[plugin_id]
     base_root = repo_root or ROOT
     if plugin_id == "easytier":
         import easytier_paths
 
-        return easytier_paths.home(root=base_root)
+        return easytier_paths.home()
     if plugin.repo is None:
-        return base_root / (plugin.legacy_dir or plugin_id)
-    target = (plugins_dir or PLUGINS_DIR) / plugin_id
-    if (target / ".git").exists():
-        return target
-    legacy = base_root / (plugin.legacy_dir or plugin_id)
-    if (legacy / ".git").exists():
-        return legacy
-    return target
+        return base_root / (plugin.bundled_dir or plugin_id)
+    return (plugins_dir or PLUGINS_DIR) / plugin_id
 
 
 def defaults() -> dict:
@@ -116,9 +108,6 @@ def load(path: Path | None = None) -> dict:
             pass
         if not isinstance(stored, dict):
             stored = {}
-            # Before plugins.json, Usage Float's autostart was switched off by a marker file.
-            if (path.parent / LEGACY_UF_AUTOSTART_OFF.name).exists():
-                config["usage-float"]["autostart"] = False
         for plugin_id, row in stored.items():
             if plugin_id in config and isinstance(row, dict):
                 for key in ("enabled", "autostart"):

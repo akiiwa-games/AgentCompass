@@ -3,8 +3,8 @@
 Supports Claude Code, Codex CLI, Antigravity IDE/CLI, and Pi hook payloads on stdin.
 
 Dispatch-labelled Paseo launches consume a task-bound, one-use durable claim.
-Unlabelled legacy calls retain ledger compatibility checks only: an unbound
-ledger entry is never represented as dispatch authorization or a reservation.
+Non-Paseo harness launches without label support use ledger matching checks:
+an unbound ledger entry is never represented as dispatch authorization or a reservation.
 """
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ HOME = Path.home()
 DEFAULT_LEDGER = HOME / ".agent-compass" / "router-ledger.jsonl"
 LEDGER_TAIL_BYTES = 1024 * 1024
 DEFAULT_USAGE_CACHE = HOME / ".agent-compass" / "usage-cache.json"
-LEGACY_USAGE_CACHE = HOME / ".usage-float" / "usage-cache.json"
 def router_command() -> str:
     """What the deny messages tell the agent to run: the console script when installed, else this checkout's package directory."""
     if getattr(sys, "frozen", False):
@@ -768,10 +767,7 @@ def target_windows(candidates: list[dict], accounts: dict | None) -> list[str] |
 
 
 def usage_row(account: str, usage_cache_path: Path | None = None) -> dict | None:
-    """The account's newest usage reading across the collector's cache and the legacy Usage Float copy.
-
-    An explicit path, or ROUTER_USAGE_CACHE, names the only file read (usage_cache.py has the rules).
-    """
+    """The account's usage reading from the collector's cache (or ROUTER_USAGE_CACHE)."""
     try:
         cache = router_module("usage_cache")
     except ImportError:
@@ -779,15 +775,13 @@ def usage_row(account: str, usage_cache_path: Path | None = None) -> dict | None
     if cache is not None:
         providers = cache.read(usage_cache_path, HOME)[0]
     else:
-        # The skill scripts are missing: read the two conventional files directly, newest-first is not decidable here.
         providers = None
         named = usage_cache_path or os.environ.get("ROUTER_USAGE_CACHE")
-        for path in ([Path(named)] if named else [DEFAULT_USAGE_CACHE, LEGACY_USAGE_CACHE]):
-            try:
-                providers = json.loads(path.read_text(encoding="utf-8-sig"))
-                break
-            except (OSError, ValueError):
-                continue
+        path = Path(named) if named else DEFAULT_USAGE_CACHE
+        try:
+            providers = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            providers = None
     rows = providers.get("providers") if isinstance(providers, dict) else None
     row = rows.get(account) if isinstance(rows, dict) else None
     return row if isinstance(row, dict) else None
@@ -1150,7 +1144,7 @@ def evaluate_payload(
     calls = wrapped_agent_calls(tool_name, tool_input) or [(tool_name, tool_input)]
     calls.extend(cli_turn_calls(tool_name, tool_input))
     if any(re.split(r'__|\.', name)[-1] in WORKER_QUESTION_TOOLS for name, _ in calls):
-        worker = os.environ.get('ROUTER_WORKER') == '1' or (
+        worker = os.environ.get('AGENTCOMPASS_WORKER') == '1' or (
             caller_id and is_delegated_worker(caller_id, paseo_agents_dir))
         if worker:
             return format_response(False, harness_kind,
@@ -1248,12 +1242,12 @@ def evaluate_payload(
             if reason:
                 return format_response(False, harness_kind, reason)
             continue
-        if (name == 'create_agent' or trigger == 'shell:paseo agent create') and os.environ.get('ROUTER_PASEO_LEGACY_NO_LABELS') != '1':
+        if name == 'create_agent' or trigger == 'shell:paseo agent create':
             return format_response(False, harness_kind,
-                '[Router Gate] This Paseo host supports labels. Write the task brief to <task.md> and run '
+                f'[Router Gate] This Paseo host supports labels ({trigger}). Write the task brief to <task.md> and run '
                 + ROUTER_CMD + ' roll --brief <task.md>; it routes and launches in one step. Or pass the returned '
                 'create_agent object with router.* labels (title/initialPrompt/workspaceId may be edited; '
-                'provider/settings/labels may not). An unbound legacy ledger is not launch authorization.')
+                'provider/settings/labels may not). An unbound ledger entry is not launch authorization.')
         if rows is None:
             rows = recent_routes(ledger, now=now, window_seconds=win)
         if not rows:

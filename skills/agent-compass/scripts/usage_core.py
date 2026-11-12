@@ -11,8 +11,7 @@ repository root. Usage Float keeps its own copy for its UI; the two are maintain
 cache file format.
 
 Differences from the upstream copy: no Tk/Windows UI, wallpaper or HUD code; the cache file location comes from
-usage_cache.py; proxy settings are read from ``~/.agent-compass/usage-config.json`` first and the legacy
-``~/.usage-float/config.json`` second (read-only).
+usage_cache.py; proxy settings are read from ``~/.agent-compass/usage-config.json``.
 """
 
 from __future__ import annotations
@@ -183,7 +182,6 @@ CODEX_HOME_2: Path
 GROK_HOME: Path
 STATE_DIR: Path
 CONFIG_PATH: Path
-LEGACY_CONFIG_PATH: Path
 CACHE_PATH: Path
 CLAUDE_CLI_PACKAGE_PATHS: tuple[Path, ...]
 CODEX_ACCOUNTS: tuple[CodexAccount, ...]
@@ -198,7 +196,7 @@ def configure_paths(
 ) -> Path:
     """Configure local provider, config, and cache paths from one source of truth."""
     global HOME, CLAUDE_HOME, CLAUDE_HOME_2, CODEX_HOME, CODEX_HOME_2, GROK_HOME
-    global STATE_DIR, CONFIG_PATH, LEGACY_CONFIG_PATH, CACHE_PATH
+    global STATE_DIR, CONFIG_PATH, CACHE_PATH
     global CLAUDE_CLI_PACKAGE_PATHS, CODEX_ACCOUNTS, CODEX_ACCOUNT_BY_ID
 
     resolved_home = Path(home) if home is not None else Path.home()
@@ -219,9 +217,7 @@ def configure_paths(
     CODEX_HOME_2 = codex_home_2
     GROK_HOME = grok_home
     STATE_DIR = resolved_state
-    # Proxy settings: the core's own file wins, the legacy Usage Float config only fills what it leaves out (read-only).
     CONFIG_PATH = Path(os.environ.get("AGENTCOMPASS_USAGE_CONFIG") or resolved_state / "usage-config.json")
-    LEGACY_CONFIG_PATH = resolved_home / ".usage-float" / "config.json"
     CACHE_PATH = resolved_cache
     CLAUDE_CLI_PACKAGE_PATHS = (
         Path(os.environ.get("APPDATA", str(resolved_home)))
@@ -480,16 +476,12 @@ COLLECTOR_CONFIG_KEYS: tuple[str, ...] = (
 
 
 def read_usage_config() -> dict[str, Any]:
-    """Collector settings (LLM proxy keys and budget); {} when neither file exists or parses."""
-    merged: dict[str, Any] = {}
-    for path in (LEGACY_CONFIG_PATH, CONFIG_PATH):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError):
-            continue
-        if isinstance(data, dict):
-            merged.update(data)
-    return merged
+    """Collector settings (LLM proxy keys and budget); {} when the config file is absent or unparseable."""
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    return dict(data) if isinstance(data, dict) else {}
 
 
 def write_usage_config(cfg: dict[str, Any]) -> None:
@@ -549,8 +541,6 @@ def save_usage_cache(cache: dict[str, Any]) -> None:
 
 def update_usage_cache(update: Callable[[dict[str, Any]], None]) -> None:
     with file_lock(CACHE_PATH.with_suffix('.lock')):
-        if CACHE_PATH == usage_cache.canonical_path(HOME):
-            usage_cache.seed_from_legacy(HOME)
         # A transient read failure (a locked or unreadable file) must not turn a read/modify/write into an
         # empty-cache publication that destroys all display history. A file that is readable but is not valid JSON
         # will not heal by waiting, so it is set aside under a new name and the collector starts a new cache.
@@ -559,8 +549,6 @@ def update_usage_cache(update: Callable[[dict[str, Any]], None]) -> None:
         except ValueError:
             quarantine = CACHE_PATH.with_name(f"{CACHE_PATH.name}.corrupt-{datetime.now(timezone.utc):%Y%m%dT%H%M%S}")
             CACHE_PATH.replace(quarantine)
-            if CACHE_PATH == usage_cache.canonical_path(HOME):
-                usage_cache.seed_from_legacy(HOME)
             cache = load_usage_cache(strict=True)
         update(cache)
         save_usage_cache(cache)
@@ -2557,7 +2545,7 @@ def discover_litellm_proxies() -> dict[str, LiteLLMProxyConfig]:
     """Discover LiteLLM/OpenAI-compatible proxy accounts configured in the router files, Paseo or the usage config."""
     proxies: dict[str, LiteLLMProxyConfig] = {}
     router_files = [
-        Path(os.environ.get("ROUTE_MANAGER_ACCOUNTS_OVERRIDE") or STATE_DIR / "accounts-override.json"),
+        Path(os.environ.get("AGENTCOMPASS_ACCOUNTS_OVERRIDE") or STATE_DIR / "accounts-override.json"),
         STATE_DIR / "provider-inventory.json",
         Path(__file__).resolve().parent.parent / "references" / "accounts.json",
     ]
@@ -3250,7 +3238,7 @@ def active_providers(
 
 
 def refresh_local_activity(output: Path | None = None, now: float | None = None) -> dict[str, Any]:
-    """Scan local session files and Paseo agents to publish route-manager.activity.v1."""
+    """Scan local session files and Paseo agents to publish agent-compass.activity.v1."""
     clock = time.time() if now is None else float(now)
     cutoff = clock - 300.0
     accounts: dict[str, dict[str, Any]] = {}
@@ -3370,7 +3358,7 @@ def refresh_local_activity(output: Path | None = None, now: float | None = None)
             active_workers[pid] = {"count": pcount}
 
     payload = {
-        "schema": "route-manager.activity.v1",
+        "schema": "agent-compass.activity.v1",
         "generated_at": iso_now,
         "active_workers": active_workers,
         "accounts": accounts,
@@ -3390,7 +3378,7 @@ def refresh_local_activity(output: Path | None = None, now: float | None = None)
 
 def activity_path() -> Path:
     """The running/idle activity file the collector publishes and capacity_stats reads."""
-    configured = os.environ.get("AGENTCOMPASS_ACTIVITY_FILE") or os.environ.get("ROUTE_MANAGER_ACTIVITY_FILE")
+    configured = os.environ.get("AGENTCOMPASS_ACTIVITY_FILE")
     return Path(configured) if configured else STATE_DIR / "usage-activity.json"
 
 
@@ -3407,7 +3395,7 @@ def provider_poll_seconds(provider_id: str) -> int:
         age = time.time() - _iso_epoch(activity.get('generated_at'), 0)
         workers = activity.get('active_workers')
         account = (activity.get('accounts') or {}).get(provider_id) or {}
-        if (activity.get('schema') != 'route-manager.activity.v1'
+        if (activity.get('schema') != 'agent-compass.activity.v1'
                 or not 0 <= age <= 180 or not isinstance(workers, dict)):
             return UNKNOWN_ACTIVITY_REFRESH_SECONDS
         tracked = {

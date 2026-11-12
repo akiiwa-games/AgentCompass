@@ -96,6 +96,7 @@ class SetupAndRouterHomeParityTests(unittest.TestCase):
             'mode': 'browser-only', 'browserInteractionMode': 'automatic',
             'host': '127.0.0.1', 'port': 8790, 'proAvailable': True})
         self.write('.agent-compass/accounts-override.json', {
+            'schema_version': 2,
             'accounts': {
                 'team-proxy': {
                     'backend_kind': 'litellm',

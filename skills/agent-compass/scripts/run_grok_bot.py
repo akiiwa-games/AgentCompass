@@ -17,7 +17,7 @@ import grok_bot_paths
 import override_store
 
 PACKAGE = Path(__file__).resolve().parents[1] / 'grok-bot'
-CLI = grok_bot_paths.runtime_dir(PACKAGE) / grok_bot_paths.ENTRY
+CLI = grok_bot_paths.runtime_dir() / grok_bot_paths.ENTRY
 # Cold send: list + EnsureSandBox + retried list + one send, each bounded upstream at 30s.
 # Include a possible initial Ensure for an absent descriptor and local startup/decryption overhead.
 CLI_TIMEOUT = 210
@@ -209,8 +209,8 @@ def receipt_path(task_id):
     return STATE / 'tasks' / f'{task_id}.json'
 
 
-def marker(task_id, state, prefix='agent-compass'):
-    return f'[{prefix}:{task_id}:{state}]'
+def marker(task_id, state):
+    return f'[agent-compass:{task_id}:{state}]'
 
 
 def remote_prompt(text, task_id):
@@ -303,11 +303,9 @@ def read_reply(receipt):
         else:
             continue
         for terminal in ('completed', 'needs_input'):
-            # Tasks sent before the AgentCompass rename asked for the route-manager prefix.
-            for prefix in ('agent-compass', 'route-manager'):
-                suffix = marker(receipt['task_id'], terminal, prefix)
-                if text.rstrip().endswith('\n' + suffix) or text.strip() == suffix:
-                    state, answer = terminal, text.rstrip()[:-len(suffix)].rstrip()
+            suffix = marker(receipt['task_id'], terminal)
+            if text.rstrip().endswith('\n' + suffix) or text.strip() == suffix:
+                state, answer = terminal, text.rstrip()[:-len(suffix)].rstrip()
     return {'state': state, **({'reply': answer} if answer is not None else {})}
 
 

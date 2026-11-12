@@ -10,9 +10,8 @@ PRODUCT_REPO = "AgentCompass"
 RELEASES_API = f"https://api.github.com/repos/{DEFAULT_ORG}/{PRODUCT_REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{DEFAULT_ORG}/{PRODUCT_REPO}/releases/latest"
 
-# New names first; the ROUTE_MANAGER_* names from before the AgentCompass rename still work.
-_ORG_ENV = ("AGENTCOMPASS_GITHUB_ORG", "ROUTE_MANAGER_GITHUB_ORG")
-_USAGE_FLOAT_ENV = ("AGENTCOMPASS_USAGE_FLOAT_REPO", "ROUTE_MANAGER_USAGE_FLOAT_REPO")
+_ORG_ENV = ("AGENTCOMPASS_GITHUB_ORG",)
+_USAGE_FLOAT_ENV = ("AGENTCOMPASS_USAGE_FLOAT_REPO",)
 _REMOTE = re.compile(r"github\.com[:/]([^/\s\"']+)/")
 
 

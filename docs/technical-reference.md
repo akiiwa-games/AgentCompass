@@ -5,7 +5,7 @@ Back to [README.md](../README.md).
 ## Contents
 
 1. [How Scoring & Allocation Work](#1-how-scoring--allocation-work)
-2. [Moving from a Git Checkout to the Installed Product](#2-moving-from-a-git-checkout-to-the-installed-product)
+2. [After an Update & Moving from a Git Checkout](#2-after-an-update--moving-from-a-git-checkout)
 3. [Packaging, Incremental Updates & Runtime Ports](#3-packaging-incremental-updates--runtime-ports)
 4. [Repository Layout](#4-repository-layout)
 5. [Provider Inventory & Quota Collection](#5-provider-inventory--quota-collection)
@@ -60,42 +60,45 @@ and plan window structure in [`skills/agent-compass/references/plan-templates.js
 
 ---
 
-## 2. Moving from a Git Checkout to the Installed Product
+## 2. After an Update & Moving from a Git Checkout
 
-A machine that ran AgentCompass from a git checkout keeps parts of it inside that checkout. The installed product
-keeps them elsewhere, so move them once (every step has a dry run, is safe to repeat, and changes no account or rule):
+### After an update
+
+AgentCompass does not carry compatibility readers or silent migrations for older local state shapes. If a schema, setting, hook, rule block, or cache under `~/.agent-compass` predates an update, routing fails fast naming the file and its fix. Run:
 
 ```powershell
-# 1. Plugin clones (usage-float, codex-chatgpt-web with its local patches, gemini-web, dot2api) -> ~/.agent-compass/plugins/<id>.
-#    Closes the tray, stops each running plugin, moves the whole working tree (local changes and untracked files too),
-#    replaces any junction that pointed back at the checkout, rebuilds dot2api's .venv, restarts what ran and the tray.
-python -X utf8 <checkout>\tray\deploy.py migrate-plugins --dry-run
-python -X utf8 <checkout>\tray\deploy.py migrate-plugins
-
-# 2. The EasyTier node -> %ProgramData%\AgentCompass\easytier (asks for administrator rights through UAC).
-#    Re-points the SYSTEM task at the new home, checks the node comes back (and sees the named peers), then deletes the
-#    old copy; if it does not come back the task goes back to the old home. --keep-old keeps the old copy.
-python -X utf8 <checkout>\tray\easytier_setup.py install --migrate-from <checkout>\easytier --dry-run
-python -X utf8 <checkout>\tray\easytier_setup.py install --migrate-from <checkout>\easytier --expect-peer OTHER_HOST
-
-# 3. The product itself: quit the checkout tray, run AgentCompass-tray-setup.exe from Releases, then re-run setup with
-#    the installer's exe. Setup replaces hook, skill and rule entries that pointed at the checkout or a wheel.
-& "$env:LOCALAPPDATA\AgentCompass\cli\agentcompass.exe" setup --yes --hooks
-
-# 4. Remove a leftover wheel so it cannot shadow the installer's exe on PATH (`agentcompass doctor` prints the exact command).
-uv tool uninstall agentcompass      # or: python -m pip uninstall -y agentcompass
+agentcompass doctor
 ```
 
-The tray finds plugins and the EasyTier node at their old checkout locations until they are moved, so the steps can
-run in any order. Host configs that still name a checkout path are listed at the end of step 1 for you to edit.
+`doctor` inspects local state read-only (`accounts-override.json`, `host-policy.json`, `host-rules/*.md`, `user-scores.json`, `router-ledger.jsonl`, `dispatch.sqlite3`, `router-overrides.json`, caches, installed hooks, skill links, and global rule blocks) without modifying user files and prints one of three fixes per flagged path:
+
+1. **Re-run `agentcompass setup`** (`agentcompass setup --yes --hooks`) — refreshes global rule blocks, skill links, and `PreToolUse` / `tool_call` hooks.
+2. **Re-toggle in the tray** — rewrites user preference files (`accounts-override.json`, `host-policy.json`, `user-scores.json`, `router-overrides.json`, plugin autostart) in the current schema.
+3. **Delete a named cache or state file** — clears stale derived caches (`provider-inventory.json`, `usage-activity.json`, `dispatch.sqlite3`, `~/.usage-float/usage-cache.json`, `~/.cache/agentcompass-calibration` without `fetch-manifest.json`, or old custom `host-rules/*.md` overlays) so the next run recreates them cleanly. Old-shape rows in `router-ledger.jsonl` are skipped during replay, audit, and tray display with a count note; delete `router-ledger.jsonl` when you want a clean ledger.
+
+### Moving from a Git Checkout to the Installed Product
+
+A machine switching from a git checkout to the installed product keeps plugins under `~/.agent-compass/plugins/<id>` and the EasyTier node under `%ProgramData%\AgentCompass\easytier`:
+
+```powershell
+# 1. Quit the checkout tray, run AgentCompass-tray-setup.exe from Releases, then re-run setup with the installer's exe.
+#    Setup replaces hook, skill and rule entries that pointed at the checkout or a wheel.
+& "$env:LOCALAPPDATA\AgentCompass\cli\agentcompass.exe" setup --yes --hooks
+
+# 2. Install or re-register the EasyTier node in %ProgramData%\AgentCompass\easytier (asks for administrator rights through UAC).
+python -X utf8 "$env:LOCALAPPDATA\AgentCompass\app\current\tray\easytier_setup.py" install --binaries DIR --config THIS_HOSTS_TOML
+
+# 3. Remove a leftover wheel so it cannot shadow the installer's exe on PATH (`agentcompass doctor` prints the exact command).
+uv tool uninstall agentcompass      # or: python -m pip uninstall -y agentcompass
+```
 
 ---
 
 ## 3. Packaging, Incremental Updates & Runtime Ports
 
 - The router is a Python package, not a frozen executable: skills stay real directories because Claude, Codex and Antigravity read `SKILL.md`, and `agentcompass` runs the sibling scripts by path (`python -I`).
-- A packaged install (no `.git`) checks [GitHub Releases](https://github.com/akiiwa-games/AgentCompass/releases) at most once per 6 hours (one cache shared by the tray's AgentCompass update and the integrations check; a failed read such as a rate limit falls back to the last good release, labelled with its time) and points the installer build at the tray's **Update AgentCompass** button and a uv install at `uv tool upgrade agentcompass`; a development checkout fast-forwards with git. `AGENTCOMPASS_GITHUB_ORG` and `AGENTCOMPASS_USAGE_FLOAT_REPO` override the org and the usage-float clone URL. Every `AGENTCOMPASS_*` variable that had a `ROUTE_MANAGER_*` name before the rename still accepts the old name.
-- Tray extras: `pip install "agentcompass[tray]"`. `packaging/build.ps1` builds a one-folder PyInstaller tray (`AgentCompass.exe`) and CLI (`cli/agentcompass.exe`), a versioned application code package (`app-<version>.zip`), a release `manifest.json`, and with Inno Setup 6 a per-user installer (`AgentCompass-tray-setup.exe`, `PrivilegesRequired=lowest`) that registers the "AgentCompass" scheduled task (and removes the pre-rename "Route Manager" one); uninstall removes the task, the `PRO_CONSULT_*` / `CODEX_WEB_GPT_EXTERNAL_TRAY` variables and the Startup shortcuts. Builds are unsigned unless `AGENTCOMPASS_SIGNTOOL` and a certificate are set (SmartScreen will warn; see `packaging/SIGNING.md`). Tagged pushes (`v*`) attach the wheel, `AgentCompass-tray-setup.exe`, `app-<version>.zip` and `manifest.json` to the Release.
+- A packaged install (no `.git`) checks [GitHub Releases](https://github.com/akiiwa-games/AgentCompass/releases) at most once per 6 hours (one cache shared by the tray's AgentCompass update and the integrations check; a failed read such as a rate limit falls back to the last good release, labelled with its time) and points the installer build at the tray's **Update AgentCompass** button and a uv install at `uv tool upgrade agentcompass`; a development checkout fast-forwards with git. `AGENTCOMPASS_GITHUB_ORG` and `AGENTCOMPASS_USAGE_FLOAT_REPO` override the org and the usage-float clone URL.
+- Tray extras: `pip install "agentcompass[tray]"`. `packaging/build.ps1` builds a one-folder PyInstaller tray (`AgentCompass.exe`) and CLI (`cli/agentcompass.exe`), a versioned application code package (`app-<version>.zip`), a release `manifest.json`, and with Inno Setup 6 a per-user installer (`AgentCompass-tray-setup.exe`, `PrivilegesRequired=lowest`) that registers the "AgentCompass" scheduled task; uninstall removes the task, the `PRO_CONSULT_*` / `CODEX_WEB_GPT_EXTERNAL_TRAY` variables and the Startup shortcuts. Builds are unsigned unless `AGENTCOMPASS_SIGNTOOL` and a certificate are set (SmartScreen will warn; see `packaging/SIGNING.md`). Tagged pushes (`v*`) attach the wheel, `AgentCompass-tray-setup.exe`, `app-<version>.zip` and `manifest.json` to the Release.
 - **Incremental Windows updates (since `0.4.0`)**:
   - The Windows installer separates the frozen runtime (`_internal/`, `cli/_internal/`, boot executables `AgentCompass.exe` and `cli/agentcompass.exe`, and `runtime-info.json`) from application code (`app/current/`, unpacked from `app/packages/app-<version>.zip`, with the previous version retained at `app/previous/` for automatic startup/update rollback).
   - On update (`tray/updates.py`), an installed tray reads `manifest.json` from the Release and compares `runtime_fingerprint` (and `required_runtime_fingerprint` / `min_runtime_version` inside `app-<version>.zip`) against `<install>/runtime-info.json`.
@@ -149,7 +152,7 @@ agentcompass providers
 
 ### Subscription Quota Collection (`usage_collector.py`)
 
-Quota windows are collected by [`usage_collector.py`](../skills/agent-compass/scripts/usage_collector.py) (`agentcompass usage` runs it once; the tray runs it every 5 minutes) into `~/.agent-compass/usage-cache.json` with a receipt at `~/.agent-compass/usage-collector.json`. Routing only reads that file (`agentcompass usage --show` prints it). The [usage-float](https://github.com/akiiwa-games/usage-float) display plugin is optional; if it has written `~/.usage-float/usage-cache.json`, the newer reading per provider is used, and `ROUTER_USAGE_CACHE` / `--usage-cache` name a single cache file when needed. The collector code derives from usage-float (MIT; see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)):
+Quota windows are collected by [`usage_collector.py`](../skills/agent-compass/scripts/usage_collector.py) (`agentcompass usage` runs it once; the tray runs it every 5 minutes) into `~/.agent-compass/usage-cache.json` with a receipt at `~/.agent-compass/usage-collector.json`. Routing only reads that file (`agentcompass usage --show` prints it), or `ROUTER_USAGE_CACHE` / `--usage-cache` when set. The [usage-float](https://github.com/akiiwa-games/usage-float) display plugin is optional. The collector code derives from usage-float (MIT; see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)):
 
 - **Multi-account discovery**: Detects primary and additional Claude/Codex homes (`~/.claude`, `~/.claude-*`, `~/.codex`, `~/.codex-*`), named Paseo accounts with configured homes, and remote Magpie gateways (`magpie_usage.py`).
 - **Polling cadence**: Active accounts poll roughly every 5 minutes, idle accounts every 30 minutes, and accounts with unknown/stale activity every 15 minutes. Failed probes follow the same cadence and per-credential `429` backoff.
@@ -196,7 +199,7 @@ The tray icon displays a status dot: **green** when core usage collection and al
 - **Account Quotas & In-Flight Tasks**:
   - Live status badges (`Ready`, `Paused`, `Plugin Disabled`, `Blocked by Host Policy`), remaining percentage and API-equivalent USD per window, 3h/24h burn rates, reset countdowns, one-click quota refresh, and active worker sessions with their cumulative uncompressed context against the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray).
 - **Model Settings** — three tabs: **Models & Boost**, **Scores & Capabilities**, and **System Options**.
-  - The home page shows discovered harness/account combinations, selected model chips and a model picker with select-all, invert and clear. Model discovery runs in the background through registered `paseo_provider`, `openai_compatible` or `static` probes. Discovered chat models become selectable bundles scored from their default profile (subscription pools on by default, metered proxies off); models the router cannot run are not listed. The account directory icon edits one shared, case-insensitive `cwd_regex`; legacy `allowed_cwd` prefixes remain readable. Preferences are sparse overrides with backups under `~/.agent-compass/backups/`.
+  - The home page shows discovered harness/account combinations, selected model chips and a model picker with select-all, invert and clear. Model discovery runs in the background through registered `paseo_provider`, `openai_compatible` or `static` probes. Discovered chat models become selectable bundles scored from their default profile (subscription pools on by default, metered proxies off); models the router cannot run are not listed. The account directory icon edits one shared, case-insensitive `cwd_regex`. Preferences are sparse overrides with backups under `~/.agent-compass/backups/`.
   - Temporary priorities remain on the home page. **Scores & Capabilities** (`tray/panel_strategy.py`, `tray/score_overview.py`) holds the user's settings (weekly safety margin, short-window floor, context rotation threshold `rotate_after_carried_tokens`, and their presets), the four categories (Creativity `divergence`, Coding, Aesthetics, Tool operation) with their facets, boards, data dates, panel targets per level, coverage and the read-only continuity value with its derivation, the quota economy term, and every model's category levels on the 1–3 demand scale (`user_scores.z_to_level`, shown as 3.0+ above 3) with status and evidence on hover. Manual scores are entered and cleared there through `user_scores.set_score` / `clear_score`, the writer of `agentcompass score set|clear`, into the local file only.
   - **CLI updates** live in the home toolbar: **Update** checks and updates supported installs in the background, and **Auto-update daily** enables daily maintenance. Active CLI sessions defer their install's update and are never stopped. Provider environments select the same installation and npm prefix the router launches. Unknown/manual installs receive no guessed installer; Grok Bot's pinned build stays on Integrations. The CLI log opens from System Options.
 - **Plugins & Services**:
@@ -231,15 +234,12 @@ The node lives in `%ProgramData%\AgentCompass\easytier`: per machine like its ta
 ```powershell
 python tray\easytier_setup.py check
 python tray\easytier_setup.py install --binaries DIR --config THIS_HOSTS_TOML [--hook pre-start.ps1] [--legacy legacy.json] [--switch --expect-peer HOSTNAME]
-python tray\easytier_setup.py install --migrate-from OLD_HOME [--expect-peer HOSTNAME] [--keep-old] [--dry-run]
 python tray\easytier_setup.py switch|recover|rollback --expect-peer HOSTNAME
 python tray\easytier_setup.py arm-recovery --expect-peer HOSTNAME --minutes 10
 python tray\easytier_setup.py detach-switch --expect-peer HOSTNAME
 python tray\easytier_setup.py cleanup
 python tray\easytier_setup.py uninstall
 ```
-
-A node installed before that folder existed lives in `<checkout>\easytier`; the tray keeps finding it there until `install --migrate-from <checkout>\easytier` moves it. A node registered before the AgentCompass rename still runs as `Route Manager EasyTier`; the tray reads either name, and `install` (with or without `--migrate-from`, elevated through UAC) registers `AgentCompass EasyTier`, deletes the old tasks and starts the new one.
 
 ---
 
@@ -261,8 +261,8 @@ python -X utf8 setup\sync_host_globals.py --uninstall
 
 Safety properties of the sync (`agentcompass setup` runs the same code):
 
-- **Your text is never replaced.** Rules go into a block between `<!-- agentcompass:begin -->` and `<!-- agentcompass:end -->`; anything outside it is kept. A file that is exactly an earlier generated copy is treated as wholly managed.
-- **The shipped rules are a neutral English default** (`setup/host_rules.py`). To use your own wording, put `shared.md` (Claude, Pi, Gemini, OpenCode), `codex.md` and `daemon-append.md` (Paseo `appendSystemPrompt`) into `~/.agent-compass/host-rules/`; they are used verbatim, with `@@AGENTCOMPASS@@` (the router command: `agentcompass` when installed, otherwise `python -X utf8 <checkout>/agentcompass`), `@@ROUTER_HOOK_SCRIPT@@` and `@@HOME_POSIX@@` filled in; the old `python -X utf8 @@ROUTE_JUDGE@@` spelling is rewritten to it on every sync.
+- **Your text is never replaced.** Rules go into a block between `<!-- agentcompass:begin -->` and `<!-- agentcompass:end -->`; anything outside it is kept.
+- **The shipped rules are a neutral English default** (`setup/host_rules.py`). To use your own wording, put `shared.md` (Claude, Pi, Gemini, OpenCode), `codex.md` and `daemon-append.md` (Paseo `appendSystemPrompt`) into `~/.agent-compass/host-rules/`; they are used verbatim, with `@@AGENTCOMPASS@@` (the router command: `agentcompass` when installed, otherwise `python -X utf8 <checkout>/agentcompass`), `@@ROUTER_HOOK_SCRIPT@@` and `@@HOME_POSIX@@` filled in.
 - **Every run that changes a file backs it up first** into `~/.agent-compass/backups/host-setup-<timestamp>/`, and records the change in `~/.agent-compass/setup-manifest.json`, which `--uninstall` / `agentcompass uninstall` reads to remove the blocks, hook entries, junctions and Paseo prompt again.
 - **The spawn gate is opt-in** (`--hooks`). It blocks every sub-agent launch, including Claude Code's built-in Explore agent, unless `roll` recorded a routing decision in the last 15 minutes. Installations that already have the hook keep it up to date automatically.
 - Harness directories (`~/.pi`, `~/.gemini`, `~/.config/opencode`, ...) are only written when that harness is installed.
@@ -291,7 +291,6 @@ python tray\deploy.py check                        # Inspect current installatio
 python tray\deploy.py install                      # Apply ChatGPT Web patches, build launcher, register logon task
 python tray\deploy.py restart                      # Restart the tray UI without stopping background services
 python tray\deploy.py all                          # Install and restart
-python tray\deploy.py migrate-plugins [--dry-run]  # Move plugin clones out of a checkout into ~/.agent-compass/plugins
 python tray\updates.py check                       # Check how many commits each managed repo is behind upstream
 python tray\updates.py update                      # Fast-forward pull, rebuild, and restart enabled components
 ```

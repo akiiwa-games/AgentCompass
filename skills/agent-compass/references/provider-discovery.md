@@ -69,17 +69,8 @@ account. An override can remove the binding; other products stay independent unl
 
 ## Automatic admission of newly discovered accounts
 
-The local host allowlist predates account discovery. An omitted name in an old
-file cannot tell us whether the user disabled it or had never seen it. Existing
-files retain their exact behavior until explicitly migrated:
-
-```powershell
-python -X utf8 skills/agent-compass/scripts/host_policy.py --enable-auto-discovery
-```
-
-Migration adds `known_accounts`, the names already allowed or present in the
-current catalog/discovery. It does not allow any previously excluded account;
-the command reports the preserved exclusions. New accounts discovered afterward
+`known_accounts` in `~/.agent-compass/host-policy.json` records which accounts have
+already been seen alongside `allowed_accounts`. New accounts discovered afterward
 are admitted only once their native discovery is ready, their account has a
 non-disabled dispatch contract and no known expired subscription. An unready or
 unregistered newcomer is not marked seen; signing in/registering it later can

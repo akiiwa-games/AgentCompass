@@ -228,8 +228,8 @@ class CollectorTests(CollectorBase):
         self.assertNotIn('secret remote text', (self.state / 'usage-collector.log').read_text())
 
 
-class MigrationTests(CollectorBase):
-    """The collector next to a Usage Float that wrote the legacy cache."""
+class CacheIsolationTests(CollectorBase):
+    """The collector writes only the canonical cache and ignores ~/.usage-float/usage-cache.json."""
 
     def legacy_cache(self, **providers):
         path = self.root / '.usage-float' / 'usage-cache.json'
@@ -237,7 +237,7 @@ class MigrationTests(CollectorBase):
         path.write_text(json.dumps({'providers': providers, 'attempts': {}}))
         return path
 
-    def test_first_write_seeds_the_canonical_cache_from_legacy_and_never_writes_legacy(self):
+    def test_first_write_ignores_legacy_usage_float_cache_and_never_writes_it(self):
         self.sign_in('codex')
         fetched = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
         legacy = self.legacy_cache(grok={'provider_id': 'grok', 'available': True, 'stale': False, 'fetched_at': fetched,
@@ -245,8 +245,7 @@ class MigrationTests(CollectorBase):
         before = legacy.read_bytes()
         collector.collect()
         providers = json.loads(self.cache.read_text())['providers']
-        self.assertEqual(sorted(providers), ['codex', 'grok'])
-        self.assertEqual(providers['grok']['fetched_at'], fetched)
+        self.assertEqual(sorted(providers), ['codex'])
         self.assertEqual(legacy.read_bytes(), before)
 
     def test_a_corrupt_cache_is_set_aside_not_overwritten_and_not_blocking(self):

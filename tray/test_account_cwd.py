@@ -1,4 +1,3 @@
-import copy
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,13 +23,11 @@ def test_regex_normalizes_slashes_and_case_and_fails_closed_for_invalid_config()
         cwd_policy.validate('[')
 
 
-def test_legacy_prefix_prefill_and_override_save(tmp_path, monkeypatch):
+def test_override_save_and_cwd_regex_persistence(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
-    router_data._atomic_json(target, {'schema_version': 2, 'accounts': {'codex': {'allowed_cwd': ['E:/P4']}}})
-    assert router_data.read_account_cwd('codex') == '^E:/P4(/|$)'
+    assert router_data.read_account_cwd('codex') == ''
     router_data.save_account_cwd('codex', '^E:/(P4|PROJECTS)(/|$)')
     data = router_data._read_json(target)['accounts']['codex']
-    assert 'allowed_cwd' not in data
     assert data['cwd_regex'] == '^E:/(P4|PROJECTS)(/|$)'
     assert account_fleet.load_accounts()['accounts']['codex']['cwd_regex'] == data['cwd_regex']
     before = target.read_bytes()
@@ -41,17 +38,10 @@ def test_legacy_prefix_prefill_and_override_save(tmp_path, monkeypatch):
     assert {row['cwd_regex'] for row in rows} == {data['cwd_regex']}
 
 
-def test_regex_and_legacy_prefix_intersect_in_allocator():
-    spec = {'allowed_cwd': ['E:/P4'], 'cwd_regex': '/game(/|$)'}
-    assert account_fleet.account_cwd_allowed(spec, r'e:\p4\game')
-    assert not account_fleet.account_cwd_allowed(spec, r'e:\p4\other')
-    assert not account_fleet.account_cwd_allowed(spec, r'e:\projects\game')
-
-
-def test_plan_explains_regex_exclusion_and_legacy_intersection():
+def test_plan_explains_regex_exclusion():
     scoring = json.loads(account_fleet.reference_fleet_path().read_text(encoding='utf-8'))['scoring']
     accounts = {'scoring': scoring, 'models': {'fixture-model': {}}, 'accounts': {
-        'fixture-account': {'verified': True, 'cwd_regex': '^E:/P4(/|$)', 'allowed_cwd': ['E:/P4'],
+        'fixture-account': {'verified': True, 'cwd_regex': '^E:/P4(/|$)',
                             'bundles': {'fixture-bundle': {'model': 'fixture-model', 'effort': 'high'}}}}}
     plan = allocator.plan({'objective': 'Implement a parser', 'work_kind': 'general_implementation',
                            'expected_hours': .1, 'cwd': 'E:/PROJECTS/AgentCompass', 'profile': profile()},
@@ -59,4 +49,3 @@ def test_plan_explains_regex_exclusion_and_legacy_intersection():
                           accounts=accounts, capabilities={'routes': {'general_implementation': {}, 'other_or_mixed': {}}}, overrides=[], host_policy_config={'allowed_accounts': list(accounts['accounts'])})
     row = next(row for row in plan['ranking'] if row['id'] == 'fixture-bundle')
     assert 'outside account cwd restriction (^E:/P4(/|$))' in row['excluded']
-    assert any('cwd_regex and legacy allowed_cwd' in warning for warning in plan['decision']['warnings'])

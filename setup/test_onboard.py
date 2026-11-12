@@ -83,23 +83,9 @@ class MarkerBlockTests(unittest.TestCase):
         self.assertEqual(sg.merge_block("generated\r\n", "generated\n"), ("generated\n", "whole"))
         self.assertEqual(sg.merge_block("old text", "new text", recorded_whole_sha=sg.sha256("old text")), ("new text", "whole"))
 
-    def test_earlier_generation_of_the_same_document_is_replaced_not_duplicated(self):
-        legacy = "# Same heading\n\nold body\n"
-        self.assertEqual(sg.merge_block(legacy, "# Same heading\n\nnew body\n"), ("# Same heading\n\nnew body\n", "whole"))
-        text, mode = sg.merge_block("# My own heading\n", "# Same heading\n\nnew body\n")
-        self.assertEqual(mode, "block")
-
     def test_unbalanced_marker_is_refused(self):
         with self.assertRaises(ValueError):
             sg.merge_block(f"x\n{sg.MARKER_BEGIN}\nhalf\n", "rules\n")
-
-    def test_legacy_generated_rules_migrate_to_one_block_when_overlay_changes(self):
-        for legacy in ("【全局强制纪律】旧规则", "# 全局执行纪律（旧宿主）\n旧内容\n",
-                       host_rules.DEFAULT_SHARED, host_rules.DEFAULT_DAEMON_APPEND):
-            with self.subTest(legacy=legacy[:40]):
-                text, mode = sg.merge_block(legacy, "# New overlay\nnew rules\n")
-                self.assertEqual((text, mode), (sg.make_block("# New overlay\nnew rules\n"), "block"))
-                self.assertEqual(sg.merge_block(text, "# New overlay\nnew rules\n"), (text, "block"))
 
     def test_strip_block_restores_the_original_text(self):
         original = "# mine\n"
@@ -206,20 +192,6 @@ class SyncTests(HomeCase):
         prompt = json.loads((self.home / ".paseo" / "config.json").read_text(encoding="utf-8"))["daemon"]["appendSystemPrompt"]
         self.assertTrue(prompt.startswith("Be terse.\n\n" + sg.MARKER_BEGIN))
         self.assertIn("roll --task", prompt)
-
-    def test_legacy_paseo_prompt_is_replaced_once_and_backed_up(self):
-        legacy = "【全局强制纪律】旧的单行规则"
-        config = self.write(".paseo/config.json", {"daemon": {"appendSystemPrompt": legacy}, "other": 1})
-        self.write(".agent-compass/host-rules/daemon-append.md", "【全局强制纪律】新的单行规则\n")
-        before = config.read_bytes()
-        self.sync(skills=False)
-        data = json.loads(config.read_text(encoding="utf-8"))
-        self.assertEqual(data, {"daemon": {"appendSystemPrompt": sg.make_block("【全局强制纪律】新的单行规则\n")}, "other": 1})
-        backup = next((self.home / ".agent-compass/backups").glob("host-setup-*/configs/paseo-config.json"))
-        self.assertEqual(backup.read_bytes(), before)
-        after = config.read_bytes()
-        self.sync(skills=False)
-        self.assertEqual(config.read_bytes(), after)
 
 
 @pytest.mark.slow
@@ -397,16 +369,6 @@ class UninstallTests(HomeCase):
         self.quiet(sg.uninstall)
         self.assertEqual(path.read_text(encoding="utf-8"), "\nadded later\n")
 
-    def test_whole_file_that_was_edited_since_setup_is_left_alone(self):
-        self.write(".agent-compass/host-rules/shared.md", "# Title\n\nbody\n")
-        self.write(".claude/CLAUDE.md", "# Title\n\nold body\n")           # earlier generation: replaced as a whole
-        self.sync()
-        path = self.home / ".claude" / "CLAUDE.md"
-        self.assertEqual(path.read_text(encoding="utf-8"), "# Title\n\nbody\n")
-        path.write_text("# Title\n\nhand edited\n", encoding="utf-8")
-        self.quiet(sg.uninstall)
-        self.assertEqual(path.read_text(encoding="utf-8"), "# Title\n\nhand edited\n")
-
     def test_uninstall_without_manifest_is_a_no_op(self):
         self.write(".claude/CLAUDE.md", "# mine\n")
         self.quiet(sg.uninstall)
@@ -471,7 +433,7 @@ class OverrideTests(HomeCase):
 
     def test_disabled_account_is_written_and_user_entries_are_never_overwritten(self):
         path = self.write(".agent-compass/accounts-override.json", {"schema_version": 2, "accounts": {
-            "claude": {"bundles": {"x": {"disabled": "mine"}}}, "opencode": {"verified": True}}})
+            "claude": {"bundles": {"x": {"disabled": True}}}, "opencode": {"verified": True}}})
         result = onboard.write_override(self.home, self.detection(), {"opencode", "claude"})
         document = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(document["accounts"]["claude"]["bundles"], {"x": {"disabled": True}})
@@ -543,8 +505,7 @@ class UsagePluginTests(HomeCase):
         self.cli["git"] = "git"
         calls = []
         with patch.object(onboard, "REPO", self.home / "no-checkout"), patch.dict(os.environ, {}, clear=False):
-            for key in ("AGENTCOMPASS_GITHUB_ORG", "AGENTCOMPASS_USAGE_FLOAT_REPO", "ROUTE_MANAGER_GITHUB_ORG",
-                        "ROUTE_MANAGER_USAGE_FLOAT_REPO"):
+            for key in ("AGENTCOMPASS_GITHUB_ORG", "AGENTCOMPASS_USAGE_FLOAT_REPO"):
                 os.environ.pop(key, None)
             result = onboard.ensure_usage_float(self.home, run=lambda c, **k: calls.append(c) or type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})())
         self.assertEqual(result["action"], "cloned")

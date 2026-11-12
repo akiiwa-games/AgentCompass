@@ -182,17 +182,32 @@ def _cache_line(home: Path, environ: dict | None) -> str:
         override = os.environ["ROUTER_USAGE_CACHE"].strip()
     state = ((environ or os.environ).get("ROUTER_STATE_DIR") or "").strip()
     canonical = (Path(state) if state else home / ".agent-compass") / "usage-cache.json"
-    # An explicit file is the only one read; otherwise the collector's cache and the legacy Usage Float copy (usage_cache.py).
-    paths = [Path(override)] if override else [canonical, home / ".usage-float" / "usage-cache.json"]
-    found = []
-    for path in paths:
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        age_min = max(0, int((time.time() - stat.st_mtime) // 60))
-        found.append(f"{path} ({age_min} min old, {stat.st_size} bytes)")
-    return "; ".join(found) if found else f"missing ({paths[0]})"
+    path = Path(override) if override else canonical
+    try:
+        stat = path.stat()
+    except OSError:
+        return f"missing ({path})"
+    age_min = max(0, int((time.time() - stat.st_mtime) // 60))
+    return f"{path} ({age_min} min old, {stat.st_size} bytes)"
+
+
+def upgrade_issues(home: Path, environ: dict | None) -> list[str]:
+    """Read-only upgrade checks for older local ~/.agent-compass state, hooks and global rule blocks."""
+    try:
+        scripts = locations.skill_root() / "agent-compass" / "scripts"
+        script = scripts / "state_upgrade.py"
+        if not script.is_file():
+            return []
+        if str(scripts) not in sys.path:
+            sys.path.append(str(scripts))
+        spec = importlib.util.spec_from_file_location("agentcompass_state_upgrade", script)
+        if spec is None or spec.loader is None:
+            return []
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return list(module.collect_issues(home=home, environ=environ))
+    except Exception as error:
+        return [f"unavailable ({error.__class__.__name__}: {error})"]
 
 
 def _plugin_lines(home: Path) -> list[str]:
@@ -272,6 +287,7 @@ def collect(home: Path | None = None) -> dict:
         "listeners": listeners(list(port_state["ports"].values())),
         "conflicts": conflicts(home, environ if environ is not None else os.environ),
         "hooks": [(str(path), _hook_installed(path)) for path in _hook_paths(home)],
+        "upgrade_issues": upgrade_issues(home, environ),
     }
 
 
@@ -327,6 +343,10 @@ def render(report: dict) -> str:
     lines.append("Hooks:")
     for path, state in report.get("hooks") or []:
         lines.append(f"  {path}: {state}")
+    issues = report.get("upgrade_issues") or []
+    lines.append("Upgrade checks: " + ("none" if not issues else f"{len(issues)} item(s) need attention"))
+    for issue in issues:
+        lines.append(f"  {issue}")
     return "\n".join(lines) + "\n"
 
 

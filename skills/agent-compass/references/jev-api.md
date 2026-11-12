@@ -10,4 +10,4 @@ for the six profile levels, and `noul` questions for `needs_visual`, `needs_gui`
 `~/.agent-compass/scorer-config.json` (`jev_api_key`), else `TYPESAFE_API_KEY`, else `JEV_API_KEY`; it never lives in
 the repository. A missing key or failed call falls back to agy (unless `fallback_to_agy` is false), then to the
 deterministic profile. Configure it with `agentcompass scorer --action set --type jev --api-key -` or in
-AgentCompass under Settings > System options. `scripts/jev_route.py` is a compatibility entrypoint kept for old automation; use `agentcompass` instead.
+AgentCompass under Settings > System options.

@@ -29,14 +29,18 @@ class HostRulesTests(unittest.TestCase):
         self.assertEqual(host_rules.agentcompass_command(), f'python -X utf8 {(host_rules.REPO / "agentcompass").as_posix()}')
         self.assertTrue((host_rules.REPO / 'agentcompass' / '__main__.py').is_file())
 
-    def test_an_overlay_with_the_old_placeholder_spelling_is_rewritten(self):
+    def test_an_overlay_with_old_placeholder_or_worker_env_fails_fast(self):
         directory = host_rules.overlay_dir(self.home)
         directory.mkdir(parents=True)
-        (directory / 'shared.md').write_bytes(
-            b'run `python -X utf8 @@ROUTE_JUDGE@@ roll --task "x"` or `@@AGENTCOMPASS@@ plan`\n')
-        text, source = host_rules.load('shared', self.home)
-        command = host_rules.agentcompass_command()
-        self.assertEqual((source, text), ('overlay', f'run `{command} roll --task "x"` or `{command} plan`\n'))
+        for bad in (
+            b'run `python -X utf8 @@ROUTE_JUDGE@@ roll --task "x"`\n',
+            b'worker (`ROUTER_WORKER=1`) runs assignment\n',
+        ):
+            (directory / 'shared.md').write_bytes(bad)
+            with self.assertRaises(ValueError) as ctx:
+                host_rules.load('shared', self.home)
+            self.assertIn('shared.md', str(ctx.exception))
+            self.assertIn('delete', str(ctx.exception))
 
     def test_codex_and_daemon_overlays_include_the_shared_rules_instead_of_copying_them(self):
         directory = host_rules.overlay_dir(self.home)
@@ -91,12 +95,6 @@ class HostRulesTests(unittest.TestCase):
         self.assertEqual(source, 'overlay')
         self.assertEqual(text, f'read {host_rules.DISPATCH_RULES} then '
                                f'{host_rules.personal_dispatch_path(self.home).as_posix()} ({host_rules.SKILL_DIR})\r\n')
-
-    def test_the_old_generated_defaults_still_migrate(self):
-        for old in ('# Agent routing rules (AgentCompass)\n\nold body\n',
-                    'Router discipline: ' + host_rules.EXECUTION_POLICY + ' old tail',
-                    host_rules.load('daemon-append', self.home)[0]):
-            self.assertTrue(host_rules.is_legacy_generated(old), old[:40])
 
 
 if __name__ == '__main__':

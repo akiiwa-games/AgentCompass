@@ -40,9 +40,9 @@ def test_home_and_every_state_constant_point_into_the_test_home():
         assert not value or not hermetic._protected(value), name
 
 
-def test_paseo_agent_id_and_router_worker_are_cleared_for_every_test():
+def test_paseo_agent_id_and_agentcompass_worker_are_cleared_for_every_test():
     assert 'PASEO_AGENT_ID' not in os.environ
-    assert 'ROUTER_WORKER' not in os.environ
+    assert 'AGENTCOMPASS_WORKER' not in os.environ
     for name in hermetic.WORKER_VARIABLES:
         assert name not in os.environ, f'{name} leaked into test environment'
 
@@ -108,13 +108,13 @@ def test_xdist_workers_get_distinct_homes_and_keep_user_site_packages():
         "'state': str(h.TEST_STATE_DIR), "
         "'real_home': str(h.REAL_HOME), "
         "'paseo': os.environ.get('PASEO_AGENT_ID'), "
-        "'worker': os.environ.get('ROUTER_WORKER'), "
+        "'worker': os.environ.get('AGENTCOMPASS_WORKER'), "
         "'pystray': bool(pystray.__file__)"
         "}))"
     )
     results = {}
     for wid in ('gw0', 'gw1'):
-        env = dict(os.environ, PYTEST_XDIST_WORKER=wid, PASEO_AGENT_ID='leaked-agent', ROUTER_WORKER='1')
+        env = dict(os.environ, PYTEST_XDIST_WORKER=wid, PASEO_AGENT_ID='leaked-agent', AGENTCOMPASS_WORKER='1')
         done = subprocess.run([sys.executable, '-X', 'utf8', '-c', probe], env=env,
                               capture_output=True, text=True, timeout=20, check=True)
         results[wid] = json.loads(done.stdout.strip())

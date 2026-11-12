@@ -1182,7 +1182,7 @@ class RollTests(unittest.TestCase):
                                           '--cwd', str(Path.cwd()), '--prompt-file', str(run_dir / 'brief.md')])
         self.assertEqual((record['cwd'], record['stdin'], record['prompt']), (str(Path.cwd()), '', prompt))
         self.assertEqual(record['env']['GROK_FIXTURE_ACCOUNT'], 'bound')
-        self.assertEqual((record['env']['ROUTER_WORKER'], record['env']['ROUTER_PARENT_AGENT_ID']), ('1', 'parent-a'))
+        self.assertEqual((record['env']['AGENTCOMPASS_WORKER'], record['env']['ROUTER_PARENT_AGENT_ID']), ('1', 'parent-a'))
         self.assertFalse({'CLAUDECODE', 'CODEX_HOME'} & set(record['env']))
         self.assertIsNone(result['worker']['exit'])
         while not Path(result['worker']['output']).read_text(encoding='utf-8').strip() and time.monotonic() < deadline:
@@ -1342,7 +1342,7 @@ class RollTests(unittest.TestCase):
                 (result, code), _ = self.roll(decision, parent='', parent_id='parent-a', parent_host='paseo', env=host)
                 self.assertEqual((result['launched'], code), (True, 0))
                 prompt = self.assert_worker_prompt(result, parent='parent-a')
-                self.assertEqual(calls[0]['env']['ROUTER_WORKER'], '1')
+                self.assertEqual(calls[0]['env']['AGENTCOMPASS_WORKER'], '1')
                 self.assertEqual(calls[0]['env']['ROUTER_PARENT_AGENT_ID'], 'parent-a')
                 self.assertEqual(calls[0]['argv'], argv + [prompt] if stdin is None else argv)
                 self.assertEqual(calls[0]['env'].get('CLAUDE_CONFIG_DIR'), config_dir)
@@ -1366,6 +1366,7 @@ class RollTests(unittest.TestCase):
         import roll
         override = self.root / 'accounts-override.json'
         override.write_text(json.dumps({
+            'schema_version': 2,
             'accounts': {
                 'team-proxy': {
                     'backend_kind': 'litellm',
@@ -1400,7 +1401,7 @@ class RollTests(unittest.TestCase):
                 parent_host=None,
                 env={
                     'CLAUDE_SESSION_ID': 'claude-host-session-1',
-                    'ROUTE_MANAGER_ACCOUNTS_OVERRIDE': str(override),
+                    'AGENTCOMPASS_ACCOUNTS_OVERRIDE': str(override),
                     'PASEO_HOME': str(self.root / 'none'),
                 },
                 reachable=True,
@@ -1432,7 +1433,7 @@ class RollTests(unittest.TestCase):
                 parent_host=None,
                 env={
                     'CLAUDE_SESSION_ID': 'claude-host-session-1',
-                    'ROUTE_MANAGER_ACCOUNTS_OVERRIDE': str(override),
+                    'AGENTCOMPASS_ACCOUNTS_OVERRIDE': str(override),
                     'PASEO_HOME': str(self.root / 'none'),
                 },
                 reachable=True,
@@ -1808,7 +1809,9 @@ class RollTests(unittest.TestCase):
             'work_kind': 'debug_review', 'reasoning_depth': 2, 'code_complexity': 0, 
             'needs_visual': False, 'needs_gui': False,
             'local_only': True, 'wants_fast': False, 'read_only_review': True,
-            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1', 'reason': 'review'})
+            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+            'axis_demand': {'divergence': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0},
+            'reason': 'review'})
         review_dec = registry.issue({'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': self.bundle,
                                      'decision': {'action': 'start'}}, review_task, self.now)
         rev_row = registry.prepare(review_dec['decision_id'], review_task, self.launch, self.usage,
@@ -3556,7 +3559,7 @@ class LiveModelCheckTests(unittest.TestCase):
         self.retry_store = self.root / provider_retry.FILE
         self.latch_store = self.root / 'model-unavailable.json'
         env = patch.dict(os.environ, {
-            'ROUTER_LIVE_MODELS': str(self.live_store),
+            'AGENTCOMPASS_LIVE_MODELS': str(self.live_store),
             'ROUTER_PROVIDER_RETRY': str(self.retry_store),
             'ROUTER_MODEL_LATCH': str(self.latch_store),
             'ROUTER_STATE_DIR': str(self.root),

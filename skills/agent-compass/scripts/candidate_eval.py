@@ -152,8 +152,7 @@ def evaluate_bundle(bundle, task, ctx):
     execution_account = accounts_override.preference_account(bundle, bundle['account'], accounts)
     cwd_spec = accounts['accounts'].get(execution_account) or spec
     if not account_fleet.account_cwd_allowed(cwd_spec, task.get('cwd')):
-        exclude(f"outside account cwd restriction ({cwd_spec['cwd_regex']})" if cwd_spec.get('cwd_regex') else
-                f"outside account allowed_cwd ({cwd_spec.get('allowed_cwd')})")
+        exclude(f"outside account cwd restriction ({cwd_spec['cwd_regex']})")
 
     if not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
         exclude('excluded by host policy')

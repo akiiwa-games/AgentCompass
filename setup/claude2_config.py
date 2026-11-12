@@ -140,10 +140,8 @@ def configure(home: Path, account: str = DEFAULT_ACCOUNT, account_home: Path | N
     p = load(paseo)
     providers = p.setdefault('agents', {}).setdefault('providers', {})
     expected = provider_config(home, account, account_home, label)
-    legacy = provider_config(home, account, account_home, label)
-    legacy['env']['CLAUDE_SECURESTORAGE_CONFIG_DIR'] = ''
     current = providers.get(account)
-    if current is not None and launch_settings(current) not in (launch_settings(expected), launch_settings(legacy)):
+    if current is not None and launch_settings(current) != launch_settings(expected):
         raise RuntimeError(f'{account} already has a different configuration; review it first')
     if isinstance(current, dict) and not label:
         # Keep the display text the user already has.

@@ -2,7 +2,6 @@
 
     python easytier_setup.py check
     python easytier_setup.py install --binaries DIR --config FILE [--hook FILE] [--legacy LEGACY.json] [--switch]
-    python easytier_setup.py install --migrate-from OLD_HOME [--expect-peer HOSTNAME] [--keep-old] [--dry-run]
     python easytier_setup.py switch   --expect-peer HOSTNAME   stop the legacy runtime, start the task, roll back on failure
     python easytier_setup.py recover                           roll back unless the last switch finished ok
     python easytier_setup.py rollback                          put the legacy runtime back
@@ -15,12 +14,6 @@ bin/private/logs/state down to SYSTEM and Administrators (read for others where 
 installing user gets on the task is read, run and stop, so the unelevated tray can control it but not rewrite it.
 It relaunches itself elevated (UAC, hidden) when needed. The legacy spec (JSON) names how the previous runtime is
 stopped and brought back: {"task": "...", "command": [...], "cwd": "...", "kill_cmdline_contains": [...]}.
-
-`install --migrate-from` moves a node installed before that home existed (the checkout-era <root>/easytier) to
-it: it takes bin, private (config and hook), state and backup from the old home, stops the old node, points the
-task at the new supervisor, and checks the node comes up from the new bin (and sees every --expect-peer). On
-success the old home is deleted (--keep-old keeps it); on failure the task goes back to the old supervisor and the
-new copy is removed. `--dry-run` prints the plan without elevating or changing anything.
 """
 from __future__ import annotations
 
@@ -51,8 +44,6 @@ BIN, PRIVATE, LOGS, STATE, BACKUP = (HOME / name for name in ("bin", "private", 
 TASK_NAME = "AgentCompass EasyTier"
 RECOVER_TASK = "AgentCompass EasyTier Recover"
 SWITCH_TASK = "AgentCompass EasyTier Switch"
-# Names before the AgentCompass rename. install deletes them after registering TASK_NAME; until then they still run the node.
-LEGACY_TASKS = ("Route Manager EasyTier", "Route Manager EasyTier Recover", "Route Manager EasyTier Switch")
 USER_LOG_DIR = Path.home() / ".agent-compass" / "easytier-setup"
 PINNED = {"easytier-core.exe": "da7eb2d24b5416f3d3407636949e964a0750e3f9dc53a828cb6799a57ead445d"}
 REQUIRED = ("easytier-core.exe", "easytier-cli.exe", "Packet.dll", "wintun.dll")
@@ -472,153 +463,7 @@ def command_check() -> int:
     return 0 if all(ok for _, ok in rows) else 1
 
 
-# ---------- migration from the checkout-era home ----------
-
-def path_state(path: Path) -> str:
-    """'present', 'missing', or 'locked' (exists, but this unelevated user may not read it)."""
-    try:
-        os.stat(path)
-        return "present"
-    except PermissionError:
-        return "locked"
-    except OSError:
-        return "missing"
-
-
-def migration_sources(old: Path, hook: str | None) -> tuple[Path, Path, Path | None]:
-    """bin, node.toml and the optional pre-start hook of the node at `old`."""
-    if old.resolve() == HOME.resolve():
-        raise RuntimeError(f"{old} 已经是 EasyTier 的安装位置，无需迁移")
-    binaries, config = old / "bin", old / "private" / "node.toml"
-    if not (binaries / "easytier-core.exe").is_file():
-        raise FileNotFoundError(f"{binaries} 里没有 easytier-core.exe，{old} 不是一个已安装的节点")
-    if not config.is_file():
-        raise FileNotFoundError(f"缺少 {config}")
-    default_hook = old / "private" / "pre-start.ps1"
-    return binaries, config, Path(hook) if hook else (default_hook if default_hook.is_file() else None)
-
-
-def carry_state(old: Path) -> list[str]:
-    """Copy the old home's state/ and backup/ (rollback spec, switch result, legacy backups) into the new home."""
-    done = []
-    for name in ("state", "backup"):
-        source = old / name
-        if not source.is_dir():
-            continue
-        for path in sorted(source.rglob("*")):
-            target = HOME / name / path.relative_to(source)
-            if path.is_file() and not target.exists():
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(path, target)
-                done.append(f"已带上 {name}/{path.relative_to(source).as_posix()}")
-    return done
-
-
-def cores_from(bin_dir: Path) -> list[dict]:
-    exe = str(bin_dir / "easytier-core.exe").lower()
-    return [proc for proc in cores() if (proc.get("ExecutablePath") or "").lower() == exe]
-
-
-def stop_node_at(bin_dir: Path) -> list[str]:
-    """End the node's task (either name) and any core still running from bin_dir."""
-    stopped = []
-    for name in (TASK_NAME, *LEGACY_TASKS):
-        if task_exists(name):
-            run(["schtasks", "/End", "/TN", name], check=False)
-            stopped.append(f"任务 {name}")
-    wait_until(lambda: not cores_from(bin_dir), 20)
-    for proc in cores_from(bin_dir):
-        run(["taskkill", "/PID", str(proc["ProcessId"]), "/T", "/F"], check=False)
-        stopped.append(f"easytier-core {proc['ProcessId']}")
-    return stopped
-
-
-def remove_tree(path: Path) -> None:
-    def retry(function, target, _info):
-        os.chmod(target, 0o700)
-        function(target)
-    if is_reparse_point(path):
-        os.rmdir(path)      # a link: remove the link only, never what it points at
-    elif path.exists():
-        shutil.rmtree(path, onerror=retry)
-
-
-def task_supervisor(name: str) -> str:
-    """The arguments of a registered task's action, lowercased, or '' when they cannot be read."""
-    output = powershell(f"(Get-ScheduledTask -TaskName '{name}' -ErrorAction SilentlyContinue).Actions.Arguments",
-                        check=False).stdout
-    return output.strip().lower()
-
-
-def migration_plan(old: Path, keep_old: bool) -> list[str]:
-    lines = [f"迁移 EasyTier：{old} → {HOME}"]
-    for relative in ("bin/easytier-core.exe", "bin/easytier-cli.exe", "private/node.toml", "private/pre-start.ps1",
-                     "state", "backup"):
-        note = {"present": "有", "missing": "无", "locked": "有（受 ACL 保护，提权后读取）"}[path_state(old / relative)]
-        lines.append(f"  {relative}: {note}")
-    if easytier_paths.installed_at(HOME):
-        lines.append(f"  注意：{HOME} 已有节点；会检查计划任务是否已指向这里")
-    tasks = [name for name in (TASK_NAME, *LEGACY_TASKS) if task_exists(name)]
-    lines.append("  将停止的计划任务：" + ("、".join(tasks) if tasks else "（未查到；可能需要提权才看得见）"))
-    lines.append(f"  将重新注册 {TASK_NAME} 指向 {BIN / 'easytier-supervisor.ps1'}，并删除改名前的任务 "
-                 + "、".join(LEGACY_TASKS))
-    lines.append("  成功后：" + ("保留旧目录" if keep_old else f"删除 {old}") + "；失败则任务改回旧目录、删除新副本")
-    lines.append("  需要管理员权限（会弹出 UAC）")
-    return lines
-
-
-def command_migrate(args) -> int:
-    old = Path(args.migrate_from).expanduser().resolve()
-    if args.dry_run:
-        for line in migration_plan(old, args.keep_old):
-            print(line)
-        return 0
-    user_sid = args.user_sid or current_user_sid()
-    if easytier_paths.installed_at(HOME):
-        if str(BIN / "easytier-supervisor.ps1").lower() not in task_supervisor(TASK_NAME):
-            raise RuntimeError(f"{HOME} 已有节点，但计划任务 {TASK_NAME} 没有指向它；请先确认哪一份是在用的节点")
-        log(f"节点已在 {HOME}，计划任务也已指向这里")
-        if old.exists() and not args.keep_old:
-            remove_tree(old)
-            log(f"已删除旧目录 {old}")
-        return 0
-    binaries, config, hook = migration_sources(old, args.hook)
-    log(f"迁移 EasyTier：{old} → {HOME}")
-    for line in stage_files(binaries, config, hook):
-        log(line)
-    for line in carry_state(old):
-        log(line)
-    check_config()
-    log("配置检查通过")
-    log("停止旧节点：" + (", ".join(stop_node_at(binaries)) or "没有运行中的"))
-    try:
-        register_main_task(user_sid)
-        for name in LEGACY_TASKS:
-            delete_task(name)
-        run(["schtasks", "/Run", "/TN", TASK_NAME])
-        if not wait_until(lambda: healthy(args.expect_peer), 120, 3):
-            raise RuntimeError(f"新位置的节点 120 秒内没有达到：单实例、来自 {BIN}、对端 {args.expect_peer}")
-    except Exception as exc:
-        log(f"迁移失败：{exc}；改回旧目录")
-        run(["schtasks", "/End", "/TN", TASK_NAME], check=False)
-        wait_until(lambda: not cores_from(BIN), 20)
-        for proc in cores_from(BIN):
-            run(["taskkill", "/PID", str(proc["ProcessId"]), "/T", "/F"], check=False)
-        register_main_task(user_sid, binaries)
-        run(["schtasks", "/Run", "/TN", TASK_NAME], check=False)
-        remove_tree(HOME)
-        log(f"已让 {TASK_NAME} 重新运行 {binaries / 'easytier-supervisor.ps1'}，并删除了 {HOME} 的副本")
-        return 1
-    log(f"已注册计划任务 {TASK_NAME} 指向 {BIN}，节点运行正常")
-    if not args.keep_old:
-        remove_tree(old)
-        log(f"已删除旧目录 {old}")
-    return 0
-
-
 def command_install(args) -> int:
-    if args.migrate_from:
-        return command_migrate(args)
     log(f"安装 EasyTier 到 {HOME}")
     for line in stage_files(Path(args.binaries), Path(args.config), Path(args.hook) if args.hook else None):
         log(line)
@@ -629,20 +474,13 @@ def command_install(args) -> int:
         log("已记录旧运行方式（供回滚）")
     register_main_task(args.user_sid or current_user_sid())
     log(f"已注册计划任务 {TASK_NAME}（SYSTEM，开机启动，当前用户只可读/运行/停止）")
-    replaced = [name for name in LEGACY_TASKS if task_exists(name)]
-    for name in replaced:
-        delete_task(name)      # ends the old task's node first, so the new task never runs a second core beside it
-    if replaced:
-        log("已删除改名前的计划任务：" + "、".join(replaced))
-        if not args.switch:
-            run(["schtasks", "/Run", "/TN", TASK_NAME], check=False)
     if args.switch:
         return switch(args.expect_peer)
     return 0
 
 
 def command_uninstall() -> int:
-    for name in (TASK_NAME, RECOVER_TASK, SWITCH_TASK, *LEGACY_TASKS):
+    for name in (TASK_NAME, RECOVER_TASK, SWITCH_TASK):
         delete_task(name)
     log(f"已删除计划任务（{HOME} 里的文件保留）")
     return 0
@@ -662,21 +500,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--user-sid")
     parser.add_argument("--minutes", type=int, default=10)
     parser.add_argument("--log")
-    parser.add_argument("--migrate-from", help="install: move the node from this older home (e.g. <checkout>\\easytier)")
-    parser.add_argument("--keep-old", action="store_true", help="install --migrate-from: keep the old home")
-    parser.add_argument("--dry-run", action="store_true", help="install --migrate-from: print the plan only")
     args = parser.parse_args(argv)
     raw = list(sys.argv[1:] if argv is None else argv)
     if args.command == "check":
         return command_check()
     if args.command == "install":
         use_home(easytier_paths.product_home())
-        if args.migrate_from and args.switch:
-            parser.error("--migrate-from moves an installed node; it does not combine with --switch")
-        if not args.migrate_from and not (args.binaries and args.config):
-            parser.error("install needs --binaries and --config, or --migrate-from")
-        if args.migrate_from and args.dry_run:
-            return command_migrate(args)
+        if not (args.binaries and args.config):
+            parser.error("install needs --binaries and --config")
     if args.log:
         _log_file = Path(args.log)
     if not is_admin():

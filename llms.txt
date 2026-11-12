@@ -1,4 +1,4 @@
-# AgentCompass (formerly route-manager)
+# AgentCompass
 
 > Deterministic multi-agent task router, subscription quota scheduler, and PreToolUse spawn gate for flat-rate AI coding subscriptions (Claude Code, OpenAI Codex CLI / ChatGPT Pro, Google Antigravity / agy, Grok), launched from Claude Code, Codex, Antigravity, Paseo, Pi, OpenCode, Orca or T3 Code.
 

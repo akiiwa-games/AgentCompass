@@ -64,7 +64,7 @@ STATS_FILE = Path(os.environ.get("ROUTER_USAGE_STATS", STATE_DIR / "usage-stats.
 LOCK_FILE = STATE_DIR / "capacity.lock"
 SOURCES_FILE = STATE_DIR / "capacity-sources.json"
 KINDS = ("codex", "claude", "antigravity", "pi", "opencode")
-# One named cache file, or None for the collector's cache plus the legacy Usage Float copy (usage_cache.py).
+# One named cache file, or None for the collector's canonical cache (usage_cache.py).
 USAGE_CACHE = Path(os.environ["ROUTER_USAGE_CACHE"]) if os.environ.get("ROUTER_USAGE_CACHE") else None
 
 # API list prices in USD per million tokens: (input, cache write 5 min, cache write 1 h, cache read, output), checked
@@ -696,12 +696,12 @@ def measure(state: dict, now: float, days: int = LOOKBACK_DAYS) -> dict:
                 "pct_per_hour_24h": rate_in(series, now, OBSERVE_LONG_HOURS, changed)}
     # The usage collector owns live activity. These log scans still measure costs and
     # worker-hours, but must not maintain a second definition of running/idle.
-    activity_path = Path((os.environ.get('AGENTCOMPASS_ACTIVITY_FILE') or os.environ.get('ROUTE_MANAGER_ACTIVITY_FILE')) or STATE_DIR / 'usage-activity.json')
+    activity_path = Path(os.environ.get('AGENTCOMPASS_ACTIVITY_FILE') or STATE_DIR / 'usage-activity.json')
     document['activity_status'] = 'unknown'
     try:
         activity = json.loads(activity_path.read_text(encoding='utf-8-sig'))
         observed = parse_ts(activity.get('generated_at'))
-        if (activity.get('schema') in ('agent-compass.activity.v1', 'route-manager.activity.v1') and observed is not None
+        if (activity.get('schema') == 'agent-compass.activity.v1' and observed is not None
                 and 0 <= now - observed <= 180 and isinstance(activity.get('active_workers'), dict)):
             document['active_workers'] = activity['active_workers']
             document['activity_generated_at'] = activity['generated_at']

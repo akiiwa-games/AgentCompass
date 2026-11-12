@@ -452,11 +452,11 @@ class FixRoundRegressionTests(unittest.TestCase):
         self.assertEqual(fam_terra, 'codex')
         self.assertIn('OPENAI_BASE_URL', env_terra)
 
-        doc = user_scores.validate_document(
-            {'schema_version': 1, 'scores': {'grok-bot': {'tool_operation.responsiveness': {'level': 2.5, 'date': '2026-11-10', 'kind': 'maintainer'}}}},
-            expected_kind='maintainer',
-        )
-        self.assertEqual(doc['scores']['grok-bot']['tool_operation.responsiveness']['as_of'], '2026-11-10')
+        with self.assertRaisesRegex(ValueError, 'as_of'):
+            user_scores.validate_document(
+                {'schema_version': 1, 'scores': {'grok-bot': {'tool_operation.responsiveness': {'level': 2.5, 'date': '2026-11-10', 'kind': 'maintainer'}}}},
+                expected_kind='maintainer',
+            )
 
 
 class TaxonomyR2Round2FixTests(unittest.TestCase):

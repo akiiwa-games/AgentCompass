@@ -35,7 +35,6 @@ from panel_plugins import PluginsPage
 from panel_widgets import SETTINGS, TITLE, freeze_redraw
 import panel_widgets
 
-LEGACY_TITLE = "Route Manager · 控制台"  # a panel started before the rename
 _process = None
 SHOW_EVENT = "Local\\AgentCompassWindowShow"  # created by the window process; open_window() sets it to show it
 PAGES = (("scoring", "决策罗盘", "◎"), ("quota", "额度监控", "▤"), ("policy", "模型设置", "⚙"), ("plugins", "外部集成", "▦"))
@@ -91,7 +90,7 @@ def open_window(page: str | None = None) -> None:
     if signal_warm_window():
         return
     # A panel from before the warm window has no show event.
-    window = win32gui.FindWindow("TkTopLevel", TITLE) or win32gui.FindWindow("TkTopLevel", LEGACY_TITLE)
+    window = win32gui.FindWindow("TkTopLevel", TITLE)
     if window and win32gui.IsWindowVisible(window):
         win32gui.ShowWindow(window, win32con.SW_RESTORE)
         try:

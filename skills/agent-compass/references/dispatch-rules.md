@@ -6,7 +6,7 @@ The global rule block AgentCompass installs is a short pointer to this skill. Re
 
 1. Launch through `agentcompass roll` only, one brief per independent task ([SKILL.md](../SKILL.md#dispatch)). Never call Paseo `create_agent`, a host's `Agent`/`Task` (including a built-in Explore), `spawn_agent`, `invoke_subagent`, `run_dot_task.py` or a worker CLI yourself.
 2. Read `status` and do exactly `next_action`; `launched` means the worker runs, so start nothing else for that task. Result variants: [roll reference](roll-reference.md).
-3. A delegated worker (`ROUTER_WORKER=1`, or a `Parent session agent ID:` contract at the end of its brief) does its assignment itself and does not delegate again unless the brief appoints it coordinator.
+3. A delegated worker (`AGENTCOMPASS_WORKER=1`, or a `Parent session agent ID:` contract at the end of its brief) does its assignment itself and does not delegate again unless the brief appoints it coordinator.
 
 ## 2. Model and effort belong to the router
 

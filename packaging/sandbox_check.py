@@ -640,84 +640,6 @@ def scenario_freshness(ctx, box: Sandbox):
     op.check("a new valid cache replaces it", snapshot and snapshot["read_ok"], snapshot)
 
 
-def scenario_legacy(ctx):
-    """An existing Usage Float user: legacy cache is read, migrated by the collector, never written, and loses to newer data."""
-    box = Sandbox(ctx["base"], "legacy", ctx["venv"], ctx["fixture"], ctx["run"])
-    box.sign_in()
-    fixture = ctx["fixture"]
-    fixture.reset()
-    seed = ctx["run"].operation("legacy fixture", "write a Usage Float style cache with real credential fingerprints")
-    box.legacy.parent.mkdir(parents=True)
-    # The collector, pointed at the legacy path, writes the same format Usage Float does (credential_key included).
-    result = box.run_command(seed, [box.agentcompass, "usage"], ROUTER_USAGE_CACHE=str(box.legacy))
-    seed.check("fixture cache produced at the legacy path", result.returncode == 0 and box.legacy.is_file(), result.stderr)
-    legacy_doc = box.read_cache(box.legacy)
-    base = legacy_doc["providers"]["codex"]
-    legacy_doc["providers"]["codex"] = {**base, "fetched_at": at(-300)}
-    legacy_doc["providers"]["grok"] = {"provider_id": "grok", "display_name": "grok", "available": True, "stale": False,
-                                       "fetched_at": at(-200), "windows": [{"id": "credits", "label": "credits", "used_pct": 5.0, "resets_at": at(86400)}]}
-    box.legacy.write_text(json.dumps(legacy_doc), encoding="utf-8")
-    legacy_digest = sha(box.legacy)
-    requests_before = len(fixture.hits("chatgpt.com"))
-
-    def with_reading(used, fetched):
-        row = json.loads(json.dumps(base))
-        row["fetched_at"] = fetched
-        row["windows"][0]["used_pct"] = used
-        return row
-
-    op = ctx["run"].operation("legacy cache read before any migration", "router reads ~/.usage-float/usage-cache.json when nothing else exists")
-    _, snapshot = usage_stage(box, op, "codex", "grok")
-    op.check("legacy rows are read and fresh", snapshot and snapshot["accounts"]["codex"]["status"] == "fresh" and
-             snapshot["accounts"]["grok"]["status"] == "fresh", snapshot and snapshot["accounts"])
-    op.check("source is the legacy file", Path(snapshot["cache_path"]).resolve() == box.legacy.resolve(), snapshot.get("cache_path"))
-
-    op = ctx["run"].operation("first collection migrates", "collector seeds the canonical cache from legacy, then writes only canonical")
-    result = box.run_command(op, [box.agentcompass, "usage"])
-    op.check("collector exits 0", result.returncode == 0, result.stderr + result.stdout)
-    document = box.read_cache()
-    op.check("canonical exists and carries the legacy codex reading", document["providers"]["codex"]["fetched_at"] == legacy_doc["providers"]["codex"]["fetched_at"],
-             document["providers"].get("codex"))
-    op.check("carried-over attempt times stopped an immediate duplicate request", len(fixture.hits("chatgpt.com")) == requests_before)
-    op.check("legacy-only provider (grok) was carried over", document["providers"].get("grok", {}).get("fetched_at") == legacy_doc["providers"]["grok"]["fetched_at"])
-    op.check("the legacy file is byte-identical (never written)", sha(box.legacy) == legacy_digest)
-    _, snapshot = usage_stage(box, op, "codex", "grok")
-    op.check("router now reads the canonical file", Path(snapshot["cache_path"]).resolve() == box.cache.resolve(), snapshot.get("cache_path"))
-
-    op = ctx["run"].operation("a second writer (standalone Usage Float) on the legacy path", "newest observation wins per provider, both ways")
-    legacy_doc["providers"]["codex"] = with_reading(88.0, at(-10))
-    box.legacy.write_text(json.dumps(legacy_doc), encoding="utf-8")
-    document["providers"]["codex"] = with_reading(12.0, at(-60))
-    box.cache.write_text(json.dumps(document), encoding="utf-8")
-    _, snapshot = usage_stage(box, op, "codex")
-    op.check("a newer legacy reading beats an older canonical one", snapshot["accounts"]["codex"]["windows"][0:1] and
-             snapshot["accounts"]["codex"]["windows"][0]["observed_remaining_pct"] == 12.0, snapshot["accounts"]["codex"])
-    op.check("the response says it also read the legacy file", str(box.legacy.resolve()) in snapshot.get("also_read_from", []), snapshot.get("also_read_from"))
-    document["providers"]["codex"] = with_reading(30.0, at(-5))
-    box.cache.write_text(json.dumps(document), encoding="utf-8")
-    _, snapshot = usage_stage(box, op, "codex")
-    op.check("a newer canonical reading beats an older legacy one", snapshot["accounts"]["codex"]["windows"][0]["observed_remaining_pct"] == 70.0, snapshot["accounts"]["codex"])
-    legacy_doc["providers"]["codex"] = with_reading(99.0, at(-5 * 3600))
-    box.legacy.write_text(json.dumps(legacy_doc), encoding="utf-8")
-    _, snapshot = usage_stage(box, op, "codex")
-    op.check("an old legacy reading can neither replace nor stale the canonical one", snapshot["accounts"]["codex"]["status"] == "fresh" and
-             snapshot["accounts"]["codex"]["windows"][0]["observed_remaining_pct"] == 70.0, snapshot["accounts"]["codex"])
-
-    op = ctx["run"].operation("explicit override", "ROUTER_USAGE_CACHE names the only file read or written")
-    custom = box.root / "custom-cache.json"
-    canonical_digest, legacy_digest = sha(box.cache), sha(box.legacy)
-    result = box.run_command(op, [box.agentcompass, "usage"], ROUTER_USAGE_CACHE=str(custom))
-    op.check("collector writes the override file", result.returncode == 0 and custom.is_file(), result.stderr)
-    op.check("canonical and legacy files were not touched", sha(box.cache) == canonical_digest and sha(box.legacy) == legacy_digest)
-    _, snapshot = usage_stage(box, op, ROUTER_USAGE_CACHE=str(custom))
-    op.check("router reads only the override", Path(snapshot["cache_path"]).resolve() == custom.resolve() and not snapshot.get("also_read_from"), snapshot.get("cache_path"))
-    result, snapshot = usage_stage(box, op, ROUTER_USAGE_CACHE=str(box.root / "missing.json"))
-    op.check("a missing override does not fall back to other caches", snapshot is None or not snapshot.get("read_ok"), result.stdout[:300])
-    cli = box.script(op, "route_judge.py", "usage", "--usage-cache", str(box.legacy))
-    op.check("--usage-cache wins over everything", parse_json(cli.stdout)["cache_path"] == str(box.legacy.resolve()), cli.stdout[:200])
-    return box
-
-
 def tray_needs(op: Operation, result: subprocess.CompletedProcess, what: str) -> bool:
     """The tray scenarios are required operations: a tray dependency missing from the interpreter is a failure, not a skip."""
     if result.returncode != 0 and "ModuleNotFoundError" in result.stderr:
@@ -843,13 +765,14 @@ def scenario_usage_float(ctx, tray_box: Sandbox):
     skill = box.codex / "skills" / "agent-compass"
     shutil.copytree(box.data / "skills" / "agent-compass", skill)
 
-    op = ctx["run"].operation("Usage Float standalone (old behaviour)", "usage_float.py once writes the legacy cache; the router still reads it")
+    op = ctx["run"].operation("Usage Float standalone vs canonical cache", "usage_float.py once writes ~/.usage-float; the router reads only ~/.agent-compass/usage-cache.json")
     result = box.run_command(op, [box.python, "-X", "utf8", plugin / "usage_float.py", "once"], cwd=plugin)
     op.check("Usage Float 'once' runs its own collection against the fixture", result.returncode == 0 and box.legacy.is_file(), result.stdout[-300:] + result.stderr[-400:])
     legacy_digest = sha(box.legacy)
     _, snapshot = usage_stage(box, op, "codex")
-    op.check("router reads the legacy cache Usage Float wrote", snapshot and snapshot["accounts"]["codex"]["status"] == "fresh" and
-             Path(snapshot["cache_path"]).resolve() == box.legacy.resolve(), snapshot)
+    op.check("router does not read ~/.usage-float/usage-cache.json", snapshot is None or not snapshot.get("read_ok"), snapshot)
+    seed_canonical = box.run_command(op, [box.agentcompass, "usage"])
+    op.check("product collector seeds canonical cache", seed_canonical.returncode == 0 and box.cache.is_file(), seed_canonical.stderr)
 
     op = ctx["run"].operation("Usage Float hosted by the tray", "bind_usage delegates reading to the shared cache and forced refresh to the product collector")
     # Negative control: standalone refresh_usage WITHOUT bind_usage runs Usage Float's own fetcher into the legacy file and leaves the shared cache alone.
@@ -1177,7 +1100,6 @@ def main(argv=None) -> int:
             ctx["wheel_skill"] = clean.data / "skills" / "agent-compass"
             scenario_entry_and_docs(ctx, clean)
             scenario_freshness(ctx, clean)
-            scenario_legacy(ctx)
             tray = scenario_tray(ctx)
             scenario_network(ctx, tray)
             scenario_usage_float(ctx, tray)

@@ -225,7 +225,7 @@ class DiscoveredTierTests(unittest.TestCase):
     def test_antigravity_quota_reading_proves_sign_in_and_installed_cli_alone_does_not(self):
         self.assertNotIn('usage-cache', self.discover()['antigravity']['sources'])
         self.assertFalse(inventory.launch_verified(self.discover()['antigravity'], False))
-        self.write('.usage-float/usage-cache.json', {'providers': {'antigravity': {'windows': [
+        self.write('.agent-compass/usage-cache.json', {'providers': {'antigravity': {'windows': [
             {'id': 'gemini-weekly', 'used_pct': 25}]}}})
         row = self.discover()['antigravity']
         self.assertIn('usage-cache', row['sources'])

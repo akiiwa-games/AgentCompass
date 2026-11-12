@@ -438,18 +438,6 @@ class AllocatorTests(unittest.TestCase):
                 prof = self.profile(work_kind=kind)
                 self.assertEqual(task_intake.task_kind({'objective': objective, 'profile': prof}, capabilities, policy), kind)
 
-    def test_account_allowed_cwd_optional_directory_scope(self):
-        accounts = account_fleet.load_accounts()
-        accounts['accounts']['codex']['allowed_cwd'] = ['/workspace/allowed_root']
-        task_base = {'work_kind': 'general_implementation', 'difficulty': 'hard',
-                     'expected_hours': 1.0, 'needs': {'local_only': True}}
-        outside = allocator.plan({**task_base, 'cwd': '/workspace/other_repo'}, self.healthy_quota(), self.now,
-                                 accounts=accounts, overrides=[])
-        self.assertTrue(any('allowed_cwd' in r for r in self.rows(outside)['sol_high']['excluded']))
-        inside = allocator.plan({**task_base, 'cwd': '/workspace/allowed_root/subproject'}, self.healthy_quota(), self.now,
-                                accounts=accounts, overrides=[])
-        self.assertEqual(self.rows(inside)['sol_high']['excluded'], [])
-
     def test_classified_read_only_review_profile_and_its_own_hours(self):
         ro_prof = self.profile(work_kind='debug_review', code_complexity=0, read_only_review=True)
         ro_norm = task_intake.normalize_task(
@@ -545,7 +533,7 @@ class AllocatorTests(unittest.TestCase):
 
         sparse = account_fleet.load_accounts()
         accounts_override.apply(sparse, {'accounts': {'antigravity': {'bundles': {
-            'flash_high': {'disabled': 'sparse test'}}}}})
+            'flash_high': {'disabled': True}}}}})
         kept = sparse['accounts']['antigravity']['bundles']
         self.assertIs(kept['flash_high'].get('disabled'), True)
         self.assertNotIn('disabled', kept['agy_opus55_high'])
@@ -753,14 +741,6 @@ class OverrideContractTests(unittest.TestCase):
                              ('upsert', 'codex', 0))
             second = router.manage_overrides(self.args(boost=0.4), self.now + timedelta(seconds=1))['active'][0]
             self.assertEqual((second['id'], second['created_at'], second['boost']), (first['id'], first['created_at'], 0.4))
-
-            # Repair legacy baseline with rebaseline=True
-            old = copy.deepcopy(self.override)
-            old['baseline_windows'] = {'usage': {'used_pct': 50, 'remaining_pct': 50, 'resets_at': self.reset.isoformat()}}
-            self.path.write_text(json.dumps({'v': 1, 'overrides': [old]}))
-            repaired = router.manage_overrides(self.args(intent='user-priority', window=None,
-                                                         reset_confirmation='replenishment', rebaseline=True), self.now)['active'][0]
-            self.assertEqual(repaired['baseline_windows']['usage']['fetched_at'], self.now.isoformat())
 
         # Atomic write failure retains original file
         self.path.write_text('{"overrides": []}')
@@ -1199,24 +1179,6 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
             next(c for c in switched['ranking'] if c['id'] == switched['choice'])['score'],
             next(c for c in switched['ranking'] if c['id'] == 'sol_medium')['score'],
         )
-
-    def test_ledger_profile_maps_legacy_records_cleanly_on_read(self):
-        legacy = {
-            'work_kind': 'computer_use', 'reasoning_depth': 2, 'code_complexity': 1,
-            'needs_visual': True, 'needs_gui': True, 'local_only': True, 'realtime_loop': True,
-            'wants_fast': False, 'read_only_review': False, 'access': 'write',
-            'expected_hours': 0.5, 'hours_confidence': 'medium', 'urgency': 'normal',
-            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-            'axis_demand': {'divergence': 1, 'global_rigor': 2, 'module_precision': 3, 'vision_tools': 2},
-        }
-        mapped = ledger_snapshot.ledger_profile(legacy)
-        self.assertEqual(mapped['axis_demand'], {'divergence': 1, 'coding': 3, 'aesthetics': 0, 'tool_operation': 3})
-        self.assertNotIn('realtime_loop', mapped)
-
-        legacy_rt_only = dict(legacy, needs_visual=False, needs_gui=False,
-                              axis_demand={'divergence': 0, 'global_rigor': 1, 'module_precision': 1, 'vision_tools': 0})
-        mapped_rt = ledger_snapshot.ledger_profile(legacy_rt_only)
-        self.assertEqual(mapped_rt['axis_demand'], {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2})
 
     def test_normalize_task_local_only_matches_origin_main_without_gui_expansion(self):
         caps = account_fleet.load_capabilities()

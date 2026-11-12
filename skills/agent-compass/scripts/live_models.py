@@ -56,7 +56,7 @@ def state_dir() -> Path:
 
 
 def store_path(base_dir: Path | None = None) -> Path:
-    override = os.environ.get('ROUTER_LIVE_MODELS', '').strip()
+    override = os.environ.get('AGENTCOMPASS_LIVE_MODELS', '').strip()
     if override and override.lower() not in ('off', '0', 'false', 'on', '1', 'true'):
         return Path(override)
     return (base_dir or state_dir()) / FILE
@@ -183,14 +183,10 @@ fetch_from_paseo = _default_fetch_from_paseo
 
 
 def enabled() -> bool:
-    router_flag = os.environ.get('ROUTER_LIVE_MODELS', '').strip().lower()
-    if router_flag in ('off', '0', 'false'):
-        return False
-    if router_flag:
-        return True
     if fetch_from_paseo is not _default_fetch_from_paseo:
         return True
-    if os.environ.get('AGENTCOMPASS_LIVE_MODELS', '').strip().lower() in ('off', '0', 'false'):
+    flag = os.environ.get('AGENTCOMPASS_LIVE_MODELS', '').strip().lower()
+    if flag in ('off', '0', 'false'):
         return False
     return True
 

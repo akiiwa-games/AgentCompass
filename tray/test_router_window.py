@@ -367,10 +367,8 @@ class DecisionBindingTests(unittest.TestCase):
 
     def test_replay_reuses_the_recorded_profile_when_valid(self):
         fake = mock.Mock()
-        fake.ledger_profile.side_effect = lambda p: p
         fake.validate_profile.side_effect = lambda p: p
         with mock.patch.object(router_data, "modules", return_value=(fake, mock.Mock())), \
-                mock.patch.object(ledger_snapshot, "ledger_profile", fake.ledger_profile), \
                 mock.patch.object(task_intake, "validate_profile", fake.validate_profile), \
                 mock.patch.object(router_data, "plan_task", side_effect=lambda task: task):
             task = router_data.replay({"kind": "debug_review", "difficulty": "hard", "hours": 2.0,
@@ -476,7 +474,7 @@ class SettingsTests(unittest.TestCase):
         names = list(json.loads(self.accounts.read_text(encoding="utf-8-sig"))["accounts"])
         policy.write_text(json.dumps({"allowed_accounts": names}), encoding="utf-8")
         environment = mock.patch.dict("os.environ", {
-            "ROUTER_ACCOUNTS_OVERRIDE": str(self.dir / "accounts-override.json"),
+            "AGENTCOMPASS_ACCOUNTS_OVERRIDE": str(self.dir / "accounts-override.json"),
             "ROUTER_HOST_POLICY": str(policy),
             "ROUTER_ACCOUNTS_FILE": str(self.accounts),
             "ROUTER_STATE_DIR": str(self.dir),

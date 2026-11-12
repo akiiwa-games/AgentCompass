@@ -89,12 +89,12 @@ def validate_user_scores(path):
         for score_target, rec in targets.items():
             if not isinstance(rec, dict):
                 raise ValueError(f'Invalid score record for {model} {score_target}')
-            extra_keys = set(rec) - {'level', 'as_of', 'date', 'kind', 'note'}
+            extra_keys = set(rec) - {'level', 'as_of', 'kind', 'note'}
             if extra_keys:
                 raise ValueError(f'Unexpected keys in user-scores.json for {model} {score_target}: {", ".join(sorted(extra_keys))}')
             if 'level' not in rec or 'kind' not in rec:
                 raise ValueError(f'Missing required level/kind in user-scores.json for {model} {score_target}')
-            stamp = rec.get('as_of') if 'as_of' in rec else rec.get('date')
+            stamp = rec.get('as_of')
             if not isinstance(stamp, str) or not user_scores.DATE_RE.match(stamp.strip()):
                 raise ValueError(f'Missing or invalid YYYY-MM-DD as_of date in user-scores.json for {model} {score_target}')
             if 'note' in rec and (not isinstance(rec['note'], str) or not rec['note'].strip()):
@@ -200,9 +200,11 @@ def main(argv=None, prog=None):
     ap.add_argument('--distrust', action='append', default=[], help='a source id to leave out of every field (repeatable)')
     ap.add_argument('--references', help='references directory to rebuild and validate (default: skills/agent-compass/references)')
     args = ap.parse_args(argv)
-    target = sources.data_dir(args.data)
+    target = sources.data_dir(args.data, create=not args.no_fetch)
     try:
-        if not args.no_fetch:
+        if args.no_fetch:
+            sources.manifest(target)
+        else:
             sources.fetch(target)
         _, doc = rebuild(target, references=args.references, distrust=args.distrust)
     except (OSError, ValueError) as exc:

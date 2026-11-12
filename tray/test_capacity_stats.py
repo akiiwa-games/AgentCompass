@@ -429,6 +429,9 @@ class MeasureTests(Fixture):
         source = cs.STATE_DIR / 'usage-activity.json'
         source.write_text(json.dumps({'schema': 'route-manager.activity.v1',
             'generated_at': cs.iso(T0 + 200), 'active_workers': {'claude-lab': {'count': 2}}}))
+        self.assertEqual(cs.measure(state, T0 + 200)['activity_status'], 'unknown')
+        source.write_text(json.dumps({'schema': 'agent-compass.activity.v1',
+            'generated_at': cs.iso(T0 + 200), 'active_workers': {'claude-lab': {'count': 2}}}))
         document = cs.measure(state, T0 + 200)
         self.assertEqual(document['active_workers'], {'claude-lab': {'count': 2}})
         self.assertEqual(document['activity_status'], 'observed')

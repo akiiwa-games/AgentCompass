@@ -24,7 +24,6 @@ class PortTests(unittest.TestCase):
             environ = {
                 "AGENTCOMPASS_PORTS_FILE": str(path),
                 "AGENTCOMPASS_PORT_DOT2API": "9001",
-                "DOT2API_PORT": "1",
             }
             state = load(root, environ)
             self.assertEqual(state["ports"]["dot2api"], 9001)

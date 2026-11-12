@@ -116,8 +116,7 @@ def set_autostart(enabled: bool) -> tuple[bool, str]:
 def share_cache(native) -> Path | None:
     """Point the hosted Usage Float at the router's usage cache (~/.agent-compass/usage-cache.json).
 
-    The router's collector owns ~/.agent-compass/usage-cache.json (ROUTER_USAGE_CACHE when set). Usage Float's own
-    default is the legacy ~/.usage-float copy. The legacy cache seeds the shared one first so its history carries over.
+    The router's collector owns ~/.agent-compass/usage-cache.json (ROUTER_USAGE_CACHE when set).
     Returns the path, or None when the router's scripts are not installed.
     """
     scripts = component_launch.skill_scripts()
@@ -126,10 +125,8 @@ def share_cache(native) -> Path | None:
     if str(scripts) not in sys.path:
         sys.path.insert(0, str(scripts))
     import usage_cache
-    usage_cache.seed_from_legacy()
     native.CACHE_PATH = usage_cache.write_path()
-    # Usage Float publishes the activity file only next to its own default cache; keep that path aligned with the shared state dir.
-    os.environ.setdefault("ROUTE_MANAGER_ACTIVITY_FILE", str(usage_cache.state_dir() / "usage-activity.json"))
+    os.environ.setdefault("AGENTCOMPASS_ACTIVITY_FILE", str(usage_cache.state_dir() / "usage-activity.json"))
     return native.CACHE_PATH
 
 

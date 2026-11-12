@@ -301,7 +301,7 @@ def window_state(window, now, observation_current=True):
 
 def cache_paths(explicit=None):
     """Files the usage reading may come from: one named file (--usage-cache or ROUTER_USAGE_CACHE), else the
-    collector's cache and the legacy Usage Float copy (see usage_cache.py)."""
+    collector's canonical cache (see usage_cache.py)."""
     return usage_cache.read_paths(explicit, environ={**os.environ, USAGE_CACHE_ENV: user_env(USAGE_CACHE_ENV) or ''})
 
 
@@ -309,19 +309,16 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
     """Read the real collector cache; project an allowlist, never credentials or reset grants."""
     now = now or datetime.now(timezone.utc)
     attempts = []
-    documents = []
+    providers = polls = source = None
     for candidate in cache_paths(path):
         try:
-            documents.append((candidate, usage_cache.read_document(candidate)))
+            document = usage_cache.read_document(candidate)
+            providers = document['providers']
+            polls = document.get('poll') if isinstance(document.get('poll'), dict) else {}
+            source = str(Path(candidate).resolve())
+            break
         except (OSError, ValueError, UnicodeError):
             attempts.append({'path': str(candidate), 'status': 'unreadable_or_invalid'})
-    providers = source = None
-    if documents:
-        # Per provider the newest fetched_at wins across the collector's cache and the legacy copy.
-        document, origin = usage_cache.merge(documents)
-        providers, polls = document['providers'], document['poll']
-        source = str(documents[0][0].resolve())
-        merged_from = sorted({str(Path(p).resolve()) for p in origin.values()} - {source})
     if providers is None:
         return {'status': 'unknown', 'read_ok': False, 'read_at': now.isoformat(),
                 'cache_path': None, 'attempts': attempts, 'accounts': {},
@@ -400,7 +397,6 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
     return {
         'status': 'cached_observations', 'read_ok': True, 'read_at': now.isoformat(),
         'cache_path': source, 'attempts': attempts, 'max_age_seconds': max_age_seconds,
-        **({'also_read_from': merged_from} if merged_from else {}),
         'accounts': result,
         'missing_accounts': [k for k, v in result.items() if v.get('reason') == 'account_missing'],
         'interpretation': 'Freshness uses each fetched_at, collector flags and reset time. '
@@ -2101,7 +2097,7 @@ def record_constraint(args, task=None, classified=None):
     acc_spec = (accounts.get('accounts') or {}).get(args.account) or {}
     if not account_fleet.account_cwd_allowed(acc_spec, (task or {}).get('cwd')):
         raise ValueError(
-            f"Account {args.account!r} is restricted to allowed_cwd {acc_spec.get('allowed_cwd')!r} "
+            f"Account {args.account!r} is restricted to cwd_regex {acc_spec.get('cwd_regex')!r} "
             f"and cannot be dispatched from the current working directory."
         )
     # External runners dispatch directly after record; apply the same registered

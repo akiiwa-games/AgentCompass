@@ -38,21 +38,21 @@ class Claude2ConfigTests(unittest.TestCase):
             self.assertEqual((home / '.claude-2' / '.credentials.json').read_text(), 'secret-placeholder')
             self.assertTrue(list((home / '.agent-compass' / 'backups').glob('claude-2-*')))
 
-    def test_repairs_empty_secure_storage_without_changing_other_providers(self):
+    def test_rejects_empty_secure_storage_without_changing_other_providers(self):
         with TemporaryDirectory() as directory:
             home = Path(directory)
             (home / '.claude-2').mkdir()
             (home / '.claude-2' / '.credentials.json').touch()
             p = home / '.paseo' / 'config.json'
             p.parent.mkdir()
-            legacy = config.provider_config(home)
-            legacy['env']['CLAUDE_SECURESTORAGE_CONFIG_DIR'] = ''
-            p.write_text(json.dumps({'agents': {'providers': {
-                'claude-2': legacy, 'claude': {'enabled': True}}}}), encoding='utf-8')
-            config.configure(home)
-            providers = json.loads(p.read_text(encoding='utf-8'))['agents']['providers']
-            self.assertEqual(providers['claude-2'], config.provider_config(home))
-            self.assertEqual(providers['claude'], {'enabled': True})
+            bad = config.provider_config(home)
+            bad['env']['CLAUDE_SECURESTORAGE_CONFIG_DIR'] = ''
+            original = json.dumps({'agents': {'providers': {
+                'claude-2': bad, 'claude': {'enabled': True}}}})
+            p.write_text(original, encoding='utf-8')
+            with self.assertRaises(RuntimeError):
+                config.configure(home)
+            self.assertEqual(p.read_text(encoding='utf-8'), original)
 
     def test_any_account_name_and_home_register_the_same_way(self):
         with TemporaryDirectory() as directory:

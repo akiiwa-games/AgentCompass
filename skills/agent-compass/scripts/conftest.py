@@ -36,7 +36,7 @@ def isolated_provider_retries(monkeypatch):
 @pytest.fixture(autouse=True)
 def isolated_live_models(monkeypatch):
     """Tests never read or write the machine's live-model cache; live-model tests point it at their own file."""
-    monkeypatch.setenv('ROUTER_LIVE_MODELS', 'off')
+    monkeypatch.setenv('AGENTCOMPASS_LIVE_MODELS', 'off')
 
 
 @pytest.fixture(autouse=True)

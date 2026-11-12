@@ -6,8 +6,6 @@
     python deploy.py restart    close the running tray (services keep running) and start it again, detached
     python deploy.py icons      repair branding of this installation's existing Windows shortcuts only
     python deploy.py all        install, then restart
-    python deploy.py migrate-plugins [--dry-run] [--from CHECKOUT] [--plugin ID]
-                                move plugin clones out of a checkout into ~/.agent-compass/plugins (plugin_migration.py)
 
 Every step is safe to repeat. A replaced startup shortcut is moved to ~/.agent-compass/backups/startup, not deleted.
 
@@ -47,13 +45,10 @@ APP = TRAY_DIR / "app.pyw"
 LAUNCHER = TRAY_DIR / "launch_chatgpt_web.pyw"
 PYTHONW = Path(sys.executable).with_name("pythonw.exe")
 STARTUP = Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-SHORTCUT = STARTUP / "Route Manager.lnk"      # the old login entry, replaced by TASK_NAME
 SUPERSEDED = (
     STARTUP / "Pro Consult.lnk",      # started the ChatGPT Web launcher (with a second tray icon) at login
-    SHORTCUT,
 )
 TASK_NAME = "AgentCompass"
-LEGACY_TASK_NAMES = ("Route Manager",)      # the login task before the AgentCompass rename
 TASK_DELAY = "PT20S"      # let the taskbar come up before pystray adds its icon
 BACKUPS = Path.home() / ".agent-compass" / "backups" / "startup"
 SKILLS = TRAY_DIR.parent / "skills"
@@ -125,18 +120,11 @@ def powershell(script: str, check: bool = False) -> subprocess.CompletedProcess:
 
 
 def startup_fields() -> tuple[str, str] | None:
-    """(program, arguments) of the login task (or of its pre-rename name), or None when it is not registered."""
-    names = ", ".join(f"'{name}'" for name in (TASK_NAME, *LEGACY_TASK_NAMES))
-    script = (f"$t = foreach ($n in @({names})) {{ Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue }}; "
-              "$t = @($t)[0]; if ($t) { $t.Actions[0].Execute; $t.Actions[0].Arguments }")
+    """(program, arguments) of the login task, or None when it is not registered."""
+    script = (f"$t = Get-ScheduledTask -TaskName '{TASK_NAME}' -ErrorAction SilentlyContinue; "
+              "if ($t) { $t.Actions[0].Execute; $t.Actions[0].Arguments }")
     out = powershell(script).stdout.splitlines()
     return (out[0].strip(), out[1].strip() if len(out) >= 2 else "") if out else None
-
-
-def legacy_tasks() -> list[str]:
-    script = "; ".join(f"if (Get-ScheduledTask -TaskName '{name}' -ErrorAction SilentlyContinue) {{ '{name}' }}"
-                       for name in LEGACY_TASK_NAMES)
-    return [line.strip() for line in powershell(script).stdout.splitlines() if line.strip()]
 
 
 def startup_ok(fields: tuple[str, str] | None) -> bool:
@@ -168,17 +156,10 @@ def write_startup() -> None:
         "-Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null"
     )
     powershell(script, check=True)
-    remove_legacy_tasks()
-
-
-def remove_legacy_tasks() -> None:
-    for name in LEGACY_TASK_NAMES:
-        powershell(f"Unregister-ScheduledTask -TaskName '{name}' -Confirm:$false -ErrorAction SilentlyContinue")
 
 
 def remove_startup() -> None:
     powershell(f"Unregister-ScheduledTask -TaskName '{TASK_NAME}' -Confirm:$false -ErrorAction SilentlyContinue")
-    remove_legacy_tasks()
 
 
 def brand_shortcuts() -> list[str]:
@@ -191,7 +172,7 @@ def brand_shortcuts() -> list[str]:
     programs = Path(shell.SHGetFolderPath(0, shellcon.CSIDL_PROGRAMS, None, 0))
     desktop = Path(shell.SHGetFolderPath(0, shellcon.CSIDL_DESKTOPDIRECTORY, None, 0))
     candidates = [folder / name for folder in (programs, desktop, STARTUP)
-                  for name in ("AgentCompass.lnk", "Route Manager.lnk", "UsageFloat.lnk")]
+                  for name in ("AgentCompass.lnk", "UsageFloat.lnk")]
     allowed = {APP, TRAY_DIR / "router_window.py", TRAY_DIR / "launch_usage_float.pyw"}
     allowed_real = {os.path.normcase(os.path.realpath(entry)): entry for entry in allowed}      # same file via either checkout name
     links = Dispatch("WScript.Shell")
@@ -203,12 +184,11 @@ def brand_shortcuts() -> list[str]:
         wanted = allowed_real.get(os.path.normcase(os.path.realpath(link.Arguments.strip('"'))))
         if Path(link.TargetPath) != PYTHONW or wanted is None:
             continue
-        final = path.with_name("AgentCompass.lnk") if path.name == "Route Manager.lnk" and not path.with_name("AgentCompass.lnk").exists() else path
         icon = f"{ui_theme.window_icon_path()},0"
         store = propsys.SHGetPropertyStoreFromParsingName(str(path), None, shellcon.GPS_READWRITE)
         app_id = store.GetValue(pscon.PKEY_AppUserModel_ID).GetValue()
         del store  # release the file before WScript saves it
-        if link.IconLocation == icon and app_id == ui_theme.APP_ID and link.Arguments == f'"{wanted}"' and final == path:
+        if link.IconLocation == icon and app_id == ui_theme.APP_ID and link.Arguments == f'"{wanted}"':
             continue
         backup = BACKUPS / "icons" / path.parent.name / path.name
         backup.parent.mkdir(parents=True, exist_ok=True)
@@ -217,13 +197,11 @@ def brand_shortcuts() -> list[str]:
         link.IconLocation = icon
         link.Arguments = f'"{wanted}"'
         link.Save()
-        if final != path:      # the pre-rename link name; the target keeps launching the same tray
-            path.replace(final)
-        store = propsys.SHGetPropertyStoreFromParsingName(str(final), None, shellcon.GPS_READWRITE)
+        store = propsys.SHGetPropertyStoreFromParsingName(str(path), None, shellcon.GPS_READWRITE)
         store.SetValue(pscon.PKEY_AppUserModel_ID, propsys.PROPVARIANTType(ui_theme.APP_ID))
         store.Commit()
         del store
-        changed.append(f"Updated shortcut: {final}")
+        changed.append(f"Updated shortcut: {path}")
     return changed
 
 
@@ -364,7 +342,7 @@ def install() -> list[str]:
     if patched_now or not services.chatgpt_built():
         updates.build()
         done.append(_tr("已构建 ChatGPT Web"))
-    if not startup_ok(startup_fields()) or legacy_tasks():
+    if not startup_ok(startup_fields()):
         write_startup()
         done.append(_tr('已注册开机启动计划任务 {0}').format(f'{TASK_NAME}'))
     for old in SUPERSEDED:
@@ -676,38 +654,12 @@ def restart(refresh_components: bool = False) -> list[str]:
         release_restart_mutex(handle)
 
 
-def migrate_plugins(checkout: Path, dry_run: bool, ids: list[str] | None = None) -> int:
-    """Move plugin clones from a checkout to ~/.agent-compass/plugins (plugin_migration.py). The tray is closed
-    first, so it cannot restart a plugin from the old path mid-move, and started again afterwards."""
-    import plugin_migration
-
-    trays = tray_processes()
-    if trays and dry_run:
-        print(f"[dry run] would close the tray ({', '.join(str(proc.pid) for proc in trays)}) and start it again")
-    elif trays:
-        for proc in trays:
-            print(_tr('托盘 {0} {1}').format(f'{proc.pid}', f'{close_tray(proc)}'))
-    try:
-        return plugin_migration.migrate(checkout, dry_run=dry_run, ids=tuple(ids or plugin_migration.MIGRATABLE))
-    finally:
-        if trays and not dry_run:
-            for line in restart():
-                print(line)
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=("check", "install", "restart", "all", "icons", "startup", "migrate-plugins"))
-    parser.add_argument("--dry-run", action="store_true", help="migrate-plugins: print the plan only")
+    parser.add_argument("action", choices=("check", "install", "restart", "all", "icons", "startup"))
     parser.add_argument("--refresh-components", action="store_true", help="restart: also stop resident UI helpers so they reload")
-    parser.add_argument("--from", dest="checkout", type=Path, default=services.ROOT,
-                        help="migrate-plugins: the checkout that holds the clones (default: this one)")
-    parser.add_argument("--plugin", action="append", choices=("usage-float", "chatgpt-web", "gemini-web", "dot2api"),
-                        help="migrate-plugins: only these plugins (repeatable)")
     args = parser.parse_args()
     action = args.action
-    if action == "migrate-plugins":
-        return migrate_plugins(args.checkout, args.dry_run, args.plugin)
     status = 0
     if action == "startup":
         write_startup()

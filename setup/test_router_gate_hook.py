@@ -72,10 +72,9 @@ class RouterGateHookTests(unittest.TestCase):
             "ROUTER_USAGE_CACHE": str(self.state / "usage.json"),
             "ROUTER_PASEO_AGENTS_DIR": str(self.state / "agents"),
             "ROUTER_GATE_WINDOW_SECONDS": "900",
-            "ROUTER_PASEO_LEGACY_NO_LABELS": "1",
             "ROUTER_DISPATCH_DB": str(self.state / "dispatch.sqlite3"),
             "ROUTER_HOST_POLICY": str(self.state / "host-policy.json"),
-            "ROUTER_ACCOUNTS_OVERRIDE": str(self.state / "accounts-override.json"),
+            "AGENTCOMPASS_ACCOUNTS_OVERRIDE": str(self.state / "accounts-override.json"),
             "ROUTER_ACCOUNTS_FILE": str(Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts" / "fixtures" / "reference-accounts.json"),
         })
         env.start()
@@ -104,10 +103,10 @@ class RouterGateHookTests(unittest.TestCase):
             )
             for payload in payloads if 'paseo.parent-agent-id' in labels else payloads[:1]:
                 with self.subTest(labels=labels, payload=payload):
-                    with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': worker_id, 'ROUTER_WORKER': ''}):
+                    with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': worker_id, 'AGENTCOMPASS_WORKER': ''}):
                         denied = gate.evaluate_payload(payload)
                         self.assertIn('actual parent ID', denied['reason'])
-                    with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': '', 'ROUTER_WORKER': ''}):
+                    with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': '', 'AGENTCOMPASS_WORKER': ''}):
                         allowed = gate.evaluate_payload(payload)
                         self.assertNotIn('reason', allowed)
             with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': worker_id}):
@@ -115,7 +114,7 @@ class RouterGateHookTests(unittest.TestCase):
                     'text("request_user_input_async({questions: []})")'}), {})
                 self.assertEqual(gate.evaluate_payload({'tool_name': 'send_agent_prompt', 'tool_input':
                     {'agentId': 'actual-parent', 'prompt': 'question', 'background': True, 'notifyOnFinish': False}}), {})
-        with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': '', 'ROUTER_WORKER': '1'}):
+        with mock.patch.dict(os.environ, {'PASEO_AGENT_ID': '', 'AGENTCOMPASS_WORKER': '1'}):
             self.assertEqual(gate.evaluate_payload({'tool_name': 'request_user_input_async'})['decision'], 'block')
 
     def test_parent_continuation_keeps_completion_notifications(self):
@@ -515,15 +514,15 @@ class RouterGateHookTests(unittest.TestCase):
                 )
                 res_mismatch = gate.evaluate_payload(
                     {
-                        "toolName": "codemode",
-                        "input": {"code": f'await paseo.create_agent({{provider: "{account_name}", model: "claude-sonnet-5-5"}})'},
+                        "tool_name": "Agent",
+                        "tool_input": {"subagent_type": "general-purpose", "prompt": "work", "model": "sonnet"},
                     },
                     ledger_path=other_ledger,
                     usage_cache_path=cache,
                     paseo_agents_dir=paseo_dir,
                     now=T0,
                 )
-                self.assertTrue(res_mismatch["block"])
+                self.assertEqual(res_mismatch["decision"], "block")
             self.assertIn("pi_astra_high", res_mismatch["reason"])
 
     def test_current_paseo_create_contract_checks_quota_and_normalizes_pair(self):
@@ -557,23 +556,23 @@ class RouterGateHookTests(unittest.TestCase):
         self.assertIn("five_hour", gate.evaluate_payload({"tool_name": "send_agent_prompt", "tool_input": {
             "agentId": agent_id, "prompt": "continue"}}, now=T0)["reason"])
 
-    def test_pi_launch_namespace_matches_canonical_ledger_direct_and_codemode(self):
+    def test_pi_launch_namespace_matches_canonical_ledger_on_schedule_and_host_launch(self):
         # Actual ledger records retain canonical model, not bundle.launch_model.
         for prov, canonical_model, launch_model in (
             ("pi", "gpt-6-astra", "openai-codex/gpt-6-astra"),
             ("opencode", "deepseek-v4.1-flash-free", "opencode/deepseek-v4.1-flash-free"),
         ):
-            ledger = self.write_ledger(str(self.state), [self.route(prov, canonical_model, "high")])
+            ledger = self.write_ledger(str(self.state), [self.route(prov, canonical_model, "high", session_ids=["s1"])])
             for args in (
                 {"provider": f"{prov}/{launch_model}"},
                 {"provider": prov, "model": launch_model},
             ):
                 args["settings"] = {"thinkingOptionId": "high"}
-                direct = {"tool_name": "mcp__paseo__create_agent", "tool_input": args}
-                wrapped = {"toolName": "codemode", "input": {
-                    "code": "await paseo.create_agent(" + json.dumps(args) + ")"}}
-                self.assertEqual(gate.evaluate_payload(direct, ledger_path=ledger, now=T0), {})
-                self.assertEqual(gate.evaluate_payload(wrapped, ledger_path=ledger, now=T0), {"block": False})
+                host_launch = {"tool_name": "delegate_task", "tool_input": args}
+                schedule = {"tool_name": "mcp__paseo__create_schedule", "session_id": "s1",
+                            "tool_input": dict(args, prompt="work", cron="7 * * * *")}
+                self.assertEqual(gate.evaluate_payload(host_launch, ledger_path=ledger, now=T0), {})
+                self.assertEqual(gate.evaluate_payload(schedule, ledger_path=ledger, now=T0), {})
 
     def test_pi_namespace_normalization_preserves_owner_model_and_effort_checks(self):
         ledger = self.write_ledger(str(self.state), [self.route("pi")])
@@ -584,19 +583,19 @@ class RouterGateHookTests(unittest.TestCase):
             ("pi/other-backend/gpt-6-astra", "high", "model"),
         ):
             args = {"provider": provider, "settings": {"thinkingOptionId": effort}}
-            result = gate.evaluate_payload({"tool_name": "create_agent", "tool_input": args}, ledger_path=ledger, now=T0)
+            result = gate.evaluate_payload({"tool_name": "delegate_task", "tool_input": args}, ledger_path=ledger, now=T0)
             self.assertIn(diagnostic, result["reason"])
 
     def test_antigravity_high_model_accepts_omitted_thinking_option(self):
         for provider in ("antigravity", "antigravity-resilient"):
             for model in ("gemini-4-argon-high", "gemini-3.8-flash-high"):
-                ledger = self.write_ledger(str(self.state), [self.route(provider, model, "high")])
+                ledger = self.write_ledger(str(self.state), [self.route(provider, model, "high", session_ids=["s1"])])
                 args = {"provider": provider + "/" + model, "settings": {"modeId": "full-access"}}
-                self.assertEqual(gate.evaluate_payload({"tool_name": "create_agent", "tool_input": args},
+                self.assertEqual(gate.evaluate_payload({"tool_name": "delegate_task", "tool_input": args},
                                                       ledger_path=ledger, now=T0), {})
-                self.assertEqual(gate.evaluate_payload({"toolName": "codemode", "input": {
-                    "code": "await paseo.create_agent(" + json.dumps(args) + ")"}},
-                    ledger_path=ledger, now=T0), {"block": False})
+                self.assertEqual(gate.evaluate_payload({"tool_name": "mcp__paseo__create_schedule", "session_id": "s1",
+                    "tool_input": dict(args, prompt="work", cron="7 * * * *")},
+                    ledger_path=ledger, now=T0), {})
 
     def test_quota_never_blocks_inspection_even_with_provider_or_agent_id(self):
         self.exhausted_cache()
@@ -641,7 +640,9 @@ class RouterGateHookTests(unittest.TestCase):
             policy.unlink(missing_ok=True)
         else:
             policy.write_text(json.dumps({"allowed_accounts": allowed}), encoding="utf-8")
-        (self.state / "accounts-override.json").write_text(json.dumps({"accounts": accounts or {}}), encoding="utf-8")
+        (self.state / "accounts-override.json").write_text(
+            json.dumps({"schema_version": 2, "accounts": accounts or {}}), encoding="utf-8"
+        )
 
     def test_disabled_account_or_bundle_blocks_launch_and_resume_but_not_reports(self):
         names = ("sonnet", "opus", "bare", "codex", "child")
@@ -665,7 +666,9 @@ class RouterGateHookTests(unittest.TestCase):
 
         def launch(model):
             return {"tool_name": "create_agent", "tool_input": {
-                "provider": f"claude-lab/claude-{model}-5-5", "settings": {"thinkingOptionId": "high"}}}
+                "provider": f"claude-lab/claude-{model}-5-5", "settings": {"thinkingOptionId": "high"},
+                "labels": {"router.account": "claude-lab", "router.bundle_id": f"lab_{model}55_high",
+                           "router.dispatch_id": f"d-{model}"}}}
 
         resume_sonnet = (
             turn("sonnet"), turn("sonnet", "mcp__paseo__run_turn"), turn("sonnet", "send_message"),
@@ -675,34 +678,35 @@ class RouterGateHookTests(unittest.TestCase):
             "labels": {"router.account": "claude-lab", "router.bundle_id": "lab_sonnet55_high"}}}
         shell_launch = {"tool_name": "Bash", "tool_input": {"command": "paseo agent create --provider claude-lab/claude-sonnet-5-5"}}
         everyone = ["claude", "claude-lab", "codex", "antigravity", "dot"]
-        # (settings, cause in the block reason, blocked calls, calls differing only in the judged condition)
-        for settings, cause, blocked, passed in (
-                ({"allowed": [a for a in everyone if a != "claude-lab"]}, "host-policy.json",
-                 resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet, shell_launch),
-                 (turn("codex"), turn("sonnet", parent_agent_id=ids["child"]))),
-                ({"accounts": {"claude-lab": {"bundles": {"lab_sonnet55_high": {"disabled": True},
-                                                        "lab_sonnet55_medium": {"disabled": True},
-                                                        "lab_opus55_high": {"disabled": False}}}}}, "档位 lab_sonnet55_high",
-                 resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet), (turn("opus"), launch("opus"))),
-                ({"accounts": {"claude-lab": {"verified": False}}}, "verified: false",
-                 (turn("bare"), launch("sonnet")), (turn("codex"),))):
-            self.write_settings(**settings)
-            for payload in blocked:
-                with self.subTest(cause=cause, blocked=payload):
-                    result = gate.evaluate_payload(payload, ledger_path=ledger, now=T0)
-                    self.assertIn(cause, result["reason"])
-                    self.assertIn("roll --brief", result["reason"])
-            for payload in passed:
-                with self.subTest(cause=cause, passed=payload):
-                    self.assertNotIn("reason", gate.evaluate_payload(payload, ledger_path=ledger, now=T0))
-        # Turning the account back on, or having no host policy, lets the same calls through.
-        for settings in ({"allowed": everyone}, {}):
-            self.write_settings(**settings)
-            for payload in resume_sonnet + (turn("bare"), launch("sonnet"), shell_launch):
-                with self.subTest(settings=settings, payload=payload):
-                    self.assertNotIn("reason", gate.evaluate_payload(payload, ledger_path=ledger, now=T0))
-            # A bound launch then reaches its dispatch claim instead of the disabled-target block.
-            self.assertIn("Bound dispatch rejected", gate.evaluate_payload(bound_sonnet, now=T0)["reason"])
+        with mock.patch.object(gate.router_module("dispatch_registry"), "claim", return_value=None):
+            # (settings, cause in the block reason, blocked calls, calls differing only in the judged condition)
+            for settings, cause, blocked, passed in (
+                    ({"allowed": [a for a in everyone if a != "claude-lab"]}, "host-policy.json",
+                     resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet, shell_launch),
+                     (turn("codex"), turn("sonnet", parent_agent_id=ids["child"]))),
+                    ({"accounts": {"claude-lab": {"bundles": {"lab_sonnet55_high": {"disabled": True},
+                                                            "lab_sonnet55_medium": {"disabled": True},
+                                                            "lab_opus55_high": {"disabled": False}}}}}, "档位 lab_sonnet55_high",
+                     resume_sonnet + (turn("bare"), launch("sonnet"), bound_sonnet), (turn("opus"), launch("opus"))),
+                    ({"accounts": {"claude-lab": {"verified": False}}}, "verified: false",
+                     (turn("bare"), launch("sonnet")), (turn("codex"),))):
+                self.write_settings(**settings)
+                for payload in blocked:
+                    with self.subTest(cause=cause, blocked=payload):
+                        result = gate.evaluate_payload(payload, ledger_path=ledger, now=T0)
+                        self.assertIn(cause, result["reason"])
+                        self.assertIn("roll --brief", result["reason"])
+                for payload in passed:
+                    with self.subTest(cause=cause, passed=payload):
+                        self.assertNotIn("reason", gate.evaluate_payload(payload, ledger_path=ledger, now=T0))
+            # Turning the account back on, or having no host policy, lets the same calls through.
+            for settings in ({"allowed": everyone}, {}):
+                self.write_settings(**settings)
+                for payload in resume_sonnet + (turn("bare"), launch("sonnet")):
+                    with self.subTest(settings=settings, payload=payload):
+                        self.assertNotIn("reason", gate.evaluate_payload(payload, ledger_path=ledger, now=T0))
+        # A bound launch then reaches its dispatch claim instead of the disabled-target block.
+        self.assertIn("Bound dispatch rejected", gate.evaluate_payload(bound_sonnet, now=T0)["reason"])
         # Degrade: an unreadable host policy allows rather than blocking normal work.
         (self.state / "host-policy.json").write_text("{not json", encoding="utf-8")
         self.assertEqual(gate.evaluate_payload(turn("sonnet"), now=T0), {})
@@ -1012,7 +1016,7 @@ class RouterGateHookTests(unittest.TestCase):
         for rows in ([a, b], [b, a]):
             ledger = self.write_ledger(str(self.state), rows)
             for identity in ({}, {"parentAgentId": "parent-a", "taskId": "task-a"}):
-                result = gate.evaluate_payload({"tool_name": "create_agent", "tool_input": {
+                result = gate.evaluate_payload({"tool_name": "delegate_task", "tool_input": {
                     "provider": "codex/gpt-6-astra", "settings": {"thinkingOptionId": "high"}, **identity}},
                     ledger_path=ledger, now=T0)
                 self.assertEqual(result, {})
@@ -1020,7 +1024,7 @@ class RouterGateHookTests(unittest.TestCase):
     def test_same_task_new_decision_rejects_old_owner_with_diagnostics(self):
         identity = {"parent_agent_id": "parent-a", "task_id": "task-a"}
         ledger = self.write_ledger(str(self.state), [self.route(**identity), self.route("pi", **identity)])
-        result = gate.evaluate_payload({"tool_name": "create_agent", "tool_input": {
+        result = gate.evaluate_payload({"tool_name": "delegate_task", "tool_input": {
             "provider": "codex/gpt-6-astra", "settings": {"thinkingOptionId": "high"}, **identity}},
             ledger_path=ledger, now=T0)
         self.assertEqual(result["decision"], "block")
@@ -1030,14 +1034,14 @@ class RouterGateHookTests(unittest.TestCase):
 
     def test_parent_alone_does_not_collapse_concurrent_tasks(self):
         ledger = self.write_ledger(str(self.state), [self.route(parent_agent_id="a"), self.route("dot", parent_agent_id="a")])
-        self.assertEqual(gate.evaluate_payload({"session_id": "a", "tool_name": "create_agent", "tool_input": {
+        self.assertEqual(gate.evaluate_payload({"session_id": "a", "tool_name": "delegate_task", "tool_input": {
             "provider": "codex/gpt-6-astra"}}, ledger_path=ledger, now=T0), {})
 
     def test_a_host_terminal_parent_matches_the_harness_session_it_runs(self):
         # Issue #2: roll inside an Orca terminal records the Orca session as the parent (the worker's reply
         # address) and the Claude Code session it runs in; Claude's hook payload carries only the latter.
         ledger = self.write_ledger(str(self.state), [self.route(parent_agent_id="orca-sess", host_session_id="claude-uuid")])
-        launch = {"tool_name": "create_agent", "tool_input": {"provider": "codex/gpt-6-astra"}}
+        launch = {"tool_name": "delegate_task", "tool_input": {"provider": "codex/gpt-6-astra"}}
         self.assertEqual(gate.evaluate_payload(dict(launch, session_id="claude-uuid"), ledger_path=ledger, now=T0), {})
         self.assertEqual(gate.evaluate_payload(dict(launch, session_id="orca-sess"), ledger_path=ledger, now=T0), {})
         self.assertEqual(gate.evaluate_payload(dict(launch, session_id="other-claude"), ledger_path=ledger, now=T0)["decision"],
@@ -1045,7 +1049,7 @@ class RouterGateHookTests(unittest.TestCase):
 
     def test_nested_task_correlation_and_ttl_are_enforced(self):
         ledger = self.write_ledger(str(self.state), [self.route(task={"task_id": "a"}), self.route("pi", task={"task_id": "a"})])
-        payload = {"tool_name": "create_agent", "tool_input": {"provider": "codex/gpt-6-astra", "taskId": "a"}}
+        payload = {"tool_name": "delegate_task", "tool_input": {"provider": "codex/gpt-6-astra", "taskId": "a"}}
         self.assertIn("routed='pi'", gate.evaluate_payload(payload, ledger_path=ledger, now=T0)["reason"])
         expired = self.route()
         expired["at"] = (T0 - dt.timedelta(minutes=16)).isoformat()
@@ -1062,7 +1066,7 @@ class RouterGateHookTests(unittest.TestCase):
                                   ({"taskId": "task-b"}, "parent/task/target"),
                                   ({"targetAgentId": "target-b"}, "parent/task/target")):
             args = {"provider": "codex/gpt-6-astra", "settings": {"thinkingOptionId": "high"}, **extra}
-            result = gate.evaluate_payload({"tool_name": "create_agent", "tool_input": args}, ledger_path=ledger, now=T0)
+            result = gate.evaluate_payload({"tool_name": "delegate_task", "tool_input": args}, ledger_path=ledger, now=T0)
             self.assertIn(diagnostic, result["reason"])
 
     def test_claude_agent_tool_family_alias_is_the_routed_model(self):
@@ -1087,17 +1091,18 @@ class RouterGateHookTests(unittest.TestCase):
 
     def test_current_wrapped_launch_uses_literal_settings_and_all_calls(self):
         ledger = self.write_ledger(str(self.state), [self.route()])
-        for code, allowed in (
-            ("await paseo.create_agent({provider:'codex/gpt-6-astra', settings:{thinkingOptionId:'high'}})", True),
-            ('await tools.mcp__paseo__create_agent({provider:"codex/gpt-6-astra", settings:{thinkingOptionId:"max"}})', False),
-            ('await paseo.create_agent({provider:"codex/gpt-6-astra"}); await paseo.create_agent({provider:"pi/gpt-6-astra"})', False),
-        ):
-            result = gate.evaluate_payload({"tool_name": "exec", "tool_input": code}, ledger_path=ledger, now=T0)
-            self.assertEqual(result == {}, allowed, result)
-        # Quoted examples and readonly provider arguments are not executing calls.
-        self.exhausted_cache()
-        code = 'await paseo.list_models({provider:"claude-lab"}); await paseo.create_agent({provider:"codex/gpt-6-astra", initialPrompt:"create_agent({provider: \'claude-lab\'})"})'
-        self.assertEqual(gate.evaluate_payload({"tool_name": "exec", "tool_input": code}, ledger_path=ledger, now=T0), {})
+        with mock.patch.object(gate.router_module("dispatch_registry"), "claim", return_value=None):
+            for code, allowed in (
+                ("await paseo.create_agent({provider:'codex/gpt-6-astra', settings:{thinkingOptionId:'high'}, labels:{'router.dispatch_id':'d1'}})", True),
+                ('await tools.mcp__paseo__create_agent({provider:"codex/gpt-6-astra", settings:{thinkingOptionId:"high"}})', False),
+                ('await paseo.create_agent({provider:"codex/gpt-6-astra", labels:{"router.dispatch_id":"d1"}}); await paseo.create_agent({provider:"pi/gpt-6-astra"})', False),
+            ):
+                result = gate.evaluate_payload({"tool_name": "exec", "tool_input": code}, ledger_path=ledger, now=T0)
+                self.assertEqual(result == {}, allowed, result)
+            # Quoted examples and readonly provider arguments are not executing calls.
+            self.exhausted_cache()
+            code = 'await paseo.list_models({provider:"claude-lab"}); await paseo.create_agent({provider:"codex/gpt-6-astra", labels:{"router.dispatch_id":"d1"}, initialPrompt:"create_agent({provider: \'claude-lab\'})"})'
+            self.assertEqual(gate.evaluate_payload({"tool_name": "exec", "tool_input": code}, ledger_path=ledger, now=T0), {})
         quoted = '// create_agent({provider:"claude-lab"})\ntext("create_agent({})")'
         self.assertEqual(gate.evaluate_payload({"toolName": "codemode", "input": {"code": quoted}}, now=T0), {"block": False})
 
@@ -1594,9 +1599,9 @@ class BoundDispatchGateTests(unittest.TestCase):
             'ROUTER_CAPACITY': str(root / 'capacity.json'),
             'ROUTER_LEDGER': str(root / 'ledger.jsonl'),
             'ROUTER_USAGE_CACHE': str(root / 'usage.json'),
-            'ROUTER_GATE_BYPASS': '0', 'PASEO_AGENT_ID': '', 'ROUTER_PASEO_LEGACY_NO_LABELS': '0',
+            'ROUTER_GATE_BYPASS': '0', 'PASEO_AGENT_ID': '',
             'ROUTER_HOST_POLICY': str(root / 'host-policy.json'),
-            'ROUTER_ACCOUNTS_OVERRIDE': str(root / 'accounts-override.json'),
+            'AGENTCOMPASS_ACCOUNTS_OVERRIDE': str(root / 'accounts-override.json'),
             'ROUTER_ACCOUNTS_FILE': str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts' / 'fixtures' / 'reference-accounts.json'),
         })
         env.start()
@@ -1689,13 +1694,13 @@ class BoundDispatchGateTests(unittest.TestCase):
 
 
 class UsageRowTests(unittest.TestCase):
-    """The hook reads quota the way the router does: the newest reading across the router's cache and the legacy copy."""
+    """The hook reads quota only from the canonical router cache (or an explicit named file)."""
 
     def setUp(self):
         self.state = Path(os.environ["ROUTER_STATE_DIR"])
         self.canonical = self.state / "usage-cache.json"
-        self.legacy = gate.HOME / ".usage-float" / "usage-cache.json"
-        self.addCleanup(lambda: [path.unlink() for path in (self.canonical, self.legacy) if path.exists()])
+        self.old_float = gate.HOME / ".usage-float" / "usage-cache.json"
+        self.addCleanup(lambda: [path.unlink() for path in (self.canonical, self.old_float) if path.exists()])
         os.environ.pop("ROUTER_USAGE_CACHE", None)
 
     def write(self, path, used, fetched):
@@ -1703,16 +1708,11 @@ class UsageRowTests(unittest.TestCase):
         path.write_text(json.dumps({"providers": {"codex": {"fetched_at": fetched, "windows": [{"id": "5h", "used_pct": used}]}}}),
                         encoding="utf-8")
 
-    def test_the_newer_reading_wins_whichever_file_holds_it(self):
+    def test_canonical_cache_or_named_file_is_read_and_old_usage_float_copy_is_ignored(self):
+        self.write(self.old_float, 90, "2026-01-02T00:00:00+00:00")
+        self.assertIsNone(gate.usage_row("codex"))
         self.write(self.canonical, 10, "2026-01-01T00:00:00+00:00")
-        self.write(self.legacy, 90, "2026-01-02T00:00:00+00:00")
-        self.assertEqual(gate.usage_row("codex")["windows"][0]["used_pct"], 90)
-        self.write(self.canonical, 10, "2026-01-03T00:00:00+00:00")
         self.assertEqual(gate.usage_row("codex")["windows"][0]["used_pct"], 10)
-
-    def test_the_legacy_copy_alone_still_works_and_a_named_file_is_exclusive(self):
-        self.write(self.legacy, 90, "2026-01-02T00:00:00+00:00")
-        self.assertEqual(gate.usage_row("codex")["windows"][0]["used_pct"], 90)
         named = self.state / "named.json"
         self.write(named, 5, "2026-01-01T00:00:00+00:00")
         self.addCleanup(named.unlink)

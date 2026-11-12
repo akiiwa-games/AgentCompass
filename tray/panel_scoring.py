@@ -183,7 +183,7 @@ class ScoringPage:
         self.show_list("ledger")
         self.set_mode("score")
         self.prefill(lambda: self.data_module().model_table(), self.models_loaded)
-        self.prefill(lambda: self.data_module().recent_ledger(30), self.ledger_loaded)
+        self.prefill(lambda: self.data_module().recent_ledger_with_skipped(30), self.ledger_loaded)
         if self.plan_result:
             self.plan_loaded(self.plan_result)
 
@@ -493,10 +493,16 @@ class ScoringPage:
             self.render_radar()
 
     def load_ledger(self):
-        self.run(lambda: self.data_module().recent_ledger(30), self.ledger_loaded)
+        self.run(lambda: self.data_module().recent_ledger_with_skipped(30), self.ledger_loaded)
 
-    def ledger_loaded(self, rows):
+    def ledger_loaded(self, payload):
+        if isinstance(payload, tuple) and len(payload) == 2:
+            rows, skipped = payload
+        else:
+            rows, skipped = payload, 0
         self.ledger_rows = rows or []
+        if skipped:
+            self.status.set(_tr("已跳过 {0} 条旧格式台账记录").format(skipped))
         self.ledger_table.delete(*self.ledger_table.get_children())
         for index, row in enumerate(self.ledger_rows):
             s = self.data_module().ledger_summary(row)

@@ -81,10 +81,6 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     resume = next((c for c in candidates if c['id'] == worker_id), None)
     decision = {'task': {k: task[k] for k in ('kind', 'difficulty', 'hours', 'chain_hours', 'coupling')}, 'system': system,
                 'assumptions': assumptions(candidates, accounts)}
-    cwd_warnings = [f'{name}: cwd_regex and legacy allowed_cwd both apply (intersection)'
-                    for name, spec in accounts['accounts'].items() if spec.get('cwd_regex') and spec.get('allowed_cwd')]
-    if cwd_warnings:
-        decision.setdefault('warnings', []).extend(cwd_warnings)
     for err in candidate_eval.QUOTA_DATA_ERRORS:
         unread = sorted({c['bundle']['account'] for c in candidates if any(err in str(r) for r in c['excluded'])})
         if unread:

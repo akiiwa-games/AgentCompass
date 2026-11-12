@@ -25,7 +25,7 @@ from pathlib import Path
 
 EXE = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve()
 STATE = EXE.parent.parent / "state"
-ROUTER_VARS = ("ROUTER_WORKER", "ROUTER_PARENT_AGENT_ID", "ROUTER_PARENT_HOST", "ROUTER_PARENT_ADDRESS")
+ROUTER_VARS = ("AGENTCOMPASS_WORKER", "ROUTER_PARENT_AGENT_ID", "ROUTER_PARENT_HOST", "ROUTER_PARENT_ADDRESS")
 
 
 def write(path: Path, document: dict) -> None:

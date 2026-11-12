@@ -30,7 +30,7 @@ SAMPLE_DOCUMENT = {'task': {
 
 # OPENCODE_DB_PATH names a file that does not exist: the local OpenCode usage database is host state too.
 NO_HOST_STATE_ENV = {'ROUTER_LAUNCH_FAILURES': 'off', 'ROUTER_PROVIDER_RETRY': 'off', 'ROUTER_MODEL_LATCH': 'off',
-                     'ROUTER_LIVE_MODELS': 'off', 'OPENCODE_DB_PATH': 'demo-no-opencode.db'}
+                     'AGENTCOMPASS_LIVE_MODELS': 'off', 'OPENCODE_DB_PATH': 'demo-no-opencode.db'}
 
 
 def reference_accounts():

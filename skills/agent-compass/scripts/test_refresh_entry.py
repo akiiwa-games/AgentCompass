@@ -397,14 +397,24 @@ class RefreshEntryTests(unittest.TestCase):
         # Every output file is still rebuilt and valid.
         refresh.validate(self.refs_dir)
 
-        # An empty calibration directory (missing core parquet/AA sources) also exits 2 cleanly.
+        # A calibration directory without fetch-manifest.json fails with that exact cause, including default data_dir().
         empty_dir = self.tmp / 'empty-cal'
         empty_dir.mkdir()
         out, err = io.StringIO(), io.StringIO()
         with patch('sys.stdout', out), patch('sys.stderr', err):
             empty_code = refresh.main(['--no-fetch', '--data', str(empty_dir), '--references', str(self.refs_dir)])
         self.assertEqual(empty_code, 2)
-        self.assertTrue(err.getvalue().strip())
+        self.assertIn(str(empty_dir / 'fetch-manifest.json'), err.getvalue())
+
+        default_cache = self.tmp / 'default-cal-cache'
+        default_cache.mkdir()
+        (default_cache / 'stale.parquet').write_bytes(b'old')
+        out2, err2 = io.StringIO(), io.StringIO()
+        with patch.object(sources, 'data_dir', return_value=default_cache), \
+                patch('sys.stdout', out2), patch('sys.stderr', err2):
+            default_code = refresh.main(['--no-fetch', '--references', str(self.refs_dir)])
+        self.assertEqual(default_code, 2)
+        self.assertIn(str(default_cache / 'fetch-manifest.json'), err2.getvalue())
 
     def test_validation_checks_user_scores_schema_and_public_data_integrity(self):
         user_scores_path = self.refs_dir / 'user-scores.json'

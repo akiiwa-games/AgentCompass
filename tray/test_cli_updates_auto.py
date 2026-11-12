@@ -158,7 +158,7 @@ def _write_npm_package(prefix: Path, package: str, command: str, version: str, *
 
 
 def _hermetic_npm_fixture(tmp_path: Path, monkeypatch):
-    for var in ('PASEO_AGENT_ID', 'ROUTER_WORKER'):
+    for var in ('PASEO_AGENT_ID', 'AGENTCOMPASS_WORKER'):
         monkeypatch.delenv(var, raising=False)
     home = tmp_path / 'home'
     local = tmp_path / 'local'

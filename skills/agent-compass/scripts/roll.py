@@ -659,10 +659,10 @@ def fallback_result(out, outcome, decision, parent, args):
 
 def _router_override_proxy_spec(provider):
     state_dir = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass')
-    override_env = (os.environ.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE') or os.environ.get('ROUTE_MANAGER_ACCOUNTS_OVERRIDE')
-                    or os.environ.get('ROUTER_ACCOUNTS_OVERRIDE'))
+    override_env = os.environ.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE')
     override_path = Path(override_env).expanduser() if override_env else state_dir / 'accounts-override.json'
-    doc, _ = provider_inventory.read_json(override_path)
+    import accounts_override
+    doc = accounts_override.load_override(override_path) or {}
     for section in ('litellm_proxies', 'accounts'):
         block = doc.get(section) if isinstance(doc, dict) else None
         if isinstance(block, dict) and isinstance(block.get(provider), dict):
@@ -797,7 +797,7 @@ def cli(args, out, bundle, text, judge):
     executable, flags = CLI_RUNS[family]
     env = {k: v for k, v in judge.subscription_env().items() if not k.startswith(HOST_SESSION_ENV)}
     env.update(provider_env)
-    env.update(ROUTER_WORKER='1', ROUTER_PARENT_AGENT_ID=out['parent_id'],
+    env.update(AGENTCOMPASS_WORKER='1', ROUTER_PARENT_AGENT_ID=out['parent_id'],
                ROUTER_PARENT_HOST=out['parent_host'], ROUTER_PARENT_ADDRESS=out['parent_address'])
     run = CLI_RUNS_DIR / f'{time.strftime("%Y%m%d-%H%M%S")}-{bundle["provider"]}-{os.getpid()}'
     run.mkdir(parents=True, exist_ok=True)

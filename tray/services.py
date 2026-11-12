@@ -365,7 +365,7 @@ def launcher_data_dir() -> Path:
 def chatgpt_env() -> dict[str, str]:
     env = os.environ.copy()
     # The bridge keeps its own Codex profile so it never touches the user's real ~/.codex.
-    env["CODEX_HOME"] = (os.environ.get("AGENTCOMPASS_CHATGPT_CODEX_HOME") or os.environ.get("ROUTE_MANAGER_CHATGPT_CODEX_HOME")) or str(Path.home() / ".codex-pro-consult")
+    env["CODEX_HOME"] = os.environ.get("AGENTCOMPASS_CHATGPT_CODEX_HOME") or str(Path.home() / ".codex-pro-consult")
     env["CODEX_CHATGPT_WEB_HOME"] = str(bridge_home())
     env["CODEX_WEB_GPT_LAUNCHER_DATA_DIR"] = str(launcher_data_dir())
     bun = bun_exe()

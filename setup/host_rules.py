@@ -13,7 +13,6 @@ An overlay is used verbatim except for placeholders that depend on where this ch
 
     @@AGENTCOMPASS@@        the router command: `agentcompass` for the Windows installer or an installed package, otherwise
                             `python -X utf8 <checkout>/agentcompass` (same sub-commands, any working directory)
-    @@ROUTE_JUDGE@@         legacy; `python -X utf8 @@ROUTE_JUDGE@@` is rewritten to @@AGENTCOMPASS@@, a bare path stays the script path
     @@ROUTER_HOOK_SCRIPT@@  what the gate hook runs: `<app>/cli/agentcompass.exe gate-hook` for the Windows installer,
                             otherwise the absolute path of setup/router_gate_hook.py
     @@HOME_POSIX@@          the user's home directory with forward slashes
@@ -29,15 +28,15 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-if str(REPO) not in sys.path:
-    sys.path.append(str(REPO))
+SCRIPTS = REPO / "skills" / "agent-compass" / "scripts"
+for _entry in (REPO, SCRIPTS):
+    if str(_entry) not in sys.path:
+        sys.path.append(str(_entry))
 try:
     from agentcompass import install as ac_install  # noqa: E402
 except ImportError:  # a bare copy of setup/ without the package
     ac_install = None
-
-ROUTE_JUDGE = (REPO / "skills" / "agent-compass" / "scripts" / "route_judge.py").as_posix()
-LEGACY_ENTRY = "python -X utf8 @@ROUTE_JUDGE@@"
+import state_upgrade  # noqa: E402
 
 
 def agentcompass_command() -> str:
@@ -87,7 +86,7 @@ Cross-project rules for agents that can delegate work through the AgentCompass r
 
 ## 2. Delegation goes through AgentCompass
 
-1. Do serial work yourself. Delegate only independent work that gains from parallelism, an isolated large context, a specialist capability or quota offloading. A delegated worker (`ROUTER_WORKER=1` or a `Parent session agent ID:` contract) does its assignment without delegating again.
+1. Do serial work yourself. Delegate only independent work that gains from parallelism, an isolated large context, a specialist capability or quota offloading. A delegated worker (`AGENTCOMPASS_WORKER=1` or a `Parent session agent ID:` contract) does its assignment without delegating again.
 2. Dispatch only with `@@AGENTCOMPASS@@ roll --task "<assignment>"` (or `--brief <file>`, one brief per independent task). Never call `create_agent`, `Agent`/`Task`, `spawn_agent` or `invoke_subagent` directly.
 3. Read the result's `status` and do exactly `next_action`.
 4. Never pick a model or effort yourself; the router does.
@@ -102,7 +101,7 @@ Cross-project rules for agents that can delegate work through the AgentCompass r
 DEFAULT_CODEX = DEFAULT_SHARED
 
 DEFAULT_DAEMON_APPEND = (
-    "AgentCompass: do serial work yourself; a delegated worker (ROUTER_WORKER=1 or a Parent session agent ID contract) does not delegate again. "
+    "AgentCompass: do serial work yourself; a delegated worker (AGENTCOMPASS_WORKER=1 or a Parent session agent ID contract) does not delegate again. "
     "Dispatch only with `@@AGENTCOMPASS@@ roll --task \"<assignment>\"`, never create_agent / Agent / spawn_agent / invoke_subagent directly; "
     "read the result's status and do exactly next_action; never pick a model or effort yourself. "
     "Before dispatching, load the agent-compass skill and read @@DISPATCH_RULES@@.@@PERSONAL_DISPATCH_SENTENCE@@ "
@@ -131,26 +130,9 @@ def overlay_dir(home: Path) -> Path:
     return home / ".agent-compass" / "host-rules"
 
 
-def is_legacy_generated(text: str) -> bool:
-    """Recognise pre-marker generated rules even after an overlay changes the title/body."""
-    stripped = text.lstrip()
-    return stripped.startswith((
-        "【全局强制纪律】",
-        "# 全局执行纪律（",
-        "# 全局执行纪律\n",
-        "# Agent routing rules (AgentCompass)\n",
-        "Router discipline: if you are already a delegated worker (",
-        "Router discipline: " + EXECUTION_POLICY,
-        "Router discipline: The main session executes serial work directly by default",
-        "AgentCompass: do serial work yourself;",
-    ))
-
-
 def render(text: str, home: Path) -> str:
     return (
-        text.replace(LEGACY_ENTRY, "@@AGENTCOMPASS@@")
-        .replace("@@AGENTCOMPASS@@", agentcompass_command())
-        .replace("@@ROUTE_JUDGE@@", ROUTE_JUDGE)
+        text.replace("@@AGENTCOMPASS@@", agentcompass_command())
         .replace("@@ROUTER_HOOK_SCRIPT@@", ROUTER_HOOK_SCRIPT)
         .replace("@@HOME_POSIX@@", home.as_posix())
         .replace("@@REPO@@", REPO.as_posix())
@@ -163,6 +145,10 @@ def render(text: str, home: Path) -> str:
 def load(kind: str, home: Path) -> tuple[str, str]:
     """Return ``(rendered_text, source)`` where source is ``overlay`` or ``default``."""
     path = overlay_dir(home) / OVERLAY_FILES[kind]
+    if path.exists():
+        issue = state_upgrade.check_host_rule_file(path)
+        if issue:
+            raise ValueError(issue)
     try:
         raw = path.read_bytes().decode("utf-8-sig")
     except OSError:

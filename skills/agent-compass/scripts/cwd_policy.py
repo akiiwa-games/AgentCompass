@@ -21,13 +21,3 @@ def matches(pattern, path=None):
         return not pattern or re.search(pattern, normalized(path), re.IGNORECASE) is not None
     except (re.error, TypeError):
         return False
-
-
-def from_prefixes(prefixes):
-    values = [prefixes] if isinstance(prefixes, str) else prefixes or []
-    patterns = []
-    for value in values:
-        path = normalized(value)
-        start = '^' if ':' in path or path.startswith('/') else r'(^|/)'
-        patterns.append(start + re.escape(path) + r'(/|$)')
-    return patterns[0] if len(patterns) == 1 else '(?:' + '|'.join(patterns) + ')' if patterns else ''

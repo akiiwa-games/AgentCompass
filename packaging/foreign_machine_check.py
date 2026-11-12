@@ -778,12 +778,12 @@ sys.path.insert(0, {str(tray_dir)!r})
 
 import account_fleet
 import allocator
+import dispatch_registry
 import provider_inventory
 import route_judge
 import router_gate_hook as gate
 import router_data
 
-os.environ["ROUTER_PASEO_LEGACY_NO_LABELS"] = "1"
 now = dt.datetime.now(dt.timezone.utc)
 reset_5h = (now + dt.timedelta(hours=3)).isoformat()
 reset_7d = (now + dt.timedelta(days=4)).isoformat()
@@ -840,7 +840,7 @@ agy_claude_reason = gate.check_account_quota_exhausted(
 )
 write_ledger("argon_high", {{"account": "antigravity", "provider": "antigravity-resilient", "model": "gemini-4-argon-high", "effort": "high", "modeId": "full-access"}})
 agy_gemini_eval = gate.evaluate_payload(
-    {{"parent_agent_id": "parent-1", "tool_name": "mcp__paseo__create_agent", "tool_input": {{"provider": "antigravity-resilient", "model": "gemini-4-argon-high", "effort": "high", "modeId": "full-access"}}}},
+    {{"parent_agent_id": "parent-1", "tool_name": "invoke_subagent", "tool_input": {{"TypeName": "self", "Role": "Worker", "Prompt": "check", "Model": "gemini-4-argon-high"}}}},
     ledger_path=ledger_path, now=now, usage_cache_path=cache_path, paseo_agents_dir=paseo_dir
 )
 write_ledger("agy_sonnet55_high", {{"account": "antigravity", "provider": "antigravity-resilient", "model": "claude-sonnet-5-5", "effort": "high", "modeId": "full-access"}})
@@ -2142,14 +2142,9 @@ def verify_f13_product_layout(ctx: dict):
     box = make_profile(ctx, "f13-product-layout")
     op = run.operation(
         "F13 product layout without the dev checkout",
-        "In a foreign profile with a checkout-era layout (synthetic git clones of the four plugins inside a checkout, "
-        "each with a local patch and an untracked file, and a junction from ~/.agent-compass/plugins to one of them): "
-        "migrate-plugins --dry-run changes nothing; the migration moves every clone to ~/.agent-compass/plugins/<id> "
-        "with its local changes, replaces the junction, and is a no-op the second time; plugin roots then resolve "
-        "there. EasyTier resolves to %ProgramData%/AgentCompass/easytier (the sandbox's ProgramData) from a frozen- "
-        "and a wheel-shaped install, keeps finding a checkout-era node until it is migrated, and the migration "
-        "dry run plans that move without elevating. The wheel's grok-bot CLI and Paseo bridge dependencies go under "
-        "the state directory, not site-packages.",
+        "In a foreign profile, git-cloned plugin roots resolve directly to ~/.agent-compass/plugins/<id>, EasyTier "
+        "resolves to %ProgramData%/AgentCompass/easytier, and the wheel's grok-bot CLI and Paseo bridge dependencies "
+        "go under the state directory, not site-packages.",
     )
     probe = HERE / "f13_product_layout_probe.py"
     work = box.root / "work"
@@ -2165,7 +2160,7 @@ def verify_f13_product_layout(ctx: dict):
     results = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
     for name, outcome in results.items():
         op.check(name, outcome.get("ok"), outcome.get("detail"))
-    op.check("the probe ran every F13 check", len(results) >= 16, sorted(results))
+    op.check("the probe ran every F13 check", len(results) >= 6, sorted(results))
 
 
 def main(argv=None) -> int:
