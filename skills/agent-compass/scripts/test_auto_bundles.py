@@ -159,17 +159,16 @@ class SeenPersistence(unittest.TestCase):
 
 
 class SharedHooks(unittest.TestCase):
-    def test_legacy_disabled_gives_neutral_exclusion(self):
+    def test_disabled_bundle_gives_neutral_exclusion(self):
+        # String `disabled` values are rejected at load (test_router_data_models); a boolean one excludes neutrally.
         from datetime import datetime, timezone
         merged = json.loads(json.dumps(REAL))
         owner, bid = next((o, b) for o, s in merged['accounts'].items() for b in (s.get('bundles') or {}))
-        merged['accounts'][owner]['bundles'][bid].update(disabled='Legacy explanation', discovery_unavailable=True)
+        merged['accounts'][owner]['bundles'][bid].update(disabled=True, discovery_unavailable=True)
         task = {'work_kind': 'general_implementation', 'difficulty': 'routine', 'needs': {'local_only': True}}
         row = next(c for c in allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
                                              accounts=merged)['ranking'] if c['id'] == bid)
         self.assertIn('unchecked in model management', row['excluded'])
-        self.assertIs(merged['accounts'][owner]['bundles'][bid]['disabled'], True)
-        self.assertNotIn('Legacy explanation', row['excluded'])
         self.assertTrue(all(isinstance(e, str) for e in row['excluded']))
 
     def test_harness_visual_capability(self):
