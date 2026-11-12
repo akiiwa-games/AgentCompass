@@ -530,9 +530,11 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
     import allocator
     import account_fleet
     import candidate_ranking
+    import dispatch_ground_truth
     import ledger_snapshot
     now = now or utcnow()
     accounts = accounts or account_fleet.load_accounts()
+    launch_git = dispatch_ground_truth.capture_launch_git(cwd)
     with transaction(path) as connection:
         expire(connection, now)
         decision = get(connection, 'decisions', decision_id)
@@ -547,6 +549,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                 # Re-preparing revises the assignment text in place; the bound launch fields cannot differ.
                 request['labels'].update({k: row['request']['labels'][k] for k in LABELS})
                 row['request'] = request
+                if cwd and row.get('launch_commit') is None:
+                    row.update(cwd=cwd, **launch_git)
                 save(connection, row)
             return row
         if parse(decision['valid_until']) <= now or not decision['dispatchable']:
@@ -642,6 +646,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                'operation': 'resume' if resume_agent_id else 'create',
                'agent_id': resume_agent_id, 'access': access,
                **({'cwd': cwd} if cwd else {}),
+               **launch_git,
                'fallback_prompt': fallback_prompt if resume_agent_id else None,
                'read_only_review': read_only_review,
                **({'profile': profile} if isinstance(profile, dict) else {}),
@@ -1007,9 +1012,42 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             row.pop('released_at', None)
             if not undelivered:
                 row['lease_until'] = stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until'])))
+        prev_state = row['state']
+        later_dispatch_ids = set()
+        if target == 'completed' and agent_id:
+            ref_stamp = row.get('launched_at') or row.get('created_at')
+            for other in rows(connection, 'dispatches'):
+                if other['dispatch_id'] != dispatch_id and other.get('agent_id') == agent_id:
+                    other_stamp = other.get('launched_at') or other.get('created_at')
+                    if ref_stamp and later(other_stamp, ref_stamp):
+                        later_dispatch_ids.add(other['dispatch_id'])
         if row['state'] != target:
             event(row, target, now)
         save(connection, row)
+    if target == 'launched' and not row.get('started_at') and row.get('launch_commit') is None \
+            and isinstance(row.get('cwd'), str) and row['cwd'].strip():
+        import dispatch_ground_truth
+        launch_git = dispatch_ground_truth.capture_launch_git(row['cwd'])
+        with transaction(path) as connection:
+            latest = get(connection, 'dispatches', dispatch_id)
+            if latest.get('launch_commit') is None and not latest.get('started_at'):
+                latest.update(launch_git)
+                save(connection, latest)
+                row = latest
+    if target == 'completed' and (prev_state != 'completed' or 'ground_truth_recorded_at' not in row):
+        import dispatch_ground_truth
+        gt = dispatch_ground_truth.collect_ground_truth(
+            row,
+            idle_threshold=RUN_LEASE,
+            recorded_at=stamp(now),
+            agent_doc=paseo_agent_record(agent_id),
+            other_dispatch_ids=later_dispatch_ids,
+        )
+        with transaction(path) as connection:
+            latest = get(connection, 'dispatches', dispatch_id)
+            latest.update(gt)
+            save(connection, latest)
+            row = latest
     # Only a turn positively seen ending on the model's reply lifts a hold: a cancelled probe reads as finished too.
     if target == 'completed' and provider_replied(terminal, row.get('launched_at')):
         try:
@@ -1076,3 +1114,77 @@ def pending(path=None):
     with transaction(path) as connection:
         # Include expired started/uncertain launches so a later observation can repair them.
         return [r for r in rows(connection, 'dispatches') if unresolved(r, utcnow())]
+
+
+def record_external_launch(dispatch_mode, external_id, decision_id, bundle, *, parent_id=None, task_id=None,
+                           profile=None, brief_path=None, cwd=None, completed=False, now=None, path=None):
+    """Persist an external non-Paseo runner dispatch (`grok-bot`, `dot`) in `dispatches` without holding Paseo budget."""
+    if not external_id or not decision_id:
+        return None
+    import dispatch_ground_truth
+    now = now or utcnow()
+    dispatch_id = f'{dispatch_mode}:{external_id}'
+    launch_git = dispatch_ground_truth.capture_launch_git(cwd, external_runner=True)
+    with transaction(path) as connection:
+        existing = connection.execute('SELECT data FROM dispatches WHERE id=?', (dispatch_id,)).fetchone()
+        if existing:
+            row = json.loads(existing[0])
+        else:
+            by_dec = connection.execute('SELECT data FROM dispatches WHERE decision_id=?', (decision_id,)).fetchone()
+            if by_dec:
+                return json.loads(by_dec[0])
+            row = {
+                'dispatch_id': dispatch_id,
+                'decision_id': decision_id,
+                'dispatch_mode': dispatch_mode,
+                'external_task_id': external_id,
+                'parent_id': parent_id,
+                'task_id': task_id,
+                'bundle': dict(bundle or {}),
+                'created_at': stamp(now),
+                'launched_at': stamp(now),
+                'lease_until': stamp(now),
+                'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)),
+                'operation': 'create',
+                'agent_id': None,
+                'access': 'write' if cwd else 'read_only',
+                **({'cwd': cwd} if cwd else {}),
+                **launch_git,
+                **({'profile': profile} if isinstance(profile, dict) else {}),
+                **({'brief_path': brief_path} if brief_path else {}),
+            }
+            event(row, 'external_launched', now)
+            save(connection, row)
+    if completed:
+        return complete_external(dispatch_mode, external_id, now=now, path=path)
+    return row
+
+
+def complete_external(dispatch_mode, external_id, *, now=None, path=None):
+    """Mark a previously recorded external runner dispatch `completed` and persist its ground-truth fields."""
+    target_db = Path(path or db_path())
+    if not external_id or not target_db.exists():
+        return None
+    dispatch_id = f'{dispatch_mode}:{external_id}'
+    with transaction(target_db) as connection:
+        found = connection.execute('SELECT data FROM dispatches WHERE id=?', (dispatch_id,)).fetchone()
+        if not found:
+            return None
+        row = json.loads(found[0])
+    if row.get('state') == 'completed' and 'ground_truth_recorded_at' in row:
+        return row
+    import dispatch_ground_truth
+    now = now or utcnow()
+    gt = dispatch_ground_truth.collect_ground_truth(
+        row,
+        idle_threshold=RUN_LEASE,
+        recorded_at=stamp(now),
+        agent_doc=None,
+    )
+    with transaction(target_db) as connection:
+        latest = get(connection, 'dispatches', dispatch_id)
+        if latest.get('state') != 'completed':
+            event(latest, 'completed', now)
+        latest.update(gt)
+        save(connection, latest)
+        return latest

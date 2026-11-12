@@ -299,15 +299,31 @@ def prepare_resume_prompt(text, parent, host='paseo', address=None):
     return base + '\n\n---\n\n' + recipient + '\n'
 
 
-def dot(args, out, prompt_file):
+def dot(args, out, prompt_file, *, task=None, decision=None):
     files = [str(f) for f in args.file]
-    apply_to = ['--apply-to', str(args.apply_to or Path.cwd())] if files else []
+    target_cwd = str(args.apply_to or Path.cwd()) if files else None
+    apply_to = ['--apply-to', target_cwd] if target_cwd else []
     command = python(DOT_RUNNER, 'run', '--prompt-file', str(prompt_file),
                      *[x for f in files for x in ('--file', f)], *apply_to, '--no-wait')
     proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
                           timeout=180)
     found = re.search(r'task_id=(\S+)', proc.stderr)
     launched = bool(found) or proc.returncode == 0
+    if launched and found and isinstance(decision, dict) and decision.get('decision_id'):
+        try:
+            registry.record_external_launch(
+                'dot',
+                found.group(1),
+                decision['decision_id'],
+                decision.get('selected_bundle') or {'provider': 'dot', 'account': 'dot', 'model': 'dot'},
+                parent_id=out.get('parent_id'),
+                task_id=(task or {}).get('task_id'),
+                profile=decision.get('task_profile') or (task or {}).get('profile'),
+                brief_path=(task or {}).get('brief_path'),
+                cwd=target_cwd,
+            )
+        except OSError:
+            pass
     result = dict(out, launched=launched, dispatch_mode='dot',
                   caller_action='already_launched_do_not_respawn' if launched else 'check_error',
                   worker={'provider': 'dot', 'task_id': found.group(1) if found else None, 'exit': proc.returncode,
@@ -330,7 +346,7 @@ def consult(args, out, prompt_file):
                 next='Run next_argv (blocks until the answer is in <out>/response.md).'), 0
 
 
-def grok_bot(args, out, prompt_file, task, bundle):
+def grok_bot(args, out, prompt_file, task, bundle, *, decision=None):
     """Same external-runner receipt/continuation surface as Dot; no Paseo adapter."""
     import run_grok_bot as runner
     if args.file or args.apply_to or args.local_only or getattr(args, 'workspace', None):
@@ -343,6 +359,22 @@ def grok_bot(args, out, prompt_file, task, bundle):
         return dict(out, launched=False, dispatch_mode='grok-bot', caller_action='check_error', error=str(exc)), 1
     delivery = receipt['delivery']
     completed = receipt['state'] == 'completed'
+    if receipt.get('task_id') and receipt.get('state') != 'failed' and isinstance(decision, dict) and decision.get('decision_id'):
+        try:
+            registry.record_external_launch(
+                'grok-bot',
+                receipt['task_id'],
+                decision['decision_id'],
+                bundle,
+                parent_id=out.get('parent_id'),
+                task_id=task.get('task_id'),
+                profile=decision.get('task_profile') or task.get('profile'),
+                brief_path=task.get('brief_path'),
+                cwd=None,
+                completed=completed,
+            )
+        except OSError:
+            pass
     result = dict(out, launched=True if completed or delivery == 'accepted' else False if delivery == 'rejected' else None,
                   dispatch_mode='grok-bot', completed=completed, worker=receipt,
                   caller_action='completed' if completed else 'already_launched_do_not_respawn' if delivery == 'accepted' else
@@ -457,10 +489,10 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             matched = match_reusable_worker(args, task, text, parent, workers=compatible)
             if matched:
                 resume_agent_id = matched['agent_id']
-    if not workspace and access == 'write':
+    if not workspace:
         # A resumed worker stays where it lives, whatever the parent's directory.
         landing = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or parent_cwd()
-    if landing:
+    if landing and access == 'write':
         out = same_cwd_warning(out, landing, parent, workspace)
     prompt_for_launch = (prepare_resume_prompt(text, parent, out.get('parent_host') or 'paseo', out.get('parent_address'))
                          if resume_agent_id else text)
@@ -1058,11 +1090,11 @@ def _run(args, judge):
     text, prompt_file = prepare_worker_prompt(text, parent, parent_host, parent_address)
     out['worker_prompt_file'] = str(prompt_file)
     if provider == 'dot':
-        return dot(args, out, prompt_file)
+        return dot(args, out, prompt_file, task=task, decision=decision)
     if provider == 'chatgpt-web':
         return consult(args, out, prompt_file)
     if provider == 'grok-bot':
-        return grok_bot(args, out, prompt_file, task, bundle)
+        return grok_bot(args, out, prompt_file, task, bundle, decision=decision)
     if parent_host == 'herdr':
         import host_herdr
         return host_herdr.launch(out, bundle, prompt_file, task['task_id'], judge)

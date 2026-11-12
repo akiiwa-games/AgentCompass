@@ -298,6 +298,23 @@ def doctor(config: dict) -> int:
     return EXIT_OK if ready and status == 200 else EXIT_FAILED
 
 
+def _record_completed_dispatch(task_id: str | None) -> None:
+    if not task_id:
+        return
+    try:
+        db = Path(os.environ.get("ROUTER_DISPATCH_DB") or Path.home() / ".agent-compass/dispatch.sqlite3")
+        if not db.exists():
+            return
+        compass_scripts = str(Path(__file__).resolve().parents[2] / "agent-compass" / "scripts")
+        if compass_scripts not in sys.path:
+            sys.path.insert(0, compass_scripts)
+        import dispatch_registry
+
+        dispatch_registry.complete_external("dot", task_id, path=db)
+    except Exception:
+        pass
+
+
 def status_command(
     config: dict,
     task_id: str,
@@ -311,7 +328,10 @@ def status_command(
         code, message = wait_task(config, task_id, time.monotonic() + wait)
         if code == EXIT_OK:
             print(message)
-            return handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            rc = handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            if rc == EXIT_OK:
+                _record_completed_dispatch(task_id)
+            return rc
         print(message, file=sys.stderr)
         return code
     task = task_view(config, task_id)
@@ -321,7 +341,11 @@ def status_command(
     if state == "completed":
         if output or unpack_to or apply_to:
             message = reply_text(task.get("result"))
-            return handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            rc = handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            if rc == EXIT_OK:
+                _record_completed_dispatch(task_id)
+            return rc
+        _record_completed_dispatch(task_id)
         return EXIT_OK
     if state in ("queued", "running"):
         print("No heartbeat: running does not prove progress. Dot's reply is the only proof.")
@@ -347,7 +371,10 @@ def run_task(
         code, message = wait_task(config, task_id, deadline)
         if code == EXIT_OK:
             print(message)
-            return handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            rc = handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            if rc == EXIT_OK:
+                _record_completed_dispatch(task_id)
+            return rc
         print(message, file=sys.stderr)
         return code
     messages = []
@@ -363,7 +390,10 @@ def run_task(
         code, message = wait_task(config, created_id, deadline)
         if code == EXIT_OK:
             print(message)
-            return handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            rc = handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            if rc == EXIT_OK:
+                _record_completed_dispatch(created_id)
+            return rc
         print(message, file=sys.stderr)
         return code
     if status in (404, 405):
@@ -382,13 +412,19 @@ def run_task(
                     code, message = wait_task(config, found_id, deadline)
                     if code == EXIT_OK:
                         print(message)
-                        return handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+                        rc = handle_completed_reply(message, output=output, unpack_to=unpack_to, apply_to=apply_to)
+                        if rc == EXIT_OK:
+                            _record_completed_dispatch(found_id)
+                        return rc
                     print(message, file=sys.stderr)
                     return code
                 print(error, file=sys.stderr)
                 return EXIT_FAILED
             print(reply)
-            return handle_completed_reply(reply, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            rc = handle_completed_reply(reply, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            if rc == EXIT_OK:
+                _record_completed_dispatch(found_id)
+            return rc
     try:
         body = json.loads(raw.decode() or "{}")
     except json.JSONDecodeError:
@@ -401,7 +437,10 @@ def run_task(
         code, pending = wait_task(config, found, deadline)
         if code == EXIT_OK:
             print(pending)
-            return handle_completed_reply(pending, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            rc = handle_completed_reply(pending, output=output, unpack_to=unpack_to, apply_to=apply_to)
+            if rc == EXIT_OK:
+                _record_completed_dispatch(found)
+            return rc
         print(pending, file=sys.stderr)
         return code
     print(str(message), file=sys.stderr)

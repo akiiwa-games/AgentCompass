@@ -311,6 +311,14 @@ def read_reply(receipt):
     return {'state': state, **({'reply': answer} if answer is not None else {})}
 
 
+def _record_completed_dispatch(task_id):
+    try:
+        import dispatch_registry
+        dispatch_registry.complete_external('grok-bot', task_id)
+    except Exception:
+        pass
+
+
 def status(task_id, wait=0):
     path = receipt_path(task_id)
     deadline = time.monotonic() + max(0, wait)
@@ -318,6 +326,8 @@ def status(task_id, wait=0):
         with override_store.locked(path):
             receipt = json.loads(path.read_text(encoding='utf-8'))
             if receipt['state'] in ('completed', 'failed'):
+                if receipt['state'] == 'completed':
+                    _record_completed_dispatch(task_id)
                 return receipt
             try:
                 update = read_reply(receipt)
@@ -328,6 +338,8 @@ def status(task_id, wait=0):
             except TransportError as exc:
                 # A read failure changes neither delivery nor the last observed state.
                 return {**receipt, 'read_error': str(exc)}
+        if receipt['state'] == 'completed':
+            _record_completed_dispatch(task_id)
         if receipt['state'] in ('completed', 'needs_input') or time.monotonic() >= deadline:
             return receipt
         time.sleep(min(2, max(0, deadline - time.monotonic())))
