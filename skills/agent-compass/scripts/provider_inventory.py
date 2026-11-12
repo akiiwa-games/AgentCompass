@@ -833,6 +833,47 @@ def _magpie_state(family, account_home, config, token, is_api, cached):
     return is_magpie, override
 
 
+def _non_magpie_record(home, environ, provider_id):
+    """Credential a Magpie probe stored as not Magpie.
+
+    usage_cache.read drops a file whose providers table is empty. That is the file a
+    failed probe leaves when this account is the only row, so the record is read raw.
+    """
+    path = usage_cache.read_paths(None, home, environ)[0]
+    try:
+        document = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+    except (OSError, ValueError, UnicodeError):
+        return None
+    gateways = document.get('non_magpie_gateways') if isinstance(document, dict) else None
+    if not isinstance(gateways, dict):
+        return None
+    recorded = gateways.get(provider_id)
+    return recorded if isinstance(recorded, str) and recorded else None
+
+
+def _live_auth_token_subscription(family, account_home, paseo_env, provider_id, home, environ):
+    """Claude ANTHROPIC_AUTH_TOKEN on a custom base, still read as a Magpie subscription.
+
+    Metered USD does not take this account (docs/technical-reference.md, Metered USD).
+    ANTHROPIC_API_KEY alone is not this source. A probe that records the credential as
+    not Magpie drops it, and the harness can then be a dollar candidate.
+    """
+    if family != 'claude':
+        return False
+    import usage_magpie
+    extra = paseo_env if isinstance(paseo_env, dict) else None
+    source = usage_magpie.read_source(account_home, extra)
+    if source is None or source.explicit:
+        return False
+    settings, _error = read_json(account_home / 'settings.json')
+    file_env = obj(settings.get('env'))
+    overlay = extra or {}
+    auth = str(overlay.get('ANTHROPIC_AUTH_TOKEN') or file_env.get('ANTHROPIC_AUTH_TOKEN') or '').strip()
+    if not auth:
+        return False
+    return _non_magpie_record(home, environ, provider_id) != source.credential_key
+
+
 def _metered_category_evidence(cached, credential_key):
     """Billing category proved for this digest. The latest read's amount is separate."""
     if _metered_spend_evidence(cached, credential_key) is not None:
@@ -867,7 +908,8 @@ def harness_usd_candidates(home=None, environ=None):
     """Self-built API-key harnesses that a usage poll may read with GET /key/info.
 
     Zero network. The key stays in the returned records and is not written to a file.
-    Official API hosts and explicit Magpie gateways are not candidates.
+    Official API hosts, explicit Magpie gateways, and a live ANTHROPIC_AUTH_TOKEN
+    subscription source are not candidates.
     """
     environ = os.environ if environ is None else environ
     home = Path(home) if home is not None else Path(environ.get('ROUTER_PROVIDER_HOME') or Path.home())
@@ -894,7 +936,8 @@ def harness_usd_candidates(home=None, environ=None):
             continue
         cached = obj(cache_rows.get(name))
         is_magpie, _magpie_key = _magpie_state(family, account_home, config, token, True, cached)
-        if is_magpie:
+        if is_magpie or _live_auth_token_subscription(
+                family, account_home, env, name, home, environ):
             continue
         found.append({
             'provider_id': name,
@@ -1039,7 +1082,10 @@ def _discover(home=None, environ=None, now=None):
         elif cached:
             row['usage_binding'] = 'changed'
         # A self-built key is a candidate only. Billing becomes metered when this credential's /key/info spend is cached.
-        if is_api and not is_magpie and enabled and base not in OFFICIAL_API_ORIGINS:
+        # A live ANTHROPIC_AUTH_TOKEN subscription source is not a candidate.
+        if (is_api and not is_magpie and enabled and base not in OFFICIAL_API_ORIGINS
+                and not _live_auth_token_subscription(
+                    family, account_home, env, name, home, environ)):
             row['usd_candidate'] = True
             evidence = _metered_spend_evidence(cached, row.get('credential_key'))
             if evidence is not None:
