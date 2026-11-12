@@ -524,7 +524,7 @@ def scenario_entry_and_docs(ctx, box: Sandbox):
     for label, entry in modes.items():
         for name, args, stdin in (("--task text", ["--task", TASK_TEXT], None), ("--task - (stdin)", ["--task", "-"], TASK_TEXT + "\n"),
                                   ("--brief file", ["--brief", elsewhere / "task.md"], None)):
-            dry = call(op, entry, "roll", *args, "--dry-run", stdin=stdin)
+            dry = call(op, entry, "roll", *args, "--dry-run", "--score", stdin=stdin)  # a dry run classifies only with --score
             document = parse_json(dry.stdout) or {}
             op.check(f"[{label}] roll {name} --dry-run: status dry_run, no hours needed", dry.returncode == 0 and document.get("status") == "dry_run"
                      and document.get("worker") and "assumptions" in document, dry.stdout[:300] + dry.stderr[:300])

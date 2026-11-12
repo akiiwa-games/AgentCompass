@@ -2678,7 +2678,7 @@ def plan_stage(document, args):
         return finalize(planned, None, 'auto', started, reviewed_task), 2
     if should_score:
         profile, task, needs, scorer, hours_estimate, alerts = classify_task(
-            task, needs, capabilities, policy, args.score_timeout, use_model=not args.dry_run)
+            task, needs, capabilities, policy, args.score_timeout, use_model=bool(args.score) or not args.dry_run)
         if profile is None:
             return scorer_unavailable_result(task, scorer, started), 2
         extra_alerts.extend(alerts)
@@ -2775,6 +2775,7 @@ def scorer_cli(args):
 
 
 def main():
+    import account_fleet
     if sys.argv[1:2] == ['score'] and len(sys.argv) >= 3 and sys.argv[2] in ('set', 'list', 'clear'):
         import user_scores
         return user_scores.cli_main(sys.argv[2:])
@@ -2889,7 +2890,6 @@ def main():
             task = document.get('task')
             if not isinstance(task, dict) or not task:
                 raise ValueError('Input requires task.')
-            import account_fleet
             import task_intake
             capabilities = account_fleet.load_capabilities()
             policy = account_fleet.load_accounts()['scoring']
