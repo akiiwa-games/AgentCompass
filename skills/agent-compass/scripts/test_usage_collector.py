@@ -350,16 +350,27 @@ class HostedCollectorEntryTests(CollectorBase):
         self.assertEqual(snap['error'], 'HTTP 502')
         self.assertEqual(snap['windows'][0]['used_pct'], 15.0)
 
-    def test_write_usage_config_updates_authoritative_collector_config(self):
-        (self.root / '.usage-float').mkdir(parents=True, exist_ok=True)
-        (self.root / '.usage-float' / 'config.json').write_text(json.dumps({'llm_proxy_timezone': 'UTC+8'}), encoding='utf-8')
+    def test_usage_config_keeps_language_and_rejects_old_proxy_keys(self):
         self.state.mkdir(parents=True, exist_ok=True)
-        usage_core.CONFIG_PATH.write_text(json.dumps({'llm_proxy_timezone': 'UTC'}), encoding='utf-8')
-        usage_core.write_usage_config({'llm_proxy_timezone': 'UTC-8', 'card_width': 999})
+        usage_core.write_usage_config({'language': 'en', 'card_width': 999})
         saved = json.loads(usage_core.CONFIG_PATH.read_text(encoding='utf-8'))
-        self.assertEqual(saved['llm_proxy_timezone'], 'UTC-8')
-        self.assertNotIn('card_width', saved)
-        self.assertEqual(usage_core.read_usage_config()['llm_proxy_timezone'], 'UTC-8')
+        self.assertEqual(saved, {'language': 'en'})
+        self.assertEqual(usage_core.read_usage_config()['language'], 'en')
+        before = usage_core.CONFIG_PATH.read_text(encoding='utf-8')
+        with self.assertRaises(ValueError) as rejected:
+            usage_core.write_usage_config({'llm_proxy_timezone': 'UTC-8'})
+        self.assertIn('llm_proxy_timezone', str(rejected.exception))
+        self.assertEqual(usage_core.CONFIG_PATH.read_text(encoding='utf-8'), before)
+        usage_core.CONFIG_PATH.write_text(
+            json.dumps({'language': 'zh', 'llm_proxy_budget_duration': '7d', 'litellm_proxies': {}}),
+            encoding='utf-8',
+        )
+        raw = usage_core.CONFIG_PATH.read_text(encoding='utf-8')
+        with self.assertRaises(ValueError) as stale:
+            usage_core.read_usage_config()
+        self.assertIn('llm_proxy_budget_duration', str(stale.exception))
+        self.assertIn('litellm_proxies', str(stale.exception))
+        self.assertEqual(usage_core.CONFIG_PATH.read_text(encoding='utf-8'), raw)
 
     def test_claude_session_reset_sets_and_obeys_429_backoff(self):
         self.sign_in('claude')

@@ -25,17 +25,15 @@ def read(path: Path) -> dict:
 
 
 def query_proxy(spec: dict) -> list[dict]:
-    """GET only the configured proxy's models endpoint; never forward credentials on redirects."""
-    sub = spec.get('litellm') or spec
-    base = str(sub.get('endpoint') or sub.get('base_url') or spec.get('endpoint') or spec.get('base_url') or '').rstrip('/')
+    """GET only the configured account's models endpoint; never forward credentials on redirects."""
+    base = str(spec.get('endpoint') or '').rstrip('/')
     for suffix in ('/v1/chat/completions', '/v1/responses', '/v1/messages', '/v1'):
         if base.endswith(suffix):
             base = base[:-len(suffix)]
             break
     if urllib.parse.urlsplit(base).scheme not in ('http', 'https'):
         raise ValueError('Unsupported proxy endpoint')
-    env_key = sub.get('api_key_env') or spec.get('api_key_env')
-    key = sub.get('api_key') or spec.get('api_key') or (os.environ.get(env_key) if env_key else None)
+    key = spec.get('api_key')
     headers = {'Accept': 'application/json'}
     if key:
         headers['Authorization'] = f'Bearer {key}'
@@ -88,8 +86,7 @@ def probe_definition(provider: str, definition: dict | None = None) -> dict:
         spec.update(declared)
     elif isinstance(declared, str):
         spec['type'] = declared
-    sub = spec.get('litellm') if isinstance(spec.get('litellm'), dict) else {}
-    endpoint = spec.get('endpoint') or spec.get('base_url') or sub.get('endpoint') or sub.get('base_url')
+    endpoint = spec.get('endpoint')
     spec.setdefault('type', 'openai_compatible' if endpoint else
                     'paseo_provider' if spec.get('harness', provider) in PASEO_HARNESSES else 'static')
     if not isinstance(spec['type'], str) or spec['type'] not in PROBE_TYPES:

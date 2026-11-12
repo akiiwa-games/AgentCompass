@@ -37,6 +37,23 @@ LEGACY_HOOK_TOKENS = (
     'ROUTER_PASEO_LEGACY_NO_LABELS',
     'ROUTER_ACCOUNTS_OVERRIDE',
 )
+OBSOLETE_USAGE_CONFIG_KEYS = (
+    'llm_proxy_timezone',
+    'llm_proxy_budget_duration',
+    'llm_proxy_api_key',
+    'llm_proxy_endpoint',
+    'llm_proxy_provider_id',
+    'litellm_proxies',
+)
+_RESET_METER_FIELDS = (
+    'windows',
+    'capacity_usd',
+    'burn_pct_per_worker_hour',
+    'burn_basis',
+    'budget_duration',
+    'timezone',
+)
+_OLD_PROXY_KINDS = frozenset({'litellm', 'proxy', 'api-proxy'})
 
 
 def fix_delete(path: Path | str) -> str:
@@ -108,9 +125,81 @@ def validate_accounts_override_doc(doc, path: Path | str) -> None:
                 raise ValueError(format_issue(
                     path, f'older field accounts.{name}.allowed_cwd (replaced by cwd_regex)', FIX_TRAY,
                 ))
+            meter = _resetting_meter_detail(name, spec)
+            if meter:
+                raise ValueError(format_issue(path, meter, FIX_TRAY))
+    if 'litellm_proxies' in doc:
+        raise ValueError(format_issue(
+            path,
+            'older accounts-override field litellm_proxies '
+            '(a metered USD account is an accounts entry with endpoint, api_key and optional budget_usd, and it does not reset)',
+            FIX_TRAY,
+        ))
     bad_disabled = _find_non_bool_disabled(doc)
     if bad_disabled:
         raise ValueError(format_issue(path, f'older accounts-override format ({bad_disabled})', FIX_TRAY))
+
+
+def _resetting_meter_detail(name, spec) -> str | None:
+    """Old proxy fields on a dollar account. Subscription windows are not this account."""
+    if not isinstance(spec, dict):
+        return None
+    found = [key for key in _RESET_METER_FIELDS if key in spec]
+    if isinstance(spec.get('litellm'), dict):
+        found.append('litellm')
+    kind = str(spec.get('backend_kind') or '').strip().lower()
+    if kind in _OLD_PROXY_KINDS:
+        found.append(f'backend_kind={kind}')
+    if not found:
+        return None
+    billing = str(spec.get('billing') or '').strip().lower()
+    endpoint = str(spec.get('endpoint') or '').strip()
+    api_key = spec.get('api_key')
+    has_key = isinstance(api_key, str) and bool(api_key.strip())
+    dollar = billing == 'metered' and bool(endpoint or has_key)
+    old_identity = kind in _OLD_PROXY_KINDS or isinstance(spec.get('litellm'), dict)
+    if not dollar and not old_identity:
+        return None
+    listed = ', '.join(found)
+    return (
+        f"account {name!r} still has a resetting meter ({listed}). "
+        'A metered USD account states endpoint, api_key and optional budget_usd and does not reset. '
+        'Remove those fields'
+    )
+
+
+def obsolete_usage_config_keys(doc) -> list[str]:
+    if not isinstance(doc, dict):
+        return []
+    return [key for key in OBSOLETE_USAGE_CONFIG_KEYS if key in doc]
+
+
+def usage_config_issue(path: Path | str, keys) -> str:
+    listed = ', '.join(keys)
+    return format_issue(
+        path,
+        f'usage config still has llm-proxy settings that no longer apply ({listed}). '
+        'A metered USD account is an accounts-override.json entry with endpoint, api_key and optional budget_usd, '
+        'and it does not reset. Remove those keys',
+        fix_delete(path),
+    )
+
+
+def check_usage_config(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    try:
+        raw = path.read_text(encoding='utf-8-sig')
+    except (OSError, UnicodeError):
+        return None
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        return None
+    keys = obsolete_usage_config_keys(doc)
+    if not keys:
+        return None
+    return usage_config_issue(path, keys)
 
 
 def check_accounts_override(path: Path) -> str | None:
@@ -549,6 +638,7 @@ def collect_issues(home: Path | None = None, environ: dict | None = None) -> lis
 
     for issue in (
         check_accounts_override(accounts_path),
+        check_usage_config(sdir / 'usage-config.json'),
         check_host_policy(policy_path),
         check_user_scores(sdir / 'user-scores.json'),
         check_ledger(ledger_path),

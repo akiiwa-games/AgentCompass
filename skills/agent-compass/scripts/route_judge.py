@@ -305,6 +305,18 @@ def cache_paths(explicit=None):
     return usage_cache.read_paths(explicit, environ={**os.environ, USAGE_CACHE_ENV: user_env(USAGE_CACHE_ENV) or ''})
 
 
+def _metered_usd_details(details):
+    """Spent and budget dollars from a collector row. None when this is not that reading."""
+    if not isinstance(details, dict) or details.get('kind') != 'metered_usd':
+        return None
+    spent = details.get('spent_usd')
+    if isinstance(spent, bool) or not isinstance(spent, (int, float)):
+        return None
+    budget = details.get('budget_usd')
+    budget_usd = float(budget) if isinstance(budget, (int, float)) and not isinstance(budget, bool) else None
+    return {'kind': 'metered_usd', 'spent_usd': float(spent), 'budget_usd': budget_usd}
+
+
 def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_SECONDS, quota_sources=None, inventory=None):
     """Read the real collector cache; project an allowlist, never credentials or reset grants."""
     now = now or datetime.now(timezone.utc)
@@ -373,7 +385,14 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
                         break
                 if not replaced:
                     windows.append(limit_win)
-        usable = any(w['remaining_pct_before_reset'] is not None for w in windows)
+        metered_usd = row.get('backend_kind') == 'metered_usd'
+        # A dollar balance has no reset, so remaining_pct_before_reset stays unset.
+        # The reading is still current when the used share or the spent summary is known.
+        balance_known = metered_usd and (
+            any(w.get('observed_remaining_pct') is not None for w in windows)
+            or isinstance(row.get('summary'), str)
+        )
+        usable = any(w['remaining_pct_before_reset'] is not None for w in windows) or balance_known
         result[account] = {
             **({'quota_source': source_account} if source_account != account else {}),
             'status': 'fresh' if current and usable else 'stale' if fetched else 'unknown',
@@ -390,6 +409,8 @@ def usage_snapshot(path=None, accounts=None, now=None, max_age_seconds=MAX_AGE_S
             **({'rate_limited_until': rate_limited_until} if rate_limited_until else {}),
             **({'billing': row['billing']} if isinstance(row.get('billing'), str) else {}),
             **({'backend_kind': row['backend_kind']} if isinstance(row.get('backend_kind'), str) else {}),
+            **({'summary': row['summary']} if metered_usd and isinstance(row.get('summary'), str) else {}),
+            **({'usage_details': _metered_usd_details(row.get('usage_details'))} if _metered_usd_details(row.get('usage_details')) else {}),
             # A Magpie pool's per-account readings, for display only (hover detail); routing uses the windows.
             **({'pool_members': details['members']} if isinstance(details := row.get('usage_details'), dict)
                and details.get('kind') == 'magpie_pool' and isinstance(details.get('members'), list) else {}),

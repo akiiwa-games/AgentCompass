@@ -346,10 +346,12 @@ class HostedSingleReaderTests(unittest.TestCase):
 
         import hermetic_run
         main_root = hermetic_run.main_checkout_root(host.ROOT)
+        env_plugin = os.environ.get("AGENTCOMPASS_USAGE_FLOAT", "").strip()
         plugin_dir = next(
             (
                 candidate
                 for candidate in (
+                    *([Path(env_plugin)] if env_plugin else []),
                     host.ROOT / "usage-float",
                     *([main_root / "usage-float"] if main_root else []),
                     hermetic_run.REAL_HOME / ".agent-compass" / "plugins" / "usage-float",
@@ -430,7 +432,7 @@ class HostedSingleReaderTests(unittest.TestCase):
             "fetch_codex_usage",
             "fetch_grok_usage",
             "fetch_pi_usage",
-            "fetch_api_proxy_usage",
+            "fetch_metered_usd_usage" if hasattr(self.native, "fetch_metered_usd_usage") else "fetch_api_proxy_usage",
             "fetch_antigravity_usage",
             "http_json",
             "claude_authorized_json",
@@ -861,16 +863,17 @@ class HostedSingleReaderTests(unittest.TestCase):
             rows_after = {r.title: r for r in self.native.iter_display_rows(state["providers"], selected)}
             self.assertEqual(rows_after["grok"].left_pct, 90.0)
 
-    def test_hosted_settings_timezone_persists_to_collector_usage_config(self):
+    def test_hosted_settings_keep_language_and_have_no_reset_picker(self):
+        if not hasattr(self.native, "fetch_metered_usd_usage"):
+            self.skipTest("usage-float checkout is the resetting llm-proxy build")
         (self.home / ".agent-compass").mkdir(parents=True, exist_ok=True)
         collector_cfg = self.home / ".agent-compass" / "usage-config.json"
-        collector_cfg.write_text(json.dumps({"llm_proxy_timezone": "UTC"}), encoding="utf-8")
+        collector_cfg.write_text(json.dumps({"language": "zh"}), encoding="utf-8")
         (self.home / ".usage-float").mkdir(parents=True, exist_ok=True)
         (self.home / ".usage-float" / "config.json").write_text(
             json.dumps({
                 "language": "zh",
                 "display_mode": "float",
-                "llm_proxy_timezone": "UTC+8",
                 "providers": ["claude-2:7d"],
             }),
             encoding="utf-8",
@@ -878,36 +881,50 @@ class HostedSingleReaderTests(unittest.TestCase):
         host.bind_usage(self.native)
         self._poison_plugin_fetchers_and_writers()
 
-        def find_timezone_combobox(widget):
+        def find_comboboxes(widget):
             from tkinter import ttk
 
+            found = []
             for child in widget.winfo_children():
-                if isinstance(child, ttk.Combobox) and "UTC" in tuple(child.cget("values") or ()):
-                    return child
-                found = find_timezone_combobox(child)
-                if found is not None:
-                    return found
-            return None
+                if isinstance(child, ttk.Combobox):
+                    found.append(child)
+                found.extend(find_comboboxes(child))
+            return found
 
         with mock.patch.object(self.usage_core, "http_json", return_value=(200, self._magpie_payload(20.0))):
             def exercise_settings(root, scope, drain):
-                # Authoritative collector config ("UTC") wins over stale legacy config ("UTC+8") on load.
-                self.assertEqual(scope["state"]["llm_proxy_timezone"], "UTC")
+                self.assertEqual(scope["state"]["language"], "zh")
+                self.assertNotIn("llm_proxy_timezone", scope["state"])
                 scope["open_settings"]()
                 win = scope["state"]["settings_win"]
                 win.update_idletasks()
-                combo = find_timezone_combobox(win)
-                self.assertIsNotNone(combo)
-                combo.set("UTC-5")
-                combo.event_generate("<<ComboboxSelected>>")
+                combos = find_comboboxes(win)
+                values = [tuple(combo.cget("values") or ()) for combo in combos]
+                self.assertFalse(any(item.startswith("UTC") for row in values for item in row))
+                language = next(combo for combo in combos if "English" in tuple(combo.cget("values") or ()))
+                language.set("English")
+                language.event_generate("<<ComboboxSelected>>")
                 drain(root)
-                win.tk.call(win.protocol("WM_DELETE_WINDOW"))
+                reopened = scope["state"].get("settings_win")
+                if reopened is not None:
+                    reopened.update_idletasks()
+                    reopened.tk.call(reopened.protocol("WM_DELETE_WINDOW"))
+                    drain(root)
 
             self._run_hosted_ui(exercise_settings)
 
         saved_collector = json.loads(collector_cfg.read_text(encoding="utf-8"))
-        self.assertEqual(saved_collector["llm_proxy_timezone"], "UTC-5")
-        self.assertEqual(self.usage_core.read_usage_config()["llm_proxy_timezone"], "UTC-5")
+        self.assertEqual(saved_collector.get("language"), "en")
+        for key in (
+            "llm_proxy_timezone",
+            "llm_proxy_budget_duration",
+            "llm_proxy_api_key",
+            "llm_proxy_endpoint",
+            "llm_proxy_provider_id",
+            "litellm_proxies",
+        ):
+            self.assertNotIn(key, saved_collector)
+        self.assertEqual(self.usage_core.read_usage_config()["language"], "en")
 
     def test_hosted_reset_popups_route_through_product_and_respect_429_backoff(self):
         from tkinter import messagebox

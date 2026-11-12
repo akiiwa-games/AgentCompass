@@ -99,7 +99,7 @@ class SetupAndRouterHomeParityTests(unittest.TestCase):
             'schema_version': 2,
             'accounts': {
                 'team-proxy': {
-                    'backend_kind': 'litellm',
+                    'billing': 'metered',
                     'endpoint': 'https://proxy.example.test',
                     'api_key': 'sk-proxy',
                     'models': ['gpt-6.1-sol'],
@@ -150,7 +150,7 @@ class SetupAndRouterHomeParityTests(unittest.TestCase):
         manual_only_sync_homes = set()
         for name, row in inv['accounts'].items():
             fam = row.get('family')
-            if fam in self.NON_HOME_SYNC_FAMILIES or row.get('backend_kind') == 'litellm':
+            if fam in self.NON_HOME_SYNC_FAMILIES or row.get('backend_kind') == 'metered_usd':
                 self.assertNotIn('home', row)
                 continue
             home_path = Path(row['home']).resolve()

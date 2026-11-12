@@ -147,17 +147,17 @@ def default_profile(raw_model, accounts):
 def harness_compatibility(harness, model, account_spec, accounts=None):
     """('ok'|'unverified'|'excluded', reason). Read-only rules; no endpoint is called here.
 
-    Metered proxies (LiteLLM) are driven by Codex CLI over the Responses API. LiteLLM translates
-    /v1/responses for non-OpenAI providers, but that bridge has not been verified on this proxy,
-    so non-OpenAI models on codex/pi over a proxy are 'unverified' (still derivable; metered
-    bundles stay a routing last resort). Claude Code needs an Anthropic Messages endpoint; non-Claude models there are
-    excluded unless the account declares `anthropic_compatible: true`.
+    A metered account (including a metered USD balance) is driven by Codex CLI over the Responses API.
+    That bridge is not verified for non-OpenAI models, so those models on codex/pi are 'unverified'
+    (still derivable; metered bundles stay a routing last resort). Claude Code needs an Anthropic
+    Messages endpoint; non-Claude models there are excluded unless the account declares
+    `anthropic_compatible: true`.
     """
     spec = account_spec or {}
     if not is_chat_model(model):
         return 'excluded', 'non-chat model (embedding/image/audio)'
     api_family = _model_api_family(model, accounts)
-    proxy = spec.get('billing') == 'metered' or spec.get('backend_kind') == 'litellm'
+    proxy = spec.get('billing') == 'metered' or spec.get('backend_kind') == 'metered_usd'
     if harness in ('codex', 'pi'):
         if api_family == 'codex' or not proxy:
             return 'ok', ''
@@ -195,6 +195,12 @@ def proxy_harness(family, model, accounts=None):
         api_family = str((models.get(canon) or {}).get('api_family') or '').strip().lower()
         return 'claude' if api_family == 'claude' else 'codex'
     return family
+
+
+def _metered_draws(spec):
+    """The dollar balance this account draws when a budget exists. No period is invented."""
+    windows = spec.get('windows') if isinstance(spec.get('windows'), dict) else {}
+    return ['balance'] if 'balance' in windows else []
 
 
 def _draws(spec, model, accounts):
@@ -286,8 +292,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                     'provider': provider, 'harness': harness, 'model': model_name, 'launch_model': raw,
                     **({'effort': effort} if effort else {}),
                     **({'modeId': HARNESS_MODE[harness]} if harness in HARNESS_MODE else {}),
-                    'draws': [] if metered and 'spend' not in (spec.get('windows') or {}) else
-                             (['spend'] if metered else _draws(spec, key, accounts)),
+                    'draws': _metered_draws(spec) if metered else _draws(spec, key, accounts),
                     'disabled': bool(pref.get('disabled', default_disabled)) or availability == 'expired',
                     **({'disabled_by_default': True} if by_default else {}),
                     'auto': True, 'billing': 'metered' if metered else 'subscription',

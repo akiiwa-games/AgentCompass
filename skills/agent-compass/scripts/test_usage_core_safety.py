@@ -172,9 +172,12 @@ class UsageSafetyTests(unittest.TestCase):
     def test_single_row_providers_are_fetched_not_confused_with_display_groups(self):
         with patch.object(usage, 'fetch_codex_usage', side_effect=lambda account: self.good(account.provider_id)) as codex, patch.object(
             usage, 'fetch_grok_usage', return_value=self.good('grok')
-        ) as grok, patch.object(usage, 'fetch_api_proxy_usage', return_value=self.good('api-proxy')) as proxy:
-            result = usage.collect_local_usage(['codex', 'codex-2', 'grok', 'api-proxy'])
-        self.assertEqual([p.provider_id for p in result], ['codex', 'codex-2', 'grok', 'api-proxy'])
+        ) as grok, patch.object(usage, 'discover_metered_usd_accounts', return_value={'usd': usage.MeteredUsdAccount(
+            'usd', 'usd', 'sk-test', 'https://proxy.example.test', 'https://proxy.example.test/v1',
+            'https://proxy.example.test', None, (),
+        )}) as _found, patch.object(usage, 'fetch_metered_usd_usage', return_value=self.good('usd')) as proxy:
+            result = usage.collect_local_usage(['codex', 'codex-2', 'grok', 'usd'])
+        self.assertEqual([p.provider_id for p in result], ['codex', 'codex-2', 'grok', 'usd'])
         self.assertEqual(codex.call_count, 2)
         grok.assert_called_once()
         proxy.assert_called_once()

@@ -617,6 +617,23 @@ def read_time_text(value) -> str:
     return moment.astimezone().strftime('%m-%d %H:%M') if moment else _tr('从未')
 
 
+def metered_spent_text(usage_row: dict) -> str:
+    """Spent-first dollar label for a metered USD reading. Empty for any other account."""
+    if not isinstance(usage_row, dict) or usage_row.get("backend_kind") != "metered_usd":
+        return ""
+    details = usage_row.get("usage_details") if isinstance(usage_row.get("usage_details"), dict) else {}
+    spent = details.get("spent_usd")
+    if isinstance(spent, (int, float)) and not isinstance(spent, bool):
+        import usage_core
+        spent_text = usage_core.format_usd_amount(float(spent))
+        budget = details.get("budget_usd")
+        if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
+            return _tr("已用 {0} / {1}").format(spent_text, usage_core.format_usd_amount(float(budget)))
+        return _tr("已用 {0}").format(spent_text)
+    summary = usage_row.get("summary")
+    return summary if isinstance(summary, str) else ""
+
+
 def countdown(seconds) -> str:
     if not isinstance(seconds, (int, float)):
         return "—"
@@ -767,6 +784,8 @@ def account_cards() -> list[dict]:
         windows = []
         latched = set((row or {}).get("exhausted_windows") or ())  # Only these windows are latched out.
         member_rows = pool_member_rows(usage_row.get("pool_members"), now)
+        metered_usd = usage_row.get("backend_kind") == "metered_usd" or spec.get("backend_kind") == "metered_usd"
+        spent_text = metered_spent_text(usage_row) if metered_usd else ""
         for window in usage_row.get("windows") or []:
             wid = window.get("id")
             c_wid = quota_pools.canonical_window_id(spec, wid)
@@ -787,13 +806,16 @@ def account_cards() -> list[dict]:
             # A pool counts down to its next partial refill; each account's own reset is on the hover.
             refill = None if reset_passed else pool_next_refill_seconds(member_rows, wid)
             windows.append({
-                "id": wid, "hours": hours, "remaining_pct": remaining, "accounts": window.get("accounts") or 1,
-                "remaining_usd": round(cap * remaining / 100, 1) if cap and remaining is not None else None,
+                "id": wid, "hours": None if metered_usd else hours, "remaining_pct": remaining,
+                "used_pct": window.get("used_pct"),
+                "accounts": window.get("accounts") or 1,
+                "remaining_usd": None if metered_usd else (round(cap * remaining / 100, 1) if cap and remaining is not None else None),
                 "reserved_pct": res.get("pct", 0.0), "reserved_usd": res.get("usd", 0.0),
                 "reserved_workers": list(res.get("workers") or ()),
                 "rate_3h": rates.get("pct_per_hour_3h"), "rate_24h": rates.get("pct_per_hour_24h"),
-                "reset_in": _tr("已重置") if reset_passed else countdown(
-                    refill if refill is not None else window.get("seconds_until_reset")),
+                "reset_in": "" if metered_usd else (_tr("已重置") if reset_passed else countdown(
+                    refill if refill is not None else window.get("seconds_until_reset"))),
+                **({"metered_usd": True, "spent_text": spent_text} if metered_usd else {}),
                 "stale": reset_passed or usage_row.get("status") != "fresh" or reading_failed})
         bundle_pills = []
         for bid, bspec in (spec.get("bundles") or {}).items():
@@ -855,6 +877,7 @@ def account_cards() -> list[dict]:
                       **({"local_spend_usd": local_spend} if local_spend else {}),
                       "usage_note": venice_usage.note(api_usage) if name in ('omp', 'dsh') else
                           free_note if free_note is not None else
+                          spent_text if metered_usd and not windows else
                           _tr("API 余额未提供，非无限额度") if spec.get('billing') == 'metered' and not windows else None,
                       "windows": windows, "bundles": bundle_pills,
                       "host_enabled": bool(pool_allowed(name)),
@@ -971,7 +994,7 @@ def usage_providers(names, accounts: dict | None = None) -> list[str]:
     for name in names:
         source = sources.get(name, name)
         row = rows.get(source) or {}
-        if row.get("family") in USAGE_FAMILIES or row.get("backend_kind") == "litellm":
+        if row.get("family") in USAGE_FAMILIES or row.get("backend_kind") == "metered_usd":
             result.append(source)
     result = list(dict.fromkeys(result))
     try:
@@ -1904,8 +1927,8 @@ def model_probe_definitions(rows: list[dict]) -> dict:
     modules()
     import accounts_override
     document = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {}
-    overrides = {name: spec for section in ("accounts", "litellm_proxies")
-                 for name, spec in (document.get(section) or {}).items() if isinstance(spec, dict)}
+    accounts = document.get("accounts") if isinstance(document.get("accounts"), dict) else {}
+    overrides = {name: spec for name, spec in accounts.items() if isinstance(spec, dict)}
     baseline = (_read_json(_accounts_path()).get("accounts") or {})
     paseo = _read_json(Path(os.environ.get("PASEO_HOME") or Path.home() / ".paseo") / "config.json")
     provider_settings = (paseo.get("agents") or {}).get("providers") or {}

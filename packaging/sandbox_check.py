@@ -173,6 +173,8 @@ class Fixture:
                     # The Claude plan is read only from the live OAuth profile, never from the login file.
                     return self._reply(200, {"organization": {"organization_type": "claude_max",
                                                               "rate_limit_tier": "default_claude_max_20x"}})
+                if host == "litellm" and path == "/key/info":
+                    return self._reply(200, {"info": {"spend": fixture.proxy_spend, "max_budget": 10}})
                 if host == "api.anthropic.com" and path == "/api/oauth/usage":
                     return self._reply(200, {
                         "five_hour": {"utilization": fixture.claude_used, "resets_at": (now + dt.timedelta(hours=2)).isoformat()},
@@ -180,14 +182,11 @@ class Fixture:
                 return self._reply(404, {"error": "unknown fixture path"})
 
             def do_POST(self):
-                """A LiteLLM-style proxy account (host name ``litellm``): spend and budget come back as response headers."""
+                """Classifier completions. A metered USD account is read with GET /key/info, not a probe POST."""
                 self.rfile.read(int(self.headers.get("Content-Length") or 0))
                 host, _, rest = self.path.lstrip("/").partition("/")
                 path = "/" + rest.split("?", 1)[0]
                 fixture.requests.append({"host": host, "path": path, "authorization": self.headers.get("Authorization")})
-                if host == "litellm" and path.endswith("/embeddings"):
-                    return self._reply(200, {"data": []}, {"x-litellm-key-spend": str(fixture.proxy_spend),
-                                                           "x-litellm-key-max-budget": "10"})
                 if self.path.endswith("/chat/completions"):
                     profile = {"work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
                                "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0},
@@ -877,8 +876,16 @@ def scenario_frozen(ctx, skip: bool):
     box.state.mkdir(parents=True, exist_ok=True)
     # No provider credentials in this home: the only account that can be read is a LiteLLM-style proxy on the local fixture, so the
     # executable (which has no network guard) has nothing to send anywhere else. A dead proxy address backs that up.
-    (box.state / "usage-config.json").write_text(json.dumps({"litellm_proxies": {"sandbox-proxy": {
-        "endpoint": fixture.url + "/litellm", "api_key": "sandbox-key", "label": "sandbox proxy"}}}), encoding="utf-8")
+    (box.state / "accounts-override.json").write_text(json.dumps({
+        "schema_version": 2,
+        "accounts": {"sandbox-proxy": {
+            "billing": "metered",
+            "endpoint": fixture.url + "/litellm",
+            "api_key": "sandbox-key",
+            "label": "sandbox proxy",
+            "models": ["sandbox-model"],
+        }},
+    }), encoding="utf-8")
     dead = {"HTTPS_PROXY": "http://127.0.0.1:9", "HTTP_PROXY": "http://127.0.0.1:9", "ALL_PROXY": "http://127.0.0.1:9", "NO_PROXY": "127.0.0.1"}
 
     op = ctx["run"].operation("frozen usage_collect", "AgentCompass.exe --run-component usage_collect: the tray's collector child, packaged")
@@ -889,9 +896,9 @@ def scenario_frozen(ctx, skip: bool):
     document = box.read_cache() if box.cache.is_file() else {"providers": {}}
     row = document["providers"].get("sandbox-proxy", {})
     op.check("it wrote the canonical cache with a fresh sandbox-proxy reading", row.get("available") is True and bool(row.get("fetched_at")), row)
-    op.check("it asked only the local fixture (one embeddings probe, nothing for codex or claude)",
+    op.check("it asked only the local fixture (one /key/info read, nothing for codex or claude)",
              [hit["host"] for hit in fixture.requests[asked_before:]] == ["litellm"] and
-             fixture.requests[asked_before]["path"].endswith("/embeddings"), fixture.requests[asked_before:])
+             fixture.requests[asked_before]["path"] == "/key/info", fixture.requests[asked_before:])
     op.check("the legacy Usage Float location was not created", not box.legacy.exists())
     fixture.proxy_spend = 6.0
     document["providers"]["sandbox-proxy"]["fetched_at"] = at(-3600)

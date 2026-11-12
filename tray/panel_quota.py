@@ -99,6 +99,8 @@ def short_window_name(window: dict, multi: bool = True) -> str:
         return f"{wid[:-3]} 5h"
     if wid == "credits":
         return span or _tr("订阅额度")
+    if wid == "balance":
+        return _tr("已用")
     if wid in ("usage", "spend", "default", ""):
         return span or wid or "7d"
     return f"{wid} {span}".strip() if span and not wid.endswith(span) else wid
@@ -774,6 +776,22 @@ class QuotaPage:
             remaining = window.get("remaining_pct")
             reserved = float(window.get("reserved_pct") or 0.0)
             is_stale = bool(window.get("stale") or card.get("usage_status") != "fresh" or is_failing)
+            if window.get("metered_usd"):
+                used = window.get("used_pct")
+                share = None if used is None else max(0.0, min(100.0, float(used)))
+                colour = "Red" if share is not None and share >= 90.0 else "Amber" if share is not None and share >= 70.0 else "Green"
+                fg = ("#64748B" if is_stale
+                      else theme.GREEN if colour == "Green"
+                      else theme.AMBER if colour == "Amber"
+                      else theme.RED)
+                w_name.configure(text="")
+                w_detail.configure(text=window.get("spent_text") or "")
+                w_share.configure(text="—" if used is None else f"{max(0.0, float(used)):.0f}%", fg=fg)
+                if hasattr(bar, "set_segments"):
+                    bar.set_segments(share, 0, colour=colour, stale=is_stale)
+                else:
+                    bar.configure(style=f"{colour}.Horizontal.TProgressbar", value=share or 0)
+                continue
             w_name.configure(text=card_window_name(card, window))
             # A pool counts down to its next partial refill; each account's own reset is on the hover.
             w_detail.configure(text=short_countdown(window.get("reset_in")))

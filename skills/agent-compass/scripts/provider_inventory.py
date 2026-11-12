@@ -1194,44 +1194,46 @@ def _discover(home=None, environ=None, now=None):
     override_path = Path(override_env).expanduser() if override_env else state_dir / 'accounts-override.json'
     import accounts_override
     override_doc = accounts_override.load_override(override_path) or {}
-    for section in ('litellm_proxies', 'accounts'):
-        for pname, pspec in obj(override_doc.get(section)).items():
-            if pname in result['accounts'] or not isinstance(pspec, dict) or pspec.get('enabled') is False:
-                continue
-            sub = obj(pspec.get('litellm')) or pspec
-            bkind = str(pspec.get('backend_kind') or sub.get('backend_kind') or pspec.get('probe') or '').lower()
-            ep = str(sub.get('endpoint') or sub.get('base_url') or pspec.get('endpoint') or pspec.get('base_url') or '').strip()
-            key_env = str(sub.get('api_key_env') or pspec.get('api_key_env') or '').strip()
-            key = str(sub.get('api_key') or pspec.get('api_key') or (environ.get(key_env) if key_env else '') or '').strip()
-            if bkind in ('litellm', 'proxy', 'api-proxy') or (ep and key):
-                pcached = obj(cache_rows.get(pname))
-                budget_usd = None
-                plabel = str(pcached.get('plan_label') or pspec.get('plan') or '').strip()
-                if plabel.startswith('$'):
-                    try:
-                        budget_usd = float(plabel[1:].split()[0])
-                    except ValueError:
-                        pass
-                if budget_usd is None:
-                    raw_cap = obj(pspec.get('capacity_usd')).get('spend') or pspec.get('budget_usd') or sub.get('budget_usd')
-                    if isinstance(raw_cap, (int, float)) and raw_cap > 0:
-                        budget_usd = float(raw_cap)
-                pfamily = str(pspec.get('family') or pspec.get('provider') or 'codex')
-                pmodels = [m for m in array(pspec.get('models') or sub.get('models')) if isinstance(m, str)]
-                pstatus = 'ready' if (ep and key) else 'missing_credentials'
-                result['accounts'][pname] = {
-                    'family': pfamily,
-                    'provider': pname,
-                    'sources': ['router-override'],
-                    'status': pstatus,
-                    'plan': plabel or pspec.get('plan') or 'LiteLLM Proxy',
-                    'billing': 'metered',
-                    'backend_kind': 'litellm',
-                    **({'budget_usd': budget_usd} if budget_usd is not None else {}),
-                    **({'models': pmodels} if pmodels else {}),
-                    **({'cwd_regex': pspec['cwd_regex']} if pspec.get('cwd_regex') else {}),
-                }
-                result['launchers'][pname] = {'family': pfamily, 'status': pstatus}
+    for pname, pspec in obj(override_doc.get('accounts')).items():
+        if pname in result['accounts'] or not isinstance(pspec, dict) or pspec.get('disabled') is True:
+            continue
+        if str(pspec.get('billing') or '').strip().lower() != 'metered':
+            continue
+        ep = str(pspec.get('endpoint') or '').strip()
+        key = str(pspec.get('api_key') or '').strip()
+        if not ep or not key:
+            continue
+        pcached = obj(cache_rows.get(pname))
+        details = obj(pcached.get('usage_details'))
+        budget_usd = None
+        for raw_budget in (pspec.get('budget_usd'), details.get('budget_usd')):
+            if isinstance(raw_budget, (int, float)) and not isinstance(raw_budget, bool) and raw_budget > 0:
+                budget_usd = float(raw_budget)
+                break
+        if budget_usd is None:
+            plabel = str(pcached.get('plan_label') or '').strip()
+            if plabel.startswith('$'):
+                try:
+                    parsed = float(plabel[1:].split()[0].replace(',', ''))
+                except ValueError:
+                    parsed = 0.0
+                if parsed > 0:
+                    budget_usd = parsed
+        pfamily = str(pspec.get('family') or pspec.get('provider') or 'codex')
+        pmodels = [m for m in array(pspec.get('models')) if isinstance(m, str)]
+        result['accounts'][pname] = {
+            'family': pfamily,
+            'provider': pname,
+            'sources': ['router-override'],
+            'status': 'ready',
+            'plan': f'${budget_usd:g}' if budget_usd is not None else 'metered USD',
+            'billing': 'metered',
+            'backend_kind': 'metered_usd',
+            **({'budget_usd': budget_usd} if budget_usd is not None else {}),
+            **({'models': pmodels} if pmodels else {}),
+            **({'cwd_regex': pspec['cwd_regex']} if pspec.get('cwd_regex') else {}),
+        }
+        result['launchers'][pname] = {'family': pfamily, 'status': 'ready'}
     # Configuration validity only; whether the local service answers is checked at dispatch.
     web_home = consult_home(home, environ)
     result['source_paths']['chatgpt-web'] = str(web_home)
@@ -1752,21 +1754,24 @@ def apply(accounts, inventory=None, *, live=None):
 
     for name, row in inventory['accounts'].items():
         family = row['family']
-        is_litellm = row.get('backend_kind') == 'litellm'
+        is_metered_usd = row.get('backend_kind') == 'metered_usd'
         if name not in specs:
             if row['status'] not in account_state.LISTED_STATES:
                 continue
-            if is_litellm:
+            if is_metered_usd:
                 spec = {
-                    'plan': row.get('plan') or 'LiteLLM Proxy',
+                    'plan': row.get('plan') or 'metered USD',
                     'billing': 'metered',
+                    'backend_kind': 'metered_usd',
                     'verified': True,
                     'expires_at': None,
-                    'windows': {'spend': {'hours': 168, 'launch_min_remaining_pct': 5}},
+                    'windows': {},
                     'bundles': {},  # auto_bundles derives one bundle per advertised model below
                 }
-                if isinstance(row.get('budget_usd'), (int, float)) and row['budget_usd'] > 0:
-                    spec['capacity_usd'] = {'spend': float(row['budget_usd'])}
+                budget = row.get('budget_usd')
+                if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
+                    spec['windows'] = {'balance': {}}
+                    spec['capacity_usd'] = {'balance': float(budget)}
                 specs[name] = spec
             elif family == 'pi':
                 if row.get('quota_account') and row.get('quota_account') != name:
@@ -1829,11 +1834,24 @@ def apply(accounts, inventory=None, *, live=None):
         spec['discovery_status'] = row['status']
         if row.get('cwd_regex') and 'cwd_regex' not in spec:
             spec['cwd_regex'] = row['cwd_regex']
-        if is_litellm or spec.get('backend_kind') in ('litellm', 'proxy'):
+        if is_metered_usd:
             spec['billing'] = 'metered'
-            spec.setdefault('windows', {'spend': {'hours': 168, 'launch_min_remaining_pct': 5}})
-            if isinstance(row.get('budget_usd'), (int, float)) and row['budget_usd'] > 0:
-                spec.setdefault('capacity_usd', {})['spend'] = float(row['budget_usd'])
+            spec['backend_kind'] = 'metered_usd'
+            budget = row.get('budget_usd')
+            if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
+                spec['windows'] = {'balance': {}}
+                cap = spec.get('capacity_usd')
+                if not isinstance(cap, dict):
+                    cap = {}
+                    spec['capacity_usd'] = cap
+                cap['balance'] = float(budget)
+            else:
+                spec['windows'] = {}
+                cap = spec.get('capacity_usd')
+                if isinstance(cap, dict):
+                    cap.pop('balance', None)
+                    if not cap:
+                        spec.pop('capacity_usd', None)
             spec.setdefault('bundles', {})
             continue
         plan = row.get('plan')

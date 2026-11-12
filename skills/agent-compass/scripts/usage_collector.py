@@ -28,12 +28,12 @@ STATE = usage_cache.state_dir()
 
 
 def discovered_subscriptions() -> list[str]:
-    """Every account the core can read on this machine: Claude and Codex homes, Pi, LiteLLM proxies, Grok, agy."""
+    """Every account the core can read on this machine: Claude and Codex homes, Pi, metered USD accounts, Grok, agy."""
     usage = usage_core
     items: list[str] = []
     extra_pi = ('pi',) if usage.read_pi_codex_auth()[0] is not None and usage.pi_linked_codex_provider() is None else ()
     for pid in (*usage.discover_claude_homes().keys(), *usage.discover_codex_accounts().keys(), *extra_pi,
-                *usage.discover_litellm_proxies().keys(), 'grok', 'antigravity'):
+                *usage.discover_metered_usd_accounts().keys(), 'grok', 'antigravity'):
         if pid not in items:
             items.append(pid)
     return items
