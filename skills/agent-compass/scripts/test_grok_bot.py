@@ -20,7 +20,6 @@ import account_fleet
 import accounts_override
 import quota_pools
 import dispatch_registry
-import scorer_client
 import usage_reading
 import roll
 import run_grok_bot as runner
@@ -599,6 +598,7 @@ from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, sys.argv.pop(1))
 import route_judge
+import scorer_client
 import run_grok_bot as runner
 import provider_inventory as inventory
 fake_cli = Path(sys.argv.pop(1))

@@ -790,7 +790,7 @@ class FiveAxisTests(unittest.TestCase):
                     patch.object(roll.registry, 'pending', return_value=[]), \
                     patch.object(roll.registry, 'reusable_workers', return_value=[]), \
                     patch.object(roll, 'can_launch_via_paseo', return_value=False), \
-                    patch.object(roll, 'cli', side_effect=lambda _a, out, b, _txt, _j: (
+                    patch.object(roll, 'cli', side_effect=lambda _a, out, b, _txt: (
                         launched_bundles.append((b['account'], b['model'])) or
                         (dict(out, launched=True, dispatch_mode='cli',
                               caller_action='already_launched_do_not_respawn',

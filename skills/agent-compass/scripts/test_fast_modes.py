@@ -3,7 +3,7 @@ import copy
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 import allocator
@@ -62,7 +62,7 @@ class FastModesTests(unittest.TestCase):
                             with patch.object(roll, 'provider_definition', return_value=(provider, {})), \
                                     patch.object(roll.subprocess, 'Popen') as spawn:
                                 with self.assertRaisesRegex(ValueError, 'fast_capable'):
-                                    roll.cli(SimpleNamespace(wait=0), {}, bundle, 'fixture', Mock())
+                                    roll.cli(SimpleNamespace(wait=0), {}, bundle, 'fixture')
                                 spawn.assert_not_called()
                         else:
                             self.assertTrue(route_judge.record_constraint(args)['selected_bundle']['fast'])
