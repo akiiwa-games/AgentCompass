@@ -12,6 +12,7 @@ OPERATIONAL = re.compile(
 
 FENCE = re.compile(r"^(```|~~~).*?^\1[ \t]*$", re.MULTILINE | re.DOTALL)
 LINK = re.compile(r"\[[^\]\n]*\]\(\s*<?([^)\s>]+)")
+LINK_DEFINITION = re.compile(r"^ {0,3}\[[^\]\n]+\]:[ \t]*<?([^\s>]+)", re.MULTILINE)
 HTML_ATTRIBUTE = re.compile(r"""\b(?:src|href)\s*=\s*["']([^"']+)["']""")
 HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]+(.+?)[ \t#]*$", re.MULTILINE)
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
@@ -21,10 +22,10 @@ LINE_SUFFIX = re.compile(r"(?::\d+)+$")
 
 
 def link_targets(text):
-    """(path, fragment) of every Markdown link and HTML src/href in a text, outside fenced code (code is not markup).
+    """(path, fragment) of every Markdown link, `[label]: path` definition and HTML src/href in a text, outside fenced code (code is not markup).
     URLs are skipped; a root-relative target is read from the repository root; a same-page anchor has an empty path."""
     prose = FENCE.sub("", text)
-    for target in LINK.findall(prose) + HTML_ATTRIBUTE.findall(prose):
+    for target in LINK.findall(prose) + LINK_DEFINITION.findall(prose) + HTML_ATTRIBUTE.findall(prose):
         if SCHEME.match(target) or target.startswith("//"):
             continue
         target, _, fragment = target.partition("#")
@@ -103,12 +104,12 @@ class DocsTests(unittest.TestCase):
         self.assertEqual(found, [])
 
     def test_link_and_path_extraction_follows_the_rule(self):
-        text = ("[a](docs/x.md#top) [b](https://example.org/x) [c](#here) ![i](hero.gif) [d](<../y.md>) [r](/setup/z.py)\n"
+        text = ("[a](docs/x.md#top) [b](https://example.org/x) [c](#here) ![i](hero.gif) [d](<../y.md>) [r](/setup/z.py)\n[lab]: docs/def.md#sec\n"
                 '<img src="docs/p.png"> `tray/app.pyw:12` `skills/<name>/SKILL.md` `~/.agent-compass/x` `tray\\deploy.py` '
                 "`setup/*.py` `python docs/a.md --flag` `usage-float/` `tray/` `docs/b.md#sec`\n"
                 "```\n[e](nope.md) python tray/ghost.py --x\n```\n")
         self.assertEqual(list(link_targets(text)),
-                         [("docs/x.md", "top"), ("", "here"), ("hero.gif", ""), ("../y.md", ""), ("/setup/z.py", ""), ("docs/p.png", "")])
+                         [("docs/x.md", "top"), ("", "here"), ("hero.gif", ""), ("../y.md", ""), ("/setup/z.py", ""), ("docs/def.md", "sec"), ("docs/p.png", "")])
         self.assertEqual(list(cited_paths(text, {"docs", "setup", "skills", "tray"})),
                          ["tray/app.pyw", "tray/deploy.py", "docs/a.md", "tray/", "docs/b.md", "tray/ghost.py"])
         self.assertEqual(anchors("# A `b` [c](d)\n## A `b` [c](d)\n## 1. How & Why\n"), {"a-b-c", "a-b-c-1", "1-how--why"})
