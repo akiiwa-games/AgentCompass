@@ -67,8 +67,8 @@ def score_dimensions(components: dict) -> dict:
 
 def score_raw(components: dict, headroom: dict | None = None) -> dict:
     """The raw component values each score axis is built from, for the hover text. A category the task demands at level 3
-    also names its credit above the anchor and the level-3 cap, the ceiling with the model that sets it
-    (`five_axis_headroom`); the spoke itself stops at the anchor."""
+    also names the score above the anchor the fit counts (capped at the ceiling) and the level-3 cap, the ceiling with
+    the model that sets it (`five_axis_headroom`); the spoke itself stops at the anchor."""
     c = components or {}
     out = {**{key: {k: c[k] for k in (key, f"share_{key}") if k in c} for key in ABILITY_AXES},
            "economy": {k: c[k] for k in ("opportunity_cost", "boost") if k in c}}
@@ -78,6 +78,8 @@ def score_raw(components: dict, headroom: dict | None = None) -> dict:
                 out[key]["above_anchor"] = f"{h['above_anchor']:+.3f}"
             if h.get("ceiling") is not None:
                 out[key]["ceiling"] = f"{h['ceiling']:+.3f} ({h.get('model') or '—'})"
+            if h.get("facet"):
+                out[key]["facet"] = h["facet"]
     return out
 
 

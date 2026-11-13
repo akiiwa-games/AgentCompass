@@ -30,13 +30,14 @@ The router scores a model on **four capability categories** (`divergence`, `codi
 | `five_axis.py [--distrust SOURCE] [--accept-panel-change]` | Writes `references/five-axis-scores.json`: per-effort facet curves, parallel-board link offsets, category scores, `estimate_fits` (`r`, `skill`, `loo_rmse`, `n`), `usd_per_hour`, `duration_multiplier`, community plan capacities, panel `anchor.targets` (`levels` 1..3 with the level-3 `ceiling`, `continuity = t3 - t2`), `anchor.sd_panel` and `anchor.panel_change`, and surfaced data errors. Refuses a panel change unless accepted. |
 | `arena_capture.py import CAPTURE.json ...` / `show` | Imports browser-captured `arena.ai` Agent / Code and Alignment boards and preserves their manifest entries across `sources.py fetch`. |
 | `community.py` | Reads community real-usage measurements of subscription window capacity, token mix, vendor plan multipliers, and usd-per-hour check rows. |
-| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change]` | Single entry point (`agentcompass data refresh [--no-fetch]`): runs fetch (unless `--no-fetch`), `measurements.py`, `five_axis.py`, `capability_catalog.py`, `public_data.py manifest --write`, validates `public-data` checks and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing, invalid or a refused panel change (nothing written). |
+| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`): runs fetch (unless `--no-fetch`), `measurements.py`, `five_axis.py`, `capability_catalog.py`, `public_data.py manifest --write`, validates `public-data` checks and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing, invalid or a refused panel change (nothing written). |
 
 ## Refresh
 
 ```
 agentcompass data refresh                     # fetch, rebuild shipped data + views + manifest, validate, source-age report
 agentcompass data refresh --no-fetch          # rebuild and validate from cached downloads without fetching
+agentcompass data refresh --no-fetch --accept-panel-change   # write a rebuild whose panel members changed (refused otherwise)
 ```
 
 Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--accept-panel-change]`.

@@ -625,23 +625,25 @@ def five_axis_fit(values, demand, targets):
 
 
 def five_axis_headroom(rows, targets):
-    """{category: {'above_anchor', 'ceiling', 'model'}} for the categories `rows` (five_axis_fit) demand at level 3: how far
-    the candidate's score lies above t3 (the anchor; 0 at or below it) and the level-3 cap the fit reads there, the
-    category's ceiling, with the model that sets it. tool_operation reports the facet that decides its term. Display only
-    (the decision radar's hover): the radar spoke itself stays five_axis_shares."""
+    """{category: {'above_anchor', 'ceiling', 'model'}} for the categories `rows` (five_axis_fit) demand at level 3: the
+    level-3 cap the fit reads there (the category's ceiling, with the model that sets it) and the part of the candidate's
+    score above the anchor that the fit counts, min(z, ceiling) above z = 0 (z is anchor-relative, so this is the same
+    reference as the ceiling; 0 at or below the anchor). tool_operation reports the facet that decides its term
+    (`facet`). Display only (the decision radar's hover): the radar spoke itself stays five_axis_shares."""
     out = {}
     for a, r in rows.items():
         if r['demand'] != 3:
             continue
         level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
+        facet = {}
         if 'facets' in r:
             f, part = min(r['facets'].items(), key=lambda kv: kv[1]['term'])
-            r, ceiling = part, level3['by_facet'][f]['ceiling']
+            r, ceiling, facet = part, level3['by_facet'][f]['ceiling'], {'facet': f}
         else:
             ceiling = level3['ceiling']
         z = r['score']
-        out[a] = {'above_anchor': None if z is None else round(max(0.0, z - r['target']), 4),
-                  'ceiling': ceiling['value'], 'model': ceiling['model']}
+        out[a] = {'above_anchor': None if z is None else round(max(0.0, min(z, ceiling['value'])), 4),
+                  'ceiling': ceiling['value'], 'model': ceiling['model'], **facet}
     return out
 
 

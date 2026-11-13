@@ -267,10 +267,14 @@ class FiveAxisTests(unittest.TestCase):
         headroom = axis_scores.five_axis_headroom(rows, targets)
         self.assertEqual(set(headroom), {'divergence', 'tool_operation'})            # coding is demanded at level 2
         self.assertEqual(headroom['divergence'], {'above_anchor': 0.5, 'ceiling': 1.0, 'model': 'best'})
-        deciding = min(rows['tool_operation']['facets'].items(), key=lambda kv: kv[1]['term'])[1]
-        self.assertEqual(headroom['tool_operation']['above_anchor'], round(max(0.0, deciding['score'] - deciding['target']), 4))
-        below = axis_scores.five_axis_fit({**values, 'divergence': -0.4}, d, axis_scores.five_axis_targets(d, targets))[1]
-        self.assertEqual(axis_scores.five_axis_headroom(below, targets)['divergence']['above_anchor'], 0.0)
+        name, deciding = min(rows['tool_operation']['facets'].items(), key=lambda kv: kv[1]['term'])
+        tool = headroom['tool_operation']
+        self.assertEqual(tool['facet'], name)
+        self.assertEqual(tool['above_anchor'], round(max(0.0, min(deciding['score'], tool['ceiling'])), 4))
+        t = axis_scores.five_axis_targets(d, targets)
+        for z, shown in ((-0.4, 0.0), (1.4, 1.0)):       # nothing at or below the anchor; never more than the ceiling
+            rows_z = axis_scores.five_axis_fit({**values, 'divergence': z}, d, t)[1]
+            self.assertEqual(axis_scores.five_axis_headroom(rows_z, targets)['divergence']['above_anchor'], shown)
 
     def test_a_five_axis_file_without_level_three_ceilings_is_named_with_what_to_run(self):
         """A file written before schema /3 fails with a message naming the missing rows and the command, never a KeyError."""
