@@ -827,14 +827,8 @@ def check_account_quota_exhausted(
             f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
         )
     try:
-        account_fleet = router_module("account_fleet")
-        axis_scores = router_module("axis_scores")
-        quota_pools = router_module("quota_pools")
-        judge = router_module("route_judge")
-        inventory = router_module("provider_inventory")
-        accounts = accounts if accounts is not None else account_fleet.load_accounts()
-        usage = judge.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get("_discovery") or {})
-        usage = inventory.merge_usage(usage, accounts, now, names={account})
+        turn_refusal = router_module("turn_refusal")
+        accounts = accounts if accounts is not None else router_module("account_fleet").load_accounts()
         if records is None:
             try:
                 registry = router_module("dispatch_registry")
@@ -854,17 +848,12 @@ def check_account_quota_exhausted(
                 or ((not exclude_dispatch_id or r.get("dispatch_id") != exclude_dispatch_id)
                     and (not exclude_agent_id or r.get("agent_id") != exclude_agent_id))
             ]
-        probes = [dict(b, id=b.get("bundle_id") or b.get("id")) for b in bundles or ()] or [
-            {"account": account, "model": model or ""}]
-        priced = axis_scores.five_axis_overlay(accounts)      # once for every probe
-        found = [(probe, refusal) for probe in probes
-                 for refusal in quota_pools.launch_blockers(probe, priced, usage, now, records=records)]
+        found = turn_refusal.window_refusal(account, accounts, now, usage_cache_path, records, bundles, model)
     except Exception:
         return None
     if not found:
         return None
-    probe, (wid, why) = found[0]
-    what = probe.get("id") or probe.get("model") or "?"
+    what, wid, why = found
     return (
         f"[Router Gate] 拦截向额度不足的窗口派发或续跑任务：{account} 的 {what} 所用窗口 {wid} 不可用（{why}）。"
         "运行中的受控子会话仍可由父会话直接发送控制消息收尾；idle 或运行状态未知的 worker 请先收取已有输出，"

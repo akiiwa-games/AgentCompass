@@ -173,7 +173,9 @@ def worker_worn(worker, policy):
 
 
 def continuation_verdict(agent_id):
-    """Describe the current carried-context decision without using host window telemetry."""
+    """Describe the continuation decision without using host window telemetry: rotate at the carried-context
+    threshold, roll when a new turn to this worker's account or model would be refused now (`turn_refusal`), else
+    same worker."""
     rule = 'A redo or correction of this worker\'s task goes back to it while the verdict says same worker.'
     try:
         state = session_state(agent_id)
@@ -190,7 +192,15 @@ def continuation_verdict(agent_id):
         if carried >= threshold:
             verdict = f'Continuation: rotate — carried {size(carried)} ≥ {size(threshold)} rotate_after_carried_tokens; write a handoff brief and roll.'
         else:
-            verdict = f'Continuation: same worker (carried {size(carried)} of {size(threshold)} rotate_after_carried_tokens).'
+            import turn_refusal
+            try:
+                refusal = turn_refusal.worker_refusal(agent_id)
+            except Exception as exc:
+                raise ValueError(f'turn_check_unavailable: {exc}') from exc
+            if refusal:
+                verdict = f'Continuation: roll — a new turn to this worker would be refused: {refusal}; do not send the follow-up to it, write the brief and roll.'
+            else:
+                verdict = f'Continuation: same worker (carried {size(carried)} of {size(threshold)} rotate_after_carried_tokens).'
     except Exception as exc:
         verdict = f'Continuation: unknown ({exc or "session_state_unavailable"}).'
     return verdict + '\n' + rule

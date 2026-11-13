@@ -131,7 +131,10 @@ Historical uncompressed worker context is `compacted_tokens + context_tokens`, i
 all pre-compaction context replaced over the session. At the configured context rotation
 threshold (`rotate_after_carried_tokens`, default 2M, set in the tray), start a fresh
 worker with a handoff. The parent can still steer its own running worker under the
-communication contract below.
+communication contract below. The continuation verdict in a worker notification adds the
+admission of a new turn (`turn_refusal.py`): an under-threshold worker whose account is not
+ready, is held after a provider failure, or draws a refusing quota window, or whose model is
+held, gets `roll` with the reason instead of `same worker`.
 
 ---
 

@@ -223,7 +223,7 @@ test('finished and failed workers notify even without native messaging tools', a
     assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
     assert.equal(f.calls.length, 1);
     assert.equal(f.calls[0][0], 'parent');
-    assert.match(f.calls[0][1], /Continuation: (same worker|rotate|unknown)/);
+    assert.match(f.calls[0][1], /Continuation: (same worker|roll|rotate|unknown)/);
     assert.match(f.calls[0][1], /redo or correction/);
     assert.match(f.calls[0][1], /The worker ended without a final reply/);
     assert.doesNotMatch(f.calls[0][1], /get_agent_activity/);
@@ -244,7 +244,7 @@ test('permissions notify once per request and do not consume the final callback'
   assert.match(f.calls[0][1], /A permission is waiting/);
   assert.doesNotMatch(f.calls[0][1], /SECRET-REPORT/);
   assert.doesNotMatch(f.calls[0][1], /Final reply:/);
-  assert.match(f.calls[0][1], /Continuation: (same worker|rotate|unknown)/);
+  assert.match(f.calls[0][1], /Continuation: (same worker|roll|rotate|unknown)/);
   f.setAgent({status: 'idle', attentionReason: 'finished'});
   assert.equal(await notificationStep(f.client, f.record, f.persist, 20), true);
   assert.equal(f.calls.length, 3);
@@ -269,7 +269,7 @@ test('a finished worker sends one notice containing the final reply after its la
   assert.match(f.calls[0][1], /^\[AgentCompass worker notification\]/);
   assert.match(f.calls[0][1], /Final reply:\n<the report>/);
   assert.doesNotMatch(f.calls[0][1], /older reply/);
-  assert.match(f.calls[0][1], /Continuation: (same worker|rotate|unknown)/);
+  assert.match(f.calls[0][1], /Continuation: (same worker|roll|rotate|unknown)/);
   assert.match(f.calls[0][1], /redo or correction/);
   assert.doesNotMatch(f.calls[0][1], /get_agent_activity/);
   await notificationStep(f.client, f.record, f.persist, 20);
