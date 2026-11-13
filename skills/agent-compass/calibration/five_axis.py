@@ -87,7 +87,9 @@ import tiers
 
 OUT = sources.REPO / 'references' / 'five-axis-scores.json'
 PLANS = sources.REPO / 'references' / 'plan-templates.json'
-SCHEMA = 'agent-compass.five-axis-scores/2'
+# /3 (2026-11-13): every level-3 row carries `ceiling`, the anchor block `sd_panel` and `panel_change`. Readers before it
+# ignore the added fields; the runtime refuses a file without ceilings (axis_scores.require_level3_ceilings).
+SCHEMA = 'agent-compass.five-axis-scores/3'
 AXES = measurements.AXES
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')

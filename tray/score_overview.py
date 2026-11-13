@@ -69,6 +69,15 @@ def _levels(targets: dict, category: str, facet: str) -> dict:
     return ((((targets.get(category) or {}).get("facets") or {}).get(facet) or {}).get("levels")) or {}
 
 
+def level3_cap(targets: dict, category: str, facet: str) -> dict | None:
+    """The level-3 cap the fit reads for this facet's category (axis_scores.five_axis_targets): the category's ceiling,
+    and for tool_operation the ceiling of this facet when level 3 asks for it."""
+    level3 = (((targets.get(category) or {}).get("levels") or {}).get("3")) or {}
+    if category == "tool_operation":
+        return ((level3.get("by_facet") or {}).get(facet) or {}).get("ceiling")
+    return level3.get("ceiling")
+
+
 def continuity_derivation(targets: dict, category: str) -> tuple[float | None, str]:
     """(the category's continuity value, how it is derived): the largest t3 − t2 over its facets, as the data computed it."""
     value = (targets.get(category) or {}).get("continuity")
@@ -103,7 +112,8 @@ def category_overview(data: dict, models: dict) -> list[dict]:
                            "panel_n": link.get("panel_n"), "dates": (dates[0], dates[-1]) if dates else None,
                            "targets": {lv: ((levels.get(lv) or {}).get("target"), (levels.get(lv) or {}).get("statistic"))
                                        for lv in ("1", "2", "3")},
-                           "ceiling": (levels.get("3") or {}).get("ceiling")})
+                           "cap": level3_cap(targets, key, facet),
+                           "facet_best": None if key == "tool_operation" else (levels.get("3") or {}).get("ceiling")})
         coverage = {}
         for row in models.values():
             status = (((row or {}).get("five_axis") or {}).get("axis_status") or {}).get(key, "missing")
@@ -139,10 +149,13 @@ def z_targets_note() -> str:
 def targets_tip(facet: dict) -> str:
     rows = [_tr("等级 {0}：{1}（{2}）").format(lv, f"{value:+.4f}" if _number(value) else "—", statistic or "—")
             for lv, (value, statistic) in facet["targets"].items()]
-    ceiling = facet.get("ceiling") or {}
-    if _number(ceiling.get("value")):
-        rows.append(_tr("等级 3 上限：{0}（最高实测 {1}）；等级 1、2 封顶在目标").format(
-            f"{ceiling['value']:+.4f}", ceiling.get("model") or "—"))
+    cap = facet.get("cap") or {}
+    if _number(cap.get("value")):
+        rows.append(_tr("等级 3 上限（契合度读取）：{0}（{1}）；等级 1、2 封顶在目标").format(
+            f"{cap['value']:+.4f}", cap.get("model") or "—"))
+    best = facet.get("facet_best") or {}
+    if _number(best.get("value")):
+        rows.append(_tr("本分项最高实测：{0}（{1}）").format(f"{best['value']:+.4f}", best.get("model") or "—"))
     return "\n".join([z_targets_note(), *rows])
 
 

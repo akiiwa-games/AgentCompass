@@ -26,7 +26,7 @@ TARGETS = {
                                                               '3': {'target': 0.0, 'statistic': 'anchor'}}}}},
     'coding': {'continuity': 1.5, 'facets': {
         'execution': {'levels': {'1': {'target': -3.0}, '2': {'target': -1.5},
-                                 '3': {'target': 0.0, 'ceiling': {'value': 0.42, 'model': 'best-model', 'status': 'measured'}}}},
+                                 '3': {'target': 0.0, 'ceiling': {'value': 0.42, 'model': 'facet-best', 'status': 'measured'}}}},
         'faithfulness': {'levels': {'1': {'target': -2.0}, '2': {'target': -0.5}, '3': {'target': 0.0}}}}},
     'aesthetics': {'continuity': 1.0, 'facets': {
         'design': {'levels': {'1': {'target': -2.0}, '2': {'target': -1.0}, '3': {'target': 0.0}}}}},
@@ -37,6 +37,8 @@ TARGETS = {
 for _cat in TARGETS.values():
     first = next(iter(_cat['facets'].values()))['levels']
     _cat['levels'] = first
+TARGETS['coding']['levels'] = {**TARGETS['coding']['levels'],
+                               '3': {'target': 0.0, 'ceiling': {'value': 0.0, 'model': 'category-best', 'status': 'measured'}}}
 
 
 def cell(value, status='measured', **extra):
@@ -182,7 +184,10 @@ def test_category_overview_lists_boards_dates_targets_and_continuity():
     assert so.facet_dates_text(execution) == '2026-10-16 – 2026-11-09'
     assert execution['targets']['2'][0] == -1.5
     assert '面板标准分 z' in so.targets_tip(execution)
-    assert '+0.4200' in so.targets_tip(execution) and 'best-model' in so.targets_tip(execution)
+    tip = so.targets_tip(execution)
+    # the cap the fit reads is the category's ceiling; the facet's own best is a facet fact, never labelled the cap
+    assert '等级 3 上限（契合度读取）：+0.0000（category-best）' in tip
+    assert '本分项最高实测：+0.4200（facet-best）' in tip
     assert blocks['coding']['continuity'] == 1.5
     assert '1.500' in blocks['coding']['derivation']
     assert blocks['divergence']['coverage'] == {'measured': 1, 'estimated': 1}

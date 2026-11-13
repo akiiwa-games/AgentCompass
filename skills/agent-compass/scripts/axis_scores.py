@@ -105,6 +105,25 @@ def load_five_axis(path=None, *, use_effective=True):
     return json.loads(target.read_text(encoding='utf-8'))
 
 
+def require_level3_ceilings(data):
+    """Fail fast on a five-axis-scores.json written before level-3 ceilings (schema agent-compass.five-axis-scores/3): the
+    fit reads `ceiling` on every level-3 row that has a target (per facet for tool_operation), so an older file is named
+    with what to run instead of failing later with a KeyError."""
+    targets = (data.get('anchor') or {}).get('targets') or {}
+    missing = []
+    for a in FIVE_AXES:
+        level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
+        rows = (level3.get('by_facet') or {}).items() if a == 'tool_operation' else [(None, level3)]
+        for f, r in rows:
+            if r.get('target') is not None and not isinstance((r.get('ceiling') or {}).get('value'), (int, float)):
+                missing.append(a if f is None else f'{a}.{f}')
+    if missing:
+        raise ValueError(
+            f"five-axis-scores.json (schema {data.get('schema')!r}) has no level-3 ceiling for {', '.join(missing)}; this "
+            'code reads agent-compass.five-axis-scores/3. In an install run `agentcompass data --refresh` (or update '
+            'AgentCompass); in a checkout run `python -X utf8 agentcompass data refresh --no-fetch`.')
+
+
 def load_public_user_scores(path=None, *, use_effective=True):
     default_file = account_fleet.REFERENCES / 'user-scores.json'
     target = Path(path) if path is not None else (public_data.effective(default_file) if use_effective else default_file)
@@ -494,6 +513,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     if not anchor.get('model') or set(targets) != set(FIVE_AXES):
         raise ValueError('five-axis-scores.json names no anchor model or no panel targets for the four categories: the fit '
                          'has nothing to stand on')
+    require_level3_ceilings(data)
     out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor['model'], 'targets': targets,
                          'panel_n': anchor.get('panel_n')}
     pub_manual = public_scores if public_scores is not None else (
@@ -604,34 +624,45 @@ def five_axis_fit(values, demand, targets):
     return (value / total if total else 0.0), rows
 
 
-def five_axis_shares(values, targets, demand=None):
-    """{category: 0..1} for display (the tray radars): (min(z, c) - t1) / (ceiling - t1), where t1 is the level-1 target
-    (the panel's weakest), `ceiling` the level-3 row's ceiling (the best measured model) and c the cap the fit reads for
-    the demanded level (five_axis_targets): the target at levels 1 and 2, the ceiling at level 3 or without a demand. So a
-    spoke shows the same capped score the fit counts, on one scale from the panel's weakest (0) to the best measured
-    model (1). tool_operation takes the weakest of its level-3 facets when all of them have a value (a facet the demanded
-    level does not ask for is capped at its ceiling); None where any of them has no value."""
-    demand = demand or {}
+def five_axis_headroom(rows, targets):
+    """{category: {'above_anchor', 'ceiling', 'model'}} for the categories `rows` (five_axis_fit) demand at level 3: how far
+    the candidate's score lies above t3 (the anchor; 0 at or below it) and the level-3 cap the fit reads there, the
+    category's ceiling, with the model that sets it. tool_operation reports the facet that decides its term. Display only
+    (the decision radar's hover): the radar spoke itself stays five_axis_shares."""
+    out = {}
+    for a, r in rows.items():
+        if r['demand'] != 3:
+            continue
+        level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
+        if 'facets' in r:
+            f, part = min(r['facets'].items(), key=lambda kv: kv[1]['term'])
+            r, ceiling = part, level3['by_facet'][f]['ceiling']
+        else:
+            ceiling = level3['ceiling']
+        z = r['score']
+        out[a] = {'above_anchor': None if z is None else round(max(0.0, z - r['target']), 4),
+                  'ceiling': ceiling['value'], 'model': ceiling['model']}
+    return out
 
-    def share(z, row, cap_row):
-        ceiling = (row.get('ceiling') or {}).get('value') if row else None
-        if z is None or ceiling is None or row.get('zero') is None or ceiling <= row['zero']:
+
+def five_axis_shares(values, targets):
+    """{category: 0..1} for display (the tray radar): (min(z, t3) - t1) / (t3 - t1), where t1 is the level-1 target (the
+    panel's weakest) and t3 the level-3 target (the anchor): 0 at the panel's weakest, 1 at the anchor, never more; a
+    level-3 demand's credit above the anchor up to the ceiling is shown in the decision hover (five_axis_headroom).
+    tool_operation takes the weakest of its level-3 facets when all required level-3 facets have a value; None where any
+    required facet has no value."""
+    def share(z, row):
+        if z is None or not row or row.get('target') is None or row['target'] <= row['zero']:
             return None
-        cap = cap_row['target'] if cap_row and cap_row.get('target') is not None else ceiling
-        return round(max(0.0, (min(z, cap, ceiling) - row['zero']) / (ceiling - row['zero'])), 4)
-
+        return round(max(0.0, (min(z, row['target']) - row['zero']) / (row['target'] - row['zero'])), 4)
     out = {}
     for a in FIVE_AXES:
-        levels = (targets.get(a) or {}).get('levels') or {}
-        level3 = levels.get('3') or {}
-        w = demand.get(a, 0)
-        demanded = (levels.get(str(w)) or {}) if w in (1, 2) else {}
+        level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
         if a == 'tool_operation':
-            capped = demanded.get('by_facet') or {}
-            parts = [share((values.get(a) or {}).get(f), r, capped.get(f)) for f, r in (level3.get('by_facet') or {}).items()]
+            parts = [share((values.get(a) or {}).get(f), r) for f, r in (level3.get('by_facet') or {}).items()]
             out[a] = min(parts) if parts and all(p is not None for p in parts) else None
         else:
-            out[a] = share(values.get(a), level3, demanded)
+            out[a] = share(values.get(a), level3)
     return out
 
 

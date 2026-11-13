@@ -251,16 +251,41 @@ class FiveAxisTests(unittest.TestCase):
             after = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, raised))[0]
             self.assertEqual(before, after)
 
-    def test_radar_shares_show_the_capped_score_of_the_demanded_level(self):
-        """The radar spoke is (min(z, c) - t1) / (ceiling - t1), c the cap the fit reads for the demanded level."""
-        targets = {**TARGETS, 'divergence': level_targets(-1.0, -0.5, 0.0, ceiling=1.0)}
-        values = {'divergence': 0.5, 'coding': None, 'aesthetics': None,
-                  'tool_operation': {'responsiveness': None, 'image_recognition': None}}
-        shares = lambda d=None: axis_scores.five_axis_shares(values, targets, d)['divergence']
-        self.assertEqual(shares(), 0.75)
-        self.assertEqual(shares(demand(3, 0, 0, 0)), 0.75)
-        self.assertEqual(shares(demand(2, 0, 0, 0)), 0.25)
-        self.assertEqual(shares(demand(1, 0, 0, 0)), 0.0)
+    def test_the_radar_stops_at_the_anchor_and_the_hover_names_the_level_three_headroom(self):
+        """The radar spoke is (min(z, t3) - t1) / (t3 - t1) whatever the ceiling; a level-3 demand's credit above the
+        anchor and its cap (the ceiling with the model that sets it) are display facts for the hover, computed from the
+        fit rows, and only for categories demanded at level 3."""
+        targets = {**TARGETS, 'divergence': level_targets(-1.0, -0.5, 0.0, ceiling=1.0),
+                   'tool_operation': tool_targets(-1.0, -0.5, 0.0, ceiling=0.6)}
+        values = {'divergence': 0.5, 'coding': -0.2, 'aesthetics': None,
+                  'tool_operation': {'responsiveness': 0.3, 'image_recognition': 0.1}}
+        shares = axis_scores.five_axis_shares(values, targets)
+        self.assertEqual((shares['divergence'], shares['tool_operation']), (1.0, 1.0))
+        self.assertEqual(shares, axis_scores.five_axis_shares(values, TARGETS))     # the ceiling never moves a spoke
+        d = demand(3, 2, 0, 3)
+        rows = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, targets))[1]
+        headroom = axis_scores.five_axis_headroom(rows, targets)
+        self.assertEqual(set(headroom), {'divergence', 'tool_operation'})            # coding is demanded at level 2
+        self.assertEqual(headroom['divergence'], {'above_anchor': 0.5, 'ceiling': 1.0, 'model': 'best'})
+        deciding = min(rows['tool_operation']['facets'].items(), key=lambda kv: kv[1]['term'])[1]
+        self.assertEqual(headroom['tool_operation']['above_anchor'], round(max(0.0, deciding['score'] - deciding['target']), 4))
+        below = axis_scores.five_axis_fit({**values, 'divergence': -0.4}, d, axis_scores.five_axis_targets(d, targets))[1]
+        self.assertEqual(axis_scores.five_axis_headroom(below, targets)['divergence']['above_anchor'], 0.0)
+
+    def test_a_five_axis_file_without_level_three_ceilings_is_named_with_what_to_run(self):
+        """A file written before schema /3 fails with a message naming the missing rows and the command, never a KeyError."""
+        old = copy.deepcopy(TARGETS)
+        del old['coding']['levels']['3']['ceiling']
+        del old['tool_operation']['levels']['3']['by_facet']['image_recognition']['ceiling']
+        doc = {'schema': 'agent-compass.five-axis-scores/2', 'anchor': {**ANCHOR, 'targets': old}}
+        with self.assertRaises(ValueError) as caught:
+            axis_scores.require_level3_ceilings(doc)
+        text = str(caught.exception)
+        for part in ('coding', 'tool_operation.image_recognition', 'five-axis-scores/2', 'agentcompass data'):
+            self.assertIn(part, text)
+        self.assertNotIn('divergence', text)
+        axis_scores.require_level3_ceilings({'anchor': ANCHOR})                    # the current shape passes
+        axis_scores.require_level3_ceilings(axis_scores.load_five_axis())           # and so does the shipped file
 
     def test_continuity_is_one_demand_level_of_the_highest_demanded_categories(self):
         targets = {**TARGETS, 'coding': level_targets(-2.0, -1.4, 0.0), 'tool_operation': tool_targets(-1.7, 0.14, 0.0)}

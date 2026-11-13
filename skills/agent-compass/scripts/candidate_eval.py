@@ -625,13 +625,15 @@ def evaluate_bundle(bundle, task, ctx):
     shown = {**{a: values[a] for a in axis_scores.FIVE_AXES if a != 'tool_operation'}, 'tool_operation': min(tool) if tool else None}
     result['components'].update({a: None if v is None else round(v, 4) for a, v in shown.items()})
     result['components'].update({f'share_{a}': v for a, v in
-                                 axis_scores.five_axis_shares(values, ctx['accounts']['_five_axis']['targets'],
-                                                                 task['five_axis_demand']).items()})
+                                 axis_scores.five_axis_shares(values, ctx['accounts']['_five_axis']['targets']).items()})
     result['components'].update(five_axis_level=round(axis_scores.five_axis_level(axis_rows), 4),
                                 five_axis_shortfall=round(sum(r['demand'] * r['shortfall'] for r in axis_rows.values())
                                                           / max(1, sum(r['demand'] for r in axis_rows.values())), 4))
     result['five_axis_demand'] = task['five_axis_demand']
     result['five_axis_fit'] = axis_rows
+    headroom = axis_scores.five_axis_headroom(axis_rows, ctx['accounts']['_five_axis']['targets'])
+    if headroom:
+        result['five_axis_headroom'] = headroom        # level-3 credit above the anchor, for the decision radar's hover
     usd_rate = 0.0 if spec.get('unlimited') or spec.get('unmetered') or billing == 'unknown' else quota_economy.model_usd_per_hour(model, info)       # dollars per hour of this candidate's own work; effort is in its duration
     result['five_axis_price'] = {'usd_per_hour': round(usd_rate, 4)}
     result['components'].update({'fit': round(fit, 3), 'continuity': 0.0})

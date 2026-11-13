@@ -3,7 +3,8 @@
 Values are made up to show the UI: not benchmark claims, not live allocation inputs, no account data.
 
 The headline decision follows the quota-line economy: N = F − β·X/h, where F is the fit capped at what the
-task needs (demand-weighted mean of min(score, target) per axis), X the spend that lands over the window's
+task needs (demand-weighted mean of min(score, cap) per axis; the cap is the target at levels 1 and 2 and the
+category's ceiling at level 3), X the spend that lands over the window's
 recovery line ℓ(t) = C·(t − t0)/L, h the task hours and β the window's quota price. The rows are ordered by the
 router's own `candidate_ranking.five_axis_order` (after R2-F4): N, then the shorter wait, then the faster completion,
 then the fewer USD, then the higher level. Quota expiry is never a tie-break; it only enters N through the price.
