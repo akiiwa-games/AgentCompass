@@ -1789,13 +1789,93 @@ class BoundDispatchGateTests(unittest.TestCase):
                 ('Bash', 'setsid codex exec task', 'shell:codex exec'),
                 ('Bash', 'winpty codex exec task', 'shell:codex exec'),
                 ('Bash', 'sudo -u worker codex exec task', 'shell:codex exec'),
-                ('Bash', 'nohup codex exec task &', 'shell:codex exec')):
+                ('Bash', 'nohup codex exec task &', 'shell:codex exec'),
+                ('Bash', "env -S 'paseo run --provider codex x'", 'shell:paseo agent create'),
+                ('Bash', "env --split-string='codex exec' task", 'shell:codex exec'),
+                ('Bash', 'uvx codex exec task', 'shell:codex exec'),
+                ('Bash', 'uv tool run codex exec task', 'shell:codex exec'),
+                ('Bash', 'pipx run codex exec task', 'shell:codex exec'),
+                ('Bash', 'cmd //c paseo run --provider codex x', 'shell:paseo agent create'),   # Git Bash's /c
+                # A shell with options and no script file still runs its here-document.
+                ('Bash', "bash -s arg <<'EOF'\ncodex exec task\nEOF", 'shell:codex exec'),
+                ('Bash', "bash -o pipefail <<'EOF'\ncodex exec task\nEOF", 'shell:codex exec'),
+                # Start-Process joins -ArgumentList into one Windows command line: quotes written into an element
+                # keep a spaced script path together.
+                ('PowerShell', r'''Start-Process python -ArgumentList '"D:\my work\run_dot_task.py"','--prompt','t' ''',
+                 'shell:run_dot_task.py'),
+                ('PowerShell', r'Start-Process python -ArgumentList "`"D:\my work\run_dot_task.py`" --prompt t"',
+                 'shell:run_dot_task.py'),
+                ('PowerShell', r'''Start-Process python -ArgumentList @('"D:\my work\run_dot_task.py"','--prompt','t')''',
+                 'shell:run_dot_task.py')):
             with self.subTest(command=command):
                 self.assert_launch(tool, command, trigger)
-        # A heredoc fed to a program that is not a shell is data; another subcommand of a wrapper is its own program.
-        for command in ("cat <<'EOF'\npaseo run x\nEOF", 'uv pip install codex'):
+        # A heredoc fed to a program that is not a shell, or to a shell given a script file, is that program's stdin;
+        # another subcommand of a wrapper is its own program. A spaced path Start-Process passes unquoted is cut at
+        # the space by Start-Process itself, so python runs `D:\my`, not the Dot runner.
+        for tool, command in (
+                ('Bash', "cat <<'EOF'\npaseo run x\nEOF"), ('Bash', 'uv pip install codex'),
+                ('Bash', "bash run.sh <<'EOF'\npaseo run x\nEOF"), ('Bash', "sh ./install.sh <<'EOF'\ncodex exec t\nEOF"),
+                ('PowerShell', r'Start-Process python -ArgumentList "D:\my work\run_dot_task.py --prompt t"')):
             with self.subTest(command=command):
-                self.assertIsNone(gate.detect_subagent_launch('Bash', {'command': command}))
+                self.assertIsNone(gate.detect_subagent_launch(tool, {'command': command}))
+
+    def test_posix_arithmetic_is_not_a_here_document(self):
+        for command in ('(( x = 1 << 2 ))\ncodex exec task', 'echo $(( 1 << 2 ))\ncodex exec task'):
+            with self.subTest(command=command):
+                self.assert_launch('Bash', command, 'shell:codex exec')
+
+    def codex_call(self, cmd, **extra):
+        """An exec_command call as Codex sends it: a bare command string in `cmd`, `shell` only sometimes."""
+        return {'tool_name': 'exec_command',
+                'tool_input': dict({'cmd': cmd, 'workdir': 'D:/work', 'yield_time_ms': 10000}, **extra)}
+
+    def test_codex_exec_command_is_read_in_the_host_default_shell(self):
+        """A tool that names no shell runs the host's: PowerShell on Windows."""
+        here_string = "@'\nIt's the plan:\ncodex exec runs tasks, isn't it\n'@ | Set-Content plan.md"
+        with mock.patch.object(gate, 'HOST_SHELL_DIALECT', gate.POWERSHELL):
+            for cmd, trigger in (
+                    ("@'\nprint(\"it's\")\n'@ | python -; paseo run --provider codex x", 'shell:paseo agent create'),
+                    (r'''$p = 'D:\work'; cd "$p\"; paseo run --provider codex x''', 'shell:paseo agent create'),
+                    (r'python D:\work\run_dot_task.py --out "D:\out\" --prompt t', 'shell:run_dot_task.py'),
+                    ("<# it's #> codex exec task", 'shell:codex exec'),
+                    ("Start-Process -FilePath python -ArgumentList @('run_dot_task.py','--prompt','t')",
+                     'shell:run_dot_task.py'),
+                    ('Write-Output "a`"b"; codex exec task', 'shell:codex exec'),
+                    ('codex `\nexec task', 'shell:codex exec')):
+                with self.subTest(cmd=cmd):
+                    payload = self.codex_call(cmd)
+                    self.assertEqual(gate.detect_subagent_launch(payload['tool_name'], payload['tool_input']), trigger)
+                    denied = gate.evaluate_payload(payload, now=self.now)
+                    self.assertEqual(denied['decision'], 'block')
+                    self.assertIn(f'({trigger})', denied['reason'])
+            # A here-string is text, also inside the code-mode `exec` wrapper.
+            self.assertEqual(gate.evaluate_payload(self.codex_call(here_string), now=self.now), {})
+            wrapped = {'tool_name': 'exec',
+                       'tool_input': 'text(await tools.exec_command(' + json.dumps({'cmd': here_string}) + '))'}
+            self.assertEqual(gate.evaluate_payload(wrapped, now=self.now), {})
+        with mock.patch.object(gate, 'HOST_SHELL_DIALECT', gate.POSIX):
+            self.assertEqual(gate.evaluate_payload(self.codex_call("cat <<'EOF'\npaseo run x\nEOF"), now=self.now), {})
+
+    def test_the_shell_argument_of_a_call_decides_its_dialect(self):
+        heredoc = "cat <<'EOF'\npaseo run x\nEOF"      # a launch only when `<<` is not a here-document
+        start = "Start-Process -FilePath python -ArgumentList @('run_dot_task.py','--prompt','t')"
+        with mock.patch.object(gate, 'HOST_SHELL_DIALECT', gate.POWERSHELL):
+            for shell in ('bash', 'bash.exe', '/usr/bin/bash'):
+                with self.subTest(shell=shell):
+                    self.assertIsNone(gate.detect_subagent_launch('exec_command', self.codex_call(heredoc, shell=shell)['tool_input']))
+        with mock.patch.object(gate, 'HOST_SHELL_DIALECT', gate.POSIX):
+            self.assertIsNone(gate.detect_subagent_launch('exec_command', self.codex_call(start)['tool_input']))
+            for shell in ('powershell', 'pwsh'):
+                with self.subTest(shell=shell):
+                    self.assertEqual(gate.detect_subagent_launch(
+                        'exec_command', self.codex_call(start, shell=shell)['tool_input']), 'shell:run_dot_task.py')
+
+    def test_a_line_the_chosen_dialect_cannot_parse_is_read_in_the_other(self):
+        for tool, command, trigger in (
+                ('Bash', "@'\nprint(\"it's\")\n'@ | python -; codex exec task", 'shell:codex exec'),
+                ('PowerShell', 'echo "a\\"b"; codex exec task', 'shell:codex exec')):
+            with self.subTest(tool=tool, command=command):
+                self.assert_launch(tool, command, trigger)
 
     def test_posix_brace_expansion_is_not_a_command_break(self):
         for command in ('echo {a,b} dot-subagent', 'ls skills/{dot-subagent,x}', 'echo x{1..3} codex exec'):

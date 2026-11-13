@@ -14,6 +14,7 @@ import importlib
 import json
 import os
 import re
+import shlex
 import sys
 import sqlite3
 import warnings
@@ -303,7 +304,10 @@ ORCA_LAUNCH_COMMANDS = frozenset({("orchestration", "worker-start"), ("agent", "
 # Programs that run another command line: shells take it after -c / -Command / /c, package runners as their argv.
 SHELL_PROGRAMS = frozenset({"bash", "sh", "zsh", "dash", "pwsh", "powershell", "cmd"})
 POSIX_SHELL_COMMAND_FLAG_RE = re.compile(r"-[A-Za-z]*c[A-Za-z]*")   # `-c`, `-lc`, `-ec`
-WINDOWS_SHELL_COMMAND_FLAGS = frozenset({"-c", "-command", "/c", "/k"})
+# `//c` is `/c` written through Git Bash, which would otherwise convert `/c` into a path.
+WINDOWS_SHELL_COMMAND_FLAGS = frozenset({"-c", "-command", "/c", "/k", "//c", "//k"})
+# Options of a POSIX shell that take a value; its first other non-option word is a script file.
+POSIX_SHELL_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
 PACKAGE_RUNNERS = {"npx": (), "bunx": (), "pnpm": ("dlx", "exec"), "yarn": ("dlx", "exec")}
 START_PROCESS = frozenset({"start-process", "saps"})
 PYTHON_STEM_RE = re.compile(r"py|python(?:\d+(?:\.\d+)*)?w?")
@@ -314,23 +318,27 @@ NODE_CODE_FLAGS = frozenset({"-e", "--eval", "-p", "--print"})
 COMMAND_PREFIX_WORDS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "time", "exec",
                                   "command", "call"})
 ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*", re.S)
-# Programs that run the command after their own options: name -> (subcommand that must follow, options that take a
-# value, positional arguments before the command). `timeout 600 <command>`, `uv run <command>`.
+# Programs that run the command after their own options: name -> (subcommands of which one must follow, options that
+# take a value, positional arguments before the command). `timeout 600 <command>`, `uv tool run <command>`.
+UV_VALUE_OPTIONS = frozenset({"--with", "--with-requirements", "--python", "-p", "--project", "--directory",
+                              "--package", "--extra", "--group", "--env-file", "--index", "--from"})
 PASS_THROUGH_WRAPPERS = {
-    "env": ("", frozenset({"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}), 0),
-    "timeout": ("", frozenset({"-s", "--signal", "-k", "--kill-after"}), 1),
-    "sudo": ("", frozenset({"-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt", "-C", "-D",
+    "env": ((), frozenset({"-u", "--unset", "-C", "--chdir"}), 0),   # -S / --split-string: command_words
+    "timeout": ((), frozenset({"-s", "--signal", "-k", "--kill-after"}), 1),
+    "sudo": ((), frozenset({"-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt", "-C", "-D",
                             "--chdir", "-r", "--role", "-t", "--type", "-U", "--other-user"}), 0),
-    "nice": ("", frozenset({"-n", "--adjustment"}), 0),
-    "nohup": ("", frozenset(), 0),
-    "setsid": ("", frozenset(), 0),
-    "stdbuf": ("", frozenset({"-i", "-o", "-e", "--input", "--output", "--error"}), 0),
-    "winpty": ("", frozenset(), 0),
-    "wsl": ("", frozenset({"-d", "--distribution", "-u", "--user", "--cd"}), 0),
-    "uv": ("run", frozenset({"--with", "--with-requirements", "--python", "-p", "--project", "--directory",
-                             "--package", "--extra", "--group", "--env-file", "--index", "--from"}), 0),
-    "poetry": ("run", frozenset({"-C", "--directory", "-P", "--project"}), 0),
+    "nice": ((), frozenset({"-n", "--adjustment"}), 0),
+    "nohup": ((), frozenset(), 0),
+    "setsid": ((), frozenset(), 0),
+    "stdbuf": ((), frozenset({"-i", "-o", "-e", "--input", "--output", "--error"}), 0),
+    "winpty": ((), frozenset(), 0),
+    "wsl": ((), frozenset({"-d", "--distribution", "-u", "--user", "--cd"}), 0),
+    "uv": ((("run",), ("tool", "run")), UV_VALUE_OPTIONS, 0),
+    "uvx": ((), UV_VALUE_OPTIONS, 0),
+    "pipx": ((("run",),), frozenset({"--spec", "--python", "--pip-args"}), 0),
+    "poetry": ((("run",),), frozenset({"-C", "--directory", "-P", "--project"}), 0),
 }
+ENV_SPLIT_OPTIONS = ("-S", "--split-string")
 LAUNCHER_SUFFIXES = (".exe", ".cmd", ".bat", ".ps1", ".js", ".mjs", ".cjs")
 
 
@@ -351,7 +359,10 @@ class ShellParseError(ValueError):
 
 # How a command line is read: by the shell of the tool that sent it, or the shell a wrapper starts.
 POSIX, POWERSHELL, CMD = "posix", "powershell", "cmd"
-POWERSHELL_TOOLS = frozenset({"PowerShell", "powershell"})
+SHELL_TOOL_DIALECTS = {"Bash": POSIX, "bash": POSIX, "PowerShell": POWERSHELL, "powershell": POWERSHELL}
+HOST_SHELL_DIALECT = POWERSHELL if os.name == "nt" else POSIX
+# A line the chosen dialect cannot parse is read in this one before it counts as undecidable.
+FALLBACK_DIALECT = {POSIX: POWERSHELL, POWERSHELL: POSIX}
 SHELL_ESCAPE = {POSIX: "\\", POWERSHELL: "`", CMD: "^"}
 # Characters a POSIX backslash outside quotes escapes. Before any other character it is kept, as a Windows path
 # separator in a command a host sends through bash.
@@ -362,9 +373,24 @@ CMD_SPECIAL = frozenset('&<>()@^|')
 CMD_EXECUTABLE_SUFFIXES = (".exe", ".cmd", ".bat", ".com")
 
 
-def shell_dialect(tool_name: str) -> str:
-    """The shell a tool's command line is written for: PowerShell for the PowerShell tools, else a POSIX shell."""
-    return POWERSHELL if base_tool_name(tool_name) in POWERSHELL_TOOLS else POSIX
+def program_dialect(program: object) -> str | None:
+    """The dialect of a shell named as a program (`powershell`, `bash.exe`, `/bin/sh`, `cmd`), else None."""
+    if not isinstance(program, str):
+        return None
+    stem = program_stem(program.strip())
+    return (POWERSHELL if stem in ("pwsh", "powershell") else CMD if stem == "cmd"
+            else POSIX if stem in SHELL_PROGRAMS else None)
+
+
+def shell_dialect(tool_name: str, tool_input: dict) -> str:
+    """The shell a call's command line is written for, decided from the call.
+
+    A tool that names its shell keeps it (`Bash`, `PowerShell`). Any other shell tool (Codex `exec_command` and
+    `exec`, Antigravity `run_command`, `shell`) runs the shell its `shell` argument names, else the host's default
+    shell: PowerShell on Windows, a POSIX shell elsewhere.
+    """
+    named = SHELL_TOOL_DIALECTS.get(base_tool_name(tool_name))
+    return named or program_dialect(tool_input.get("shell")) or HOST_SHELL_DIALECT
 
 
 def read_heredoc(line: str, i: int, delimiter: str, strip_tabs: bool) -> tuple[str, int]:
@@ -379,6 +405,16 @@ def read_heredoc(line: str, i: int, delimiter: str, strip_tabs: bool) -> tuple[s
             break
         lines.append(text)
     return "\n".join(lines), min(i, len(line))
+
+
+def arithmetic_end(line: str, start: int) -> int:
+    """Index of the `)` that balances the `(` at `start` of a POSIX `((...))` arithmetic text."""
+    depth = 0
+    for i in range(start, len(line)):
+        depth += {"(": 1, ")": -1}.get(line[i], 0)
+        if not depth:
+            return i
+    raise ShellParseError("unterminated ((")
 
 
 def simple_commands(line: str, dialect: str = POSIX) -> list[tuple[list[str], list[str]]]:
@@ -414,6 +450,8 @@ def parse_commands(line: str, i: int, dialect: str, nested: bool) -> tuple[list,
 
     def substitution(start: int) -> int:
         """Collect the commands of the `$(` whose `(` is at `start`; the index of its `)`."""
+        if posix and line[start + 1:start + 2] == "(":     # `$(( 1 << 2 ))` is arithmetic, not commands
+            return arithmetic_end(line, start)
         inner, end = parse_commands(line, start + 1, dialect, nested=True)
         commands.extend(inner)
         return end
@@ -499,6 +537,9 @@ def parse_commands(line: str, i: int, dialect: str, nested: bool) -> tuple[list,
         elif c == ")" and nested and not depth:
             end_command()
             return commands, i
+        elif posix and c == "(" and nxt == "(" and not in_word and not words:
+            end_command()       # `(( x = 1 << 2 ))`: an arithmetic command, whose `<<` is a shift
+            i = arithmetic_end(line, i) + 1
         elif c in "()":
             depth += 1 if c == "(" else -1
             end_command()
@@ -536,6 +577,24 @@ def cmd_command_line(args: list[str]) -> str:
     return line[1:last] + line[last + 1:] if last > 0 else line[1:]
 
 
+def posix_shell_script(args: list) -> bool:
+    """Whether a POSIX shell's arguments name a script file: a non-option word, unless `-s` reads stdin."""
+    i = 0
+    while i < len(args) and isinstance(args[i], str):
+        word = args[i]
+        if word in ("-", "--"):     # end of options: the next word, if any, is the script
+            return i + 1 < len(args)
+        if word in POSIX_SHELL_VALUE_OPTIONS:
+            i += 2
+        elif word.startswith(("-", "+")):
+            if word.startswith("-") and not word.startswith("--") and "s" in word[1:]:
+                return False
+            i += 1
+        else:
+            return True
+    return False
+
+
 def command_words(words: list) -> list:
     """A simple command from its program on: leading assignments, shell keywords and wrappers removed."""
     i = 0
@@ -547,11 +606,21 @@ def command_words(words: list) -> list:
         elif word.startswith("$") and i + 1 < len(words) and words[i + 1] == "=":   # PowerShell `$out = <command>`
             i += 2
         elif stem in PASS_THROUGH_WRAPPERS:
-            subcommand, value_options, positionals = PASS_THROUGH_WRAPPERS[stem]
-            if subcommand and words[i + 1:i + 2] != [subcommand]:
+            subcommands, value_options, positionals = PASS_THROUGH_WRAPPERS[stem]
+            subcommand = next((s for s in subcommands if tuple(words[i + 1:i + 1 + len(s)]) == s), None)
+            if subcommands and subcommand is None:
                 break   # another subcommand of the wrapper (`uv pip install`): the wrapper is the program
-            i += 2 if subcommand else 1
+            i += 1 + len(subcommand or ())
             while i < len(words) and isinstance(words[i], str) and words[i].startswith("-") and words[i] != "-":
+                option, sep, value = words[i].partition("=")
+                if stem == "env" and option in ENV_SPLIT_OPTIONS:
+                    # `env -S 'prog args'` splits its value into the command, before the words that follow.
+                    value = value if sep else words[i + 1] if i + 1 < len(words) else None
+                    try:
+                        split = shlex.split(value) if isinstance(value, str) else []
+                    except ValueError:
+                        split = []
+                    return command_words([*split, *words[i + (1 if sep else 2):]]) if split else []
                 i += 2 if words[i] in value_options else 1
                 if words[i - 1] == "--":
                     break
@@ -608,7 +677,7 @@ def paseo_cli_options(words: list) -> dict[str, str]:
 def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
     """Normalize the static Paseo CLI sends, schedule launches and worker launchers a call runs; never execute it.
 
-    A shell line is parsed, in the dialect of the tool that sent it, into simple commands, and each is judged by the
+    A shell line is parsed, in the dialect of the call (shell_dialect), into simple commands, and each is judged by the
     program it runs, seen through interpreters, shells and wrappers (`python <script>`, `bash -c`, `bash <<EOF`,
     `cmd /c`, `eval`, `iex`, `Start-Process`, `npx`, PASS_THROUGH_WRAPPERS). A launcher name that
     is an argument, a path, a search pattern or quoted text given to another program is not a launch. A line that
@@ -651,9 +720,9 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
                 # A POSIX shell runs the one string after -c; PowerShell joins what follows; cmd as cmd_command_line.
                 shell(rest[0] if dialect == POSIX else " ".join(rest) if dialect == POWERSHELL
                       else cmd_command_line(rest), depth + 1, dialect)
-            elif not flags and dialect == POSIX:
-                for body in stdin:      # `bash <<'EOF'`: the here-document is the script
-                    shell(body, depth + 1, POSIX)
+            elif not flags and dialect == POSIX and not posix_shell_script(args):
+                for body in stdin:      # `bash <<'EOF'`: the here-document is the script, unless a script file is
+                    shell(body, depth + 1, POSIX)   # given (`bash run.sh <<EOF`: it is that script's stdin)
         elif stem == "eval":
             shell(" ".join(literal_args), depth + 1, POSIX)
         elif stem in ("invoke-expression", "iex"):
@@ -746,11 +815,18 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
                 i += 1
         if not isinstance(program, str) or not program:
             return
-        items = []
-        listed = [item[2:-1] if item.startswith("@(") and item.endswith(")") else item for item in listed]
-        for match in re.finditer(r'"([^"]*)"|\'([^\']*)\'|([^\s,]+)', " ".join(listed)):
-            item = next(group for group in match.groups() if group is not None)
-            items.extend(item.split() if match.group(3) is None and re.search(r'\s', item) else [item])
+        elements = []
+        for word in listed:
+            if word.startswith("@(") and word.endswith(")"):    # an array literal, kept raw by the tokenizer
+                for match in re.finditer(r"""'((?:[^']|'')*)'|"((?:[^"`]|`.)*)"|([^\s,]+)""", word[2:-1]):
+                    single, double, bare = match.groups()
+                    elements.append(single.replace("''", "'") if single is not None
+                                    else re.sub(r"`(.)", r"\1", double) if double is not None else bare)
+            else:
+                elements.extend(part for part in word.split(",") if part)
+        # Start-Process joins the elements with spaces into one Windows command line and adds no quotes, so only
+        # double quotes written into an element keep a spaced path together (its documented `"`"C:\x y\a.py`""`).
+        items = [item.replace('"', '') for item in re.findall(r'(?:"[^"]*"|[^\s"])+', " ".join(elements))]
         argv([program, *items], depth + 1)
 
     def python(code: str, depth: int):
@@ -795,15 +871,20 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
             return
         # Also accepts a Python script supplied directly as a wrapper's code.
         python(command, depth)
-        try:
-            commands = simple_commands(command, dialect)
-        except ShellParseError:
-            return   # undecidable: not a launch (see the docstring)
+        commands = None
+        for reading in (dialect, FALLBACK_DIALECT.get(dialect)):
+            try:
+                commands = simple_commands(command, reading) if reading else None
+            except ShellParseError:
+                continue    # read it in the other dialect before it counts as undecidable
+            break
+        if not commands:
+            return   # undecidable in both readings: not a launch (see the docstring)
         for words, stdin in commands:
             argv(words, depth, stdin)
 
     for command in extract_shell_commands(tool_input):
-        shell(command, 0, shell_dialect(tool_name))
+        shell(command, 0, shell_dialect(tool_name, tool_input))
     return targets
 
 
