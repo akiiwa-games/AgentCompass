@@ -32,6 +32,8 @@
 !/audit/
 /audit/*
 !/audit/*.py
+!/audit/calibrate/
+!/audit/calibrate/**
 !/setup/
 /setup/*
 !/setup/*.py
