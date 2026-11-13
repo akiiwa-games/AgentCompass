@@ -292,9 +292,16 @@ class CalibrationReportTests(unittest.TestCase):
         state, out = self.sub("state"), self.sub("out")
         write_state(state, [dispatch(1, tokens={"input_tokens": 10, "output_tokens": 5, "cache_read_tokens": 1})])
         (state / "provider-inventory.json").write_text("{not json", encoding="utf-8")
+        # An account-level hold on a multi-pool account: load_accounts would migrate it into pool holds and rewrite
+        # the store under a lock file. The hold goes where the retry store lives for this process and into the state dir.
+        hold = {"entries": {"antigravity": {"account": "antigravity", "model": None, "models": ["gemini-4-argon-high"],
+                                            "scope": "account", "observed_at": STAMP, "retry_at": "2099-01-01T00:00:00+00:00"}}}
+        for base in (Path.home() / ".agent-compass", state):
+            base.mkdir(exist_ok=True)
+            (base / "provider-retry.json").write_text(json.dumps(hold), encoding="utf-8")
 
         def snapshot():
-            return {str(p): (p.stat().st_mtime_ns, p.stat().st_size)
+            return {str(p): hashlib.sha256(p.read_bytes()).hexdigest()
                     for base in (Path.home(), state) for p in base.rglob("*") if p.is_file()}
 
         before = snapshot()

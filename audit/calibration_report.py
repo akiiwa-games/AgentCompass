@@ -421,25 +421,31 @@ def build(db, ledger_path, since, until, pricing):
 def accounts_pricing(state: Path):
     """bundle -> {list_price, usd_per_hour, window_id, capacity_usd}, with no write anywhere.
 
-    Prices come from the shipped `accounts.json` and `five-axis-scores.json` (`references/`), not from fleet discovery,
-    which rewrites `provider-inventory.json`. Plan facts (which plan an account is on, hence its window capacity) come from
+    Prices come from the shipped `accounts.json` and `five-axis-scores.json` (`references/`), read directly. It does not
+    call `account_fleet.load_accounts` (it rewrites `provider-inventory.json` through discovery and `provider-retry.json`
+    through `scope_account_holds`), only functions checked to be pure: `accounts_override.normalize`,
+    `provider_inventory.apply` with an inventory given, `apply_shared_quota`, `axis_scores.five_axis_overlay` without local
+    state, `quota_pools.bundle_pools`, `account_fleet.model_spec`. Plan facts (which plan an account is on, hence its window capacity) come from
     the state directory's existing `provider-inventory.json`, read and never rewritten; without it a window's capacity is
     unknown and its share is left blank. `list_price` is the model's public price in USD per million tokens and
     `usd_per_hour` the rate `expected_usd` is estimated on. The window is the first long window the bundle draws that
     has a cited capacity."""
     sys.path.insert(0, str(SCRIPTS))
     import account_fleet
+    import accounts_override
     import axis_scores
     import provider_inventory
     import quota_economy
     import quota_pools
-    accounts = account_fleet.load_accounts(path=account_fleet.REFERENCES / "accounts.json")
+    accounts = accounts_override.normalize(
+        json.loads((account_fleet.REFERENCES / "accounts.json").read_text(encoding="utf-8-sig")))
     try:
         inventory = json.loads((state / "provider-inventory.json").read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         inventory = None
     if isinstance(inventory, dict):
         provider_inventory.apply(accounts, inventory)
+        provider_inventory.apply_shared_quota(accounts)
     accounts = axis_scores.five_axis_overlay(accounts, read_local_state=False)
     short = (accounts.get("scoring") or {}).get("short_window_hours")
     specs = accounts.get("accounts") or {}
