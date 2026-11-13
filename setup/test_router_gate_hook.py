@@ -1703,6 +1703,66 @@ class BoundDispatchGateTests(unittest.TestCase):
                 ('grep -n "a|b" x.py; paseo run --provider codex/gpt-6-astra task', 'shell:paseo agent create')):
             self.assertEqual(gate.detect_subagent_launch('exec_command', {'cmd': command}), expected, command)
 
+    def test_a_launcher_name_given_to_another_program_is_not_a_launch(self):
+        """The gate judges the program each simple command runs, not text anywhere in the line."""
+        for command in (
+                # Reproduced: blocked as shell:run_dot_task.py because `skills/dot-subagent ` is followed by a space.
+                'cd /d/work/agentcompass && cat agentcompass/test_docs.py; ls skills/route-agent-work '
+                'skills/gemini-web skills/dot-subagent skills/chatgpt-pro-consult',
+                'ls skills/dot-subagent', 'ls -la ~/.codex/skills/dot-subagent/scripts/run_dot_task.py',
+                'cat skills/dot-subagent/scripts/run_dot_task.py',
+                "rg -n 'paseo agent create|codex exec' setup", 'rg dot-subagent skills',
+                "git grep -n 'orca agent launch'", 'git grep run_dot_task.py -- skills',
+                r'Get-Content skills\dot-subagent\scripts\run_dot_task.py',
+                'Get-Content -Path skills/dot-subagent/SKILL.md | Select-Object -First 5',
+                'echo dot-subagent run_dot_task.py', 'echo "paseo run --provider codex x"',
+                "Write-Output 'codex exec task'",
+                "git commit -F - <<'EOF'\nfix the gate; paseo run --provider codex x\nEOF\ngit log -1",
+                "git commit -m @'\nfix the gate; codex exec task\n'@"):
+            with self.subTest(command=command):
+                self.assertIsNone(gate.detect_subagent_launch('Bash', {'command': command}))
+                self.assertEqual(gate.evaluate_payload({'tool_name': 'Bash', 'tool_input': {'command': command}},
+                                                       now=self.now), {})
+
+    def test_a_launch_anywhere_in_a_compound_line_reaches_the_launch_checks(self):
+        dot = 'skills/dot-subagent/scripts/run_dot_task.py --prompt-file task.md'
+        for command, trigger in (
+                ('git status; ls; codex exec -m gpt-6-astra task', 'shell:codex exec'),
+                ('echo a | grep a && orca agent launch --agent claude --prompt hi', 'shell:orca worker launch'),
+                ('cd skills && paseo run --provider codex/gpt-6-astra task', 'shell:paseo agent create'),
+                (f'cd /d/work && python -X utf8 {dot}', 'shell:run_dot_task.py'),
+                (f'python3 -u -W ignore {dot}', 'shell:run_dot_task.py'),
+                ('FOO=1 dot-subagent run --prompt hi', 'shell:run_dot_task.py'),
+                ("bash -lc 'cd x && codex exec task'", 'shell:codex exec'),
+                ('cmd /c "cd x & paseo agent create --provider codex"', 'shell:paseo agent create'),
+                ('out=$(codex exec task)', 'shell:codex exec'),
+                # PowerShell forms: the call operator, an assignment, `;` and `|`.
+                (rf'Set-Location D:\work; & python -X utf8 D:\work\{dot}', 'shell:run_dot_task.py'),
+                (r"& 'C:\Program Files\Paseo\paseo.cmd' run --provider codex x", 'shell:paseo agent create'),
+                ('$result = codex.cmd exec task', 'shell:codex exec'),
+                ('Get-ChildItem | Out-Null; orca.exe orchestration worker-start --task t1', 'shell:orca worker launch')):
+            with self.subTest(command=command):
+                self.assertEqual(gate.detect_subagent_launch('Bash', {'command': command}), trigger)
+                denied = gate.evaluate_payload({'tool_name': 'Bash', 'tool_input': {'command': command}}, now=self.now)
+                self.assertEqual(denied['decision'], 'block')
+                self.assertIn(f'({trigger})', denied['reason'])
+
+    def test_launcher_inspection_commands_are_not_launches(self):
+        dot = 'python ~/.codex/skills/dot-subagent/scripts/run_dot_task.py'
+        for command in (f'{dot} --help', f'{dot} -h', f'{dot} run --check-only --prompt hi', f'{dot} doctor',
+                        f'{dot} status', f'{dot} run --task-id t1', f'{dot} run --task-id=t1', 'dot-subagent status',
+                        'cd x && codex exec --help', 'paseo run --help', 'paseo agent create -h',
+                        'orca orchestration worker-start --help'):
+            with self.subTest(command=command):
+                self.assertIsNone(gate.detect_subagent_launch('Bash', {'command': command}))
+
+    def test_a_line_that_does_not_parse_is_not_a_launch(self):
+        """No shell runs it; the gate keeps its fail-open degrade for an undecidable line."""
+        for command in ('echo "unterminated; paseo run --provider codex x', "codex exec 'task",
+                        'echo $(codex exec task'):
+            with self.subTest(command=command):
+                self.assertIsNone(gate.detect_subagent_launch('Bash', {'command': command}))
+
     def test_labelled_launch_works_without_any_legacy_ledger_and_is_single_use(self):
         self.assertEqual(gate.evaluate_payload(self.payload(), now=self.now), {})
         self.assertEqual(gate.evaluate_payload(self.payload(), now=self.now), {})

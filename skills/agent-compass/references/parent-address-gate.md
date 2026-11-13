@@ -1,5 +1,9 @@
 # Parent addressing and worker questions
 
+The spawn gate prevents accidental unrouted launches. It is not a security boundary against a session that
+deliberately disguises a launch: it judges the program each simple command of a shell line runs (seen through
+interpreters and wrappers), and a line it cannot parse or a program that is not a literal is not a launch.
+
 - Failure: an unaddressed worker cannot reach its coordinator; UI questions (including `request_user_input_async`) strand the workflow in the worker session.
 - Action: refuse dispatch without an actual parent ID; refuse interactive user-question calls by an identified worker. Reads, repairs, messages and main-session questions remain allowed.
 - Decision: use the launching session's host ID, include it and its messaging address in the delivered assignment, and preserve parentage in host metadata. Never substitute `top-level`, a task ID or the worker's own ID. Paseo resolves the parent before creation; native host orchestrators must carry the coordinator session ID plus its live inbox address and preamble.

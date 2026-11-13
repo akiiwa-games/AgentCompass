@@ -113,28 +113,6 @@ TURN_TARGET_ARG_RE = re.compile(
     re.I,
 )
 
-# Match actual worker-spawning CLI invocations at the start of a command segment.
-# A command segment ends at an unquoted ;, &&, ||, | or newline; quoted separators are argument text.
-SHELL_SEGMENT_RE = re.compile(r"""(?:"(?:\\.|[^"\\])*"?|'[^']*'?|&(?!&)|[^;|&\r\n"'])+""")
-LEADING_WRAPPERS_RE = re.compile(
-    r"^\s*(?:(?:env|[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\S+))\s+)*"
-    r"(?:(?:&|call|start|nohup|bash|sh|zsh|pwsh|powershell(?:\.exe)?|cmd(?:\.exe)?\s+/c)\s+)*"
-    r"(?:-\w+\s+)*",
-    re.I,
-)
-
-SHELL_SPAWN_PATTERNS = (
-    ("paseo agent create", re.compile(r"\bpaseo(?:\.cmd|\.exe)?\s+(?:agent\s+(?:create|start|spawn|run)|create_agent|run)\b(?!.*--help)", re.I)),
-    ("run_dot_task.py", re.compile(r"\b(?:run_dot_task\.py|dot-subagent(?:\.cmd)?(?![/\\]))\b(?!.*(?:--help|-h|--check-only|\bdoctor\b|\bstatus\b|--task-id\b))", re.I)),
-    ("orca worker launch", re.compile(r"(?:^|[/\\])orca(?:\.cmd|\.exe)?\s+(?:orchestration\s+worker-start|agent\s+launch)\b(?!.*--help)", re.I)),
-    ("codex exec", re.compile(r"(?:^|[/\\])codex(?:\.cmd|\.exe)?\s+exec\b(?!.*--help)", re.I)),
-)
-
-READ_ONLY_CMD_PREFIX_RE = re.compile(
-    r"^\s*(?:git\s+(?:commit|log|diff|show|status|grep)|rg|grep|Select-String|Get-Content|cat|head|tail|sed|awk|echo|printf|Write-Output|python(?:\.exe)?\s+(?:-\S+\s+)*-m\s+unittest)\b",
-    re.I,
-)
-
 
 # What the installed hook matchers must route here: every base name evaluate_payload acts on.
 HOOKED_TOOLS = DIRECT_SUBAGENT_TOOLS | SCHEDULE_RETARGET_TOOLS | PASEO_TURN_TOOLS | CODEMODE_TOOLS | SHELL_TOOLS
@@ -310,24 +288,216 @@ UNKNOWN_CLI_VALUE = "<not a literal>"
 
 # The Paseo CLI (commander): global options are accepted before and between command words, on the root and on
 # `schedule`/`agent` alike (`paseo --json schedule create`, `paseo schedule --json create`).
-PASEO_EXES = frozenset({"paseo", "paseo.cmd", "paseo.exe", "paseo.ps1"})
 PASEO_VALUE_OPTIONS = frozenset({"-o", "--format", "--host", "--home"})
 PASEO_GROUP_COMMANDS = frozenset({"agent", "schedule"})
 # Commands that create and start an agent. A schedule launch is judged as the MCP schedule tools.
 PASEO_LAUNCH_COMMANDS = frozenset({("run",), ("agent", "run"), ("agent", "create"), ("agent", "start"),
                                    ("agent", "spawn"), ("create_agent",)})
 PASEO_SCHEDULE_COMMANDS = {("schedule", "create"): "create_schedule", ("schedule", "update"): "update_schedule"}
-PASEO_CLI_LAUNCH = "paseo_cli_launch"   # a cli_turn_calls entry for PASEO_LAUNCH_COMMANDS; judged on the shell call
+# A cli_turn_calls entry for a worker launcher a shell command runs, args {"trigger": "shell:<launcher>"}; the launch
+# itself is judged on the shell call.
+SHELL_LAUNCH = "shell_launch"
+# Words of the Dot runner that only inspect: help, a dry check, diagnostics, or an existing task's status or result.
+DOT_INSPECT_WORDS = frozenset({"--help", "-h", "--check-only", "doctor", "status", "--task-id"})
+ORCA_LAUNCH_COMMANDS = frozenset({("orchestration", "worker-start"), ("agent", "launch")})
 # Programs that run another command line: shells take it after -c / -Command / /c, package runners as their argv.
 SHELL_PROGRAMS = frozenset({"bash", "sh", "zsh", "dash", "pwsh", "powershell", "cmd"})
-SHELL_COMMAND_FLAGS = frozenset({"-c", "-command", "/c", "/k"})
+POSIX_SHELL_COMMAND_FLAG_RE = re.compile(r"-[A-Za-z]*c[A-Za-z]*")   # `-c`, `-lc`, `-ec`
+WINDOWS_SHELL_COMMAND_FLAGS = frozenset({"-c", "-command", "/c", "/k"})
 PACKAGE_RUNNERS = {"npx": (), "bunx": (), "pnpm": ("dlx", "exec"), "yarn": ("dlx", "exec")}
 START_PROCESS = frozenset({"start-process", "saps"})
+PYTHON_STEM_RE = re.compile(r"py|python(?:\d+(?:\.\d+)*)?w?")
+PYTHON_VALUE_FLAGS = frozenset({"-X", "-W"})
+NODE_VALUE_FLAGS = frozenset({"-r", "--require", "--import", "--loader", "--experimental-loader", "-C", "--conditions"})
+NODE_CODE_FLAGS = frozenset({"-e", "--eval", "-p", "--print"})
+# Words before a program that run it rather than being it: shell keywords and prefix commands. `env` and `start`
+# take their own options and are read by command_words.
+COMMAND_PREFIX_WORDS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "time", "exec",
+                                  "nohup", "command", "call"})
+ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*", re.S)
+ENV_VALUE_FLAGS = frozenset({"-u", "--unset", "-C", "--chdir", "-S", "--split-string"})
+LAUNCHER_SUFFIXES = (".exe", ".cmd", ".bat", ".ps1", ".js", ".mjs", ".cjs")
 
 
 def program_name(word: str) -> str:
     """`C:\\x\\Paseo.CMD` -> `paseo.cmd`; the program a command word runs, lower-cased."""
     return word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+
+
+def program_stem(word: str) -> str:
+    """`C:\\x\\Paseo.CMD` -> `paseo`: the program name without a Windows or Node launcher suffix."""
+    name = program_name(word)
+    return next((name[:-len(s)] for s in LAUNCHER_SUFFIXES if name.endswith(s)), name)
+
+
+class ShellParseError(ValueError):
+    """A command line no shell would run: an unterminated quote, substitution or here-string."""
+
+
+# Unquoted characters that end a simple command. `(` `)` `{` `}` open and close subshells, groups and PowerShell
+# script blocks, whose body is commands of its own; a single `&` is a background or PowerShell call operator, and
+# either way the next word is a program.
+SHELL_COMMAND_BREAKS = frozenset(";|&\n(){}")
+# Characters a backslash outside quotes escapes. Before any other character it is a Windows path separator.
+SHELL_ESCAPED = frozenset(" \t\"'\\;&|()<>{}$`#")
+HEREDOC_RE = re.compile(r"""<<(-?)[ \t]*(['"]?)([^\s'"<>;|&()]+)\2""")
+
+
+def closing_paren(line: str, start: int) -> int:
+    """Index of the `)` that closes the `(` at `start`, skipping quoted text."""
+    depth, i = 0, start
+    while i < len(line):
+        c = line[i]
+        if c in "'\"":
+            end = line.find(c, i + 1)
+            while c == '"' and end > 0 and line[end - 1] == "\\":
+                end = line.find(c, end + 1)
+            if end < 0:
+                raise ShellParseError(f"unterminated {c} inside $(")
+            i = end
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if not depth:
+                return i
+        i += 1
+    raise ShellParseError("unterminated $(")
+
+
+def skip_heredoc(line: str, i: int, delimiter: str, strip_tabs: bool) -> int:
+    """Index after the body of a here-document that starts at `i`: up to its delimiter line, or the end."""
+    while i < len(line):
+        end = line.find("\n", i)
+        end = len(line) if end < 0 else end
+        text = line[i:end].rstrip("\r")
+        i = end + 1
+        if (text.lstrip("\t") if strip_tabs else text) == delimiter:
+            return i
+    return len(line)
+
+
+def simple_commands(line: str) -> tuple[list[list[str]], list[str]]:
+    """The words of each simple command of a POSIX-shell or PowerShell line, and the lines its `$(...)` run.
+
+    Commands end at an unquoted `;` `&&` `||` `|` `&` newline or bracket. Quotes are removed from words; quoted text,
+    here-document bodies and PowerShell here-strings are argument text, never commands. Raises ShellParseError when
+    the line does not parse.
+    """
+    commands, substitutions, words, heredocs = [], [], [], []
+    word, in_word, i, n = [], False, 0, len(line)
+
+    def end_word():
+        nonlocal word, in_word
+        if in_word:
+            words.append("".join(word))
+        word, in_word = [], False
+
+    def end_command():
+        end_word()
+        if words:
+            commands.append(list(words))
+            words.clear()
+
+    while i < n:
+        c, nxt = line[i], line[i + 1:i + 2]
+        if c in "\\`" and line.startswith(("\n", "\r\n"), i + 1):    # line continuation
+            i = line.index("\n", i) + 1
+        elif c == "\\" and nxt and nxt in SHELL_ESCAPED:
+            word.append(nxt)
+            in_word, i = True, i + 2
+        elif c in " \t\r":
+            end_word()
+            i += 1
+        elif c == "\n":
+            end_command()
+            i += 1
+            for delimiter, strip_tabs in heredocs:
+                i = skip_heredoc(line, i, delimiter, strip_tabs)
+            heredocs.clear()
+        elif c == "#" and not in_word:
+            end = line.find("\n", i)
+            i = n if end < 0 else end
+        elif c == "@" and not in_word and nxt in ("'", '"') and line.startswith(("\n", "\r\n"), i + 2):
+            body = line.index("\n", i) + 1
+            end = line.find("\n" + nxt + "@", body - 1)
+            if end < 0:
+                raise ShellParseError("unterminated here-string")
+            word.append(line[body:end].rstrip("\r"))
+            in_word, i = True, end + 3
+        elif c == "'":
+            end = line.find("'", i + 1)
+            if end < 0:
+                raise ShellParseError("unterminated '")
+            word.append(line[i + 1:end])
+            in_word, i = True, end + 1
+        elif c == '"':
+            in_word, i = True, i + 1
+            while i < n and line[i] != '"':
+                ch, after = line[i], line[i + 1:i + 2]
+                if (ch == "\\" and after and after in '"\\$`\n') or (ch == "`" and after and after in '"`'):
+                    word.append("" if after == "\n" else after)
+                    i += 2
+                elif ch == "$" and after == "(":
+                    end = closing_paren(line, i + 1)
+                    substitutions.append(line[i + 2:end])
+                    word.append(line[i:end + 1])
+                    i = end + 1
+                else:
+                    word.append(ch)
+                    i += 1
+            if i >= n:
+                raise ShellParseError('unterminated "')
+            i += 1
+        elif c == "$" and nxt == "(":
+            end = closing_paren(line, i + 1)
+            substitutions.append(line[i + 2:end])
+            word.append(line[i:end + 1])
+            in_word, i = True, end + 1
+        elif c == "$" and nxt == "{":
+            end = line.find("}", i)
+            if end < 0:
+                raise ShellParseError("unterminated ${")
+            word.append(line[i:end + 1])
+            in_word, i = True, end + 1
+        elif c == "<" and nxt == "<" and line[i + 2:i + 3] != "<" and HEREDOC_RE.match(line, i):
+            match = HEREDOC_RE.match(line, i)
+            heredocs.append((match.group(3), bool(match.group(1))))
+            end_word()
+            i = match.end()
+        elif c in SHELL_COMMAND_BREAKS:
+            end_command()
+            i += 1
+        else:
+            word.append(c)
+            in_word, i = True, i + 1
+    end_command()
+    return commands, substitutions
+
+
+def command_words(words: list) -> list:
+    """A simple command from its program on: leading assignments, shell keywords and prefix commands removed."""
+    i = 0
+    while i < len(words) and isinstance(words[i], str):
+        word = words[i]
+        lower = word.lower()
+        if ENV_ASSIGNMENT_RE.fullmatch(word) or lower in COMMAND_PREFIX_WORDS:
+            i += 1
+        elif word.startswith("$") and i + 1 < len(words) and words[i + 1] == "=":   # PowerShell `$out = <command>`
+            i += 2
+        elif lower == "env":
+            i += 1
+            while i < len(words) and isinstance(words[i], str) and words[i].startswith("-"):
+                i += 2 if words[i] in ENV_VALUE_FLAGS else 1
+        elif lower == "start":
+            # cmd `start ["title"] [/b ...] <program>`; in PowerShell `start` is Start-Process.
+            i += 1
+            while i < len(words) and isinstance(words[i], str) and (not words[i] or words[i].startswith("/")):
+                i += 1
+            return ["Start-Process", *words[i:]]
+        else:
+            break
+    return words[i:]
 
 
 def paseo_command(args: list) -> tuple[tuple[str, ...], list] | None:
@@ -369,32 +539,48 @@ def paseo_cli_options(words: list) -> dict[str, str]:
 
 
 def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
-    """Normalize static Paseo CLI sends and schedule launches; never execute shell or Python code.
+    """Normalize the static Paseo CLI sends, schedule launches and worker launchers a call runs; never execute it.
 
-    Only command positions and subprocess arguments count, not quoted prompt
-    text. Unknown/dynamic expressions retain the existing fail-open behavior.
+    A shell line is parsed into simple commands and each is judged by the program it runs, seen through
+    interpreters and wrappers (`python <script>`, `bash -c`, `cmd /c`, `Start-Process`, `npx`). A launcher name that
+    is an argument, a path, a search pattern or quoted text given to another program is not a launch. A line that
+    does not parse, and a program or argument that is not a literal, is undecidable and is not a launch: the gate's
+    fail-open degrade, since it guards against accidental launches and is not a security boundary.
     """
     if tool_name not in SHELL_TOOLS | CODEMODE_TOOLS:
         return []
     targets = []
 
+    def launch(label: str):
+        targets.append((SHELL_LAUNCH, {"trigger": f"shell:{label}"}))
+
     def argv(words: list, depth: int):
+        words = command_words(words)
         if not words or not isinstance(words[0], str) or depth > 4:
             return
-        if re.search(r"\s", program_name(words[0].strip())):
-            # A quoted command line left by a stripped wrapper (`bash -c "..."`), not a program path with spaces
-            # (`C:\Program Files\Paseo\paseo.cmd`).
-            shell(words[0], depth + 1)
-            return
         exe = program_name(words[0])
-        stem = exe.rsplit(".", 1)[0] if exe.endswith((".exe", ".cmd", ".ps1")) else exe
-        if exe in PASEO_EXES:
-            paseo(words[1:])
+        stem = program_stem(words[0])
+        args = words[1:]
+        if stem == "paseo":
+            paseo(args)
+        elif exe == "run_dot_task.py" or stem == "dot-subagent":
+            if not any(isinstance(w, str) and (w in DOT_INSPECT_WORDS or w.startswith("--task-id=")) for w in args):
+                launch("run_dot_task.py")
+        elif stem == "orca":
+            if tuple(args[:2]) in ORCA_LAUNCH_COMMANDS and "--help" not in args:
+                launch("orca worker launch")
+        elif stem == "codex":
+            if args[:1] == ["exec"] and "--help" not in args:
+                launch("codex exec")
         elif stem in SHELL_PROGRAMS:
-            flags = [i for i, w in enumerate(words) if isinstance(w, str) and w.lower() in SHELL_COMMAND_FLAGS]
+            posix = stem not in ("pwsh", "powershell", "cmd")
+            flags = [i for i, w in enumerate(words) if isinstance(w, str) and (
+                POSIX_SHELL_COMMAND_FLAG_RE.fullmatch(w) if posix else w.lower() in WINDOWS_SHELL_COMMAND_FLAGS)]
             if flags:
                 rest = [w for w in words[flags[0] + 1:] if isinstance(w, str)]
-                shell(rest[0] if len(rest) == 1 else " ".join(rest), depth + 1)
+                if rest:
+                    # A POSIX shell runs the one string after -c; PowerShell and cmd join what follows.
+                    shell(rest[0] if posix else " ".join(rest), depth + 1)
         elif stem in PACKAGE_RUNNERS:
             rest = words[1:]
             if PACKAGE_RUNNERS[stem]:
@@ -405,11 +591,41 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
                 rest = rest[2:] if rest[0] in ("-p", "--package") else rest[1:]
             argv(rest, depth + 1)
         elif exe in START_PROCESS:
-            start_process(words[1:], depth)
-        elif stem in ('python', 'python3', 'py') and '-c' in words:
-            index = words.index('-c') + 1
-            if index < len(words) and isinstance(words[index], str):
-                python(words[index], depth + 1)
+            start_process(args, depth)
+        elif PYTHON_STEM_RE.fullmatch(stem):
+            python_interpreter(args, depth)
+        elif stem == "node":
+            node_interpreter(args, depth)
+
+    def python_interpreter(args: list, depth: int):
+        """`python [options] <script> ...` runs the script; `-c` runs code; `-m` and stdin run no script by path."""
+        i = 0
+        while i < len(args) and isinstance(args[i], str):
+            word = args[i]
+            if word == "-c":
+                if i + 1 < len(args) and isinstance(args[i + 1], str):
+                    python(args[i + 1], depth + 1)
+                return
+            if word in ("-m", "-"):
+                return
+            if word.startswith("-"):
+                i += 2 if word in PYTHON_VALUE_FLAGS else 1
+                continue
+            argv(args[i:], depth + 1)
+            return
+
+    def node_interpreter(args: list, depth: int):
+        """`node [options] <script> ...` runs the script; inline `-e` code is not read."""
+        i = 0
+        while i < len(args) and isinstance(args[i], str):
+            word = args[i]
+            if word in NODE_CODE_FLAGS:
+                return
+            if word.startswith("-"):
+                i += 2 if word in NODE_VALUE_FLAGS else 1
+                continue
+            argv(args[i:], depth + 1)
+            return
 
     def paseo(args: list):
         if '--help' in args or '-h' in args:
@@ -422,7 +638,7 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
             # Same launch as MCP create_schedule / update_schedule: the provider settings become its arguments.
             targets.append((PASEO_SCHEDULE_COMMANDS[path], paseo_cli_options(rest)))
         elif path in PASEO_LAUNCH_COMMANDS:
-            targets.append((PASEO_CLI_LAUNCH, paseo_cli_options(rest)))
+            launch("paseo agent create")
         elif path in (('send',), ('agent', 'send')):
             ids = [w for w in rest if not (isinstance(w, str) and w.startswith('-'))]
             if ids and isinstance(ids[0], str) and UUID_RE.fullmatch(ids[0]):
@@ -501,13 +717,14 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
             return
         # Also accepts a Python script supplied directly as a wrapper's code.
         python(command, depth)
-        for segment in SHELL_SEGMENT_RE.findall(command):
-            segment = LEADING_WRAPPERS_RE.sub('', segment.strip())
-            if READ_ONLY_CMD_PREFIX_RE.match(segment):
-                continue
-            words = re.findall(r'''"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+''', segment)
-            argv([word[1:-1] if len(word) >= 2 and word[0] == word[-1]
-                  and word[0] in ('"', "'") else word for word in words], depth)
+        try:
+            commands, substitutions = simple_commands(command)
+        except ShellParseError:
+            return   # undecidable: not a launch (see the docstring)
+        for words in commands:
+            argv(words, depth)
+        for nested in substitutions:
+            shell(nested, depth + 1)
 
     for command in extract_shell_commands(tool_input):
         shell(command)
@@ -530,21 +747,8 @@ def detect_subagent_launch(tool_name: str, tool_input: dict) -> str | None:
     if tool_name in SHELL_TOOLS:
         if any(name in DIRECT_SUBAGENT_TOOLS for name, _ in wrapped_agent_calls(tool_name, tool_input)):
             return f"{tool_name}:create_agent"
-        if any(name == PASEO_CLI_LAUNCH for name, _ in cli_turn_calls(tool_name, tool_input)):
-            return "shell:paseo agent create"
-        for command in extract_shell_commands(tool_input):
-            if not command:
-                continue
-            for raw_segment in SHELL_SEGMENT_RE.findall(command):
-                segment = raw_segment.strip()
-                if not segment or READ_ONLY_CMD_PREFIX_RE.match(segment):
-                    continue
-                stripped = LEADING_WRAPPERS_RE.sub("", segment)
-                if READ_ONLY_CMD_PREFIX_RE.match(stripped):
-                    continue
-                for label, pattern in SHELL_SPAWN_PATTERNS:
-                    if pattern.search(stripped):
-                        return f"shell:{label}"
+        return next((args["trigger"] for name, args in cli_turn_calls(tool_name, tool_input)
+                     if name == SHELL_LAUNCH), None)
     return None
 
 
