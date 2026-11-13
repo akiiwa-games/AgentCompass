@@ -213,6 +213,7 @@ def test_account_cards_and_model_rows_surface_live_model_exclusions_and_unreadab
     }})
     (account_fleet.REFERENCES / 'accounts.json').write_text(json.dumps({
         'scoring': {'safety_margin_pct': 5},
+        'families': {'rows': []},
         'models': {
             'gemini-4-argon-high': {'label': 'Gemini 4 Argon (High)'},
             'gemini-3.8-flash-high': {'label': 'Gemini 3.8 Flash (High)'},

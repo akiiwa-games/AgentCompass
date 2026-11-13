@@ -46,7 +46,7 @@ class WindowScopeTests(unittest.TestCase):
             'five_hour': {'hours': 5}, 'seven_day': {'hours': 168},
             'weekly_quartz': {'hours': 168, 'models': ['quartz']}}, 'bundles': {
             'quartz_high': {'model': 'acme-quartz-2', 'effort': 'high'},
-            'onyx_high': {'model': 'acme-onyx-2', 'effort': 'high'}}}}, 'scoring': {}}
+            'onyx_high': {'model': 'acme-onyx-2', 'effort': 'high'}}}}, 'scoring': {}, 'families': {'rows': []}}
         observed = usage('acme', reading('weekly_quartz', 100, 40), reading('seven_day', 20, 40))
         for bid, blocked in (('quartz_high', True), ('onyx_high', False)):
             bundle = dict(accounts['accounts']['acme']['bundles'][bid], account='acme', id=bid)
@@ -55,7 +55,7 @@ class WindowScopeTests(unittest.TestCase):
                 self.assertEqual('weekly_quartz' in quota_pools.bundle_pools(bundle, accounts), blocked)
 
     def test_a_new_scoped_week_works_from_the_provider_reading_alone(self):
-        accounts = {'accounts': {'acme': {'windows': {'seven_day': {'hours': 168}}}}, 'scoring': {}}
+        accounts = {'accounts': {'acme': {'windows': {'seven_day': {'hours': 168}}}}, 'scoring': {}, 'families': {'rows': []}}
         observed = usage('acme', reading('weekly_quartz', 100, 40, models=['Quartz']), reading('seven_day', 20, 40))
         for model, blocked in (('acme-quartz-2', True), ('acme-onyx-2', False)):
             with self.subTest(model=model):
@@ -66,7 +66,7 @@ class WindowScopeTests(unittest.TestCase):
                                  ['weekly_quartz', 'seven_day'] if blocked else ['seven_day'])
 
     def test_an_unscoped_observed_window_binds_every_model(self):
-        accounts = {'accounts': {'acme': {'windows': {'seven_day': {'hours': 168}}}}, 'scoring': {}}
+        accounts = {'accounts': {'acme': {'windows': {'seven_day': {'hours': 168}}}}, 'scoring': {}, 'families': {'rows': []}}
         observed = usage('acme', reading('mystery', 100, 40), reading('seven_day', 20, 40))
         self.assertTrue(quota_pools.launch_blockers({'account': 'acme', 'model': 'acme-onyx-2'}, accounts, observed, NOW))
 

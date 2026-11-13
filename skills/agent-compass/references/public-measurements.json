@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-11T14:53:22+00:00",
+ "generated_at": "2026-11-13T04:06:35+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [
@@ -82,6 +82,13 @@
    "check": "variant_not_effort",
    "level": "structural",
    "evidence": "listed as 'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)': the tag names nvfp4, not an effort"
+  },
+  {
+   "model": "gemini-4-hydrogen-high",
+   "source": "aa.terminalbench_4",
+   "check": "high_outside_adjacent_efforts",
+   "level": "statistical",
+   "evidence": "High 0.5404, Medium 0.2929, xHigh 0.5354"
   },
   {
    "model": "nemotron-3.5-super-vl-free",
@@ -16048,6 +16055,220 @@
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-02"
+    }
+   ]
+  },
+  "gemini-4-hydrogen-high": {
+   "tier": [
+    {
+     "source": "tier.aa_index",
+     "kind": "benchmark",
+     "value": 0.0657,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:00+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 50.7871 at High interpolated onto the arena.ai Overall High scale between ['Gemini 4 Argon'] and ['Claude Opus 5.5'] of the 22 models listed at High on both boards",
+     "listed_as": "Gemini 4 Hydrogen",
+     "board_value": 50.7870826951304,
+     "neighbours": {
+      "below": {
+       "x": 50.4121935905389,
+       "tier": 0.0657,
+       "models": [
+        "Gemini 4 Argon"
+       ]
+      },
+      "above": {
+       "x": 51.8359958227294,
+       "tier": 0.0657,
+       "models": [
+        "Claude Opus 5.5"
+       ]
+      }
+     },
+     "n": 22
+    }
+   ],
+   "coding": [
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": -0.1346,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:00+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.565657 (claude-opus-5-5), sd_panel 0.187624 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Gemini 4 Hydrogen (High)",
+     "raw": 0.540404,
+     "z_by_effort": {
+      "low": -2.6649,
+      "xhigh": -0.1615,
+      "high": -0.1346,
+      "medium": -1.4536
+     },
+     "raw_by_effort": {
+      "low": 0.065657,
+      "xhigh": 0.535354,
+      "high": 0.540404,
+      "medium": 0.292929
+     }
+    },
+    {
+     "source": "aa.frontiercode_2",
+     "kind": "benchmark",
+     "value": 0.052,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:00+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `frontiercode-2-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.359279 (claude-opus-5-5), sd_panel 0.076793 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Gemini 4 Hydrogen (High)",
+     "raw": 0.363275,
+     "z_by_effort": {
+      "low": -3.4693,
+      "xhigh": 0.3947,
+      "high": 0.052,
+      "medium": -0.5735
+     },
+     "raw_by_effort": {
+      "low": 0.092862,
+      "xhigh": 0.389592,
+      "high": 0.363275,
+      "medium": 0.315239
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:01+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (audio, file, image, text, video)",
+     "listed_as": "google/gemini-4-hydrogen",
+     "input_modalities": [
+      "audio",
+      "file",
+      "image",
+      "text",
+      "video"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 8.325,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:00+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Gemini 4 Hydrogen (High)",
+     "time_per_task_s": 499.5,
+     "time_per_task_min": 8.325,
+     "output_tps": 170.13
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 1.294,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:00+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Gemini 4 Hydrogen (Low)",
+     "time_per_task_s": 77.67,
+     "time_per_task_min": 1.294,
+     "output_tps": 181.2
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 3.701,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:00+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Gemini 4 Hydrogen (Medium)",
+     "time_per_task_s": 222.04,
+     "time_per_task_min": 3.701,
+     "output_tps": 177.23
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 13.516,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:00+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "Gemini 4 Hydrogen (Xhigh)",
+     "time_per_task_s": 810.97,
+     "time_per_task_min": 13.516,
+     "output_tps": 190.4
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 1.5,
+      "output": 7.5,
+      "cache_read": 0.075
+     },
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:00+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Gemini 4 Hydrogen (High)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 1.5,
+      "output": 7.5,
+      "cache_read": 0.075
+     },
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:01+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "google/gemini-4-hydrogen"
+    }
+   ],
+   "intelligence_index": [
+    {
+     "source": "aa.index",
+     "kind": "benchmark",
+     "value": 50.79,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-13T02:57:00+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index, every listed effort",
+     "listed_as": "Gemini 4 Hydrogen (High)",
+     "raw_by_effort": {
+      "low": 26.8937,
+      "xhigh": 53.9192,
+      "high": 50.7871,
+      "medium": 41.233
+     },
+     "z_by_effort": {
+      "low": -2.0787,
+      "xhigh": 0.1736,
+      "high": -0.0874,
+      "medium": -0.8836
+     },
+     "z": -0.0874
     }
    ]
   }

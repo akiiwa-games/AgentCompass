@@ -17,7 +17,7 @@ import router_data
 
 
 def document():
-    return {'scoring': {'safety_margin_pct': 5},
+    return {'scoring': {'safety_margin_pct': 5}, 'families': {'rows': []},
             'accounts': {'codex': {'verified': False, 'bundles': {
                 'sol_medium': {'model': 'gpt-6.1-sol', 'effort': 'medium'},
                 'sol_high': {'model': 'gpt-6.1-sol', 'effort': 'high'},

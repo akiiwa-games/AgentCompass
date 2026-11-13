@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/3",
- "generated_at": "2026-11-13T03:00:37+00:00",
- "measurements_sha256": "d8e81f10953f8d1eb5c073dad093a1bd8ed8d9d1fb1ae9dbf8c3406fd2404c21",
+ "generated_at": "2026-11-13T04:06:35+00:00",
+ "measurements_sha256": "4edc314b666df9f305b3e3d31a0c4f5dec4ef8130cc479b03e5015c4c5821055",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
  "estimate_fits": {
@@ -18,12 +18,12 @@
    "y_max": 0.2371
   },
   "coding.execution~tier": {
-   "a": -1.0049,
-   "b": 2.8702,
-   "r": 0.8355,
-   "skill": 0.6766,
-   "loo_rmse": 0.7087,
-   "n": 29,
+   "a": -0.9682,
+   "b": 2.9281,
+   "r": 0.8415,
+   "skill": 0.6878,
+   "loo_rmse": 0.7048,
+   "n": 30,
    "x_min": -1.2415,
    "x_max": 0.1685,
    "y_min": -4.0083,
@@ -69,7 +69,7 @@
  "duration_fit_rejected": null,
  "tier_sources": {
   "arena_overall": 27,
-  "other_overall": 14,
+  "other_overall": 15,
   "sibling": 13,
   "none": 5
  },
@@ -1579,7 +1579,7 @@
          "value": 0.2883,
          "model": "gemini-4-carbon",
          "status": "measured",
-         "n": 33,
+         "n": 34,
          "statistic": "highest measured value at High among catalogued models"
         }
        }
@@ -2216,6 +2216,13 @@
    "evidence": "listed as 'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)': the tag names nvfp4, not an effort"
   },
   {
+   "model": "gemini-4-hydrogen-high",
+   "source": "aa.terminalbench_4",
+   "check": "high_outside_adjacent_efforts",
+   "level": "statistical",
+   "evidence": "High 0.5404, Medium 0.2929, xHigh 0.5354"
+  },
+  {
    "model": "nemotron-3.5-super-vl-free",
    "source": "arena.agent_code",
    "check": "variant_not_effort",
@@ -2625,15 +2632,15 @@
     "by_effort": {
      "high": 1.2962,
      "max": 1.6689,
-     "low": 0.4598,
-     "medium": 0.9378,
+     "low": 0.4365,
+     "medium": 0.8889,
      "xhigh": 1.4309
     },
     "minutes_by_effort": {
      "high": 12.392,
      "max": 15.955,
-     "low": 4.396,
-     "medium": 8.965,
+     "low": 4.173,
+     "medium": 8.498,
      "xhigh": 13.679
     },
     "basis_by_effort": {
@@ -2654,26 +2661,26 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_position",
@@ -3426,11 +3433,11 @@
         "tier_source": "sibling",
         "shift": 0.0,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -5968,14 +5975,14 @@
      "high": 2.9888,
      "low": 2.4889,
      "medium": 2.646,
-     "xhigh": 4.3353,
+     "xhigh": 4.4128,
      "max": 7.2222
     },
     "minutes_by_effort": {
      "high": 28.573,
      "low": 23.794,
      "medium": 25.296,
-     "xhigh": 41.445,
+     "xhigh": 42.186,
      "max": 69.044
     },
     "basis_by_effort": {
@@ -6003,14 +6010,14 @@
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -6091,6 +6098,474 @@
     "aa_only": false
    },
    "data_errors": []
+  },
+  "gemini-4-hydrogen-high": {
+   "axes": {
+    "divergence": {
+     "facets": {
+      "creative_writing": {
+       "value": -0.2172,
+       "by_effort": {
+        "low": -0.7287,
+        "medium": -0.2172,
+        "high": -0.2172
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "sibling_shift",
+        "base_model": "gemini-3.8-flash-high",
+        "base_value": -0.7415,
+        "base_tier": -0.0659,
+        "tier": 0.0657,
+        "tier_source": "other_overall",
+        "shift": 0.5243,
+        "fit": "divergence.creative_writing~tier",
+        "r": 0.8991,
+        "skill": 0.7935,
+        "loo_rmse": 0.6378,
+        "n": 35,
+        "slope": 3.9838
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.2172,
+     "by_effort": {
+      "low": -0.7287,
+      "medium": -0.2172,
+      "high": -0.2172
+     },
+     "status": "estimated"
+    },
+    "coding": {
+     "facets": {
+      "execution": {
+       "value": -0.2096,
+       "by_effort": {
+        "low": -3.2287,
+        "medium": -1.1751,
+        "high": -0.2096,
+        "xhigh": -0.0382
+       },
+       "status": "measured",
+       "sources": {
+        "aa.terminalbench_4": {
+         "by_effort": {
+          "low": -2.8356,
+          "medium": -1.6243,
+          "high": -0.3187,
+          "xhigh": -0.3187
+         },
+         "listed_as": "Gemini 4 Hydrogen (High)",
+         "effort_shift": "measured",
+         "link_scale": 1.0,
+         "link_offset": -0.1707,
+         "effort_basis": {
+          "low": {
+           "method": "listed"
+          },
+          "xhigh": {
+           "method": "listed"
+          },
+          "high": {
+           "method": "listed"
+          },
+          "medium": {
+           "method": "listed"
+          }
+         }
+        },
+        "aa.frontiercode_2": {
+         "by_effort": {
+          "low": -3.6218,
+          "medium": -0.726,
+          "high": -0.1005,
+          "xhigh": 0.2422
+         },
+         "listed_as": "Gemini 4 Hydrogen (High)",
+         "effort_shift": "measured",
+         "link_scale": 1.0,
+         "link_offset": -0.1525,
+         "effort_basis": {
+          "low": {
+           "method": "listed"
+          },
+          "xhigh": {
+           "method": "listed"
+          },
+          "high": {
+           "method": "listed"
+          },
+          "medium": {
+           "method": "listed"
+          }
+         }
+        }
+       }
+      },
+      "faithfulness": {
+       "value": -1.1836,
+       "by_effort": {
+        "low": -2.5742,
+        "medium": -1.4794,
+        "high": -1.1836
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "sibling_shift",
+        "base_model": "gemini-3.8-flash-high",
+        "base_value": -1.1836,
+        "base_tier": -0.0659,
+        "tier": 0.0657,
+        "tier_source": "other_overall",
+        "shift": 0.0,
+        "shift_basis": "shift 0: no fit, out-of-sample skill -0.140 (leave-one-out error not below the mean predictor's)"
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -1.1836,
+     "by_effort": {
+      "low": -3.2287,
+      "medium": -1.4794,
+      "high": -1.1836
+     },
+     "status": "estimated"
+    },
+    "aesthetics": {
+     "facets": {
+      "design": {
+       "value": -0.789,
+       "by_effort": {
+        "low": -1.3455,
+        "medium": -0.805,
+        "high": -0.789
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "sibling_shift",
+        "base_model": "gemini-3.8-flash-high",
+        "base_value": -1.4745,
+        "base_tier": -0.0659,
+        "tier": 0.0657,
+        "tier_source": "other_overall",
+        "shift": 0.6855,
+        "fit": "aesthetics.design~tier",
+        "r": 0.8306,
+        "skill": 0.6437,
+        "loo_rmse": 1.1725,
+        "n": 40,
+        "slope": 5.2088
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.789,
+     "by_effort": {
+      "low": -1.3455,
+      "medium": -0.805,
+      "high": -0.789
+     },
+     "status": "estimated"
+    },
+    "tool_operation": {
+     "facets": {
+      "responsiveness": {
+       "value": 0.8078,
+       "by_effort": {
+        "low": 2.7478,
+        "medium": 1.3755,
+        "high": 0.8078
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "sibling_shift",
+        "base_model": "gemini-3.8-flash-high",
+        "base_value": 0.8078,
+        "base_tier": -0.0659,
+        "tier": 0.0657,
+        "tier_source": "other_overall",
+        "shift": 0.0,
+        "shift_basis": "shift 0: no fit, slope -0.721 is not positive"
+       }
+      },
+      "image_recognition": {
+       "value": 0.2478,
+       "by_effort": {
+        "low": -0.1943,
+        "medium": 0.0614,
+        "high": 0.2478
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "sibling_shift",
+        "base_model": "gemini-3.8-flash-high",
+        "base_value": -0.1225,
+        "base_tier": -0.0659,
+        "tier": 0.0657,
+        "tier_source": "other_overall",
+        "shift": 0.3703,
+        "fit": "tool_operation.image_recognition~tier",
+        "r": 0.8095,
+        "skill": 0.6246,
+        "loo_rmse": 0.5047,
+        "n": 28,
+        "slope": 2.8137
+       }
+      }
+     },
+     "missing_facets": [],
+     "by_level": {
+      "2": {
+       "by_effort": {
+        "low": 2.7478,
+        "medium": 1.3755,
+        "high": 0.8078
+       },
+       "facets": [
+        "responsiveness"
+       ]
+      },
+      "3": {
+       "by_effort": {
+        "low": -0.1943,
+        "medium": 0.0614,
+        "high": 0.2478
+       },
+       "facets": [
+        "responsiveness",
+        "image_recognition"
+       ]
+      }
+     },
+     "value": 0.2478,
+     "by_effort": {
+      "low": -0.1943,
+      "medium": 0.0614,
+      "high": 0.2478
+     },
+     "status": "estimated"
+    }
+   },
+   "scores": {
+    "divergence": -0.2172,
+    "coding": -1.1836,
+    "aesthetics": -0.789,
+    "tool_operation": 0.2478
+   },
+   "missing_axes": [],
+   "usd_per_hour": {
+    "value": 7.503,
+    "status": "ok",
+    "kind": "converted",
+    "fallback": false,
+    "merge": "series conversion: usd of gemini-3.8-flash-high x API list price ratio 1.5148 over the community token mix",
+    "used": [],
+    "sources": {
+     "base": {
+      "value": 4.953,
+      "status": "ok",
+      "merge": "arena.agent_sessions: High listing",
+      "used": [
+       "arena.agent_sessions"
+      ],
+      "sources": {
+       "arena.agent_sessions": {
+        "value": 4.953,
+        "how": "High listing",
+        "kind": "community",
+        "as_of": "2026-11-08",
+        "url": "https://arena.ai/leaderboard/agent",
+        "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+        "by_effort": {
+         "high": 4.953
+        },
+        "sessions": 52722
+       }
+      },
+      "kind": "community",
+      "fallback": false,
+      "model": "gemini-3.8-flash-high"
+     },
+     "ratio": 1.5148,
+     "prices": {
+      "gemini-4-hydrogen-high": {
+       "value": {
+        "input": 1.5,
+        "output": 7.5,
+        "cache_read": 0.075
+       },
+       "source": "aa.price",
+       "kind": "vendor",
+       "as_of": "2026-11-13",
+       "url": "https://artificialanalysis.ai/leaderboards/models",
+       "listed_as": "Gemini 4 Hydrogen (High)"
+      },
+      "gemini-3.8-flash-high": {
+       "value": {
+        "input": 0.75,
+        "output": 3.75,
+        "cache_read": 0.075
+       },
+       "source": "aa.price",
+       "kind": "vendor",
+       "as_of": "2026-11-09",
+       "url": "https://artificialanalysis.ai/leaderboards/models",
+       "listed_as": "Gemini 3.8 Flash (High)"
+      }
+     },
+     "token_mix": {
+      "cache_read": 0.92,
+      "input": 0.0756,
+      "output": 0.0044
+     }
+    }
+   },
+   "duration_multiplier": {
+    "status": "ok",
+    "anchor_minutes": 9.56,
+    "by_effort": {
+     "high": 0.8708,
+     "low": 0.1354,
+     "medium": 0.3871,
+     "xhigh": 1.4138,
+     "max": 2.604
+    },
+    "minutes_by_effort": {
+     "high": 8.325,
+     "low": 1.294,
+     "medium": 3.701,
+     "xhigh": 13.516,
+     "max": 24.894
+    },
+    "basis_by_effort": {
+     "high": {
+      "method": "aa",
+      "source": "aa.cost_time",
+      "listed_as": "Gemini 4 Hydrogen (High)",
+      "as_of": "2026-11-13",
+      "url": "https://artificialanalysis.ai/leaderboards/models"
+     },
+     "low": {
+      "method": "aa",
+      "source": "aa.cost_time",
+      "listed_as": "Gemini 4 Hydrogen (Low)",
+      "as_of": "2026-11-13",
+      "url": "https://artificialanalysis.ai/leaderboards/models"
+     },
+     "medium": {
+      "method": "aa",
+      "source": "aa.cost_time",
+      "listed_as": "Gemini 4 Hydrogen (Medium)",
+      "as_of": "2026-11-13",
+      "url": "https://artificialanalysis.ai/leaderboards/models"
+     },
+     "xhigh": {
+      "method": "aa",
+      "source": "aa.cost_time",
+      "listed_as": "Gemini 4 Hydrogen (Xhigh)",
+      "as_of": "2026-11-13",
+      "url": "https://artificialanalysis.ai/leaderboards/models"
+     },
+     "max": {
+      "method": "fleet_effort_ratio",
+      "from_effort": "xhigh",
+      "ratio": 1.8418,
+      "n": 8,
+      "iqr": [
+       1.6412,
+       2.0872
+      ],
+      "source": "aa.cost_time",
+      "note": "fleet effort ratio max/xhigh, n=8, IQR 1.64-2.09"
+     }
+    },
+    "efforts_without_time": []
+   },
+   "image_input": {
+    "value": true,
+    "status": "yes",
+    "source": "openrouter.modality",
+    "kind": "vendor",
+    "as_of": "2026-11-13",
+    "url": "https://openrouter.ai/api/v1/models",
+    "method": "OpenRouter architecture.input_modalities (audio, file, image, text, video)",
+    "sources": [
+     "openrouter.modality"
+    ]
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": {
+    "value": {
+     "input": 1.5,
+     "output": 7.5,
+     "cache_read": 0.075
+    },
+    "source": "aa.price",
+    "kind": "vendor",
+    "as_of": "2026-11-13",
+    "url": "https://artificialanalysis.ai/leaderboards/models",
+    "listed_as": "Gemini 4 Hydrogen (High)"
+   },
+   "intelligence_index": 50.79,
+   "tier": {
+    "value": 0.0657,
+    "method": "other_overall",
+    "sources": [
+     {
+      "source": "tier.aa_index",
+      "value": 0.0657,
+      "as_of": "2026-11-13",
+      "url": "https://artificialanalysis.ai/leaderboards/models",
+      "listed_as": "Gemini 4 Hydrogen",
+      "neighbours": {
+       "below": {
+        "x": 50.4121935905389,
+        "tier": 0.0657,
+        "models": [
+         "Gemini 4 Argon"
+        ]
+       },
+       "above": {
+        "x": 51.8359958227294,
+        "tier": 0.0657,
+        "models": [
+         "Claude Opus 5.5"
+        ]
+       }
+      },
+      "n": 22
+     }
+    ]
+   },
+   "evidence": {
+    "independent_sources": {
+     "divergence": [],
+     "coding": [],
+     "aesthetics": [],
+     "tool_operation": []
+    },
+    "aa_only": true
+   },
+   "data_errors": [
+    {
+     "model": "gemini-4-hydrogen-high",
+     "field": "axes",
+     "reason": "aa_only",
+     "level": "yellow",
+     "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
+    }
+   ]
   },
   "claude-sonnet-5-5": {
    "axes": {
@@ -7091,14 +7566,14 @@
      "high": 2.2851,
      "low": 1.1124,
      "xhigh": 2.7169,
-     "medium": 1.7028,
+     "medium": 1.6987,
      "max": 5.0041
     },
     "minutes_by_effort": {
      "high": 21.846,
      "low": 10.635,
      "xhigh": 25.974,
-     "medium": 16.279,
+     "medium": 16.24,
      "max": 47.839
     },
     "basis_by_effort": {
@@ -7127,14 +7602,14 @@
       "method": "fleet_effort_position",
       "lower_effort": "low",
       "upper_effort": "high",
-      "position": 0.5914,
-      "n": 9,
+      "position": 0.5881,
+      "n": 10,
       "iqr": [
-       0.4535,
-       0.6673
+       0.4813,
+       0.6661
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort position medium in low..high, n=9, IQR 0.45-0.67"
+      "note": "fleet effort position medium in low..high, n=10, IQR 0.48-0.67"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -7643,16 +8118,16 @@
     "by_effort": {
      "high": 1.5594,
      "medium": 1.2497,
-     "low": 0.6612,
-     "xhigh": 2.2619,
-     "max": 3.7682
+     "low": 0.4369,
+     "xhigh": 2.5318,
+     "max": 4.6631
     },
     "minutes_by_effort": {
      "high": 14.908,
      "medium": 11.947,
-     "low": 6.321,
-     "xhigh": 21.624,
-     "max": 36.024
+     "low": 4.177,
+     "xhigh": 24.204,
+     "max": 44.579
     },
     "basis_by_effort": {
      "high": {
@@ -7670,40 +8145,30 @@
       "url": "https://artificialanalysis.ai/leaderboards/models"
      },
      "low": {
-      "method": "fleet_effort_ratio",
+      "method": "series_effort",
+      "base_model": "gemini-4-hydrogen-high",
       "from_effort": "medium",
-      "ratio": 0.5291,
-      "n": 9,
-      "iqr": [
-       0.432,
-       0.7331
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio low/medium, n=9, IQR 0.43-0.73"
+      "ratio": 0.3496,
+      "source": "aa.cost_time"
      },
      "xhigh": {
-      "method": "fleet_effort_ratio",
+      "method": "series_effort",
+      "base_model": "gemini-4-hydrogen-high",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
-      "iqr": [
-       1.2741,
-       1.5039
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "ratio": 1.6235,
+      "source": "aa.cost_time"
      },
      "max": {
       "method": "fleet_effort_ratio",
-      "from_effort": "high",
-      "ratio": 2.4164,
-      "n": 10,
+      "from_effort": "xhigh",
+      "ratio": 1.8418,
+      "n": 8,
       "iqr": [
-       1.8498,
-       2.9647
+       1.6412,
+       2.0872
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio max/high, n=10, IQR 1.85-2.96"
+      "note": "fleet effort ratio max/xhigh, n=8, IQR 1.64-2.09"
      }
     },
     "efforts_without_time": []
@@ -8425,11 +8890,11 @@
         "tier_source": "sibling",
         "shift": 0.0,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -11818,11 +12283,11 @@
         "tier_source": "sibling",
         "shift": 0.0,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -12245,11 +12710,11 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": -2.1697,
+       "value": -2.1824,
        "by_effort": {
-        "low": -2.6944,
-        "high": -2.1697,
-        "xhigh": -2.1042
+        "low": -2.7071,
+        "high": -2.1824,
+        "xhigh": -2.1169
        },
        "status": "estimated",
        "sources": {},
@@ -12260,13 +12725,13 @@
         "base_tier": -0.1023,
         "tier": -0.3216,
         "tier_source": "sibling",
-        "shift": -0.6294,
+        "shift": -0.6421,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -12289,9 +12754,9 @@
       }
      },
      "missing_facets": [],
-     "value": -2.1697,
+     "value": -2.1824,
      "by_effort": {
-      "high": -2.1697
+      "high": -2.1824
      },
      "status": "estimated"
     },
@@ -12405,7 +12870,7 @@
    },
    "scores": {
     "divergence": -1.7336,
-    "coding": -2.1697,
+    "coding": -2.1824,
     "aesthetics": -2.1775,
     "tool_operation": -0.7861
    },
@@ -12424,14 +12889,14 @@
      "xhigh": 1.898,
      "low": 0.7771,
      "high": 1.5963,
-     "medium": 1.1895,
+     "medium": 1.1867,
      "max": 3.4958
     },
     "minutes_by_effort": {
      "xhigh": 18.145,
      "low": 7.429,
      "high": 15.261,
-     "medium": 11.372,
+     "medium": 11.345,
      "max": 33.42
     },
     "basis_by_effort": {
@@ -12465,14 +12930,14 @@
       "method": "fleet_effort_position",
       "lower_effort": "low",
       "upper_effort": "high",
-      "position": 0.5914,
-      "n": 9,
+      "position": 0.5881,
+      "n": 10,
       "iqr": [
-       0.4535,
-       0.6673
+       0.4813,
+       0.6661
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort position medium in low..high, n=9, IQR 0.45-0.67"
+      "note": "fleet effort position medium in low..high, n=10, IQR 0.48-0.67"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -13783,16 +14248,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 4.6718,
-     "low": 1.6573,
-     "medium": 3.3797,
-     "xhigh": 6.7765,
+     "low": 1.5731,
+     "medium": 3.2037,
+     "xhigh": 6.8976,
      "max": 11.2889
     },
     "minutes_by_effort": {
      "high": 44.662,
-     "low": 15.844,
-     "medium": 32.31,
-     "xhigh": 64.783,
+     "low": 15.039,
+     "medium": 30.627,
+     "xhigh": 65.941,
      "max": 107.922
     },
     "basis_by_effort": {
@@ -13806,38 +14271,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -14212,16 +14677,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 6.4616,
-     "low": 2.2923,
-     "medium": 4.6746,
-     "xhigh": 9.3726,
+     "low": 2.1758,
+     "medium": 4.4311,
+     "xhigh": 9.5402,
      "max": 15.6139
     },
     "minutes_by_effort": {
      "high": 61.773,
-     "low": 21.914,
-     "medium": 44.689,
-     "xhigh": 89.602,
+     "low": 20.801,
+     "medium": 42.361,
+     "xhigh": 91.204,
      "max": 149.269
     },
     "basis_by_effort": {
@@ -14241,38 +14706,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -14658,16 +15123,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 6.4616,
-     "low": 2.2923,
-     "medium": 4.6746,
-     "xhigh": 9.3726,
+     "low": 2.1758,
+     "medium": 4.4311,
+     "xhigh": 9.5402,
      "max": 15.6139
     },
     "minutes_by_effort": {
      "high": 61.773,
-     "low": 21.914,
-     "medium": 44.689,
-     "xhigh": 89.602,
+     "low": 20.801,
+     "medium": 42.361,
+     "xhigh": 91.204,
      "max": 149.269
     },
     "basis_by_effort": {
@@ -14681,38 +15146,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -15108,16 +15573,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 3.9925,
-     "low": 1.4163,
-     "medium": 2.8883,
-     "xhigh": 5.7911,
+     "low": 1.3444,
+     "medium": 2.7379,
+     "xhigh": 5.8947,
      "max": 9.6475
     },
     "minutes_by_effort": {
      "high": 38.168,
-     "low": 13.54,
-     "medium": 27.612,
-     "xhigh": 55.363,
+     "low": 12.852,
+     "medium": 26.174,
+     "xhigh": 56.353,
      "max": 92.23
     },
     "basis_by_effort": {
@@ -15131,38 +15596,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -16009,16 +16474,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 1.2494,
-     "low": 0.4432,
-     "medium": 0.9039,
-     "xhigh": 1.8122,
+     "low": 0.4207,
+     "medium": 0.8568,
+     "xhigh": 1.8447,
      "max": 3.019
     },
     "minutes_by_effort": {
      "high": 11.944,
-     "low": 4.237,
-     "medium": 8.641,
-     "xhigh": 17.325,
+     "low": 4.022,
+     "medium": 8.191,
+     "xhigh": 17.635,
      "max": 28.862
     },
     "basis_by_effort": {
@@ -16032,38 +16497,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -16434,16 +16899,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 1.4859,
-     "low": 0.5271,
-     "medium": 1.075,
-     "xhigh": 2.1552,
+     "low": 0.5003,
+     "medium": 1.0189,
+     "xhigh": 2.1938,
      "max": 3.5905
     },
     "minutes_by_effort": {
      "high": 14.205,
-     "low": 5.039,
-     "medium": 10.277,
-     "xhigh": 20.604,
+     "low": 4.783,
+     "medium": 9.741,
+     "xhigh": 20.973,
      "max": 34.325
     },
     "basis_by_effort": {
@@ -16457,38 +16922,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -17089,16 +17554,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 4.1593,
-     "low": 1.4755,
-     "medium": 3.009,
-     "xhigh": 6.0332,
+     "low": 1.4005,
+     "medium": 2.8523,
+     "xhigh": 6.141,
      "max": 10.0506
     },
     "minutes_by_effort": {
      "high": 39.763,
-     "low": 14.106,
-     "medium": 28.766,
-     "xhigh": 57.677,
+     "low": 13.389,
+     "medium": 27.268,
+     "xhigh": 58.708,
      "max": 96.084
     },
     "basis_by_effort": {
@@ -17112,38 +17577,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -17495,16 +17960,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 6.4995,
-     "low": 2.3056,
-     "medium": 4.702,
-     "xhigh": 9.4275,
+     "low": 2.1886,
+     "medium": 4.457,
+     "xhigh": 9.596,
      "max": 15.7054
     },
     "minutes_by_effort": {
      "high": 62.135,
-     "low": 22.042,
-     "medium": 44.951,
-     "xhigh": 90.127,
+     "low": 20.923,
+     "medium": 42.609,
+     "xhigh": 91.738,
      "max": 150.144
     },
     "basis_by_effort": {
@@ -17518,38 +17983,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -17865,16 +18330,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 1.2775,
-     "low": 0.4532,
-     "medium": 0.9242,
-     "xhigh": 1.853,
+     "low": 0.4302,
+     "medium": 0.876,
+     "xhigh": 1.8862,
      "max": 3.087
     },
     "minutes_by_effort": {
      "high": 12.213,
-     "low": 4.333,
-     "medium": 8.835,
-     "xhigh": 17.715,
+     "low": 4.113,
+     "medium": 8.375,
+     "xhigh": 18.032,
      "max": 29.512
     },
     "basis_by_effort": {
@@ -17895,38 +18360,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -18265,16 +18730,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 0.6205,
-     "low": 0.2201,
-     "medium": 0.4488,
-     "xhigh": 0.9,
+     "low": 0.2089,
+     "medium": 0.4255,
+     "xhigh": 0.9161,
      "max": 1.4994
     },
     "minutes_by_effort": {
      "high": 5.932,
-     "low": 2.104,
-     "medium": 4.291,
-     "xhigh": 8.604,
+     "low": 1.997,
+     "medium": 4.068,
+     "xhigh": 8.758,
      "max": 14.334
     },
     "basis_by_effort": {
@@ -18288,38 +18753,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -18652,16 +19117,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 0.4342,
-     "low": 0.1541,
-     "medium": 0.3141,
-     "xhigh": 0.6298,
+     "low": 0.1462,
+     "medium": 0.2978,
+     "xhigh": 0.6411,
      "max": 1.0493
     },
     "minutes_by_effort": {
      "high": 4.151,
-     "low": 1.473,
-     "medium": 3.003,
-     "xhigh": 6.021,
+     "low": 1.398,
+     "medium": 2.847,
+     "xhigh": 6.129,
      "max": 10.031
     },
     "basis_by_effort": {
@@ -18675,38 +19140,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -19138,15 +19603,15 @@
     "by_effort": {
      "high": 1.2959,
      "medium": 0.9497,
-     "low": 0.5025,
-     "xhigh": 1.8797,
+     "low": 0.4748,
+     "xhigh": 1.9134,
      "max": 3.1315
     },
     "minutes_by_effort": {
      "high": 12.389,
      "medium": 9.079,
-     "low": 4.804,
-     "xhigh": 17.97,
+     "low": 4.539,
+     "xhigh": 18.292,
      "max": 29.937
     },
     "basis_by_effort": {
@@ -19167,26 +19632,26 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "medium",
-      "ratio": 0.5291,
-      "n": 9,
+      "ratio": 0.5,
+      "n": 10,
       "iqr": [
-       0.432,
-       0.7331
+       0.4222,
+       0.6823
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/medium, n=9, IQR 0.43-0.73"
+      "note": "fleet effort ratio low/medium, n=10, IQR 0.42-0.68"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -19614,15 +20079,15 @@
     "by_effort": {
      "high": 0.9421,
      "max": 1.3425,
-     "low": 0.3342,
-     "medium": 0.6815,
+     "low": 0.3173,
+     "medium": 0.646,
      "xhigh": 1.082
     },
     "minutes_by_effort": {
      "high": 9.006,
      "max": 12.834,
-     "low": 3.195,
-     "medium": 6.515,
+     "low": 3.033,
+     "medium": 6.176,
      "xhigh": 10.344
     },
     "basis_by_effort": {
@@ -19643,26 +20108,26 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_position",
@@ -19958,16 +20423,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 0.7678,
-     "low": 0.2724,
-     "medium": 0.5554,
-     "xhigh": 1.1137,
+     "low": 0.2586,
+     "medium": 0.5265,
+     "xhigh": 1.1336,
      "max": 1.8552
     },
     "minutes_by_effort": {
      "high": 7.34,
-     "low": 2.604,
-     "medium": 5.31,
-     "xhigh": 10.647,
+     "low": 2.472,
+     "medium": 5.033,
+     "xhigh": 10.837,
      "max": 17.736
     },
     "basis_by_effort": {
@@ -19988,38 +20453,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -20315,13 +20780,13 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": -1.9469,
+       "value": -1.9509,
        "by_effort": {
-        "low": -3.0793,
-        "medium": -2.5185,
-        "high": -1.9469,
-        "xhigh": -1.3876,
-        "max": -1.0566
+        "low": -3.0833,
+        "medium": -2.5225,
+        "high": -1.9509,
+        "xhigh": -1.3916,
+        "max": -1.0606
        },
        "status": "estimated",
        "sources": {},
@@ -20332,13 +20797,13 @@
         "base_tier": -0.6696,
         "tier": -0.7391,
         "tier_source": "arena_overall",
-        "shift": -0.1995,
+        "shift": -0.2035,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       }
      },
@@ -20748,13 +21213,13 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": -0.064,
+       "value": -0.0653,
        "by_effort": {
-        "low": -1.8592,
-        "medium": -0.3602,
-        "high": -0.064,
-        "xhigh": 0.4854,
-        "max": 0.7041
+        "low": -1.8605,
+        "medium": -0.3615,
+        "high": -0.0653,
+        "xhigh": 0.4841,
+        "max": 0.7028
        },
        "status": "estimated",
        "sources": {},
@@ -20765,13 +21230,13 @@
         "base_tier": 0.0,
         "tier": -0.0223,
         "tier_source": "arena_overall",
-        "shift": -0.064,
+        "shift": -0.0653,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -21210,13 +21675,13 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": -1.8177,
+       "value": -1.8315,
        "by_effort": {
-        "low": -3.4791,
-        "medium": -3.0071,
-        "high": -1.8177,
-        "xhigh": -0.9206,
-        "max": -0.3123
+        "low": -3.4929,
+        "medium": -3.0209,
+        "high": -1.8315,
+        "xhigh": -0.9344,
+        "max": -0.3261
        },
        "status": "estimated",
        "sources": {},
@@ -21227,13 +21692,13 @@
         "base_tier": -0.0327,
         "tier": -0.2716,
         "tier_source": "arena_overall",
-        "shift": -0.6857,
+        "shift": -0.6995,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -21260,13 +21725,13 @@
       }
      },
      "missing_facets": [],
-     "value": -1.8177,
+     "value": -1.8315,
      "by_effort": {
-      "low": -3.4791,
-      "medium": -3.0071,
-      "high": -1.8177,
-      "xhigh": -0.9206,
-      "max": -0.3123
+      "low": -3.4929,
+      "medium": -3.0209,
+      "high": -1.8315,
+      "xhigh": -0.9344,
+      "max": -0.3261
      },
      "status": "estimated"
     },
@@ -21419,7 +21884,7 @@
    },
    "scores": {
     "divergence": -1.8036,
-    "coding": -1.8177,
+    "coding": -1.8315,
     "aesthetics": -2.324,
     "tool_operation": -0.9232
    },
@@ -22365,9 +22830,9 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": -3.8471,
+       "value": -3.8733,
        "by_effort": {
-        "high": -3.8471
+        "high": -3.8733
        },
        "status": "estimated",
        "sources": {},
@@ -22378,13 +22843,13 @@
         "base_tier": -0.1323,
         "tier": -0.5851,
         "tier_source": "arena_overall",
-        "shift": -1.2996,
+        "shift": -1.3258,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -22407,9 +22872,9 @@
       }
      },
      "missing_facets": [],
-     "value": -3.8471,
+     "value": -3.8733,
      "by_effort": {
-      "high": -3.8471
+      "high": -3.8733
      },
      "status": "estimated"
     },
@@ -22525,7 +22990,7 @@
    },
    "scores": {
     "divergence": -2.713,
-    "coding": -3.8471,
+    "coding": -3.8733,
     "aesthetics": -5.516,
     "tool_operation": -1.9991
    },
@@ -22602,17 +23067,17 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 1.5878,
+     "low": 0.2468,
      "medium": 1.2724,
-     "low": 0.6732,
-     "xhigh": 2.303,
-     "max": 3.8367
+     "xhigh": 2.5778,
+     "max": 4.7478
     },
     "minutes_by_effort": {
      "high": 15.179,
+     "low": 2.359,
      "medium": 12.164,
-     "low": 6.436,
-     "xhigh": 22.017,
-     "max": 36.679
+     "xhigh": 24.644,
+     "max": 45.389
     },
     "basis_by_effort": {
      "high": {
@@ -22623,8 +23088,16 @@
       "series": [
        "gemini-3.1-flash-lite",
        "gemini-3.7-flash",
-       "gemini-3.8-flash-high"
+       "gemini-3.8-flash-high",
+       "gemini-4-hydrogen-high"
       ]
+     },
+     "low": {
+      "method": "series_effort",
+      "base_model": "gemini-4-hydrogen-high",
+      "from_effort": "high",
+      "ratio": 0.1554,
+      "source": "aa.cost_time"
      },
      "medium": {
       "method": "series_effort",
@@ -22633,41 +23106,24 @@
       "ratio": 0.8014,
       "source": "aa.cost_time"
      },
-     "low": {
-      "method": "fleet_effort_ratio",
-      "from_effort": "medium",
-      "ratio": 0.5291,
-      "n": 9,
-      "iqr": [
-       0.432,
-       0.7331
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio low/medium, n=9, IQR 0.43-0.73"
-     },
      "xhigh": {
-      "method": "fleet_effort_ratio",
+      "method": "series_effort",
+      "base_model": "gemini-4-hydrogen-high",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
-      "iqr": [
-       1.2741,
-       1.5039
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "ratio": 1.6235,
+      "source": "aa.cost_time"
      },
      "max": {
       "method": "fleet_effort_ratio",
-      "from_effort": "high",
-      "ratio": 2.4164,
-      "n": 10,
+      "from_effort": "xhigh",
+      "ratio": 1.8418,
+      "n": 8,
       "iqr": [
-       1.8498,
-       2.9647
+       1.6412,
+       2.0872
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio max/high, n=10, IQR 1.85-2.96"
+      "note": "fleet effort ratio max/xhigh, n=8, IQR 1.64-2.09"
      }
     },
     "efforts_without_time": []
@@ -23234,11 +23690,11 @@
         "tier_source": "arena_overall",
         "shift": 0.0,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -23424,16 +23880,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 0.8121,
-     "low": 0.2881,
-     "medium": 0.5876,
-     "xhigh": 1.178,
+     "low": 0.2734,
+     "medium": 0.5569,
+     "xhigh": 1.1991,
      "max": 1.9624
     },
     "minutes_by_effort": {
      "high": 7.764,
-     "low": 2.754,
-     "medium": 5.617,
-     "xhigh": 11.262,
+     "low": 2.614,
+     "medium": 5.324,
+     "xhigh": 11.463,
      "max": 18.761
     },
     "basis_by_effort": {
@@ -23453,38 +23909,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -23609,13 +24065,13 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": -0.1091,
+       "value": -0.1113,
        "by_effort": {
-        "low": -1.9043,
-        "medium": -0.4053,
-        "high": -0.1091,
-        "xhigh": 0.4403,
-        "max": 0.659
+        "low": -1.9065,
+        "medium": -0.4075,
+        "high": -0.1113,
+        "xhigh": 0.4381,
+        "max": 0.6568
        },
        "status": "estimated",
        "sources": {},
@@ -23626,13 +24082,13 @@
         "base_tier": 0.0,
         "tier": -0.038,
         "tier_source": "arena_overall",
-        "shift": -0.1091,
+        "shift": -0.1113,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -24035,13 +24491,13 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": -0.5494,
+       "value": -0.5604,
        "by_effort": {
-        "low": -2.3446,
-        "medium": -0.8456,
-        "high": -0.5494,
-        "xhigh": 0.0,
-        "max": 0.2187
+        "low": -2.3556,
+        "medium": -0.8566,
+        "high": -0.5604,
+        "xhigh": -0.011,
+        "max": 0.2077
        },
        "status": "estimated",
        "sources": {},
@@ -24052,13 +24508,13 @@
         "base_tier": 0.0,
         "tier": -0.1914,
         "tier_source": "arena_overall",
-        "shift": -0.5494,
+        "shift": -0.5604,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -24514,11 +24970,11 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": -2.1697,
+       "value": -2.1824,
        "by_effort": {
-        "low": -2.6944,
-        "high": -2.1697,
-        "xhigh": -2.1042
+        "low": -2.7071,
+        "high": -2.1824,
+        "xhigh": -2.1169
        },
        "status": "estimated",
        "sources": {},
@@ -24529,13 +24985,13 @@
         "base_tier": -0.1023,
         "tier": -0.3216,
         "tier_source": "arena_overall",
-        "shift": -0.6294,
+        "shift": -0.6421,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -24558,9 +25014,9 @@
       }
      },
      "missing_facets": [],
-     "value": -2.1697,
+     "value": -2.1824,
      "by_effort": {
-      "high": -2.1697
+      "high": -2.1824
      },
      "status": "estimated"
     },
@@ -24709,7 +25165,7 @@
    },
    "scores": {
     "divergence": -1.7336,
-    "coding": -2.1697,
+    "coding": -2.1824,
     "aesthetics": -2.1775,
     "tool_operation": -0.7861
    },
@@ -24788,14 +25244,14 @@
      "xhigh": 1.898,
      "low": 0.7771,
      "high": 1.5963,
-     "medium": 1.1895,
+     "medium": 1.1867,
      "max": 3.4958
     },
     "minutes_by_effort": {
      "xhigh": 18.145,
      "low": 7.429,
      "high": 15.261,
-     "medium": 11.372,
+     "medium": 11.345,
      "max": 33.42
     },
     "basis_by_effort": {
@@ -24829,14 +25285,14 @@
       "method": "fleet_effort_position",
       "lower_effort": "low",
       "upper_effort": "high",
-      "position": 0.5914,
-      "n": 9,
+      "position": 0.5881,
+      "n": 10,
       "iqr": [
-       0.4535,
-       0.6673
+       0.4813,
+       0.6661
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort position medium in low..high, n=9, IQR 0.45-0.67"
+      "note": "fleet effort position medium in low..high, n=10, IQR 0.48-0.67"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -25203,14 +25659,14 @@
      "xhigh": 1.898,
      "low": 0.7771,
      "high": 1.5963,
-     "medium": 1.1895,
+     "medium": 1.1867,
      "max": 3.4958
     },
     "minutes_by_effort": {
      "xhigh": 18.145,
      "low": 7.429,
      "high": 15.261,
-     "medium": 11.372,
+     "medium": 11.345,
      "max": 33.42
     },
     "basis_by_effort": {
@@ -25246,14 +25702,14 @@
       "method": "fleet_effort_position",
       "lower_effort": "low",
       "upper_effort": "high",
-      "position": 0.5914,
-      "n": 9,
+      "position": 0.5881,
+      "n": 10,
       "iqr": [
-       0.4535,
-       0.6673
+       0.4813,
+       0.6661
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort position medium in low..high, n=9, IQR 0.45-0.67"
+      "note": "fleet effort position medium in low..high, n=10, IQR 0.48-0.67"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -25641,14 +26097,14 @@
      "high": 0.9894,
      "low": 0.824,
      "medium": 0.8759,
-     "xhigh": 1.4351,
+     "xhigh": 1.4609,
      "max": 2.3909
     },
     "minutes_by_effort": {
      "high": 9.459,
      "low": 7.877,
      "medium": 8.374,
-     "xhigh": 13.72,
+     "xhigh": 13.966,
      "max": 22.857
     },
     "basis_by_effort": {
@@ -25683,14 +26139,14 @@
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -26047,17 +26503,17 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 1.5878,
+     "low": 0.2468,
      "medium": 1.2724,
-     "low": 0.6732,
-     "xhigh": 2.303,
-     "max": 3.8367
+     "xhigh": 2.5778,
+     "max": 4.7478
     },
     "minutes_by_effort": {
      "high": 15.179,
+     "low": 2.359,
      "medium": 12.164,
-     "low": 6.436,
-     "xhigh": 22.017,
-     "max": 36.679
+     "xhigh": 24.644,
+     "max": 45.389
     },
     "basis_by_effort": {
      "high": {
@@ -26074,6 +26530,13 @@
       "as_of": "2026-11-08",
       "url": "https://arena.ai/leaderboard/agent"
      },
+     "low": {
+      "method": "series_effort",
+      "base_model": "gemini-4-hydrogen-high",
+      "from_effort": "high",
+      "ratio": 0.1554,
+      "source": "aa.cost_time"
+     },
      "medium": {
       "method": "series_effort",
       "base_model": "gemini-3.8-flash-high",
@@ -26081,41 +26544,24 @@
       "ratio": 0.8014,
       "source": "aa.cost_time"
      },
-     "low": {
-      "method": "fleet_effort_ratio",
-      "from_effort": "medium",
-      "ratio": 0.5291,
-      "n": 9,
-      "iqr": [
-       0.432,
-       0.7331
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio low/medium, n=9, IQR 0.43-0.73"
-     },
      "xhigh": {
-      "method": "fleet_effort_ratio",
+      "method": "series_effort",
+      "base_model": "gemini-4-hydrogen-high",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
-      "iqr": [
-       1.2741,
-       1.5039
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "ratio": 1.6235,
+      "source": "aa.cost_time"
      },
      "max": {
       "method": "fleet_effort_ratio",
-      "from_effort": "high",
-      "ratio": 2.4164,
-      "n": 10,
+      "from_effort": "xhigh",
+      "ratio": 1.8418,
+      "n": 8,
       "iqr": [
-       1.8498,
-       2.9647
+       1.6412,
+       2.0872
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio max/high, n=10, IQR 1.85-2.96"
+      "note": "fleet effort ratio max/xhigh, n=8, IQR 1.64-2.09"
      }
     },
     "efforts_without_time": []
@@ -26241,11 +26687,11 @@
         "tier_source": "arena_overall",
         "shift": 0.0,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -26671,9 +27117,9 @@
     "coding": {
      "facets": {
       "execution": {
-       "value": -3.026,
+       "value": -3.0544,
        "by_effort": {
-        "high": -3.026
+        "high": -3.0544
        },
        "status": "estimated",
        "sources": {},
@@ -26684,13 +27130,13 @@
         "base_tier": -0.1731,
         "tier": -0.6632,
         "tier_source": "arena_overall",
-        "shift": -1.4067,
+        "shift": -1.4351,
         "fit": "coding.execution~tier",
-        "r": 0.8355,
-        "skill": 0.6766,
-        "loo_rmse": 0.7087,
-        "n": 29,
-        "slope": 2.8702
+        "r": 0.8415,
+        "skill": 0.6878,
+        "loo_rmse": 0.7048,
+        "n": 30,
+        "slope": 2.9281
        }
       },
       "faithfulness": {
@@ -26713,9 +27159,9 @@
       }
      },
      "missing_facets": [],
-     "value": -3.026,
+     "value": -3.0544,
      "by_effort": {
-      "high": -3.026
+      "high": -3.0544
      },
      "status": "estimated"
     },
@@ -26848,7 +27294,7 @@
    },
    "scores": {
     "divergence": -3.2805,
-    "coding": -3.026,
+    "coding": -3.0544,
     "aesthetics": -5.802,
     "tool_operation": -1.986
    },
@@ -26865,16 +27311,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 6.4616,
-     "low": 2.2923,
-     "medium": 4.6746,
-     "xhigh": 9.3726,
+     "low": 2.1758,
+     "medium": 4.4311,
+     "xhigh": 9.5402,
      "max": 15.6139
     },
     "minutes_by_effort": {
      "high": 61.773,
-     "low": 21.914,
-     "medium": 44.689,
-     "xhigh": 89.602,
+     "low": 20.801,
+     "medium": 42.361,
+     "xhigh": 91.204,
      "max": 149.269
     },
     "basis_by_effort": {
@@ -26894,38 +27340,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -27264,16 +27710,16 @@
     "anchor_minutes": 9.56,
     "by_effort": {
      "high": 0.8121,
-     "low": 0.2881,
-     "medium": 0.5876,
-     "xhigh": 1.178,
+     "low": 0.2734,
+     "medium": 0.5569,
+     "xhigh": 1.1991,
      "max": 1.9624
     },
     "minutes_by_effort": {
      "high": 7.764,
-     "low": 2.754,
-     "medium": 5.617,
-     "xhigh": 11.262,
+     "low": 2.614,
+     "medium": 5.324,
+     "xhigh": 11.463,
      "max": 18.761
     },
     "basis_by_effort": {
@@ -27294,38 +27740,38 @@
      "low": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.3547,
-      "n": 10,
+      "ratio": 0.3367,
+      "n": 11,
       "iqr": [
-       0.29,
-       0.461
+       0.2757,
+       0.4352
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=10, IQR 0.29-0.46"
+      "note": "fleet effort ratio low/high, n=11, IQR 0.28-0.44"
      },
      "medium": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 0.7234,
-      "n": 11,
+      "ratio": 0.6858,
+      "n": 12,
       "iqr": [
-       0.6206,
-       0.739
+       0.6022,
+       0.7375
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=11, IQR 0.62-0.74"
+      "note": "fleet effort ratio medium/high, n=12, IQR 0.60-0.74"
      },
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -27902,14 +28348,14 @@
      "high": 3.0049,
      "low": 2.5023,
      "medium": 2.6603,
-     "xhigh": 4.3587,
+     "xhigh": 4.4366,
      "max": 7.2611
     },
     "minutes_by_effort": {
      "high": 28.727,
      "low": 23.922,
      "medium": 25.432,
-     "xhigh": 41.669,
+     "xhigh": 42.414,
      "max": 69.416
     },
     "basis_by_effort": {
@@ -27937,14 +28383,14 @@
      "xhigh": {
       "method": "fleet_effort_ratio",
       "from_effort": "high",
-      "ratio": 1.4505,
-      "n": 9,
+      "ratio": 1.4764,
+      "n": 10,
       "iqr": [
-       1.2741,
-       1.5039
+       1.3096,
+       1.5936
       ],
       "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=9, IQR 1.27-1.50"
+      "note": "fleet effort ratio xhigh/high, n=10, IQR 1.31-1.59"
      },
      "max": {
       "method": "fleet_effort_ratio",
@@ -28037,6 +28483,13 @@
    "reason": "no_cited_source",
    "level": "yellow",
    "effect": "fast mode is not priced or enabled from a policy multiplier on the five-axis path"
+  },
+  {
+   "model": "gemini-4-hydrogen-high",
+   "field": "axes",
+   "reason": "aa_only",
+   "level": "yellow",
+   "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
   },
   {
    "model": "grok-bot",

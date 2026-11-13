@@ -14,7 +14,7 @@ import tiers  # noqa: E402
 
 class SeriesTests(unittest.TestCase):
     ACC = {'models': {m: {} for m in ('gpt-6-luna', 'gpt-5.6-luna', 'gpt-6-astra', 'dot', 'claude-opus-5-5')},
-           'aliases': {}, 'families': {'patterns': []},
+           'aliases': {}, 'families': {'rows': []},
            'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}},
            'same_model': {'dot': {'model': 'gpt-6-astra', 'carries': ['divergence'], 'url': 'https://example.test/dot'}}}
 
@@ -197,7 +197,7 @@ class UsdConversionTests(unittest.TestCase):
         usd = {'gpt-5.6-luna': {'value': 4.0, 'status': 'ok', 'kind': 'community'},
                'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'},
                'claude-opus-5-5': {'value': 7.0, 'status': 'ok', 'kind': 'community'}}
-        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'patterns': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
+        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         scorer = fa.Scorer(meas, acc)
         fa.convert_usd(usd, rows, scorer, meas, acc, {m: {'value': None, 'method': 'none'} for m in rows})
@@ -211,7 +211,7 @@ class UsdConversionTests(unittest.TestCase):
         rows = {'gpt-5.6-luna': {'fields': {'price': []}}, 'gpt-6-luna': {'fields': {'price': []}}}
         usd = {'gpt-5.6-luna': {'value': 4.0, 'status': 'ok', 'kind': 'community'},
                'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'}}
-        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'patterns': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
+        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc, {m: {'value': None} for m in rows})
         self.assertIsNone(usd['gpt-6-luna']['value'])

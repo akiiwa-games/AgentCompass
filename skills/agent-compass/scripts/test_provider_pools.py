@@ -171,7 +171,7 @@ def test_a_good_reading_or_a_re_login_lifts_each_pool_hold_on_its_own_evidence(a
 def test_windows_scoped_only_by_the_usage_reading_split_pools_too():
     """Usage readers pass a provider-declared `models` list through (usage_core.window_models); with no configured
     scope, the reading alone splits the account."""
-    fleet = {'models': {}, 'aliases': {}, 'accounts': {'acme': {'windows': {'alpha-day': {}, 'beta-day': {}},
+    fleet = {'models': {}, 'aliases': {}, 'families': {'rows': []}, 'accounts': {'acme': {'windows': {'alpha-day': {}, 'beta-day': {}},
                                                                  'bundles': {'a': {'model': 'alpha-1'},
                                                                              'b': {'model': 'beta-1'}}}}}
     observed = {'alpha-day': {'id': 'alpha-day', 'models': ['alpha']}, 'beta-day': {'id': 'beta-day', 'models': ['beta']}}

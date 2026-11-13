@@ -489,7 +489,7 @@ class AllocatorTests(unittest.TestCase):
                     spec, bundle['model'], {}, bundle, accounts)], expected)
                 if 'draws' not in bundle:
                     self.assertEqual([wid for wid, _, _ in quota_pools.applicable_windows(
-                        spec, account_fleet.canonical(bundle['model'], accounts), {})], expected)
+                        spec, account_fleet.canonical(bundle['model'], accounts), {}, accounts=accounts)], expected)
         for bid, draws in (('flash_high', ['3p-weekly']), ('agy_opus55_high', ['3p-weekly']),
                            ('agy_opus55_high', [])):
             with self.subTest(bundle=bid, draws=draws):

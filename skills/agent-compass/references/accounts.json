@@ -48,6 +48,7 @@
     "fable": "claude-fable-5-2",
     "gemini-3.8-flash": "gemini-3.8-flash-high",
     "gemini-4-argon": "gemini-4-argon-high",
+    "gemini-4-hydrogen": "gemini-4-hydrogen-high",
     "gemini-4-pro": "gemini-4-argon-high",
     "gemini-4-ultra": "gemini-4-argon-high",
     "argon": "gemini-4-argon-high",
@@ -214,7 +215,7 @@
     "kind": "maintainer",
     "as_of": "2026-11-13",
     "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py)",
-    "patterns": [
+    "rows": [
       {
         "pattern": "^grok-bot$",
         "models": []
@@ -274,6 +275,13 @@
         "pattern": "^gpt-6",
         "models": [
           "gpt-6-astra"
+        ]
+      },
+      {
+        "pattern": "^gemini.*hydrogen",
+        "models": [
+          "gemini-4-hydrogen-high",
+          "gemini-3.8-flash-high"
         ]
       },
       {
@@ -577,6 +585,12 @@
     },
     "gemini-4-argon-high": {
       "label": "Argon 4"
+    },
+    "gemini-4-hydrogen-high": {
+      "label": "Hydrogen 4",
+      "listed_as": {
+        "aa": "Gemini 4 Hydrogen"
+      }
     },
     "claude-sonnet-5-5": {
       "label": "Sonnet 5.5",
@@ -1262,6 +1276,12 @@
         "argon_high": {
           "provider": "antigravity-resilient",
           "model": "gemini-4-argon-high",
+          "effort": "high",
+          "modeId": "full-access"
+        },
+        "hydrogen_high": {
+          "provider": "antigravity-resilient",
+          "model": "gemini-4-hydrogen-high",
           "effort": "high",
           "modeId": "full-access"
         },

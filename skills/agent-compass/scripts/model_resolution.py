@@ -18,10 +18,10 @@ DIRECT_SOURCES = ('exact', 'alias')
 def family_patterns(accounts):
     """The catalog's ordered family patterns ([{'pattern', 'models'}]) from its `families` maintainer declaration."""
     table = accounts.get('families') if isinstance(accounts, dict) else None
-    if not isinstance(table, dict) or not isinstance(table.get('patterns'), list):
+    if not isinstance(table, dict) or not isinstance(table.get('rows'), list):
         raise ValueError('accounts has no families table: the catalog needs `families` {kind, as_of, statement, '
-                         'patterns: [{pattern, models}]} (references/accounts.json)')
-    return table['patterns']
+                         'rows: [{pattern, models}]} (references/accounts.json)')
+    return table['rows']
 
 
 def split_model_effort(raw):

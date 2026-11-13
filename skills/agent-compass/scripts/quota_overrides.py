@@ -72,7 +72,7 @@ def override_depleted(override, usage, accounts):
     scoring = accounts.get('scoring') or {}
     margin, short = scoring.get('safety_margin_pct', 5), scoring.get('short_window_hours', 24)
     model = account_fleet.canonical(override['model'], accounts) if override.get('model') else None
-    binding = {wid: wspec for wid, wspec, _ in quota_pools.applicable_windows(spec, model, {})} if model else spec.get('windows', {})
+    binding = {wid: wspec for wid, wspec, _ in quota_pools.applicable_windows(spec, model, {}, accounts=accounts)} if model else spec.get('windows', {})
     for window in row.get('windows') or ():
         if not isinstance(window, dict):
             continue

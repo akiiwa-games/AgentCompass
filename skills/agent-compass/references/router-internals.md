@@ -155,7 +155,7 @@ The same rules hold in the other repositories that port this router.
 | `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | the same-series target's scores and usd_per_hour (series conversion; a small-size name on a non-small target is not in its series and gets the small row), marked estimated |
 | `unknown` | no match | no scores: a demanded category (`>= 1`, except `tool_operation = 1`) is a data error and the model leaves automatic routing |
 
-The `family` patterns are data: `accounts.json` `families`, a dated maintainer declaration whose `patterns` is an ordered list of `{pattern, models}` matched against the bare name (a catalog without it is a named error, never an empty table); the first matching pattern decides and the name resolves to the first of its models the catalogue has (none: `unknown`). A name no pattern matches falls back to the longest calibrated id it extends (`<id>-...`).
+The `family` patterns are data: `accounts.json` `families`, a dated maintainer declaration whose `rows` is an ordered list of `{pattern, models}` matched against the bare name (a catalog without it is a named error, never an empty table); the first matching pattern decides and the name resolves to the first of its models the catalogue has (none: `unknown`). A name no pattern matches falls back to the longest calibrated id it extends (`<id>-...`).
 
 A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry.
 

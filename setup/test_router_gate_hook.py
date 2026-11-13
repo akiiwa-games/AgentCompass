@@ -624,7 +624,7 @@ class RouterGateHookTests(unittest.TestCase):
                 cache = self.exhausted_cache(**changes)
                 self.assertEqual(gate.check_account_quota_exhausted("claude-lab", cache, T0) is not None, blocked)
         # Dict-shaped window specs with custom launch_min_remaining_pct apply across non-Claude accounts too.
-        custom_accounts = {"families": {"patterns": []},
+        custom_accounts = {"families": {"rows": []},
                            "accounts": {"team-proxy": {"windows": {"spend": {"hours": 168, "launch_min_remaining_pct": 15}}}}}
         cache = self.state / "usage.json"
         for used_pct, blocked in ((86.0, True), (80.0, False)):

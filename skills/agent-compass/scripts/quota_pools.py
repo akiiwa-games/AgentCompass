@@ -144,6 +144,7 @@ def applicable_windows(account_spec, model, usage_row, bundle=None, accounts=Non
     With a bundle, explicit draws (including []) remain authoritative. Otherwise
     historical model tags and known observed scopes determine applicability.
     Observation-only hard limits have no invented capacity, burn rate or hours.
+    `accounts` is the catalogue the model name resolves against (its models, aliases and families).
     """
     observed = {}
     for w in (usage_row or {}).get('windows', []):
@@ -154,7 +155,7 @@ def applicable_windows(account_spec, model, usage_row, bundle=None, accounts=Non
     windows = {**configured, **{wid: {} for wid in observed if wid not in configured}}
     if bundle is None:
         ids = bundle_pools({'account': '_billing', 'model': model or ''},
-                           {'accounts': {'_billing': account_spec}}, observed)
+                           {**(accounts or {}), 'accounts': {'_billing': account_spec}}, observed)
     else:
         if accounts is None:
             acct = bundle.get('account') if isinstance(bundle, dict) and isinstance(bundle.get('account'), str) else '_billing'

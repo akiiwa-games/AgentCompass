@@ -1331,7 +1331,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
         if model:
             row["model"] = model
         if stop_on_reset:
-            windows = [(wid, spec) for wid, spec, _ in quota_pools.applicable_windows(accounts["accounts"][account], model, {})
+            windows = [(wid, spec) for wid, spec, _ in quota_pools.applicable_windows(accounts["accounts"][account], model, {}, accounts=accounts)
                        if spec.get("hours", 0) >= 24]
             if not windows:
                 raise ValueError(_tr("该账号没有可确认重置的周额度窗口；请取消“重置后自动撤销”"))

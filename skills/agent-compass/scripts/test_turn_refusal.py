@@ -26,7 +26,7 @@ BUNDLE = {'account': 'acme', 'provider': 'acme', 'model': 'acme-quartz-2', 'effo
 FLEET = {'accounts': {'acme': {'windows': {'seven_day': {'hours': 168}}, 'bundles': {
     'quartz_high': {'provider': 'acme', 'model': 'acme-quartz-2', 'effort': 'high'},
     'onyx_high': {'provider': 'acme', 'model': 'acme-onyx-2', 'effort': 'high'}}}},
-    'scoring': {'rotate_after_carried_tokens': THRESHOLD},
+    'scoring': {'rotate_after_carried_tokens': THRESHOLD}, 'families': {'rows': []},
     '_discovery': {'accounts': {'acme': {'status': 'ready'}}, 'launchers': {}}}
 
 

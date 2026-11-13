@@ -139,7 +139,7 @@ def _candidates(accounts):
 def _weekly_window(accounts, account, model):
     import quota_pools
     windows = [(wid, spec) for wid, spec, _ in quota_pools.applicable_windows(
-        accounts['accounts'][account], model, {}) if spec.get('hours', 0) >= 24]
+        accounts['accounts'][account], model, {}, accounts=accounts) if spec.get('hours', 0) >= 24]
     return max(windows, key=lambda w: w[1]['hours'])[0] if windows else None
 
 

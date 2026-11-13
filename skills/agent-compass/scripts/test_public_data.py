@@ -346,8 +346,8 @@ class ProvenanceTests(unittest.TestCase):
     def test_families_must_be_a_dated_maintainer_declaration(self):
         accounts = json.loads((public_data.BUNDLED / 'accounts.json').read_text(encoding='utf-8'))
         public_data.validate_accounts_provenance(accounts)
-        for broken in (accounts['families']['patterns'], {**accounts['families'], 'as_of': None},
-                       {key: value for key, value in accounts['families'].items() if key != 'patterns'}):
+        for broken in (accounts['families']['rows'], {**accounts['families'], 'as_of': None},
+                       {key: value for key, value in accounts['families'].items() if key != 'rows'}):
             with self.subTest(broken=str(broken)[:60]), self.assertRaisesRegex(ValueError, 'families'):
                 public_data.validate_accounts_provenance({**accounts, 'families': broken})
 

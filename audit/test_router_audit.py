@@ -20,7 +20,7 @@ class FakeRouter:
 
 
 def context(rows, **extra):
-    base = {"rows": rows, "usage_now": {"accounts": {}}, "router": FakeRouter, "pinned": {}, "now_row": {"usage": {}},
+    base = {"rows": rows, "usage_now": {"accounts": {}}, "router": FakeRouter, "usage_reading": FakeRouter, "pinned": {}, "now_row": {"usage": {}},
             "heavy_by_day": {}, "heavy_detail": {}, "sessions": [], "dot": None, "ledger_rows": [row(0)], "peaks": {}}
     base.update(extra)
     return base

@@ -247,7 +247,7 @@ class FixRoundRegressionTests(unittest.TestCase):
                                 'z_by_effort': {'high': 0.2}}],
         }
         rows, _, _, _, _, _ = fa.Scorer({'panel': {'models': panel}, 'models': models},
-                                        {'models': {m: {} for m in models}}).score()
+                                        {'models': {m: {} for m in models}, 'families': {'rows': []}}).score()
         self.assertIsNone(rows['partial_coder']['axes']['coding']['value'])
         self.assertEqual(rows['partial_coder']['axes']['coding']['missing_facets'], ['faithfulness'])
         self.assertEqual(rows['partial_coder']['axes']['tool_operation']['by_level']['2']['by_effort']['high'], 0.2)

@@ -40,7 +40,7 @@ def test_override_save_and_cwd_regex_persistence(tmp_path, monkeypatch):
 
 def test_plan_explains_regex_exclusion():
     scoring = json.loads(account_fleet.reference_fleet_path().read_text(encoding='utf-8'))['scoring']
-    accounts = {'scoring': scoring, 'models': {'fixture-model': {}}, 'accounts': {
+    accounts = {'scoring': scoring, 'models': {'fixture-model': {}}, 'families': {'rows': []}, 'accounts': {
         'fixture-account': {'verified': True, 'cwd_regex': '^E:/P4(/|$)',
                             'bundles': {'fixture-bundle': {'model': 'fixture-model', 'effort': 'high'}}}}}
     plan = allocator.plan({'objective': 'Implement a parser', 'work_kind': 'general_implementation',
