@@ -356,43 +356,7 @@ def _manage_overrides_locked(args, now=None):
             until = max([t for t in (resets, expires) if t] or [now + timedelta(hours=24)])
         if until is None or until <= now:
             raise ValueError('--until must be a future ISO time with a zone.')
-        baseline_windows = None
-        if stop_on_reset:
-            acct_row = (usage.get('accounts') or {}).get(args.account) or {}
-            fetched = quota_pools.parse_time(acct_row.get('fetched_at'))
-            if (acct_row.get('status') == 'fresh' and acct_row.get('stale') is not True
-                    and acct_row.get('available') is not False
-                    and acct_row.get('account', args.account) == args.account
-                    and fetched is not None and 0 <= (now - fetched).total_seconds() <= 900):
-                spec = accounts['accounts'][args.account]
-                short = accounts['scoring']['short_window_hours']
-                bw = {}
-                for w in acct_row.get('windows') or ():
-                    if not isinstance(w, dict):
-                        continue
-                    wid = quota_pools.canonical_window_id(spec, w.get('id'))
-                    hours = (spec.get('windows', {}).get(wid) or {}).get('hours', 168)
-                    if (wid == quota_pools.canonical_window_id(spec, args.window)) if args.window else hours >= short:
-                        used_val = w.get('used_pct')
-                        rem_val = w.get('remaining_pct_before_reset')
-                        if rem_val is None:
-                            rem_val = w.get('observed_remaining_pct')
-                        if used_val is None and rem_val is not None:
-                            used_val = 100.0 - float(rem_val)
-                        row_bw = {
-                            k: v for k, v in (
-                                ('account', args.account),
-                                ('fetched_at', acct_row.get('fetched_at')),
-                                ('observation_id', acct_row.get('observation_id')),
-                                ('used_pct', used_val),
-                                ('remaining_pct', rem_val),
-                                ('resets_at', w.get('resets_at')),
-                            ) if v is not None
-                        }
-                        if row_bw:
-                            bw[wid] = row_bw
-                if bw:
-                    baseline_windows = bw
+        baseline_windows = _reset_baseline(args, usage, accounts, now) if stop_on_reset else None
         rows = [o for o in rows if (until_o := quota_pools.parse_time(o.get('until'))) is not None and until_o > now
                 and not override_reset_landed(o, usage, accounts, now)
                 and not override_depleted(o, usage, accounts)]
@@ -454,3 +418,44 @@ def _manage_overrides_locked(args, now=None):
                            'boost': boost, 'until': until.isoformat()})
     decision_ledger.append_ledger(ledger_row)
     return {'stage': 'override', 'path': str(path), 'removed': removed, 'active': load_overrides(now, path, usage=usage, accounts=accounts, prune=False)}
+
+
+def _reset_baseline(args, usage, accounts, now):
+    """The windows a stop-on-reset override watches, as one fresh observation (at most 15 minutes old) shows them;
+    None without such an observation. A reset lands when usage recovers from this baseline."""
+    acct_row = (usage.get('accounts') or {}).get(args.account) or {}
+    fetched = quota_pools.parse_time(acct_row.get('fetched_at'))
+    if (acct_row.get('status') == 'fresh' and acct_row.get('stale') is not True
+            and acct_row.get('available') is not False
+            and acct_row.get('account', args.account) == args.account
+            and fetched is not None and 0 <= (now - fetched).total_seconds() <= 900):
+        spec = accounts['accounts'][args.account]
+        short = accounts['scoring']['short_window_hours']
+        bw = {}
+        for w in acct_row.get('windows') or ():
+            if not isinstance(w, dict):
+                continue
+            wid = quota_pools.canonical_window_id(spec, w.get('id'))
+            hours = (spec.get('windows', {}).get(wid) or {}).get('hours', 168)
+            if (wid == quota_pools.canonical_window_id(spec, args.window)) if args.window else hours >= short:
+                used_val = w.get('used_pct')
+                rem_val = w.get('remaining_pct_before_reset')
+                if rem_val is None:
+                    rem_val = w.get('observed_remaining_pct')
+                if used_val is None and rem_val is not None:
+                    used_val = 100.0 - float(rem_val)
+                row_bw = {
+                    k: v for k, v in (
+                        ('account', args.account),
+                        ('fetched_at', acct_row.get('fetched_at')),
+                        ('observation_id', acct_row.get('observation_id')),
+                        ('used_pct', used_val),
+                        ('remaining_pct', rem_val),
+                        ('resets_at', w.get('resets_at')),
+                    ) if v is not None
+                }
+                if row_bw:
+                    bw[wid] = row_bw
+        if bw:
+            return bw
+    return None

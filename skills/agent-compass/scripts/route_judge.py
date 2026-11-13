@@ -117,30 +117,12 @@ def record_constraint(args, task=None, classified=None):
     if not basis or not args.account or not args.provider or not args.model:
         raise ValueError('record requires --basis, --provider, --account and --model.')
     started = time.monotonic()
-    if task is None:
-        task = {}
-    if not task and args.input is not None:
-        loaded = json.loads(args.input.read_text(encoding='utf-8-sig'))
-        task = loaded.get('task') if isinstance(loaded, dict) and isinstance(loaded.get('task'), dict) else {}
-    if not task.get('parent_agent_id'):
-        # The gate matches same-session rows first; a record without the session ID loses to any
-        # roll this session made inside the window. Only real host IDs, never the ppid fallback.
-        from worker_context import detect_host_session
-        parent = (getattr(args, 'parent_id', None) or '').strip() or detect_host_session()
-        parent = parent.removeprefix('claude:')
-        if parent and not parent.startswith(('claude-session-', 'codex-session-')):
-            task = {**task, 'parent_agent_id': parent}
+    task = _record_task(args, task)
     import account_fleet
-    import allocator
     import auto_bundles
     import axis_scores
-    import candidate_eval
-    import candidate_ranking
-    import launch_failures
-    import model_latch
     import model_resolution
     import provider_retry
-    import quota_pools
     accounts = account_fleet.load_accounts()
     now = datetime.now(timezone.utc)
     usage = usage_reading.usage_snapshot(args.usage_cache, args.accounts, now)
@@ -200,24 +182,7 @@ def record_constraint(args, task=None, classified=None):
     if chosen:
         quota_bundle['id'] = chosen
         quota_bundle.setdefault('bundle_id', chosen)
-    dispatch_registry.check_launch_quota(quota_bundle, accounts, usage, now)
-    acc_usage = (usage.get('accounts') or {}).get(args.account) or {}
-    if acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until') or quota_pools.latched_windows(accounts, args.account):
-        blockers = quota_pools.launch_blockers(
-            quota_bundle, accounts, usage, now, records=dispatch_flow.reservation_records(read_only=True))
-        if blockers:
-            wid, reason = blockers[0]
-            raise ValueError(
-                f"Account {args.account!r} window {wid!r} is exhausted or below safety floor ({reason}). "
-                f"Do not dispatch {args.account}; run `{router_command()} plan` to pick an account with remaining capacity."
-            )
-    cooling = (candidate_eval.cooling_reason(quota_bundle, launch_failures.active(), accounts)
-               if launch_failures.enabled() else None)
-    if cooling:
-        raise ValueError(f"{args.account}/{pin.model} is cooling down ({cooling}). Tell the user; do not substitute another model.")
-    latched_model = model_latch.reason(quota_bundle, model_latch.active(now=now))
-    if latched_model:
-        raise ValueError(f"{args.account}/{pin.model}: {latched_model}. Tell the user; do not substitute another model.")
+    _check_record_launch(args, pin, quota_bundle, accounts, usage, now)
     # A model the user names on a held account or model is the probe that can lift the hold: it goes, with a warning.
     retrying = provider_retry.reason(quota_bundle, provider_retry.active(now=now))
     c_model = resolved['key'] if direct else account_fleet.model_leaf(pin.model)
@@ -231,7 +196,6 @@ def record_constraint(args, task=None, classified=None):
     if classified:
         # What is planned and reserved; the decision stays bound to the caller's task.
         task = {**classified['task'], **({'parent_agent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {})}
-    records = None
     if effort is None and not sibling:
         effort = auto_bundles.HARNESS_DEFAULT_EFFORT.get(account_fleet.bundle_harness({'provider': args.provider, 'model': c_model}, args.account))
     base_b = account_fleet.bundles(accounts).get(chosen) or {}
@@ -274,6 +238,61 @@ def record_constraint(args, task=None, classified=None):
         result['host_policy_violation'] = {'account': args.account, 'dispatch_allowed': False,
                                            'policy_path': str(host_policy.policy_path()[0]),
                                            'reason': 'excluded by host policy; constraint recorded, not dispatch authorization'}
+    _compare_with_router(result, task, usage, now, chosen, fast_requested, classified)
+    return decision_ledger.finalize(result, None, 'auto', started, reviewed_task if classified else task)
+
+
+def _record_task(args, task):
+    """The task a record is for: the caller's, else the --input document's; parented to this host session when it
+    names no parent."""
+    if task is None:
+        task = {}
+    if not task and args.input is not None:
+        loaded = json.loads(args.input.read_text(encoding='utf-8-sig'))
+        task = loaded.get('task') if isinstance(loaded, dict) and isinstance(loaded.get('task'), dict) else {}
+    if not task.get('parent_agent_id'):
+        # The gate matches same-session rows first; a record without the session ID loses to any
+        # roll this session made inside the window. Only real host IDs, never the ppid fallback.
+        from worker_context import detect_host_session
+        parent = (getattr(args, 'parent_id', None) or '').strip() or detect_host_session()
+        parent = parent.removeprefix('claude:')
+        if parent and not parent.startswith(('claude-session-', 'codex-session-')):
+            task = {**task, 'parent_agent_id': parent}
+    return task
+
+
+def _check_record_launch(args, pin, quota_bundle, accounts, usage, now):
+    """Refuse a forced route that cannot launch now: no quota left in a window it draws, a launch cooling down, or a
+    latched model. External runners dispatch directly after record, so this is the protection prepared dispatches get."""
+    import candidate_eval
+    import launch_failures
+    import model_latch
+    import quota_pools
+    dispatch_registry.check_launch_quota(quota_bundle, accounts, usage, now)
+    acc_usage = (usage.get('accounts') or {}).get(args.account) or {}
+    if acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until') or quota_pools.latched_windows(accounts, args.account):
+        blockers = quota_pools.launch_blockers(
+            quota_bundle, accounts, usage, now, records=dispatch_flow.reservation_records(read_only=True))
+        if blockers:
+            wid, reason = blockers[0]
+            raise ValueError(
+                f"Account {args.account!r} window {wid!r} is exhausted or below safety floor ({reason}). "
+                f"Do not dispatch {args.account}; run `{router_command()} plan` to pick an account with remaining capacity."
+            )
+    cooling = (candidate_eval.cooling_reason(quota_bundle, launch_failures.active(), accounts)
+               if launch_failures.enabled() else None)
+    if cooling:
+        raise ValueError(f"{args.account}/{pin.model} is cooling down ({cooling}). Tell the user; do not substitute another model.")
+    latched_model = model_latch.reason(quota_bundle, model_latch.active(now=now))
+    if latched_model:
+        raise ValueError(f"{args.account}/{pin.model}: {latched_model}. Tell the user; do not substitute another model.")
+
+
+def _compare_with_router(result, task, usage, now, chosen, fast_requested, classified):
+    """Add to a record what the router would have chosen for the same task, and what the override cost."""
+    import account_fleet
+    import allocator
+    import candidate_ranking
     if task and not isinstance(task.get('profile'), dict):
         # record / roll --provider never calls the classifier, and the router plans only a classified task: with no
         # caller profile there is nothing to compare the user's choice with.
@@ -285,8 +304,7 @@ def record_constraint(args, task=None, classified=None):
                 isinstance((spec or {}).get('cadence'), dict)
                 for spec in (account_fleet.load_accounts().get('accounts') or {}).values()
             )
-            plan_records = (records if records is not None else
-                            dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
+            plan_records = (dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
                             if not ((task.get('chain') or {}).get('id') or has_cadence) else
                             decision_ledger.read_ledger() + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES))
             plan = allocator.plan(plan_task, usage, now, records=plan_records)
@@ -303,7 +321,6 @@ def record_constraint(args, task=None, classified=None):
                                                                       'notes': row['notes']}})
             if classified and row is not None and isinstance(row.get('expected_usd'), (int, float)):
                 result['expected_usd'] = row['expected_usd']    # the pinned bundle's own price, as the launch reserves it
-    return decision_ledger.finalize(result, None, 'auto', started, reviewed_task if classified else task)
 
 
 def _with_effort(pin, effort):
@@ -531,21 +548,7 @@ def classify_pinned(task, args):
 
 def plan_stage(document, args):
     """Classify, allocate and record one task; shared by the plan and roll stages."""
-    task = document.get('task')
-    if not isinstance(task, dict) or not task:
-        raise ValueError('Input requires task.')
-    if getattr(args, 'hours', None) is not None and task.get('expected_hours') is None:
-        task = {**task, 'expected_hours': args.hours}
-    if getattr(args, 'can_wait_hours', None) is not None and task.get('can_wait_hours') is None:
-        cwh = args.can_wait_hours
-        if not (isinstance(cwh, (int, float)) and not isinstance(cwh, bool) and math.isfinite(cwh) and cwh >= 0):
-            raise ValueError('--can-wait-hours must be a non-negative number of hours.')
-        task = {**task, 'can_wait_hours': float(cwh)}
-    hours = task.get('expected_hours')
-    if hours is None and task.get('hours_source') == 'classifier_estimate':
-        pass  # The allocator budgets the classification's own expected_hours; roll reports it.
-    elif not (isinstance(hours, (int, float)) and not isinstance(hours, bool) and math.isfinite(hours) and hours > 0):
-        raise ValueError('Task requires expected_hours (positive number of active worker-hours, or pass --hours <n>).')
+    task = _plan_input_task(document, args)
     if getattr(args, 'demo', False):
         if args.stage != 'plan' or not args.dry_run:
             raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
@@ -653,6 +656,41 @@ def plan_stage(document, args):
     apply_readiness_gap(planned, loaded_accounts, usage)
     if extra_alerts:
         planned.setdefault('alerts', []).extend(extra_alerts)
+    _add_plan_alerts(planned, task, capabilities, dot_down)
+    if task.get('hours_source') == 'classifier_estimate':
+        planned['hours_estimate'] = hours_estimate or {
+            'hours': (planned.get('decision', {}).get('task') or {}).get('hours'), 'source': 'caller_profile',
+            'confidence': task['profile'].get('hours_confidence', 'unknown')}
+    if scorer is not None:
+        planned['scorer'], planned['task_profile'] = scorer, task['profile']
+    planned['_allocation_task'] = task     # carries the profile, so the launch-time re-plan scores alike
+    result = decision_ledger.finalize(planned, None, 'auto', started, reviewed_task)
+    return result, 0 if result.get('choice') != 'none' else 2
+
+
+def _plan_input_task(document, args):
+    """The document's task with --hours and --can-wait-hours applied where it gives none; it must carry its hours unless
+    the classifier is to estimate them."""
+    task = document.get('task')
+    if not isinstance(task, dict) or not task:
+        raise ValueError('Input requires task.')
+    if getattr(args, 'hours', None) is not None and task.get('expected_hours') is None:
+        task = {**task, 'expected_hours': args.hours}
+    if getattr(args, 'can_wait_hours', None) is not None and task.get('can_wait_hours') is None:
+        cwh = args.can_wait_hours
+        if not (isinstance(cwh, (int, float)) and not isinstance(cwh, bool) and math.isfinite(cwh) and cwh >= 0):
+            raise ValueError('--can-wait-hours must be a non-negative number of hours.')
+        task = {**task, 'can_wait_hours': float(cwh)}
+    hours = task.get('expected_hours')
+    if hours is None and task.get('hours_source') == 'classifier_estimate':
+        pass  # The allocator budgets the classification's own expected_hours; roll reports it.
+    elif not (isinstance(hours, (int, float)) and not isinstance(hours, bool) and math.isfinite(hours) and hours > 0):
+        raise ValueError('Task requires expected_hours (positive number of active worker-hours, or pass --hours <n>).')
+    return task
+
+
+def _add_plan_alerts(planned, task, capabilities, dot_down):
+    """The plan's alerts about Dot, worker rotation and an unknown work_kind."""
     if dot_down:
         planned.setdefault('alerts', []).append({
             'code': 'dot_unreachable', 'severity': 'info', 'account': 'dot',
@@ -674,15 +712,6 @@ def plan_stage(document, args):
             'code': 'unknown_work_kind', 'severity': 'warn', 'account': None,
             'message': f"work_kind {task['work_kind']!r} is not a route, so the plan treated it as other_or_mixed. "
                        'Use one of: ' + ', '.join(capabilities['routes']) + '.'})
-    if task.get('hours_source') == 'classifier_estimate':
-        planned['hours_estimate'] = hours_estimate or {
-            'hours': (planned.get('decision', {}).get('task') or {}).get('hours'), 'source': 'caller_profile',
-            'confidence': task['profile'].get('hours_confidence', 'unknown')}
-    if scorer is not None:
-        planned['scorer'], planned['task_profile'] = scorer, task['profile']
-    planned['_allocation_task'] = task     # carries the profile, so the launch-time re-plan scores alike
-    result = decision_ledger.finalize(planned, None, 'auto', started, reviewed_task)
-    return result, 0 if result.get('choice') != 'none' else 2
 
 
 def scorer_cli(args):
@@ -704,11 +733,32 @@ def scorer_cli(args):
     return result, 0 if result['ok'] else 1
 
 
-def main():
+def score_stage(args):
+    """`agentcompass score --input task.json`: the System-One profile of one task, without allocating it."""
     import account_fleet
-    if sys.argv[1:2] == ['score'] and len(sys.argv) >= 3 and sys.argv[2] in ('set', 'list', 'clear'):
-        import user_scores
-        return user_scores.cli_main(sys.argv[2:])
+    if args.input is None:
+        raise ValueError('score requires --input.')
+    document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+    task = document.get('task')
+    if not isinstance(task, dict) or not task:
+        raise ValueError('Input requires task.')
+    import task_intake
+    capabilities = account_fleet.load_capabilities()
+    policy = account_fleet.load_accounts()['scoring']
+    profile, scorer = scorer_client.score_task(task, capabilities, args.score_timeout, use_model=not args.dry_run)
+    if profile is None:
+        result = {'stage': 'score', 'status': 'blocked', 'source': scorer['source'], 'task_profile': None,
+                  'scorer': scorer, 'error': 'scorer_unavailable', 'next': SCORER_UNAVAILABLE_NEXT}
+        return result, 2
+    derived = task_intake.profile_difficulty(profile, policy)
+    result = {'stage': 'score', 'source': scorer['source'], 'task_profile': profile, 'scorer': scorer,
+              'derived': {'kind': task_intake.task_kind({**task, 'profile': profile}, capabilities, policy),
+                          'difficulty': task.get('difficulty') or derived, 'profile_difficulty': derived}}
+    return result, 0
+
+
+def build_parser():
+    """The one flat option set every stage accepts (stage_help shows each stage its own)."""
     parser = argparse.ArgumentParser(prog='agentcompass', description=__doc__, add_help=False)
     parser.add_argument('stage', nargs='?', choices=tuple(stage_help.STAGES))
     parser.add_argument('-h', '--help', action='store_true', help='Show the options of this stage.')
@@ -787,6 +837,15 @@ def main():
                         help='override: repair an existing intent baseline using the current fresh observation; never assign a new timestamp to old quota values.')
     parser.add_argument('--list', action='store_true', help='override: show the active overrides.')
     parser.add_argument('--clear', help='override: remove the override with this id, or "all".')
+    return parser
+
+
+def main():
+    import account_fleet
+    if sys.argv[1:2] == ['score'] and len(sys.argv) >= 3 and sys.argv[2] in ('set', 'list', 'clear'):
+        import user_scores
+        return user_scores.cli_main(sys.argv[2:])
+    parser = build_parser()
     args = parser.parse_args()
     if args.help_all:
         if args.stage:
@@ -813,27 +872,9 @@ def main():
             print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
             return code
         if args.stage == 'score':
-            if args.input is None:
-                raise ValueError('score requires --input.')
-            document = json.loads(args.input.read_text(encoding='utf-8-sig'))
-            task = document.get('task')
-            if not isinstance(task, dict) or not task:
-                raise ValueError('Input requires task.')
-            import task_intake
-            capabilities = account_fleet.load_capabilities()
-            policy = account_fleet.load_accounts()['scoring']
-            profile, scorer = scorer_client.score_task(task, capabilities, args.score_timeout, use_model=not args.dry_run)
-            if profile is None:
-                result = {'stage': 'score', 'status': 'blocked', 'source': scorer['source'], 'task_profile': None,
-                          'scorer': scorer, 'error': 'scorer_unavailable', 'next': SCORER_UNAVAILABLE_NEXT}
-                print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-                return 2
-            derived = task_intake.profile_difficulty(profile, policy)
-            result = {'stage': 'score', 'source': scorer['source'], 'task_profile': profile, 'scorer': scorer,
-                      'derived': {'kind': task_intake.task_kind({**task, 'profile': profile}, capabilities, policy),
-                                  'difficulty': task.get('difficulty') or derived, 'profile_difficulty': derived}}
+            result, code = score_stage(args)
             print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-            return 0
+            return code
         if args.can_wait_hours is not None and (not math.isfinite(args.can_wait_hours) or args.can_wait_hours < 0):
             raise ValueError('--can-wait-hours must be a non-negative number of hours.')
         if args.stage == 'roll':
