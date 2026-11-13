@@ -569,13 +569,22 @@ class SetupFlowTests(HomeCase):
         document = json.loads(onboard.override_path(self.home).read_text(encoding="utf-8"))
         self.assertIs(document["accounts"]["opencode"]["verified"], True)
 
-    def test_setup_disable_then_accept_restores_host_policy(self):
+    def test_only_an_answer_the_user_gives_readmits_an_account_taken_out_of_host_policy(self):
+        """Rule: a known omission from host policy is an intentional deny (host_policy.sync_discovered), so the
+        non-interactive default of `setup --yes` (which every product update runs) never re-admits the account."""
         self.cli = {"claude": "claude", "opencode": "opencode"}
         self.write(".claude/.credentials.json", CLAUDE_CREDENTIALS)
         self.run_setup("--disable", "opencode", "--no-docs", "--no-skills")
         path = self.home / ".agent-compass/host-policy.json"
-        self.assertNotIn("opencode", json.loads(path.read_text(encoding="utf-8"))["allowed_accounts"])
+        denied = path.read_text(encoding="utf-8")
+        self.assertNotIn("opencode", json.loads(denied)["allowed_accounts"])
         self.run_setup("--no-docs", "--no-skills")
+        self.assertEqual(path.read_text(encoding="utf-8"), denied)
+
+        def answer(question):
+            return "y" if "Route work to it?" in question else "n"
+        with contextlib.redirect_stdout(io.StringIO()), patch.object(sys.stdin, "isatty", return_value=True),                 patch("builtins.input", side_effect=answer):
+            onboard.main(["setup", "--home", str(self.home), "--no-usage", "--no-docs", "--no-skills"])
         self.assertIn("opencode", json.loads(path.read_text(encoding="utf-8"))["allowed_accounts"])
 
     def test_no_signed_in_cli_says_so(self):

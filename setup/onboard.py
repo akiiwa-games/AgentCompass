@@ -398,7 +398,9 @@ def setup_main(argv: list[str] | None = None) -> int:
         if row["signed_in"] is None and row["name"] not in disabled:
             if not asker.ask(f"{row['name']} is installed but its sign-in cannot be verified. Route work to it?", True):
                 disabled.add(row["name"])
-            else:
+            elif asker.interactive:
+                # Only an answer the user gave re-admits an account. The non-interactive default is no choice: an
+                # account missing from host policy's allowed list is the user's deny (host_policy.sync_discovered).
                 enabled.add(row["name"])
     override = write_override(home, detection, disabled, dry)
     import host_policy
