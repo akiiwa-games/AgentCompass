@@ -579,6 +579,22 @@ def console_command_opens_no_window(exe):
           f"rc={helper.returncode} new console windows={len(popped)}")
 
 
+def redirection_guard(pid):
+    """Flags of a process's redirection trust policy (ProcessRedirectionTrustPolicy, 16), None when it cannot be read.
+    With flag 1 the process cannot follow a junction a non-elevated process made: the skill links of "agentcompass setup"."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel32.OpenProcess(0x1000, False, int(pid))
+    if not handle:
+        return None
+    flags = wintypes.DWORD()
+    try:
+        read = kernel32.GetProcessMitigationPolicy(ctypes.c_void_p(handle), 16, ctypes.byref(flags), ctypes.c_size_t(4))
+    finally:
+        kernel32.CloseHandle(ctypes.c_void_p(handle))
+    return flags.value if read else None
+
+
 def tray_processes():
     done = run(["tasklist", "/FI", "IMAGENAME eq AgentCompass.exe", "/FO", "CSV", "/NH"], label="tasklist")
     return [int(row.split('","')[1]) for row in done.stdout.splitlines() if row.startswith('"AgentCompass.exe"')]
@@ -831,6 +847,13 @@ def g_installer():
     cli_ver_a = run([cli_exe, "--version"], label="cli-version-a")
     check(f"installed cli\\agentcompass.exe --version reports {version}", cli_ver_a.returncode == 0 and version in cli_ver_a.stdout, cli_ver_a.stdout + cli_ver_a.stderr)
     check("a Start menu 'AgentCompass' shortcut launches the tray again after it is quit", START_MENU_LINK.is_file())
+    # Setup turns on RedirectionGuard for itself (Inno Setup 6.7 and later) and a child process inherits it. The guest
+    # user is elevated, so its junctions are trusted and nothing fails here; what shows is the policy itself.
+    guards = {pid: redirection_guard(pid) for pid in wait_for(tray_processes, 40) or []}
+    check("the installer started the tray, and no tray process carries Setup's RedirectionGuard", bool(guards) and all(flags == 0 for flags in guards.values()), guards)
+    setup_log = HOME / ".agent-compass" / "installer-setup.log"
+    setup_text = setup_log.read_text(encoding="utf-8", errors="replace") if setup_log.is_file() else ""
+    check("the installer applied the earlier setup again and that run finished (installer-setup.log, no traceback)", "Summary" in setup_text and "Traceback" not in setup_text, setup_text[-500:] or "no log")
     try:
         winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CURRENT_USER, UNINSTALL_KEY))
         registered = True

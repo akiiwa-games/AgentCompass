@@ -9,6 +9,7 @@
 ; The setup output goes to %USERPROFILE%\.agent-compass\installer-setup.log.
 ; The install needs the running tray gone. It stops the tray, waits for its files to be released, and gives up before
 ; changing anything when they are not; a tray it stopped is started again when the install does not finish.
+; The tray is always started through its scheduled task, so it never runs as a child of Setup.
 ; The three environment names must match tray/deploy.py wanted_env():
 ;   PRO_CONSULT_LAUNCHER, PRO_CONSULT_LAUNCHER_ARGS, CODEX_WEB_GPT_EXTERNAL_TRAY
 ; Version is passed by packaging/build.ps1 as /DMyAppVersion=...
@@ -44,6 +45,10 @@ UninstallDisplayName={#MyAppName} tray
 CloseApplications=force
 RestartApplications=no
 ChangesEnvironment=yes
+; Setup (Inno Setup 6.7 and later) turns on Windows' RedirectionGuard for itself and its child processes inherit it:
+; they cannot follow a junction a non-elevated process made. This installer never elevates (PrivilegesRequired=lowest),
+; so the guard protects nothing here, and "agentcompass setup" run below must follow the skill links it made earlier.
+RedirectionGuard=no
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -71,7 +76,6 @@ Source: "..\dist\AgentCompass\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 [Run]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Register-ScheduledTask -TaskName 'AgentCompass' -Description 'AgentCompass tray' -Action (New-ScheduledTaskAction -Execute '{app}\{#MyAppExeName}') -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) -Force | Out-Null"""; Flags: runhidden waituntilterminated
 Filename: "{cmd}"; Parameters: "/D /C """"{app}\cli\agentcompass.exe"" setup --yes {code:SetupArguments} >> ""{%USERPROFILE}\.agent-compass\installer-setup.log"" 2>&1"""; Check: SetupRequested; Flags: runhidden waituntilterminated
-Filename: "{app}\{#MyAppExeName}"; Flags: nowait
 
 [Code]
 const
@@ -155,12 +159,29 @@ begin
     Result := '--no-usage';
 end;
 
+{ The tray is started through its scheduled task, by the Task Scheduler service, never as a child of Setup. A child
+  inherits the process mitigations of Setup and of whatever started Setup (the tray's own updater, itself started by an
+  earlier installer): under RedirectionGuard the tray cannot follow the skill links. A machine where the task could not
+  be registered gets the tray started directly. }
+procedure StartTray();
+var
+  ResultCode: Integer;
+begin
+  if not FileExists(ExpandConstant('{app}\{#MyAppExeName}')) then
+    exit;
+  if Exec('schtasks.exe', '/Run /TN "AgentCompass"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+    exit;
+  Exec(ExpandConstant('{app}\{#MyAppExeName}'), '', ExpandConstant('{app}'), SW_SHOWNORMAL, ewNoWait, ResultCode);
+end;
+
+{ [Run] entries (the scheduled task, setup) have run by ssPostInstall. }
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
     AddCliToPath();
     InstallFinished := True;
+    StartTray();
   end;
 end;
 
@@ -210,13 +231,11 @@ begin
     Result := 'AgentCompass is still closing and its files are in use. Nothing was changed. Run the installer again in a minute.';
 end;
 
-{ [Run] starts the tray after a finished install. An install that stopped the tray and did not finish starts it here. }
+{ A finished install starts the tray at ssPostInstall. An install that stopped the tray and did not finish starts it here. }
 procedure DeinitializeSetup();
-var
-  ResultCode: Integer;
 begin
-  if TrayStopped and (not InstallFinished) and FileExists(ExpandConstant('{app}\{#MyAppExeName}')) then
-    Exec(ExpandConstant('{app}\{#MyAppExeName}'), '', ExpandConstant('{app}'), SW_SHOWNORMAL, ewNoWait, ResultCode);
+  if TrayStopped and (not InstallFinished) then
+    StartTray();
 end;
 
 [UninstallRun]
