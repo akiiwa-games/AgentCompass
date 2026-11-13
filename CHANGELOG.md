@@ -2,6 +2,11 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.6.2 - 2026-11-13
+
+- The installer starts the tray through its scheduled task and no longer turns on Inno Setup's RedirectionGuard: a tray or setup run started by the installer could not follow the skill links (`WinError 448`), which stopped Usage Float and the installer's own setup run.
+- The Windows Sandbox check follows v0.6.0 routing and asserts that no installer-started tray carries RedirectionGuard.
+
 ## v0.6.1 - 2026-11-13
 
 - A task marked `needs_visual` or `needs_gui` requires a model that takes image input at every `tool_operation` level, not only at level 3.

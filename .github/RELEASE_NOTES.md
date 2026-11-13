@@ -1,16 +1,12 @@
-AgentCompass v0.6.1 fixes three things found after v0.6.0: an update could leave the tray closed, an update did not apply setup again, and a task that must look at images could be sent to a model that takes no image input. It builds on v0.6.0. Only application code changed, so the tray's "Update AgentCompass" installs the code package; the installer fixes below take effect the next time the installer itself runs.
+AgentCompass v0.6.2 fixes the tray that the installer starts. It builds on v0.6.1. The installer itself changed, so the tray's "Update AgentCompass" downloads and runs the full installer.
 
-- **A visual task needs a model that takes images.** A task the classifier marks `needs_visual` or `needs_gui` now requires image input at every `tool_operation` level. Before, the image-input check applied only at level 3, so such a task with a lower level could go to a model whose public data says it takes no image input.
-  - A model that takes no image input leaves the task. A model with no cited modality leaves automatic routing; naming it still launches it, with the data error as a warning.
-  - Tasks without the flag are routed as before.
-- **Setup follows the update.** On a machine where `agentcompass setup` was run, an update applies it again with the new files: skill links, global rule blocks and an installed gate hook are refreshed, and the hook choice stays as it was. The installer does it before it starts the tray; after a code-package, wheel or Git update the tray does it, and a failure is reported without stopping the restart. A machine that was never set up is not set up by an update.
-- **An update never re-admits an account you took out.** `agentcompass setup --yes` answered its own question about an account whose sign-in cannot be verified with "yes" and wrote the account back into the allowed list. Only an answer given at the prompt (or `--disable`) changes that list now.
-- **The installer and a running tray.** The installer stops the tray, then waits up to a minute for the tray's and the CLI's program files to be released. If they are not, it changes nothing, says so, and starts the tray again; it exits with code 7. Before, the tray could stay closed after an update that did not finish.
-- **Fixes.**
-  - `agentcompass doctor` names the right fix for a leftover `route-agent-work` skill link: delete it.
-  - The pre-release privacy check finds a denied path however its separators are written (`\`, `\\` or `/`); one machine path in a classifier calibration case was replaced by a neutral one.
-- **For contributors.** The fast test suite passes on a hosted Windows runner.
+- **A tray started by the installer could not read the router's skill links.** The installer is built with Inno Setup, which since 6.7 turns on Windows' RedirectionGuard for itself; every process it starts inherits that, and such a process cannot follow a directory junction a normal (non-elevated) program made. The skill links `agentcompass setup` creates are such junctions. After an install or a full-installer update:
+  - Usage Float stopped at start with `WinError 448`, and tray pages that read the installed skill failed the same way, until the tray was next started at sign-in.
+  - The installer's own "setup follows the update" run (new in v0.6.1) stopped at the skill links on a machine that already had them.
+- **The fix.** The installer no longer turns the guard on (it installs per user and never elevates, so there was nothing for it to protect), and it starts the tray through the `AgentCompass` scheduled task instead of as its own child, so the tray inherits nothing from the installer or from the old tray that launched the update.
+- **Updating from v0.6.0 or v0.6.1.** If your tray was last started by one of those installers, this update is launched by that tray and its setup step can still stop once at the skill links; the tray it starts afterwards is clean. Run `agentcompass setup --yes` once after the update if you want the skill links and rules refreshed right away. If Usage Float is missing now, quitting the tray and starting it from the Start menu also brings it back.
+- **For contributors.** The Windows Sandbox check now follows v0.6.0 routing (a local quota fixture in the guest, a classified dry run, no assertion on which account wins) and asserts that no tray process started by the installer carries RedirectionGuard.
 
-The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.6.1/packaging/SIGNING.md).
+The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.6.2/packaging/SIGNING.md).
 
 Status: alpha. Accounts come from discovery on your machine; choose which ones take part in the tray.
