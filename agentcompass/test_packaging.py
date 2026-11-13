@@ -167,6 +167,21 @@ class PackagingTests(unittest.TestCase):
         self.assertIn(r'Filename: "{app}\cli\agentcompass.exe"; Parameters: "uninstall --yes"', iss)
         self.assertNotIn("/D /C agentcompass uninstall", iss)       # never whichever agentcompass PATH finds first
 
+    def test_the_installer_applies_an_earlier_setup_again_and_never_leaves_the_tray_down(self):
+        iss = (ROOT / "packaging" / "agentcompass.iss").read_text(encoding="utf-8")
+        code = iss.split("[Code]", 1)[1].split("\n[", 1)[0]
+        # The file `agentcompass setup` leaves behind is what marks a machine as set up; its name has one owner.
+        owner = (ROOT / "setup" / "sync_host_globals.py").read_text(encoding="utf-8")
+        self.assertIn('return state_dir() / "setup-manifest.json"', owner)
+        self.assertIn(r"FileExists(ExpandConstant('{%USERPROFILE}\.agent-compass\setup-manifest.json'))", code)
+        self.assertIn("setup --yes {code:SetupArguments}", iss)
+        # The tray it stops is waited for before any file changes, and started again when the install does not finish.
+        prepare = code.split("function PrepareToInstall", 1)[1].split("\nend;", 1)[0]
+        self.assertLess(prepare.index("taskkill.exe"), prepare.index("ProgramsReleased()"))
+        self.assertIn("Result := 'AgentCompass is still closing", prepare)
+        restart = code.split("procedure DeinitializeSetup();", 1)[1].split("\nend;", 1)[0]
+        self.assertIn("TrayStopped and (not InstallFinished)", restart)
+
     def test_the_installer_leaves_a_start_menu_entry_to_launch_the_tray(self):
         iss = (ROOT / "packaging" / "agentcompass.iss").read_text(encoding="utf-8")
         icons = iss.split("[Icons]", 1)[1].split("\n[", 1)[0] if "[Icons]" in iss else ""

@@ -706,6 +706,8 @@ EN = {
     'AgentCompass 当前分支 {0} 未跟踪 origin，未执行 git 更新': 'Current branch {0} does not track origin; skipped git pull',
     'AgentCompass 仓库已更新（git pull --ff-only）': 'Updated AgentCompass repo (git pull --ff-only)',
     '已刷新公共路由数据（agentcompass data --refresh）': 'Refreshed public routing data (agentcompass data --refresh)',
+    '已按原有选择重新应用 Router 设置（agentcompass setup）': 'Applied the router setup again with the same choices (agentcompass setup)',
+    '重新应用 Router 设置失败：{0}。请运行 agentcompass setup': 'Applying the router setup again failed: {0}. Run agentcompass setup',
     '未检测到运行中的托盘，无需重启托盘': 'No running tray detected; tray restart skipped',
     '正在重启托盘…': 'Restarting tray…',
     '托盘已重启 · AgentCompass {0}': 'Tray restarted · AgentCompass {0}',

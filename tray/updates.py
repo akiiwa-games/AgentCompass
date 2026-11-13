@@ -42,6 +42,8 @@ LOCK = threading.Lock()
 _progress = threading.local()
 RELEASE_CHECK_INTERVAL_SECONDS = 6 * 3600
 RELEASE_CACHE_NAME = "product-release.json"
+# Written by `agentcompass setup` (setup/sync_host_globals.py manifest_path), removed by `agentcompass uninstall`.
+SETUP_MANIFEST_NAME = "setup-manifest.json"
 
 
 def report(kind: str, message: str, component: str | None = None, **extra) -> None:
@@ -1860,21 +1862,41 @@ def _update_git_checkout(root: Path, exec_run) -> tuple[str, bool]:
     return _tr("AgentCompass 仓库已更新（git pull --ff-only）"), True
 
 
-def _refresh_public_data_step(installs: dict, exec_run) -> str:
+def _router_cli(installs: dict) -> list[str]:
+    """The argument vector that runs the updated `agentcompass` of this install."""
     tray_root = Path(installs["tray"]["root"])
     path_router = installs["routers"].get("path") or {}
     cli_bin = path_router.get("cli") or shutil.which("agentcompass")
     bundled_cli = tray_root / "cli" / ("agentcompass.exe" if os.name == "nt" else "agentcompass")
     if cli_bin:
-        cmd = [str(cli_bin), "data", "--refresh"]
-    elif bundled_cli.is_file():
-        cmd = [str(bundled_cli), "data", "--refresh"]
-    elif installs["wheel_installs"] and installs["wheel_installs"][0].get("python"):
-        cmd = [str(installs["wheel_installs"][0]["python"]), "-m", "agentcompass", "data", "--refresh"]
-    else:
-        cmd = [sys.executable, "-m", "agentcompass", "data", "--refresh"]
-    exec_run(cmd, tray_root)
+        return [str(cli_bin)]
+    if bundled_cli.is_file():
+        return [str(bundled_cli)]
+    if installs["wheel_installs"] and installs["wheel_installs"][0].get("python"):
+        return [str(installs["wheel_installs"][0]["python"]), "-m", "agentcompass"]
+    return [sys.executable, "-m", "agentcompass"]
+
+
+def _refresh_public_data_step(installs: dict, exec_run) -> str:
+    exec_run([*_router_cli(installs), "data", "--refresh"], Path(installs["tray"]["root"]))
     return _tr("已刷新公共路由数据（agentcompass data --refresh）")
+
+
+def _reapply_setup_step(installs: dict, exec_run, state_dir: Path | None = None) -> tuple[str, str]:
+    """Apply the setup of a machine that was set up before again, with the updated files.
+
+    `agentcompass setup` records what it wrote in SETUP_MANIFEST_NAME until `agentcompass uninstall`. Skill links, rule
+    blocks and an installed gate hook must follow an update; `--no-usage` skips the usage collection and no hook flag
+    keeps the hook as it is. The installer does the same itself (packaging/agentcompass.iss), so this step runs only
+    after an update that did not go through it. A failed setup is reported and does not stop the tray restart."""
+    directory = Path(state_dir) if state_dir is not None else services.STATE_DIR
+    if not (directory / SETUP_MANIFEST_NAME).is_file():
+        return "", ""
+    try:
+        exec_run([*_router_cli(installs), "setup", "--yes", "--no-usage"], Path(installs["tray"]["root"]))
+    except Exception as error:
+        return _tr("重新应用 Router 设置失败：{0}。请运行 agentcompass setup").format(error), "failed"
+    return _tr("已按原有选择重新应用 Router 设置（agentcompass setup）"), "updated"
 
 
 def _restart_tray_step(state_dir: Path | None = None) -> str:
@@ -1962,6 +1984,7 @@ def update_agentcompass(
 
         steps: list[str] = []
         updated_any = False
+        installer_ran = False
 
         if shape == "installer":
             inst_root = Path(tray["root"])
@@ -2154,6 +2177,7 @@ def update_agentcompass(
                     return summary
 
                 exec_run([str(installer_exe), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], installer_exe.parent)
+                installer_ran = True
                 msg = _tr("已完成安装包静默更新（{0}）").format((release_info or {}).get("tag_name") or installer_exe.name)
                 steps.append(msg)
                 report("result", msg, status="updated")
@@ -2190,6 +2214,12 @@ def update_agentcompass(
             refresh_msg = _refresh_public_data_step(installs, exec_run=exec_run)
             steps.append(refresh_msg)
             report("result", refresh_msg, status="updated")
+
+            if not installer_ran:
+                setup_msg, setup_status = _reapply_setup_step(installs, exec_run=exec_run, state_dir=state_dir)
+                if setup_msg:
+                    steps.append(setup_msg)
+                    report("result", setup_msg, status=setup_status)
 
             report("component", _tr("重启托盘"))
             restart_msg = restart_fn() if restart_fn is not None else _restart_tray_step(state_dir=state_dir)

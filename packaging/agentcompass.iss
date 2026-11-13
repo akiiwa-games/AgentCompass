@@ -1,10 +1,14 @@
 ; Per-user AgentCompass installer: the tray and the `agentcompass` command line. No admin, no Python needed.
 ; {app}\cli\agentcompass.exe goes on the user PATH (HKCU\Environment\Path); uninstall takes it off again.
-; Router setup (skills, global rules, the opt-in gate hook) is never run silently by default: the tray offers it on
-; first launch. Scripted installs choose it on the command line:
+; Router setup (skills, global rules, the opt-in gate hook) is never run silently on a machine that was not set up: the
+; tray offers it on first launch. Scripted installs choose it on the command line:
 ;   AgentCompass-tray-setup.exe /VERYSILENT /SETUP=hooks     setup --yes --hooks    (skills, rules and the gate hook)
 ;   AgentCompass-tray-setup.exe /VERYSILENT /SETUP=nohooks   setup --yes --no-hooks (skills and rules only)
+; On a machine that was set up before (%USERPROFILE%\.agent-compass\setup-manifest.json exists), an install without
+; /SETUP applies that setup again with the new files (setup --yes --no-usage: the hook stays as it is).
 ; The setup output goes to %USERPROFILE%\.agent-compass\installer-setup.log.
+; The install needs the running tray gone. It stops the tray, waits for its files to be released, and gives up before
+; changing anything when they are not; a tray it stopped is started again when the install does not finish.
 ; The three environment names must match tray/deploy.py wanted_env():
 ;   PRO_CONSULT_LAUNCHER, PRO_CONSULT_LAUNCHER_ARGS, CODEX_WEB_GPT_EXTERNAL_TRAY
 ; Version is passed by packaging/build.ps1 as /DMyAppVersion=...
@@ -66,12 +70,16 @@ Source: "..\dist\AgentCompass\*"; DestDir: "{app}"; Flags: ignoreversion recurse
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Register-ScheduledTask -TaskName 'AgentCompass' -Description 'AgentCompass tray' -Action (New-ScheduledTaskAction -Execute '{app}\{#MyAppExeName}') -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) -Force | Out-Null"""; Flags: runhidden waituntilterminated
-Filename: "{cmd}"; Parameters: "/D /C """"{app}\cli\agentcompass.exe"" setup --yes {code:SetupHookFlag} >> ""{%USERPROFILE}\.agent-compass\installer-setup.log"" 2>&1"""; Check: SetupRequested; Flags: runhidden waituntilterminated
+Filename: "{cmd}"; Parameters: "/D /C """"{app}\cli\agentcompass.exe"" setup --yes {code:SetupArguments} >> ""{%USERPROFILE}\.agent-compass\installer-setup.log"" 2>&1"""; Check: SetupRequested; Flags: runhidden waituntilterminated
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait
 
 [Code]
 const
   EnvKey = 'Environment';
+  ExitWaitMs = 60000;
+
+var
+  TrayStopped, InstallFinished: Boolean;
 
 function CliDir(): String;
 begin
@@ -126,17 +134,25 @@ begin
   Result := Lowercase(ExpandConstant('{param:SETUP|}'));
 end;
 
-function SetupRequested(): Boolean;
+{ A machine that ran "agentcompass setup" keeps this file until "agentcompass uninstall". }
+function SetUpBefore(): Boolean;
 begin
-  Result := (SetupMode() = 'hooks') or (SetupMode() = 'nohooks');
+  Result := FileExists(ExpandConstant('{%USERPROFILE}\.agent-compass\setup-manifest.json'));
 end;
 
-function SetupHookFlag(Param: String): String;
+function SetupRequested(): Boolean;
+begin
+  Result := (SetupMode() = 'hooks') or (SetupMode() = 'nohooks') or ((SetupMode() = '') and SetUpBefore());
+end;
+
+function SetupArguments(Param: String): String;
 begin
   if SetupMode() = 'hooks' then
     Result := '--hooks'
+  else if SetupMode() = 'nohooks' then
+    Result := '--no-hooks'
   else
-    Result := '--no-hooks';
+    Result := '--no-usage';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -144,6 +160,7 @@ begin
   if CurStep = ssPostInstall then
   begin
     AddCliToPath();
+    InstallFinished := True;
   end;
 end;
 
@@ -153,12 +170,53 @@ begin
     RemoveCliFromPath();
 end;
 
+{ A running program keeps its own file closed to writers: the file opens for writing only when no process runs it. }
+function Replaceable(FileName: String): Boolean;
+var
+  Stream: TFileStream;
+begin
+  Result := True;
+  if not FileExists(FileName) then
+    exit;
+  try
+    Stream := TFileStream.Create(FileName, fmOpenReadWrite or fmShareExclusive);
+    Stream.Free;
+  except
+    Result := False;
+  end;
+end;
+
+function ProgramsReleased(): Boolean;
+begin
+  Result := Replaceable(ExpandConstant('{app}\{#MyAppExeName}')) and Replaceable(ExpandConstant('{app}\cli\agentcompass.exe'));
+end;
+
+{ A killed process can take a while to leave. Copying files before it has left ends in "Setup was unable to
+  automatically close all applications" and a rolled-back install, so wait here and stop before any change. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode, Waited: Integer;
+begin
+  Result := '';
+  TrayStopped := not Replaceable(ExpandConstant('{app}\{#MyAppExeName}'));
+  Exec('taskkill.exe', '/F /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Waited := 0;
+  while (not ProgramsReleased()) and (Waited < ExitWaitMs) do
+  begin
+    Sleep(500);
+    Waited := Waited + 500;
+  end;
+  if not ProgramsReleased() then
+    Result := 'AgentCompass is still closing and its files are in use. Nothing was changed. Run the installer again in a minute.';
+end;
+
+{ [Run] starts the tray after a finished install. An install that stopped the tray and did not finish starts it here. }
+procedure DeinitializeSetup();
 var
   ResultCode: Integer;
 begin
-  Exec('taskkill.exe', '/F /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Result := '';
+  if TrayStopped and (not InstallFinished) and FileExists(ExpandConstant('{app}\{#MyAppExeName}')) then
+    Exec(ExpandConstant('{app}\{#MyAppExeName}'), '', ExpandConstant('{app}'), SW_SHOWNORMAL, ewNoWait, ResultCode);
 end;
 
 [UninstallRun]

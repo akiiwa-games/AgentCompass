@@ -393,11 +393,11 @@ class OneClickUpdateTests(unittest.TestCase):
             self.assertEqual(ran_commands[0][1:], ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
             self.assertTrue(ran_commands[0][0].endswith("AgentCompass-tray-setup.exe"))
             self.assertEqual(ran_commands[1][-2:], ["data", "--refresh"])
-            self.assertFalse(any("setup" in cmd for cmd in ran_commands))
+            self.assertFalse(any("setup" in cmd for cmd in ran_commands))      # the installer applies the setup itself
             self.assertIn("托盘已重启", summary)
             self.assertTrue(any(e.get("kind") == "finish" for e in events))
 
-    def test_wheel_shape_uses_uv_or_pip_according_to_dist_info_and_never_runs_setup(self):
+    def test_wheel_shape_uses_uv_or_pip_according_to_dist_info_and_runs_setup_only_where_it_ran_before(self):
         with TemporaryDirectory() as tmp:
             base = Path(tmp)
             state_dir = base / "state"
@@ -449,6 +449,40 @@ class OneClickUpdateTests(unittest.TestCase):
             self.assertNotIn(sp_pip.parents[1].resolve(), [Path(pip_cwds[0]).resolve(), *Path(pip_cwds[0]).resolve().parents])
             self.assertEqual(pip_cmds[1], [str(cli_pip), "data", "--refresh"])
             self.assertFalse(any("setup" in cmd for cmd in pip_cmds))
+
+            # Case C: this machine ran `agentcompass setup` before, so the update applies it again with the same hook choice
+            (state_dir / updates.SETUP_MANIFEST_NAME).write_text("{}", encoding="utf-8")
+            set_up_cmds = []
+            updates.update_agentcompass(
+                root=sp_pip,
+                home=home,
+                state_dir=state_dir,
+                which_path=cli_pip,
+                frozen=False,
+                release=release,
+                runner=lambda args, cwd=None, env=None: set_up_cmds.append(list(args)) or "",
+                restart_fn=lambda: "restarted",
+            )
+            self.assertEqual(set_up_cmds[1:], [[str(cli_pip), "data", "--refresh"], [str(cli_pip), "setup", "--yes", "--no-usage"]])
+
+            # A setup that fails is reported and the tray still restarts
+            def failing_setup(args, cwd=None, env=None):
+                if "setup" in args:
+                    raise RuntimeError("exit 1")
+                return ""
+
+            summary = updates.update_agentcompass(
+                root=sp_pip,
+                home=home,
+                state_dir=state_dir,
+                which_path=cli_pip,
+                frozen=False,
+                release=release,
+                runner=failing_setup,
+                restart_fn=lambda: "restarted",
+            )
+            self.assertIn("agentcompass setup", summary)
+            self.assertIn("restarted", summary)
 
     def test_git_shape_pulls_when_clean_and_refuses_dirty_tree_while_still_upgrading_separate_wheel(self):
         with TemporaryDirectory() as tmp:
