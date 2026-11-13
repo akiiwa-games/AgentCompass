@@ -36,7 +36,6 @@ def setUpModule():
     home = Path(_state.name)
     _gate_paths = mock.patch.multiple(gate, HOME=home,
         DEFAULT_LEDGER=home / '.agent-compass/router-ledger.jsonl',
-        DEFAULT_USAGE_CACHE=home / '.agent-compass/usage-cache.json',
         DEFAULT_PASEO_AGENTS=home / '.paseo/agents')
     _gate_paths.start()
     sys.path.insert(0, str(SKILL_ROOT / "scripts"))
@@ -1047,16 +1046,47 @@ class RouterGateHookTests(unittest.TestCase):
         self.assertEqual(registry.inspect("dispatch-other")["expected_usd"], 6.0)
         self.assertNotIn("quota_released_reason", registry.inspect("dispatch-other"))
 
-    def test_without_router_modules_only_the_latch_is_checked(self):
+    def test_without_the_window_modules_only_the_latch_is_checked_and_a_missing_owner_is_not_swallowed(self):
         cache = self.quota_cache({"claude": {"windows": [self.window("five_hour", 100)]}})
         real = gate.router_module
 
         def missing(name):
-            if name == "quota_exhaustion":
+            if name == "turn_refusal":
                 return real(name)
             raise ImportError(name)
         with mock.patch.object(gate, "router_module", side_effect=missing):
             self.assertIsNone(gate.check_account_quota_exhausted("claude", cache, T0, model="claude-opus-5-5"))
+
+    def test_a_hook_over_a_mismatched_skill_tree_denies_and_names_the_action(self):
+        real = gate.router_module
+        worker = {"labels": {"router.parent_id": "parent-fixture", "router.account": "claude-lab",
+                             "router.bundle_id": "lab_sonnet55_high"}}
+        payload = {"tool_name": "send_agent_prompt", "tool_input": {"agentId": "worker-fixture", "prompt": "continue"},
+                   "parent_agent_id": "parent-fixture"}
+
+        class WithoutAttribute:
+            def __init__(self, module, missing):
+                self.module, self.missing = module, missing
+
+            def __getattr__(self, name):
+                if name == self.missing:
+                    raise AttributeError(name)
+                return getattr(self.module, name)
+
+        def missing_module(name):
+            if name == "turn_refusal":
+                raise ImportError(name)
+            return real(name)
+
+        def missing_attribute(name):
+            return WithoutAttribute(real(name), "bundle_rows") if name == "account_fleet" else real(name)
+        for label, router_module in (("module", missing_module), ("attribute", missing_attribute)):
+            settings = ({"accounts": {"claude-lab": {"bundles": {"lab_sonnet55_high": {"model": "claude-sonnet-5-5"}}}}}, None)
+            with self.subTest(missing=label), mock.patch.object(gate, "router_module", side_effect=router_module),                     mock.patch.object(gate, "load_paseo_agent", return_value=worker),                     mock.patch.object(gate, "load_dispatch_settings", return_value=settings):
+                result = gate.evaluate_payload(payload, now=T0)
+                self.assertEqual(result.get("decision"), "block", result)
+                self.assertIn("agentcompass setup", result["reason"])
+                self.assertIn("不一致", result["reason"])
 
     def test_interleaved_decisions_match_older_route_in_both_orders(self):
         a = self.route(parent_agent_id="parent-a", task_id="task-a")
@@ -1954,8 +1984,12 @@ class BoundDispatchGateTests(unittest.TestCase):
         self.assertEqual(self.registry.inspect(self.row['dispatch_id'])['state'], 'prepared')
 
 
+def usage_row(account, named=None):
+    return gate.router_module("turn_refusal").usage_row(account, named, gate.HOME)
+
+
 class UsageRowTests(unittest.TestCase):
-    """The hook reads quota only from the canonical router cache (or an explicit named file)."""
+    """The router reads quota only from the canonical cache (or an explicit named file): `turn_refusal.usage_row`, which the hook calls."""
 
     def setUp(self):
         self.state = Path(os.environ["ROUTER_STATE_DIR"])
@@ -1971,14 +2005,14 @@ class UsageRowTests(unittest.TestCase):
 
     def test_canonical_cache_or_named_file_is_read_and_old_usage_float_copy_is_ignored(self):
         self.write(self.old_float, 90, "2026-01-02T00:00:00+00:00")
-        self.assertIsNone(gate.usage_row("codex"))
+        self.assertIsNone(usage_row("codex"))
         self.write(self.canonical, 10, "2026-01-01T00:00:00+00:00")
-        self.assertEqual(gate.usage_row("codex")["windows"][0]["used_pct"], 10)
+        self.assertEqual(usage_row("codex")["windows"][0]["used_pct"], 10)
         named = self.state / "named.json"
         self.write(named, 5, "2026-01-01T00:00:00+00:00")
         self.addCleanup(named.unlink)
-        self.assertEqual(gate.usage_row("codex", named)["windows"][0]["used_pct"], 5)
-        self.assertIsNone(gate.usage_row("codex", self.state / "missing.json"))
+        self.assertEqual(usage_row("codex", named)["windows"][0]["used_pct"], 5)
+        self.assertIsNone(usage_row("codex", self.state / "missing.json"))
 
 
 class DenyMessageEntryTests(unittest.TestCase):

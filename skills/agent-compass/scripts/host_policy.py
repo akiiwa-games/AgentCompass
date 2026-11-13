@@ -109,6 +109,32 @@ def account_allowed(policy, account):
     return policy is None or account in policy['allowed_accounts']
 
 
+def disabled_cause(account, candidates, accounts, policy):
+    """(kind, detail) when the account, or every bundle the target can be, is switched off on this host, else None.
+    Kinds: `legacy` (the account's leftover meter text), `host_policy` (account not in the policy's allowed accounts),
+    `bundles` (ids all unchecked in model management). `candidates` are the account's matching bundle rows."""
+    legacy = ((accounts or {}).get('accounts') or {}).get(account, {}).get('legacy_meter')
+    if isinstance(legacy, str) and legacy.strip():
+        return 'legacy', legacy
+    if policy is not None and not account_allowed(policy, account):
+        return 'host_policy', account
+    if candidates and all(c.get('disabled') for c in candidates):
+        return 'bundles', [c['bundle_id'] for c in candidates]
+    return None
+
+
+def disabled_text(account, cause, language):
+    """The one wording of a `disabled_cause`, in `en` (the verdict for a parent) or `zh` (the spawn gate's reply)."""
+    kind, detail = cause
+    if kind == 'legacy':
+        return detail
+    if language == 'zh':
+        return (f"账号 {account} 已在本机禁用（不在 host-policy.json 的 allowed_accounts 中）" if kind == 'host_policy'
+                else "档位 " + ", ".join(detail) + " 已在模型管理中停用")
+    return (f'account {account} is disabled on this host by its host policy' if kind == 'host_policy'
+            else f'bundle {", ".join(detail)} is unchecked in model management')
+
+
 def judge_allowed(policy, name, account):
     return account_allowed(policy, account) and (policy is None or 'judges' not in policy or name in policy['judges'])
 

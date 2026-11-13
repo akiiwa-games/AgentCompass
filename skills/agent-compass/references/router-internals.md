@@ -131,7 +131,11 @@ Historical uncompressed worker context is `compacted_tokens + context_tokens`, i
 all pre-compaction context replaced over the session. At the configured context rotation
 threshold (`rotate_after_carried_tokens`, default 2M, set in the tray), start a fresh
 worker with a handoff. The parent can still steer its own running worker under the
-communication contract below.
+communication contract below. The continuation verdict in a worker notification (`turn_refusal.py`) says `roll` with the reason for the conditions the gate
+enforces on a new turn (account or bundle disabled, confirmed quota exhaustion, a refusing quota window) and advises `roll` for
+more: the worker's last turn ended in a provider failure (read from the watcher receipt, so before the hold is recorded), its
+account is not ready, or its account, quota pool or model is held. The gate does not enforce the advisory ones. The verdict is
+read-only and bounded in its own registry and quota reads, and loads the fleet through `load_accounts`, which may update host policy and holds as for any caller; an unresolvable worker or an unreadable registry is `unknown`.
 
 ---
 

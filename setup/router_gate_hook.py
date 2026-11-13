@@ -23,7 +23,6 @@ from pathlib import Path
 HOME = Path.home()
 DEFAULT_LEDGER = HOME / ".agent-compass" / "router-ledger.jsonl"
 LEDGER_TAIL_BYTES = 1024 * 1024
-DEFAULT_USAGE_CACHE = HOME / ".agent-compass" / "usage-cache.json"
 def router_command() -> str:
     """What the deny messages tell the agent to run: the console script when installed, else this checkout's package directory."""
     if getattr(sys, "frozen", False):
@@ -986,6 +985,21 @@ def detect_target_agent_ids(tool_name: str, tool_input: dict) -> list[str]:
     return []
 
 
+class RouterTreeMismatch(Exception):
+    """The skill tree the hook loads lacks a module or function this hook version calls (hook and skill from different installs)."""
+
+
+def router_owner(module: str, *names: str):
+    """The named functions of a router module (one function: itself). A missing module or function is one explicit
+    outcome, RouterTreeMismatch, which evaluate_payload turns into a denial that names the action."""
+    try:
+        loaded = router_module(module)
+        found = tuple(getattr(loaded, name) for name in names)
+    except (ImportError, AttributeError) as exc:
+        raise RouterTreeMismatch(f"{module}.{'/'.join(names)}: {exc}") from exc
+    return found[0] if len(found) == 1 else found
+
+
 def router_module(name: str):
     checkout = Path(__file__).resolve().parents[1] / "skills/agent-compass"
     skill = Path(os.environ.get("ROUTER_SKILL_ROOT") or (
@@ -1060,17 +1074,16 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
     account = target.get("account") or (
         "antigravity" if provider == "antigravity-resilient" else provider if provider in table else None)
     candidates = []
-    for name, spec in table.items():
-        for bundle_id, bundle in (spec.get("bundles") or {}).items():
-            if target.get("bundle_id"):
-                matched = bundle_id == target["bundle_id"]
-            else:
-                matched = bool(target.get("model")) and account in (None, name) and (
-                    same_launch_value("model", target["model"], bundle.get("model"))
-                    and target.get("effort") in (None, bundle.get("effort"))
-                    and (not provider or (bundle.get("provider") == "pi") == (provider == "pi")))
-            if matched:
-                candidates.append(dict(bundle, account=name, bundle_id=bundle_id))
+    if target.get("bundle_id") and table:
+        candidates = router_owner("account_fleet", "bundle_rows")(accounts, target["bundle_id"])
+    elif not target.get("bundle_id"):
+        for name, spec in table.items():
+            for bundle_id, bundle in (spec.get("bundles") or {}).items():
+                if bool(target.get("model")) and account in (None, name) and (
+                        same_launch_value("model", target["model"], bundle.get("model"))
+                        and target.get("effort") in (None, bundle.get("effort"))
+                        and (not provider or (bundle.get("provider") == "pi") == (provider == "pi"))):
+                    candidates.append(dict(bundle, account=name, bundle_id=bundle_id))
     if not account and len({c["account"] for c in candidates}) == 1:
         account = candidates[0]["account"]
     return account, [c for c in candidates if c["account"] == account]
@@ -1092,15 +1105,11 @@ def check_target_disabled(
     if not account:
         return None
     where = f" (agent_id={target['agent_id']})" if target.get("agent_id") else ""
-    legacy = ((accounts or {}).get("accounts") or {}).get(account, {}).get("legacy_meter")
-    if isinstance(legacy, str) and legacy.strip():
-        cause = legacy
-    elif policy is not None and account not in (policy.get("allowed_accounts") or []):
-        cause = f"账号 {account} 已在本机禁用（不在 host-policy.json 的 allowed_accounts 中）"
-    elif candidates and all(c.get("disabled") for c in candidates):
-        cause = "档位 " + ", ".join(c["bundle_id"] for c in candidates) + " 已在模型管理中停用"
-    else:
+    disabled_cause, disabled_text = router_owner("host_policy", "disabled_cause", "disabled_text")
+    found = disabled_cause(account, candidates, accounts, policy)
+    if not found:
         return None
+    cause = disabled_text(account, found, "zh")
     return f"[Router Gate] 拦截向已禁用账号/档位启动或续派任务{where}：{cause}。" + DISABLED_RECOVERY
 
 
@@ -1128,27 +1137,6 @@ def target_windows(candidates: list[dict], accounts: dict | None) -> list[str] |
         return None
 
 
-def usage_row(account: str, usage_cache_path: Path | None = None) -> dict | None:
-    """The account's usage reading from the collector's cache (or ROUTER_USAGE_CACHE)."""
-    try:
-        cache = router_module("usage_cache")
-    except ImportError:
-        cache = None
-    if cache is not None:
-        providers = cache.read(usage_cache_path, HOME)[0]
-    else:
-        providers = None
-        named = usage_cache_path or os.environ.get("ROUTER_USAGE_CACHE")
-        path = Path(named) if named else DEFAULT_USAGE_CACHE
-        try:
-            providers = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError):
-            providers = None
-    rows = providers.get("providers") if isinstance(providers, dict) else None
-    row = rows.get(account) if isinstance(rows, dict) else None
-    return row if isinstance(row, dict) else None
-
-
 def check_account_quota_exhausted(
     account: str | None,
     usage_cache_path: Path | None = None,
@@ -1174,28 +1162,17 @@ def check_account_quota_exhausted(
     if not account:
         return None
     now = now or dt.datetime.now(dt.timezone.utc)
-    row = usage_row(account, usage_cache_path)
+    latched, without_own, window_refusal = router_owner("turn_refusal", "latched", "without_own", "window_refusal")
     # Confirmed upstream exhaustion is durable even with no/stale usage cache.
     # This applies to new launches and resumed turns, never to read-only investigation.
-    try:
-        exhaustion = router_module('quota_exhaustion')
-    except ImportError:
-        exhaustion = None
-    if exhaustion is not None and exhaustion.blocked(account, row, windows=windows):
+    if latched(account, windows, usage_cache_path, HOME):
         return (
             '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear '
             'the exhaustion record. While the owned worker is running, send a control message with completion '
             f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
         )
     try:
-        account_fleet = router_module("account_fleet")
-        axis_scores = router_module("axis_scores")
-        quota_pools = router_module("quota_pools")
-        judge = router_module("route_judge")
-        inventory = router_module("provider_inventory")
-        accounts = accounts if accounts is not None else account_fleet.load_accounts()
-        usage = judge.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get("_discovery") or {})
-        usage = inventory.merge_usage(usage, accounts, now, names={account})
+        accounts = accounts if accounts is not None else router_module("account_fleet").load_accounts()
         if records is None:
             try:
                 registry = router_module("dispatch_registry")
@@ -1208,24 +1185,13 @@ def check_account_quota_exhausted(
                 router_module("dispatch_flow").deliver_end_notices(now=now)
             except Exception:
                 pass
-        if records and (exclude_dispatch_id or exclude_agent_id):
-            records = [
-                r for r in records
-                if not isinstance(r, dict)
-                or ((not exclude_dispatch_id or r.get("dispatch_id") != exclude_dispatch_id)
-                    and (not exclude_agent_id or r.get("agent_id") != exclude_agent_id))
-            ]
-        probes = [dict(b, id=b.get("bundle_id") or b.get("id")) for b in bundles or ()] or [
-            {"account": account, "model": model or ""}]
-        priced = axis_scores.five_axis_overlay(accounts)      # once for every probe
-        found = [(probe, refusal) for probe in probes
-                 for refusal in quota_pools.launch_blockers(probe, priced, usage, now, records=records)]
+        records = without_own(records, exclude_dispatch_id, exclude_agent_id)
+        found = window_refusal(account, accounts, now, usage_cache_path, records, bundles, model)
     except Exception:
         return None
     if not found:
         return None
-    probe, (wid, why) = found[0]
-    what = probe.get("id") or probe.get("model") or "?"
+    what, wid, why = found
     return (
         f"[Router Gate] 拦截向额度不足的窗口派发或续跑任务：{account} 的 {what} 所用窗口 {wid} 不可用（{why}）。"
         "运行中的受控子会话仍可由父会话直接发送控制消息收尾；idle 或运行状态未知的 worker 请先收取已有输出，"
@@ -1560,26 +1526,32 @@ def evaluate_payload(
             agent_ids = [agent_id for agent_id in detect_target_agent_ids(name, args) or
                          detect_target_agent_ids(tool_name, tool_input) if agent_id not in upward]
             docs = {agent_id: load_paseo_agent(agent_id, paseo_agents_dir) for agent_id in agent_ids}
-            targets = [dict(target_spec(doc, agent_labels(doc)), agent_id=agent_id)
+            targets = [dict(target_spec(doc, agent_labels(doc)), agent_id=agent_id,
+                            dispatch_id=agent_labels(doc).get("router.dispatch_id"))
                        for agent_id, doc in docs.items() if isinstance(doc, dict)]
         dispatch_id = args.get("labels", {}).get("router.dispatch_id") if isinstance(args.get("labels"), dict) else None
         for target in targets:
-            account, candidates = resolve_target(target, accounts)
-            controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
-            reason = None if controlling else (
-                check_target_disabled(target, account, candidates, accounts, policy)
-                or check_account_quota_exhausted(
-                    account or target.get("provider"),
-                    usage_cache_path=usage_cache_path,
-                    now=now,
-                    accounts=accounts,
-                    windows=target_windows(candidates, accounts),
-                    bundles=candidates,
-                    model=target.get("model"),
-                    exclude_dispatch_id=dispatch_id,
-                    exclude_agent_id=target.get("agent_id"),
+            try:
+                account, candidates = resolve_target(target, accounts)
+                controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
+                reason = None if controlling else (
+                    check_target_disabled(target, account, candidates, accounts, policy)
+                    or check_account_quota_exhausted(
+                        account or target.get("provider"),
+                        usage_cache_path=usage_cache_path,
+                        now=now,
+                        accounts=accounts,
+                        windows=target_windows(candidates, accounts),
+                        bundles=candidates,
+                        model=target.get("model"),
+                        exclude_dispatch_id=dispatch_id or target.get("dispatch_id"),
+                        exclude_agent_id=target.get("agent_id"),
+                    )
                 )
-            )
+            except RouterTreeMismatch as exc:
+                return format_response(False, harness_kind,
+                    f"[Router Gate] 拦截：本钩子与已加载的 agent-compass 技能目录版本不一致（{exc}）。"
+                    "请运行 `agentcompass setup` 使钩子与技能目录来自同一次安装后重试。")
             if reason:
                 return format_response(False, harness_kind, reason)
         if not trigger:
