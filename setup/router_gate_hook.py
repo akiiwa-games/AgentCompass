@@ -22,7 +22,6 @@ from pathlib import Path
 HOME = Path.home()
 DEFAULT_LEDGER = HOME / ".agent-compass" / "router-ledger.jsonl"
 LEDGER_TAIL_BYTES = 1024 * 1024
-DEFAULT_USAGE_CACHE = HOME / ".agent-compass" / "usage-cache.json"
 def router_command() -> str:
     """What the deny messages tell the agent to run: the console script when installed, else this checkout's package directory."""
     if getattr(sys, "frozen", False):
@@ -699,17 +698,16 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
     account = target.get("account") or (
         "antigravity" if provider == "antigravity-resilient" else provider if provider in table else None)
     candidates = []
-    for name, spec in table.items():
-        for bundle_id, bundle in (spec.get("bundles") or {}).items():
-            if target.get("bundle_id"):
-                matched = bundle_id == target["bundle_id"]
-            else:
-                matched = bool(target.get("model")) and account in (None, name) and (
-                    same_launch_value("model", target["model"], bundle.get("model"))
-                    and target.get("effort") in (None, bundle.get("effort"))
-                    and (not provider or (bundle.get("provider") == "pi") == (provider == "pi")))
-            if matched:
-                candidates.append(dict(bundle, account=name, bundle_id=bundle_id))
+    if target.get("bundle_id") and table:
+        candidates = router_module("account_fleet").bundle_rows(accounts, target["bundle_id"])
+    elif not target.get("bundle_id"):
+        for name, spec in table.items():
+            for bundle_id, bundle in (spec.get("bundles") or {}).items():
+                if bool(target.get("model")) and account in (None, name) and (
+                        same_launch_value("model", target["model"], bundle.get("model"))
+                        and target.get("effort") in (None, bundle.get("effort"))
+                        and (not provider or (bundle.get("provider") == "pi") == (provider == "pi"))):
+                    candidates.append(dict(bundle, account=name, bundle_id=bundle_id))
     if not account and len({c["account"] for c in candidates}) == 1:
         account = candidates[0]["account"]
     return account, [c for c in candidates if c["account"] == account]
@@ -731,15 +729,11 @@ def check_target_disabled(
     if not account:
         return None
     where = f" (agent_id={target['agent_id']})" if target.get("agent_id") else ""
-    try:
-        found = router_module("turn_refusal").disabled_cause(account, candidates, accounts or {}, policy)
-    except ImportError:
-        return None
+    host = router_module("host_policy")
+    found = host.disabled_cause(account, candidates, accounts, policy)
     if not found:
         return None
-    kind, detail = found
-    cause = (detail if kind == "legacy" else f"账号 {account} 已在本机禁用（不在 host-policy.json 的 allowed_accounts 中）"
-             if kind == "host_policy" else "档位 " + ", ".join(detail) + " 已在模型管理中停用")
+    cause = host.disabled_text(account, found, "zh")
     return f"[Router Gate] 拦截向已禁用账号/档位启动或续派任务{where}：{cause}。" + DISABLED_RECOVERY
 
 
@@ -767,27 +761,6 @@ def target_windows(candidates: list[dict], accounts: dict | None) -> list[str] |
         return None
 
 
-def usage_row(account: str, usage_cache_path: Path | None = None) -> dict | None:
-    """The account's usage reading from the collector's cache (or ROUTER_USAGE_CACHE)."""
-    try:
-        cache = router_module("usage_cache")
-    except ImportError:
-        cache = None
-    if cache is not None:
-        providers = cache.read(usage_cache_path, HOME)[0]
-    else:
-        providers = None
-        named = usage_cache_path or os.environ.get("ROUTER_USAGE_CACHE")
-        path = Path(named) if named else DEFAULT_USAGE_CACHE
-        try:
-            providers = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError):
-            providers = None
-    rows = providers.get("providers") if isinstance(providers, dict) else None
-    row = rows.get(account) if isinstance(rows, dict) else None
-    return row if isinstance(row, dict) else None
-
-
 def check_account_quota_exhausted(
     account: str | None,
     usage_cache_path: Path | None = None,
@@ -813,21 +786,16 @@ def check_account_quota_exhausted(
     if not account:
         return None
     now = now or dt.datetime.now(dt.timezone.utc)
-    row = usage_row(account, usage_cache_path)
+    turn_refusal = router_module("turn_refusal")
     # Confirmed upstream exhaustion is durable even with no/stale usage cache.
     # This applies to new launches and resumed turns, never to read-only investigation.
-    try:
-        exhaustion = router_module('quota_exhaustion')
-    except ImportError:
-        exhaustion = None
-    if exhaustion is not None and exhaustion.blocked(account, row, windows=windows):
+    if turn_refusal.latched(account, windows, usage_cache_path, HOME):
         return (
             '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear '
             'the exhaustion record. While the owned worker is running, send a control message with completion '
             f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
         )
     try:
-        turn_refusal = router_module("turn_refusal")
         accounts = accounts if accounts is not None else router_module("account_fleet").load_accounts()
         if records is None:
             try:
@@ -841,13 +809,7 @@ def check_account_quota_exhausted(
                 router_module("dispatch_flow").deliver_end_notices(now=now)
             except Exception:
                 pass
-        if records and (exclude_dispatch_id or exclude_agent_id):
-            records = [
-                r for r in records
-                if not isinstance(r, dict)
-                or ((not exclude_dispatch_id or r.get("dispatch_id") != exclude_dispatch_id)
-                    and (not exclude_agent_id or r.get("agent_id") != exclude_agent_id))
-            ]
+        records = turn_refusal.without_own(records, exclude_dispatch_id, exclude_agent_id)
         found = turn_refusal.window_refusal(account, accounts, now, usage_cache_path, records, bundles, model)
     except Exception:
         return None
@@ -1188,7 +1150,8 @@ def evaluate_payload(
             agent_ids = [agent_id for agent_id in detect_target_agent_ids(name, args) or
                          detect_target_agent_ids(tool_name, tool_input) if agent_id not in upward]
             docs = {agent_id: load_paseo_agent(agent_id, paseo_agents_dir) for agent_id in agent_ids}
-            targets = [dict(target_spec(doc, agent_labels(doc)), agent_id=agent_id)
+            targets = [dict(target_spec(doc, agent_labels(doc)), agent_id=agent_id,
+                            dispatch_id=agent_labels(doc).get("router.dispatch_id"))
                        for agent_id, doc in docs.items() if isinstance(doc, dict)]
         dispatch_id = args.get("labels", {}).get("router.dispatch_id") if isinstance(args.get("labels"), dict) else None
         for target in targets:
@@ -1204,7 +1167,7 @@ def evaluate_payload(
                     windows=target_windows(candidates, accounts),
                     bundles=candidates,
                     model=target.get("model"),
-                    exclude_dispatch_id=dispatch_id,
+                    exclude_dispatch_id=dispatch_id or target.get("dispatch_id"),
                     exclude_agent_id=target.get("agent_id"),
                 )
             )

@@ -63,8 +63,9 @@ def record(account, error, *, windows=None, at=None, source=None, path=None):
 ALL = '*'
 
 
-def exhausted_windows(account, usage=None, *, path=None, now=None):
-    """Window ids still latched for this account; {ALL} for an account-wide latch, empty when free."""
+def exhausted_windows(account, usage=None, *, path=None, now=None, read_only=False):
+    """Window ids still latched for this account; {ALL} for an account-wide latch, empty when free. A fresh reading that
+    shows recovery clears or narrows the latch on disk; `read_only` returns the same answer and writes nothing."""
     path = path or store_path()
     row = (_read(path).get('accounts') or {}).get(account) or {}
     if not row.get('blocked'):
@@ -87,6 +88,8 @@ def exhausted_windows(account, usage=None, *, path=None, now=None):
         remaining = exhausted if ALL in latched else (latched & exhausted) | (latched - set(readings))
     if remaining == latched:
         return latched
+    if read_only:
+        return remaining
     if not remaining:
         return set() if clear(account, path=path, expected_observed_at=row['observed_at']) else latched
     with override_store.locked(path):
@@ -99,9 +102,9 @@ def exhausted_windows(account, usage=None, *, path=None, now=None):
     return remaining
 
 
-def blocked(account, usage=None, *, path=None, windows=None, now=None):
+def blocked(account, usage=None, *, path=None, windows=None, now=None, read_only=False):
     """True when the latch covers the whole account, or any of `windows` (the ids a launch would draw)."""
-    latched = exhausted_windows(account, usage, path=path, now=now)
+    latched = exhausted_windows(account, usage, path=path, now=now, read_only=read_only)
     return ALL in latched or bool(windows is not None and latched & set(windows))
 
 

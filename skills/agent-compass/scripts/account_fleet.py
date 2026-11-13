@@ -179,6 +179,14 @@ def bundle_harness(bundle, account=None, bundle_id=None, *, family=None):
     return 'codex'
 
 
+def bundle_rows(accounts, bundle_id):
+    """The configured rows of `bundle_id`, one per account that has it, each with its `account` and `bundle_id`. The
+    spawn gate resolves a labelled worker and the continuation verdict resolves a dispatched one through this."""
+    return [dict(row, account=name, bundle_id=bundle_id)
+            for name, spec in ((accounts or {}).get('accounts') or {}).items()
+            for row in [(spec.get('bundles') or {}).get(bundle_id)] if isinstance(row, dict)]
+
+
 def bundles(accounts):
     """Flat list of launchable bundles with their account and execution harness attached."""
     out = {}

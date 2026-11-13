@@ -1,14 +1,23 @@
-"""Why a new turn to an existing worker is refused now, composed only from the owners of each condition.
+"""What stands in the way of a new turn to a worker's account and bundle, composed only from the owners of each condition.
 
-The conditions are the ones the allocator applies to a candidate and the spawn gate applies to a turn, read once:
-the account or bundle switched off (`host_policy`, the model-management checkbox, a legacy meter), the account's
-discovery state (`provider_inventory.unavailable_reason`), a provider hold (`provider_retry`), a model
-latch (`model_latch`), the confirmed-exhaustion latch (`quota_exhaustion`) and the quota windows the bundle draws
-(`quota_pools.launch_blockers` on the usage reading). `setup/router_gate_hook.py` reads `disabled_cause` and
-`window_refusal` and `worker_sessions.continuation_verdict` reads `worker_refusal`, so neither restates a rule.
+Two readers, two contracts:
+
+- The spawn gate (`setup/router_gate_hook.py`) enforces on a new turn to an existing worker: a disabled account or
+  bundle (`host_policy.disabled_cause`), the confirmed-exhaustion latch (`latched`) and a quota window the bundle draws
+  that refuses a launch (`window_refusal`), with the worker's own reservation left out (`without_own`).
+- The continuation verdict (`worker_sessions.continuation_verdict`, via `worker_refusal`) says `roll` for those same
+  conditions and adds advice the gate does not enforce: the worker's last turn ended in a provider failure, the account
+  is not ready (`provider_inventory.unavailable_reason`), a provider hold on its account, quota pool or model
+  (`provider_retry`), or a model latch (`model_latch`). A parent that sends the follow-up anyway is admitted by the gate
+  whenever the enforced conditions pass.
+
+The verdict never writes and never waits on a writer: it reads the registry on a read-only connection with a short wait,
+reads the exhaustion latch without clearing it, and takes the failed turn from the watcher's receipt, so it does not depend
+on the hold or the settlement that follows the failure. A worker it cannot resolve is an error (`unknown`), not an all-clear.
 """
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 import account_fleet
 import axis_scores
@@ -22,18 +31,24 @@ import quota_pools
 import usage_cache
 
 
-def disabled_cause(account, candidates, accounts, policy):
-    """(kind, detail) when the account, or every bundle the target can be, is switched off, else None. Kinds: `legacy`
-    (the account's leftover meter text), `host_policy` (account not allowed on this host), `bundles` (ids all unchecked
-    in model management). `candidates` are the account's matching bundle rows; `policy` is the loaded host policy."""
-    legacy = (accounts.get('accounts') or {}).get(account, {}).get('legacy_meter')
-    if isinstance(legacy, str) and legacy.strip():
-        return 'legacy', legacy
-    if policy is not None and not host_policy.account_allowed(policy, account):
-        return 'host_policy', account
-    if candidates and all(c.get('disabled') for c in candidates):
-        return 'bundles', [c['bundle_id'] for c in candidates]
-    return None
+def usage_row(account, usage_cache_path, home):
+    """The account's usage reading from the collector's cache (or ROUTER_USAGE_CACHE), else None."""
+    providers = (usage_cache.read(usage_cache_path, home)[0] or {}).get('providers')
+    row = providers.get(account) if isinstance(providers, dict) else None
+    return row if isinstance(row, dict) else None
+
+
+def latched(account, windows, usage_cache_path, home, read_only=False):
+    """True when a confirmed quota failure latches the whole account or any of `windows` (the ids a launch draws)."""
+    return quota_exhaustion.blocked(account, usage_row(account, usage_cache_path, home), windows=windows,
+                                    read_only=read_only)
+
+
+def without_own(records, dispatch_id=None, agent_id=None):
+    """`records` (active reservations) without the worker's own: the one carrying its dispatch id or its agent id."""
+    return [r for r in records
+            if not isinstance(r, dict) or ((not dispatch_id or r.get('dispatch_id') != dispatch_id)
+                                           and (not agent_id or r.get('agent_id') != agent_id))]
 
 
 def window_refusal(account, accounts, now, usage_cache_path, records, bundles=None, model=None):
@@ -41,8 +56,8 @@ def window_refusal(account, accounts, now, usage_cache_path, records, bundles=No
 
     `bundles` are the resolved bundles of the target; without them the launch is probed as `model` on `account` (an
     unknown model draws every window). `records` are the active in-flight reservations, already without the caller's
-    own. `accounts` is the loaded fleet; usage is read as routing reads it (`route_judge.usage_snapshot`, then
-    `provider_inventory.merge_usage`).
+    own (`without_own`). `accounts` is the loaded fleet; usage is read as routing reads it
+    (`route_judge.usage_snapshot`, then `provider_inventory.merge_usage`).
     """
     import route_judge
     usage = route_judge.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get('_discovery') or {})
@@ -56,56 +71,71 @@ def window_refusal(account, accounts, now, usage_cache_path, records, bundles=No
     return None
 
 
-def worker_bundle(agent_id):
-    """(dispatch id, launched bundle) of a worker this router launched, from its Paseo record's dispatch label; else None."""
+def worker_row(agent_id, stored):
+    """The dispatch row of this worker among `stored` rows, else None. The newest row carrying the agent id wins; the
+    Paseo record's `router.dispatch_id` label names it when no row carries the agent id yet."""
+    mine = [r for r in stored if isinstance(r, dict) and r.get('agent_id') == agent_id]
+    if mine:
+        return max(mine, key=lambda r: r.get('created_at') or '')
     doc = registry.paseo_agent_record(agent_id)
     labels = doc.get('labels') if isinstance(doc, dict) else None
-    dispatch_id = labels.get('router.dispatch_id') if isinstance(labels, dict) else None
-    if not isinstance(dispatch_id, str) or not dispatch_id:
-        return None
-    try:
-        row = registry.inspect(dispatch_id)
-    except ValueError:
-        return None
-    bundle = row.get('bundle')
-    return (dispatch_id, bundle) if isinstance(bundle, dict) and bundle.get('account') else None
+    labelled = labels.get('router.dispatch_id') if isinstance(labels, dict) else None
+    return next((r for r in stored if isinstance(r, dict) and labelled and r.get('dispatch_id') == labelled), None)
 
 
-def worker_refusal(agent_id, now=None):
-    """Why a new turn to this worker would be refused now, in words for its parent; None when nothing refuses it or the
-    worker is not one this router launched (the gate also leaves a target it cannot resolve alone)."""
-    located = worker_bundle(agent_id)
-    if located is None:
+def own_failure(row):
+    """The provider's message when this worker's last turn ended in a provider failure, `True` when it did without a
+    message, else None. Read from the settled row's failure code, or until the row settles from the watcher's receipt:
+    it does not wait for the hold the failure records."""
+    code, message = row.get('failure_code'), None
+    if not code:
+        terminal = (registry.watcher_receipt(row['dispatch_id']) or {}).get('terminal')
+        terminal = terminal if isinstance(terminal, dict) else {}
+        code, message = terminal.get('failure_code'), terminal.get('provider_message')
+    if code not in provider_retry.FAILURE_CODES:
         return None
-    dispatch_id, bundle = located
-    account = bundle['account']
+    return message if isinstance(message, str) and message else True
+
+
+def worker_refusal(agent_id, now=None, home=None):
+    """Why a new turn to this worker is not advised now, in words for its parent; None when nothing refuses it.
+
+    Raises ValueError('worker_not_resolvable') for a worker with no dispatch row of this router: nothing here can say
+    its account is free, and the gate would resolve it differently. sqlite3.OperationalError when the registry is
+    busy for longer than a moment.
+    """
     now = now or datetime.now(timezone.utc)
+    home = Path(home) if home else Path.home()
+    stored = registry.read_dispatches()
+    row = worker_row(agent_id, stored)
+    bundle = row.get('bundle') if row else None
+    if not isinstance(bundle, dict) or not bundle.get('account'):
+        raise ValueError('worker_not_resolvable')
+    account, dispatch_id = bundle['account'], row['dispatch_id']
+    failure = own_failure(row)
+    if failure:
+        return ('its last turn ended in a provider failure' + (f' ({failure})' if failure is not True else '')
+                + '; whether the provider holds the account is classified separately')
     accounts = account_fleet.load_accounts()
-    candidates = [dict(row, bundle_id=bundle_id) for bundle_id in [bundle.get('bundle_id') or bundle.get('id')]
-                  for row in [((accounts.get('accounts') or {}).get(account, {}).get('bundles') or {}).get(bundle_id)]
-                  if isinstance(row, dict)]
-    off = disabled_cause(account, candidates, accounts, host_policy.load_policy())
+    candidates = [r for r in account_fleet.bundle_rows(accounts, bundle.get('bundle_id') or bundle.get('id'))
+                  if r['account'] == account]
+    off = host_policy.disabled_cause(account, candidates, accounts, host_policy.load_policy())
     if off:
-        kind, detail = off
-        return {'legacy': f'account {account} is switched off ({detail})',
-                'host_policy': f'account {account} is disabled on this host by its host policy',
-                'bundles': f'bundle {", ".join(detail)} is unchecked in model management'}[kind] + (
-            "; re-enabling is the user's choice in AgentCompass settings, so roll the follow-up instead")
+        return (host_policy.disabled_text(account, off, 'en')
+                + "; re-enabling is the user's choice in AgentCompass settings, so roll the follow-up instead")
     unavailable = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, account, bundle.get('provider'))
     if unavailable:
         return f'account {account} is not ready ({unavailable})'
     held = provider_retry.reason(bundle, provider_retry.active(now=now))
     if held:
         return f'account {account} is held after a provider failure ({held})'
-    latched = model_latch.reason(bundle, model_latch.active(now=now))
-    if latched:
-        return f'model {model_latch.launch_model(bundle)} on {account} is held ({latched})'
-    row = (usage_cache.read(None, None)[0] or {}).get('providers', {}).get(account)
+    latch = model_latch.reason(bundle, model_latch.active(now=now))
+    if latch:
+        return f'model {model_latch.launch_model(bundle)} on {account} is held ({latch})'
     windows = sorted(quota_pools.bundle_pools(dict(bundle, id=bundle.get('bundle_id') or bundle.get('id')), accounts))
-    if quota_exhaustion.blocked(account, row if isinstance(row, dict) else None, windows=windows):
+    if latched(account, windows, None, home, read_only=True):
         return f'quota of account {account} was confirmed exhausted'
-    records = [r for r in registry.reservations(now=now, read_only=True)
-               if not isinstance(r, dict) or (r.get('dispatch_id') != dispatch_id and r.get('agent_id') != agent_id)]
+    records = without_own(registry.held_records(stored, now), dispatch_id, agent_id)
     found = window_refusal(account, accounts, now, None, records, bundles=[bundle])
     if found:
         what, wid, why = found
