@@ -274,11 +274,11 @@ def classify_scope(account, provider, model, message, failure=FAILURE_CODE):
     """(scope, metadata) from the configured System-One classifier; `unknown` when it cannot answer."""
     if not isinstance(message, str) or not message:
         return 'unknown', {'source': 'no_message'}
-    import route_judge
+    import scorer_client
     text = json.dumps({'account': account, 'provider': provider, 'model': model, 'failure': failure,
                        'provider_message': message}, ensure_ascii=False, indent=2)
-    answer, meta = route_judge.classify_structured(SCOPE_INSTRUCTIONS, text, SCOPE_SCHEMA, validate_scope,
-                                                   timeout=CLASSIFIER_TIMEOUT_SECONDS)
+    answer, meta = scorer_client.classify_structured(SCOPE_INSTRUCTIONS, text, SCOPE_SCHEMA, validate_scope,
+                                                     timeout=CLASSIFIER_TIMEOUT_SECONDS)
     if answer is None:
         return 'unknown', meta
     return answer['scope'], {**meta, **({'reason': answer['reason']} if answer.get('reason') else {})}

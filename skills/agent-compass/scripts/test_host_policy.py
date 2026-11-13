@@ -8,6 +8,10 @@ import allocator
 import account_fleet
 import host_policy
 import route_judge as router
+import decision_ledger
+import subscription_cli
+import subscription_judge
+import usage_reading
 
 from router_test_support import isolated_router_state, profile, temporary_root
 
@@ -45,15 +49,15 @@ class HostPolicyTests(unittest.TestCase):
                 'quality_fit': 'review', 'available': True}
 
     def request(self, stage='select', accounts=('claude', 'codex', 'codex-work', 'grok', 'api-proxy', 'dot', 'chatgpt-web', 'antigravity')):
-        with patch.object(router, 'usage_snapshot', return_value={'accounts': {}}):
-            return router.build_request(stage, {'task': {'objective': 'review'},
+        with patch.object(usage_reading, 'usage_snapshot', return_value={'accounts': {}}):
+            return subscription_judge.build_request(stage, {'task': {'objective': 'review'},
                                                'candidates': {a: self.candidate(a) for a in accounts}})
 
     def test_missing_default_preserves_defaults(self):
         self.path.unlink()
         self.assertIsNone(host_policy.load_policy())
         self.assertTrue(host_policy.account_allowed(None, 'claude'))
-        self.assertEqual(router.judge_order({}, 'auto'), ['codex', 'sonnet'])
+        self.assertEqual(subscription_judge.judge_order({}, 'auto'), ['codex', 'sonnet'])
 
     def test_missing_explicit_override_is_error(self):
         self.path.unlink()
@@ -98,7 +102,7 @@ class HostPolicyTests(unittest.TestCase):
     def test_empty_whitelist_is_not_default(self):
         self.write({'allowed_accounts': []})
         self.assertEqual(self.plan()['choice'], 'none')
-        self.assertEqual(router.judge_order({}, 'auto'), [])
+        self.assertEqual(subscription_judge.judge_order({}, 'auto'), [])
 
     def test_excluded_coupled_owner_is_blocked(self):
         result = self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled',
@@ -112,31 +116,31 @@ class HostPolicyTests(unittest.TestCase):
         self.assertEqual(set(request['state']['host_policy_excluded']), {'claude', 'codex-work', 'grok', 'api-proxy'})
 
     def test_judges_auto_explicit_and_account_intersection(self):
-        self.assertEqual(router.judge_order({}, 'auto'), ['codex'])
-        self.assertEqual(router.judge_order({}, 'codex'), ['codex'])
+        self.assertEqual(subscription_judge.judge_order({}, 'auto'), ['codex'])
+        self.assertEqual(subscription_judge.judge_order({}, 'codex'), ['codex'])
         with self.assertRaisesRegex(host_policy.HostPolicyError, 'excluded by host policy'):
-            router.judge_order({}, 'sonnet')
+            subscription_judge.judge_order({}, 'sonnet')
         self.write({'allowed_accounts': ['codex'], 'judges': ['sonnet']})
-        self.assertEqual(router.judge_order({}, 'auto'), [])
+        self.assertEqual(subscription_judge.judge_order({}, 'auto'), [])
 
     def test_delegate_and_select_denied_explicit_judge_never_call_cli(self):
-        with patch.object(router, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
+        with patch.object(subscription_cli, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
             for stage in ('delegate', 'select'):
                 with self.assertRaises(host_policy.HostPolicyError):
-                    router.evaluate(self.request(stage), requested='sonnet')
+                    subscription_judge.evaluate(self.request(stage), requested='sonnet')
 
     def test_no_allowed_judge_continues_self_without_cli(self):
         self.write({'allowed_accounts': ['codex'], 'judges': []})
-        with patch.object(router, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
-            result = router.evaluate(self.request('delegate'))
+        with patch.object(subscription_cli, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
+            result = subscription_judge.evaluate(self.request('delegate'))
         self.assertEqual(result['source'], 'judge_unavailable')
         self.assertIn('continue feasible parent work', result['next'])
 
     def test_prepared_select_rechecks_current_policy(self):
         request = self.request(accounts=('codex',))
         self.write({'allowed_accounts': []})
-        with patch.object(router, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
-            result = router.evaluate(request)
+        with patch.object(subscription_cli, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
+            result = subscription_judge.evaluate(request)
         self.assertEqual(result['choice'], 'none')
 
     def test_record_keeps_constraint_and_flags_violation_in_ledger(self):
@@ -145,11 +149,11 @@ class HostPolicyTests(unittest.TestCase):
         args = router.argparse.Namespace(basis='User explicit retained owner', provider='claude', account='claude',
                 model='claude-opus-5-5', effort='high', input=task, usage_cache=None, accounts=None,
                 constraint='user_override', specialty=None)
-        with patch.object(router, 'ledger_path', return_value=self.directory/'ledger.jsonl'), \
-             patch.object(router, 'usage_snapshot', return_value={'accounts': {}}), \
-             patch.object(router, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
+        with patch.object(decision_ledger, 'ledger_path', return_value=self.directory/'ledger.jsonl'), \
+             patch.object(usage_reading, 'usage_snapshot', return_value={'accounts': {}}), \
+             patch.object(subscription_cli, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
             result = router.record_constraint(args)
-            ledger = router.read_ledger()
+            ledger = decision_ledger.read_ledger()
         self.assertFalse(result['host_policy_violation']['dispatch_allowed'])
         self.assertEqual(ledger[0]['host_policy_violation'], result['host_policy_violation'])
         self.assertFalse(result['classifier_skipped'])

@@ -17,6 +17,7 @@ import host_policy
 import model_latch
 import provider_inventory
 import provider_inventory as real_inventory
+import usage_reading
 import provider_retry
 
 MESSAGE = 'Free usage exceeded, subscribe to Go'
@@ -29,7 +30,7 @@ class ProviderRetryCardTests(unittest.TestCase):
         accounts = {'accounts': {'opencode': {'bundles': {}}},
                     '_discovery': {'accounts': {'opencode': row or {'family': 'opencode', 'status': 'ready'}}}}
         router.usage_snapshot.return_value = {'accounts': {}}
-        with patch.object(router_data, 'modules', return_value=(Mock(), router)),              patch.object(account_fleet, 'load_accounts', return_value=accounts),              patch.object(axis_scores, 'five_axis_overlay'),              patch.object(host_policy, 'load_policy', return_value=None),              patch.object(host_policy, 'account_allowed', return_value=True),              patch.object(provider_retry, 'active', return_value=holds), \
+        with patch.object(router_data, 'modules', return_value=(Mock(), router)), patch.object(usage_reading, 'usage_snapshot', router.usage_snapshot),              patch.object(account_fleet, 'load_accounts', return_value=accounts),              patch.object(axis_scores, 'five_axis_overlay'),              patch.object(host_policy, 'load_policy', return_value=None),              patch.object(host_policy, 'account_allowed', return_value=True),              patch.object(provider_retry, 'active', return_value=holds), \
              patch.dict(sys.modules, {'provider_inventory': inventory}), \
              patch.object(router_data, '_read_json', return_value={}), \
              patch.object(router_data, 'pool_reservations', return_value={}), \
@@ -205,6 +206,7 @@ def test_account_cards_and_model_rows_surface_live_model_exclusions_and_unreadab
     rtr_mock = Mock()
     rtr_mock.usage_snapshot.return_value = {'accounts': {}}
     monkeypatch.setattr(router_data, 'modules', lambda: (alloc, rtr_mock))
+    monkeypatch.setattr(usage_reading, 'usage_snapshot', rtr_mock.usage_snapshot)
     monkeypatch.setattr(provider_inventory, 'current', lambda: {'accounts': {
         'antigravity': {'family': 'antigravity', 'status': 'ready', 'identity': 'id-agy'},
         'codex': {'family': 'codex', 'status': 'ready', 'identity': 'id-codex'},

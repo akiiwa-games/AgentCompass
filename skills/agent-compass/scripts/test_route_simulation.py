@@ -76,10 +76,10 @@ class UsageAwareSimulationTests(unittest.TestCase):
 
     def test_a_pooled_window_keeps_its_account_count_through_the_ledger(self):
         import quota_pools
-        import route_judge
+        import decision_ledger
         at = NOW - timedelta(days=2)
         reading = {'id': 'seven_day', 'used_pct': 40.0, 'resets_at': (at + timedelta(days=3)).isoformat(), 'accounts': 3}
-        digest = route_judge.usage_digest({'accounts': {'claude': {'status': 'ok', 'fetched_at': at.isoformat(),
+        digest = decision_ledger.usage_digest({'accounts': {'claude': {'status': 'ok', 'fetched_at': at.isoformat(),
                                                                    'windows': [reading]}}})
         self.assertEqual(digest['claude']['windows'][0]['accounts'], 3)
         old = {'claude': {'status': 'ok', 'fetched_at': at.isoformat(), 'windows': [dict(reading, accounts=None)]}}

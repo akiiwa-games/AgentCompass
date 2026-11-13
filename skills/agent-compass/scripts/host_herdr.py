@@ -59,7 +59,7 @@ def hc(*args, timeout=25):
     return data
 
 
-def interactive(bundle, judge):
+def interactive(bundle):
     """Only mappings we can reproduce exactly; account selection uses the existing provider adapter."""
     import roll
     family, provider_env = roll.provider_definition(bundle['provider'], bundle=bundle)
@@ -74,7 +74,7 @@ def interactive(bundle, judge):
         canonical = account_fleet.canonical(bundle['model'], accounts)
         validate(family, canonical, account_fleet.model_spec(accounts, canonical))
     model, effort = bundle.get('launch_model') or bundle['model'], bundle.get('effort')
-    command = roll.cli_command(family, bundle['provider'], judge)
+    command = roll.cli_command(family, bundle['provider'])
     if family == 'claude':
         flags = ['--model', model, '--permission-mode', 'bypassPermissions',
                  *(['--effort', effort] if effort else []),
@@ -108,14 +108,14 @@ def receipt_result(out, request, path):
                      'run next_argv to read terminal status/output. Do not repeat an uncertain launch.'), 0
 
 
-def launch(out, bundle, prompt_file, task_id, judge, *, cwd=None, dispatch_id=None):
+def launch(out, bundle, prompt_file, task_id, *, cwd=None, dispatch_id=None):
     with receipt_lock():
-        return _launch(out, bundle, prompt_file, task_id, judge, cwd=cwd, dispatch_id=dispatch_id)
+        return _launch(out, bundle, prompt_file, task_id, cwd=cwd, dispatch_id=dispatch_id)
 
 
-def _launch(out, bundle, prompt_file, task_id, judge, *, cwd=None, dispatch_id=None):
+def _launch(out, bundle, prompt_file, task_id, *, cwd=None, dispatch_id=None):
     try:
-        interactive(bundle, judge)  # validate before a terminal or durable launch intent exists
+        interactive(bundle)  # validate before a terminal or durable launch intent exists
         hc('server', 'status', '--json')  # non-starting on Windows; upstream may autostart on Unix
         observed = terminal_from(hc('get', out['parent_address'], '--json'))
         if not isinstance(observed, dict) or observed.get('state') != 'live':
@@ -245,11 +245,11 @@ def worker(path):
     request = load_request(path)
     if not os.environ.get('HC_TERMINAL_ID'):
         raise ValueError('Herdr worker must run inside its hc child terminal.')
-    import route_judge as judge
-    argv, provider_env = interactive(request['bundle'], judge)
+    import subscription_cli
+    argv, provider_env = interactive(request['bundle'])
     # The core's environment is not this routed account. Resolve account env here,
     # inside the child; do not persist credentials or inject caller session IDs.
-    env = {key: value for key, value in judge.subscription_env().items()
+    env = {key: value for key, value in subscription_cli.subscription_env().items()
            if not key.startswith(('CLAUDE', 'CODEX_', 'PASEO_', 'ORCA_', 'T3_', 'CINDY_', 'ROUTER_PARENT_'))}
     env.update(provider_env)
     env.update(AGENTCOMPASS_WORKER='1', ROUTER_PARENT_AGENT_ID=request['parent'],
@@ -266,7 +266,7 @@ def worker(path):
         try:
             return process.wait()
         except BaseException:
-            judge.stop_process(process)
+            subscription_cli.stop_process(process)
             raise
     os.execvpe(argv[0], [*argv, bootstrap], env)
 

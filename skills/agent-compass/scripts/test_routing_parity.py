@@ -19,6 +19,9 @@ import auto_bundles
 import dispatch_registry
 import roll
 import route_judge
+import decision_ledger
+import scorer_client
+import usage_reading
 from router_test_support import isolated_router_state, profile, usage_windows
 import window_scope
 
@@ -330,9 +333,10 @@ class RecordConstraintTests(RouterCase):
             'basis': 'User asked', 'account': 'claude', 'provider': 'claude', 'model': 'claude-opus-5-5', 'effort': None,
             'input': None, 'usage_cache': None, 'accounts': None, 'constraint': 'user_override', 'specialty': None,
             'reason_category': None, 'fast': False, 'parent_id': None, **fields})
-        with patch.object(route_judge, 'usage_snapshot', return_value=copy.deepcopy(usage or self.usage)), \
-                patch.object(route_judge, 'datetime', wraps=datetime) as clock:
-            clock.now.return_value = NOW
+        with patch.object(usage_reading, 'usage_snapshot', return_value=copy.deepcopy(usage or self.usage)), \
+                patch.object(route_judge, 'datetime', wraps=datetime) as clock, \
+                patch.object(decision_ledger, 'datetime', wraps=datetime) as ledger_clock:
+            clock.now.return_value = ledger_clock.now.return_value = NOW
             return route_judge.record_constraint(args, task)
 
     def test_omitting_effort_keeps_the_row_level(self):
@@ -436,7 +440,7 @@ class ProfileValidationTests(RouterCase):
         caps = account_fleet.load_capabilities()
         bad = dict(PROFILE, multi_task=True, task_count='1')
         with self.assertRaisesRegex(ValueError, 'invalid_caller_profile'):
-            route_judge.score_task({'objective': 'x', 'profile': bad}, caps)
+            scorer_client.score_task({'objective': 'x', 'profile': bad}, caps)
         with self.assertRaisesRegex(ValueError, 'invalid_caller_profile'):
             self.plan(self.task(bad))
 
@@ -446,9 +450,9 @@ class ProfileValidationTests(RouterCase):
         def answer(*_args, **_kw):
             return task_intake.validate_profile(dict(PROFILE, multi_task=True, task_count='1')), 'x', 'y'
         with patch.dict(os.environ, {'ROUTER_SCORE_CACHE': 'off'}), \
-                patch.object(route_judge, 'scorer_accounts', return_value=[None]), \
-                patch.object(route_judge, 'run_scorer', side_effect=answer) as scorer:
-            profile, meta = route_judge.score_task({'objective': 'x'}, caps, scorer_config={'scorer_type': 'claude_haiku_low', 'fallback_to_agy': True})
+                patch.object(scorer_client, 'scorer_accounts', return_value=[None]), \
+                patch.object(scorer_client, 'run_scorer', side_effect=answer) as scorer:
+            profile, meta = scorer_client.score_task({'objective': 'x'}, caps, scorer_config={'scorer_type': 'claude_haiku_low', 'fallback_to_agy': True})
         self.assertIsNone(profile)
         self.assertEqual(meta['source'], 'scorer_unavailable')
         self.assertEqual(meta['fallback_reason'], 'ValueError')
@@ -459,15 +463,15 @@ class ProfileValidationTests(RouterCase):
         caps = account_fleet.load_capabilities()
         config = {'scorer_type': 'claude_haiku_low', 'fallback_to_agy': False}
         task = {'objective': 'hello world'}
-        order = route_judge.scorer_attempt_order(config)[1]
-        key = route_judge.score_cache_key(task, caps, order, config)
+        order = scorer_client.scorer_attempt_order(config)[1]
+        key = scorer_client.score_cache_key(task, caps, order, config)
         good = task_intake.validate_profile(dict(PROFILE))
         for stale in ({'work_kind': 'removed_legacy_kind'}, dict(PROFILE, multi_task=True, task_count='1'), {k: v for k, v in PROFILE.items() if k != 'task_count'}):
             with self.subTest(stale=stale), patch.dict(os.environ, {'ROUTER_SCORE_CACHE': str(Path(self.root) / 'cache.json')}):
-                route_judge.score_cache_put(key, stale, {'source': 'system_one', 'scorer_type': 'claude_haiku_low'})
-                with patch.object(route_judge, 'scorer_accounts', return_value=[None]), \
-                        patch.object(route_judge, 'run_scorer', return_value=(good, 'p', 'm')) as scorer:
-                    profile, meta = route_judge.score_task(task, caps, scorer_config=config)
+                scorer_client.score_cache_put(key, stale, {'source': 'system_one', 'scorer_type': 'claude_haiku_low'})
+                with patch.object(scorer_client, 'scorer_accounts', return_value=[None]), \
+                        patch.object(scorer_client, 'run_scorer', return_value=(good, 'p', 'm')) as scorer:
+                    profile, meta = scorer_client.score_task(task, caps, scorer_config=config)
                 self.assertEqual(profile, good)
                 self.assertFalse(meta.get('cached'))
                 scorer.assert_called_once()
@@ -475,23 +479,23 @@ class ProfileValidationTests(RouterCase):
     def test_cache_key_covers_every_structured_input_and_copies_are_isolated(self):
         caps = account_fleet.load_capabilities()
         config = {'scorer_type': 'claude_haiku_low', 'fallback_to_agy': False}
-        order = route_judge.scorer_attempt_order(config)[1]
+        order = scorer_client.scorer_attempt_order(config)[1]
         base = {'objective': 'o', 'context': 'c', 'environment': 'e', 'expected_hours': 1, 'needs': {'gui': False}}
-        keys = {route_judge.score_cache_key(base, caps, order, config)}
+        keys = {scorer_client.score_cache_key(base, caps, order, config)}
         for name, value in (('objective', 'o2'), ('context', 'c2'), ('environment', 'e2'), ('expected_hours', 2), ('needs', {'gui': True})):
-            keys.add(route_judge.score_cache_key({**base, name: value}, caps, order, config))
+            keys.add(scorer_client.score_cache_key({**base, name: value}, caps, order, config))
         self.assertEqual(len(keys), 6)
-        self.assertEqual(set(route_judge.SCORER_TASK_FIELDS), {'objective', 'context', 'environment', 'expected_hours', 'needs'})
+        self.assertEqual(set(scorer_client.SCORER_TASK_FIELDS), {'objective', 'context', 'environment', 'expected_hours', 'needs'})
         with patch.dict(os.environ, {'ROUTER_SCORE_CACHE': str(Path(self.root) / 'cache2.json')}):
             profile, scorer = dict(PROFILE), {'source': 'system_one', 'attempts': []}
-            route_judge.score_cache_put('k', profile, scorer)
+            scorer_client.score_cache_put('k', profile, scorer)
             profile['reasoning_depth'] = 4
             scorer['attempts'].append('later')
-            first = route_judge.score_cache_get('k')
+            first = scorer_client.score_cache_get('k')
             self.assertEqual(first['profile']['reasoning_depth'], 2)
             self.assertEqual(first['scorer']['attempts'], [])
             first['profile']['reasoning_depth'] = 3
-            self.assertEqual(route_judge.score_cache_get('k')['profile']['reasoning_depth'], 2)
+            self.assertEqual(scorer_client.score_cache_get('k')['profile']['reasoning_depth'], 2)
 
 
 if __name__ == '__main__':

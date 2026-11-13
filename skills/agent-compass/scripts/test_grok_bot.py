@@ -20,7 +20,8 @@ import account_fleet
 import accounts_override
 import quota_pools
 import dispatch_registry
-import route_judge
+import scorer_client
+import usage_reading
 import roll
 import run_grok_bot as runner
 
@@ -180,7 +181,7 @@ class GrokBotTests(unittest.TestCase):
                 if not missing:
                     providers['grok'] = grok
                 cache.write_text(json.dumps({'providers': providers}))
-                usage = route_judge.usage_snapshot(cache, accounts=['grok-bot'], now=now)
+                usage = usage_reading.usage_snapshot(cache, accounts=['grok-bot'], now=now)
                 # No public source gives the credits window a capacity, so the bot runs only when it is named.
                 plan = allocator.plan({'work_kind': 'text_in_text_out', 'difficulty': 'routine', 'expected_hours': .2,
                                        'constraints': {'model': 'grok-bot'}},
@@ -513,7 +514,7 @@ class GrokBotTests(unittest.TestCase):
                 'credential_key': 'c1', 'identity': 'c1',
             }
             fleet = provider_inventory.apply(account_fleet.load_accounts(account_fleet.reference_fleet_path()), snap)
-            usage = route_judge.usage_snapshot(cache_path, accounts=['grok-bot', 'claude'], now=now)
+            usage = usage_reading.usage_snapshot(cache_path, accounts=['grok-bot', 'claude'], now=now)
             res = allocator.plan(task, usage, now=now, accounts=fleet, records=[], overrides=[],
                                  host_policy_config=host_policy_cfg, read_local_state=read_local)
             return next(c for c in res['ranking'] if c['id'] == 'grok_bot'), fleet
@@ -613,7 +614,7 @@ fixture_profile = profile(work_kind='web_research', reasoning_depth=2, code_comp
                           reason='fixture', access='read-only', axis_demand={'divergence': 1, 'coding': 1, 'aesthetics': 0, 'tool_operation': 0})
 with patch.object(runner, 'submit', side_effect=accept), patch.object(
         inventory, 'GROK_BOT_CLI', fake_cli), patch.object(runner.shutil, 'which', side_effect=fixture_which), patch.object(
-        route_judge, 'score_task', return_value=(fixture_profile, {'source': 'system_one', 'model': 'fixture-scorer'})), patch.object(
+        scorer_client, 'score_task', return_value=(fixture_profile, {'source': 'system_one', 'model': 'fixture-scorer'})), patch.object(
         route_judge.dispatch_flow, 'launch', side_effect=AssertionError('unexpected external provider launch')):
     raise SystemExit(route_judge.main())
 '''

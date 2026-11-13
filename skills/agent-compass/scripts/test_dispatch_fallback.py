@@ -10,10 +10,12 @@ from unittest.mock import patch
 
 import allocator
 import account_fleet
+import decision_ledger
 import dispatch_fallback as fallback
 import dispatch_flow as flow
 import dispatch_registry as registry
 import provider_retry
+import usage_reading
 
 from router_test_support import isolated_router_state
 import test_dispatch
@@ -106,23 +108,15 @@ class FallbackTests(unittest.TestCase):
         test = self
 
         class Judge:
-            SCORER_TIMEOUT_SECONDS = 30
-
             @staticmethod
             def plan_stage(document, args):
                 test.plans.append(sorted(document.get('unavailable') or ()))
                 planned = allocator.plan(dict(document['task']), test.usage, registry.utcnow(),
                                          unavailable=document.get('unavailable') or (), accounts=test.accounts)
                 return dict(planned, **registry.issue(planned, document['task'])), 0
-
-            @staticmethod
-            def usage_snapshot(_):
-                return test.usage
-
-            @staticmethod
-            def append_ledger(entry):
-                test.ledger.append(entry)
         self.judge = Judge
+        self.enterContext(patch.object(usage_reading, 'usage_snapshot', side_effect=lambda *_, **__: test.usage))
+        self.enterContext(patch.object(decision_ledger, 'append_ledger', side_effect=test.ledger.append))
         self.launch = {'title': 'Fixture task', 'initialPrompt': 'Only fixture work'}
 
     # Helpers.
@@ -725,11 +719,8 @@ class RollFallbackTests(unittest.TestCase):
                                      test.usage, registry.utcnow(),
                                      unavailable=document.get('unavailable') or (), accounts=test.accounts)
             return dict(planned, **registry.issue(planned, document['task'])), 0
-        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage),
-                                   'usage_snapshot': staticmethod(lambda _: test.usage),
-                                   'append_ledger': staticmethod(test.ledger.append),
-                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
-                                   'cli_prefix': staticmethod(lambda name: [name])})
+        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage)})
+        self.enterContext(test_dispatch.fake_owners(self))
         with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a', 'ROUTER_PARENT_AGENT_ID': ''}), \
                 patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'worker-prompts'), \
                 patch.object(roll, 'RESULTS_DIR', self.root / 'roll-results'), \
@@ -784,11 +775,8 @@ class RollFallbackTests(unittest.TestCase):
                                              test.usage, registry.utcnow(),
                                              unavailable=document.get('unavailable') or (), accounts=test.accounts)
                     return dict(planned, **registry.issue(planned, document['task'])), 0
-                judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage),
-                                           'usage_snapshot': staticmethod(lambda _: test.usage),
-                                           'append_ledger': staticmethod(test.ledger.append),
-                                           'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
-                                           'cli_prefix': staticmethod(lambda name: [name])})
+                judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage)})
+                self.enterContext(test_dispatch.fake_owners(self))
                 with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a', 'ROUTER_PARENT_AGENT_ID': '',
                                              'ROUTER_LAUNCH_FAILURES': str(cooldown_store)}), \
                         patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'worker-prompts'), \

@@ -17,7 +17,7 @@ import candidate_eval
 import provider_inventory
 import quota_economy
 import quota_pools
-import route_judge
+import usage_reading
 import state_upgrade
 import usage_core
 
@@ -388,7 +388,7 @@ class Snapshot(unittest.TestCase):
             'usage_details': {'kind': 'metered_usd', 'spent_usd': 12.34, 'budget_usd': 200,
                               'api_key': 'sk-team-proxy'},
         }}}), encoding='utf-8', newline='\n')
-        snap = route_judge.usage_snapshot(path, accounts=['usd'], now=NOW)
+        snap = usage_reading.usage_snapshot(path, accounts=['usd'], now=NOW)
         row = snap['accounts']['usd']
         self.assertEqual(row['status'], 'fresh')
         self.assertIsNone(row['windows'][0]['resets_at'])
@@ -406,7 +406,7 @@ class Snapshot(unittest.TestCase):
             'windows': [],
             'usage_details': {'kind': 'metered_usd', 'query': 'no_permission'},
         }}}), encoding='utf-8', newline='\n')
-        snap = route_judge.usage_snapshot(path, accounts=['usd'], now=NOW)
+        snap = usage_reading.usage_snapshot(path, accounts=['usd'], now=NOW)
         row = snap['accounts']['usd']
         self.assertFalse(row['available'])
         self.assertEqual(row['status'], 'stale')

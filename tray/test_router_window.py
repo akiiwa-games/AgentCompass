@@ -16,12 +16,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compa
 import allocator
 import account_fleet
 import axis_scores
+import decision_ledger
+import env_vars
 import host_policy
 import ledger_snapshot
 import provider_inventory
 import quota_economy
 import quota_pools
+import scorer_client
 import task_intake
+import usage_reading
 import worker_sessions
 from tk_test_support import desktop_test, require_tk, import_theatre_without_user_diagnostics
 require_tk()
@@ -342,10 +346,9 @@ class DecisionBindingTests(unittest.TestCase):
         fake.dot_may_take.return_value = True
         fake.plan.return_value = PLAN
         router = mock.Mock()
-        router.score_task.return_value = ({"reasoning_depth": 2}, {"source": "system_one", "model": "jev-latest"})
-        router.read_ledger.return_value = []
         router.dot_unreachable.return_value = "refused"
-        with mock.patch.object(router_data, "modules", return_value=(fake, router)), \
+        with mock.patch.object(router_data, "modules", return_value=(fake, router)),                 mock.patch.object(scorer_client, "score_task",
+                                  return_value=({"reasoning_depth": 2}, {"source": "system_one", "model": "jev-latest"})),                 mock.patch.object(decision_ledger, "read_ledger", return_value=[]),                 mock.patch.object(decision_ledger, "append_ledger") as append_ledger, \
                 mock.patch.object(account_fleet, "load_accounts", fake.load_accounts), \
                 mock.patch.object(account_fleet, "load_capabilities", fake.load_capabilities), \
                 mock.patch.object(task_intake, "task_kind", fake.task_kind), \
@@ -363,7 +366,7 @@ class DecisionBindingTests(unittest.TestCase):
         self.assertEqual(task["profile"], {"reasoning_depth": 2})
         self.assertEqual(fake.plan.call_args.args[3], ["dot_text"])
         fake.infer_task_profile.assert_not_called()
-        router.append_ledger.assert_not_called()
+        append_ledger.assert_not_called()
 
     def test_replay_reuses_the_recorded_profile_when_valid(self):
         fake = mock.Mock()
@@ -437,12 +440,11 @@ class AccountCardTests(unittest.TestCase):
         fake.canonical_window_id.side_effect = lambda spec, wid: wid
         fake.capacity_usd.return_value = None
         fake.host_policy.load_policy.return_value = None
-        router = mock.Mock()
-        router.usage_snapshot.return_value = {"accounts": {"claude-lab": {"status": "fresh", "windows": [window]}}}
+        usage = {"accounts": {"claude-lab": {"status": "fresh", "windows": [window]}}}
         inventory = mock.Mock()
         inventory.current.return_value = {"accounts": {}}
         inventory.quota_sources.return_value = {}
-        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, "modules", return_value=(fake, router)),                 mock.patch.object(account_fleet, "load_accounts", fake.load_accounts),                 mock.patch.object(axis_scores, "five_axis_overlay", fake.five_axis_overlay),                 mock.patch.object(host_policy, "load_policy", fake.host_policy.load_policy),                 mock.patch.object(host_policy, "account_allowed", fake.host_policy.account_allowed),                 mock.patch.object(quota_pools, "canonical_window_id", fake.canonical_window_id),                 mock.patch.object(quota_economy, "capacity_usd", fake.capacity_usd),                 mock.patch.dict(sys.modules, {"provider_inventory": inventory}),                 mock.patch.object(router_data, "STATE_DIR", Path(directory)),                 mock.patch.object(router_data.plugins, "load", return_value={}),                 mock.patch.object(router_data, "account_badge", return_value=("", "")):
+        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, "modules", return_value=(fake, mock.Mock())),                 mock.patch.object(usage_reading, "usage_snapshot", return_value=usage),                 mock.patch.object(account_fleet, "load_accounts", fake.load_accounts),                 mock.patch.object(axis_scores, "five_axis_overlay", fake.five_axis_overlay),                 mock.patch.object(host_policy, "load_policy", fake.host_policy.load_policy),                 mock.patch.object(host_policy, "account_allowed", fake.host_policy.account_allowed),                 mock.patch.object(quota_pools, "canonical_window_id", fake.canonical_window_id),                 mock.patch.object(quota_economy, "capacity_usd", fake.capacity_usd),                 mock.patch.dict(sys.modules, {"provider_inventory": inventory}),                 mock.patch.object(router_data, "STATE_DIR", Path(directory)),                 mock.patch.object(router_data.plugins, "load", return_value={}),                 mock.patch.object(router_data, "account_badge", return_value=("", "")):
             return router_data.account_cards()[0]["windows"][0]
 
     def test_a_window_past_its_reset_waits_for_a_new_reading(self):
@@ -1418,7 +1420,7 @@ class ScorerConfigTests(unittest.TestCase):
         import allocator
         import route_judge
 
-        self.allocator, self.router = allocator, route_judge
+        self.allocator = allocator
         self.temp = tempfile.TemporaryDirectory(prefix="tray-scorer-test-")
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / "scorer-config.json"
@@ -1426,12 +1428,12 @@ class ScorerConfigTests(unittest.TestCase):
                         mock.patch.dict(route_judge.os.environ, {"ROUTER_SCORER_CONFIG": str(self.path),
                                                                  "ROUTER_SCORER_TYPE": "",
                                                                  "ROUTER_SCORE_CACHE": "off"}),
-                        mock.patch.object(route_judge, "user_env", return_value=None)):
+                        mock.patch.object(env_vars, "user_env", return_value=None)):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def test_types_match_route_judge(self):
-        self.assertEqual([row[0] for row in router_data.SCORER_TYPES], list(self.router.SCORER_TYPES))
+    def test_types_match_the_scorer_client(self):
+        self.assertEqual([row[0] for row in router_data.SCORER_TYPES], list(scorer_client.SCORER_TYPES))
         self.assertEqual([row[0] for row in router_data.SCORER_TYPES[:4]], ["jev", "claude_haiku_low", "codex_terra_low", "agy_flash_low"])
         self.assertEqual({row[0] for row in router_data.SCORER_TYPES if row[2]}, {"jev", "openai_compatible"})
 
@@ -1467,7 +1469,7 @@ class ScorerConfigTests(unittest.TestCase):
             router_data.save_scorer_config("heuristic")
         with self.assertRaises(ValueError):
             router_data.save_scorer_config("nope")
-        with mock.patch.object(self.router, "user_env", side_effect=lambda n: "env-key-123456789" if n == "TYPESAFE_API_KEY" else None):
+        with mock.patch.object(env_vars, "user_env", side_effect=lambda n: "env-key-123456789" if n == "TYPESAFE_API_KEY" else None):
             field = router_data.read_scorer_config()["fields"]["jev"]
         self.assertEqual((field["env_key"], field["key_hint"], field["api_key_masked"]), (True, "使用环境变量 TYPESAFE_API_KEY", ""))
 
@@ -1482,14 +1484,14 @@ class ScorerConfigTests(unittest.TestCase):
             "wants_fast": {"noul": 0.05}, "read_only_review": {"noul": 0.02},
             "access": {"choice": "write"}, "multi_task": {"noul": 0.05}, "task_count": {"choice": "1"}}}
         seen = []
-        with mock.patch.object(self.router, "post_json", side_effect=lambda url, body, key, timeout: seen.append(key) or response):
+        with mock.patch.object(scorer_client, "post_json", side_effect=lambda url, body, key, timeout: seen.append(key) or response):
             message = router_data.test_scorer_config()
             router_data.test_scorer_config("jev", "unsaved-key-000011112222")
         self.assertRegex(message, r"^测试成功（Jev · \d+ms）：general_implementation · D2 C2$")
         self.assertEqual(seen, [SECRET, "unsaved-key-000011112222"])
         router_data.save_scorer_config("jev", "")
-        with mock.patch.object(self.router, "post_json", side_effect=AssertionError("no call without a key")), \
-                mock.patch.object(self.router, "scorer_prefix", side_effect=AssertionError("no agy fallback in a test")):
+        with mock.patch.object(scorer_client, "post_json", side_effect=AssertionError("no call without a key")), \
+                mock.patch.object(scorer_client, "scorer_prefix", side_effect=AssertionError("no agy fallback in a test")):
             message = router_data.test_scorer_config()
         self.assertTrue(message.startswith("测试失败（Jev"), message)
         self.assertIn("TypeSafe API key not configured", message)
@@ -1506,7 +1508,7 @@ class ScorerConfigTests(unittest.TestCase):
             "multi_task": False, "task_count": "1",
         }
         with mock.patch.object(router_data, "plan_task", side_effect=lambda task: {"task": task}), \
-                mock.patch.object(self.router, "score_task", return_value=(profile, {"source": "system_one", "model": "m"})):
+                mock.patch.object(scorer_client, "score_task", return_value=(profile, {"source": "system_one", "model": "m"})):
             live = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
         self.assertEqual((live["task"]["work_kind"], live["task"]["difficulty"], live["scorer"]["model"]),
                          ("debug_review", "coupled", "m"))
@@ -1514,7 +1516,7 @@ class ScorerConfigTests(unittest.TestCase):
         self.assertEqual(task_intake.resolve_modality_needs(live["task"]["needs"], live["task"]["profile"], {}),
                          {"visual": True, "local_only": True})
         with mock.patch.object(router_data, "plan_task", side_effect=AssertionError("should not plan when scorer unavailable")), \
-                mock.patch.object(self.router, "score_task", return_value=(None, {"source": "scorer_unavailable", "fallback_detail": "timed out"})):
+                mock.patch.object(scorer_client, "score_task", return_value=(None, {"source": "scorer_unavailable", "fallback_detail": "timed out"})):
             unavail = router_data.simulate("修复解析器的 bug", 1.0, live_scorer=True)
         self.assertEqual((unavail["status"], unavail["choice"], unavail["error"]), ("blocked", "none", "scorer_unavailable"))
         import router_window

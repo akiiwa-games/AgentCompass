@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import roll
+import subscription_cli
 import worker_sessions
 
 from router_test_support import isolated_router_state
@@ -83,14 +84,12 @@ class RollNotificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             process = Mock(pid=1234)
             args = SimpleNamespace(wait=0)
-            judge = Mock()
-            judge.subscription_env.return_value = {}
-            with patch.object(roll, 'CLI_RUNS_DIR', Path(folder)), \
+            with patch.object(subscription_cli, 'subscription_env', return_value={}),                     patch.object(roll, 'CLI_RUNS_DIR', Path(folder)), \
                     patch.object(roll, 'provider_definition', return_value=('codex', {})), \
                     patch.object(roll, 'cli_command', return_value=['fake-codex']), \
                     patch.object(roll.subprocess, 'Popen', return_value=process):
                 result, code = roll.cli(args, {'parent_id': 'parent', 'parent_host': 'native',
-                    'parent_address': 'inbox'}, {'provider': 'codex', 'model': 'fixture'}, 'fixture', judge)
+                    'parent_address': 'inbox'}, {'provider': 'codex', 'model': 'fixture'}, 'fixture')
             self.assertEqual(code, 0)
             self.assertIn('No automatic completion notification', result['next'])
             self.assertIn('must watch worker.output and worker.stderr', result['next'])

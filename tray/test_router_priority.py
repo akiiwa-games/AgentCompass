@@ -14,6 +14,7 @@ from router_test_support import isolated_router_state
 import account_fleet
 import host_policy
 import quota_overrides
+import usage_reading
 
 
 class PriorityTests(unittest.TestCase):
@@ -33,7 +34,7 @@ class PriorityTests(unittest.TestCase):
                          'resets_at': (self.now+timedelta(days=6)).isoformat()}]}}}
         for p in [patch.object(priority, 'modules', return_value=(self.a, self.r)),
                   patch.dict(os.environ, {'ROUTER_OVERRIDES': str(self.path)}),
-                  patch.object(self.r, 'usage_snapshot', return_value=self.usage),
+                  patch.object(usage_reading, 'usage_snapshot', return_value=self.usage),
                   patch.object(host_policy, 'load_policy', return_value={'allowed_accounts': ['codex']})]:
             p.start(); self.addCleanup(p.stop)
 

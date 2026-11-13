@@ -25,6 +25,9 @@ import worker_sessions
 import antigravity_telemetry
 import override_store
 import route_judge as router
+import decision_ledger
+import subscription_cli
+import usage_reading
 from router_test_support import isolated_router_state, profile, profile_for, temporary_root, usage_windows
 
 
@@ -748,12 +751,12 @@ class OverrideContractTests(unittest.TestCase):
 
     @pytest.mark.slow
     def test_upsert_rebaseline_and_atomic_concurrency(self):
-        with patch.object(router, 'usage_snapshot', return_value=self.usage):
-            first = router.manage_overrides(self.args(), self.now)['active'][0]
-            override_rows = [row for row in router.read_ledger() if row.get('stage') == 'override']
+        with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
+            first = quota_overrides.manage_overrides(self.args(), self.now)['active'][0]
+            override_rows = [row for row in decision_ledger.read_ledger() if row.get('stage') == 'override']
             self.assertEqual((override_rows[-1]['action'], override_rows[-1]['account'], override_rows[-1]['removed']),
                              ('upsert', 'codex', 0))
-            second = router.manage_overrides(self.args(boost=0.4), self.now + timedelta(seconds=1))['active'][0]
+            second = quota_overrides.manage_overrides(self.args(boost=0.4), self.now + timedelta(seconds=1))['active'][0]
             self.assertEqual((second['id'], second['created_at'], second['boost']), (first['id'], first['created_at'], 0.4))
 
         # Atomic write failure retains original file
@@ -900,10 +903,10 @@ class RouterIntegrationTests(unittest.TestCase):
         return code, json.loads(shown.call_args.args[0])
 
     def test_plan_dry_run_no_eligible_and_record_agreement(self):
-        self.addCleanup(setattr, router, 'LEDGER_WRITES', True)
+        self.addCleanup(setattr, decision_ledger, 'LEDGER_WRITES', True)
         with tempfile.TemporaryDirectory() as directory, \
-                patch.object(router, 'ledger_path', return_value=Path(directory) / 'ledger.jsonl'), \
-                patch.object(router, 'cli_prefix', side_effect=AssertionError('Unexpected model call')):
+                patch.object(decision_ledger, 'ledger_path', return_value=Path(directory) / 'ledger.jsonl'), \
+                patch.object(subscription_cli, 'cli_prefix', side_effect=AssertionError('Unexpected model call')):
             task = Path(directory) / 'task.json'
             cache = str(self.cache(directory))
 
@@ -919,11 +922,11 @@ class RouterIntegrationTests(unittest.TestCase):
             self.assertEqual((again['choice'], again['decision']['action']), ('sol_xhigh', 'resume'))
 
             # 2. Dry-run leaves no extra ledger row; non-eligible exits 2
-            before_count = len(router.read_ledger())
+            before_count = len(decision_ledger.read_ledger())
             task.write_text(self.dumps_task({'task': {'work_kind': 'frontend_implementation', 'difficulty': 'routine',
                                                  'expected_hours': 0.5, 'needs': {'local_only': True}}}), encoding='utf-8')
             code, dry = self.run_main(['plan', '--input', str(task), '--usage-cache', cache, '--dry-run'])
-            self.assertEqual((code, len(router.read_ledger())), (0, before_count))
+            self.assertEqual((code, len(decision_ledger.read_ledger())), (0, before_count))
             planned = dry['choice']
 
             # 3. Record agreement check
@@ -940,7 +943,7 @@ class RouterIntegrationTests(unittest.TestCase):
                              (None, True, None))
             self.assertEqual((agreed['agrees'], agreed['classifier_skipped'], agreed['router_choice']),
                              (None, True, None))
-            skipped_row = router.read_ledger()[-1]
+            skipped_row = decision_ledger.read_ledger()[-1]
             self.assertTrue(skipped_row['classifier_skipped'])
             self.assertIsNone(skipped_row['agrees'])
             task.write_text(json.dumps({'task': {

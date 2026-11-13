@@ -13,6 +13,9 @@ import accounts_override
 import provider_inventory
 import roll
 import route_judge as router
+import subscription_cli
+import subscription_judge
+import usage_reading
 from router_test_support import isolated_router_state
 
 
@@ -51,8 +54,8 @@ class AccountIdentityTests(unittest.TestCase):
                 window.pop('launch_min_remaining_pct', None)
                 if reserve is not None:
                     window['launch_min_remaining_pct'] = reserve
-                with patch.object(router, 'usage_snapshot', return_value=self.usage(15)) as snapshot:
-                    result = router.build_request('select', {'task': {'objective': 'Review'},
+                with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage(15)) as snapshot:
+                    result = subscription_judge.build_request('select', {'task': {'objective': 'Review'},
                                                            'candidates': {'worker': candidate}})
                 self.assertEqual('worker' in result['state']['candidates'], expected)
                 self.assertIn('team-backup', snapshot.call_args.args[1])
@@ -61,7 +64,7 @@ class AccountIdentityTests(unittest.TestCase):
         args = argparse.Namespace(provider='team-backup', account='team-backup', model='claude-sonnet-5-5',
             effort='high', basis='Explicit test choice', dry_run=True, input=None, usage_cache=None,
             accounts=None, constraint='user_override', specialty=None, parent_id='test-parent')
-        with patch.object(router, 'usage_snapshot', return_value=self.usage(15)):
+        with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage(15)):
             self.assertEqual(router.record_constraint(args)['selected_bundle']['account'], 'team-backup')
             self.fleet['accounts']['team-backup']['windows']['five_hour']['launch_min_remaining_pct'] = 25
             with self.assertRaisesRegex(ValueError, 'quota|floor|exhausted'):
@@ -75,19 +78,19 @@ class AccountIdentityTests(unittest.TestCase):
         self.fleet['accounts']['team-backup']['windows']['five_hour']['launch_min_remaining_pct'] = 25
         usage = self.usage(26)
         usage['accounts']['primary-team'] = empty
-        self.assertEqual(router.resolve_judge('sonnet', usage)['account'], 'team-backup')
-        self.assertIn('sonnet', router.judge_order(usage, 'auto'))
+        self.assertEqual(subscription_judge.resolve_judge('sonnet', usage)['account'], 'team-backup')
+        self.assertIn('sonnet', subscription_judge.judge_order(usage, 'auto'))
         usage['accounts']['team-backup'] = self.usage(15)['accounts']['team-backup']
-        self.assertNotIn('sonnet', router.judge_order(usage, 'auto'))
+        self.assertNotIn('sonnet', subscription_judge.judge_order(usage, 'auto'))
 
     def test_judge_uses_neutral_reserve_without_private_default(self):
-        self.assertEqual(router.resolve_judge('sonnet', self.usage(15))['account'], 'team-backup')
-        self.assertIn('sonnet', router.judge_order(self.usage(15), 'auto'))
+        self.assertEqual(subscription_judge.resolve_judge('sonnet', self.usage(15))['account'], 'team-backup')
+        self.assertIn('sonnet', subscription_judge.judge_order(self.usage(15), 'auto'))
 
     def test_subscription_credentials_follow_discovered_home(self):
         with patch.dict(router.os.environ, {'CLAUDE_CODE_OAUTH_TOKEN': 'inherited',
                                           'ANTHROPIC_API_KEY': 'inherited'}):
-            env = router.subscription_env('team-backup')
+            env = subscription_cli.subscription_env('team-backup')
         self.assertEqual(env['CLAUDE_CONFIG_DIR'], self.inventory['accounts']['team-backup']['home'])
         self.assertEqual(env['CLAUDE_SECURESTORAGE_CONFIG_DIR'], env['CLAUDE_CONFIG_DIR'])
         self.assertNotIn('CLAUDE_CODE_OAUTH_TOKEN', env)
@@ -96,8 +99,8 @@ class AccountIdentityTests(unittest.TestCase):
     def test_name_does_not_prove_claude_family(self):
         self.inventory['accounts']['claude-impostor'] = {'family': 'codex', 'home': str(self.root / 'other')}
         with patch.dict(router.os.environ, {}, clear=True):
-            self.assertNotIn('CLAUDE_CONFIG_DIR', router.subscription_env('claude-impostor'))
-        self.assertIsNone(router.claude_session_limit('claude-impostor', self.root, self.now, self.inventory))
+            self.assertNotIn('CLAUDE_CONFIG_DIR', subscription_cli.subscription_env('claude-impostor'))
+        self.assertIsNone(usage_reading.claude_session_limit('claude-impostor', self.root, self.now, self.inventory))
 
     def test_session_limit_reads_discovered_home(self):
         log = Path(self.inventory['accounts']['team-backup']['home']) / 'projects' / 'work' / 'session.jsonl'
@@ -106,7 +109,7 @@ class AccountIdentityTests(unittest.TestCase):
         log.write_text(json.dumps({'timestamp': self.now.isoformat(), 'message': {'content': [{
             'type': 'text', 'text': "You've hit your session limit · resets " + reset.strftime('%I:%M%p') + ' (UTC)'}]}})
             + '\n', encoding='utf-8')
-        limit = router.claude_session_limit('team-backup', self.root, self.now, self.inventory)
+        limit = usage_reading.claude_session_limit('team-backup', self.root, self.now, self.inventory)
         self.assertIsNotNone(limit)
         self.assertGreater(limit['resets_at'], self.now)
 

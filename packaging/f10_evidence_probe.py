@@ -25,7 +25,7 @@ import allocator  # noqa: E402
 import account_fleet
 import candidate_eval
 import provider_inventory  # noqa: E402
-import route_judge  # noqa: E402
+import usage_reading  # noqa: E402
 
 STATE = Path(os.environ["ROUTER_STATE_DIR"])
 NOW = dt.datetime.now(dt.timezone.utc)
@@ -60,8 +60,8 @@ def usage_from(providers, accounts, name="f10-scenario-cache.json"):
             row.setdefault("credential_key", keys[acc])
     path = STATE / name
     path.write_text(json.dumps({"providers": providers}), encoding="utf-8")
-    usage = route_judge.usage_snapshot(path, list(accounts.get("accounts") or {}), NOW,
-                                       inventory=accounts.get("_discovery") or {})
+    usage = usage_reading.usage_snapshot(path, list(accounts.get("accounts") or {}), NOW,
+                                         inventory=accounts.get("_discovery") or {})
     return provider_inventory.merge_usage(usage, accounts, NOW)
 
 

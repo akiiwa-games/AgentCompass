@@ -60,8 +60,8 @@ class HerdrAdapterTests(unittest.TestCase):
                 return {'terminal': self.term, 'first_message': None}
             return {'terminal': {'address': 't1', 'state': 'live'}} if argv[0] == 'get' else {'running': True}
         with patch.object(hh, 'hc', side_effect=boundary), patch.object(hh, 'interactive', return_value=(['codex'], {})):
-            first, code = hh.launch(self.out, self.bundle, self.prompt, 'task', object())
-            second, _ = hh.launch(self.out, self.bundle, self.prompt, 'task', object())
+            first, code = hh.launch(self.out, self.bundle, self.prompt, 'task')
+            second, _ = hh.launch(self.out, self.bundle, self.prompt, 'task')
         self.assertEqual(code, 0)
         self.assertTrue(first['launched'])
         self.assertEqual(first['worker'], second['worker'])
@@ -81,8 +81,8 @@ class HerdrAdapterTests(unittest.TestCase):
                 raise TimeoutError('reply lost')
             return {'terminal': {'state': 'live'}} if argv[0] == 'get' else {}
         with patch.object(hh, 'hc', side_effect=boundary), patch.object(hh, 'interactive', return_value=([], {})):
-            result, _ = hh.launch(self.out, self.bundle, self.prompt, 'task', object())
-            again, _ = hh.launch(self.out, self.bundle, self.prompt, 'task', object())
+            result, _ = hh.launch(self.out, self.bundle, self.prompt, 'task')
+            again, _ = hh.launch(self.out, self.bundle, self.prompt, 'task')
         self.assertIsNone(result['launched'])
         self.assertIsNone(again['launched'])
 
@@ -95,7 +95,7 @@ class HerdrAdapterTests(unittest.TestCase):
             return {'state':'live'} if argv[0]=='get' else {}
         with patch.object(hh,'hc',side_effect=boundary), patch.object(hh,'interactive',return_value=([],{})):
             with ThreadPoolExecutor(max_workers=4) as pool:
-                replies=list(pool.map(lambda _:hh.launch(self.out,self.bundle,self.prompt,'concurrent',object()),range(4)))
+                replies=list(pool.map(lambda _:hh.launch(self.out,self.bundle,self.prompt,'concurrent'),range(4)))
         self.assertEqual(len(calls),1)
         self.assertTrue(all(reply[0]['launched'] for reply in replies))
         for file in hh.runs_dir().glob('*.json'):
@@ -116,7 +116,7 @@ class HerdrAdapterTests(unittest.TestCase):
 
     def test_missing_or_offline_host_creates_no_request(self):
         with patch.object(hh, 'hc', side_effect=RuntimeError('offline')), patch.object(hh, 'interactive', return_value=([], {})):
-            result, code = hh.launch(self.out, self.bundle, self.prompt, 'task', object())
+            result, code = hh.launch(self.out, self.bundle, self.prompt, 'task')
         self.assertFalse(result['launched'])
         self.assertEqual(code, 2)
         self.assertEqual(list(hh.runs_dir().glob('*.json')), [])
@@ -125,7 +125,7 @@ class HerdrAdapterTests(unittest.TestCase):
         import roll
         with patch.object(roll, 'provider_definition', return_value=('codex', {'CODEX_HOME': 'account-two'})), \
              patch.object(roll, 'cli_command', return_value=['codex']):
-            argv, env = hh.interactive(self.bundle, object())
+            argv, env = hh.interactive(self.bundle)
         self.assertIn('--no-daemon', argv)
         self.assertIn('model_reasoning_effort="high"', argv)
         self.assertIn('--dangerously-bypass-approvals-and-sandbox', argv)
@@ -135,7 +135,7 @@ class HerdrAdapterTests(unittest.TestCase):
         import roll
         with patch.object(roll, 'provider_definition', return_value=('codex', {})):
             with self.assertRaisesRegex(ValueError, 'permission mode'):
-                hh.interactive(dict(self.bundle, modeId='read-only'), object())
+                hh.interactive(dict(self.bundle, modeId='read-only'))
 
     def test_claude_and_pi_interactive_modes_are_not_print_modes(self):
         import roll
@@ -143,7 +143,7 @@ class HerdrAdapterTests(unittest.TestCase):
             bundle=dict(self.bundle,provider=family,account=family,modeId=mode)
             with patch.object(roll,'provider_definition',return_value=(family,{})), \
                  patch.object(roll,'cli_command',return_value=[family]):
-                argv,_=hh.interactive(bundle,object())
+                argv,_=hh.interactive(bundle)
             self.assertNotIn('-p',argv)
             self.assertNotIn('--print',argv)
             self.assertIn('high',argv)
@@ -160,7 +160,7 @@ class HerdrAdapterTests(unittest.TestCase):
         self.assertEqual(boundary.call_count, 1)
 
     def test_unix_retains_exec_replacement_instead_of_a_supervisor_child(self):
-        import route_judge as judge
+        import subscription_cli
         request=self.root/'unix.json'
         hh.save(request,{'version':1,'state':'launched','name':'ac-fixture','hc_session':'fixture',
             'parent':'parent-fixture','bundle':{},'prompt_file':str(self.prompt),'cwd':str(self.root)})
@@ -168,7 +168,7 @@ class HerdrAdapterTests(unittest.TestCase):
         proxy=SimpleNamespace(name='posix',environ=os.environ,chdir=lambda _:None,execvpe=exec_call)
         with patch.dict(os.environ,{'HC_TERMINAL_ID':'fixture'}),patch.object(hh,'os',proxy), \
              patch.object(hh,'interactive',return_value=([sys.executable],{})), \
-             patch.object(judge,'subscription_env',return_value={}),patch.object(hh.subprocess,'Popen') as spawn:
+             patch.object(subscription_cli,'subscription_env',return_value={}),patch.object(hh.subprocess,'Popen') as spawn:
             with self.assertRaisesRegex(RuntimeError,'exec replacement'):hh.worker(request)
             spawn.assert_not_called()
         self.assertEqual(exec_call.call_args.args[0],sys.executable)
@@ -195,8 +195,8 @@ class WindowsWorkerLifetimeTests(unittest.TestCase):
                     'parent':'parent-fixture','bundle':{},'prompt_file':str(root/'task.md'),'cwd':tmp})
                 (root/'task.md').write_text('Complete fixture task',encoding='utf-8')
                 wrapper=root/'wrapper.py'
-                wrapper.write_text("import sys,os\nsys.path.insert(0,sys.argv[1])\nimport host_herdr as h,route_judge as j\n"
-                    "h.interactive=lambda bundle,judge: ([sys.executable,sys.argv[2],sys.argv[3],sys.argv[4]],{})\n"
+                wrapper.write_text("import sys,os\nsys.path.insert(0,sys.argv[1])\nimport host_herdr as h,subscription_cli as j\n"
+                    "h.interactive=lambda bundle: ([sys.executable,sys.argv[2],sys.argv[3],sys.argv[4]],{})\n"
                     "j.subscription_env=lambda: dict(os.environ)\n"
                     "raise SystemExit(h.main(['worker','--request',sys.argv[5]]))\n",encoding='utf-8')
                 env={key:value for key,value in os.environ.items() if key in ('SYSTEMROOT','WINDIR','TEMP','TMP','PATHEXT')}
@@ -222,7 +222,7 @@ class WindowsWorkerLifetimeTests(unittest.TestCase):
                             process.wait(timeout=10)
 
     def test_interrupted_wait_cleans_only_the_owned_child(self):
-        import route_judge as judge
+        import subscription_cli
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             request=root/'request.json'
@@ -234,8 +234,8 @@ class WindowsWorkerLifetimeTests(unittest.TestCase):
             try:
                 with patch.dict(os.environ,{'HC_SESSION':'fixture','HC_TERMINAL_ID':'fixture'}), \
                      patch.object(hh,'interactive',return_value=([sys.executable],{})), \
-                     patch.object(judge,'subscription_env',return_value={}), \
-                     patch.object(judge,'stop_process') as stop, \
+                     patch.object(subscription_cli,'subscription_env',return_value={}), \
+                     patch.object(subscription_cli,'stop_process') as stop, \
                      patch.object(hh.subprocess,'Popen',return_value=process):
                     with self.assertRaises(KeyboardInterrupt):hh.worker(request)
                     stop.assert_called_once_with(process)

@@ -11,7 +11,7 @@ import account_fleet
 import quota_pools
 import dispatch_flow
 import dispatch_registry as registry
-import route_judge
+import usage_reading
 from router_test_support import isolated_router_state
 
 
@@ -130,7 +130,7 @@ class ApplicableQuotaTests(unittest.TestCase):
             row=registry.prepare(decision['decision_id'],self.task,launch,healthy,accounts=self.accounts,now=self.now)
             host=Mock()
             with patch.object(account_fleet,'load_accounts',return_value=self.accounts), \
-                 patch.object(route_judge,'usage_snapshot',return_value=self.usage(0)):
+                 patch.object(usage_reading,'usage_snapshot',return_value=self.usage(0)):
                 with self.assertRaises(ValueError):
                     dispatch_flow.launch(row['dispatch_id'],'parent-a',host=host,watch_seconds=0)
             host.assert_not_called()  # the only path which could create a worker/process
@@ -143,7 +143,7 @@ class ApplicableQuotaTests(unittest.TestCase):
                 calls.append(request['operation'])
                 return {'ok':True,'agent':snapshot}
             with patch.object(account_fleet,'load_accounts',return_value=self.accounts), \
-                 patch.object(route_judge,'usage_snapshot',return_value=healthy):
+                 patch.object(usage_reading,'usage_snapshot',return_value=healthy):
                 started=dispatch_flow.launch(row['dispatch_id'],'parent-a',host=available,watch_seconds=0)
             self.assertEqual(started['state'],'started')
             self.assertEqual(calls.count('create'),1)
@@ -151,11 +151,11 @@ class ApplicableQuotaTests(unittest.TestCase):
     def test_usage_projection_retains_only_valid_observed_model_scopes(self):
         raw={'id':'extra','used_pct':100,'resets_at':(self.now+timedelta(hours=3)).isoformat(),
              'models':['claude'],'unrelated_secret':'never expose'}
-        projected=route_judge.window_state(raw,self.now)
+        projected=usage_reading.window_state(raw,self.now)
         self.assertEqual(projected['models'],['claude'])
         self.assertNotIn('unrelated_secret',projected)
         for malformed in ('claude',[None],[]):
-            self.assertNotIn('models',route_judge.window_state({**raw,'models':malformed},self.now))
+            self.assertNotIn('models',usage_reading.window_state({**raw,'models':malformed},self.now))
 
 
 if __name__=='__main__':

@@ -194,10 +194,11 @@ def save(path, document):
 def enable(account, model, window, hours, now=None):
     if hours not in DURATIONS:
         raise ValueError(_tr('请选择菜单中的预期重置时间'))
-    _, router = modules()
+    modules()
     import account_fleet
     import override_store
     import quota_overrides
+    import usage_reading
     now = now or datetime.now(timezone.utc)
     accounts = account_fleet.load_accounts()
     target = next((t for t in targets(accounts)
@@ -224,7 +225,7 @@ def enable(account, model, window, hours, now=None):
                 f'{account_label(account)}', f'{model_label(model, accounts)}', f"{stamp(new_until)}")
         # Use ONE real observation for the baseline. Never synthesize a timestamp
         # for a cached older value and never fetch directly from provider APIs.
-        usage = router.usage_snapshot(now=now)
+        usage = usage_reading.usage_snapshot(now=now)
         base = baseline(accounts, usage, target, now)
         if quota_overrides.override_depleted({'account': account, 'model': model, 'window': window, 'boost': BOOST},
                                        usage, accounts):
@@ -264,15 +265,16 @@ def cancel(entry_id, expected_revision):
 
 
 def snapshot(now=None):
-    _, router = modules()
+    modules()
     import account_fleet
     import quota_overrides
     import quota_pools
+    import usage_reading
     now = now or datetime.now(timezone.utc)
     path = quota_overrides.overrides_path()
     doc = read_document(path)
     accounts = account_fleet.load_accounts()
-    usage = router.usage_snapshot(now=now)
+    usage = usage_reading.usage_snapshot(now=now)
     landed = {r['id']: r for r in doc['overrides'] if active(r, now)
               and quota_overrides.override_reset_landed(r, usage, accounts, now)}
     if landed:

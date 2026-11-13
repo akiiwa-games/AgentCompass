@@ -651,10 +651,10 @@ def cli(args):
             raise ValueError('dispatch prepare requires --input {decision_id, task, launch}')
         document = json.loads(args.input.read_text(encoding='utf-8-sig'))
         require_actual_parent(document['task'].get('parent_agent_id'))
-        import route_judge
+        import usage_reading
         reconcile()
         row = registry.prepare(document['decision_id'], document['task'], document['launch'],
-                               route_judge.usage_snapshot(args.usage_cache))
+                               usage_reading.usage_snapshot(args.usage_cache))
         return {**public(row), 'create_agent': row['request']}
     if action == 'start' and not args.dispatch_id:
         raise ValueError('start acknowledgment requires --dispatch-id; it observes the host rather than trusting caller status')

@@ -207,7 +207,7 @@ def cycle_observation(window, observed, usage_row, now, read_failed_ok=False):
     if observed.get('reset_time_passed') is True:
         return None
     if usage_row.get('status') in (None, 'fresh'):
-        return observed     # current, or a caller that does not classify freshness (route_judge.usage_snapshot does)
+        return observed     # current, or a caller that does not classify freshness (usage_reading.usage_snapshot does)
     fetched = parse_time(usage_row.get('fetched_at'))
     if ((usage_row.get('available') is False and not read_failed_ok) or fetched is None
             or (fetched - now).total_seconds() > 60):
@@ -273,7 +273,7 @@ def launch_blockers(bundle, accounts, usage, now, latched=None, records=None):
     the windows it excludes or defers to their reset, which no task size escapes (a short window at or under its
     floor; a priced window at or under the safety margin; a window this cycle's reading shows used up). Active
     in-flight reservations (`records`) are deducted from remaining capacity just as evaluate_bundle deducts them.
-    `usage` is route_judge.usage_snapshot after provider_inventory.merge_usage; windows the model does not draw
+    `usage` is usage_reading.usage_snapshot after provider_inventory.merge_usage; windows the model does not draw
     (window_scope) never appear.
 
     The capacities a window is priced on are the public data's, as in `plan`: `accounts` should be `five_axis_overlay`

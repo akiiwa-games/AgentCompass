@@ -11,7 +11,7 @@ import allocator
 import account_fleet
 import axis_scores
 import task_intake
-import route_judge
+import scorer_client
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
 FIXTURES = Path(__file__).resolve().parent / 'fixtures'
@@ -85,7 +85,7 @@ class NoLegacyScoringTests(unittest.TestCase):
             self.assertFalse({'capabilities', 'subjective', 'score'} & set(row), model)
 
         # The classifier: the answer's schema, the shipped calibration cases and a normalized task.
-        schema = route_judge.scorer_schema(account_fleet.load_capabilities())
+        schema = scorer_client.scorer_schema(account_fleet.load_capabilities())
         self.assertFalse(LEGACY_PROFILE_FIELDS & set(schema['properties']), 'classifier schema')
         self.assertIn('axis_demand', schema['required'])
         for case in load(REFERENCES / 'classifier-cases.json')['calibration_cases']:

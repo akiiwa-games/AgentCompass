@@ -23,7 +23,7 @@ import dispatch_registry as registry
 import ledger_snapshot
 import provider_inventory
 import roll
-import route_judge
+import usage_reading
 import run_grok_bot as grok_runner
 
 from router_test_support import isolated_router_state, profile_for, temporary_root
@@ -254,7 +254,7 @@ class GroundTruthRecordingTests(unittest.TestCase):
                 },
             },
         }
-        usage_patch = patch.object(route_judge, 'usage_snapshot', return_value=self.usage)
+        usage_patch = patch.object(usage_reading, 'usage_snapshot', return_value=self.usage)
         usage_patch.start()
         self.addCleanup(usage_patch.stop)
 

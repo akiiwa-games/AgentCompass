@@ -25,6 +25,8 @@ import dispatch_flow as flow
 import dispatch_registry as registry
 import roll
 import route_judge as router
+import decision_ledger
+import scorer_client
 from router_test_support import isolated_router_state, profile, usage_windows
 import router_data
 
@@ -136,6 +138,12 @@ ROUTING_MODULES = frozenset({
     'task_intake.py',
     'worker_sessions.py',
     'route_judge.py',
+    'scorer_client.py',
+    'decision_ledger.py',
+    'subscription_judge.py',
+    'subscription_cli.py',
+    'usage_reading.py',
+    'env_vars.py',
     'roll.py',
     'dispatch_registry.py',
     'router_data.py',
@@ -1225,9 +1233,9 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
             baseline = None
             for idx, text in enumerate(TASK_TEXT_CORPUS):
                 scored_prof = dict(prof, reason=text[:200])
-                with patch.object(router, 'score_task', return_value=(scored_prof, {'source': 'system_one', 'model': 'm'})), \
-                        patch.object(router, 'read_ledger', return_value=[]), \
-                        patch.object(router, 'append_ledger'):
+                with patch.object(scorer_client, 'score_task', return_value=(scored_prof, {'source': 'system_one', 'model': 'm'})), \
+                        patch.object(decision_ledger, 'read_ledger', return_value=[]), \
+                        patch.object(decision_ledger, 'append_ledger'):
                     doc = {
                         'task': {
                             'task_id': f'invariance-{idx}',
@@ -1285,9 +1293,9 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                     usage_cache=cache, dry_run=False, verbose=True, fast=False,
                     resume=None, new_worker=False, no_score=False, score=True, score_timeout=5,
                 )
-                with patch.object(router, 'score_task', return_value=(scored_prof, {'source': 'system_one', 'model': 'm'})), \
-                        patch.object(router, 'read_ledger', return_value=[]), \
-                        patch.object(router, 'append_ledger'), \
+                with patch.object(scorer_client, 'score_task', return_value=(scored_prof, {'source': 'system_one', 'model': 'm'})), \
+                        patch.object(decision_ledger, 'read_ledger', return_value=[]), \
+                        patch.object(decision_ledger, 'append_ledger'), \
                         patch.object(roll, 'resolve_parent', return_value=('parent-a', 'native', 'parent-a')), \
                         patch.object(registry, 'pending', return_value=[]), \
                         patch.object(registry, 'reusable_workers', return_value=[idle_worker]), \
@@ -1349,7 +1357,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                     stage='plan', hours=1.0, demo=False, dry_run=False, usage_cache=cache,
                     fast=False, no_score=False, score=True, score_timeout=5, keep_whole=None,
                 )
-                with patch.object(router, 'score_task', return_value=(
+                with patch.object(scorer_client, 'score_task', return_value=(
                     None, {'source': 'scorer_unavailable', 'fallback_reason': 'all_scorers_failed'}
                 )), patch.object(router_data, 'modules', return_value=(allocator, router)):
                     plan_res, plan_code = router.plan_stage({'task': {'objective': text, 'expected_hours': 1.0}}, args)

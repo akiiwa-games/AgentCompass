@@ -804,7 +804,7 @@ def check_account_quota_exhausted(
 
     `bundles` are the target's resolved bundles; without them the launch is probed as `model` on `account`
     (an unknown model draws every window). Which windows bind and when they refuse come from
-    quota_pools.launch_blockers on route_judge.usage_snapshot, the same rules and reading routing uses:
+    quota_pools.launch_blockers on usage_reading.usage_snapshot, the same rules and reading routing uses:
     the launch floor, a window used up inside its cycle, an empty short window, active in-flight
     reservations, and a scope from data only. `windows` are the quota windows the launch draws, for the
     confirmed-exhaustion latch (an account-wide latch blocks every launch). When the router modules cannot
@@ -830,10 +830,10 @@ def check_account_quota_exhausted(
         account_fleet = router_module("account_fleet")
         axis_scores = router_module("axis_scores")
         quota_pools = router_module("quota_pools")
-        judge = router_module("route_judge")
+        usage_reading = router_module("usage_reading")
         inventory = router_module("provider_inventory")
         accounts = accounts if accounts is not None else account_fleet.load_accounts()
-        usage = judge.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get("_discovery") or {})
+        usage = usage_reading.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get("_discovery") or {})
         usage = inventory.merge_usage(usage, accounts, now, names={account})
         if records is None:
             try:

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import account_fleet
 import task_intake
 import capability_catalog
-import route_judge
+import decision_ledger
 
 
 class CatalogueTests(unittest.TestCase):
@@ -62,23 +62,23 @@ class CatalogueTests(unittest.TestCase):
         now = datetime(2026, 10, 29, tzinfo=timezone.utc)
         records = [{'stage': 'record', 'choice': 'custom', 'at': now.isoformat(),
                     'bundle': {'account': 'workspace-account', 'provider': 'custom'}}] * 3
-        self.assertIsNone(route_judge.account_cadence_alert(records, now, 'workspace-account', {}))
+        self.assertIsNone(decision_ledger.account_cadence_alert(records, now, 'workspace-account', {}))
         spec = {'cadence': {'window_seconds': 3600, 'limit': 3}}
-        self.assertIsNotNone(route_judge.account_cadence_alert(records, now, 'workspace-account', spec))
-        self.assertIsNone(route_judge.account_cadence_alert(records, now, 'other-account', spec))
+        self.assertIsNotNone(decision_ledger.account_cadence_alert(records, now, 'workspace-account', spec))
+        self.assertIsNone(decision_ledger.account_cadence_alert(records, now, 'other-account', spec))
         spec['cadence']['limit'] = 4
-        self.assertIsNone(route_judge.account_cadence_alert(records, now, 'workspace-account', spec))
+        self.assertIsNone(decision_ledger.account_cadence_alert(records, now, 'workspace-account', spec))
 
     def test_remote_adapter_names_do_not_suppress_capacity_alerts(self):
         for provider in ('dot', 'chatgpt-web', 'custom-remote'):
             with self.subTest(provider=provider), \
-                    patch.object(route_judge, 'LEDGER_WRITES', False), \
-                    patch.object(route_judge, 'append_ledger'), \
+                    patch.object(decision_ledger, 'LEDGER_WRITES', False), \
+                    patch.object(decision_ledger, 'append_ledger'), \
                     patch.object(account_fleet, 'load_accounts', return_value={'accounts': {}}), \
-                    patch.object(route_judge, 'capacity_alerts', return_value=[{'code': 'capacity-proof'}]) as alerts:
+                    patch.object(decision_ledger, 'capacity_alerts', return_value=[{'code': 'capacity-proof'}]) as alerts:
                 result = {'stage': 'plan', 'selected_bundle': {
                     'provider': provider, 'account': 'workspace-account', 'expected_usd': 0}}
-                route_judge.finalize(result, None, 'auto', 0, records=[])
+                decision_ledger.finalize(result, None, 'auto', 0, records=[])
                 alerts.assert_called_once()
                 self.assertIn('capacity-proof', [row['code'] for row in result['alerts']])
 

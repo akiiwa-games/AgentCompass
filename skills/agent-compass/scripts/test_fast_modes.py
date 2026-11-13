@@ -14,6 +14,7 @@ import dispatch_registry as registry
 import fast_modes
 import roll
 import route_judge
+import usage_reading
 from router_test_support import isolated_router_state, usage_windows
 
 
@@ -52,7 +53,7 @@ class FastModesTests(unittest.TestCase):
                         model=model, effort='high', input=None, usage_cache=None, accounts=None,
                         constraint='user_override', specialty=None, fast=True)
                     with patch.object(account_fleet, 'load_accounts', return_value=accounts), \
-                            patch.object(route_judge, 'usage_snapshot', return_value=usage):
+                            patch.object(usage_reading, 'usage_snapshot', return_value=usage):
                         if policy is False:
                             with self.assertRaisesRegex(ValueError, 'fast_capable'):
                                 route_judge.record_constraint(args)
