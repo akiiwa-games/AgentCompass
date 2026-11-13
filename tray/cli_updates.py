@@ -853,9 +853,10 @@ def maybe_trigger_auto_update(notify_fn=None, *, now: float | None = None, uptim
             if result["updated"] and notify_fn:
                 notify_fn(result["summary"])
         except Exception as error:
-            log(f"auto-update: {error}")
+            summary = str(error)
+            log(f"auto-update: {summary}")
             # Avoid a failing check every maintenance tick for the rest of the day.
-            _change_state(lambda state: state.update(last_auto_update_at=time.time(), last_auto_update_summary=str(error)))
+            _change_state(lambda state: state.update(last_auto_update_at=time.time(), last_auto_update_summary=summary))
         finally:
             with _state_lock:
                 _auto_running = False

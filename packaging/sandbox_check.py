@@ -1196,7 +1196,7 @@ def write_reports(run: Run, started: float, notes: dict):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--wheel", type=Path, help="Install this wheel instead of building one from the working tree.")
-    parser.add_argument("--report", type=Path, default=ROOT / ".route-briefs" / "sandbox-report",
+    parser.add_argument("--report", type=Path, default=ROOT / "sandbox-report",
                         help="Parent directory of the per-run report directories (nothing in it is deleted).")
     parser.add_argument("--keep", action="store_true", help="Keep the sandbox directory for inspection.")
     parser.add_argument("--skip-frozen", action="store_true", help="Do not build and run the PyInstaller tray (recorded as not executed).")

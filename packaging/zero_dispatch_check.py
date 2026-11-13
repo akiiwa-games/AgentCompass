@@ -968,7 +968,7 @@ def step_entries(z: Zero):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--wheel", type=Path, help="Install this wheel instead of building one from the working tree.")
-    parser.add_argument("--report", type=Path, default=ROOT / ".route-briefs" / "zero-dispatch-report")
+    parser.add_argument("--report", type=Path, default=ROOT / "zero-dispatch-report")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--only", nargs="*", help="Run only these steps (names of the step_* functions, without the prefix).")
     args = parser.parse_args(argv)
