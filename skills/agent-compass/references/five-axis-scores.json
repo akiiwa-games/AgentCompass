@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/3",
- "generated_at": "2026-11-13T04:06:35+00:00",
- "measurements_sha256": "4edc314b666df9f305b3e3d31a0c4f5dec4ef8130cc479b03e5015c4c5821055",
+ "generated_at": "2026-11-13T04:40:12+00:00",
+ "measurements_sha256": "6f01931d8c49dd5c4f2a18662af80a5ae1d5336dd2646eaf86a7b8185b3921c1",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
  "estimate_fits": {
@@ -743,79 +743,51 @@
     },
     "3p-5h": {
      "unit": "usd",
-     "capacity_usd": 400.0,
-     "status": "stale",
-     "rung": 3,
-     "age_days": 66,
-     "merge": "median of 1 value(s), rung 3",
+     "capacity_usd": 23.6,
+     "status": "ok",
+     "rung": 1,
+     "age_days": 0,
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
-       "source": "vendor.google.ultra",
-       "kind": "derived",
-       "value": 400.0,
-       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
-       "as_of": "2026-11-09",
-       "fetched_at": "2026-11-09T06:36:09+00:00",
-       "method": "20 x antigravity/pro 3p-5h (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
-       "derived_from": [
-        {
-         "source": "community.eneasf.antigravity",
-         "kind": "community",
-         "value": 20.0,
-         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
-         "as_of": "2026-09-08",
-         "fetched_at": "2026-11-09T05:49:38+00:00",
-         "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 66,
-         "stale": true,
-         "rung": 1
-        }
-       ],
-       "age_days": 66,
-       "stale": true,
-       "rung": 3
+       "source": "maintainer.antigravity.ultra20",
+       "kind": "maintainer",
+       "value": 23.6,
+       "url": null,
+       "as_of": "2026-11-13",
+       "fetched_at": null,
+       "method": "Maintainer measurement on one Google AI Ultra 20x account driven through the Antigravity CLI: the list-priced spend of its Claude Opus 5.5 / Sonnet 5.5 turns (uncached input, cache reads, output, from the native session token counts) between two usage readings of the window, divided by the rise of the reading; 4 runs from 2026-11-05 to 2026-11-12, 185.6 points and 808 turns, 43.72 usd, 23.3 to 24.7 usd per full window run by run",
+       "age_days": 0,
+       "stale": false,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 17.5
+     "ref_hours": 1.0
     },
     "3p-weekly": {
      "unit": "usd",
-     "capacity_usd": 2580.0,
-     "status": "stale",
-     "rung": 3,
-     "age_days": 66,
-     "merge": "median of 1 value(s), rung 3",
+     "capacity_usd": 47.6,
+     "status": "ok",
+     "rung": 1,
+     "age_days": 0,
+     "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
-       "source": "vendor.google.ultra",
-       "kind": "derived",
-       "value": 2580.0,
-       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
-       "as_of": "2026-11-09",
-       "fetched_at": "2026-11-09T06:36:09+00:00",
-       "method": "20 x antigravity/pro 3p-weekly (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
-       "derived_from": [
-        {
-         "source": "community.eneasf.antigravity",
-         "kind": "community",
-         "value": 129.0,
-         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
-         "as_of": "2026-09-08",
-         "fetched_at": "2026-11-09T05:49:38+00:00",
-         "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 66,
-         "stale": true,
-         "rung": 1
-        }
-       ],
-       "age_days": 66,
-       "stale": true,
-       "rung": 3
+       "source": "maintainer.antigravity.ultra20",
+       "kind": "maintainer",
+       "value": 47.6,
+       "url": null,
+       "as_of": "2026-11-13",
+       "fetched_at": null,
+       "method": "Maintainer measurement on one Google AI Ultra 20x account driven through the Antigravity CLI: the list-priced spend of its Claude Opus 5.5 / Sonnet 5.5 turns (uncached input, cache reads, output, from the native session token counts) between two usage readings of the window, divided by the rise of the reading; one run from 2026-11-11 to 2026-11-13 that ended at 100%, 94.65 points and 767 turns, 45.03 usd; the readings of the 5-hour and the weekly window rise 2.0 to 1 together",
+       "age_days": 0,
+       "stale": false,
+       "rung": 1
       }
      ],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 112.9
+     "ref_hours": 2.1
     }
    },
    "ultra5": {
@@ -897,79 +869,23 @@
     },
     "3p-5h": {
      "unit": "usd",
-     "capacity_usd": 100.0,
-     "status": "stale",
-     "rung": 3,
-     "age_days": 66,
-     "merge": "median of 1 value(s), rung 3",
-     "sources": [
-      {
-       "source": "vendor.google.ultra",
-       "kind": "derived",
-       "value": 100.0,
-       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
-       "as_of": "2026-11-09",
-       "fetched_at": "2026-11-09T06:36:09+00:00",
-       "method": "5 x antigravity/pro 3p-5h (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
-       "derived_from": [
-        {
-         "source": "community.eneasf.antigravity",
-         "kind": "community",
-         "value": 20.0,
-         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
-         "as_of": "2026-09-08",
-         "fetched_at": "2026-11-09T05:49:38+00:00",
-         "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 66,
-         "stale": true,
-         "rung": 1
-        }
-       ],
-       "age_days": 66,
-       "stale": true,
-       "rung": 3
-      }
-     ],
+     "capacity_usd": null,
+     "status": "error",
+     "rung": null,
+     "sources": [],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 4.4
+     "ref_hours": null,
+     "age_days": null
     },
     "3p-weekly": {
      "unit": "usd",
-     "capacity_usd": 645.0,
-     "status": "stale",
-     "rung": 3,
-     "age_days": 66,
-     "merge": "median of 1 value(s), rung 3",
-     "sources": [
-      {
-       "source": "vendor.google.ultra",
-       "kind": "derived",
-       "value": 645.0,
-       "url": "https://support.google.com/googleone/answer/16286513?hl=en",
-       "as_of": "2026-11-09",
-       "fetched_at": "2026-11-09T06:36:09+00:00",
-       "method": "5 x antigravity/pro 3p-weekly (Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan)",
-       "derived_from": [
-        {
-         "source": "community.eneasf.antigravity",
-         "kind": "community",
-         "value": 129.0,
-         "url": "https://raw.githubusercontent.com/eneasf/antigravity-token-dashboard/main/docs/FINDINGS.md",
-         "as_of": "2026-09-08",
-         "fetched_at": "2026-11-09T05:49:38+00:00",
-         "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-         "age_days": 66,
-         "stale": true,
-         "rung": 1
-        }
-       ],
-       "age_days": 66,
-       "stale": true,
-       "rung": 3
-      }
-     ],
+     "capacity_usd": null,
+     "status": "error",
+     "rung": null,
+     "sources": [],
      "reference_model": "claude-opus-5-5",
-     "ref_hours": 28.2
+     "ref_hours": null,
+     "age_days": null
     }
    },
    "pro": {
@@ -1075,10 +991,32 @@
  "capacity_stale_days": 21,
  "capacity_not_found": {
   "claude/max5 (rung 1)": "wokey is still collecting Max 5x accounts; finops measures a weekly lower bound and two full sessions (used), so rung 3 is a cross-check only",
-  "antigravity/ultra5, ultra20 (rungs 1-2)": "only Google AI Pro is measured (eneasf telemetry, September 2026; its Ultra 5x figures are 5x Pro by assumption, ADR-041); time-to-exhaust reports are set aside (EXHAUST_REJECTED); rung 3 (Google 5x / 20x Pro) applies",
+  "antigravity/ultra5, ultra20 (rungs 1-2)": "only Google AI Pro is measured (eneasf telemetry, September 2026; its Ultra 5x figures are 5x Pro by assumption, ADR-041); time-to-exhaust reports are set aside (EXHAUST_REJECTED); rung 3 (Google 5x / 20x Pro) applies to the Gemini track; the Claude / GPT track is a maintainer measurement on Ultra 20x and UNMEASURED on Ultra 5x",
   "pi/*": "Pi spends a Codex account allowance; the plan behind it is not known"
  },
  "capacity_errors": [
+  {
+   "field": "capacity",
+   "family": "antigravity",
+   "plan": "ultra5",
+   "window": "3p-5h",
+   "level": "yellow",
+   "reason": "capacity_unmeasured",
+   "as_of": "2026-11-13",
+   "statement": "Google states 5x / 20x usage for Gemini and Antigravity without naming the Claude / GPT track, and that track measured on Ultra 20x (maintainer.antigravity.ultra20) is far below 20x the Pro figure, so no multiplier sizes it on Ultra 5x",
+   "effect": "the bundles drawing this window stay out of automatic routing (name the model to dispatch it)"
+  },
+  {
+   "field": "capacity",
+   "family": "antigravity",
+   "plan": "ultra5",
+   "window": "3p-weekly",
+   "level": "yellow",
+   "reason": "capacity_unmeasured",
+   "as_of": "2026-11-13",
+   "statement": "Google states 5x / 20x usage for Gemini and Antigravity without naming the Claude / GPT track, and that track measured on Ultra 20x (maintainer.antigravity.ultra20) is far below 20x the Pro figure, so no multiplier sizes it on Ultra 5x",
+   "effect": "the bundles drawing this window stay out of automatic routing (name the model to dispatch it)"
+  },
   {
    "field": "capacity",
    "source": "community.eneasf.antigravity",
@@ -1342,6 +1280,14 @@
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:37+00:00",
    "age_days": 5,
+   "stale": false
+  },
+  "maintainer.antigravity.ultra20": {
+   "kind": "maintainer",
+   "as_of": "2026-11-13",
+   "as_of_kind": "measurement date",
+   "fetched_at": null,
+   "age_days": 0,
    "stale": false
   },
   "openrouter.modality": {

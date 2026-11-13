@@ -1854,7 +1854,8 @@ class CommunityCapacityTests(unittest.TestCase):
         now = datetime(2026, 11, 9, tzinfo=timezone.utc)
         meas = self.meas()
         meas['capacity']['rules'].append({'type': 'plan_multiplier', 'family': 'claude', 'plan': 'max5', 'of_plan': 'max20',
-                                          'factor': 0.25, 'statement': 'a quarter', 'source': 'vendor.x', 'kind': 'vendor',
+                                          'factor': 0.25, 'windows': ['five_hour', 'seven_day'],
+                                          'statement': 'a quarter', 'source': 'vendor.x', 'kind': 'vendor',
                                           'url': 'https://example.org/vendor', 'as_of': '2026-11-08'})
         meas['capacity']['exhaust'] = [{'family': 'claude', 'plan': 'max5', 'window': 'five_hour', 'model': 'claude-opus-5-5',
                                         'hours': 4.0, 'source': 'community.c', 'kind': 'community',
@@ -1871,6 +1872,22 @@ class CommunityCapacityTests(unittest.TestCase):
         # An exhaust report of a model with no usd gives no value: the vendor rung takes over.
         caps, _ = self.fa.capacity(meas, self.PLANS, {}, now)
         self.assertEqual(caps['claude']['max5']['five_hour']['rung'], 3)
+        # A multiplier derives only the windows it names: the vendor statement covers no other quota track.
+        meas['capacity']['rules'][-1]['windows'] = ['five_hour']
+        caps, errors = self.fa.capacity(meas, self.PLANS, {}, now)
+        self.assertEqual(caps['claude']['max5']['five_hour']['rung'], 3)
+        self.assertEqual((caps['claude']['max5']['seven_day']['capacity_usd'], caps['claude']['max5']['seven_day']['status']),
+                         (None, 'error'))
+        def gap(errs, reason):
+            return [(e.get('plan'), e.get('window'), e['level']) for e in errs if e['reason'] == reason]
+        self.assertIn(('max5', 'seven_day', 'red'), gap(errors, 'capacity_ladder_empty'))
+        # A window the maintainers declared unmeasured is a listed gap, not a failed refresh; its capacity stays unknown.
+        meas['capacity']['unmeasured'] = [{'family': 'claude', 'plan': 'max5', 'window': 'seven_day', 'kind': 'maintainer',
+                                           'as_of': '2026-11-13', 'statement': 'no public measurement'}]
+        caps, errors = self.fa.capacity(meas, self.PLANS, {}, now)
+        self.assertIsNone(caps['claude']['max5']['seven_day']['capacity_usd'])
+        self.assertIn(('max5', 'seven_day', 'yellow'), gap(errors, 'capacity_unmeasured'))
+        self.assertNotIn(('max5', 'seven_day', 'red'), gap(errors, 'capacity_ladder_empty'))
 
     def test_all_sources_stale_turns_the_window_stale_and_refresh_exits_yellow_or_red(self):
         now = datetime(2026, 12, 15, tzinfo=timezone.utc)

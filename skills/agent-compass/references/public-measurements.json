@@ -616,6 +616,17 @@
      ]
     }
    ]
+  },
+  "maintainer.antigravity.ultra20": {
+   "file": null,
+   "url": null,
+   "fetched_at": null,
+   "sha256": null,
+   "as_of": "2026-11-13",
+   "as_of_kind": "measurement date",
+   "kind": "maintainer",
+   "models_listed": null,
+   "method": "maintainer measurement of subscription window capacity (calibration/community.py)"
   }
  },
  "missing_sources": {},
@@ -890,6 +901,32 @@
     "fetched_at": "2026-11-09T05:49:38+00:00",
     "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
     "quote": "Capacity: $129.00 / week │ │ Capacity: $129.00 / week │ │ Burst: $20.00 / 5h │ │ Burst: $20.00 / 5h"
+   },
+   {
+    "family": "antigravity",
+    "plan": "ultra20",
+    "window": "3p-5h",
+    "value": 23.6,
+    "rung": 1,
+    "source": "maintainer.antigravity.ultra20",
+    "kind": "maintainer",
+    "url": null,
+    "as_of": "2026-11-13",
+    "fetched_at": null,
+    "method": "Maintainer measurement on one Google AI Ultra 20x account driven through the Antigravity CLI: the list-priced spend of its Claude Opus 5.5 / Sonnet 5.5 turns (uncached input, cache reads, output, from the native session token counts) between two usage readings of the window, divided by the rise of the reading; 4 runs from 2026-11-05 to 2026-11-12, 185.6 points and 808 turns, 43.72 usd, 23.3 to 24.7 usd per full window run by run"
+   },
+   {
+    "family": "antigravity",
+    "plan": "ultra20",
+    "window": "3p-weekly",
+    "value": 47.6,
+    "rung": 1,
+    "source": "maintainer.antigravity.ultra20",
+    "kind": "maintainer",
+    "url": null,
+    "as_of": "2026-11-13",
+    "fetched_at": null,
+    "method": "Maintainer measurement on one Google AI Ultra 20x account driven through the Antigravity CLI: the list-priced spend of its Claude Opus 5.5 / Sonnet 5.5 turns (uncached input, cache reads, output, from the native session token counts) between two usage readings of the window, divided by the rise of the reading; one run from 2026-11-11 to 2026-11-13 that ended at 100%, 94.65 points and 767 turns, 45.03 usd; the readings of the 5-hour and the weekly window rise 2.0 to 1 together"
    }
   ],
   "rules": [
@@ -912,6 +949,10 @@
     "plan": "ultra5",
     "of_plan": "pro",
     "factor": 5,
+    "windows": [
+     "gemini-5h",
+     "gemini-weekly"
+    ],
     "statement": "Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan",
     "type": "plan_multiplier",
     "source": "vendor.google.ultra",
@@ -925,6 +966,10 @@
     "plan": "ultra20",
     "of_plan": "pro",
     "factor": 20,
+    "windows": [
+     "gemini-5h",
+     "gemini-weekly"
+    ],
     "statement": "Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan",
     "type": "plan_multiplier",
     "source": "vendor.google.ultra",
@@ -938,6 +983,11 @@
     "plan": "max5",
     "of_plan": "pro",
     "factor": 5,
+    "windows": [
+     "five_hour",
+     "seven_day",
+     "weekly_fable"
+    ],
     "statement": "The Max plan includes five times the Pro plan's usage every five hours and every week",
     "type": "plan_multiplier",
     "source": "vendor.anthropic.max",
@@ -951,6 +1001,10 @@
     "plan": "pro100",
     "of_plan": "plus",
     "factor": 5,
+    "windows": [
+     "usage",
+     "five_hour"
+    ],
     "statement": "This new tier offers 5x more Codex usage than Plus (OpenAI announcement, 2026-04-09)",
     "type": "plan_multiplier",
     "source": "vendor.openai.pro100",
@@ -978,6 +1032,16 @@
     "why": "reports conflict by 6x on the same plan; Opus 4.6 era"
    },
    {
+    "url": "https://discuss.ai.google.dev/t/135870",
+    "claim": "Antigravity Ultra: one Claude conversation used about 60% of the quota; Claude usable for at most an hour (several users, March 2026)",
+    "why": "the single Ultra plan before the May 2026 split; no model, window or token count given"
+   },
+   {
+    "url": "https://discuss.ai.google.dev/t/172347",
+    "claim": "Google AI Ultra: two 2-hour sessions on the first day of a weekly cycle left the Claude & GPT weekly limit 60% used and the Gemini one 77% used (2026-06-23)",
+    "why": "after the split, but the plan (5x or 20x), the models and the share of each track are not stated"
+   },
+   {
     "url": "https://deepakness.com/raw/antigravity-limits/",
     "claim": "Google AI Pro: Opus 4.5 hit the 5-hour limit after about 2 hours (2026-01-09)",
     "why": "January 2026 limits (cut since); Pro is measured directly (eneasf)"
@@ -1000,9 +1064,27 @@
   "errors": [],
   "not_found": {
    "claude/max5 (rung 1)": "wokey is still collecting Max 5x accounts; finops measures a weekly lower bound and two full sessions (used), so rung 3 is a cross-check only",
-   "antigravity/ultra5, ultra20 (rungs 1-2)": "only Google AI Pro is measured (eneasf telemetry, September 2026; its Ultra 5x figures are 5x Pro by assumption, ADR-041); time-to-exhaust reports are set aside (EXHAUST_REJECTED); rung 3 (Google 5x / 20x Pro) applies",
+   "antigravity/ultra5, ultra20 (rungs 1-2)": "only Google AI Pro is measured (eneasf telemetry, September 2026; its Ultra 5x figures are 5x Pro by assumption, ADR-041); time-to-exhaust reports are set aside (EXHAUST_REJECTED); rung 3 (Google 5x / 20x Pro) applies to the Gemini track; the Claude / GPT track is a maintainer measurement on Ultra 20x and UNMEASURED on Ultra 5x",
    "pi/*": "Pi spends a Codex account allowance; the plan behind it is not known"
   },
+  "unmeasured": [
+   {
+    "family": "antigravity",
+    "plan": "ultra5",
+    "window": "3p-5h",
+    "kind": "maintainer",
+    "as_of": "2026-11-13",
+    "statement": "Google states 5x / 20x usage for Gemini and Antigravity without naming the Claude / GPT track, and that track measured on Ultra 20x (maintainer.antigravity.ultra20) is far below 20x the Pro figure, so no multiplier sizes it on Ultra 5x"
+   },
+   {
+    "family": "antigravity",
+    "plan": "ultra5",
+    "window": "3p-weekly",
+    "kind": "maintainer",
+    "as_of": "2026-11-13",
+    "statement": "Google states 5x / 20x usage for Gemini and Antigravity without naming the Claude / GPT track, and that track measured on Ultra 20x (maintainer.antigravity.ultra20) is far below 20x the Pro figure, so no multiplier sizes it on Ultra 5x"
+   }
+  ],
   "token_mix": {
    "cache_read": 0.92,
    "input": 0.0756,

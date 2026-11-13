@@ -22,7 +22,8 @@ The capacity ladder (round 5, user 2026-11-09: capacity is never left unknown; e
 2. a community time-to-exhaust report (`EXHAUST`: hours of a named model before a window ran out) times that model's
    usd per hour on the five-axis basis (`arena.agent_sessions`; else the series conversion from a same-series
    sibling, else option B `derived.community_mix` as labelled fallback, see five_axis.py);
-3. a vendor-published plan multiplier (`multipliers`) applied to a measured sibling plan's window.
+3. a vendor-published plan multiplier (`multipliers`) applied to a measured sibling plan's window, only for the
+   windows the multiplier names (`windows`): a statement about one quota track says nothing about another.
 Only when all three are empty is the window an error (`five_axis.capacity`, red and surfaced in routing notes).
 
 `mix` is the community real-traffic token split wokey values every plan at (option B fallback): the
@@ -177,7 +178,11 @@ SOURCES = {
     'vendor.google.ultra': {
         'file': 'vendor-google-ultra.html', 'kind': 'vendor', 'date': None, 'readings': [],
         'multipliers': [
+            # The Gemini track only. Google does not state the factor for Claude / GPT models, and that track measured
+            # on Ultra 20x (MAINTAINER_READINGS) is far below 20x the Pro figure, as the public reports of Ultra
+            # (EXHAUST_REJECTED) also have it (maintainer, 2026-11-13).
             {'family': 'antigravity', 'plan': plan, 'of_plan': 'pro', 'factor': factor,
+             'windows': ['gemini-5h', 'gemini-weekly'],
              'pattern': r'you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan',
              'statement': 'Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google '
                           'Antigravity compared to the Google AI Pro plan'}
@@ -186,12 +191,14 @@ SOURCES = {
     'vendor.anthropic.max': {
         'file': 'vendor-anthropic-max.html', 'kind': 'vendor', 'date': None, 'readings': [],
         'multipliers': [{'family': 'claude', 'plan': 'max5', 'of_plan': 'pro', 'factor': 5,
+                         'windows': ['five_hour', 'seven_day', 'weekly_fable'],
                          'pattern': r"five times the Pro plan's usage every five hours and every week",
                          'statement': "The Max plan includes five times the Pro plan's usage every five hours and every week"}],
     },
     'vendor.openai.pro100': {
         'file': 'vendor-openai-pro100.html', 'kind': 'vendor', 'date': None, 'readings': [],
         'multipliers': [{'family': 'codex', 'plan': 'pro100', 'of_plan': 'plus', 'factor': 5,
+                         'windows': ['usage', 'five_hour'],
                          'pattern': r'This new tier offers 5x more Codex usage than Plus',
                          'statement': 'This new tier offers 5x more Codex usage than Plus (OpenAI announcement, 2026-04-09)'}],
     },
@@ -207,15 +214,48 @@ EXHAUST_REJECTED = [
      'why': 'same period and plan; no model or concurrency given'},
     {'url': 'https://discuss.ai.google.dev/t/142252', 'claim': 'Opus 4.6 quota gone in 10-20 minutes (2 hours earlier)',
      'why': 'reports conflict by 6x on the same plan; Opus 4.6 era'},
+    {'url': 'https://discuss.ai.google.dev/t/135870', 'claim': 'Antigravity Ultra: one Claude conversation used about 60% '
+     'of the quota; Claude usable for at most an hour (several users, March 2026)',
+     'why': 'the single Ultra plan before the May 2026 split; no model, window or token count given'},
+    {'url': 'https://discuss.ai.google.dev/t/172347', 'claim': 'Google AI Ultra: two 2-hour sessions on the first day of '
+     'a weekly cycle left the Claude & GPT weekly limit 60% used and the Gemini one 77% used (2026-06-23)',
+     'why': 'after the split, but the plan (5x or 20x), the models and the share of each track are not stated'},
     {'url': 'https://deepakness.com/raw/antigravity-limits/', 'claim': 'Google AI Pro: Opus 4.5 hit the 5-hour limit after '
      'about 2 hours (2026-01-09)', 'why': 'January 2026 limits (cut since); Pro is measured directly (eneasf)'},
 ]
+# Maintainer measurements (dated maintainer declarations): a window measured on the maintainer's own account where no
+# public source measures it. Rung 1, in the unit of the community readings: list-priced usage per full window, cache
+# reads at the cache-read price. Each states its sample so a later public measurement can be weighed against it.
+_AGY_ULTRA20 = ('one Google AI Ultra 20x account driven through the Antigravity CLI: the list-priced spend of its Claude '
+                'Opus 5.5 / Sonnet 5.5 turns (uncached input, cache reads, output, from the native session token counts) '
+                'between two usage readings of the window, divided by the rise of the reading')
+MAINTAINER_READINGS = [
+    {'family': 'antigravity', 'plan': 'ultra20', 'window': '3p-5h', 'value': 23.6, 'as_of': '2026-11-13',
+     'source': 'maintainer.antigravity.ultra20',
+     'method': f'Maintainer measurement on {_AGY_ULTRA20}; 4 runs from 2026-11-05 to 2026-11-12, 185.6 points and 808 '
+               'turns, 43.72 usd, 23.3 to 24.7 usd per full window run by run'},
+    {'family': 'antigravity', 'plan': 'ultra20', 'window': '3p-weekly', 'value': 47.6, 'as_of': '2026-11-13',
+     'source': 'maintainer.antigravity.ultra20',
+     'method': f'Maintainer measurement on {_AGY_ULTRA20}; one run from 2026-11-11 to 2026-11-13 that ended at 100%, 94.65 '
+               'points and 767 turns, 45.03 usd; the readings of the 5-hour and the weekly window rise 2.0 to 1 together'},
+]
+# Windows that no public source measures and no vendor multiplier covers: dated maintainer declarations. Their
+# capacity is unknown by declaration, so the refresh lists them (yellow) instead of failing, and the bundles drawing
+# them stay out of automatic routing until a measurement is published.
+UNMEASURED = [
+    {'family': 'antigravity', 'plan': 'ultra5', 'window': window, 'kind': 'maintainer', 'as_of': '2026-11-13',
+     'statement': 'Google states 5x / 20x usage for Gemini and Antigravity without naming the Claude / GPT track, and that '
+                  'track measured on Ultra 20x (maintainer.antigravity.ultra20) is far below 20x the Pro figure, so no '
+                  'multiplier sizes it on Ultra 5x'}
+    for window in ('3p-5h', '3p-weekly')]
 NOT_FOUND = {
     'claude/max5 (rung 1)': 'wokey is still collecting Max 5x accounts; finops measures a weekly lower bound and two '
                             'full sessions (used), so rung 3 is a cross-check only',
     'antigravity/ultra5, ultra20 (rungs 1-2)': 'only Google AI Pro is measured (eneasf telemetry, September 2026; its '
                                                'Ultra 5x figures are 5x Pro by assumption, ADR-041); time-to-exhaust reports '
-                                               'are set aside (EXHAUST_REJECTED); rung 3 (Google 5x / 20x Pro) applies',
+                                               'are set aside (EXHAUST_REJECTED); rung 3 (Google 5x / 20x Pro) applies '
+                                               'to the Gemini track; the Claude / GPT track is a maintainer '
+                                               'measurement on Ultra 20x and UNMEASURED on Ultra 5x',
     'pi/*': 'Pi spends a Codex account allowance; the plan behind it is not known',
 }
 
@@ -246,6 +286,20 @@ def token_mix(text, spec, sid, row):
             'method': ('cache-read share as stated for the fixed split; the other tokens split into input (uncached input '
                        'and cache writes, priced at the input price) and output by the Max 20x row measured at that split '
                        f'({non_cache:g}M non-cache-read, {output:g}M output a week)')}
+
+
+def maintainer_observations():
+    """(sources {id: row}, observations) of MAINTAINER_READINGS, in the shape `extract` gives a community reading."""
+    rows, obs = {}, []
+    for reading in MAINTAINER_READINGS:
+        rows[reading['source']] = {
+            'file': None, 'url': None, 'fetched_at': None, 'sha256': None, 'as_of': reading['as_of'],
+            'as_of_kind': 'measurement date', 'kind': 'maintainer', 'models_listed': None,
+            'method': 'maintainer measurement of subscription window capacity (calibration/community.py)'}
+        obs.append({'family': reading['family'], 'plan': reading['plan'], 'window': reading['window'],
+                    'value': reading['value'], 'rung': 1, 'source': reading['source'], 'kind': 'maintainer', 'url': None,
+                    'as_of': reading['as_of'], 'fetched_at': None, 'method': reading['method']})
+    return rows, obs
 
 
 def extract(target, manifest):
@@ -322,5 +376,8 @@ def extract(target, manifest):
             rules.append({k: v for k, v in rule.items() if k != 'pattern'} |
                          {'type': 'window_ratio', 'source': sid, 'kind': 'community', 'url': url, 'as_of': rows[sid]['as_of'],
                           'fetched_at': rows[sid]['fetched_at']})
+    own_rows, own_obs = maintainer_observations()
+    rows.update(own_rows)
+    obs.extend(own_obs)
     extract.hourly = hourly
     return rows, obs, rules, errors, mix

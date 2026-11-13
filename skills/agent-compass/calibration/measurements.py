@@ -687,7 +687,8 @@ class Builder:
         return {'unit': 'usd of API-priced real usage per full window', 'observations': obs, 'rules': rules,
                 'exhaust': community.EXHAUST, 'exhaust_rejected': community.EXHAUST_REJECTED,
                 'hourly_checks': getattr(community.extract, 'hourly', []),
-                'errors': errors, 'not_found': community.NOT_FOUND, 'token_mix': mix}
+                'errors': errors, 'not_found': community.NOT_FOUND, 'unmeasured': community.UNMEASURED,
+                'token_mix': mix}
 
     def community_mix(self):
         """`derived.community_mix` usd per worker-hour (option B, user 2026-11-09): AA's measured output speed per hour

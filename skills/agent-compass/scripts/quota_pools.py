@@ -312,9 +312,12 @@ def launch_blockers(bundle, accounts, usage, now, latched=None, records=None):
             floor = float(wspec['launch_min_remaining_pct'])
             reason = f"{wid}: confirmed exhausted or below launch floor ({state['remaining']:.0f}% left, floor {floor:g}%); refresh quota or replan"
         elif not state['short']:
-            # Priced work needs remaining - need >= safety margin; no task size passes at or under the margin.
+            # Priced work needs remaining - need >= safety margin; no task size passes at or under the margin. A window
+            # of unknown capacity cannot price the need at all, so it is held at the margin too (as candidate_eval does).
             margin = policy.get('safety_margin_pct', 5)
-            if state['known'] and state['remaining'] <= margin and quota_economy.unit_rate(spec, wid, model, account_fleet.model_spec(accounts, model)):
+            if state['known'] and state['remaining'] <= margin and (
+                    quota_economy.capacity_usd(spec, wid) is None
+                    or quota_economy.unit_rate(spec, wid, model, account_fleet.model_spec(accounts, model))):
                 if state['reset_hours'] == float('inf'):
                     reason = (f"{wid} has {state['remaining']:.1f}% left, within the {margin:g}% safety margin "
                               "(this balance does not reset)")

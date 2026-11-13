@@ -117,7 +117,13 @@ class CleanInstallParityTests(unittest.TestCase):
                 applied = inventory.apply(shipped_template(), snap)
                 over = priced(applied)['antigravity']
                 self.assertEqual(over['capacity_usd']['gemini-weekly'], community('antigravity', expected_plan, 'gemini-weekly'))
-                self.assertFalse(over.get('capacity_unknown'))
+                # The tier resolves the plan, so capacity is unknown only for the windows the data leaves without a
+                # figure on that plan, never for an unknown plan.
+                unmeasured = sorted(wid for wid, row in axis_scores.load_five_axis()['capacity']['antigravity'][expected_plan].items()
+                                    if row['capacity_usd'] is None)
+                self.assertEqual(sorted(wid for wid in over['windows'] if wid not in over['capacity_usd']), unmeasured)
+                self.assertEqual(bool(over.get('capacity_unknown')), bool(unmeasured))
+                self.assertNotIn('plan_unknown_reason', over)
                 self.assertNotIn('plan_priced_as', applied['accounts']['antigravity'])
                 self.assertNotIn('plan_unknown', applied['accounts']['antigravity'])
 

@@ -869,7 +869,9 @@ class RouterGateHookTests(unittest.TestCase):
         return agent_id
 
     def test_antigravity_third_party_exhaustion_blocks_only_models_that_draw_it(self):
-        # The 2026-11-04 reading: 3p-weekly used up, the Gemini pools have room.
+        # The 2026-11-04 reading: 3p-weekly used up, the Gemini pools have room. The fixture account is on Ultra 5x, whose
+        # Claude / GPT track has no capacity in the data: a window inside the safety margin blocks whether or not its
+        # capacity is known.
         self.quota_cache({"antigravity": {"windows": [
             self.window("gemini-weekly", 28.4, 67), self.window("gemini-5h", 7.3, 4),
             self.window("3p-weekly", 99.26, 7), self.window("3p-5h", 0, 5)]}})
@@ -962,26 +964,26 @@ class RouterGateHookTests(unittest.TestCase):
         self.assertNotIn("provider", unknown)
 
     def test_quota_gate_counts_other_inflight_reservations_like_routing(self):
-        # Antigravity 3p-weekly (the public community capacity of the Ultra 20x plan) at 93% used has 7% left (> 5% safety
-        # margin). An active reservation of 3% of that capacity from another dispatch brings remaining to 4% (<= 5% margin).
+        # Antigravity gemini-weekly (the shipped capacity of the fixture account's plan) at 93% used has 7% left (> 5%
+        # safety margin). An active reservation of 3% of that capacity from another dispatch brings remaining to 4% (<= 5%).
         cache = self.quota_cache({"antigravity": {"windows": [
-            self.window("gemini-weekly", 10, 100),
+            self.window("gemini-weekly", 93.0, 100),
             self.window("gemini-5h", 10, 4),
-            self.window("3p-weekly", 93.0, 100),
+            self.window("3p-weekly", 10, 100),
             self.window("3p-5h", 10, 4),
         ]}})
         accounts, _ = gate.load_dispatch_settings()
-        _, candidates = gate.resolve_target({"bundle_id": "agy_opus55_high"}, accounts)
+        _, candidates = gate.resolve_target({"bundle_id": "argon_high"}, accounts)
         axis_scores = gate.router_module("axis_scores")
-        capacity = axis_scores.five_axis_overlay(accounts)["accounts"]["antigravity"]["capacity_usd"]["3p-weekly"]
+        capacity = axis_scores.five_axis_overlay(accounts)["accounts"]["antigravity"]["capacity_usd"]["gemini-weekly"]
         other_record = {
             "stage": "dispatch",
             "dispatch_id": "other-dispatch",
             "state": "started",
             "at": T0.isoformat(),
             "lease_until": (T0 + dt.timedelta(minutes=10)).isoformat(),
-            "choice": "agy_opus55_high",
-            "bundle": {"account": "antigravity", "provider": "antigravity-resilient", "model": "claude-opus-5-5", "effort": "high"},
+            "choice": "argon_high",
+            "bundle": {"account": "antigravity", "provider": "antigravity-resilient", "model": "gemini-4-argon-high", "effort": "high"},
             "expected_usd": round(0.03 * capacity, 2),
         }
         # Without the in-flight reservation, 7% > 5% safety margin is allowed.
@@ -991,7 +993,7 @@ class RouterGateHookTests(unittest.TestCase):
         reason = gate.check_account_quota_exhausted(
             "antigravity", cache, T0, accounts=accounts, bundles=candidates, records=[other_record])
         self.assertIsNotNone(reason)
-        self.assertIn("3p-weekly", reason)
+        self.assertIn("gemini-weekly", reason)
         # A dispatch's own reservation is excluded when claiming that dispatch itself.
         self.assertIsNone(gate.check_account_quota_exhausted(
             "antigravity", cache, T0, accounts=accounts, bundles=candidates,

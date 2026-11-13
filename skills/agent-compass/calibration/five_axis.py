@@ -1215,7 +1215,7 @@ def window_capacity(fam, plan, wid, ctx, rung_max=3):
         rung = 2
     mult = ctx['mults'].get((fam, plan))
     sibling = None
-    if mult and rung_max >= 3:
+    if mult and wid in mult['windows'] and rung_max >= 3:
         base = window_capacity(fam, mult['of_plan'], wid, {**ctx, 'mults': {}}, 2)
         if base['capacity_usd'] is not None:
             age = max(age_days(mult.get('as_of'), now) or 0, base['age_days'])
@@ -1267,6 +1267,7 @@ def capacity(meas, plans, usd, now=None):
     for r in cap.get('exhaust') or ():
         ctx['exhaust'].setdefault((r['family'], r['plan'], r['window']), []).append(r)
     errors = [{'field': 'capacity', **e} for e in cap.get('errors') or ()]
+    unmeasured = {(u['family'], u['plan'], u['window']): u for u in cap.get('unmeasured') or ()}
     out, stale = {}, {}
     for fam, table in plans.items():
         if not isinstance(table, dict):
@@ -1283,12 +1284,19 @@ def capacity(meas, plans, usd, now=None):
                 if alias:
                     continue
                 if row['status'] == 'error':
-                    errors.append({'field': 'capacity', 'family': fam, 'plan': plan, 'window': wid, 'level': 'red',
-                                   'reason': 'capacity_ladder_empty',
-                                   'effect': 'no community measurement, time-to-exhaust report or vendor multiplier: a data '
-                                             'error surfaced in routing notes; the live percentage still prices scarcity'})
+                    effect = 'the bundles drawing this window stay out of automatic routing (name the model to dispatch it)'
+                    declared = unmeasured.get((fam, target, wid))
+                    if declared:    # a known gap the maintainers declared: listed, not a failed refresh
+                        errors.append({'field': 'capacity', 'family': fam, 'plan': plan, 'window': wid, 'level': 'yellow',
+                                       'reason': 'capacity_unmeasured', 'as_of': declared['as_of'],
+                                       'statement': declared['statement'], 'effect': effect})
+                    else:
+                        errors.append({'field': 'capacity', 'family': fam, 'plan': plan, 'window': wid, 'level': 'red',
+                                       'reason': 'capacity_ladder_empty',
+                                       'effect': 'no community measurement, time-to-exhaust report or vendor multiplier '
+                                                 f'for this window: {effect}'})
                 for e in row['sources']:
-                    if e['stale'] and e['kind'] in ('community', 'vendor'):
+                    if e['stale'] and e['kind'] in ('community', 'vendor', 'maintainer'):
                         stale.setdefault(e['source'], {'age_days': e['age_days'], 'as_of': e['as_of'], 'windows': []})
                         stale[e['source']]['windows'].append(f'{fam}/{plan}/{wid}')
     for src, row in sorted(stale.items()):

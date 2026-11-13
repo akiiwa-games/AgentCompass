@@ -119,8 +119,12 @@ Checked metered bundles stay a last resort: explicit selection, `metered_ok`, or
 subscription bundle. A dollar-balance account is one of those metered accounts; the rule is [Metered USD](../../../docs/technical-reference.md#metered-usd). A free pool (a free plan or a declared free allowance) is an ordinary quota pool priced by the quota economy like any other; a model with no data for a demanded category is out of automatic routing there too. Purpose-limited unmetered services (Dot, ChatGPT Web) have no quota to relieve.
 
 A discovered plan supplies its window structure; its capacity comes only from community real-usage data per plan and window
-(`five-axis-scores.json`). A plan or window without a cited capacity is unknown, and its account stays out of automatic
-routing until the data has it. Antigravity and Grok have no default plan: when their subscription tier cannot be read or is
+(`five-axis-scores.json`). A plan or window without a cited capacity is unknown, and the bundles that draw it stay out of
+automatic routing until the data has it (a named model still launches). A vendor plan multiplier sizes only the windows its
+statement covers. A window that no public source measures takes a dated maintainer measurement when there is one (the
+Claude / GPT track `3p-5h` and `3p-weekly` of Antigravity Ultra 20x); otherwise it is declared unmeasured
+(`capacity_unmeasured` in `capacity_errors`; the same track on Ultra 5x, where only the Gemini bundles are routed
+automatically). Antigravity and Grok have no default plan: when their subscription tier cannot be read or is
 not in `plan-templates.json`, the account enters Mode B (`capacity_unknown` with `plan_unknown_reason`, surfaced in routing
 notes and on the tray quota card). An unrecognized Claude or Codex plan is priced at that family's smallest paid plan with a
 warning (`plan_unknown`, `plan_priced_as`). Unknown quota is distinct from unlimited access. Intrinsically unmetered services (OpenCode
