@@ -84,14 +84,21 @@ LAUNCHERS = {'antigravity': 'antigravity-resilient'}
 
 
 def advertised(doc, family):
-    """What a family's CLI is simulated to advertise, from the catalog: the launch ids of the family account's bundles,
-    and the other models it launches on the family's harness (`dispatch_efforts`). Discovery turns them into auto bundles."""
+    """What a family's CLI is simulated to advertise: the catalog's launch surface for that harness, the same data routing
+    dispatches from, so a scenario covers exactly the models a user of that CLI could be routed to. In order:
+    1. the launch ids of the family account's bundles on its harness;
+    2. the other models the harness launches (`dispatch_efforts[<launcher>]`);
+    3. the harness's own published ids the catalog maps to rows (`aliases` keys prefixed `<launcher>/`, e.g. OpenCode's
+       `opencode/<id>` free models).
+    A model the catalog does not declare for the harness is not simulated there; declaring it (a bundle, an effort row or
+    an alias) is a data edit that reaches routing and the simulation alike. Discovery turns these ids into auto bundles."""
     launcher = LAUNCHERS.get(family, family)
     bundles = [b for b in (((doc.get('accounts') or {}).get(family) or {}).get('bundles') or {}).values()
                if b.get('provider', family) in (family, launcher)]
     bundled = {auto_bundles.split_effort(b.get('model'), doc)[0] for b in bundles}
     ids = [*(b.get('launch_model') or b.get('model') for b in bundles),
-           *(m for m in (doc.get('dispatch_efforts') or {}).get(launcher) or {} if m not in bundled)]
+           *(m for m in (doc.get('dispatch_efforts') or {}).get(launcher) or {} if m not in bundled),
+           *(alias for alias in doc.get('aliases') or {} if alias.startswith(f'{launcher}/'))]
     return list(dict.fromkeys(m for m in ids if m))
 
 
