@@ -2,6 +2,14 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.6.1 - 2026-11-13
+
+- A task marked `needs_visual` or `needs_gui` requires a model that takes image input at every `tool_operation` level, not only at level 3.
+- An update applies an earlier `agentcompass setup` again (skill links, rule blocks, an installed gate hook); a machine that was never set up is left alone.
+- `agentcompass setup --yes` no longer writes an account back into the allowed list that the user had taken out.
+- The installer waits for a stopped tray to release its files; when it cannot continue it changes nothing and starts the tray again.
+- `agentcompass doctor` names the right fix for a leftover `route-agent-work` skill link.
+
 ## v0.6.0 - 2026-11-13
 
 - Top-level (level 3) demands are capped at the best measured model, not at the anchor, so a model above the anchor is credited on the hardest tasks. A change of the calibration panel stops a data refresh until it is accepted.
