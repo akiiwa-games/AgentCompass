@@ -3,7 +3,7 @@ import copy
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from datetime import datetime, timezone
 
 import allocator
@@ -14,6 +14,7 @@ import dispatch_registry as registry
 import fast_modes
 import roll
 import route_judge
+import usage_reading
 from router_test_support import isolated_router_state, usage_windows
 
 
@@ -52,7 +53,7 @@ class FastModesTests(unittest.TestCase):
                         model=model, effort='high', input=None, usage_cache=None, accounts=None,
                         constraint='user_override', specialty=None, fast=True)
                     with patch.object(account_fleet, 'load_accounts', return_value=accounts), \
-                            patch.object(route_judge, 'usage_snapshot', return_value=usage):
+                            patch.object(usage_reading, 'usage_snapshot', return_value=usage):
                         if policy is not True:
                             with self.assertRaisesRegex(ValueError, 'fast_capable'):
                                 route_judge.record_constraint(args)
@@ -61,7 +62,7 @@ class FastModesTests(unittest.TestCase):
                             with patch.object(roll, 'provider_definition', return_value=(provider, {})), \
                                     patch.object(roll.subprocess, 'Popen') as spawn:
                                 with self.assertRaisesRegex(ValueError, 'fast_capable'):
-                                    roll.cli(SimpleNamespace(wait=0), {}, bundle, 'fixture', Mock())
+                                    roll.cli(SimpleNamespace(wait=0), {}, bundle, 'fixture')
                                 spawn.assert_not_called()
                         else:
                             self.assertTrue(route_judge.record_constraint(args)['selected_bundle']['fast'])

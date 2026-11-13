@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/agent-compass/scripts'))
 import router_data
 import router_priority as priority
+import decision_ledger
 from router_test_support import isolated_router_state, profile
 
 
@@ -26,11 +27,11 @@ class LedgerReplayTests(unittest.TestCase):
         scorer = patch.dict(os.environ, {'ROUTER_DISABLE_LIVE_SCORER': '1'})
         scorer.start()
         self.addCleanup(scorer.stop)
-        self.addCleanup(setattr, self.router, 'LEDGER_WRITES', True)
+        self.addCleanup(setattr, decision_ledger, 'LEDGER_WRITES', True)
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.ledger = Path(directory.name) / 'ledger.jsonl'
-        patcher = patch.object(self.router, 'ledger_path', return_value=self.ledger)
+        patcher = patch.object(decision_ledger, 'ledger_path', return_value=self.ledger)
         patcher.start()
         self.addCleanup(patcher.stop)
         window = lambda wid, used, hours: {'id': wid, 'used_pct': used, 'resets_at': (self.now + timedelta(hours=hours)).isoformat()}
@@ -49,7 +50,7 @@ class LedgerReplayTests(unittest.TestCase):
         with patch('sys.argv', argv), patch('builtins.print') as shown:
             self.assertEqual(self.router.main(), 0)
         self.live = json.loads(shown.call_args.args[0])
-        [self.row] = [r for r in self.router.read_ledger() if r.get('stage') == 'plan']
+        [self.row] = [r for r in decision_ledger.read_ledger() if r.get('stage') == 'plan']
 
     def test_replay_returns_the_stored_ranking_even_after_config_and_quota_change(self):
         import account_fleet

@@ -21,6 +21,9 @@ import entry
 import dispatch_registry as registry
 import host_placement
 import provider_inventory
+import scorer_client
+import subscription_cli
+import usage_reading
 import worker_context
 import worker_sessions
 from worker_context import NATIVE_HOSTS, harness_session, require_parent_id, resolve_parent
@@ -568,7 +571,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         # The Paseo parent was not on the host, so this launch has no completion watcher. Rebuild the unwatched contract.
         text, prompt_file = prepare_worker_prompt(text, parent, 'cli', out.get('parent_address'))
         out['worker_prompt_file'] = str(prompt_file)
-        res, code = cli(args, out, decision['selected_bundle'], text, judge)
+        res, code = cli(args, out, decision['selected_bundle'], text)
         if not res.get('launched'):
             registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
         return res, code
@@ -765,7 +768,7 @@ def provider_definition(provider, bundle=None):
     return provider, env
 
 
-def cli_command(family, provider, judge):
+def cli_command(family, provider):
     if family == 'grok':
         # The executable the provider's Paseo definition names (its sibling grok when it names agent) is the one to run;
         # a configured command is never swapped for another install. Discovery applies only when none is configured.
@@ -790,10 +793,10 @@ def cli_command(family, provider, judge):
             if not spec.get('extends'):
                 break
             provider = spec['extends']
-    return judge.cli_prefix(CLI_RUNS[family][0])
+    return subscription_cli.cli_prefix(CLI_RUNS[family][0])
 
 
-def cli(args, out, bundle, text, judge):
+def cli(args, out, bundle, text):
     """No Paseo here: run the routed bundle through its own CLI, on the account its provider definition selects."""
     workspace = host_placement.canonical_dir(getattr(args, 'workspace', None))
     placed = host_placement.place('cli', workspace, default_cwd=str(Path.cwd()))
@@ -811,7 +814,7 @@ def cli(args, out, bundle, text, judge):
         model = account_fleet.canonical(bundle['model'], accounts)
         validate(family, model, account_fleet.model_spec(accounts, model))
     executable, flags = CLI_RUNS[family]
-    env = {k: v for k, v in judge.subscription_env().items() if not k.startswith(HOST_SESSION_ENV)}
+    env = {k: v for k, v in subscription_cli.subscription_env().items() if not k.startswith(HOST_SESSION_ENV)}
     env.update(provider_env)
     env.update(AGENTCOMPASS_WORKER='1', ROUTER_PARENT_AGENT_ID=out['parent_id'],
                ROUTER_PARENT_HOST=out['parent_host'], ROUTER_PARENT_ADDRESS=out['parent_address'])
@@ -822,7 +825,7 @@ def cli(args, out, bundle, text, judge):
         if os.name == 'nt' else {'start_new_session': True}
     prompt_argument = family in PROMPT_ARGUMENT
     try:
-        argv = [*cli_command(family, bundle['provider'], judge),
+        argv = [*cli_command(family, bundle['provider']),
                 *flags(bundle.get('launch_model') or bundle['model'], bundle.get('effort'), cwd, bool(bundle.get('fast')))]
         if family in PROMPT_FILE:
             argv += ['--prompt-file', str(run / 'brief.md')]
@@ -964,7 +967,7 @@ def run_batch(args, judge):
                  'next_action': f'Nothing was launched: {exc}'}, 1)
     each = [argparse.Namespace(**{**vars(args), 'brief': Path(b)}) for b in briefs]
     if not args.dry_run:
-        judge.prefetch_scores([build_task(one, read_task_text(one), None) for one in each], args.score_timeout)
+        scorer_client.prefetch_scores([build_task(one, read_task_text(one), None) for one in each], args.score_timeout)
     results, codes = [], []
     batch_used_agents = set()
     for one in each:
@@ -1010,7 +1013,7 @@ def run(args, judge):
 
 
 def _run(args, judge):
-    """judge is the route_judge module (plan_stage, record_constraint, usage_snapshot, subscription_env, cli_prefix)."""
+    """judge is the route_judge module (classify_pinned, record_constraint, plan_stage, scorer_unavailable_result)."""
     text = read_task_text(args)
     if not text.strip():
         raise ValueError('The task is empty.')
@@ -1170,7 +1173,7 @@ def _run(args, judge):
     )
     access = task_access(args, decision_profile if isinstance(decision_profile, dict) else None)
     if use_paseo:
-        return paseo(args, out, decision, task, text, parent, judge.usage_snapshot(args.usage_cache), judge=judge)
+        return paseo(args, out, decision, task, text, parent, usage_reading.usage_snapshot(args.usage_cache), judge=judge)
     surface = 'herdr' if parent_host == 'herdr' else parent_host if parent_host in NATIVE_HOSTS else 'cli'
     placed = host_placement.place(surface, canonical_ws, default_cwd=str(Path.cwd()),
                                   bundle=bundle, address=parent_address)
@@ -1179,7 +1182,7 @@ def _run(args, judge):
     landing = placed['cwd']
     if not canonical_ws and landing and access == 'write':
         out = same_cwd_warning(out, landing, parent)
-    usage = judge.usage_snapshot(getattr(args, 'usage_cache', None)) if hasattr(judge, 'usage_snapshot') else {}
+    usage = usage_reading.usage_snapshot(getattr(args, 'usage_cache', None))
     try:
         claim_row = registry.record_host_claim(
             surface, decision, task, bundle,
@@ -1193,7 +1196,7 @@ def _run(args, judge):
                                  dispatch_mode='native' if surface in NATIVE_HOSTS else surface)
     if surface == 'herdr':
         import host_herdr
-        res, code = host_herdr.launch(out, bundle, prompt_file, task['task_id'], judge,
+        res, code = host_herdr.launch(out, bundle, prompt_file, task['task_id'],
                                       cwd=landing, dispatch_id=claim_row['dispatch_id'])
         if code != 0 and res.get('launched') is False:
             registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'herdr_preflight_failed')
@@ -1202,7 +1205,7 @@ def _run(args, judge):
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     **({'dispatch_id': claim_row['dispatch_id']} if canonical_ws else {}),
                     next=placed['next']), 0
-    res, code = cli(args, out, bundle, text, judge)
+    res, code = cli(args, out, bundle, text)
     if not res.get('launched'):
         registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
     return res, code

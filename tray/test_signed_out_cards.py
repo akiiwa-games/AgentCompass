@@ -11,6 +11,7 @@ import account_fleet
 import axis_scores
 import host_policy
 import provider_inventory as real_inventory
+import usage_reading
 
 
 def cards_for(discovered: dict) -> list[str]:
@@ -23,7 +24,7 @@ def cards_for(discovered: dict) -> list[str]:
     fake.host_policy.load_policy.return_value = None
     fake.host_policy.account_allowed.return_value = True
     router.usage_snapshot.return_value = {'accounts': {}}
-    with patch.object(router_data, 'modules', return_value=(fake, router)), \
+    with patch.object(router_data, 'modules', return_value=(fake, router)), patch.object(usage_reading, 'usage_snapshot', router.usage_snapshot), \
          patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
          patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
          patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \

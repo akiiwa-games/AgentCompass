@@ -242,8 +242,9 @@ class Chain:
         return float(provider_retry.retry_seconds(1))
 
     def ledger(self, action, attempt, **extra):
+        import decision_ledger
         try:
-            self.judge.append_ledger({'v': 1, 'at': registry.stamp(registry.utcnow()), 'stage': 'fallback',
+            decision_ledger.append_ledger({'v': 1, 'at': registry.stamp(registry.utcnow()), 'stage': 'fallback',
                                       'action': action, 'parent_id': self.parent, 'task_id': self.task.get('task_id'),
                                       'root_dispatch_id': self.root_id, 'attempt': attempt.get('attempt'),
                                       'failed': {k: attempt.get(k) for k in (
@@ -327,6 +328,7 @@ class Chain:
         """From one failed attempt to the next live worker, a scheduled retry or a final state. `row` is the failed
         attempt's row (None when its bundle was refused before a row existed); `bundle` the refused bundle then.
         `resume`: the scheduled same-bundle retry of `row` is due (claim said so); it starts without deciding again."""
+        import usage_reading
         failed_id = row['dispatch_id'] if row else None
         while True:
             attempt = next((a for a in self.attempts if row and a.get('dispatch_id') == row['dispatch_id']), None)
@@ -366,7 +368,7 @@ class Chain:
             try:
                 new = registry.prepare(decision['decision_id'], self.task, dict(
                     self.launch, initialPrompt=relaunch_prompt(self.launch['initialPrompt'], self.attempts)),
-                    self.judge.usage_snapshot(None), access=self.access,
+                    usage_reading.usage_snapshot(None), access=self.access,
                     workspace=self.workspace, cwd=self.cwd,
                     attempt={'attempt_of': self.root_id, 'attempt': len(self.attempts) + 1,
                              'previous_attempt': (row or {}).get('dispatch_id')} if self.root else None)
@@ -450,6 +452,7 @@ class Chain:
     def same_bundle(self, attempt):
         """The decision for a transient failure's retry on its own bundle. It is issued and written to the ledger like
         every routed start (a plan line, or a record line for the owner's model), so the audit sees a route for it."""
+        import decision_ledger
         # A transient failure is a provider's, so it always has the row whose bundle it was.
         bundle = dict(registry.inspect(attempt['dispatch_id'])['bundle'])
         result = {'stage': 'record' if self.owner_named else 'plan', 'source': 'fallback_retry',
@@ -462,7 +465,7 @@ class Chain:
         issued = registry.issue(result, self.task, allocation_task=self.task)
         decision = {**result, **issued}
         try:
-            self.judge.append_ledger({
+            decision_ledger.append_ledger({
                 'v': 1, 'at': registry.stamp(registry.utcnow()), 'stage': decision['stage'], 'source': 'fallback_retry',
                 'choice': decision['choice'],
                 **{k: decision[k] for k in ('decision_id', 'parent_id', 'task_hash', 'bound') if decision.get(k)},
@@ -524,10 +527,11 @@ class Chain:
     def replan(self):
         """Allocation again on the original inputs with this dispatch's failed bundles unavailable."""
         import roll
+        import scorer_client
         excluded = self.excluded()
         profile = self.task.get('profile') if isinstance(self.task.get('profile'), dict) else {}
         args = argparse.Namespace(stage='plan', dry_run=False, no_score=True, score=False, demo=False, fast=False,
-                                  score_timeout=getattr(self.judge, 'SCORER_TIMEOUT_SECONDS', 30), usage_cache=None,
+                                  score_timeout=scorer_client.SCORER_TIMEOUT_SECONDS, usage_cache=None,
                                   hours=None,
                                   keep_whole=(f'AgentCompass relaunch of dispatch {self.root_id}: the original roll '
                                               'kept this brief whole') if profile.get('multi_task') else None)

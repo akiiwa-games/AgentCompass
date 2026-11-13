@@ -238,9 +238,10 @@ def unreplayable(row: dict) -> bool:
 
 def recent_ledger_with_skipped(limit: int = 30, path: Path | None = None) -> tuple[list[dict], int]:
     """The latest valid plan decisions (newest first) and the count of skipped older-shape rows."""
-    _, router = modules()
+    modules()
+    import decision_ledger
     import state_upgrade
-    rows = router.read_ledger(path) if path else router.read_ledger()
+    rows = decision_ledger.read_ledger(path) if path else decision_ledger.read_ledger()
     plans = [r for r in rows if isinstance(r, dict) and r.get("stage") == "plan" and r.get("choice")]
     valid = []
     skipped = 0
@@ -299,10 +300,12 @@ def build_task(objective: str, hours: float, local_only: bool = False, needs_vis
 def plan_task(task: dict) -> dict:
     """allocator.plan for a task, with the same Dot reachability rule as route_judge; never writes the ledger."""
     allocator, router = modules()
+    import decision_ledger
     import task_intake
+    import usage_reading
     now = now_utc()
-    usage = router.usage_snapshot(None, None, now)
-    records = router.read_ledger()
+    usage = usage_reading.usage_snapshot(None, None, now)
+    records = decision_ledger.read_ledger()
     try:
         import dispatch_flow
 
@@ -327,13 +330,14 @@ def simulate(objective: str, hours: float, local_only: bool = False, needs_visua
              live_scorer: bool = True) -> dict:
     """Plan a typed task. Profiles it with the configured System-One scorer; when the classifier is unavailable,
     returns blocked / scorer_unavailable rather than guessing from keywords."""
-    _, router = modules()
+    modules()
+    import scorer_client
     import task_intake
     accounts = _cached_accounts()
     capabilities = _load_capabilities(accounts)
     policy = accounts["scoring"]
     task = build_task(objective, hours, local_only, needs_visual)
-    profile, scorer = router.score_task(task, capabilities, use_model=bool(live_scorer))
+    profile, scorer = scorer_client.score_task(task, capabilities, use_model=bool(live_scorer))
     if profile is None:
         return {
             "stage": "plan",
@@ -483,10 +487,12 @@ def dna_series(models: dict, first: str, second: str | None) -> tuple[list[dict]
 def live_economy_windows() -> list[dict]:
     """Current live priced long-window economy numbers (`FiveAxisEconomy.report()` at 1h), read-only."""
     try:
-        allocator, router = modules()
+        allocator, _ = modules()
+        import decision_ledger
+        import usage_reading
         now = now_utc()
-        usage = router.usage_snapshot(None, None, now)
-        records = router.read_ledger()
+        usage = usage_reading.usage_snapshot(None, None, now)
+        records = decision_ledger.read_ledger()
         try:
             import dispatch_flow
             records = records + dispatch_flow.reservation_records(read_only=True)
@@ -739,12 +745,13 @@ def capacity_price_error() -> str | None:
 
 
 def account_cards() -> list[dict]:
-    _, router = modules()
+    modules()
     import axis_scores
     import host_policy
     import quota_economy
     import quota_pools
     import provider_inventory
+    import usage_reading
 
     now = now_utc()
     accounts = _cached_accounts()
@@ -757,10 +764,10 @@ def account_cards() -> list[dict]:
             pass
     inventory = accounts.get("_discovery") if isinstance(accounts.get("_discovery"), dict) else provider_inventory.current()
     sources = provider_inventory.quota_sources(accounts)
-    if getattr(router.usage_snapshot, "__module__", "") == "route_judge" and not hasattr(router.usage_snapshot, "_mock_name"):
-        usage = router.usage_snapshot(None, None, now, quota_sources=sources, inventory=inventory)
+    if getattr(usage_reading.usage_snapshot, "__module__", "") == "usage_reading" and not hasattr(usage_reading.usage_snapshot, "_mock_name"):
+        usage = usage_reading.usage_snapshot(None, None, now, quota_sources=sources, inventory=inventory)
     else:
-        usage = router.usage_snapshot(None, None, now)
+        usage = usage_reading.usage_snapshot(None, None, now)
     capacity = _read_json(STATE_DIR / "capacity.json")
     observed = capacity.get("observed") or {}
     try:
@@ -1234,15 +1241,16 @@ def workers(db: Path | None = None, paseo_home: Path | None = None) -> list[dict
 # ---------- policy ----------
 
 def overrides(now: datetime | None = None) -> list[dict]:
-    _, router = modules()
+    modules()
     import quota_overrides
+    import usage_reading
     now = now or now_utc()
     document = router_priority.read_document(quota_overrides.overrides_path())
     active_rows = [row for row in document["overrides"] if router_priority.active(row, now)]
     if not active_rows:
         return []
     accounts = _cached_accounts()
-    usage = router.usage_snapshot(now=now)
+    usage = usage_reading.usage_snapshot(now=now)
     rows = []
     for row in active_rows:
         if quota_overrides.override_reset_landed(row, usage, accounts, now) or quota_overrides.override_depleted(row, usage, accounts):
@@ -1277,7 +1285,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
         raise ValueError(_tr('加成需在 +{0} ~ +{1} 之间').format(f'{BOOST_RANGE[0]:.2f}', f'{BOOST_RANGE[1]:.2f}'))
     if hours not in BOOST_HOURS:
         raise ValueError(_tr("预期重置时间只能是 1h / 3h / 6h / 12h / 24h"))
-    _, router = modules()
+    modules()
     import account_fleet
     import override_store
     import quota_overrides
@@ -1328,7 +1336,8 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
             if not windows:
                 raise ValueError(_tr("该账号没有可确认重置的周额度窗口；请取消“重置后自动撤销”"))
             wid = max(windows, key=lambda w: w[1]["hours"])[0]
-            usage = router.usage_snapshot(now=now)
+            import usage_reading
+            usage = usage_reading.usage_snapshot(now=now)
             base = router_priority.baseline(accounts, usage, {"account": account, "window": wid}, now)
             row.update(window=wid, stop_on_reset=True, reset_confirmation="replenishment", baseline_windows={wid: base})
         document["overrides"].append(row)
@@ -2175,7 +2184,7 @@ def toggle_account_host(account: str) -> str:
 
 # ---------- System-One scorer ----------
 
-# (type id, display label, needs an API key, takes base_url/model, hint); ids match route_judge.SCORER_TYPES.
+# (type id, display label, needs an API key, takes base_url/model, hint); ids match scorer_client.SCORER_TYPES.
 SCORER_TYPES = (
     ("jev", "TypeSafe · Jev (System One API)", True, True, "TypeSafe API Key；也可设环境变量 TYPESAFE_API_KEY / JEV_API_KEY"),
     ("claude_haiku_low", "Claude · Haiku 5.5 Low（默认）", False, False, "本机 claude CLI 订阅，无需 Key"),
@@ -2190,29 +2199,31 @@ SCORER_SHORT = {"jev": "Jev", "claude_haiku_low": "Haiku", "codex_terra_low": "T
 SCORER_API_DEFAULTS = {"jev": ("https://api.typesafe.ai", "jev-latest"), "openai_compatible": ("", "")}
 
 
-def _scorer_file_key(router, scorer_type: str, path: Path | None) -> str:
+def _scorer_file_key(scorer_type: str, path: Path | None) -> str:
     """The key stored in the file for this API scorer (never shown; only compared with its masked placeholder)."""
-    fields = router.SCORER_API_FIELDS.get(scorer_type)
+    import scorer_client
+    fields = scorer_client.SCORER_API_FIELDS.get(scorer_type)
     if not fields:
         return ""
-    raw = router._read_scorer_file(path or router.scorer_config_path())
+    raw = scorer_client._read_scorer_file(path or scorer_client.scorer_config_path())
     value = raw.get(fields[0])
     return value.strip() if isinstance(value, str) else ""
 
 
 def read_scorer_config(path: Path | None = None) -> dict:
     """The saved scorer choice for the settings card. Keys are masked; key_source says file / env:<NAME> / None."""
-    _, router = modules()
-    config = router.load_scorer_config(path)
-    view = router.scorer_status(config, path)
+    modules()
+    import scorer_client
+    config = scorer_client.load_scorer_config(path)
+    view = scorer_client.scorer_status(config, path)
     fields = {}
     for scorer_type in ("jev", "openai_compatible"):
         entry = view[scorer_type]
         source = entry["key_source"]
-        stored = _scorer_file_key(router, scorer_type, path)
+        stored = _scorer_file_key(scorer_type, path)
         hint = (_tr('已保存 Key（{0}）').format(f"{entry['api_key']}") if source == "file"
                 else _tr('使用环境变量 {0}').format(f'{source[4:]}') if source else _tr("尚未配置 API Key"))
-        fields[scorer_type] = {"api_key_masked": router.mask_secret(stored), "key_source": source, "key_hint": hint,
+        fields[scorer_type] = {"api_key_masked": scorer_client.mask_secret(stored), "key_source": source, "key_hint": hint,
                                "env_key": bool(source and source.startswith("env:")),
                                "base_url": entry["base_url"], "model": entry["model"]}
     return {"scorer_type": config["scorer_type"], "label": _tr(SCORER_LABELS.get(config["scorer_type"], config["scorer_type"])),
@@ -2220,13 +2231,14 @@ def read_scorer_config(path: Path | None = None) -> dict:
             "type_from_env": view.get("type_from_env"), "config_error": view.get("config_error"), "fields": fields}
 
 
-def _key_update(router, scorer_type: str, api_key: str | None, path: Path | None) -> str | None:
+def _key_update(scorer_type: str, api_key: str | None, path: Path | None) -> str | None:
     """None keeps the stored key (field untouched or still showing its masked placeholder), '' clears, else the new key."""
     if api_key is None:
         return None
+    import scorer_client
     clean = api_key.strip()
-    stored = _scorer_file_key(router, scorer_type, path)
-    if stored and clean == router.mask_secret(stored):
+    stored = _scorer_file_key(scorer_type, path)
+    if stored and clean == scorer_client.mask_secret(stored):
         return None
     return clean
 
@@ -2235,7 +2247,8 @@ def save_scorer_config(scorer_type: str, api_key: str | None = None, base_url: s
                        path: Path | None = None) -> str:
     """Validate and atomically write ~/.agent-compass/scorer-config.json. api_key: None or the masked placeholder keeps
     the saved key, '' clears it. Empty base_url/model fall back to the scorer's defaults (Jev) or are required (custom)."""
-    _, router = modules()
+    modules()
+    import scorer_client
     if scorer_type not in SCORER_LABELS:
         raise ValueError(_tr('未知小模型类型 {0}').format(f'{scorer_type}'))
     if scorer_type in SCORER_API_DEFAULTS:
@@ -2243,10 +2256,10 @@ def save_scorer_config(scorer_type: str, api_key: str | None = None, base_url: s
         url, name = (base_url or "").strip(), (model or "").strip()
         if scorer_type == "openai_compatible" and not (url and name):
             raise ValueError(_tr("自定义接口需要填写接口地址和模型名"))
-        router.save_scorer_config(scorer_type, _key_update(router, scorer_type, api_key, path),
-                                  "" if url == default_url else url, "" if name == default_model else name, path=path)
+        scorer_client.save_scorer_config(scorer_type, _key_update(scorer_type, api_key, path),
+                                         "" if url == default_url else url, "" if name == default_model else name, path=path)
     else:
-        router.save_scorer_config(scorer_type, path=path)
+        scorer_client.save_scorer_config(scorer_type, path=path)
     return _tr('已保存路由分类小模型：{0}').format(_tr(SCORER_LABELS[scorer_type]))
 
 
@@ -2254,15 +2267,16 @@ def test_scorer_config(scorer_type: str | None = None, api_key: str | None = Non
                        model: str | None = None, objective: str | None = None) -> str:
     """Score one sample task with the saved config, overlaid with any unsaved form values; no agy fallback, so a
     failure names the chosen scorer's own problem."""
-    _, router = modules()
-    config = router.load_scorer_config()
+    modules()
+    import scorer_client
+    config = scorer_client.load_scorer_config()
     chosen = scorer_type or config["scorer_type"]
     if chosen not in SCORER_LABELS:
         raise ValueError(_tr('未知小模型类型 {0}').format(f'{chosen}'))
     config = {**config, "scorer_type": chosen, "fallback_to_agy": False}
-    fields = router.SCORER_API_FIELDS.get(chosen)
+    fields = scorer_client.SCORER_API_FIELDS.get(chosen)
     if fields:
-        key = _key_update(router, chosen, api_key, None)
+        key = _key_update(chosen, api_key, None)
         if key is not None:
             config[fields[0]] = key
             if chosen == "jev":
@@ -2270,7 +2284,7 @@ def test_scorer_config(scorer_type: str | None = None, api_key: str | None = Non
         for field, value in ((fields[1], base_url), (fields[2], model)):
             if value is not None and value.strip():
                 config[field] = value.strip()
-    result = router.scorer_test(config, objective)
+    result = scorer_client.scorer_test(config, objective)
     label, meta, profile = _tr(SCORER_SHORT.get(chosen, chosen)), result["scorer"], result["task_profile"]
     if result["ok"]:
         dims = f"D{profile['reasoning_depth']} C{profile['code_complexity']}"

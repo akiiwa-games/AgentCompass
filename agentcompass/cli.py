@@ -219,13 +219,14 @@ def readiness_notice() -> str | None:
         import account_fleet
         import provider_inventory
         import route_judge
+        import usage_reading
 
         accounts = json.loads(account_fleet.fleet_document_path().read_text(encoding="utf-8-sig"))
         user_doc = accounts_override.load_override(account_fleet.accounts_override_path())
         provider_inventory.apply(accounts, provider_inventory.discover())
         if user_doc is not None:
             accounts_override.apply(accounts, user_doc)
-        gap = route_judge.readiness_gap(accounts, route_judge.usage_snapshot())
+        gap = route_judge.readiness_gap(accounts, usage_reading.usage_snapshot())
     except Exception:
         return None
     if isinstance(gap, dict) and gap.get("code") == "no_ready_account":

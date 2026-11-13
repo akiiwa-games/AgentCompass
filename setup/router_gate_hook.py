@@ -1153,7 +1153,7 @@ def check_account_quota_exhausted(
 
     `bundles` are the target's resolved bundles; without them the launch is probed as `model` on `account`
     (an unknown model draws every window). Which windows bind and when they refuse come from
-    quota_pools.launch_blockers on route_judge.usage_snapshot, the same rules and reading routing uses:
+    quota_pools.launch_blockers on usage_reading.usage_snapshot, the same rules and reading routing uses:
     the launch floor, a window used up inside its cycle, an empty short window, active in-flight
     reservations, and a scope from data only. `windows` are the quota windows the launch draws, for the
     confirmed-exhaustion latch (an account-wide latch blocks every launch). When the router modules cannot

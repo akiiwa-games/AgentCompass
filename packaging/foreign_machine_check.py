@@ -850,9 +850,9 @@ import allocator
 import axis_scores
 import dispatch_registry
 import provider_inventory
-import route_judge
 import router_gate_hook as gate
 import router_data
+import usage_reading
 
 now = dt.datetime.now(dt.timezone.utc)
 reset_5h = (now + dt.timedelta(hours=3)).isoformat()
@@ -1257,7 +1257,7 @@ fresh_readings["litellm-test"] = {{
     "windows": [{{"id": "weekly", "used_pct": 10.0, "resets_at": reset_7d}}],
 }}
 write_cache(fresh_readings)
-usage_fresh = route_judge.usage_snapshot(
+usage_fresh = usage_reading.usage_snapshot(
     cache_path, list((accounts_metered.get("accounts") or {{}}).keys()), now, inventory=accounts_metered.get("_discovery") or {{}}
 )
 usage_fresh = provider_inventory.merge_usage(usage_fresh, accounts_metered, now)

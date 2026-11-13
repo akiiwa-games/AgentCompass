@@ -13,6 +13,7 @@ import axis_scores
 import host_policy
 import quota_economy
 import quota_pools
+import usage_reading
 import provider_inventory as real_inventory
 
 
@@ -31,7 +32,7 @@ class QuotaLatchCardTests(unittest.TestCase):
         router.usage_snapshot.return_value = {'accounts': {'antigravity': {'status': 'fresh', 'windows': [
             {'id': 'gemini-5h', 'observed_remaining_pct': 99, 'resets_at': reset, 'seconds_until_reset': 10800},
             {'id': '3p-weekly', 'observed_remaining_pct': 0, 'resets_at': reset, 'seconds_until_reset': 10800}]}}}
-        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), patch.object(usage_reading, 'usage_snapshot', router.usage_snapshot), \
              patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
              patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
              patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \

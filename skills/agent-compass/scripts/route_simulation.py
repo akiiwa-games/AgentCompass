@@ -1,7 +1,7 @@
 """Usage-aware routing distribution simulation and ledger replay.
 
 Usage reaches the allocator the way `roll` feeds it: a collector cache document goes through
-route_judge.usage_snapshot (remaining percent before reset, freshness, pools), then allocator.plan,
+usage_reading.usage_snapshot (remaining percent before reset, freshness, pools), then allocator.plan,
 which merges discovery and quota sources itself. Synthetic usage states are written as cache
 documents, never as hand-made allocator input, so the simulation cannot drift from routing.
 
@@ -38,8 +38,9 @@ import quota_economy
 import task_intake
 import host_policy  # noqa: E402
 import provider_inventory  # noqa: E402
-import route_judge  # noqa: E402
+import decision_ledger  # noqa: E402
 import usage_cache  # noqa: E402
+import usage_reading  # noqa: E402
 
 SHORT_HOURS = 24
 AMPLE_USED, SCARCE_USED, SHORT_SCARCE_USED = 10.0, 95.0, 98.0
@@ -154,12 +155,12 @@ def family_of(name, accounts):
 
 # --- usage ----------------------------------------------------------------------------------------
 def snapshot(document, accounts, now):
-    """route_judge.usage_snapshot over one cache document (the roll pipeline)."""
+    """usage_reading.usage_snapshot over one cache document (the roll pipeline)."""
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / usage_cache.CACHE_FILE
         path.write_text(json.dumps(document), encoding='utf-8')
-        return route_judge.usage_snapshot(path, None, now, quota_sources=provider_inventory.quota_sources(accounts),
-                                          inventory={'accounts': {}})
+        return usage_reading.usage_snapshot(path, None, now, quota_sources=provider_inventory.quota_sources(accounts),
+                                            inventory={'accounts': {}})
 
 
 def metered_accounts(accounts):
@@ -384,7 +385,7 @@ def explain(mode, state, task, bundle_ids=(), top=5, now=None, account_set=None)
 
 # --- replay ---------------------------------------------------------------------------------------
 def ledger_records(path=None, last=None):
-    path = Path(path) if path else route_judge.ledger_path()
+    path = Path(path) if path else decision_ledger.ledger_path()
     rows = []
     with path.open(encoding='utf-8') as stream:
         for line in stream:
@@ -441,7 +442,7 @@ def sandbox_state(folder, *, include_local=True):
     """Point routing state at a copy of the real state dir's small files (or an empty dir when include_local=False)."""
     source = Path(os.environ.get('ROUTER_STATE_DIR') or Path.home() / '.agent-compass').expanduser()
     live = [str(p) for p in usage_cache.read_paths()] if include_local else []
-    ledger = route_judge.ledger_path()
+    ledger = decision_ledger.ledger_path()
     target = Path(folder) / '.agent-compass'
     target.mkdir(parents=True)
     if include_local:

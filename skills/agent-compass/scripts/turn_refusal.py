@@ -31,6 +31,7 @@ import provider_retry
 import quota_exhaustion
 import quota_pools
 import usage_cache
+import usage_reading
 
 
 def usage_row(account, usage_cache_path, home):
@@ -63,10 +64,9 @@ def window_refusal(account, accounts, now, usage_cache_path, records, bundles=No
     `bundles` are the resolved bundles of the target; without them the launch is probed as `model` on `account` (an
     unknown model draws every window). `records` are the active in-flight reservations, already without the caller's
     own (`without_own`). `accounts` is the loaded fleet; usage is read as routing reads it
-    (`route_judge.usage_snapshot`, then `provider_inventory.merge_usage`).
+    (`usage_reading.usage_snapshot`, then `provider_inventory.merge_usage`).
     """
-    import route_judge
-    usage = route_judge.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get('_discovery') or {})
+    usage = usage_reading.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get('_discovery') or {})
     usage = provider_inventory.merge_usage(usage, accounts, now, names={account})
     probes = [dict(b, id=b.get('bundle_id') or b.get('id')) for b in bundles or ()] or [
         {'account': account, 'model': model or ''}]

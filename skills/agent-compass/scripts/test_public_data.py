@@ -15,7 +15,7 @@ import account_fleet
 import axis_scores
 import provider_inventory
 import public_data
-import route_judge
+import scorer_client
 from router_test_support import isolated_router_state
 
 T0 = datetime(2026, 11, 1, tzinfo=timezone.utc)
@@ -322,8 +322,8 @@ class LoaderPrecedenceTests(ChannelCase):
         with patch.object(provider_inventory, 'PLAN_TEMPLATES', self.bundled / 'plan-templates.json'), \
                 patch.object(provider_inventory, '_SHIPPED_PLAN_TEMPLATES', None):
             self.assertEqual(provider_inventory.plan_defaults({}, 'claude', 'pro')['windows']['five_hour']['hours'], 6)
-        with patch.object(route_judge, 'CLASSIFIER_CASES_PATH', self.bundled / 'classifier-cases.json'):
-            self.assertEqual(route_judge.load_classifier_cases()['calibration_cases'], [{'marker': 'fetched'}])
+        with patch.object(scorer_client, 'CLASSIFIER_CASES_PATH', self.bundled / 'classifier-cases.json'):
+            self.assertEqual(scorer_client.load_classifier_cases()['calibration_cases'], [{'marker': 'fetched'}])
 
     def test_user_override_beats_fetched_data(self):
         with patch.object(account_fleet, 'REFERENCES', self.bundled):
