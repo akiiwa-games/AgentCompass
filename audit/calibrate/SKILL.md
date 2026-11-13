@@ -33,18 +33,21 @@ the normal channels: shipped public reference data and releases.
    ```
 
    Defaults to the last 30 days of `~/.agent-compass` (or `ROUTER_STATE_DIR`, or `--state-dir`) and writes
-   `calibration/<run date>/report.md` and `report.json` there, then prints a summary line.
+   `calibration/<run date>/report.md` and `report.json` there, then prints a summary line. The whole run is read-only: it
+   writes only those two files. `--out DIR` is the one way to put them elsewhere. A missing state directory or an
+   unreadable database is an error, not an empty report.
 2. Read **Coverage** first. It lists completed dispatches with no active time or tokens, by dispatch path and reason
-   (only Claude and Codex session logs are read; other harnesses record the reason instead), and failed or canceled
-   dispatches that left no measurement. A cell is marked *too small* under the report's `min_cell` samples: do not act
+   (only Claude and Codex session logs are read; other harnesses record the reason instead), failed or canceled
+   dispatches that left no measurement, ledger decisions that never reached a dispatch (deliberate `self`/`none`/`split`
+   choices are counted apart), and any rows or ledger lines that could not be read. A cell is marked *too small* under the report's `min_cell` samples: do not act
    on it, wait for more dispatches or widen the range.
 3. Read the deviations, one section at a time, and decide what each may change:
 
    | Report section | Deviation | May change (shipped reference data) | May not change |
    |---|---|---|---|
    | Hours by work kind / demand profile | actual / expected hours far from 1 and stable across the range | the `expected_hours` of the matching cases in `skills/agent-compass/references/classifier-cases.json` (`calibration_cases`), and its `route_definitions` / `dimension_rubric` wording that anchors hours; add a neutral synthetic case for an under-covered kind | the classifier output in code, `work_kind` / `difficulty` / `profile` populated by hand, any hours rule keyed on a model or keyword |
-   | Spend by model and effort | actual USD (recorded tokens at public list price) far from `expected_usd`; window share higher than the economy assumed | scoring parameters in `skills/agent-compass/references/accounts.json` (`scoring`: `context_burn_extra_at_250k`, safety margins and floors, `rotate_after_carried_tokens`) | `usd_per_hour`, list prices and plan capacities (public sources only), model category scores, per-model factors |
-   | Endings (failed, relaunched, canceled, rotation) | one model or kind failing or rotating far more than the rest | provider-health and rotation parameters above; otherwise open a bug for the dispatch path | disabling a model (the user's tray checkbox does that), name-based rules |
+   | Spend by model and effort | read the two errors apart. *Spend ratio* (actual list-price USD over `expected_usd`) mixes them. *Rate ratio* (actual USD per active hour over the `usd_per_hour` the estimate used) does not depend on the hours: if it is far from 1 the rate or the burn is off, if only the spend ratio is, the hours are (see the hours rows). A `>=` USD omits cache-write tokens the public data does not price | burn or window parameters in `skills/agent-compass/references/accounts.json` (`scoring`: `context_burn_extra_at_250k`, safety margins and floors); a hours deviation goes to the classifier rows above | `usd_per_hour`, list prices and plan capacities (public sources only: a rate deviation is a note for the next upstream refresh), model category scores, per-model factors |
+   | Endings (failed, relaunched, canceled, rotation) | one model or kind failing far more than the rest, or its workers *rotated away* (replaced for context) often | `rotate_after_carried_tokens` in `accounts.json` `scoring`; for failures open a bug for the dispatch path | disabling a model (the user's tray checkbox does that), name-based rules |
    | Pinned and keep-whole groups | pins or `--keep-whole` common for one kind | the classifier cases and `route_definitions` for that kind (a pin is a symptom: see why the router's pick was overridden) | pins hard-coded away, exemptions |
 
    Write the change as a dated maintainer declaration: the date and the report's range go in the commit message, and
@@ -63,6 +66,7 @@ the normal channels: shipped public reference data and releases.
 
 ## What the report cannot show
 
-Read the gaps in `docs/technical-reference.md` ("Calibration report") before trusting a table: only completed
-dispatches are measured, only Claude and Codex harnesses have active time and tokens, non-Paseo hosts record no
+Read the gaps in `docs/technical-reference.md` ("Calibration report") before trusting a table: a retried task's later
+attempts are left out of the hours and spend cells (only the completed attempt carries active time), ratios are medians
+of per-dispatch ratios, only completed dispatches are measured, only Claude and Codex harnesses have active time and tokens, non-Paseo hosts record no
 measurement, and the window share is derived from list price over cited capacity, not read from the provider.
