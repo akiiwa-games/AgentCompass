@@ -38,7 +38,7 @@ score N    = fit + continuity + boost - quota_cost
 
 The classifier states how much the task needs (0–3) of `divergence`, `coding`, `aesthetics` and `tool_operation` (`tool_operation`
 level 1 imposes no ability requirement; level 2 evaluates per-effort `responsiveness`; level 3 evaluates
-`min(responsiveness, image_recognition)` and requires image input; it applies the cap per facet). Routine levels pay nothing
+`min(responsiveness, image_recognition)` and requires image input; it applies the cap per facet). A task the classifier marks `needs_visual` or `needs_gui` requires image input at every level: a model whose public data says it takes none leaves the task, and one with no cited modality leaves automatic routing. Routine levels pay nothing
 for ability above their target; a level-3 demand keeps crediting ability up to the category's ceiling, so the hardest tasks
 can prefer a model measured above the anchor. `t3` stays the anchor: the origin of `z`, level 3 of the manual 1–3 scale and the
 upper end of `continuity`. A model's category scores are panel standard scores (`z`)

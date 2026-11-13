@@ -212,13 +212,16 @@ def evaluate_bundle(bundle, task, ctx):
     if task.get('constraint_effort') and str(quota_economy.scoring_effort(bundle, info) or '').lower() != task['constraint_effort']:
         task_exclude('explicit effort constraint')
     # Rule B: a demanded category with no data at all, no cited usd on a metered account, or unknown image_input modality
-    # when the task demands image input (tool_operation 3), leaves automatic routing; naming the model (--model, or its
+    # when the task demands image input (needs_visual, or tool_operation 3), leaves automatic routing; naming the model (--model, or its
     # bundle) still dispatches it, with the data error as a warning and its cost unpriced.
     state = info.get('five_axis') or {'missing': list(axis_scores.FIVE_AXES), 'usd_status': 'missing'}
     billed = not (spec.get('unmetered') or spec.get('unlimited'))
     named = not pool and (model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id'])
     img_info = state.get('image_input') or {'status': 'missing'}
-    needs_image_input = task['five_axis_demand'].get('tool_operation', 0) >= axis_scores.IMAGE_INPUT_LEVEL and not pool
+    # The task reads images when the classifier says so (needs_visual, which task intake also sets for needs_gui) or when
+    # it demands tool_operation 3: a model that takes no image input cannot do either.
+    needs_image_input = (task['needs_visual']
+                         or task['five_axis_demand'].get('tool_operation', 0) >= axis_scores.IMAGE_INPUT_LEVEL) and not pool
     eff = quota_economy.scoring_effort(bundle, info)
     values = axis_scores.five_axis_values(state, eff)
     if needs_image_input and img_info.get('status') == 'no':

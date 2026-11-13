@@ -577,7 +577,7 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual((d6['ranking'][0].get('base_id') or d6['ranking'][0]['id']), 'claude-2__opus55_high')
 
     def test_image_input_exclusion_and_unknown_modality_mode_b(self):
-        """Round 11 item 4: when tool_operation is 3 (the task reads images), models with public image_input == 'no' are
+        """Round 11 item 4: when the task reads images (tool_operation 3, or needs_visual), models with public image_input == 'no' are
         excluded; models with unknown modality leave automatic routing under Mode B (dispatched with warning only when
         named via --model)."""
         doc = document(
@@ -608,10 +608,18 @@ class FiveAxisTests(unittest.TestCase):
         blocked = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 2, 0, 3)},
                             constraints={'model': 'gpt-6.1-sol'})
         self.assertEqual(blocked['choice'], 'none')
-        # Level 0-2 (no image input needed): neither is excluded for modality.
+        # Level 0-2 and no visual flag (no image input needed): neither is excluded for modality.
         text_only = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 2, 0, 2)})
         self.assertFalse(any('image input' in e or 'image_input' in e
                              for c in text_only['ranking'] for e in c['excluded']))
+        # needs_visual is a required modality at any tool_operation level: the same two gates apply.
+        for level in (0, 2):
+            d = self.plan(self.accounts, doc, profile={'axis_demand': demand(1, 2, 0, level), 'needs_visual': True})
+            self.assertTrue(all(any('model does not accept image input' in e for e in c['excluded'])
+                                for c in self.rows_for(d, 'gpt-6.1-sol')))
+            self.assertTrue(all(any('image_input modality has no cited source' in e for e in c['excluded'])
+                                for c in self.rows_for(d, 'claude-sonnet-5-5')))
+            self.assertTrue([c for c in self.rows_for(d, 'claude-opus-5-5') if not c['excluded']])
 
     def test_free_pool_mode_b_and_opencode_db_local_spend_lower_bound(self):
         """Round 11 item 5: 'free' models are an ordinary quota pool; when capacity is unreadable (opencode), they are
