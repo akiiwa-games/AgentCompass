@@ -30,7 +30,7 @@ The router scores a model on **four capability categories** (`divergence`, `codi
 | `five_axis.py [--distrust SOURCE] [--accept-panel-change]` | Writes `references/five-axis-scores.json`: per-effort facet curves, parallel-board link offsets, category scores, `estimate_fits` (`r`, `skill`, `loo_rmse`, `n`), `usd_per_hour`, `duration_multiplier`, community plan capacities, panel `anchor.targets` (`levels` 1..3 with the level-3 `ceiling`, `continuity = t3 - t2`), `anchor.sd_panel` and `anchor.panel_change`, and surfaced data errors. Refuses a panel change unless accepted. |
 | `arena_capture.py import CAPTURE.json ...` / `show` | Imports browser-captured `arena.ai` Agent / Code and Alignment boards and preserves their manifest entries across `sources.py fetch`. |
 | `community.py` | Reads community real-usage measurements of subscription window capacity, token mix, vendor plan multipliers, and usd-per-hour check rows. |
-| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`; `--model ID` merges only that model's rows on the shipped scale, see To add a model): runs fetch (unless `--no-fetch`), `measurements.py`, `five_axis.py`, `capability_catalog.py`, `public_data.py manifest --write`, validates `public-data` checks and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing, invalid or a refused panel change (nothing written). |
+| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`; `--model ID` merges only that model's rows on the shipped scale, see To add a model): runs fetch (unless `--no-fetch`), `measurements.py`, `five_axis.py`, `capability_catalog.py`, `public_data.py manifest --write`, validates `public-data` checks and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing or invalid, 3 refused with nothing written (a refused panel change or `--model`; the staleness report never exits 3). |
 
 ## Refresh
 
@@ -73,7 +73,8 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    `tier` is standardized over the fetched board itself and kept as built. Every other row, the panel and the scales stay
    as shipped. It prints each entry it left out and why (two reasons only: the anchor's reading moved since the shipped
    fetch, or a z-score whose source has no shipped scale) and notes what else it did; a model no board lists, or an entry
-   it cannot merge for another reason, stops the run before anything is written. It then validates the catalog
+   it cannot merge for another reason, stops the run before anything is written (exit 3; a run that writes exits with
+   the staleness status 0, 1 or 2). It then validates the catalog
    (`public_data.validate_accounts_provenance`) and rebuilds `five-axis-scores.json`, `model-capabilities.{json,md}` and
    the `public-data.json` manifest. Values fitted over all measured models (the tier fits, the fleet effort ratios) still
    move for other models; the run prints how many moved, by field. A model in `calibration_panel` (or the anchor) is

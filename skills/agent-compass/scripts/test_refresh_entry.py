@@ -383,7 +383,7 @@ class RefreshEntryTests(unittest.TestCase):
 
     def test_a_panel_change_is_refused_unless_accepted_and_then_recorded(self):
         """Brief 2026-11-13: when the panel's members differ from the shipped five-axis-scores.json the refresh prints the
-        change, writes nothing and exits 2; `--accept-panel-change` writes it and records it in `anchor.panel_change`,
+        change, writes nothing and exits 3 (refused); `--accept-panel-change` writes it and records it in `anchor.panel_change`,
         and a later run with the same members carries that record forward."""
         code, stdout, stderr = self._run_refresh('--no-fetch')
         self.assertEqual(code, 0, stderr + stdout)
@@ -398,7 +398,8 @@ class RefreshEntryTests(unittest.TestCase):
         before = {p.name: p.read_bytes() for p in self.refs_dir.iterdir() if p.is_file()}
 
         code, stdout, stderr = self._run_refresh('--no-fetch')
-        self.assertEqual(code, 2, stderr + stdout)
+        self.assertEqual(code, refresh.REFUSED, stderr + stdout)
+        self.assertNotIn(code, refresh.LEVEL.values())
         self.assertIn(f'added {dropped}', stderr)
         self.assertIn('removed gone-model', stderr)
         self.assertIn('--accept-panel-change', stderr)
@@ -568,7 +569,8 @@ class ModelRowMergeTests(unittest.TestCase):
                       'price': [{'source': 's.price', 'value': {'input': 1.0}, 'as_of': '2026-11-13'}],
                       'tier': [{'source': 'tier.arena_overall', 'value': 0.3}]}},
             conflicts=[{'model': 'new-m', 'field': 'image_input'}, {'model': 'old-m', 'field': 'x'}],
-            checks=[{'model': 'new-m', 'check': 'high_outside_adjacent_efforts'}, {'model': 'old-m', 'check': 'c2'}],
+            checks=[{'model': 'old-m', 'check': 'c1'}, {'model': 'new-m', 'check': 'high_outside_adjacent_efforts'},
+                    {'source': 'b.code', 'check': 'board-level'}],
             tier_sha=tier_sha)
 
     def test_only_the_named_rows_change(self):
@@ -579,9 +581,11 @@ class ModelRowMergeTests(unittest.TestCase):
         for model in ('anchor-m', 'panel-m', 'old-m'):
             self.assertEqual(merged['models'][model], shipped['models'][model])
         self.assertEqual(sorted(merged['models']), ['anchor-m', 'new-m', 'old-m', 'panel-m'])
-        self.assertEqual(merged['conflicts'], [{'model': 'old-m', 'field': 'image_input'}, {'model': 'new-m', 'field': 'image_input'}])
-        self.assertEqual(merged['checks'], [{'model': 'old-m', 'check': 'c1'}, {'source': 'b.code', 'check': 'board-level'},
-                                            {'model': 'new-m', 'check': 'high_outside_adjacent_efforts'}])
+        # In the order the full build writes them, not appended.
+        self.assertEqual(merged['conflicts'], [{'model': 'new-m', 'field': 'image_input'}, {'model': 'old-m', 'field': 'image_input'}])
+        self.assertEqual(merged['checks'], [{'model': 'old-m', 'check': 'c1'},
+                                            {'model': 'new-m', 'check': 'high_outside_adjacent_efforts'},
+                                            {'source': 'b.code', 'check': 'board-level'}])
 
     def test_board_z_is_raw_on_the_shipped_scale_and_scale_free_entries_keep_their_own_dates(self):
         merged, _, notes = refresh.merge_model_rows(self.shipped(), self.fresh(), ['new-m'])
@@ -644,7 +648,8 @@ class ModelRowMergeTests(unittest.TestCase):
         err = io.StringIO()
         with patch.object(sources, 'fetch', side_effect=AssertionError('fetched')), patch('sys.stderr', err):
             code = refresh.main(['--data', str(root / 'data'), '--references', str(root), '--model', anchor])
-        self.assertEqual(code, 2)
+        self.assertEqual(code, refresh.REFUSED)
+        self.assertNotIn(code, refresh.LEVEL.values())
         self.assertIn('full refresh', err.getvalue())
 
     def test_adding_a_non_panel_model_keeps_the_scale_targets_and_panel_record_and_a_ceiling_moves_only_to_it(self):
@@ -724,8 +729,8 @@ class ModelRowMergeTests(unittest.TestCase):
                 self.assertEqual([e['source'] for e in full_meas['models'][added]['tier']],
                                  ['tier.arena_overall' if listing == 'arena' else 'tier.aa_index'])
                 self.assertEqual(merged_meas['models'][added], full_meas['models'][added])
-                self.assertEqual([c for c in merged_meas['checks'] if c.get('model') == added],
-                                 [c for c in full_meas['checks'] if c.get('model') == added])
+                self.assertEqual(merged_meas['checks'], full_meas['checks'])
+                self.assertEqual(merged_meas['conflicts'], full_meas['conflicts'])
                 self.assertEqual(merged_scores['models'][added], full_scores['models'][added])
 
     def test_the_blast_radius_counts_only_other_models_values(self):

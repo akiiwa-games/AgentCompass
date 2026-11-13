@@ -65,7 +65,7 @@ Panel membership is derived from the rule above, never a hand list. Adding a non
 target (it can raise a ceiling). A change of members moves `sd_panel`, `t1` and `t2`, and with them the level-2 cap and the
 exchange rate between ability and quota cost, so `agentcompass data refresh` (and `five_axis.py`) compares the panel it computed
 with the shipped `five-axis-scores.json`: when the members differ it prints the added and removed models and, per category and
-facet, the old and new `sd_panel`, `t1`, `t2` and ceiling, then exits 2 and writes nothing unless `--accept-panel-change` is
+facet, the old and new `sd_panel`, `t1`, `t2` and ceiling, then exits 3 (refused) and writes nothing unless `--accept-panel-change` is
 passed. An accepted change is recorded in `anchor.panel_change` (date, added, removed, shifts) and carried forward until the next.
 Category scores live in [`skills/agent-compass/references/five-axis-scores.json`](../skills/agent-compass/references/five-axis-scores.json),
 and plan window structure in [`skills/agent-compass/references/plan-templates.json`](../skills/agent-compass/references/plan-templates.json).

@@ -35,7 +35,9 @@ Topological chain:
    community sentence no longer on the page: red, no value). Capacity windows with an empty ladder are listed as red.
 
 Exit status: 0 all fresh, 1 something stale (yellow), 2 something missing or invalid (red), so a scheduler or CI job can
-alert on it.
+alert on it; 3 (`REFUSED`, never a staleness status) when the run refused and wrote nothing: a `--model` that is not a
+catalog row, is in the panel or is the anchor, that no board lists or whose entry cannot be merged, or a panel change
+without `--accept-panel-change`.
 """
 import argparse
 import copy
@@ -59,6 +61,11 @@ import sources  # noqa: E402
 import user_scores  # noqa: E402
 
 LEVEL = {'ok': 0, 'unused': 0, 'stale': 1, 'missing': 2}   # unused: fetched, left out by design (METR)
+REFUSED = 3                 # the run refused and wrote nothing; LEVEL never uses it
+
+
+class Refused(ValueError):
+    """A `--model` run that cannot go ahead; raised before anything is written."""
 
 
 def _preserve_generated_at(path, doc):
@@ -155,9 +162,9 @@ def refuse_panel_models(names, acc, shipped):
                     *((shipped.get('panel') or {}).get('models') or ())}
     for name in names:
         if name not in (acc.get('models') or {}):
-            raise ValueError(f'--model {name}: accounts.json has no row for it; add the catalog row first')
+            raise Refused(f'--model {name}: accounts.json has no row for it; add the catalog row first')
         if name in scale_models:
-            raise ValueError(f'--model {name}: it is in the calibration panel (or is the anchor), so it changes the scale '
+            raise Refused(f'--model {name}: it is in the calibration panel (or is the anchor), so it changes the scale '
                              'of every board; run the full refresh (agentcompass data refresh) instead')
 
 
@@ -188,11 +195,11 @@ def _on_shipped_scale(field, entry, shipped_sources, fresh_sources):
     if 'z' in entry:                # the picked effort's z (aa.index), found by which effort carried it
         picked = [e for e, z in (entry.get('z_by_effort') or {}).items() if z == entry['z']]
         if not picked or picked[0] not in out.get('z_by_effort', {}):
-            raise ValueError(f"{src}: the entry z {entry['z']} matches none of its listed efforts; nothing written")
+            raise Refused(f"{src}: the entry z {entry['z']} matches none of its listed efforts; nothing written")
         out['z'] = out['z_by_effort'][picked[0]]
     if isinstance(entry.get('method'), str) and 'sd_panel' in entry['method']:
         if not _SCALE_TEXT.search(entry['method']):
-            raise ValueError(f'{src}: the method text names sd_panel in a wording this merge cannot restate on the '
+            raise Refused(f'{src}: the method text names sd_panel in a wording this merge cannot restate on the '
                              'shipped scale; nothing written')
         out['method'] = _SCALE_TEXT.sub(lambda m: (f"x_anchor {anchor_raw:.6g} ({m['anchor']}), sd_panel {sd:.6g} over "
                                                    f"{shipped_scale['n_panel']} panel models"), entry['method'])
@@ -210,7 +217,7 @@ def merge_model_rows(shipped, fresh, names, now=None):
     for name in names:
         entries = (fresh.get('models') or {}).get(name) or {}
         if not any(entries.values()):
-            raise ValueError(f'--model {name}: no board lists it (the fetched boards give it no measurement); check its '
+            raise Refused(f'--model {name}: no board lists it (the fetched boards give it no measurement); check its '
                              'listed_as names; nothing written')
         row = {}
         for field, items in entries.items():
@@ -229,8 +236,8 @@ def merge_model_rows(shipped, fresh, names, now=None):
                     tier_boards.add(src)
         merged['models'][name] = row
     for key in ('conflicts', 'checks'):
-        merged[key] = ([c for c in shipped.get(key) or () if c.get('model') not in names]
-                       + [c for c in fresh.get(key) or () if c.get('model') in names])
+        merged[key] = _in_build_order([c for c in shipped.get(key) or () if c.get('model') not in names],
+                                      [c for c in fresh.get(key) or () if c.get('model') in names], fresh.get(key) or [])
     if rescaled:
         notes.append(f'{rescaled} board z-scores recomputed on the shipped scale (the panel scale moved since the '
                      f'shipped fetch); {ROUNDED_SCALE_NOTE}')
@@ -239,6 +246,17 @@ def merge_model_rows(shipped, fresh, names, now=None):
                      "the other models' tiers stay on the shipped one")
     merged['generated_at'] = (now or datetime.now(timezone.utc)).isoformat(timespec='seconds')
     return merged, left_out, notes
+
+
+def _in_build_order(kept, added, built):
+    """`kept` with each row of `added` placed where the full build (`built`, the fresh list) has it: right after the
+    nearest row before it in `built` that is in the result, else first."""
+    out = list(kept)
+    for row in added:
+        before = built[:built.index(row)]
+        anchor = next((r for r in reversed(before) if r in out), None)
+        out.insert(0 if anchor is None else len(out) - out[::-1].index(anchor), row)
+    return out
 
 
 def _numbers(value, path=()):
@@ -363,7 +381,8 @@ def markdown(rows, generated_at, checks=()):
 
 
 def main(argv=None, prog=None):
-    ap = argparse.ArgumentParser(prog=prog, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog=prog, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+                                 epilog='exit status: 0 fresh, 1 stale, 2 missing or invalid, 3 refused (nothing written)')
     ap.add_argument('--data', help='directory holding calibration downloads (default: ~/.cache/agentcompass-calibration)')
     ap.add_argument('--no-fetch', action='store_true', help='rebuild from the cached sources already in DIR')
     ap.add_argument('--report', help='also write the source-age table (markdown) here')
@@ -386,6 +405,9 @@ def main(argv=None, prog=None):
             sources.fetch(target)
         _, doc = rebuild(target, references=args.references, distrust=args.distrust,
                          accept_panel_change=args.accept_panel_change, models=args.model)
+    except (Refused, five_axis.PanelChangeRefused) as exc:
+        sys.stderr.write(f'{exc}\n')
+        return REFUSED
     except (OSError, ValueError) as exc:
         sys.stderr.write(f'{exc}\n')
         return 2
