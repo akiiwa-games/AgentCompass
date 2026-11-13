@@ -44,8 +44,11 @@ from pathlib import Path
 import re
 import sys
 
-import override_store
-import public_data
+# `agentcompass score` runs this file with python -I, which leaves the script directory off sys.path. Same insertion as
+# route_judge.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import override_store  # noqa: E402
+import public_data  # noqa: E402
 
 SCHEMA_VERSION = 1
 FILE_NAME = 'user-scores.json'

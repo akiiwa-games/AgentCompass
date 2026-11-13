@@ -750,5 +750,17 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         self.assertEqual(minimal_models['m-missing']['five_axis']['categories']['coding']['missing_facets'], ['execution'])
 
 
+class IsolatedEntryTests(unittest.TestCase):
+    def test_the_score_stage_starts_under_python_isolated_mode(self):
+        # Rule: `agentcompass score list|set|clear` runs user_scores.py with `python -I` (agentcompass/cli.py), where the
+        # script directory is not on sys.path, so the file must reach its sibling modules by itself.
+        import subprocess
+        script = Path(__file__).resolve().parent / 'user_scores.py'
+        done = subprocess.run([sys.executable, '-I', '-X', 'utf8', str(script), 'list'], capture_output=True, text=True,
+                              encoding='utf-8', timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        json.loads(done.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()
