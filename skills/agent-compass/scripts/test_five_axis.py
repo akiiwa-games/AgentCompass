@@ -955,7 +955,7 @@ class AnchorRelativeTests(unittest.TestCase):
 
     def test_structural_and_statistical_checks_drop_bad_listings_and_flag_non_monotone_high(self):
         b = self.ms.Builder.__new__(self.ms.Builder)
-        b.acc = {'models': {'m_bad_tag': {}, 'm_range': {}, 'm_dup1': {}, 'm_dup2': {}, 'm_stat': {}, 'm_ok': {}}}
+        b.acc = {'models': {'m_bad_tag': {}, 'm_range': {}, 'm_dup1': {}, 'm_dup2': {}, 'm_stat': {}, 'm_ok': {}}, 'families': {'patterns': []}}
         b.checks, b.missing, b.manifest = [], {}, {}
         boards = {
             'aa.terminalbench_4': {
@@ -1009,7 +1009,7 @@ class AnchorRelativeTests(unittest.TestCase):
                  'listed_as': 'M1 High', 'listed_effort': 'high'},
             ]},
         }}
-        rows, _, _, _, _, _ = self.fa.Scorer(meas, {'models': {self.ms.ANCHOR: {}, 'm1': {}}}).score()
+        rows, _, _, _, _, _ = self.fa.Scorer(meas, {'models': {self.ms.ANCHOR: {}, 'm1': {}}, 'families': {'patterns': []}}).score()
         ex = rows['m1']['axes']['coding']['facets']['execution']
         self.assertEqual(ex['status'], 'measured')
         self.assertEqual(ex['sources']['arena.agent_code']['effort_shift'], 'aa')
@@ -1291,7 +1291,7 @@ class AnchorRelativeTests(unittest.TestCase):
              'z_by_effort': dict.fromkeys(EFFORT_NAMES, -0.1)}],
             tool_operation=[{'source': 'lmarena.vision', 'facet': 'image_recognition', 'value': -0.15}])
         meas['models']['channel'] = {}
-        acc = {'models': {m: {} for m in meas['models']},
+        acc = {'models': {m: {} for m in meas['models']}, 'families': {'patterns': []},
                'same_model': {'channel': {'model': 'astra', 'carries': ['coding'], 'url': 'https://openai.com/index/introducing-dots/'}}}
         rows, tier, _, _, _, _ = self.fa.Scorer(meas, acc).score()
         self.assertEqual((tier['channel']['value'], tier['channel']['method'], tier['channel']['base_model']), (4.2, 'sibling', 'astra'))
@@ -1304,7 +1304,7 @@ class AnchorRelativeTests(unittest.TestCase):
         tool = rows['channel']['axes']['tool_operation']
         self.assertEqual((tool['status'], tool.get('flag'), tool['facets']), ('missing', 'missing', {}))
         # without the declaration the row has no tier and nothing to estimate from
-        rows, tier, _, _, _, _ = self.fa.Scorer(meas, {'models': acc['models']}).score()
+        rows, tier, _, _, _, _ = self.fa.Scorer(meas, {'models': acc['models'], 'families': acc['families']}).score()
         self.assertEqual(tier['channel']['method'], 'none')
         self.assertEqual(rows['channel']['axes']['coding']['status'], 'missing')
 
@@ -1376,7 +1376,7 @@ class SourceMergeTests(unittest.TestCase):
         meas = {'models': {'m': {'usd_per_hour': self.entries(), 'aesthetics': [
             {'source': 'designarena.website', 'facet': 'design', 'value': -1.2},
             {'source': 'lmarena.webdev', 'facet': 'design', 'value': 0.4}]}}}
-        scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=['arena.agent_sessions', 'designarena.website'])
+        scorer = self.fa.Scorer(meas, {'models': {'m': {}}, 'families': {'patterns': []}}, distrust=['arena.agent_sessions', 'designarena.website'])
         usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas)
         self.assertEqual((usd['m']['value'], usd['m']['fallback']), (31.0, True))
         rows, _, _, _, _, _ = scorer.score()
@@ -1401,7 +1401,7 @@ class DurationTests(unittest.TestCase):
 
     def build(self, models, **acc_extra):
         rows = {m: {'fields': {'throughput': tps}} for m, tps in models.items()}
-        acc = {'models': {m: {} for m in models}, 'aliases': {}, **acc_extra}
+        acc = {'models': {m: {} for m in models}, 'aliases': {}, 'families': {'patterns': []}, **acc_extra}
         scorer = self.fa.Scorer({'models': {m: r['fields'] for m, r in rows.items()}}, acc)
         tier = {m: {'value': None, 'method': 'none'} for m in rows}
         return self.fa.durations(scorer, rows, acc, {}, {}, tier)
@@ -1830,7 +1830,7 @@ class DerivedUsdTests(unittest.TestCase):
             {'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max', 'value': 6.125},
             {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 13.688},
         ]}}}
-        scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=('arena.agent_sessions',))
+        scorer = self.fa.Scorer(meas, {'models': {'m': {}}, 'families': {'patterns': []}}, distrust=('arena.agent_sessions',))
         usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas)
         self.assertEqual((usd['m']['value'], usd['m']['fallback']), (13.688, True))
         self.assertIn('arena.agent_sessions distrusted', usd['m']['merge'])
