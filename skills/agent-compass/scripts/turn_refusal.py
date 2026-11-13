@@ -1,10 +1,11 @@
 """Why a new turn to an existing worker is refused now, composed only from the owners of each condition.
 
 The conditions are the ones the allocator applies to a candidate and the spawn gate applies to a turn, read once:
-the account's discovery state (`provider_inventory.unavailable_reason`), a provider hold (`provider_retry`), a model
+the account or bundle switched off (`host_policy`, the model-management checkbox, a legacy meter), the account's
+discovery state (`provider_inventory.unavailable_reason`), a provider hold (`provider_retry`), a model
 latch (`model_latch`), the confirmed-exhaustion latch (`quota_exhaustion`) and the quota windows the bundle draws
-(`quota_pools.launch_blockers` on the usage reading). `setup/router_gate_hook.py` reads `window_refusal` for its quota
-check and `worker_sessions.continuation_verdict` reads `worker_refusal`, so neither restates a rule.
+(`quota_pools.launch_blockers` on the usage reading). `setup/router_gate_hook.py` reads `disabled_cause` and
+`window_refusal` and `worker_sessions.continuation_verdict` reads `worker_refusal`, so neither restates a rule.
 """
 
 from datetime import datetime, timezone
@@ -12,12 +13,27 @@ from datetime import datetime, timezone
 import account_fleet
 import axis_scores
 import dispatch_registry as registry
+import host_policy
 import model_latch
 import provider_inventory
 import provider_retry
 import quota_exhaustion
 import quota_pools
 import usage_cache
+
+
+def disabled_cause(account, candidates, accounts, policy):
+    """(kind, detail) when the account, or every bundle the target can be, is switched off, else None. Kinds: `legacy`
+    (the account's leftover meter text), `host_policy` (account not allowed on this host), `bundles` (ids all unchecked
+    in model management). `candidates` are the account's matching bundle rows; `policy` is the loaded host policy."""
+    legacy = (accounts.get('accounts') or {}).get(account, {}).get('legacy_meter')
+    if isinstance(legacy, str) and legacy.strip():
+        return 'legacy', legacy
+    if policy is not None and not host_policy.account_allowed(policy, account):
+        return 'host_policy', account
+    if candidates and all(c.get('disabled') for c in candidates):
+        return 'bundles', [c['bundle_id'] for c in candidates]
+    return None
 
 
 def window_refusal(account, accounts, now, usage_cache_path, records, bundles=None, model=None):
@@ -65,6 +81,16 @@ def worker_refusal(agent_id, now=None):
     account = bundle['account']
     now = now or datetime.now(timezone.utc)
     accounts = account_fleet.load_accounts()
+    candidates = [dict(row, bundle_id=bundle_id) for bundle_id in [bundle.get('bundle_id') or bundle.get('id')]
+                  for row in [((accounts.get('accounts') or {}).get(account, {}).get('bundles') or {}).get(bundle_id)]
+                  if isinstance(row, dict)]
+    off = disabled_cause(account, candidates, accounts, host_policy.load_policy())
+    if off:
+        kind, detail = off
+        return {'legacy': f'account {account} is switched off ({detail})',
+                'host_policy': f'account {account} is disabled on this host by its host policy',
+                'bundles': f'bundle {", ".join(detail)} is unchecked in model management'}[kind] + (
+            "; re-enabling is the user's choice in AgentCompass settings, so roll the follow-up instead")
     unavailable = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, account, bundle.get('provider'))
     if unavailable:
         return f'account {account} is not ready ({unavailable})'

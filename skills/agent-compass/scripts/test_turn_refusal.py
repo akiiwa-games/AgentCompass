@@ -1,11 +1,13 @@
 """The continuation verdict follows a new turn's admission: a worker under the context threshold is "same worker" only
 when its account and model could take a turn now (dispatch-rules.md section 3). Synthetic accounts, usage and holds."""
+import copy
 from datetime import datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
 
 import account_fleet
 import dispatch_registry
+import host_policy
 import model_latch
 import provider_retry
 import route_judge
@@ -18,7 +20,8 @@ NOW = datetime.now(timezone.utc)
 THRESHOLD = 2_000_000
 BUNDLE = {'account': 'acme', 'provider': 'acme', 'model': 'acme-quartz-2', 'effort': 'high', 'bundle_id': 'quartz_high'}
 FLEET = {'accounts': {'acme': {'windows': {'seven_day': {'hours': 168}}, 'bundles': {
-    'quartz_high': {'provider': 'acme', 'model': 'acme-quartz-2', 'effort': 'high'}}}},
+    'quartz_high': {'provider': 'acme', 'model': 'acme-quartz-2', 'effort': 'high'},
+    'onyx_high': {'provider': 'acme', 'model': 'acme-onyx-2', 'effort': 'high'}}}},
     'scoring': {'rotate_after_carried_tokens': THRESHOLD},
     '_discovery': {'accounts': {'acme': {'status': 'ready'}}, 'launchers': {}}}
 
@@ -37,13 +40,14 @@ def usage(left):
 
 class ContinuationVerdictTests(unittest.TestCase):
     def setUp(self):
-        self.fleet = {**FLEET, '_discovery': {'accounts': {'acme': {'status': 'ready'}}, 'launchers': {}}}
-        self.left, self.holds, self.latches = 80, {}, {}
+        self.fleet = copy.deepcopy(FLEET)
+        self.left, self.holds, self.latches, self.policy = 80, {}, {}, None
         for target, new in (
                 (account_fleet, patch.object(account_fleet, 'load_accounts', side_effect=lambda: self.fleet)),
                 (turn_refusal, patch.object(turn_refusal, 'worker_bundle', return_value=('d1', dict(BUNDLE)))),
                 (route_judge, patch.object(route_judge, 'usage_snapshot', side_effect=lambda *a, **k: usage(self.left))),
                 (dispatch_registry, patch.object(dispatch_registry, 'reservations', return_value=[])),
+                (host_policy, patch.object(host_policy, 'load_policy', side_effect=lambda: self.policy)),
                 (provider_retry, patch.object(provider_retry, 'active', side_effect=lambda **k: self.holds)),
                 (model_latch, patch.object(model_latch, 'active', side_effect=lambda **k: self.latches))):
             new.start()
@@ -81,6 +85,31 @@ class ContinuationVerdictTests(unittest.TestCase):
     def test_an_account_that_is_not_ready_rolls(self):
         self.fleet['_discovery']['accounts']['acme'] = {'status': 'auth_failed', 'reason': 'credentials_rejected'}
         self.assertRoll(self.verdict(), 'not ready', 'credentials_rejected')
+
+    def test_a_hold_on_a_quota_pool_of_the_account_refuses_only_the_bundles_drawing_it(self):
+        pool = {'id': '3p-5h+3p-weekly', 'models': ['acme-quartz-2']}
+        self.holds = {provider_retry.pool_key('acme', pool['id']): {
+            'account': 'acme', 'model': None, 'scope': 'account', 'pool': pool,
+            'failure_code': provider_retry.TURN_FAILED_CODE, 'message': 'Individual quota reached. Resets in 122h48m2s.'}}
+        self.assertRoll(self.verdict(), 'quota pool 3p-5h+3p-weekly', 'Individual quota reached')
+        other = dict(BUNDLE, model='acme-onyx-2', bundle_id='onyx_high')
+        with patch.object(turn_refusal, 'worker_bundle', return_value=('d2', other)):
+            self.assertTrue(self.verdict().startswith('Continuation: same worker'))
+
+    def test_a_disabled_account_or_unchecked_bundle_rolls_and_leaves_re_enabling_to_the_user(self):
+        for name, change in (
+                ('host_policy', lambda: setattr(self, 'policy', {'allowed_accounts': ['other']})),
+                ('unchecked', lambda: self.fleet['accounts']['acme']['bundles']['quartz_high'].update(disabled=True)),
+                ('legacy', lambda: self.fleet['accounts']['acme'].update(legacy_meter='retired meter'))):
+            with self.subTest(name=name):
+                self.setUp()
+                change()
+                verdict = self.verdict()
+                self.assertRoll(verdict, 'roll the follow-up', "user's choice", 'AgentCompass settings')
+
+    def test_one_unchecked_bundle_does_not_switch_off_its_siblings(self):
+        self.fleet['accounts']['acme']['bundles']['onyx_high']['disabled'] = True
+        self.assertTrue(self.verdict().startswith('Continuation: same worker'))
 
     def test_a_hold_on_another_model_does_not_refuse_this_worker(self):
         self.latches = {model_latch.key('acme', 'acme-onyx-2'): {

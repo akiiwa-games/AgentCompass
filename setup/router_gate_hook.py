@@ -731,15 +731,15 @@ def check_target_disabled(
     if not account:
         return None
     where = f" (agent_id={target['agent_id']})" if target.get("agent_id") else ""
-    legacy = ((accounts or {}).get("accounts") or {}).get(account, {}).get("legacy_meter")
-    if isinstance(legacy, str) and legacy.strip():
-        cause = legacy
-    elif policy is not None and account not in (policy.get("allowed_accounts") or []):
-        cause = f"账号 {account} 已在本机禁用（不在 host-policy.json 的 allowed_accounts 中）"
-    elif candidates and all(c.get("disabled") for c in candidates):
-        cause = "档位 " + ", ".join(c["bundle_id"] for c in candidates) + " 已在模型管理中停用"
-    else:
+    try:
+        found = router_module("turn_refusal").disabled_cause(account, candidates, accounts or {}, policy)
+    except ImportError:
         return None
+    if not found:
+        return None
+    kind, detail = found
+    cause = (detail if kind == "legacy" else f"账号 {account} 已在本机禁用（不在 host-policy.json 的 allowed_accounts 中）"
+             if kind == "host_policy" else "档位 " + ", ".join(detail) + " 已在模型管理中停用")
     return f"[Router Gate] 拦截向已禁用账号/档位启动或续派任务{where}：{cause}。" + DISABLED_RECOVERY
 
 
