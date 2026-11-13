@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "agentcompass"
 dynamic = ["version"]
-description = "Deterministic multi-agent task router and subscription quota scheduler."
+description = "Multi-agent task router and subscription quota scheduler: a small-model classifier profiles each task, and allocation is deterministic for a given profile."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"

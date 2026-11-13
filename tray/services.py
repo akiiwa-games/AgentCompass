@@ -30,6 +30,8 @@ CREATE_NO_WINDOW = 0x08000000
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
 DOT_ROOT = plugins.plugin_root("dot2api")
 CHATGPT_ROOT = plugins.plugin_root("chatgpt-web")
 CHATGPT_LAUNCHER = CHATGPT_ROOT / "launcher"
@@ -146,8 +148,8 @@ def dot_env() -> dict[str, str]:
 
 
 def dot_port() -> int:
-    import service_ports
-    return service_ports.get("dot2api")
+    from agentcompass import ports
+    return ports.get("dot2api")
 
 
 def uv_path() -> Path:

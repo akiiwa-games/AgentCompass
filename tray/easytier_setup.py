@@ -39,6 +39,8 @@ CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
 HOME = easytier_paths.home()      # the installed node; install itself always targets easytier_paths.product_home()
 BIN, PRIVATE, LOGS, STATE, BACKUP = (HOME / name for name in ("bin", "private", "logs", "state", "backup"))
 TASK_NAME = "AgentCompass EasyTier"
@@ -280,11 +282,8 @@ def own_core(proc: dict) -> bool:
 
 
 def peer_names() -> list[str] | None:
-    try:
-        import service_ports
-        portal = f"127.0.0.1:{service_ports.get('easytier_rpc')}"
-    except Exception:
-        portal = "127.0.0.1:15888"
+    from agentcompass import ports
+    portal = f"127.0.0.1:{ports.get('easytier_rpc')}"
     result = run([str(BIN / "easytier-cli.exe"), "-p", portal, "-o", "json", "peer"], check=False, timeout=15)
     if result.returncode != 0:
         return None

@@ -179,7 +179,7 @@ The account's Paseo provider extends Claude Code with both `CLAUDE_CONFIG_DIR` a
 
 After signing in to the isolated home:
 1. Close the Usage Float window (so its shutdown does not overwrite `config.json`).
-2. Run `python setup/claude2_config.py --account team-backup --home <signed-in-home> --label 'Team backup'`. The script backs up existing settings, registers the named Paseo provider, enables that account's `7d` and `5h` Usage Float rows, and adds its projects directory to capacity analytics. The historical filename and no-argument `claude-2` default remain compatibility shortcuts.
+2. Run `python setup/register_claude_account.py --account team-backup --home <signed-in-home> --label 'Team backup'`. The script backs up existing settings, registers the named Paseo provider, enables that account's `7d` and `5h` Usage Float rows, and adds its projects directory to capacity analytics. `--account` is required; `--home` defaults to `~/.<account>`.
 3. Run `paseo reload` and reopen Usage Float.
 
 ---
@@ -303,15 +303,21 @@ Safety properties of the sync (`agentcompass setup` runs the same code):
 
 ## 8. Deployment & Tests
 
+**Installed product** (the normal machine). The installer registers the "AgentCompass" logon task, and runs `agentcompass setup --yes` only when it was started with `/SETUP=hooks` or `/SETUP=nohooks` (the hook flag follows that value; without either, setup is not run); the tray's **Update AgentCompass** button does the update (code package or full installer, see section 3). The tray executable also runs its bundled helper modules, and these are the command-line forms of the same steps:
+
 ```powershell
-# Deployment & service management
-python tray\deploy.py check                        # Inspect current installation state
-python tray\deploy.py install                      # Apply ChatGPT Web patches, build launcher, register logon task
-python tray\deploy.py restart                      # Restart the tray UI without stopping background services
-python tray\deploy.py all                          # Install and restart
-python tray\updates.py check                       # Check how many commits each managed repo is behind upstream
-python tray\updates.py update                      # Fast-forward pull, rebuild, and restart enabled components
+$tray = "$env:LOCALAPPDATA\AgentCompass\AgentCompass.exe"          # the installer's default directory
+& $tray --run-component deploy check                 # report what is in place and what is not; changes nothing
+& $tray --run-component deploy install               # ChatGPT Web patch and build, startup task, user environment variables
+& $tray --run-component deploy restart               # restart the tray without stopping background services
+& $tray --run-component updates check                # print whether a newer GitHub release exists (downloads nothing), then one line each for the Dot2API, ChatGPT Web and Usage Float clones: version and commits behind upstream
+& $tray --run-component updates update               # fast-forward the enabled plugin clones (Dot2API, ChatGPT Web, Usage Float, Gemini Web, Muse2API), then print the same release notice
+& $tray --run-component updates update-agentcompass  # what the tray button runs: update AgentCompass itself and restart the tray
 ```
+
+`deploy install` does not link skills in the installed product (`agentcompass setup` does), and `updates update` never updates AgentCompass itself.
+
+**Git checkout** (development). `python tray\deploy.py <check|install|restart|all|icons|startup>` and `python tray\updates.py <check|build|update|update-agentcompass>` take the same actions. Differences: `deploy install` also links the checkout's `skills/` into `~/.codex/skills` and `~/.claude/skills`, `updates check` prints the checkout's `git describe` and a `git pull` hint instead of a release comparison (the three clone lines follow in both shapes), and `update-agentcompass` fast-forwards the checkout (`git pull --ff-only`, refused when the tree is dirty or the branch does not track `origin`).
 
 ```powershell
 # Hermetic pytest suites (isolated temp HOME/APPDATA per xdist worker; no manual env redirection needed)
