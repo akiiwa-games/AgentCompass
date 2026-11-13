@@ -1690,6 +1690,10 @@ class BoundDispatchGateTests(unittest.TestCase):
         policy = mock.patch.object(host_policy, 'load_policy', return_value=None)
         policy.start()
         self.addCleanup(policy.stop)
+        # The machine's installed-provider discovery would otherwise decide whether the fixture account can launch.
+        inventory = mock.patch.object(gate.router_module('provider_inventory'), 'current', return_value={'accounts': {}})
+        inventory.start()
+        self.addCleanup(inventory.stop)
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         bundle = dict(account_fleet.bundles(accounts)['argon_high'], bundle_id='argon_high')
         self.task = {'parent_agent_id': 'parent-fixture', 'task_id': 'task-fixture',

@@ -84,6 +84,10 @@ def worker_key(environ=None) -> str:
 
 
 WORKER_ID = worker_key()
+# A temporary directory given as an 8.3 short path (TEMP=C:\Users\RUNNER~1\... on a hosted runner) makes every
+# temporary path differ from its resolved form, which code under test produces and tests compare against.
+tempfile.tempdir = str(Path(tempfile.gettempdir()).resolve())
+os.environ['TEMP'] = os.environ['TMP'] = tempfile.tempdir
 TEST_HOME = Path(tempfile.mkdtemp(prefix=f'agentcompass-test-home-{WORKER_ID}-'))
 TEST_STATE_DIR = TEST_HOME / '.agent-compass'
 atexit.register(shutil.rmtree, TEST_HOME, True)

@@ -24,6 +24,7 @@ dependencies = []
 venice = ["openai>=1.0"]
 tray = ["psutil", "pystray", "Pillow", "pywin32"]
 dev = ["pytest>=8", "pytest-xdist>=3.5", "psutil"]
+calibration = ["numpy", "pandas", "pyarrow"]
 
 [project.urls]
 Homepage = "https://github.com/akiiwa-games/AgentCompass"

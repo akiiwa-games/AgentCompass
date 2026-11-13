@@ -1,7 +1,7 @@
 # Calibration: the data the router scores with
 
 These scripts rebuild the router's measured data from public, cited boards. They are maintainer tools: the router never runs
-them, and they need `numpy`, `pandas` and `pyarrow`. Raw downloads stay out of git, in
+them, and they need `numpy`, `pandas` and `pyarrow` (the `calibration` extra). Raw downloads stay out of git, in
 `~/.cache/agentcompass-calibration` (or `AGENTCOMPASS_CALIBRATION_DATA`, or `--data DIR`).
 
 ## The scoring these files feed

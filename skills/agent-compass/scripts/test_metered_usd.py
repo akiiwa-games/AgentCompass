@@ -881,7 +881,9 @@ class HarnessCandidates(unittest.TestCase):
         proxy_url = f'http://127.0.0.1:{proxy.server_address[1]}'
         try:
             with _proxy_env({'http_proxy': proxy_url, 'HTTP_PROXY': proxy_url}):
-                with urllib.request.urlopen(dest_url, timeout=5) as response:
+                # An opener of its own: urlopen would build the process-wide default opener here and keep this proxy
+                # for every later urlopen in the test process.
+                with urllib.request.build_opener().open(dest_url, timeout=5) as response:
                     response.read()
                 status, _payload, _headers = usage_core.http_json_response(dest_url)
         finally:

@@ -25,10 +25,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13.7"
-      - name: Install the package with the dev and tray extras
+      - name: Install the package with the dev, tray and calibration extras
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,tray]"
+          python -m pip install -e ".[dev,tray,calibration]"
       - name: Run the fast test suite
         run: python -X utf8 -m pytest -n auto -m "not slow"
 

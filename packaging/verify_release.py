@@ -25,15 +25,16 @@ ROOT = HERE.parent
 USAGE_FLOAT_DIR = ROOT / "usage-float"
 
 
-REQUIRED_MODULES = ("pystray", "PIL", "psutil", "pytest")
+REQUIRED_MODULES = ("pystray", "PIL", "psutil", "pytest", "numpy", "pandas", "pyarrow")
 
 
 def _check_interpreter() -> str:
-    """The running interpreter runs every step; it must hold the tray and test dependencies."""
+    """The running interpreter runs every step; it must hold the tray, test and calibration dependencies."""
     missing = [m for m in REQUIRED_MODULES if importlib.util.find_spec(m) is None]
     if missing:
         raise SystemExit(f"{sys.executable} lacks required module(s): {', '.join(missing)}; run this script with an "
-                         'interpreter that has the dev and tray extras installed (pip install -e ".[dev,tray]")')
+                         'interpreter that has the dev, tray and calibration extras installed '
+                         '(pip install -e ".[dev,tray,calibration]")')
     return sys.executable
 
 

@@ -344,7 +344,7 @@ pytest -n auto                              # regression: the full suite, only b
 
 **CI (`.github/workflows/ci.yml`, on push to `main` and on pull requests):**
 
-- `tests` (`windows-latest`): installs `-e ".[dev,tray]"` and runs `pytest -n auto -m "not slow"`, the fast suite under the same hermetic setup (`conftest.py`, `hermetic_run.py`). Tests marked `slow` (real subprocesses, packaging, sandbox checks, real Tk main loops) are not run there.
+- `tests` (`windows-latest`): installs `-e ".[dev,tray,calibration]"` and runs `pytest -n auto -m "not slow"`, the fast suite under the same hermetic setup (`conftest.py`, `hermetic_run.py`). Tests marked `slow` (real subprocesses, packaging, sandbox checks, real Tk main loops) are not run there.
 - `posix-cli` (`ubuntu-latest`): builds the wheel, installs it into a fresh virtualenv and runs `agentcompass plan --demo --dry-run` and `agentcompass doctor`, the macOS / Linux CLI path of the README.
 - Packaging, sandbox and tray-installer checks stay in `release.yml` (tag push). `python -X utf8 packaging/verify_release.py` runs the pre-release verification with the running interpreter, which must have the dev and tray extras installed (it names any missing module and stops); its report goes to `verify-release-report/` in the repository root unless `--report` says otherwise.
 - Lint: `[tool.ruff]` in `pyproject.toml` selects only defect rules (syntax errors, undefined names, unused imports and variables). `ruff check` is not a CI step until the tree is clean under that rule set.

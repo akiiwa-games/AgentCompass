@@ -143,7 +143,7 @@ class ControlRecoveryTests(unittest.TestCase):
         refresh = next(item for item in snapshot["items"] if item.get("id") == "refresh")
         self.assertFalse(refresh["enabled"])
         self.scope["refresh_async"].assert_called_once_with(force=True)
-        self.assertTrue(json.loads((server.directory / "recover.response.json").read_text())["ok"])
+        self.assertTrue(json.loads((server.directory / "recover.response.json").read_text(encoding="utf-8"))["ok"])
         self.assertEqual(len(self.root.callbacks), 1)
 
     def test_first_publish_failure_retries_without_aborting_ui_start(self):
@@ -263,6 +263,8 @@ class HostedSingleReaderTests(unittest.TestCase):
 
         # Register path reset before env patch so LIFO cleanup restores usage_core after os.environ is restored.
         self.addCleanup(self.usage_core.configure_paths)
+        # Saving a language in a test changes the module's active language; later tests in this process read it.
+        self.addCleanup(setattr, self.usage_core, "_ACTIVE_LANGUAGE", self.usage_core._ACTIVE_LANGUAGE)
 
         env = {
             "HOME": str(self.home),
