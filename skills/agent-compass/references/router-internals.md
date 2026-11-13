@@ -135,7 +135,7 @@ communication contract below. The continuation verdict in a worker notification 
 enforces on a new turn (account or bundle disabled, confirmed quota exhaustion, a refusing quota window) and advises `roll` for
 more: the worker's last turn ended in a provider failure (read from the watcher receipt, so before the hold is recorded), its
 account is not ready, or its account, quota pool or model is held. The gate does not enforce the advisory ones. The verdict is
-read-only and bounded; an unresolvable worker or an unreadable registry is `unknown`.
+read-only and bounded in its own registry and quota reads, and loads the fleet through `load_accounts`, which may update host policy and holds as for any caller; an unresolvable worker or an unreadable registry is `unknown`.
 
 ---
 

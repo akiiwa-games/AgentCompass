@@ -1057,13 +1057,36 @@ class RouterGateHookTests(unittest.TestCase):
         with mock.patch.object(gate, "router_module", side_effect=missing):
             self.assertIsNone(gate.check_account_quota_exhausted("claude", cache, T0, model="claude-opus-5-5"))
 
-        def no_owner(name):
-            raise ImportError(name)
-        with mock.patch.object(gate, "router_module", side_effect=no_owner):
-            with self.assertRaises(ImportError):
-                gate.check_account_quota_exhausted("claude", cache, T0, model="claude-opus-5-5")
-            with self.assertRaises(ImportError):
-                gate.check_target_disabled({}, "claude", [], {}, None)
+    def test_a_hook_over_a_mismatched_skill_tree_denies_and_names_the_action(self):
+        real = gate.router_module
+        worker = {"labels": {"router.parent_id": "parent-fixture", "router.account": "claude-lab",
+                             "router.bundle_id": "lab_sonnet55_high"}}
+        payload = {"tool_name": "send_agent_prompt", "tool_input": {"agentId": "worker-fixture", "prompt": "continue"},
+                   "parent_agent_id": "parent-fixture"}
+
+        class WithoutAttribute:
+            def __init__(self, module, missing):
+                self.module, self.missing = module, missing
+
+            def __getattr__(self, name):
+                if name == self.missing:
+                    raise AttributeError(name)
+                return getattr(self.module, name)
+
+        def missing_module(name):
+            if name == "turn_refusal":
+                raise ImportError(name)
+            return real(name)
+
+        def missing_attribute(name):
+            return WithoutAttribute(real(name), "bundle_rows") if name == "account_fleet" else real(name)
+        for label, router_module in (("module", missing_module), ("attribute", missing_attribute)):
+            settings = ({"accounts": {"claude-lab": {"bundles": {"lab_sonnet55_high": {"model": "claude-sonnet-5-5"}}}}}, None)
+            with self.subTest(missing=label), mock.patch.object(gate, "router_module", side_effect=router_module),                     mock.patch.object(gate, "load_paseo_agent", return_value=worker),                     mock.patch.object(gate, "load_dispatch_settings", return_value=settings):
+                result = gate.evaluate_payload(payload, now=T0)
+                self.assertEqual(result.get("decision"), "block", result)
+                self.assertIn("agentcompass setup", result["reason"])
+                self.assertIn("不一致", result["reason"])
 
     def test_interleaved_decisions_match_older_route_in_both_orders(self):
         a = self.route(parent_agent_id="parent-a", task_id="task-a")

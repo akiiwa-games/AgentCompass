@@ -208,19 +208,27 @@ class UnresolvedWorkerTests(VerdictTestCase):
 
 
 class OwnReservationTests(unittest.TestCase):
-    """One function drops the worker's own reservation for the gate and the verdict: by dispatch id or by agent id."""
+    """One function drops the worker's own reservation for the gate and the verdict: one naming its agent id, or naming
+    no agent id and carrying its dispatch label. One naming another agent id is never its own."""
 
-    RECORDS = [{'dispatch_id': 'mine', 'agent_id': None}, {'dispatch_id': 'also-mine', 'agent_id': 'worker'},
-               {'dispatch_id': 'other', 'agent_id': 'someone'}, 'not-a-dict']
+    def kept(self, records, dispatch_id=None, agent_id=None):
+        return [r['dispatch_id'] for r in turn_refusal.without_own(records, dispatch_id, agent_id) if isinstance(r, dict)]
 
-    def test_a_record_carrying_only_the_dispatch_id_or_only_the_agent_id_is_the_workers_own(self):
-        self.assertEqual(turn_refusal.without_own(self.RECORDS, 'mine', 'worker'),
-                         [{'dispatch_id': 'other', 'agent_id': 'someone'}, 'not-a-dict'])
-        self.assertEqual([r.get('dispatch_id') for r in turn_refusal.without_own(self.RECORDS, 'mine') if isinstance(r, dict)],
-                         ['also-mine', 'other'])
-        self.assertEqual([r.get('dispatch_id') for r in turn_refusal.without_own(self.RECORDS, None, 'worker') if isinstance(r, dict)],
-                         ['mine', 'other'])
-        self.assertEqual(len(turn_refusal.without_own(self.RECORDS)), len(self.RECORDS))
+    def test_own_is_its_agent_id_or_an_unbound_reservation_with_its_dispatch_label(self):
+        records = [{'dispatch_id': 'mine', 'agent_id': None}, {'dispatch_id': 'bound', 'agent_id': 'worker'},
+                   {'dispatch_id': 'other', 'agent_id': 'someone'}]
+        self.assertEqual(self.kept(records, 'mine', 'worker'), ['other'])
+        self.assertEqual(self.kept(records, 'mine'), ['bound', 'other'])
+        self.assertEqual(self.kept(records, None, 'worker'), ['mine', 'other'])
+        self.assertEqual(self.kept(records), ['mine', 'bound', 'other'])
+        self.assertEqual(turn_refusal.without_own(['not-a-dict']), ['not-a-dict'])
+
+    def test_a_reservation_naming_another_agent_is_never_excluded_by_the_dispatch_label(self):
+        # A worker labelled with another dispatch's id, and a second worker carrying the same dispatch id.
+        records = [{'dispatch_id': 'shared', 'agent_id': 'second-worker'}, {'dispatch_id': 'shared', 'agent_id': 'worker'}]
+        self.assertEqual([r['agent_id'] for r in turn_refusal.without_own(records, 'shared', 'worker')], ['second-worker'])
+        self.assertEqual([r['agent_id'] for r in turn_refusal.without_own(records, 'shared', None)],
+                         ['second-worker', 'worker'])
 
     def test_the_verdict_leaves_out_the_row_of_its_own_worker_and_counts_the_others(self):
         class Quiet(VerdictTestCase):

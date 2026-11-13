@@ -624,6 +624,21 @@ def detect_target_agent_ids(tool_name: str, tool_input: dict) -> list[str]:
     return []
 
 
+class RouterTreeMismatch(Exception):
+    """The skill tree the hook loads lacks a module or function this hook version calls (hook and skill from different installs)."""
+
+
+def router_owner(module: str, *names: str):
+    """The named functions of a router module (one function: itself). A missing module or function is one explicit
+    outcome, RouterTreeMismatch, which evaluate_payload turns into a denial that names the action."""
+    try:
+        loaded = router_module(module)
+        found = tuple(getattr(loaded, name) for name in names)
+    except (ImportError, AttributeError) as exc:
+        raise RouterTreeMismatch(f"{module}.{'/'.join(names)}: {exc}") from exc
+    return found[0] if len(found) == 1 else found
+
+
 def router_module(name: str):
     checkout = Path(__file__).resolve().parents[1] / "skills/agent-compass"
     skill = Path(os.environ.get("ROUTER_SKILL_ROOT") or (
@@ -699,7 +714,7 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
         "antigravity" if provider == "antigravity-resilient" else provider if provider in table else None)
     candidates = []
     if target.get("bundle_id") and table:
-        candidates = router_module("account_fleet").bundle_rows(accounts, target["bundle_id"])
+        candidates = router_owner("account_fleet", "bundle_rows")(accounts, target["bundle_id"])
     elif not target.get("bundle_id"):
         for name, spec in table.items():
             for bundle_id, bundle in (spec.get("bundles") or {}).items():
@@ -729,11 +744,11 @@ def check_target_disabled(
     if not account:
         return None
     where = f" (agent_id={target['agent_id']})" if target.get("agent_id") else ""
-    host = router_module("host_policy")
-    found = host.disabled_cause(account, candidates, accounts, policy)
+    disabled_cause, disabled_text = router_owner("host_policy", "disabled_cause", "disabled_text")
+    found = disabled_cause(account, candidates, accounts, policy)
     if not found:
         return None
-    cause = host.disabled_text(account, found, "zh")
+    cause = disabled_text(account, found, "zh")
     return f"[Router Gate] 拦截向已禁用账号/档位启动或续派任务{where}：{cause}。" + DISABLED_RECOVERY
 
 
@@ -786,10 +801,10 @@ def check_account_quota_exhausted(
     if not account:
         return None
     now = now or dt.datetime.now(dt.timezone.utc)
-    turn_refusal = router_module("turn_refusal")
+    latched, without_own, window_refusal = router_owner("turn_refusal", "latched", "without_own", "window_refusal")
     # Confirmed upstream exhaustion is durable even with no/stale usage cache.
     # This applies to new launches and resumed turns, never to read-only investigation.
-    if turn_refusal.latched(account, windows, usage_cache_path, HOME):
+    if latched(account, windows, usage_cache_path, HOME):
         return (
             '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear '
             'the exhaustion record. While the owned worker is running, send a control message with completion '
@@ -809,8 +824,8 @@ def check_account_quota_exhausted(
                 router_module("dispatch_flow").deliver_end_notices(now=now)
             except Exception:
                 pass
-        records = turn_refusal.without_own(records, exclude_dispatch_id, exclude_agent_id)
-        found = turn_refusal.window_refusal(account, accounts, now, usage_cache_path, records, bundles, model)
+        records = without_own(records, exclude_dispatch_id, exclude_agent_id)
+        found = window_refusal(account, accounts, now, usage_cache_path, records, bundles, model)
     except Exception:
         return None
     if not found:
@@ -1155,22 +1170,27 @@ def evaluate_payload(
                        for agent_id, doc in docs.items() if isinstance(doc, dict)]
         dispatch_id = args.get("labels", {}).get("router.dispatch_id") if isinstance(args.get("labels"), dict) else None
         for target in targets:
-            account, candidates = resolve_target(target, accounts)
-            controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
-            reason = None if controlling else (
-                check_target_disabled(target, account, candidates, accounts, policy)
-                or check_account_quota_exhausted(
-                    account or target.get("provider"),
-                    usage_cache_path=usage_cache_path,
-                    now=now,
-                    accounts=accounts,
-                    windows=target_windows(candidates, accounts),
-                    bundles=candidates,
-                    model=target.get("model"),
-                    exclude_dispatch_id=dispatch_id or target.get("dispatch_id"),
-                    exclude_agent_id=target.get("agent_id"),
+            try:
+                account, candidates = resolve_target(target, accounts)
+                controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
+                reason = None if controlling else (
+                    check_target_disabled(target, account, candidates, accounts, policy)
+                    or check_account_quota_exhausted(
+                        account or target.get("provider"),
+                        usage_cache_path=usage_cache_path,
+                        now=now,
+                        accounts=accounts,
+                        windows=target_windows(candidates, accounts),
+                        bundles=candidates,
+                        model=target.get("model"),
+                        exclude_dispatch_id=dispatch_id or target.get("dispatch_id"),
+                        exclude_agent_id=target.get("agent_id"),
+                    )
                 )
-            )
+            except RouterTreeMismatch as exc:
+                return format_response(False, harness_kind,
+                    f"[Router Gate] 拦截：本钩子与已加载的 agent-compass 技能目录版本不一致（{exc}）。"
+                    "请运行 `agentcompass setup` 使钩子与技能目录来自同一次安装后重试。")
             if reason:
                 return format_response(False, harness_kind, reason)
         if not trigger:

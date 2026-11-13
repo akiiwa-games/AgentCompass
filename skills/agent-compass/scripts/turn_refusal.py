@@ -11,9 +11,11 @@ Two readers, two contracts:
   (`provider_retry`), or a model latch (`model_latch`). A parent that sends the follow-up anyway is admitted by the gate
   whenever the enforced conditions pass.
 
-The verdict never writes and never waits on a writer: it reads the registry on a read-only connection with a short wait,
-reads the exhaustion latch without clearing it, and takes the failed turn from the watcher's receipt, so it does not depend
-on the hold or the settlement that follows the failure. A worker it cannot resolve is an error (`unknown`), not an all-clear.
+The verdict's own reads are read-only and bounded: the registry on a read-only connection with a short wait, the exhaustion
+latch without clearing it, and the failed turn from the watcher's receipt, so it does not depend on the hold or the
+settlement that follows the failure. It records no hold and calls no classifier. It loads the fleet through
+`account_fleet.load_accounts`, which may update host policy and holds as it does for every other caller. A worker it cannot
+resolve is an error (`unknown`), not an all-clear.
 """
 
 from datetime import datetime, timezone
@@ -45,10 +47,14 @@ def latched(account, windows, usage_cache_path, home, read_only=False):
 
 
 def without_own(records, dispatch_id=None, agent_id=None):
-    """`records` (active reservations) without the worker's own: the one carrying its dispatch id or its agent id."""
-    return [r for r in records
-            if not isinstance(r, dict) or ((not dispatch_id or r.get('dispatch_id') != dispatch_id)
-                                           and (not agent_id or r.get('agent_id') != agent_id))]
+    """`records` (active reservations) without the worker's own. A reservation is the worker's own when it names this
+    worker's agent id, or names no agent id at all and carries the dispatch id the worker is labelled with. One that
+    names a different agent id is never excluded, whatever its dispatch id."""
+    def own(record):
+        recorded = record.get('agent_id')
+        return bool(agent_id and recorded == agent_id) or bool(dispatch_id and not recorded
+                                                              and record.get('dispatch_id') == dispatch_id)
+    return [r for r in records if not isinstance(r, dict) or not own(r)]
 
 
 def window_refusal(account, accounts, now, usage_cache_path, records, bundles=None, model=None):
