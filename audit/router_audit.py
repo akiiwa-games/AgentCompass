@@ -21,8 +21,13 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# The audit runs from a checkout (it is not in the wheel); put the checkout root on the path so the package that owns
+# the skill location, agentcompass/locations.py, imports the same way when run as `python audit/router_audit.py`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from agentcompass import locations
+
 HOME = Path.home()
-SKILL_SCRIPTS = Path(os.environ.get("ROUTER_SKILL_DIR", HOME / ".codex" / "skills" / "agent-compass" / "scripts"))
+SKILL_SCRIPTS = locations.skill_root() / "agent-compass" / "scripts"
 LEDGER = Path(os.environ.get("ROUTER_LEDGER", HOME / ".agent-compass" / "router-ledger.jsonl"))
 DOT_DB = HOME / ".dot2api" / "data" / "dot2api.sqlite3"
 REPORT_DIR = Path(__file__).resolve().parent / "reports"
