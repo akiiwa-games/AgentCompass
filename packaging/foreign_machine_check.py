@@ -404,6 +404,9 @@ def base_cli_env(box: sc.Sandbox, ctx: dict, *, include_clis=("codex", "claude")
     for item in cli_dir.iterdir():
         if item.is_file():
             item.unlink()
+    for runtime in (p for p in ctx["bin_dir"].iterdir() if p.is_dir()):    # the one-folder runtime the executables need
+        if not (cli_dir / runtime.name).exists():
+            shutil.copytree(runtime, cli_dir / runtime.name)
     for cli_name in include_clis:
         ext = ".exe" if os.name == "nt" else ""
         src = ctx["bin_dir"] / f"{cli_name}{ext}"

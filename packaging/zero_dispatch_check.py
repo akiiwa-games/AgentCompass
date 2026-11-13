@@ -136,18 +136,24 @@ class ScorerServer:
 GATE_HOOK = re.compile(r"router_gate_hook\.py|agentcompass(?:\.exe)?[\"']?\s+gate-hook\b")
 
 def build_fake_clis(base: Path) -> Path:
-    """codex.exe / claude.exe: one PyInstaller executable under two names. State goes to <base>/fixture/state."""
+    """codex.exe / claude.exe: one PyInstaller executable under two names. State goes to <base>/fixture/state.
+
+    One-folder, not one-file: a one-file executable runs as a bootloader plus a child that does the work, so stopping the
+    PID roll reports (the bootloader) could leave the child running. A real CLI is one process, and so is this one."""
     work = base / "fakecli-build"
-    done = subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--onefile", "--name", "fake-cli", "--distpath", str(work / "dist"),
+    done = subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--onedir", "--name", "fake-cli", "--distpath", str(work / "dist"),
                            "--workpath", str(work / "work"), "--specpath", str(work / "spec"), str(HERE / "zero_fake_cli.py")],
                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
-    exe = work / "dist" / "fake-cli.exe"
+    built = work / "dist" / "fake-cli"
+    exe = built / "fake-cli.exe"
     if done.returncode != 0 or not exe.is_file():
         raise RuntimeError("could not build the fixture CLI (PyInstaller is required): " + (done.stderr or done.stdout)[-400:])
     bin_dir = base / "fixture" / "bin"
-    bin_dir.mkdir(parents=True)
+    shutil.copytree(built, bin_dir)               # the runtime folder next to the executables, as one-folder needs
+    exe = bin_dir / "fake-cli.exe"
     for name in ("codex", "claude"):
         shutil.copy2(exe, bin_dir / f"{name}.exe")
+    exe.unlink()
     (base / "fixture" / "state").mkdir()
     return bin_dir
 
