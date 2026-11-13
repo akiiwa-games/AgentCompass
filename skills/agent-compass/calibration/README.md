@@ -65,16 +65,20 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    the declaration's `as_of` to the day of the edit) and the family's short `aliases` at it, and list the older model
    under `superseded`.
 5. **Rebuild its row.** Run `agentcompass data refresh --model <id>` (repeatable for several new models). It fetches the
-   boards into the data directory, builds the measurements, and writes to `public-measurements.json` only the named rows,
-   each board z-score recomputed from its raw reading on the shipped scale of its source (`sources[<id>].scale`:
-   `(raw - anchor_raw) / sd_panel`); every other row, the panel, the source table and the targets stay as shipped. It
-   prints each entry it left out and why (the anchor's reading moved since the shipped fetch; the source has no shipped
-   scale, as for the arena.ai Overall `tier`), then validates the catalog (`public_data.validate_accounts_provenance`)
-   and rebuilds `five-axis-scores.json`, `model-capabilities.{json,md}` and the `public-data.json` manifest. Values
-   fitted over all measured models (the tier fits, the fleet effort ratios) still move for other models; the run prints
-   how many moved. A model in `calibration_panel` (or the anchor) is refused: it changes the scale, so it needs the full
-   refresh (`agentcompass data refresh`, or `--no-fetch` from cached downloads), which rebuilds every row. Commit the
-   changed files under `references/`.
+   boards into the data directory, builds the measurements, and writes to `public-measurements.json` only the named
+   models' entries, conflicts and checks, every entry the full refresh writes for them: with the panel scale unchanged,
+   the model's row and its five-axis block equal those of a full refresh over the same boards. A board z-score whose
+   source scale (`sources[<id>].scale`) moved since the shipped fetch is recomputed on the shipped scale,
+   `(raw - anchor_raw) / sd_panel` (recorded at 6 significant digits, so such a z can differ in the fourth decimal); the
+   `tier` is standardized over the fetched board itself and kept as built. Every other row, the panel and the scales stay
+   as shipped. It prints each entry it left out and why (two reasons only: the anchor's reading moved since the shipped
+   fetch, or a z-score whose source has no shipped scale) and notes what else it did; a model no board lists, or an entry
+   it cannot merge for another reason, stops the run before anything is written. It then validates the catalog
+   (`public_data.validate_accounts_provenance`) and rebuilds `five-axis-scores.json`, `model-capabilities.{json,md}` and
+   the `public-data.json` manifest. Values fitted over all measured models (the tier fits, the fleet effort ratios) still
+   move for other models; the run prints how many moved, by field. A model in `calibration_panel` (or the anchor) is
+   refused: it changes the scale, so it needs the full refresh (`agentcompass data refresh`, or `--no-fetch` from cached
+   downloads), which rebuilds every row. Commit the changed files under `references/`.
 
 A **maintainer manual score** is `agentcompass score set <model> ... --public`, which writes `references/user-scores.json`
 and the manifest; then run the refresh. A **measured score** comes from the boards on the next refresh. The calibration

@@ -300,7 +300,7 @@ def check_set(directory, manifest):
         return 'no_manifest', 'no public-data.json'
     schema = manifest.get('schema_version')
     if not isinstance(schema, int) or not MIN_SCHEMA_VERSION <= schema <= SCHEMA_VERSION:
-        return 'schema', f'data schema {schema!r}; this install reads {MIN_SCHEMA_VERSION}..{SCHEMA_VERSION}'
+        return 'schema', f'data schema {schema!r}; this install reads {_schema_range()}'
     if _parse(manifest.get('published_at')) is None:
         return 'incomplete', 'manifest has no published_at'
     files = manifest.get('files') if isinstance(manifest.get('files'), dict) else {}
@@ -467,6 +467,20 @@ def refresh(force=False, environ=None, fetch=None, now=None, bundled=None, timeo
     return result
 
 
+def _schema_range():
+    return (f'schema {SCHEMA_VERSION}' if MIN_SCHEMA_VERSION == SCHEMA_VERSION
+            else f'schema {MIN_SCHEMA_VERSION}..{SCHEMA_VERSION}')
+
+
+def reader_id():
+    """Content hash of the code that judges a published set (this module and user_scores.py). A set it rejected is
+    recorded with it (`rejected_by`), so an updated install, whose reader differs, looks at that set again."""
+    digest = hashlib.sha256()
+    for path in (Path(__file__), Path(__file__).with_name('user_scores.py')):
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
 def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
     raw = fetch(cfg['url'] + MANIFEST, timeout)
     manifest = json.loads(raw.decode('utf-8-sig'))
@@ -480,21 +494,21 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
         return {'status': 'schema_too_new', 'remote_schema_version': schema, 'schema_version': SCHEMA_VERSION}
     if isinstance(schema, int) and schema < MIN_SCHEMA_VERSION:
         state.update(checked_at=_stamp(now), last_error=None, remote_schema_version=schema,
-                     note=(f'published data uses schema {schema}; this install reads {MIN_SCHEMA_VERSION}..'
-                           f'{SCHEMA_VERSION}. The last accepted set stays in effect; nothing to run, it is replaced '
-                           'when data for this release is published.'))
+                     note=(f'published data uses schema {schema}; this install reads {_schema_range()}. The last '
+                           'accepted set stays in effect; nothing to run, it is replaced when data for this release is '
+                           'published.'))
         return {'status': 'schema_too_old', 'remote_schema_version': schema, 'schema_version': SCHEMA_VERSION}
     if not isinstance(schema, int) or _parse(manifest.get('published_at')) is None:
         raise ValueError('published manifest has no usable schema_version or published_at')
     version = set_version(manifest)
-    if state.get('rejected_version') == version:
+    if state.get('rejected_version') == version and state.get('rejected_by') == reader_id():
         state.update(checked_at=_stamp(now), last_error=None)
         return {'status': 'rejected', 'version': version, 'detail': state.get('note')}
     target = cache / 'sets' / version
     if check_set(target, _read_json(target / MANIFEST))[0] == 'ok':
         state.update(version=version, published_at=manifest['published_at'], schema_version=schema,
                      checked_at=_stamp(now), last_error=None, note=None, url=cfg['url'])
-        for key in ('remote_schema_version', 'rejected_version'):
+        for key in ('remote_schema_version', 'rejected_version', 'rejected_by'):
             state.pop(key, None)
         return {'status': 'unchanged', 'version': version}
     staging = cache / 'sets' / f'.staging-{uuid.uuid4().hex[:8]}'
@@ -518,7 +532,7 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
         (staging / MANIFEST).write_bytes(raw)
         verdict, detail = check_set(staging, manifest)
         if verdict != 'ok':
-            state.update(checked_at=_stamp(now), last_error=None, rejected_version=version,
+            state.update(checked_at=_stamp(now), last_error=None, rejected_version=version, rejected_by=reader_id(),
                          note=(f'published set {version} is not usable by this install ({verdict}: {detail}). '
                                f'The last accepted set stays in effect: {UPDATE_APP}; if it is already the latest '
                                'release, the published data is defective and must be republished.'))
@@ -533,7 +547,7 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
     previous = state.get('version')
     state.update(version=version, published_at=manifest['published_at'], schema_version=schema, fetched_at=_stamp(now),
                  checked_at=_stamp(now), last_error=None, note=None, url=cfg['url'])
-    for key in ('remote_schema_version', 'rejected_version'):
+    for key in ('remote_schema_version', 'rejected_version', 'rejected_by'):
         state.pop(key, None)
     _prune(cache / 'sets', {version, previous})
     return {'status': 'updated', 'version': version, 'previous': previous, 'downloaded': downloaded}

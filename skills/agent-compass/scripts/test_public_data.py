@@ -201,6 +201,19 @@ class FetchTests(ChannelCase):
         again = self.refresh(force=True, now=T0 + timedelta(days=5))
         self.assertEqual(again['status'], 'rejected')
         self.assertEqual(self.remote.calls, [URL + public_data.MANIFEST])
+        # An updated install (a different reader) looks at the same published version again.
+        self.remote.calls.clear()
+        with patch.object(public_data, 'reader_id', return_value='updated-reader'):
+            self.refresh(force=True, now=T0 + timedelta(days=6))
+        self.assertIn(URL + 'accounts.json', self.remote.calls)
+
+    def test_the_schema_note_names_a_single_schema_without_a_range(self):
+        self.refresh()
+        self.publish(safety_margin_pct=0.7, at=T0 + timedelta(days=3), schema=public_data.MIN_SCHEMA_VERSION - 1)
+        self.refresh(force=True, now=T0 + timedelta(days=4))
+        note = public_data.read_state(self.env)['note']
+        if public_data.MIN_SCHEMA_VERSION == public_data.SCHEMA_VERSION:
+            self.assertIn(f'reads schema {public_data.SCHEMA_VERSION}.', note)
 
     def test_offline_falls_back_to_the_cache_then_to_the_shipped_copy(self):
         self.refresh()

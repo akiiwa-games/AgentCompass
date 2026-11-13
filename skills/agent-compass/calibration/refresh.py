@@ -4,15 +4,19 @@ validate the result, and report each source's age.
 `agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`
 `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...] [--references DIR]`
 
-`--model ID` (repeatable) adds or updates only those models' measurement rows: step 2 builds the measurements from the
-boards as usual, but writes to the shipped `public-measurements.json` only the named rows, each board z-score recomputed
-from its raw reading on the shipped scale of its source (`sources[<id>].scale`: z = (raw - anchor_raw) / sd_panel).
-Every other row, the panel, the source table and the targets stay as shipped. An entry is left out when its source is
-not in the shipped table, its scale is not recorded there (the arena.ai Overall `tier` field), or the anchor's raw
-reading moved between the shipped fetch and this one. A panel model or the anchor is refused: it changes the scale and
-needs the full refresh. Steps 3..7 run as usual: the panel, sd_panel, targets and `anchor.panel_change` stay as
-shipped, a level-3 ceiling moves only when the added model sets it, and values fitted over all measured models (tier
-fits, fleet effort ratios) still move for other models; the run prints how many did.
+`--model ID` (repeatable) adds or updates only those models' measurement rows, conflicts and checks: step 2 builds the
+measurements from the boards as usual, but writes to the shipped `public-measurements.json` only the named models'
+entries, every entry the full refresh writes for them. Rule: with the panel scale unchanged, the model's row and its
+five-axis block equal those of a full refresh over the same boards. A board z-score whose source scale
+(`sources[<id>].scale`) moved since the shipped fetch is recomputed from its raw reading on the shipped scale,
+z = (raw - anchor_raw) / sd_panel (recorded at 6 significant digits, so such a z can differ in the fourth decimal from
+one on the unrounded scale). The `tier` is standardized over the fetched board itself (tiers.py) and is kept as built.
+An entry is left out for two reasons only: a z-score whose source has no shipped scale, or a moved anchor reading;
+anything else that cannot be merged, or a model no board lists, stops the run before anything is written. Every other
+row, the panel and the scales stay as shipped. A panel model or the anchor is refused: it changes the scale and needs
+the full refresh. Steps 3..7 run as usual: the panel, sd_panel, targets and `anchor.panel_change` stay as shipped, a
+level-3 ceiling moves only when the added model sets it, and values fitted over all measured models (tier fits, fleet
+effort ratios) still move for other models; the run prints how many did, by field.
 
 Topological chain:
 1. Fetch (skipped with `--no-fetch`): `sources.fetch` downloads the benchmark boards and community pages into `DIR` and
@@ -134,10 +138,14 @@ def validate(references=None):
     return manifest
 
 
-# Measurement fields whose values are z-scores on a scale the source table does not record (tiers.py: arena.ai Overall
-# standardized over the whole board, and the AA index aligned onto it). A row merge cannot put them on the shipped scale.
-UNRECORDED_SCALE_FIELDS = ('tier',)
+# Measurement fields standardized over the downloaded board itself (tiers.py: arena.ai Overall over its own High rows,
+# the AA index aligned onto it through the models on both boards). No shipped constant enters them, so the full refresh
+# computes them from the download alone and the row merge keeps them exactly as built.
+DOWNLOAD_SCALE_FIELDS = ('tier',)
 _SCALE_TEXT = re.compile(r'x_anchor \S+ \((?P<anchor>[^)]+)\), sd_panel \S+ over \d+ panel models')
+_SCALE_KEYS = ('anchor', 'anchor_raw', 'sd_panel')
+ROUNDED_SCALE_NOTE = ('the recorded scale has 6 significant digits, so a recomputed z can differ in the fourth decimal '
+                      'from one on the unrounded scale')
 
 
 def refuse_panel_models(names, acc, shipped):
@@ -154,21 +162,23 @@ def refuse_panel_models(names, acc, shipped):
 
 
 def _on_shipped_scale(field, entry, shipped_sources, fresh_sources):
-    """(entry on the shipped scale, None), or (None, why it is left out), for one freshly built measurement entry."""
+    """(entry as merged, how, None) or (None, None, why it is left out) for one freshly built measurement entry; `how`
+    is 'as built' or 'rescaled'. The two reasons to leave an entry out are a board z-score whose source has no shipped
+    scale, and a moved anchor reading; anything else that cannot be merged raises, so nothing is written."""
     src = entry.get('source')
-    if src not in shipped_sources:
-        return None, 'source not in the shipped source table'
-    if field in UNRECORDED_SCALE_FIELDS:
-        return None, 'source has no shipped scale'
+    if field in DOWNLOAD_SCALE_FIELDS:
+        return entry, 'as built', None
     fresh_scale = (fresh_sources.get(src) or {}).get('scale')
     if not fresh_scale or not any(key in entry for key in ('raw', 'raw_by_effort', 'z')):
-        return entry, None          # a scale-free reading: price, time, modality, the index value itself
-    shipped_scale = shipped_sources[src].get('scale')
+        return entry, 'as built', None      # a scale-free reading: price, time, modality, the index value itself
+    shipped_scale = (shipped_sources.get(src) or {}).get('scale')
     if not shipped_scale:
-        return None, 'source has no shipped scale'
+        return None, None, 'its source has no shipped scale and the entry is a z-score'
     if (shipped_scale['anchor'], shipped_scale['anchor_raw']) != (fresh_scale['anchor'], fresh_scale['anchor_raw']):
-        return None, (f"anchor reading moved ({shipped_scale['anchor']}: {shipped_scale['anchor_raw']} shipped, "
-                      f"{fresh_scale['anchor_raw']} now)")
+        return None, None, (f"anchor reading moved ({shipped_scale['anchor']}: {shipped_scale['anchor_raw']} shipped, "
+                            f"{fresh_scale['anchor_raw']} now)")
+    if all(shipped_scale[k] == fresh_scale[k] for k in _SCALE_KEYS):
+        return entry, 'as built', None      # the same scale: the full refresh's own value
     anchor_raw, sd = shipped_scale['anchor_raw'], shipped_scale['sd_panel']
     out = dict(entry)
     if 'raw' in entry:
@@ -178,33 +188,57 @@ def _on_shipped_scale(field, entry, shipped_sources, fresh_sources):
     if 'z' in entry:                # the picked effort's z (aa.index), found by which effort carried it
         picked = [e for e, z in (entry.get('z_by_effort') or {}).items() if z == entry['z']]
         if not picked or picked[0] not in out.get('z_by_effort', {}):
-            return None, 'its z matches no listed effort'
+            raise ValueError(f"{src}: the entry z {entry['z']} matches none of its listed efforts; nothing written")
         out['z'] = out['z_by_effort'][picked[0]]
-    if isinstance(entry.get('method'), str):
+    if isinstance(entry.get('method'), str) and 'sd_panel' in entry['method']:
+        if not _SCALE_TEXT.search(entry['method']):
+            raise ValueError(f'{src}: the method text names sd_panel in a wording this merge cannot restate on the '
+                             'shipped scale; nothing written')
         out['method'] = _SCALE_TEXT.sub(lambda m: (f"x_anchor {anchor_raw:.6g} ({m['anchor']}), sd_panel {sd:.6g} over "
                                                    f"{shipped_scale['n_panel']} panel models"), entry['method'])
-    return out, None
+    return out, 'rescaled', None
 
 
 def merge_model_rows(shipped, fresh, names, now=None):
-    """(measurements, left_out): the shipped document with only the named models' rows taken from `fresh`, on the
-    shipped scale; every other row, the panel, the sources and the checks stay as shipped. left_out lists
-    (model, field, source, reason) for each entry not merged."""
-    merged, left_out = copy.deepcopy(shipped), []
+    """(measurements, left_out, notes): the shipped document with only the named models' rows, conflicts and checks
+    taken from `fresh`, board z-scores on the shipped scale; every other row, the panel and the scales stay as shipped.
+    left_out lists (model, field, source, reason) for each entry not merged; notes state what else the merge did.
+    A named model with no measurement entry at all raises (no board lists it)."""
+    merged, left_out, notes = copy.deepcopy(shipped), [], []
+    shipped_sources, fresh_sources = shipped.get('sources') or {}, fresh.get('sources') or {}
+    rescaled, tier_boards = 0, set()
     for name in names:
+        entries = (fresh.get('models') or {}).get(name) or {}
+        if not any(entries.values()):
+            raise ValueError(f'--model {name}: no board lists it (the fetched boards give it no measurement); check its '
+                             'listed_as names; nothing written')
         row = {}
-        for field, entries in ((fresh.get('models') or {}).get(name) or {}).items():
-            for entry in entries:
-                kept, reason = _on_shipped_scale(field, entry, shipped.get('sources') or {}, fresh.get('sources') or {})
+        for field, items in entries.items():
+            for entry in items:
+                kept, how, reason = _on_shipped_scale(field, entry, shipped_sources, fresh_sources)
                 if kept is None:
                     left_out.append((name, field, entry.get('source'), reason))
-                else:
-                    row.setdefault(field, []).append(kept)
+                    continue
+                row.setdefault(field, []).append(kept)
+                rescaled += how == 'rescaled'
+                src = entry.get('source')
+                if src not in merged['sources'] and src in fresh_sources:
+                    merged['sources'][src] = fresh_sources[src]
+                shipped_sha = (shipped_sources.get(src) or {}).get('sha256')
+                if field in DOWNLOAD_SCALE_FIELDS and shipped_sha != (fresh_sources.get(src) or {}).get('sha256'):
+                    tier_boards.add(src)
         merged['models'][name] = row
-    merged['conflicts'] = ([c for c in shipped.get('conflicts') or () if c.get('model') not in names]
-                           + [c for c in fresh.get('conflicts') or () if c.get('model') in names])
+    for key in ('conflicts', 'checks'):
+        merged[key] = ([c for c in shipped.get(key) or () if c.get('model') not in names]
+                       + [c for c in fresh.get(key) or () if c.get('model') in names])
+    if rescaled:
+        notes.append(f'{rescaled} board z-scores recomputed on the shipped scale (the panel scale moved since the '
+                     f'shipped fetch); {ROUNDED_SCALE_NOTE}')
+    for src in sorted(tier_boards):
+        notes.append(f'the tier from {src} is computed on the fetched board, a different file from the shipped fetch; '
+                     "the other models' tiers stay on the shipped one")
     merged['generated_at'] = (now or datetime.now(timezone.utc)).isoformat(timespec='seconds')
-    return merged, left_out
+    return merged, left_out, notes
 
 
 def _numbers(value, path=()):
@@ -222,7 +256,7 @@ def _numbers(value, path=()):
 
 def blast_radius(before, after, names):
     """One line: how many numeric values of models other than `names` moved between two five-axis documents."""
-    moved, models, largest = 0, set(), (0.0, None)
+    moved, models, fields, largest = 0, set(), {}, (0.0, None)
     for model, row in (after.get('models') or {}).items():
         if model in names:
             continue
@@ -231,12 +265,14 @@ def blast_radius(before, after, names):
             if path in old and old[path] != value:
                 moved += 1
                 models.add(model)
+                fields[path[0]] = fields.get(path[0], 0) + 1
                 if abs(value - old[path]) > largest[0]:
                     largest = (abs(value - old[path]), f"{model} {'.'.join(path)}")
     if not moved:
         return 'no value of another model moved'
-    return (f'{moved} values of {len(models)} other models moved (values fitted over all measured models); largest '
-            f'change {largest[0]:.4g} at {largest[1]}')
+    by_field = ', '.join(f'{field} {count}' for field, count in sorted(fields.items(), key=lambda kv: (-kv[1], kv[0])))
+    return (f'{moved} values of {len(models)} other models moved, by field: {by_field} (values fitted over all measured '
+            f'models); largest change {largest[0]:.4g} at {largest[1]}')
 
 
 def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, accept_panel_change=False,
@@ -259,8 +295,8 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
         shipped = json.loads(meas_path.read_text(encoding='utf-8-sig'))
         refuse_panel_models(models, acc, shipped)
         before = json.loads(scores_path.read_text(encoding='utf-8-sig')) if scores_path.is_file() else None
-        built, left_out = merge_model_rows(shipped, built, models, now=now)
-        merge = {'left_out': left_out, 'before': before}
+        built, left_out, notes = merge_model_rows(shipped, built, models, now=now)
+        merge = {'left_out': left_out, 'notes': notes, 'before': before}
     meas = _preserve_generated_at(meas_path, built)
     raw = (json.dumps(meas, indent=1, ensure_ascii=False) + '\n').encode('utf-8')
     # Built before anything is written: a refused panel change (five_axis.PanelChangeRefused) leaves every file as it was.
@@ -279,7 +315,7 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
         public_data.write_manifest(ref_dir, now=now)
         validate(ref_dir)
     if merge is not None:
-        doc = {**doc, '_model_merge': {'left_out': merge['left_out'],
+        doc = {**doc, '_model_merge': {'left_out': merge['left_out'], 'notes': merge['notes'],
                                        'blast_radius': blast_radius(merge['before'], doc, models)}}
     return meas, doc
 
@@ -357,7 +393,9 @@ def main(argv=None, prog=None):
         merge = doc['_model_merge']
         print(f"Merged rows: {', '.join(args.model)} (other rows, panel, sources and targets as shipped)")
         for model, field, src, reason in merge['left_out']:
-            print(f'  left out: {model} {field} {src}: {reason}')
+            print(f'  left out: {model} {field} {src}: {reason}; its scores use the remaining entries')
+        for note in merge['notes']:
+            print(f'  note: {note}')
         print(f"Blast radius: {merge['blast_radius']}")
         print()
     rows, worst = staleness(doc)
