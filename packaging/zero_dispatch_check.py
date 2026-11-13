@@ -693,10 +693,15 @@ def step_paseo_host(z: Zero):
     z.set_parents(PARENT)
 
     op = run.operation("no process left behind (Paseo host)", "every fixture worker has ended or was stopped")
-    leftovers = [w["pid"] for w in z.workers() if z.worker_alive(w)]
-    for pid in leftovers:
-        z.kill(pid)
-    op.check("no fixture worker was still alive after the steps", not leftovers, leftovers)
+    # A worker that has reported completion can still be exiting on a slow runner; one that outlives the grace is left behind.
+    alive = lambda: [w for w in z.workers() if z.worker_alive(w)]
+    z.wait_for(lambda: not alive(), 20, 0.5)
+    leftovers = alive()
+    for worker in leftovers:
+        z.kill(worker["pid"])
+    op.check("no fixture worker was still alive after the steps", not leftovers,
+             [{"pid": w["pid"], "cli": w.get("cli"), "scenario": w.get("scenario"), "prompt_head": w.get("prompt_head", "")[:90]}
+              for w in leftovers])
 
 
 def step_quota_and_recovery(z: Zero):
