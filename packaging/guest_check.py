@@ -18,6 +18,8 @@ import time
 import winreg
 from pathlib import Path
 
+import sandbox_check as sc   # staged next to this file: the provider usage fixture and the venv's network guard
+
 IN, OUT = Path(r"C:\in"), Path(r"C:\out")
 LOGS = OUT / "logs"
 HOME = Path(os.path.expanduser("~"))
@@ -28,6 +30,9 @@ STATE = BASE / "fixtures" / "state"
 VENV = BASE / "ve nv"
 PARENT = "guest-parent-1"
 TASK = "Rename the helper foo to bar in util.py and update its two callers."
+USAGE_CACHE = HOME / ".agent-compass" / "usage-cache.json"
+USAGE_FIXTURE: list = []     # the running usage fixture, kept for the whole guest run
+HERDR_FLAGS = {"codex": ("--no-daemon", "--dangerously-bypass-approvals-and-sandbox"), "claude": ("--permission-mode", "bypassPermissions")}   # host_herdr.interactive
 results: list[dict] = []
 current = {"id": "", "title": ""}
 counter = {"n": 0, "cmd": 0}
@@ -174,6 +179,11 @@ def g_install():
     wheel = next((IN / "wheel").glob("*.whl"))
     installed = run([VENV / "Scripts" / "python.exe", "-m", "pip", "install", "--no-index", "--no-deps", "--quiet", wheel], label="pip")
     check("pip installs the wheel offline", installed.returncode == 0, installed.stderr[-400:])
+    # The guest has no network, and an account without a current quota reading leaves automatic routing. The venv therefore
+    # reads the two provider usage endpoints from sandbox_check's local fixture, and its guard refuses every other name.
+    fixture = sc.Fixture().__enter__()
+    USAGE_FIXTURE.append(fixture)
+    sc.write_netguard([VENV / "Lib" / "site-packages"], fixture.url, [fixture.server.server_address[1]], OUT / "venv-net.jsonl")
     version = agentcompass("--version")
     check("agentcompass --version", version.returncode == 0 and re.match(r"\d+\.\d+", version.stdout.strip()), version.stdout + version.stderr)
     helped = agentcompass("--help")
@@ -199,7 +209,9 @@ def g_setup_and_uninstall():
     check("the router skill and rules were written under the guest home", (HOME / ".codex" / "skills" / "agent-compass" / "SKILL.md").exists() or any((HOME / ".claude").rglob("*agent-compass*")), "no skill files")
     providers = agentcompass("providers")
     check("providers lists codex and claude as ready", providers.returncode == 0 and "codex" in providers.stdout and "claude" in providers.stdout, providers.stdout[:300])
-    plan = agentcompass("roll", "--task", TASK, "--parent-host", "paseo", "--parent-id", PARENT, "--dry-run")
+    shown = parse(agentcompass("usage", "--show", "--accounts", "codex", "claude").stdout)
+    check("setup's usage collection read both accounts from the local fixture", all(((shown.get("accounts") or {}).get(a) or {}).get("status") == "fresh" for a in ("codex", "claude")), shown)
+    plan = agentcompass("roll", "--task", TASK, "--parent-host", "paseo", "--parent-id", PARENT, "--dry-run", "--score")   # a dry run classifies only with --score
     check("a dry-run roll classifies and routes without launching", plan.returncode == 0 and (parse(plan.stdout).get("status") in ("dry_run", "self", "launched", "native", None)) and "Traceback" not in plan.stderr, plan.stdout[:300] + plan.stderr[-200:])
     undone = agentcompass("uninstall", "--yes")
     check("uninstall exits 0", undone.returncode == 0, (undone.stdout + undone.stderr)[-400:])
@@ -234,7 +246,10 @@ with open(sys.argv[1], "a", encoding="utf-8") as box:
         box.flush()
 """
 PROBE_PROGRAM = """import json, os, shutil, sys
-open(sys.argv[1], "w", encoding="utf-8").write(json.dumps({"codex": shutil.which("codex"), "userprofile": os.environ.get("USERPROFILE"), "path": os.environ.get("PATH")}))
+seen = json.dumps({"codex": shutil.which("codex"), "userprofile": os.environ.get("USERPROFILE"), "path": os.environ.get("PATH")})
+with open(sys.argv[1] + ".tmp", "w", encoding="utf-8") as out:
+    out.write(seen)
+os.replace(sys.argv[1] + ".tmp", sys.argv[1])   # the reader waits for this name: it must never see a half-written file
 """
 
 
@@ -299,10 +314,14 @@ def g_herdr():
         wait_for(poll, 120, 2.0)
         check("running next_argv reaches completed", final.get("status") == "completed", final)
         records = worker_records()[before:]
-        check("exactly one provider process started and it is the fixture codex with the required flags",
-              len(records) == 1 and records[0]["cli"] == "codex" and "--no-daemon" in records[0]["argv"] and "--dangerously-bypass-approvals-and-sandbox" in records[0]["argv"], [r.get("argv") for r in records])
         request_path = Path(worker["request"]) if worker.get("request") else None
         stored = request_path.read_text(encoding="utf-8") if request_path and request_path.is_file() else ""
+        bundle = json.loads(stored)["bundle"] if stored else {}
+        # Which account the router picks is not asserted. Whatever it routed, that account's fixture CLI is the one process
+        # that starts, with the routed model and the flags Herdr requires of that CLI.
+        check("exactly one provider process started: the routed account's fixture CLI, with the routed model and the flags Herdr requires of it",
+              len(records) == 1 and records[0]["cli"] == bundle.get("provider") and all(flag in records[0]["argv"] for flag in HERDR_FLAGS.get(records[0]["cli"], ("unknown CLI",)))
+              and (bundle.get("launch_model") or bundle.get("model")) in records[0]["argv"], {"bundle": bundle, "started": [(r.get("cli"), r.get("argv")) for r in records]})
         prompt_file = Path(json.loads(stored)["prompt_file"]) if stored else None
         prompt_text = prompt_file.read_bytes().decode("utf-8") if prompt_file and prompt_file.is_file() else ""
         check("the assignment file the worker reads holds the whole task byte for byte (CRLF and Chinese kept)", task in prompt_text, repr(prompt_text[:160]))
@@ -631,8 +650,8 @@ def gui_session(exe, tag, router_only=False):
     hwnd = window["hwnd"]
     user32.SetForegroundWindow(hwnd)
     # Coordinates below were read from screenshots of this very window in this sandbox (1351x728 screen, window at its fixed size): the sidebar entry
-    # "额度监控" (Quota Monitor) at (100,178); after moving the window 700 px left, that page's primary "刷新" button at (929,79) and the label
-    # "剩余额度% · 更新于 HH:MM:SS" at x 600-875, y 62-98. The window repaints slowly, so every step waits until two screenshots are identical.
+    # "额度监控" (Quota Monitor) at (100,178); after moving the window 700 px left, that page's reading label
+    # "剩余额度% · 读数于 MM-DD HH:MM ↻" at x 578-865, y 79, with the label and the account cards in the strip x 0-975, y 55-250. The window repaints slowly, so every step waits until two screenshots are identical.
     move(hwnd, 0, 0, 1351, 728)
     time.sleep(2)
     click_shot(100, 178)
@@ -640,24 +659,41 @@ def gui_session(exe, tag, router_only=False):
     move(hwnd, -700, 0, 2000, 728)
     seconds2, page = settle(f"{tag}-quota-page-right.png")
     check("the window is not hung after opening the Quota Monitor page (screenshots kept for review)", not user32.IsHungAppWindow(hwnd) and page is not None, (seconds, seconds2))
-    label_before = region_hash(page, 600, 62, 275, 36) if page else None
-    # Since 537194f the visible Quota Monitor page reloads itself every 15 s, so the idle control expects that refresh (within 40 s:
-    # 15 s interval plus the slow repaint) instead of a frozen label.
-    label_idle = None
+    # The label is the time of the newest reading ("读数于 MM-DD HH:MM", panel_quota.quota_reading_stamp), not a clock, so a reload
+    # shows only in what the page draws. The control gives the cache another Codex reading through the real collector (the
+    # fixture answers another used share) and waits for the strip holding the label and the account cards (x 0-975,
+    # y 55-250) to change with nobody touching the window: the visible page reloads itself every 15 s (within 40 s here: the
+    # interval plus the slow repaint).
+    strip = (0, 55, 975, 195)
+    cards_before = region_hash(page, *strip) if page else None
+    USAGE_FIXTURE[0].codex_used = 30.0 if USAGE_FIXTURE[0].codex_used == 55.0 else 55.0   # a figure the page is not showing yet
+    reread = parse(agentcompass("usage", "--force").stdout)
+    stored = json.loads(USAGE_CACHE.read_text(encoding="utf-8")) if USAGE_CACHE.is_file() else {}
+    codex_used = [w.get("used_pct") for w in ((stored.get("providers") or {}).get("codex") or {}).get("windows") or [] if w.get("id") == "five_hour"]
+    check("the collector stored the fixture's new Codex reading", codex_used == [USAGE_FIXTURE[0].codex_used], {"stored": codex_used, "receipt": reread})
+    cards_idle = None
     idle_started = time.time()
-    while label_before and time.time() - idle_started < 40:
+    while cards_before and time.time() - idle_started < 40:
         time.sleep(3)
         _, idle = settle(f"{tag}-quota-idle.png")
-        label_idle = region_hash(idle, 600, 62, 275, 36) if idle else None
-        if label_idle and label_idle != label_before:
+        cards_idle = region_hash(idle, *strip) if idle else None
+        if cards_idle and cards_idle != cards_before:
             break
-    check("control: with nobody touching it the visible quota page refreshes its update-time label on its own (15 s auto refresh)",
-          bool(label_before) and bool(label_idle) and label_idle != label_before, (label_before, label_idle, round(time.time() - idle_started, 1)))
-    label_before = label_idle or label_before
-    click_shot(929, 79)
-    after_seconds, after = settle(f"{tag}-quota-after-refresh.png", limit=60)
-    label_after = region_hash(after, 600, 62, 275, 36) if after else None
-    check("after clicking 刷新 the page's update-time label is different (the window really refreshed)", bool(label_after) and label_after != label_before, (label_before, label_after, after_seconds))
+    check("control: with nobody touching it the visible quota page redraws its account cards after a new reading (15 s auto refresh)",
+          bool(cards_before) and bool(cards_idle) and cards_idle != cards_before, (cards_before, cards_idle, round(time.time() - idle_started, 1)))
+    # The reading label ("... ↻") is the control that reads the accounts again (panel_quota.refresh_usage); the "刷新" button only
+    # reloads the page from the cache, the same reload as the 15 s refresh above, so it cannot be told apart from it and is not
+    # asserted. The packaged window has no fixture and no network, so its read fails; what it leaves is a new attempt per
+    # account in the usage cache.
+
+    def attempts():
+        document = json.loads(USAGE_CACHE.read_text(encoding="utf-8")) if USAGE_CACHE.is_file() else {}
+        return {name: row.get("at") for name, row in (document.get("attempts") or {}).items() if name in ("codex", "claude")}
+    attempts_before = attempts()
+    click_shot(720, 79)
+    again = wait_for(lambda: len(attempts_before) == 2 and all(attempts().get(name, 0) > at for name, at in attempts_before.items()), 90, 1.0)
+    settle(f"{tag}-quota-after-refresh.png", limit=60)
+    check("after clicking the reading label (↻) the window read both accounts again (the usage cache records a newer attempt for each)", bool(again), (attempts_before, attempts()))
     check("the window stayed responsive after the click", not user32.IsHungAppWindow(hwnd))
     user32.PostMessageW(window["hwnd"], 0x0010, 0, 0)
     if tray is None:

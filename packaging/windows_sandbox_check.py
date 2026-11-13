@@ -114,6 +114,7 @@ def stage(base: Path, repo_root: Path, gui: bool = False, inno: bool = False) ->
         (stage_in / "inno" / "version.txt").write_text(version, encoding="utf-8")
     (stage_in / "guest").mkdir()
     shutil.copy2(HERE / "guest_check.py", stage_in / "guest" / "guest_check.py")
+    shutil.copy2(HERE / "sandbox_check.py", stage_in / "guest" / "sandbox_check.py")   # guest_check imports its usage fixture and network guard
     (stage_in / "guest" / "host-home.txt").write_text(str(Path.home()), encoding="utf-8")   # the guest proves it cannot see it
     return stage_in
 
