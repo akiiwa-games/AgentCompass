@@ -67,24 +67,12 @@ KINDS = ("codex", "claude", "antigravity", "pi", "opencode")
 # One named cache file, or None for the collector's canonical cache (usage_cache.py).
 USAGE_CACHE = Path(os.environ["ROUTER_USAGE_CACHE"]) if os.environ.get("ROUTER_USAGE_CACHE") else None
 
-# API list prices in USD per million tokens: (input, cache write 5 min, cache write 1 h, cache read, output), checked
-# 2026-10-12 on platform.claude.com/docs/en/about-claude/pricing and developers.openai.com/api/docs/pricing (standard
-# tier, short context). A subscription is not billed per token, but how much of a window a call takes is assumed to
-# follow these prices: an Opus 5.5 token costs twice a Sonnet 5.5 token, an Astra token five times a Sol token. Without
-# them one shared per-token rate made a model that moves fewer tokens look cheaper whatever its price.
-PRICES = {
-    # Fable 5.2: platform.claude.com/docs/en/about-claude/pricing, read 2026-11-10.
-    "claude-fable-5-2": (8.0, 10.0, 16.0, 0.20, 40.0),
-    "claude-fable-5-1": (10.0, 12.5, 20.0, 0.25, 50.0),
-    "claude-opus-5-5": (4.0, 5.0, 8.0, 0.20, 20.0),
-    "claude-sonnet-5-5": (2.0, 2.5, 4.0, 0.10, 10.0),
-    "claude-haiku-5-5": (0.10, 0.125, 0.20, 0.01, 0.50),
-    "gpt-6-astra": (10.0, 12.5, 12.5, 1.00, 50.0),
-    "gpt-6.1-sol": (2.0, 2.5, 2.5, 0.10, 10.0),
-    "gpt-6-sol": (2.0, 2.5, 2.5, 0.20, 10.0),
-    "gpt-6-luna": (0.10, 0.125, 0.125, 0.01, 0.50),
-}
-PRICE_VERSION = 3      # a state scanned under another price/model table is read from the logs again
+# API list prices in USD per million tokens are catalog data: accounts.json `models[m].list_price` (input, cache write 5 min,
+# cache write 1 h, cache read, output; cited in `list_price_source`). A subscription is not billed per token, but how much
+# of a window a call takes is assumed to follow these prices: an Opus token costs twice a Sonnet token, an Astra token five
+# times a Sol token. Without them one shared per-token rate made a model that moves fewer tokens look cheaper whatever its
+# price. A model without a list price keeps its account's token fit.
+PRICE_FIELDS = ("input", "cache_write_5m", "cache_write_1h", "cache_read", "output")
 
 
 # ------------------------------------------------------------------ small helpers
@@ -117,6 +105,33 @@ def short_hash(text: str) -> str:
 
 def same_reset(a: float, b: float) -> bool:
     return abs(a - b) < SAME_RESET_SECONDS
+
+
+def skill_scripts() -> Path | None:
+    """The agent-compass skill's scripts directory: the installed skill, else this checkout's; None when neither exists."""
+    codex = Path(os.environ.get("CODEX_HOME") or HOME / ".codex")
+    for scripts in (codex / "skills/agent-compass/scripts", Path(__file__).resolve().parents[1] / "skills/agent-compass/scripts"):
+        if (scripts / "usage_cache.py").is_file():
+            if str(scripts) not in sys.path:
+                sys.path.insert(0, str(scripts))
+            return scripts
+    return None
+
+
+def load_prices() -> dict[str, tuple[float, ...]]:
+    """{model id: list price per PRICE_FIELDS} from the catalog in effect (public_data.effective over the shipped copy)."""
+    scripts = skill_scripts()
+    if scripts is None:
+        raise RuntimeError("agent-compass skill scripts not found: the catalog holding the models' list prices is unavailable")
+    import public_data
+    doc = json.loads(public_data.effective(scripts.parent / "references" / "accounts.json").read_text(encoding="utf-8-sig"))
+    return {model: tuple(float(row["list_price"][f]) for f in PRICE_FIELDS)
+            for model, row in doc["models"].items() if isinstance(row, dict) and row.get("list_price")}
+
+
+PRICES = load_prices()
+# A state scanned under another price/model table is read from the logs again.
+PRICE_VERSION = short_hash(json.dumps(PRICES, sort_keys=True))
 
 
 def list_usd(model: str, fresh: int = 0, write_5m: int = 0, write_1h: int = 0, read: int = 0, out: int = 0) -> float:
@@ -542,14 +557,10 @@ def scan_all(state: dict, now: float, days: int) -> dict:
 
 def usage_cache_module():
     """usage_cache.py from the installed agent-compass skill, else from this checkout; None when neither exists."""
-    codex = Path(os.environ.get("CODEX_HOME") or HOME / ".codex")
-    for scripts in (codex / "skills/agent-compass/scripts", Path(__file__).resolve().parents[1] / "skills/agent-compass/scripts"):
-        if (scripts / "usage_cache.py").is_file():
-            if str(scripts) not in sys.path:
-                sys.path.insert(0, str(scripts))
-            import usage_cache
-            return usage_cache
-    return None
+    if skill_scripts() is None:
+        return None
+    import usage_cache
+    return usage_cache
 
 
 def sample_usage_cache(state: dict) -> None:

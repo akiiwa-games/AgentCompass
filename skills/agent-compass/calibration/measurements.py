@@ -30,10 +30,11 @@ Fields
   Image input: a model a vision board lists takes image input (`image_input`); a cited vendor statement that it takes
   none (`vendor.text_only`), or OpenRouter's input modalities, otherwise. A public board that lists the model wins.
 
-One conversion for every board, a panel standard score relative to the anchor model (ANCHOR, Opus 5.5):
+One conversion for every board, a panel standard score relative to the anchor model (ANCHOR, accounts.json
+`calibration_panel.anchor`):
 z = (x - x_anchor) / sd_panel(x), x the board's raw value (Elo, rating, success rate, index; -ln seconds for the time to
 first answer token). The panel is the fleet models listed on every scoring board that lists all six anchor rows
-(`tiers.ANCHORS`); sd_panel is the sample standard deviation of the board over the panel. A board that lists the
+(accounts.json `calibration_panel.models`); sd_panel is the sample standard deviation of the board over the panel. A board that lists the
 anchor and at least MIN_PANEL panel members is a source; any other is recorded as missing with the reason. Nothing is
 capped or bridged: a new model at the top of a board moves no other model, and the anchor is 0 on every board.
 Artificial Analysis boards list every effort variant: each entry carries the score at High (else the effort-less
@@ -72,21 +73,12 @@ import series
 import sources
 import tiers
 
-ANCHOR = 'claude-opus-5-5'      # every capability score is relative to this model (0 on every board)
+# Every capability score is relative to this model (0 on every board): accounts.json `calibration_panel.anchor`.
+ANCHOR = tiers.panel(sources.accounts())[0]
 MIN_PANEL = 8                   # panel members a board must list to be a source (as five_axis.MIN_FIT_POINTS)
 OUT = sources.REPO / 'references' / 'public-measurements.json'
 SCHEMA = 'agent-compass.public-measurements/1'
 
-# Names the automatic matcher cannot derive (a dated or differently worded listing of the same model).
-EXTRA_NAMES = {
-    'beam-free': {'arena': 'Beam 1.0 501B A23B'},       # the Alignment Index lists it as `Beam` (matched automatically)
-    'deepseek-v4.1-flash-free': {'aa': 'DeepSeek V4.1 Flash 1017'},
-    'deepseek-v4-pro': {'aa': 'DeepSeek V4 Pro 0813', 'swe': 'DeepSeek V4 Pro 0813'},
-    'muse-wonder-1.0': {'aa': 'Muse Wonder'},
-    'nemotron-3-ultra-free': {'aa': 'Nemotron 3 Ultra 550B A55B'},
-    'nemotron-3.5-super-vl-free': {'arena': 'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B', 'aa': 'Nemotron 3.5 Super VL'},
-    'qwen3.8-max': {'aa': 'Qwen3.8 Max'},
-}
 # Every scoring board: source -> (category, facet). Parallel boards of one facet are linked and averaged (five_axis.py).
 CAPABILITY_SOURCES = {
     'lmarena.creative_writing': ('divergence', 'creative_writing'),
@@ -131,28 +123,6 @@ SOURCE_KIND = {**dict.fromkeys(CAPABILITY_SOURCES, 'benchmark'), 'derived.commun
                'aa.price': 'vendor', 'openrouter.price': 'vendor', 'vendor.price': 'vendor', 'openrouter.modality': 'vendor',
                'vendor.fast_mode': 'vendor', 'aa.index': 'benchmark'}
 IMAGE_BENCHMARKS = ('lmarena.vision', 'aa.mmmu_pro')
-# Public vendor fast-mode specifications (round 11, user 2026-11-10): only models with a cited vendor price and speed
-# multiplier get a fast_mode measurement; other fast-capable models have no public multiplier (surfaced gap).
-VENDOR_FAST_MODE = {
-    'claude-opus-5-5': {
-        'price_multiplier': 2.0, 'speed_multiplier': 2.5,
-        'fast_price': {'input': 8.0, 'output': 40.0, 'cache_read': 0.4},
-        'standard_price': {'input': 4.0, 'output': 20.0, 'cache_read': 0.2},
-        'as_of': '2026-11-10', 'url': 'https://code.claude.com/docs/en/fast-mode',
-        'pricing_url': 'https://platform.claude.com/docs/en/about-claude/pricing',
-        'statement': 'Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Opus 5.5 fast mode is '
-                     '$8/$40 per MTok (2x standard $4/$20, cache read $0.20) with up to 2.5x output tokens per second.',
-    },
-    'claude-fable-5-2': {
-        'price_multiplier': 2.0, 'speed_multiplier': 2.5,
-        'fast_price': {'input': 16.0, 'output': 80.0, 'cache_read': 0.4},
-        'standard_price': {'input': 8.0, 'output': 40.0, 'cache_read': 0.2},
-        'as_of': '2026-11-10', 'url': 'https://code.claude.com/docs/en/fast-mode',
-        'pricing_url': 'https://platform.claude.com/docs/en/about-claude/pricing',
-        'statement': 'Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Fable 5.2 fast mode is '
-                     '$16/$80 per MTok (2x standard $8/$40, cache read $0.20) with up to 2.5x output tokens per second.',
-    },
-}
 ARENA_FILE = {**{src: f'{board}.parquet' for src, (board, _) in LMARENA.items()},
               **{src: arena_capture.FILES[spec[0]] for src, spec in ARENA_CAPTURES.items()}, **DESIGN_ARENA,
               **dict.fromkeys([*AA_SCORE, AA_TTFA], 'aa-models.html')}
@@ -205,6 +175,10 @@ class Builder:
     def __init__(self, target, acc, now=None):
         self.target, self.acc, self.now = target, acc, now
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
+        anchor, self.panel_ids, self.anchor_name = tiers.panel(acc)
+        if anchor != ANCHOR:
+            raise ValueError(f'calibration_panel anchor {anchor!r} differs from the shipped accounts.json anchor {ANCHOR!r} '
+                             'that five_axis.py scales on')
         self.manifest = sources.manifest(target)
         self.source_rows, self.out, self.names = {}, {m: {} for m in self.models}, {m: {} for m in self.models}
         self.missing = {}
@@ -379,8 +353,7 @@ class Builder:
             explicit_key = {'lmarena': 'arena', 'arena': 'arena', 'aa': 'aa'}.get(family)
             raw[src], names[src] = {}, {}
             for model in self.models:
-                exp = ((EXTRA_NAMES.get(model) or {}).get(explicit_key) or (tiers.NAMES.get(model) or {}).get(explicit_key)
-                       or (tiers.ANCHORS.get(model) if family in ('lmarena', 'arena', 'aa') else None)) if explicit_key else None
+                exp = tiers.listed_as(self.models, model, explicit_key) if explicit_key else None
                 name = match.find(model, exp) or (match.find(model) if exp else None)
                 if name is not None:
                     raw[src][model], names[src][model] = b['board'][name], name
@@ -388,7 +361,7 @@ class Builder:
         panel, core, scale = self.panel(raw)
         self.panel_doc = {'models': panel, 'n': len(panel), 'core_boards': core, 'min_panel': MIN_PANEL,
                           'rule': 'the fleet models listed on every scoring board that lists all six anchor rows '
-                                  f'({", ".join(tiers.ANCHORS)}); sd_panel is the sample standard deviation over them'}
+                                  f'({", ".join(self.panel_ids)}); sd_panel is the sample standard deviation over them'}
         for src, sc in scale.items():
             axis, facet = CAPABILITY_SOURCES[src]
             b = boards[src]
@@ -519,7 +492,7 @@ class Builder:
 
     def panel(self, raw):
         """(panel models, core boards, {source: {'anchor_raw', 'sd', 'n'}}) of the module docstring."""
-        core = [src for src, board in raw.items() if board and all(a in board for a in tiers.ANCHORS)]
+        core = [src for src, board in raw.items() if board and all(a in board for a in self.panel_ids)]
         panel = sorted(set.intersection(*(set(raw[src]) for src in core))) if core else []
         scale = {}
         for src, board in raw.items():
@@ -540,30 +513,28 @@ class Builder:
     # --- tier -------------------------------------------------------------------------------------
     def tier(self):
         """The tier entries (module docstring): arena.ai Overall at High, else AA Intelligence Index at High."""
-        fitter = tiers.Fitter(self.target)
+        fitter = tiers.Fitter(self.target, self.anchor_name)
         overall = fitter.overall
         as_of = max(r[4] for r in overall.values())
         self.register('tier.arena_overall', 'text_style_control.parquet', as_of,
                       'tiers.py: arena.ai Overall (Text, style control) at High standardized relative to '
-                      f'{tiers.ANCHORS[tiers.ANCHOR_MODEL]} (anchor = 0, continuous z-score)', len(overall))
+                      f'{self.anchor_name} (anchor = 0, continuous z-score)', len(overall))
         self.register('tier.aa_index', 'aa-models.html', None,
                       'tiers.py: Artificial Analysis Intelligence Index at High interpolated onto the continuous '
                       'arena.ai Overall High scale through the models listed at High on both boards',
                       len(fitter.aa))
         arena, aa = Matcher(overall), Matcher(fitter.aa)
         for model in self.models:
-            extra_names = EXTRA_NAMES.get(model) or {}
-            names = tiers.NAMES.get(model) or {}
-            explicit = extra_names.get('arena') or names.get('arena') or tiers.ANCHORS.get(model)
+            explicit = tiers.listed_as(self.models, model, 'arena')
             found = arena.find(model, explicit) or (arena.find(model) if explicit else None)
             if found:
                 row = overall[found]
                 t = fitter.arena_overall_tier(found)
                 self.add(model, 'tier', 'tier.arena_overall', round(t, 4),
-                         tiers.basis_arena(row, t, fitter.anchor_raw, fitter.sd),
+                         tiers.basis_arena(row, t, fitter.anchor_raw, fitter.sd, fitter.anchor_name),
                          listed_as=row[3], arena_value=round(row[0], 1))
             else:
-                explicit = extra_names.get('aa') or names.get('aa') or tiers.ANCHORS.get(model)
+                explicit = tiers.listed_as(self.models, model, 'aa')
                 aa_found = aa.find(model, explicit) or (aa.find(model) if explicit else None)
                 if aa_found:
                     for board, r in fitter.other_overall({'aa.index': aa_found}).items():
@@ -587,7 +558,7 @@ class Builder:
         match = Matcher(variants)
         idx_high, idx_efforts, idx_recs = {}, {}, {}
         for model in self.models:
-            exp = (EXTRA_NAMES.get(model) or {}).get('aa') or (tiers.NAMES.get(model) or {}).get('aa') or tiers.ANCHORS.get(model)
+            exp = tiers.listed_as(self.models, model, 'aa')
             base = match.find(model, exp) or (match.find(model) if exp else None)
             if not base:
                 continue
@@ -672,8 +643,7 @@ class Builder:
         unpriced = {}
         match = Matcher(by_base)
         for model in self.models:
-            exp = ((EXTRA_NAMES.get(model) or {}).get('arena') or (tiers.NAMES.get(model) or {}).get('arena')
-                   or tiers.ANCHORS.get(model))
+            exp = tiers.listed_as(self.models, model, 'arena')
             base = match.find(model, exp) or (match.find(model) if exp else None)
             if not base:
                 continue
@@ -758,23 +728,24 @@ class Builder:
                          mix_as_of=mix['as_of'])
 
     def fast_mode(self):
-        """Cited vendor fast-mode price and speed multipliers and vendor API pricing (round 11, user 2026-11-10)."""
+        """Cited vendor fast-mode price and speed multipliers and vendor API pricing (round 11, user 2026-11-10): the
+        accounts.json `models[m].vendor_fast_mode` declarations. Only a model with a cited vendor price and speed multiplier
+        gets a fast_mode measurement; other fast-capable models have no public multiplier (a surfaced gap)."""
+        fast = {m: info['vendor_fast_mode'] for m, info in self.models.items() if info.get('vendor_fast_mode')}
         self.source_rows['vendor.fast_mode'] = {
             'file': None, 'url': 'https://code.claude.com/docs/en/fast-mode', 'fetched_at': None, 'sha256': None,
             'as_of': '2026-11-10', 'as_of_kind': 'data date',
             'method': 'Anthropic Claude Code fast-mode and API pricing documentation (read 2026-11-10)',
-            'models_listed': len(VENDOR_FAST_MODE), 'kind': 'vendor',
+            'models_listed': len(fast), 'kind': 'vendor',
             'pricing_url': 'https://platform.claude.com/docs/en/about-claude/pricing',
         }
         self.source_rows['vendor.price'] = {
             'file': None, 'url': 'https://platform.claude.com/docs/en/about-claude/pricing', 'fetched_at': None, 'sha256': None,
             'as_of': '2026-11-10', 'as_of_kind': 'data date',
             'method': 'Anthropic API pricing documentation (read 2026-11-10): USD per million tokens',
-            'models_listed': len(VENDOR_FAST_MODE), 'kind': 'vendor',
+            'models_listed': len(fast), 'kind': 'vendor',
         }
-        for model, spec in VENDOR_FAST_MODE.items():
-            if model not in self.models:
-                continue
+        for model, spec in fast.items():
             self.add(model, 'fast_mode', 'vendor.fast_mode',
                      {'price_multiplier': spec['price_multiplier'], 'speed_multiplier': spec['speed_multiplier']},
                      spec['statement'], fast_price=spec['fast_price'], standard_price=spec['standard_price'],

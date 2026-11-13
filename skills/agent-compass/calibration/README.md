@@ -43,10 +43,38 @@ Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--
 
 One command runs the full chain in topological order: `sources.py fetch` (skipped with `--no-fetch`) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> `public_data.py manifest --write` -> validation (`public-data` checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
 
-To add a model, put its source names in `tiers.NAMES` (or `measurements.EXTRA_NAMES`), then run `agentcompass data refresh --no-fetch` (or `agentcompass data refresh`). Every written value names its sources and dates.
+## To add a model or a score
+
+Every per-model fact is reference data under `references/`; adding a model or a score changes no Python and no test.
+
+1. **The row.** In `references/accounts.json`, add `models["<id>"]` (copy a sibling row and edit it): `label` (tray name),
+   and when they apply `api_family` (`claude` / `codex`: the native CLI), `context_window`, `image_input_source` or
+   `text_only_source` (cited or dated maintainer statement), and `fast_capable: true` only for a verified fast launch
+   ([fast-modes.md](../references/fast-modes.md)).
+2. **Board names.** `listed_as: {"arena": "...", "aa": "..."}` gives the name arena.ai / LMArena and Artificial Analysis list
+   the model under, when the automatic matcher cannot derive it from the id (a dated listing, other wording). Leave out a
+   board that lists it under its id or does not list it.
+3. **Prices (optional, cited).** `list_price` (`input`, `cache_write_5m`, `cache_write_1h`, `cache_read`, `output`, USD per
+   million tokens) with `list_price_source` (`kind: "vendor"`, https `url`, `as_of`) prices local session logs in the tray;
+   `vendor_fast_mode` (price and speed multipliers, fast and standard prices, `url`, `pricing_url`, `as_of`, `statement`)
+   adds the fast variant's measurement.
+4. **Launch and family.** A bundle under `accounts[<account>].bundles` and its efforts under `dispatch_efforts[<harness>]`
+   make it launchable (discovery adds auto bundles for what a CLI advertises). When it is the newest model of a family,
+   point that family's entry in `families` (ordered `{pattern, models}`; the first matching pattern decides) and the
+   family's short `aliases` at it, and list the older model under `superseded`.
+5. **Rebuild.** Run `agentcompass data refresh --no-fetch` (or `agentcompass data refresh` to fetch new boards first). It
+   validates the catalog (`public_data.validate_accounts_provenance`: provenance and the shape of the fields above),
+   rebuilds `public-measurements.json`, `five-axis-scores.json`, `model-capabilities.{json,md}` and the `public-data.json`
+   manifest. Commit the changed files under `references/`.
+
+A **maintainer manual score** is `agentcompass score set <model> ... --public`, which writes `references/user-scores.json`
+and the manifest; then run the refresh. A **measured score** comes from the boards on the next refresh. The calibration
+scale itself (the anchor and the panel's sentinel models) is `calibration_panel` in `accounts.json`, a dated maintainer
+declaration; changing it rescales every score. Every written value names its sources and dates.
 
 ## Rules the data follows
 
 - The anchor tiers are the user's judgment. The scripts report contradictions with them and never change them.
 - Public cited data only. A value without a trusted source is missing, and missing is a surfaced data error, never a default.
-- No model names in router code. Everything above is data under `references/`.
+- No model names in router code. Everything above is data under `references/`, including each model's board names,
+  prices, fast-mode multipliers, family patterns and the calibration panel.

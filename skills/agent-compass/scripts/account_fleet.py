@@ -116,11 +116,12 @@ def models_table(accounts):
 
 def resolve_model(model, accounts):
     """model_resolution.resolve_model against this document: {'key', 'source', 'effort', 'bare'}."""
-    return _resolve_model(model, accounts.get('models', {}), accounts.get('aliases', {}))
+    return _resolve_model(model, accounts.get('models', {}), accounts.get('aliases', {}), accounts.get('families') or [])
 
 
 def canonical(model, accounts):
-    return resolve_canonical_model(model, accounts.get('models', {}), accounts.get('aliases', {})) or model
+    return resolve_canonical_model(model, accounts.get('models', {}), accounts.get('aliases', {}),
+                                   accounts.get('families') or []) or model
 
 
 def model_spec(accounts, model):

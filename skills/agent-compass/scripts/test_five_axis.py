@@ -916,17 +916,20 @@ class AnchorRelativeTests(unittest.TestCase):
     def setUpClass(cls):
         import five_axis
         import measurements
+        import sources
         import tiers
         cls.fa, cls.ms, cls.tiers = five_axis, measurements, tiers
+        cls.anchors = tiers.panel(sources.accounts())[1]
 
     def panel_models(self):
-        anchors = list(self.tiers.ANCHORS)
+        anchors = list(self.anchors)
         extras = [f'p{i}' for i in range(max(4, self.ms.MIN_PANEL + 2 - len(anchors)))]
         return anchors + extras
 
     def test_panel_standard_scores_put_anchor_at_zero_and_reject_unanchored_or_thin_boards(self):
         members = self.panel_models()
         b = self.ms.Builder.__new__(self.ms.Builder)
+        b.panel_ids = self.anchors
         b.source_rows = {s: {'file': 'f'} for s in ('lmarena.webdev', 'designarena.website', 'aa.mmmu_pro',
                                                     'no_anchor', 'too_few', 'flat')}
         b.missing, b.manifest = {}, {}
@@ -1032,6 +1035,7 @@ class AnchorRelativeTests(unittest.TestCase):
         raw = {'lmarena.creative_writing': {m: 1500.0 - 20.0 * i for i, m in enumerate(members)}}
         b1 = self.ms.Builder.__new__(self.ms.Builder)
         b1.source_rows, b1.missing, b1.manifest = {'lmarena.creative_writing': {'file': 'f'}}, {}, {}
+        b1.panel_ids = self.anchors
         panel1, _, scale1 = b1.panel(raw)
         grown = {'lmarena.creative_writing': {**raw['lmarena.creative_writing'], 'newtop': 1700.0}}  # not on all core boards if added to one
         # Add a second core board where newtop is absent so newtop is outside the panel
@@ -1043,11 +1047,13 @@ class AnchorRelativeTests(unittest.TestCase):
         b_before = self.ms.Builder.__new__(self.ms.Builder)
         b_before.source_rows = {s: {'file': 'f'} for s in raw2}
         b_before.missing, b_before.manifest = {}, {}
+        b_before.panel_ids = self.anchors
         panel_a, _, scale_a = b_before.panel(raw2)
 
         b_after = self.ms.Builder.__new__(self.ms.Builder)
         b_after.source_rows = {s: {'file': 'f'} for s in grown2}
         b_after.missing, b_after.manifest = {}, {}
+        b_after.panel_ids = self.anchors
         panel_b, _, scale_b = b_after.panel(grown2)
 
         self.assertEqual(panel_a, panel_b)

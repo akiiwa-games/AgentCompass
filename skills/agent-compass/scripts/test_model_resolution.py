@@ -96,8 +96,8 @@ class ModelResolutionTests(unittest.TestCase):
         self.assertEqual(account_fleet.canonical('openai/gpt-5-custom@20251001', self.accounts), 'gpt-6.1-sol')
         self.assertEqual(account_fleet.canonical('vendor/gpt-5-custom-latest', self.accounts), 'gpt-5-custom')
         # Alias cycles and metadata strings must not become model specifications.
-        self.assertIsNone(resolve_canonical_model('loop', {}, {'loop': 'other', 'other': 'loop'}))
-        self.assertIsNone(resolve_canonical_model('basis', self.accounts['models'], {}))
+        self.assertIsNone(resolve_canonical_model('loop', {}, {'loop': 'other', 'other': 'loop'}, []))
+        self.assertIsNone(resolve_canonical_model('basis', self.accounts['models'], {}, self.accounts['families']))
 
     def test_unknown_models_have_no_row_score_or_price(self):
         self.assertEqual(account_fleet.resolve_model('new-vendor/unknown', self.accounts)['source'], 'unknown')
@@ -125,7 +125,8 @@ class ModelResolutionTests(unittest.TestCase):
                      'grok-4.7-mini', 'grok-4.7-fast', 'llama-5']:
             self.assertNotIn(name, self.accounts['models'])
         for name in ['llama-future', 'gpt-4-future', 'unknown-vendor']:
-            self.assertIsNone(resolve_canonical_model(name, self.accounts['models'], self.accounts['aliases']))
+            self.assertIsNone(resolve_canonical_model(name, self.accounts['models'], self.accounts['aliases'],
+                                                      self.accounts['families']))
 
     def test_current_frontier_tiers_and_context_windows(self):
         shipped = axis_scores.load_five_axis()['models']

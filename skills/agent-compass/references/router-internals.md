@@ -148,6 +148,8 @@ The same rules hold in the other repositories that port this router.
 | `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | the same-series target's scores and usd_per_hour (series conversion; a small-size name on a non-small target is not in its series and gets the small row), marked estimated |
 | `unknown` | no match | no scores: a demanded category (`>= 1`, except `tool_operation = 1`) is a data error and the model leaves automatic routing |
 
+The `family` patterns are data: `accounts.json` `families`, an ordered list of `{pattern, models}` matched against the bare name; the first matching pattern decides and the name resolves to the first of its models the catalogue has (none: `unknown`). A name no pattern matches falls back to the longest calibrated id it extends (`<id>-...`).
+
 A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry.
 
 `account_fleet.row_key` says which model a row runs: the key for `exact` and `alias`, the row's own name for `family` and `unknown`. A family guess folds to its target only for its estimated score. Wherever a row, a pin, a cooldown, a worker or a rival is matched, it is its own model, so naming the flagship never takes a family row. A cooldown recorded under any spelling of a model cools all its spellings. The rival for `needs_judgment` is the best row of a different model, never another effort, harness or account of the same model.

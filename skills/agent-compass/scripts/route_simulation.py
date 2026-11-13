@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import accounts_override  # noqa: E402
 import allocator  # noqa: E402
 import account_fleet
+import auto_bundles
 import axis_scores
 import quota_economy
 import task_intake
@@ -80,26 +81,27 @@ ACCOUNT_SETS = {
     'opencode free': {'accounts': {'opencode': ('opencode', 'free')}},
 }
 LAUNCHERS = {'antigravity': 'antigravity-resilient'}
-# What each product's CLI advertises (public model ids, 2026-11-04; Claude Fable 5.2 added 2026-11-10); discovery turns them into auto bundles.
-CATALOGS = {
-    'claude': ['claude-opus-5-5', 'claude-fable-5-2', 'claude-fable-5-1', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-4-8',
-               'claude-sonnet-4-6', 'claude-haiku-4-5'],
-    'codex': ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6.1-terra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra',
-              'gpt-5.6-luna'],
-    'antigravity': ['gemini-4-argon-high', 'gemini-4-argon-medium', 'gemini-3.8-flash-high', 'gemini-3.8-flash-medium',
-                    'claude-opus-5-5-high', 'claude-opus-5-5-medium', 'claude-sonnet-5-5-high', 'gpt-oss-120b-medium'],
-    'opencode': ['opencode/big-pickle', 'opencode/mimo-v2.6-flash-free', 'opencode/nemotron-3.5-lightning-free',
-                 'opencode/nemotron-3.5-super-vl-free', 'opencode/glm-5.3-flash-free', 'opencode/beam-free',
-                 'opencode/flint-40b-free', 'opencode/deepseek-v4.1-flash-free'],
-}
+
+
+def advertised(doc, family):
+    """What a family's CLI is simulated to advertise, from the catalog: the launch ids of the family account's bundles,
+    and the other models it launches on the family's harness (`dispatch_efforts`). Discovery turns them into auto bundles."""
+    launcher = LAUNCHERS.get(family, family)
+    bundles = [b for b in (((doc.get('accounts') or {}).get(family) or {}).get('bundles') or {}).values()
+               if b.get('provider', family) in (family, launcher)]
+    bundled = {auto_bundles.split_effort(b.get('model'), doc)[0] for b in bundles}
+    ids = [*(b.get('launch_model') or b.get('model') for b in bundles),
+           *(m for m in (doc.get('dispatch_efforts') or {}).get(launcher) or {} if m not in bundled)]
+    return list(dict.fromkeys(m for m in ids if m))
 
 
 def account_set_snapshot(name):
     """A discovery snapshot holding only the set's accounts, each ready on a subscription."""
     rows, launchers = {}, {}
+    doc = json.loads(account_fleet.fleet_document_path().read_text(encoding='utf-8-sig'))
     for account, (family, plan) in ACCOUNT_SETS[name]['accounts'].items():
         row = {'family': family, 'status': 'ready', 'plan': plan, 'billing': 'subscription', 'sources': ['native'],
-               'identity': f'sim-{account}', 'quota_account': account, 'models': list(CATALOGS.get(family, []))}
+               'identity': f'sim-{account}', 'quota_account': account, 'models': advertised(doc, family)}
         if family in LAUNCHERS:
             row['provider'] = LAUNCHERS[family]
             launchers[LAUNCHERS[family]] = {'family': LAUNCHERS[family], 'status': 'ready'}

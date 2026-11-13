@@ -1938,6 +1938,7 @@ def apply(accounts, inventory=None, *, live=None):
                 specs.pop(name, None)
     known_models = accounts.get('models') if isinstance(accounts.get('models'), dict) else {}
     aliases = accounts.get('aliases') if isinstance(accounts.get('aliases'), dict) else {}
+    model_families = accounts.get('families') or []
     shipped_templates = _shipped_plan_templates()
 
     for name, row in inventory['accounts'].items():
@@ -2127,8 +2128,8 @@ def apply(accounts, inventory=None, *, live=None):
             if reason:
                 bundle['discovery_unavailable'] = reason
             if isinstance(advertised, list):
-                match = bundle.get('launch_model') if bundle.get('launch_model') in advertised else next((m for m in advertised if (resolve_canonical_model(m, known_models, aliases) or m.rsplit('/', 1)[-1])
-                              == (resolve_canonical_model(bundle['model'], known_models, aliases) or bundle['model'])), None)
+                match = bundle.get('launch_model') if bundle.get('launch_model') in advertised else next((m for m in advertised if (resolve_canonical_model(m, known_models, aliases, model_families) or m.rsplit('/', 1)[-1])
+                              == (resolve_canonical_model(bundle['model'], known_models, aliases, model_families) or bundle['model'])), None)
                 if match:
                     bundle['launch_model'] = match
                 else:
@@ -2141,7 +2142,7 @@ def apply(accounts, inventory=None, *, live=None):
             # A second account on the owner's subscription (Pi signed in as the Codex account) re-derives what the
             # owner already launches through the same launcher; the owner's rows and its enable/disable curation stand.
             def launch_key(bid, bundle, account):
-                model = resolve_canonical_model(bundle.get('model'), known_models, aliases) or bundle.get('model')
+                model = resolve_canonical_model(bundle.get('model'), known_models, aliases, model_families) or bundle.get('model')
                 return bundle.get('provider', account), bundle_harness(bundle, account, bid), model, bundle.get('effort')
             offered = {launch_key(bid, b, owner) for bid, b in specs[owner].get('bundles', {}).items()}
             for bid, bundle in specs[name].get('bundles', {}).items():

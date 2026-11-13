@@ -102,6 +102,70 @@ def validate_accounts_provenance(doc):
         for field in ('text_only_source', 'image_input_source'):
             if field in spec and not _valid_public_declaration(spec.get(field)):
                 raise ValueError(f'models[{model!r}].{field} requires an https url or dated kind="maintainer" (with as_of)')
+        _validate_model_data(model, spec)
+    _validate_catalog_tables(doc)
+
+
+LISTING_BOARDS = ('arena', 'aa')        # calibration/tiers.py LISTING_BOARDS: `listed_as` keys
+LIST_PRICE_FIELDS = ('input', 'cache_write_5m', 'cache_write_1h', 'cache_read', 'output')
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0
+
+
+def _price_table(value, fields):
+    return isinstance(value, dict) and set(value) == set(fields) and all(_number(value[f]) for f in fields)
+
+
+def _validate_model_data(model, spec):
+    """Shape of the per-model reference fields (`listed_as`, `list_price`, `vendor_fast_mode`, `fast_capable`)."""
+    if 'listed_as' in spec:
+        names = spec['listed_as']
+        if (not isinstance(names, dict) or not names or not set(names) <= set(LISTING_BOARDS)
+                or not all(isinstance(v, str) and v.strip() for v in names.values())):
+            raise ValueError(f'models[{model!r}].listed_as maps {"/".join(LISTING_BOARDS)} to the name each board lists the model under')
+    if 'list_price' in spec:
+        if not _price_table(spec['list_price'], LIST_PRICE_FIELDS):
+            raise ValueError(f'models[{model!r}].list_price needs numeric {", ".join(LIST_PRICE_FIELDS)} (USD per million tokens)')
+        if not _valid_vendor_price_source(spec.get('list_price_source')):
+            raise ValueError(f'models[{model!r}].list_price requires list_price_source with kind="vendor", https url and ISO as_of')
+    if 'vendor_fast_mode' in spec:
+        fast = spec['vendor_fast_mode']
+        ok = (isinstance(fast, dict) and _number(fast.get('price_multiplier')) and _number(fast.get('speed_multiplier'))
+              and all(_price_table(fast.get(k), ('input', 'output', 'cache_read')) for k in ('fast_price', 'standard_price'))
+              and all(str(fast.get(k) or '').startswith('https://') for k in ('url', 'pricing_url'))
+              and bool(_ISO_DATE.match(str(fast.get('as_of') or ''))) and isinstance(fast.get('statement'), str))
+        if not ok:
+            raise ValueError(f'models[{model!r}].vendor_fast_mode needs price_multiplier, speed_multiplier, fast_price, '
+                             'standard_price, https url and pricing_url, ISO as_of and the vendor statement')
+    if 'fast_capable' in spec and not isinstance(spec['fast_capable'], bool):
+        raise ValueError(f'models[{model!r}].fast_capable must be true or false')
+
+
+def _validate_catalog_tables(doc):
+    """The catalog-wide model tables: `families` (model_resolution) and `calibration_panel` (calibration/measurements.py)."""
+    models = {k for k, v in (doc.get('models') or {}).items() if isinstance(v, dict)}
+    families = doc.get('families')
+    if not isinstance(families, list):
+        raise ValueError('accounts.json needs a families list of {pattern, models}')
+    for i, entry in enumerate(families):
+        if not isinstance(entry, dict) or not isinstance(entry.get('pattern'), str) or not isinstance(entry.get('models'), list):
+            raise ValueError(f'families[{i}] needs a pattern and a models list')
+        try:
+            re.compile(entry['pattern'])
+        except re.error as exc:
+            raise ValueError(f'families[{i}].pattern {entry["pattern"]!r} is not a regular expression: {exc}') from None
+        unknown = [m for m in entry['models'] if m not in models]
+        if unknown:
+            raise ValueError(f'families[{i}] ({entry["pattern"]}) names models without a row: {", ".join(map(str, unknown))}')
+    panel = doc.get('calibration_panel')
+    if not _valid_public_declaration(panel) or not isinstance(panel.get('anchor'), str) or not isinstance(panel.get('models'), list):
+        raise ValueError('accounts.json needs calibration_panel {anchor, models} as a dated maintainer declaration')
+    unknown = [m for m in [panel['anchor'], *panel['models']] if m not in models]
+    if unknown or panel['anchor'] not in panel['models']:
+        raise ValueError(f'calibration_panel anchor and models must be model rows, the anchor among the models'
+                         + (f' (no row: {", ".join(map(str, unknown))})' if unknown else ''))
 
 SCHEMA_VERSION = 3              # the newest data schema this code reads; bump with any breaking data change
 # Schema 3 (2026-11-11) switches to the four-category taxonomy (`divergence`, `coding`, `aesthetics`, `tool_operation`),

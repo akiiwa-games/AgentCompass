@@ -45,15 +45,21 @@ def _public_catalog():
         _PUBLIC_CATALOG_CACHE = {
             'models': doc.get('models') if isinstance(doc.get('models'), dict) else {},
             'aliases': doc.get('aliases') if isinstance(doc.get('aliases'), dict) else {},
+            'families': families(doc),
         }
     return _PUBLIC_CATALOG_CACHE
+
+
+def families(accounts):
+    """The catalog's ordered `families` list (model_resolution.resolve_model); a document without one declares none."""
+    return (accounts.get('families') if isinstance(accounts, dict) else None) or []
 
 
 def _model_api_family(model, accounts=None):
     src = accounts if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict) else _public_catalog()
     models = src.get('models') or {}
     aliases = src.get('aliases') if isinstance(src.get('aliases'), dict) else {}
-    canon = resolve_canonical_model(model, models, aliases) or str(model or '')
+    canon = resolve_canonical_model(model, models, aliases, families(src)) or str(model or '')
     return str((models.get(canon) or {}).get('api_family') or '').strip().lower()
 
 
@@ -84,7 +90,7 @@ def series_target(raw_model, accounts):
                   else (accounts if isinstance(accounts, dict) else {}))
     known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict)}
     aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
-    resolved = resolve_model(raw_model, known, aliases)
+    resolved = resolve_model(raw_model, known, aliases, families(accounts))
     return resolved['key'] if resolved['source'] == 'family' and resolved['key'] else None
 
 
@@ -114,7 +120,7 @@ def superseded_by(raw_model, accounts):
     to {'by': newer id, 'basis': ...}. Efforts and harnesses of one model share its entry.
     """
     table = accounts.get('superseded') if isinstance(accounts.get('superseded'), dict) else {}
-    resolved = resolve_model(raw_model, accounts.get('models') or {}, accounts.get('aliases') or {})
+    resolved = resolve_model(raw_model, accounts.get('models') or {}, accounts.get('aliases') or {}, families(accounts))
     names = [*_name_candidates(raw_model, accounts)[1], resolved['bare']]
     if resolved['source'] in DIRECT_SOURCES:
         names.append(resolved['key'])
@@ -132,7 +138,7 @@ def default_profile(raw_model, accounts):
     known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict)}
     aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
     base = _name_candidates(raw_model, accounts)[0]
-    resolved = resolve_model(raw_model, known, aliases)
+    resolved = resolve_model(raw_model, known, aliases, families(accounts))
     if resolved['source'] in DIRECT_SOURCES:
         return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
                 'basis': 'Calibrated row in accounts.models.'}
@@ -191,7 +197,7 @@ def proxy_harness(family, model, accounts=None):
     family = str(family or 'codex')
     if family in ('claude', 'codex'):
         models = (accounts or {}).get('models') or {}
-        canon = resolve_canonical_model(model, models, (accounts or {}).get('aliases') or {}) or str(model or '')
+        canon = resolve_canonical_model(model, models, (accounts or {}).get('aliases') or {}, families(accounts)) or str(model or '')
         api_family = str((models.get(canon) or {}).get('api_family') or '').strip().lower()
         return 'claude' if api_family == 'claude' else 'codex'
     return family
@@ -206,7 +212,8 @@ def _metered_draws(spec):
 def _draws(spec, model, accounts):
     import window_scope
     windows = spec.get('windows') if isinstance(spec.get('windows'), dict) else {}
-    canonical = resolve_canonical_model(model, accounts.get('models') or {}, accounts.get('aliases') or {}) or model
+    canonical = resolve_canonical_model(model, accounts.get('models') or {}, accounts.get('aliases') or {},
+                                        families(accounts)) or model
     return [wid for wid, w in windows.items() if window_scope.binds_any((canonical, model), w)]
 
 

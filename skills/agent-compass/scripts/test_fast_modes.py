@@ -22,7 +22,7 @@ def setUpModule():
 
 
 class FastModesTests(unittest.TestCase):
-    def test_effective_fast_policy_false_wins_but_missing_is_not_disabled(self):
+    def test_only_an_effective_fast_capable_true_enables_fast(self):
         now = datetime.now(timezone.utc)
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         usage = usage_windows(now, {'codex': [('five_hour', 95, 3), ('seven_day', 95, 100)],
@@ -46,14 +46,14 @@ class FastModesTests(unittest.TestCase):
                             # Only Claude Opus has cited fast-mode pricing and speed; Codex models have none, so forcing
                             # fast on them is a data error, never a guessed variant.
                             fast = candidate_ranking.candidate_for_bundle(ranking, bid, True)
-                            self.assertEqual(bool(fast and fast['bundle'].get('fast')), provider == 'claude' and policy is not False)
+                            self.assertEqual(bool(fast and fast['bundle'].get('fast')), provider == 'claude' and policy is True)
                     bundle = dict(account_fleet.bundles(accounts)[bid], fast=True)
                     args = SimpleNamespace(basis='Diagnostic fixture', provider=provider, account=provider,
                         model=model, effort='high', input=None, usage_cache=None, accounts=None,
                         constraint='user_override', specialty=None, fast=True)
                     with patch.object(account_fleet, 'load_accounts', return_value=accounts), \
                             patch.object(route_judge, 'usage_snapshot', return_value=usage):
-                        if policy is False:
+                        if policy is not True:
                             with self.assertRaisesRegex(ValueError, 'fast_capable'):
                                 route_judge.record_constraint(args)
                             with self.assertRaisesRegex(ValueError, 'fast_capable'):
@@ -68,15 +68,20 @@ class FastModesTests(unittest.TestCase):
                             self.assertTrue(registry.resolve_bundle(bundle, accounts)['fast'])
                     self.assertIsNotNone(registry.resolve_bundle(dict(bundle, fast=False), accounts))
 
-    def test_only_verified_model_and_harness_pairs(self):
-        for harness, models in fast_modes.MODELS.items():
-            for model in models:
-                fast_modes.validate(harness, model)
-        for harness, model in [('pi', 'gpt-6-astra'), ('codex', 'gpt-6-pro'),
-                               ('claude', 'claude-sonnet-5-5'), ('claude', 'claude-opus-4-7'),
-                               ('claude', 'claude-haiku-5-5'), ('claude', 'claude-opus-future')]:
-            with self.subTest(harness=harness, model=model), self.assertRaises(ValueError):
-                fast_modes.validate(harness, model)
+    def test_fast_needs_a_declared_row_on_the_harness_of_its_api_family(self):
+        # Rule (fast-modes.md): fast runs only where the row declares fast_capable: true, on its api_family's harness.
+        for harness in fast_modes.HARNESSES:
+            fast_modes.validate(harness, 'model-a', {'fast_capable': True, 'api_family': harness})
+        other = {'codex': 'claude', 'claude': 'codex'}
+        for harness, info in [('pi', {'fast_capable': True, 'api_family': 'codex'}),
+                              ('antigravity-resilient', {'fast_capable': True, 'api_family': 'claude'}),
+                              *((h, {'fast_capable': True, 'api_family': other[h]}) for h in fast_modes.HARNESSES),
+                              *((h, {'api_family': h}) for h in fast_modes.HARNESSES),
+                              *((h, {'fast_capable': False, 'api_family': h}) for h in fast_modes.HARNESSES),
+                              ('claude', {})]:
+            with self.subTest(harness=harness, info=info), self.assertRaises(ValueError):
+                fast_modes.validate(harness, 'model-a', info)
+            self.assertFalse(fast_modes.supported(harness, 'model-a', info))
 
     def test_fast_and_normal_requests_preserve_model_effort_and_no_pi_feature(self):
         for provider, model in [('codex', 'gpt-6-astra'), ('claude', 'claude-opus-5-5')]:
