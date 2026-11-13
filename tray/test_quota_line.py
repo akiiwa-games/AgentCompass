@@ -172,8 +172,10 @@ def test_plan_task_and_replay_derive_quota_line_for_live_and_legacy_decisions(mo
     _, router = router_data.modules()
     import account_fleet
     import host_policy
+    import decision_ledger
     import provider_inventory
     import router_test_support
+    import usage_reading
 
     now = datetime(2026, 11, 12, 2, 0, tzinfo=timezone.utc)
     fake_usage = router_test_support.usage_windows(now, {
@@ -184,8 +186,8 @@ def test_plan_task_and_replay_derive_quota_line_for_live_and_legacy_decisions(mo
     monkeypatch.setattr(provider_inventory, "current", lambda *_a, **_kw: {"accounts": {}, "launchers": {}})
     monkeypatch.setattr(host_policy, "load_policy", lambda *_a, **_kw: {"allowed_accounts": ["claude", "codex"]})
     monkeypatch.setattr(router_data, "now_utc", lambda: now)
-    monkeypatch.setattr(router, "usage_snapshot", lambda *_a, **_kw: fake_usage)
-    monkeypatch.setattr(router, "read_ledger", lambda *_a, **_kw: [])
+    monkeypatch.setattr(usage_reading, "usage_snapshot", lambda *_a, **_kw: fake_usage)
+    monkeypatch.setattr(decision_ledger, "read_ledger", lambda *_a, **_kw: [])
     monkeypatch.setattr(router, "dot_unreachable", lambda: True)
 
     profile = router_test_support.profile(local_only=True, axis_demand={

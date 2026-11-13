@@ -319,10 +319,12 @@ def test_score_overview_reads_the_shipped_data(tmp_path, monkeypatch):
 
 
 def test_live_economy_windows_reports_active_priced_windows(monkeypatch):
-    _, router = router_data.modules()
+    router_data.modules()
     import host_policy
+    import decision_ledger
     import provider_inventory
     import router_test_support
+    import usage_reading
 
     now = datetime(2026, 11, 12, 2, 0, tzinfo=timezone.utc)
     fake_usage = router_test_support.usage_windows(now, {
@@ -333,8 +335,8 @@ def test_live_economy_windows_reports_active_priced_windows(monkeypatch):
     monkeypatch.setattr(provider_inventory, 'current', lambda *_a, **_kw: {'accounts': {}, 'launchers': {}})
     monkeypatch.setattr(host_policy, 'load_policy', lambda *_a, **_kw: {'allowed_accounts': ['claude', 'codex']})
     monkeypatch.setattr(router_data, 'now_utc', lambda: now)
-    monkeypatch.setattr(router, 'usage_snapshot', lambda *_a, **_kw: fake_usage)
-    monkeypatch.setattr(router, 'read_ledger', lambda *_a, **_kw: [])
+    monkeypatch.setattr(usage_reading, 'usage_snapshot', lambda *_a, **_kw: fake_usage)
+    monkeypatch.setattr(decision_ledger, 'read_ledger', lambda *_a, **_kw: [])
 
     windows = router_data.live_economy_windows()
     labels = {w['label'] for w in windows}
