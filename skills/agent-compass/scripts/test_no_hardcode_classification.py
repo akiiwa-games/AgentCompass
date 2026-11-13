@@ -265,6 +265,11 @@ ALLOWED_TAINT_SINK_STATEMENTS = {
         'if not text.strip():',
     ): 'rejects empty brief/task input before routing',
     (
+        'skills/agent-compass/scripts/scorer_client.py',
+        'scorer_test',
+        "task = {'objective': (objective or '').strip() or SCORER_TEST_OBJECTIVE}",
+    ): 'falls back to default self-test sample objective when --objective is blank',
+    (
         'skills/agent-compass/scripts/route_judge.py',
         'plan_stage',
         "or (not args.dry_run and bool((task.get('objective') or '').strip()) and not isinstance(task.get('profile'), dict))",
@@ -453,6 +458,8 @@ def scan_python_source_for_violations(rel: str, src: str) -> tuple[list[str], se
     tainted_return_funcs: set[str] = set()
     tainted_class_attrs: set[str] = set()
     scope_const_maps: dict[str, dict] = {name: dict(const_map) for name, _, _ in scopes}
+    if path_name == 'scorer_client.py' and 'scorer_test' in tainted_params:
+        tainted_params['scorer_test'].add('objective')  # route_judge.scorer_cli passes args.objective
     if path_name == 'roll.py':
         for fn in ('title_of', 'build_task', 'prepare_worker_prompt', 'paseo', '_run', 'run',
                    'match_reusable_worker', 'strip_injected_contract'):
