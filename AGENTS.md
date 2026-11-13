@@ -18,6 +18,8 @@ When to test (user rule, 2026-11-12):
 pytest -n auto
 ```
 
+CI (`.github/workflows/ci.yml`, push to `main` and pull requests) runs the fast suite, `pytest -n auto -m "not slow"`, on `windows-latest` after `pip install ".[dev,tray]"`, and builds the wheel on `ubuntu-latest` to run `agentcompass plan --demo --dry-run` and `agentcompass doctor`. So a worker still runs only the tests of its feature; a break elsewhere shows up in CI. Tests marked `slow` run only in the pre-release regression.
+
 Install test dependencies with `pip install -e ".[dev]"` (`pytest`, `pytest-xdist`, `psutil`).
 
 ## Routing Tests Assert Rules, Never Outcomes
