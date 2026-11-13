@@ -12,5 +12,5 @@ the repository. Without a key, Jev is skipped. A failed call moves on to the nex
 `claude_haiku_low`, `codex_terra_low`, `agy_flash_low` (only the configured scorer is tried when `fallback_to_agy`
 is false), each on every ready account of its family. When all of them fail or are absent, `score_task` returns no
 profile and the scorer metadata `source: scorer_unavailable` with the reason; no keyword-based or default profile is
-made up. A task too large for the scorer (HTTP 413) stops the run with that error instead of falling through. Configure it with `agentcompass scorer --action set --type jev --api-key -` or in
+made up. A task the scorer refuses as too large (HTTP 413) is remembered, and the remaining scorers are still tried; only when none of them answers does `score_task` raise that error instead of returning `scorer_unavailable`. Configure it with `agentcompass scorer --action set --type jev --api-key -` or in
 AgentCompass under Settings > System options.

@@ -303,21 +303,21 @@ Safety properties of the sync (`agentcompass setup` runs the same code):
 
 ## 8. Deployment & Tests
 
-**Installed product** (the normal machine). The installer registers the "AgentCompass" logon task and runs `agentcompass setup`; the tray's **Update AgentCompass** button does the update (code package or full installer, see section 3). The tray executable also runs its bundled helper modules, and these are the command-line forms of the same steps:
+**Installed product** (the normal machine). The installer registers the "AgentCompass" logon task, and runs `agentcompass setup --yes` only when it was started with `/SETUP=hooks` or `/SETUP=nohooks` (the hook flag follows that value; without either, setup is not run); the tray's **Update AgentCompass** button does the update (code package or full installer, see section 3). The tray executable also runs its bundled helper modules, and these are the command-line forms of the same steps:
 
 ```powershell
-$tray = "$env:LOCALAPPDATA\AgentCompass\AgentCompass.exe"
+$tray = "$env:LOCALAPPDATA\AgentCompass\AgentCompass.exe"          # the installer's default directory
 & $tray --run-component deploy check                 # report what is in place and what is not; changes nothing
 & $tray --run-component deploy install               # ChatGPT Web patch and build, startup task, user environment variables
 & $tray --run-component deploy restart               # restart the tray without stopping background services
-& $tray --run-component updates check                # print whether a newer GitHub release exists; downloads nothing
+& $tray --run-component updates check                # print whether a newer GitHub release exists (downloads nothing), then one line each for the Dot2API, ChatGPT Web and Usage Float clones: version and commits behind upstream
 & $tray --run-component updates update               # fast-forward the enabled plugin clones (Dot2API, ChatGPT Web, Usage Float, Gemini Web, Muse2API), then print the same release notice
 & $tray --run-component updates update-agentcompass  # what the tray button runs: update AgentCompass itself and restart the tray
 ```
 
 `deploy install` does not link skills in the installed product (`agentcompass setup` does), and `updates update` never updates AgentCompass itself.
 
-**Git checkout** (development). `python tray\deploy.py <check|install|restart|all|icons|startup>` and `python tray\updates.py <check|build|update|update-agentcompass>` take the same actions. Differences: `deploy install` also links the checkout's `skills/` into `~/.codex/skills` and `~/.claude/skills`, `updates check` prints the checkout's `git describe` and a `git pull` hint instead of a release comparison, and `update-agentcompass` fast-forwards the checkout (`git pull --ff-only`, refused when the tree is dirty or the branch does not track `origin`).
+**Git checkout** (development). `python tray\deploy.py <check|install|restart|all|icons|startup>` and `python tray\updates.py <check|build|update|update-agentcompass>` take the same actions. Differences: `deploy install` also links the checkout's `skills/` into `~/.codex/skills` and `~/.claude/skills`, `updates check` prints the checkout's `git describe` and a `git pull` hint instead of a release comparison (the three clone lines follow in both shapes), and `update-agentcompass` fast-forwards the checkout (`git pull --ff-only`, refused when the tree is dirty or the branch does not track `origin`).
 
 ```powershell
 # Hermetic pytest suites (isolated temp HOME/APPDATA per xdist worker; no manual env redirection needed)
