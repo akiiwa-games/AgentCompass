@@ -83,6 +83,11 @@ class FastModesTests(unittest.TestCase):
                 fast_modes.validate(harness, 'model-a', info)
             self.assertFalse(fast_modes.supported(harness, 'model-a', info))
 
+    def test_a_missing_catalog_row_is_a_named_error(self):
+        for check in (fast_modes.supported, fast_modes.validate):
+            with self.subTest(check=check.__name__), self.assertRaisesRegex(ValueError, 'needs its catalog row'):
+                check('codex', 'model-a', None)
+
     def test_fast_and_normal_requests_preserve_model_effort_and_no_pi_feature(self):
         for provider, model in [('codex', 'gpt-6-astra'), ('claude', 'claude-opus-5-5')]:
             for fast in (False, True):

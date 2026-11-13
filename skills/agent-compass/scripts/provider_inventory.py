@@ -20,7 +20,7 @@ import tomllib
 import account_state
 import antigravity_plan
 import grok_bot_paths
-from model_resolution import resolve_canonical_model
+from model_resolution import family_patterns, resolve_canonical_model
 import provider_retry
 import public_data
 import usage_cache
@@ -1857,7 +1857,7 @@ def _apply_auto_bundles(accounts, inventory, live):
     state = Path(os.environ.get('ROUTER_STATE_DIR') or home / '.agent-compass')
     seen = auto_bundles.read_seen(state / 'auto-bundles-seen.json') if live else {}
     derived = auto_bundles.derive(accounts, _auto_catalog(inventory, live, now_epoch), now_epoch,
-                                  seen=seen, families=families)
+                                  seen=seen, account_families=families)
     for account, rows in derived['bundles'].items():
         for bundle in rows.values():
             reason = unavailable_reason(inventory, account, bundle.get('provider', account))
@@ -1938,7 +1938,7 @@ def apply(accounts, inventory=None, *, live=None):
                 specs.pop(name, None)
     known_models = accounts.get('models') if isinstance(accounts.get('models'), dict) else {}
     aliases = accounts.get('aliases') if isinstance(accounts.get('aliases'), dict) else {}
-    model_families = accounts.get('families') or []
+    model_families = family_patterns(accounts)
     shipped_templates = _shipped_plan_templates()
 
     for name, row in inventory['accounts'].items():

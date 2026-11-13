@@ -210,209 +210,214 @@
     "as_of": "2026-11-04",
     "statement": "maintainer: the anchor (0 on every board) and the sentinel models whose shared board coverage defines the calibration panel (calibration/measurements.py)"
   },
-  "families": [
-    {
-      "pattern": "^grok-bot$",
-      "models": []
-    },
-    {
-      "pattern": "^claude-opus",
-      "models": [
-        "claude-opus-5-5"
-      ]
-    },
-    {
-      "pattern": "^claude-sonnet",
-      "models": [
-        "claude-sonnet-5-5"
-      ]
-    },
-    {
-      "pattern": "^claude-fable",
-      "models": [
-        "claude-fable-5-2"
-      ]
-    },
-    {
-      "pattern": "^claude-haiku",
-      "models": [
-        "claude-haiku-5-5"
-      ]
-    },
-    {
-      "pattern": "^gpt-6.*luna",
-      "models": [
-        "gpt-6-luna"
-      ]
-    },
-    {
-      "pattern": "^gpt-6.*terra",
-      "models": [
-        "gpt-6.1-terra",
-        "gpt-6-astra"
-      ]
-    },
-    {
-      "pattern": "^gpt-6.*sol",
-      "models": [
-        "gpt-6.1-sol",
-        "gpt-6-astra"
-      ]
-    },
-    {
-      "pattern": "^gpt-6.*pro",
-      "models": [
-        "gpt-6-pro",
-        "gpt-6-astra"
-      ]
-    },
-    {
-      "pattern": "^gpt-6",
-      "models": [
-        "gpt-6-astra"
-      ]
-    },
-    {
-      "pattern": "^gemini.*flash",
-      "models": [
-        "gemini-3.8-flash-high"
-      ]
-    },
-    {
-      "pattern": "^gemini",
-      "models": [
-        "gemini-4-argon-high"
-      ]
-    },
-    {
-      "pattern": "^grok.*(?:mini|fast)|^grok-code",
-      "models": [
-        "grok-4.7-build-fast",
-        "grok-4.7"
-      ]
-    },
-    {
-      "pattern": "^grok",
-      "models": [
-        "grok-4.7"
-      ]
-    },
-    {
-      "pattern": "^deepseek.*flash",
-      "models": [
-        "deepseek-v4.1-flash-free"
-      ]
-    },
-    {
-      "pattern": "^deepseek",
-      "models": [
-        "deepseek-v4-pro"
-      ]
-    },
-    {
-      "pattern": "^qwen.*flash",
-      "models": [
-        "qwen3-flash-2025-07-28"
-      ]
-    },
-    {
-      "pattern": "^qwen.*coder",
-      "models": [
-        "qwen3-coder-next",
-        "qwen3.8-max"
-      ]
-    },
-    {
-      "pattern": "^qwen",
-      "models": [
-        "qwen3.8-max"
-      ]
-    },
-    {
-      "pattern": "^kimi|^moonshot",
-      "models": [
-        "kimi-k3.1-pro"
-      ]
-    },
-    {
-      "pattern": "^glm.*flash",
-      "models": [
-        "glm-5.3-flash-free"
-      ]
-    },
-    {
-      "pattern": "^glm",
-      "models": [
-        "glm-5.3"
-      ]
-    },
-    {
-      "pattern": "^minimax.*flash",
-      "models": [
-        "minimax-m3.1-flash"
-      ]
-    },
-    {
-      "pattern": "^minimax|^abab",
-      "models": [
-        "minimax-m3"
-      ]
-    },
-    {
-      "pattern": "^doubao",
-      "models": [
-        "doubao-seed-2-1-pro-260628"
-      ]
-    },
-    {
-      "pattern": "^mimo.*flash",
-      "models": [
-        "mimo-v2.6-flash-free"
-      ]
-    },
-    {
-      "pattern": "^mimo",
-      "models": [
-        "mimo-v2.6-pro"
-      ]
-    },
-    {
-      "pattern": "^nemotron.*lightning",
-      "models": [
-        "nemotron-3.5-lightning-free",
-        "nemotron-3-ultra-free"
-      ]
-    },
-    {
-      "pattern": "^nemotron.*(?:super|vl)",
-      "models": [
-        "nemotron-3.5-super-vl-free",
-        "nemotron-3-ultra-free"
-      ]
-    },
-    {
-      "pattern": "^nemotron",
-      "models": [
-        "nemotron-3-ultra-free"
-      ]
-    },
-    {
-      "pattern": "^muse",
-      "models": [
-        "muse-wonder-1.0"
-      ]
-    },
-    {
-      "pattern": "^llama",
-      "models": []
-    },
-    {
-      "pattern": "^mistral|^codestral|^devstral",
-      "models": [
-        "mistral-large-4"
-      ]
-    }
-  ],
+  "families": {
+    "kind": "maintainer",
+    "as_of": "2026-11-13",
+    "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py)",
+    "patterns": [
+      {
+        "pattern": "^grok-bot$",
+        "models": []
+      },
+      {
+        "pattern": "^claude-opus",
+        "models": [
+          "claude-opus-5-5"
+        ]
+      },
+      {
+        "pattern": "^claude-sonnet",
+        "models": [
+          "claude-sonnet-5-5"
+        ]
+      },
+      {
+        "pattern": "^claude-fable",
+        "models": [
+          "claude-fable-5-2"
+        ]
+      },
+      {
+        "pattern": "^claude-haiku",
+        "models": [
+          "claude-haiku-5-5"
+        ]
+      },
+      {
+        "pattern": "^gpt-6.*luna",
+        "models": [
+          "gpt-6-luna"
+        ]
+      },
+      {
+        "pattern": "^gpt-6.*terra",
+        "models": [
+          "gpt-6.1-terra",
+          "gpt-6-astra"
+        ]
+      },
+      {
+        "pattern": "^gpt-6.*sol",
+        "models": [
+          "gpt-6.1-sol",
+          "gpt-6-astra"
+        ]
+      },
+      {
+        "pattern": "^gpt-6.*pro",
+        "models": [
+          "gpt-6-pro",
+          "gpt-6-astra"
+        ]
+      },
+      {
+        "pattern": "^gpt-6",
+        "models": [
+          "gpt-6-astra"
+        ]
+      },
+      {
+        "pattern": "^gemini.*flash",
+        "models": [
+          "gemini-3.8-flash-high"
+        ]
+      },
+      {
+        "pattern": "^gemini",
+        "models": [
+          "gemini-4-argon-high"
+        ]
+      },
+      {
+        "pattern": "^grok.*(?:mini|fast)|^grok-code",
+        "models": [
+          "grok-4.7-build-fast",
+          "grok-4.7"
+        ]
+      },
+      {
+        "pattern": "^grok",
+        "models": [
+          "grok-4.7"
+        ]
+      },
+      {
+        "pattern": "^deepseek.*flash",
+        "models": [
+          "deepseek-v4.1-flash-free"
+        ]
+      },
+      {
+        "pattern": "^deepseek",
+        "models": [
+          "deepseek-v4-pro"
+        ]
+      },
+      {
+        "pattern": "^qwen.*flash",
+        "models": [
+          "qwen3-flash-2025-07-28"
+        ]
+      },
+      {
+        "pattern": "^qwen.*coder",
+        "models": [
+          "qwen3-coder-next",
+          "qwen3.8-max"
+        ]
+      },
+      {
+        "pattern": "^qwen",
+        "models": [
+          "qwen3.8-max"
+        ]
+      },
+      {
+        "pattern": "^kimi|^moonshot",
+        "models": [
+          "kimi-k3.1-pro"
+        ]
+      },
+      {
+        "pattern": "^glm.*flash",
+        "models": [
+          "glm-5.3-flash-free"
+        ]
+      },
+      {
+        "pattern": "^glm",
+        "models": [
+          "glm-5.3"
+        ]
+      },
+      {
+        "pattern": "^minimax.*flash",
+        "models": [
+          "minimax-m3.1-flash"
+        ]
+      },
+      {
+        "pattern": "^minimax|^abab",
+        "models": [
+          "minimax-m3"
+        ]
+      },
+      {
+        "pattern": "^doubao",
+        "models": [
+          "doubao-seed-2-1-pro-260628"
+        ]
+      },
+      {
+        "pattern": "^mimo.*flash",
+        "models": [
+          "mimo-v2.6-flash-free"
+        ]
+      },
+      {
+        "pattern": "^mimo",
+        "models": [
+          "mimo-v2.6-pro"
+        ]
+      },
+      {
+        "pattern": "^nemotron.*lightning",
+        "models": [
+          "nemotron-3.5-lightning-free",
+          "nemotron-3-ultra-free"
+        ]
+      },
+      {
+        "pattern": "^nemotron.*(?:super|vl)",
+        "models": [
+          "nemotron-3.5-super-vl-free",
+          "nemotron-3-ultra-free"
+        ]
+      },
+      {
+        "pattern": "^nemotron",
+        "models": [
+          "nemotron-3-ultra-free"
+        ]
+      },
+      {
+        "pattern": "^muse",
+        "models": [
+          "muse-wonder-1.0"
+        ]
+      },
+      {
+        "pattern": "^llama",
+        "models": []
+      },
+      {
+        "pattern": "^mistral|^codestral|^devstral",
+        "models": [
+          "mistral-large-4"
+        ]
+      }
+    ]
+  },
   "models": {
     "deepseek-v4.1-flash-free": {
       "label": "DeepSeek Flash",

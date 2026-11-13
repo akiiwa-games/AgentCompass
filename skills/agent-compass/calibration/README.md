@@ -60,7 +60,8 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    adds the fast variant's measurement.
 4. **Launch and family.** A bundle under `accounts[<account>].bundles` and its efforts under `dispatch_efforts[<harness>]`
    make it launchable (discovery adds auto bundles for what a CLI advertises). When it is the newest model of a family,
-   point that family's entry in `families` (ordered `{pattern, models}`; the first matching pattern decides) and the
+   point that family's entry in `families.patterns` (ordered `{pattern, models}`; the first matching pattern decides; move
+   the declaration's `as_of` to the day of the edit) and the
    family's short `aliases` at it, and list the older model under `superseded`.
 5. **Rebuild.** Run `agentcompass data refresh --no-fetch` (or `agentcompass data refresh` to fetch new boards first). It
    validates the catalog (`public_data.validate_accounts_provenance`: provenance and the shape of the fields above),

@@ -330,6 +330,14 @@ class ProvenanceTests(unittest.TestCase):
     """R2-F2: public reference files accept cited https:// URLs or dated kind='maintainer' declarations, and reject
     uncited kind='user' or undated declarations."""
 
+    def test_families_must_be_a_dated_maintainer_declaration(self):
+        accounts = json.loads((public_data.BUNDLED / 'accounts.json').read_text(encoding='utf-8'))
+        public_data.validate_accounts_provenance(accounts)
+        for broken in (accounts['families']['patterns'], {**accounts['families'], 'as_of': None},
+                       {key: value for key, value in accounts['families'].items() if key != 'patterns'}):
+            with self.subTest(broken=str(broken)[:60]), self.assertRaisesRegex(ValueError, 'families'):
+                public_data.validate_accounts_provenance({**accounts, 'families': broken})
+
     def test_accounts_provenance_accepts_dated_maintainer_and_rejects_uncited_user(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)

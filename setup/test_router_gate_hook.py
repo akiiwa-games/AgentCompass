@@ -75,7 +75,7 @@ class RouterGateHookTests(unittest.TestCase):
             "ROUTER_DISPATCH_DB": str(self.state / "dispatch.sqlite3"),
             "ROUTER_HOST_POLICY": str(self.state / "host-policy.json"),
             "AGENTCOMPASS_ACCOUNTS_OVERRIDE": str(self.state / "accounts-override.json"),
-            "ROUTER_ACCOUNTS_FILE": str(Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts" / "fixtures" / "reference-accounts.json"),
+            "ROUTER_ACCOUNTS_FILE": str(gate.router_module("account_fleet").reference_fleet_path()),
         })
         env.start()
         self.addCleanup(env.stop)
@@ -1650,7 +1650,7 @@ class BoundDispatchGateTests(unittest.TestCase):
             'ROUTER_GATE_BYPASS': '0', 'PASEO_AGENT_ID': '',
             'ROUTER_HOST_POLICY': str(root / 'host-policy.json'),
             'AGENTCOMPASS_ACCOUNTS_OVERRIDE': str(root / 'accounts-override.json'),
-            'ROUTER_ACCOUNTS_FILE': str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts' / 'fixtures' / 'reference-accounts.json'),
+            'ROUTER_ACCOUNTS_FILE': str(gate.router_module('account_fleet').reference_fleet_path()),
         })
         env.start()
         self.addCleanup(env.stop)

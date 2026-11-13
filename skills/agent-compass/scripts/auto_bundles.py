@@ -20,7 +20,7 @@ import os
 import re
 from pathlib import Path
 
-from model_resolution import DIRECT_SOURCES, resolve_canonical_model, resolve_model
+from model_resolution import DIRECT_SOURCES, family_patterns, resolve_canonical_model, resolve_model
 
 AUTO_PREFIX = 'auto:'
 STALE_LIMIT_SECONDS = 7 * 24 * 3600
@@ -45,21 +45,16 @@ def _public_catalog():
         _PUBLIC_CATALOG_CACHE = {
             'models': doc.get('models') if isinstance(doc.get('models'), dict) else {},
             'aliases': doc.get('aliases') if isinstance(doc.get('aliases'), dict) else {},
-            'families': families(doc),
+            'families': doc.get('families'),
         }
     return _PUBLIC_CATALOG_CACHE
-
-
-def families(accounts):
-    """The catalog's ordered `families` list (model_resolution.resolve_model); a document without one declares none."""
-    return (accounts.get('families') if isinstance(accounts, dict) else None) or []
 
 
 def _model_api_family(model, accounts=None):
     src = accounts if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict) else _public_catalog()
     models = src.get('models') or {}
     aliases = src.get('aliases') if isinstance(src.get('aliases'), dict) else {}
-    canon = resolve_canonical_model(model, models, aliases, families(src)) or str(model or '')
+    canon = resolve_canonical_model(model, models, aliases, family_patterns(src)) or str(model or '')
     return str((models.get(canon) or {}).get('api_family') or '').strip().lower()
 
 
@@ -90,7 +85,7 @@ def series_target(raw_model, accounts):
                   else (accounts if isinstance(accounts, dict) else {}))
     known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict)}
     aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
-    resolved = resolve_model(raw_model, known, aliases, families(accounts))
+    resolved = resolve_model(raw_model, known, aliases, family_patterns(accounts))
     return resolved['key'] if resolved['source'] == 'family' and resolved['key'] else None
 
 
@@ -120,7 +115,7 @@ def superseded_by(raw_model, accounts):
     to {'by': newer id, 'basis': ...}. Efforts and harnesses of one model share its entry.
     """
     table = accounts.get('superseded') if isinstance(accounts.get('superseded'), dict) else {}
-    resolved = resolve_model(raw_model, accounts.get('models') or {}, accounts.get('aliases') or {}, families(accounts))
+    resolved = resolve_model(raw_model, accounts.get('models') or {}, accounts.get('aliases') or {}, family_patterns(accounts))
     names = [*_name_candidates(raw_model, accounts)[1], resolved['bare']]
     if resolved['source'] in DIRECT_SOURCES:
         names.append(resolved['key'])
@@ -138,7 +133,7 @@ def default_profile(raw_model, accounts):
     known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict)}
     aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
     base = _name_candidates(raw_model, accounts)[0]
-    resolved = resolve_model(raw_model, known, aliases, families(accounts))
+    resolved = resolve_model(raw_model, known, aliases, family_patterns(accounts))
     if resolved['source'] in DIRECT_SOURCES:
         return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
                 'basis': 'Calibrated row in accounts.models.'}
@@ -192,12 +187,12 @@ def _account_harnesses(account, spec):
 PER_MODEL = '*'
 
 
-def proxy_harness(family, model, accounts=None):
+def proxy_harness(family, model, accounts):
     """Harness for a model on an account without manual bundles."""
     family = str(family or 'codex')
     if family in ('claude', 'codex'):
-        models = (accounts or {}).get('models') or {}
-        canon = resolve_canonical_model(model, models, (accounts or {}).get('aliases') or {}, families(accounts)) or str(model or '')
+        models = accounts.get('models') or {}
+        canon = resolve_canonical_model(model, models, accounts.get('aliases') or {}, family_patterns(accounts)) or str(model or '')
         api_family = str((models.get(canon) or {}).get('api_family') or '').strip().lower()
         return 'claude' if api_family == 'claude' else 'codex'
     return family
@@ -213,7 +208,7 @@ def _draws(spec, model, accounts):
     import window_scope
     windows = spec.get('windows') if isinstance(spec.get('windows'), dict) else {}
     canonical = resolve_canonical_model(model, accounts.get('models') or {}, accounts.get('aliases') or {},
-                                        families(accounts)) or model
+                                        family_patterns(accounts)) or model
     return [wid for wid, w in windows.items() if window_scope.binds_any((canonical, model), w)]
 
 
@@ -232,12 +227,13 @@ def auto_bundle_id(account, harness, model, effort=None):
     return f'{AUTO_PREFIX}{account}:{harness}:{model}' + (f'@{effort}' if effort else '')
 
 
-def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
+def derive(accounts, catalog, now, overrides=None, seen=None, account_families=None):
     """Return {'bundles': {account: {bid: bundle}}, 'excluded': [...], 'seen': {...}}.
 
     overrides: sparse preferences document ({'accounts': {acc: {'bundles': {bid: {'disabled': bool}}}}}),
     the same shape tray router_data.toggle_harness_model writes.
     seen: {bundle_id: last_detected_epoch}; the returned 'seen' should be persisted by the caller.
+    account_families: {account: discovered launcher family}, for accounts whose harness is chosen per model.
     Manual bundles always win for the same (account, harness, canonical base model).
     """
     providers = (catalog or {}).get('providers') or {}
@@ -268,7 +264,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, families=None):
                     continue
                 base, id_effort = split_effort(raw, accounts)
                 harness = pair_harness if pair_harness != PER_MODEL else \
-                    proxy_harness((families or {}).get(account) or spec.get('family'),
+                    proxy_harness((account_families or {}).get(account) or spec.get('family'),
                                   default_profile(raw, accounts)['model'], accounts)
                 profile = default_profile(raw, accounts)
                 status, reason = harness_compatibility(harness, profile['model'], spec, accounts)

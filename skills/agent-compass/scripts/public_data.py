@@ -148,18 +148,18 @@ def _validate_catalog_tables(doc):
     """The catalog-wide model tables: `families` (model_resolution) and `calibration_panel` (calibration/measurements.py)."""
     models = {k for k, v in (doc.get('models') or {}).items() if isinstance(v, dict)}
     families = doc.get('families')
-    if not isinstance(families, list):
-        raise ValueError('accounts.json needs a families list of {pattern, models}')
-    for i, entry in enumerate(families):
+    if not _valid_public_declaration(families) or not isinstance(families.get('patterns'), list):
+        raise ValueError('accounts.json needs families {patterns: [{pattern, models}]} as a dated maintainer declaration')
+    for i, entry in enumerate(families['patterns']):
         if not isinstance(entry, dict) or not isinstance(entry.get('pattern'), str) or not isinstance(entry.get('models'), list):
-            raise ValueError(f'families[{i}] needs a pattern and a models list')
+            raise ValueError(f'families.patterns[{i}] needs a pattern and a models list')
         try:
             re.compile(entry['pattern'])
         except re.error as exc:
-            raise ValueError(f'families[{i}].pattern {entry["pattern"]!r} is not a regular expression: {exc}') from None
+            raise ValueError(f'families.patterns[{i}].pattern {entry["pattern"]!r} is not a regular expression: {exc}') from None
         unknown = [m for m in entry['models'] if m not in models]
         if unknown:
-            raise ValueError(f'families[{i}] ({entry["pattern"]}) names models without a row: {", ".join(map(str, unknown))}')
+            raise ValueError(f'families.patterns[{i}] ({entry["pattern"]}) names models without a row: {", ".join(map(str, unknown))}')
     panel = doc.get('calibration_panel')
     if not _valid_public_declaration(panel) or not isinstance(panel.get('anchor'), str) or not isinstance(panel.get('models'), list):
         raise ValueError('accounts.json needs calibration_panel {anchor, models} as a dated maintainer declaration')

@@ -15,6 +15,15 @@ _VENDOR_TAG = re.compile(r'(?:@\d{8}|-\d{8}|-\d{4}-\d{2}-\d{2}|:\w+|\[\w+\]|-(?:
 DIRECT_SOURCES = ('exact', 'alias')
 
 
+def family_patterns(accounts):
+    """The catalog's ordered family patterns ([{'pattern', 'models'}]) from its `families` maintainer declaration."""
+    table = accounts.get('families') if isinstance(accounts, dict) else None
+    if not isinstance(table, dict) or not isinstance(table.get('patterns'), list):
+        raise ValueError('accounts has no families table: the catalog needs `families` {kind, as_of, statement, '
+                         'patterns: [{pattern, models}]} (references/accounts.json)')
+    return table['patterns']
+
+
 def split_model_effort(raw):
     """('claude-opus-5-5', 'medium') for 'claude-opus-5-5:medium'; (raw, None) without an effort suffix."""
     name = str(raw or '').strip()
@@ -29,7 +38,7 @@ def resolve_model(raw_model_name, known_models, aliases, families):
     -latest/-preview, a vendor tag or an effort suffix, or through `aliases`), `family` (only a fuzzy family match),
     `unknown` (key None). `effort` is what the name itself asked for. `bare` is the undecorated lowercase name.
 
-    `families` is the catalog's ordered `families` list ({'pattern', 'models'}): the first pattern that matches the bare
+    `families` is the catalog's ordered family patterns (family_patterns): the first pattern that matches the bare
     name decides, and the name resolves to the first of its models the directory knows (none known: unknown).
     """
     aliases = aliases or {}

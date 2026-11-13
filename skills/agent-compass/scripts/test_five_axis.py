@@ -1155,7 +1155,7 @@ class AnchorRelativeTests(unittest.TestCase):
 
     def score(self, meas):
         # The fable rows form one series through this catalog's family pattern (model_resolution `families`).
-        families = [{'pattern': '^claude-fable', 'models': ['claude-fable-5-2']}]
+        families = {'patterns': [{'pattern': '^claude-fable', 'models': ['claude-fable-5-2']}]}
         return self.fa.Scorer(meas, {'models': {m: {} for m in meas['models']}, 'families': families}).score()
 
     def test_the_tier_is_read_only_from_the_overall_boards(self):
