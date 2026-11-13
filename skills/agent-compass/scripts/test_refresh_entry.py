@@ -484,5 +484,110 @@ class RefreshEntryTests(unittest.TestCase):
         self.assertEqual(events[0][1], self.data_dir)
 
 
+def _measurements(scale, models, conflicts=()):
+    """A minimal measurements document: one scaled board `b.code`, one scale-free source `s.price`, the tier source."""
+    return {'generated_at': '2026-11-01T00:00:00+00:00', 'panel': {'models': ['anchor-m', 'panel-m']},
+            'sources': {'b.code': {'scale': scale}, 's.price': {}, 'tier.arena_overall': {}},
+            'conflicts': list(conflicts), 'models': models}
+
+
+def _board_entry(raw, scale, raw_by_effort=None, as_of='2026-11-12'):
+    entry = {'source': 'b.code', 'value': round((raw - scale['anchor_raw']) / scale['sd_panel'], 4), 'raw': raw,
+             'as_of': as_of, 'fetched_at': f'{as_of}T08:00:00+00:00',
+             'method': (f"board; z = (x - x_anchor) / sd_panel; x_anchor {scale['anchor_raw']:.6g} (anchor-m), "
+                        f"sd_panel {scale['sd_panel']:.6g} over {scale['n_panel']} panel models")}
+    if raw_by_effort:
+        entry['raw_by_effort'] = raw_by_effort
+        entry['z_by_effort'] = {e: round((r - scale['anchor_raw']) / scale['sd_panel'], 4) for e, r in raw_by_effort.items()}
+    return entry
+
+
+class ModelRowMergeTests(unittest.TestCase):
+    """Rule (calibration/refresh.py, --model): only the named rows change, each board z on the shipped source scale,
+    z = (raw - anchor_raw) / sd_panel; an entry whose anchor reading moved, or whose scale is not shipped, is left out;
+    a panel model or the anchor is refused."""
+    SHIPPED_SCALE = {'anchor': 'anchor-m', 'anchor_raw': 50.0, 'sd_panel': 10.0, 'n_panel': 12}
+    FRESH_SCALE = {'anchor': 'anchor-m', 'anchor_raw': 50.0, 'sd_panel': 8.0, 'n_panel': 11}   # the panel shrank
+
+    def shipped(self):
+        return _measurements(self.SHIPPED_SCALE, {
+            'anchor-m': {'coding': [_board_entry(50.0, self.SHIPPED_SCALE)]},
+            'panel-m': {'coding': [_board_entry(40.0, self.SHIPPED_SCALE)]},
+            'old-m': {'coding': [_board_entry(45.0, self.SHIPPED_SCALE)]}},
+            conflicts=[{'model': 'old-m', 'field': 'image_input'}])
+
+    def fresh(self, scale=None):
+        scale = scale or self.FRESH_SCALE
+        return _measurements(scale, {
+            'anchor-m': {'coding': [_board_entry(50.0, scale)]},
+            'panel-m': {'coding': [_board_entry(41.0, scale)]},
+            'old-m': {'coding': [_board_entry(47.0, scale)]},
+            'new-m': {'coding': [_board_entry(62.0, scale, {'low': 55.0, 'high': 62.0})],
+                      'price': [{'source': 's.price', 'value': {'input': 1.0}, 'as_of': '2026-11-13'}],
+                      'tier': [{'source': 'tier.arena_overall', 'value': 0.3}]}},
+            conflicts=[{'model': 'new-m', 'field': 'image_input'}, {'model': 'old-m', 'field': 'x'}])
+
+    def test_only_the_named_rows_change(self):
+        shipped = self.shipped()
+        merged, _ = refresh.merge_model_rows(shipped, self.fresh(), ['new-m'])
+        for key in ('panel', 'sources'):
+            self.assertEqual(merged[key], shipped[key])
+        for model in ('anchor-m', 'panel-m', 'old-m'):
+            self.assertEqual(merged['models'][model], shipped['models'][model])
+        self.assertEqual(sorted(merged['models']), ['anchor-m', 'new-m', 'old-m', 'panel-m'])
+        self.assertEqual(merged['conflicts'], [{'model': 'old-m', 'field': 'image_input'}, {'model': 'new-m', 'field': 'image_input'}])
+
+    def test_board_z_is_raw_on_the_shipped_scale_and_scale_free_entries_keep_their_own_dates(self):
+        merged, _ = refresh.merge_model_rows(self.shipped(), self.fresh(), ['new-m'])
+        row, scale = merged['models']['new-m'], self.SHIPPED_SCALE
+        board = row['coding'][0]
+        z = lambda raw: round((raw - scale['anchor_raw']) / scale['sd_panel'], 4)
+        self.assertEqual(board['value'], z(board['raw']))
+        self.assertEqual(board['z_by_effort'], {e: z(r) for e, r in board['raw_by_effort'].items()})
+        self.assertIn(f"sd_panel {scale['sd_panel']:.6g} over {scale['n_panel']} panel models", board['method'])
+        self.assertEqual((board['as_of'], board['fetched_at']), ('2026-11-12', '2026-11-12T08:00:00+00:00'))
+        self.assertEqual(row['price'], self.fresh()['models']['new-m']['price'])
+
+    def test_a_moved_anchor_reading_or_an_unshipped_scale_leaves_the_entry_out_with_the_reason(self):
+        moved = dict(self.FRESH_SCALE, anchor_raw=51.0)
+        merged, left_out = refresh.merge_model_rows(self.shipped(), self.fresh(moved), ['new-m'])
+        self.assertNotIn('coding', merged['models']['new-m'])
+        reasons = {(field, src): why for _, field, src, why in left_out}
+        self.assertIn('anchor reading moved', reasons[('coding', 'b.code')])
+        self.assertEqual(reasons[('tier', 'tier.arena_overall')], 'source has no shipped scale')
+        shipped = self.shipped()
+        shipped['sources']['b.code'] = {}
+        _, left_out = refresh.merge_model_rows(shipped, self.fresh(), ['new-m'])
+        self.assertIn(('new-m', 'coding', 'b.code', 'source has no shipped scale'), left_out)
+
+    def test_a_panel_model_the_anchor_or_a_model_without_a_row_is_refused(self):
+        acc = {'models': {m: {} for m in ('anchor-m', 'panel-m', 'sentinel-m', 'new-m')},
+               'calibration_panel': {'anchor': 'anchor-m', 'models': ['anchor-m', 'sentinel-m']}}
+        for name in ('anchor-m', 'panel-m', 'sentinel-m'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'calibration panel'):
+                refresh.refuse_panel_models([name], acc, self.shipped())
+        with self.assertRaisesRegex(ValueError, 'no row'):
+            refresh.refuse_panel_models(['unknown-m'], acc, self.shipped())
+        refresh.refuse_panel_models(['new-m'], acc, self.shipped())
+
+    def test_the_command_refuses_a_panel_model_before_any_download(self):
+        root = Path(tempfile.mkdtemp(prefix='refresh-model-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        shutil.copyfile(public_data.BUNDLED / 'accounts.json', root / 'accounts.json')
+        anchor = json.loads((root / 'accounts.json').read_text(encoding='utf-8'))['calibration_panel']['anchor']
+        (root / 'public-measurements.json').write_text(json.dumps({'panel': {'models': []}}), encoding='utf-8')
+        err = io.StringIO()
+        with patch.object(sources, 'fetch', side_effect=AssertionError('fetched')), patch('sys.stderr', err):
+            code = refresh.main(['--data', str(root / 'data'), '--references', str(root), '--model', anchor])
+        self.assertEqual(code, 2)
+        self.assertIn('full refresh', err.getvalue())
+
+    def test_the_blast_radius_counts_only_other_models_values(self):
+        before = {'models': {'a': {'x': 1.0, 'y': {'z': 2}}, 'new-m': {'x': 0}}}
+        after = {'models': {'a': {'x': 1.5, 'y': {'z': 2}}, 'new-m': {'x': 9}}}
+        self.assertIn('1 values of 1 other models', refresh.blast_radius(before, after, ['new-m']))
+        self.assertEqual(refresh.blast_radius(before, before, ['new-m']), 'no value of another model moved')
+
+
 if __name__ == '__main__':
     unittest.main()

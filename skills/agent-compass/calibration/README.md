@@ -39,7 +39,7 @@ agentcompass data refresh                     # fetch, rebuild shipped data + vi
 agentcompass data refresh --no-fetch          # rebuild and validate from cached downloads without fetching
 ```
 
-Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE]`.
+Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--model ID ...]`.
 
 One command runs the full chain in topological order: `sources.py fetch` (skipped with `--no-fetch`) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> `public_data.py manifest --write` -> validation (`public-data` checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
 
@@ -61,12 +61,19 @@ Every per-model fact is reference data under `references/`; adding a model or a 
 4. **Launch and family.** A bundle under `accounts[<account>].bundles` and its efforts under `dispatch_efforts[<harness>]`
    make it launchable (discovery adds auto bundles for what a CLI advertises). When it is the newest model of a family,
    point that family's entry in `families.patterns` (ordered `{pattern, models}`; the first matching pattern decides; move
-   the declaration's `as_of` to the day of the edit) and the
-   family's short `aliases` at it, and list the older model under `superseded`.
-5. **Rebuild.** Run `agentcompass data refresh --no-fetch` (or `agentcompass data refresh` to fetch new boards first). It
-   validates the catalog (`public_data.validate_accounts_provenance`: provenance and the shape of the fields above),
-   rebuilds `public-measurements.json`, `five-axis-scores.json`, `model-capabilities.{json,md}` and the `public-data.json`
-   manifest. Commit the changed files under `references/`.
+   the declaration's `as_of` to the day of the edit) and the family's short `aliases` at it, and list the older model
+   under `superseded`.
+5. **Rebuild its row.** Run `agentcompass data refresh --model <id>` (repeatable for several new models). It fetches the
+   boards into the data directory, builds the measurements, and writes to `public-measurements.json` only the named rows,
+   each board z-score recomputed from its raw reading on the shipped scale of its source (`sources[<id>].scale`:
+   `(raw - anchor_raw) / sd_panel`); every other row, the panel, the source table and the targets stay as shipped. It
+   prints each entry it left out and why (the anchor's reading moved since the shipped fetch; the source has no shipped
+   scale, as for the arena.ai Overall `tier`), then validates the catalog (`public_data.validate_accounts_provenance`)
+   and rebuilds `five-axis-scores.json`, `model-capabilities.{json,md}` and the `public-data.json` manifest. Values
+   fitted over all measured models (the tier fits, the fleet effort ratios) still move for other models; the run prints
+   how many moved. A model in `calibration_panel` (or the anchor) is refused: it changes the scale, so it needs the full
+   refresh (`agentcompass data refresh`, or `--no-fetch` from cached downloads), which rebuilds every row. Commit the
+   changed files under `references/`.
 
 A **maintainer manual score** is `agentcompass score set <model> ... --public`, which writes `references/user-scores.json`
 and the manifest; then run the refresh. A **measured score** comes from the boards on the next refresh. The calibration

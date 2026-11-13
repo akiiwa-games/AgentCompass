@@ -603,7 +603,7 @@ def summary_line(report):
 
 
 USAGE = """usage: agentcompass data [--refresh]
-       agentcompass data refresh [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE]
+       agentcompass data refresh [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--model ID ...]
 
 Shows which public reference data (accounts.json, plan-templates.json, classifier-cases.json, five-axis-scores.json,
 user-scores.json) routing reads: the copy shipped with this install, or the newer set fetched from the AgentCompass
@@ -613,6 +613,8 @@ repository's main branch.
 
 Maintainers (in a git checkout):
   agentcompass data refresh [--no-fetch]   rebuild calibrated data, capability views and public-data.json, then validate
+  agentcompass data refresh --model ID     after adding model ID to accounts.json: merge only its measurement rows on the
+                                           shipped scale and rebuild the rest (a panel model needs the full refresh)
   public_data.py manifest [--check | --write]   verify or rewrite references/public-data.json after hand edits
 Off switch: AGENTCOMPASS_PUBLIC_DATA=off, or {"enabled": false} in ~/.agent-compass/public-data-config.json.
 """

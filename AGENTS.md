@@ -51,6 +51,7 @@ There are no compatibility re-exports across split modules. Always import `modul
 
 ## Change & Regeneration Checklist (Blast Radius)
 
+- **Adding a model**: edit `references/accounts.json` (row, board names, launch, family) and run `python -X utf8 agentcompass data refresh --model <id>`; it merges only that model's measurement rows on the shipped scale and rebuilds the generated files (`skills/agent-compass/calibration/README.md`). A model in `calibration_panel` needs the full refresh below.
 - **Any shipped reference data** (calibrated scores, capacities, `references/user-scores.json`, or hand-edits to `accounts.json`, `plan-templates.json`, `classifier-cases.json`): run `python -X utf8 agentcompass data refresh --no-fetch` (omit `--no-fetch` only when fetching new upstream boards) to rebuild `public-measurements.json`, `five-axis-scores.json`, `model-capabilities.{json,md}`, and `public-data.json` in topological order and validate schemas.
 - **Skill / reference Markdown or documented CLI commands**: run `python -X utf8 skills/agent-compass/scripts/check_router_contract.py` and `pytest agentcompass/test_docs.py` (never teach direct `route_judge.py` script calls; keep `packaging/sandbox_check.py` `DOC_RUNS` aligned if documented commands change).
 - **Tray UI text**: update `tray/i18n_catalog.py` alongside `tray/panel_*.py`.
