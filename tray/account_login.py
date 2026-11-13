@@ -14,16 +14,21 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
 import gateways
-import service_ports
+from agentcompass import ports
 from i18n import translate as _tr
 
-PORT = service_ports.get("account_login")
+PORT = ports.get("account_login")
 PROFILE = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local")) / "AgentCompass Account Login" / "chrome-profile"
 CDP = f"http://127.0.0.1:{PORT}"
 CREATE_NO_WINDOW = 0x08000000

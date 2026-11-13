@@ -11,13 +11,18 @@ from __future__ import annotations
 from i18n import translate as _tr
 
 import os
+import sys
 import webbrowser
 from pathlib import Path
 
-import plugins
-import service_ports
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
 
-MUSE_PORT = service_ports.get("muse2api")
+import plugins
+from agentcompass import ports
+
+MUSE_PORT = ports.get("muse2api")
 MUSE_HOME = Path.home() / ".muse2api"
 MUSE_LOG = MUSE_HOME / "serve.log"
 MUSE_URL = f"http://127.0.0.1:{MUSE_PORT}"
