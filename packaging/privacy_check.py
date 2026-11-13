@@ -42,16 +42,25 @@ def denylist(path: Path | None) -> list[str]:
     return [line.strip() for line in lines if line.strip() and not line.lstrip().startswith("#")]
 
 
+SEPARATORS = re.compile(r"[\\/]+")
+
+
+def _plain(text: str) -> str:
+    """Lower case, with every run of path separators as one "/": a path is the same value however a file writes it
+    (forward slashes, backslashes, or the doubled backslashes of a JSON string)."""
+    return SEPARATORS.sub("/", text.lower())
+
+
 def problems(files: list[str], denied: list[str], root: Path = ROOT) -> list[str]:
     found = []
-    lowered = [(d, d.lower()) for d in denied]
+    lowered = [(d, _plain(d)) for d in denied]
     for rel in files:
         try:
             text = (root / rel).read_text(encoding="utf-8")
         except (UnicodeDecodeError, FileNotFoundError, IsADirectoryError):
             continue
         for number, line in enumerate(text.splitlines(), 1):
-            low = line.lower()
+            low = _plain(line)
             for index, (_, needle) in enumerate(lowered, 1):
                 if needle in low:
                     found.append(f"{rel}:{number}: denylist entry #{index}")

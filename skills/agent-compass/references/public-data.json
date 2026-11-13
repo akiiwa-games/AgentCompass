@@ -1,7 +1,7 @@
 {
   "schema_version": 4,
-  "version": "8f31b21a430f",
-  "published_at": "2026-11-13T04:40:12Z",
+  "version": "8fe0ed76c32f",
+  "published_at": "2026-11-13T08:29:08Z",
   "files": {
     "accounts.json": {
       "sha256": "ef2691a90015755fad3f0b92b58bd440f55bf80f2dd3369b1f168e05c9d17698",
@@ -12,8 +12,8 @@
       "bytes": 13517
     },
     "classifier-cases.json": {
-      "sha256": "70b1aef834635e50cb524b5c0582bdb989dcc746c56d51635aef0a15b3598718",
-      "bytes": 69551
+      "sha256": "a91512298882469f94f60bb1fb5d0c231e4aee9b8c00690ff69edd7bbb70b947",
+      "bytes": 69547
     },
     "five-axis-scores.json": {
       "sha256": "fd773e45c884c7599486f9d6d6252446fb91f517689dbab763d78e9557571567",

@@ -17,6 +17,11 @@ class PrivacyCheckTests(unittest.TestCase):
         found = self.scan("cwd = 'D:/Secret-Project/x'\n", ["secret-project"])
         self.assertEqual(found, ["f.py:1: denylist entry #1"])
 
+    def test_a_denied_path_is_found_however_its_separators_are_written(self):
+        for written in ("D:/Secret/x", r"D:\Secret\x", r"D:\\Secret\\x"):
+            for entry in ("D:/Secret", r"D:\Secret"):
+                self.assertEqual(self.scan(f"cwd = '{written}'\n", [entry]), ["f.py:1: denylist entry #1"], (written, entry))
+
     def test_reserved_example_mail_passes_and_a_real_one_fails(self):
         self.assertEqual(self.scan("a = 'user@example.test' b = 'noreply@anthropic.com'\n"), [])
         self.assertEqual(len(self.scan("owner = 'someone" + "@" + "gmail.com'\n")), 1)
