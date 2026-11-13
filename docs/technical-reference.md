@@ -143,7 +143,7 @@ Companion repositories and runtime directories are separate local checkouts or i
 | `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`), including the split allocator modules (`allocator`, `account_fleet`, `task_intake`, `axis_scores`, `quota_economy`, `quota_pools`, `quota_overrides`, `candidate_eval`, `candidate_ranking`, `ledger_snapshot`, `worker_sessions`), dispatch/usage scripts, and `calibration/` (`agentcompass data refresh`). |
 | `setup/` | Onboarding (`onboard.py`), global host rule and skill sync (`sync_host_globals.py`, `host_rules.py`), `PreToolUse` / `tool_call` spawn and rotation gate (`router_gate_hook.py`), and Paseo SDK dispatch bridge (`paseo_dispatch_bridge.mjs`). |
 | `tray/` | Windows tray (`app.pyw`), decision console shell (`router_window.py`) and page mixins (`panel_scoring.py`, `panel_quota.py`, `panel_policy.py`, `panel_models.py`, `panel_strategy.py`, `panel_system.py`, `panel_plugins.py`, `panel_widgets.py`), Tk-free view model (`router_data.py`), `radar_chart.py`, `quota_line.py`, `decision_theatre.py`, updaters, and service supervisor. |
-| `packaging/` & `audit/` | Wheel/PyInstaller/Inno Setup bundling (`app_bundle.py`, `app_bootstrap.py`, `check_payload.py`), behavioral harnesses (`verify_release.py`, `sandbox_check.py`, `foreign_machine_check.py`, `zero_dispatch_check.py`), and read-only ledger compliance audit (`audit/router_audit.py`). |
+| `packaging/` & `audit/` | Wheel/PyInstaller/Inno Setup bundling (`app_bundle.py`, `app_bootstrap.py`, `check_payload.py`), behavioral harnesses (`verify_release.py`, `sandbox_check.py`, `foreign_machine_check.py`, `zero_dispatch_check.py`), read-only ledger compliance audit (`audit/router_audit.py`), and the maintainer calibration report (`audit/calibration_report.py`). |
 | `usage-float/`, `gemini-web/`, `dot2api/`, `codex-chatgpt-web/`, `easytier/` | Optional companion checkouts and runtime state; see [usage-float](https://github.com/akiiwa-games/usage-float#readme) and [gemini-web](https://github.com/akiiwa-games/gemini-web#readme). |
 
 ---
@@ -318,3 +318,13 @@ python tray\updates.py update                      # Fast-forward pull, rebuild,
 pytest <test files of the touched feature>   # a feature change within a version: only its own tests
 pytest -n auto                              # regression: the full suite, only before a release
 ```
+
+### Calibration report (`audit/calibration_report.py`)
+
+Maintainer-only and read-only. It reads `dispatch.sqlite3` and `router-ledger.jsonl` from the state directory and compares what was expected with what the dispatches did: classifier `expected_hours` against active duration (by work kind and by dominant demand category), `expected_usd` against recorded tokens at public list price and its share of the window's cited capacity (by model and effort), and how dispatches ended (completed, failed, relaunched on another candidate, canceled, other, open, plus how many started by context rotation). Pinned (`user_override`) and `--keep-whole` dispatches are their own groups and stay out of the routed tables. Every cell shows its sample size, and a cell under `MIN_CELL` samples is marked too small to read. A **Coverage** block names what was not measured: only completed dispatches carry active time and tokens, and only Claude and Codex session logs are read, so other harnesses, non-Paseo hosts and failed or canceled dispatches record no measurement.
+
+```powershell
+python -X utf8 audit/calibration_report.py --since 2026-11-01 --until 2026-11-13   # writes <state dir>/calibration/<run date>/report.{md,json}
+```
+
+The files hold counts, medians and group names only (no task text, paths, ids or credentials), and nothing in them is a routing input: recorded outcomes never reach allocation. The maintainer reads the report and edits shipped reference data by hand; the loop and its boundaries are in `audit/calibrate/SKILL.md`.
