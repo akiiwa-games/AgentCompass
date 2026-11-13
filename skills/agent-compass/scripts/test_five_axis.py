@@ -1154,7 +1154,9 @@ class AnchorRelativeTests(unittest.TestCase):
         return {'panel': {'models': panel}, 'models': models}
 
     def score(self, meas):
-        return self.fa.Scorer(meas, {'models': {m: {} for m in meas['models']}}).score()
+        # The fable rows form one series through this catalog's family pattern (model_resolution `families`).
+        families = [{'pattern': '^claude-fable', 'models': ['claude-fable-5-2']}]
+        return self.fa.Scorer(meas, {'models': {m: {} for m in meas['models']}, 'families': families}).score()
 
     def test_the_tier_is_read_only_from_the_overall_boards(self):
         measured = self.tiered(4.0)
@@ -1911,7 +1913,9 @@ class ArenaCaptureTests(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / 'fetch-manifest.json').write_text('{"files": {}}', encoding='utf-8')
-            builder = self.ms.Builder(Path(tmp), {'models': {}})
+            anchor = self.ms.ANCHOR
+            builder = self.ms.Builder(Path(tmp), {'models': {anchor: {'listed_as': {'arena': 'A', 'aa': 'A'}}},
+                                                  'calibration_panel': {'anchor': anchor, 'models': [anchor]}})
             builder.boards()
         for src in self.ms.ARENA_CAPTURES:
             self.assertIn('not captured', builder.missing[src]['reason'], src)

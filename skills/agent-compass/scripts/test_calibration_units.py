@@ -123,7 +123,8 @@ class FitterTests(unittest.TestCase):
             'Model C': (1490.0, 1485.0, 1495.0, 'Model C', '2026-11-09'),
             'Model D': (1520.0, 1515.0, 1525.0, 'Model D', '2026-11-09'),
         })
-        f.anchor_raw, f.sd = f.overall_scale(f.overall)
+        f.anchor_name = 'Claude Opus 5.5'
+        f.anchor_raw, f.sd = f.overall_scale(f.overall, f.anchor_name)
         f.aa = {'Model A': 40.0, 'Model B': 50.0, 'Model C': 60.0, 'Model D': 70.0, 'Only AA': 55.0}
         f.maps = {'aa.index': f.board_map(f.aa)}
         return f
