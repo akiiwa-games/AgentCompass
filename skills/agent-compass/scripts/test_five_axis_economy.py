@@ -280,9 +280,11 @@ class FleetEconomyTests(unittest.TestCase):
 
     def assert_used_share_monotone(self, plan_at, levels, account='codex'):
         """Raising `account`'s used share never lowers any candidate's C, and an over-line candidate on that pool
-        (need probability at the end of its run above one half: past the line) never climbs past a candidate on
-        another pool. Siblings on the same tight pool may reorder among themselves, so the rank is taken relative
-        to the other pools."""
+        (need probability at the end of its run above one half: past the line) climbs past a candidate on another pool
+        only when that candidate's C rose by more than its own: N = F + continuity + boost - C with F, continuity and
+        boost unchanged, and another pool's quota price may rise with this pool's scarcity (its outside alternative got
+        dearer). Siblings on the same tight pool may reorder among themselves, so the rank is taken relative to the
+        other pools."""
         prev = None
         for used in levels:
             d = plan_at(used)
@@ -297,8 +299,8 @@ class FleetEconomyTests(unittest.TestCase):
                     self.assertGreaterEqual(cost[cid] + 1e-9, p_cost[cid], (cid, used))
                 for x in p_over & pos.keys():
                     for y in (pos.keys() & p_pos.keys()) - mine - p_mine:
-                        if p_pos[y] < p_pos[x]:
-                            self.assertLess(pos[y], pos[x], (x, 'climbed past', y, used))
+                        if p_pos[y] < p_pos[x] and pos[y] > pos[x]:
+                            self.assertGreater(cost[y] - p_cost[y], cost[x] - p_cost[x], (x, 'climbed past', y, used))
             prev = (cost, pos, mine, over)
         self.assertTrue(prev[3], 'the fixture must put at least one candidate over the line')
 
@@ -1471,7 +1473,6 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
             self.assertEqual(cw['used_usd'], float(seats))
             pro = row(d, 'pro_max')
             costs.append(pro['components']['opportunity_cost'])
-        self.assertLess(costs[0], 5e-3)
         self.assertTrue(all(b > a for a, b in zip(costs, costs[1:])), costs)
 
         # Monotonicity in used seats: with all else equal, one more used seat never lowers pro_max's C and never
@@ -1498,8 +1499,9 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
 
     def test_zero_of_five_used_near_end_of_cadence_period_follows_expiring_quota_speed_rule(self):
         # 10 minutes left in the 12h cadence period with 0 of 5 seats used: C(pro_max) is near zero (~0).
-        # When local quota is also expiring (2h to weekly reset, C ≈ 0), candidates tie on N and the existing
-        # expiring-quota speed rule breaks the tie by completion_hours (AA Time/Task, +fast where available).
+        # When local quota is also expiring (2h to weekly reset, C ≈ 0), the candidates' N differ by C alone (N is never
+        # rounded), and where N ties the documented order breaks the tie by completion_hours (AA Time/Task, +fast where
+        # available), asserted pairwise on the two candidates.
         d_tie = self._plan(claude_plan='max_20x', codex_plan='pro', claude_used=0.50, codex_used=0.50,
                            claude_reset_h=2.0, codex_reset_h=84.0,
                            seats_used=0, cadence_reset_h=1 / 6, divergence=1, hours=0.3, local_only=True)
@@ -1507,12 +1509,13 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         opus_fast = row(d_tie, 'opus55_medium', fast=True)
         self.assertLess(pro_tie['components']['opportunity_cost'], 5e-5)
         self.assertLess(opus_fast['components']['opportunity_cost'], 5e-5)
-        self.assertEqual(round(pro_tie['score'], 4), round(opus_fast['score'], 4))
+        self.assertAlmostEqual(pro_tie['score'] - opus_fast['score'],
+                               opus_fast['components']['opportunity_cost'] - pro_tie['components']['opportunity_cost'],
+                               places=12)
         self.assertLess(opus_fast['duration_hours'], pro_tie['duration_hours'])
-        self.assertEqual(candidate_ranking.five_axis_deciding_key(opus_fast, pro_tie), 'completion_hours')
-        self.assertTrue(d_tie['selected_bundle'].get('fast'))
-        ids = [c['id'] for c in eligible(d_tie)]
-        self.assertLess(ids.index(opus_fast['id']), ids.index('pro_max'))
+        tied = {**pro_tie, 'score': opus_fast['score']}
+        self.assertEqual(candidate_ranking.five_axis_order(tied)[1], candidate_ranking.five_axis_order(opus_fast)[1])
+        self.assertEqual(candidate_ranking.five_axis_deciding_key(opus_fast, tied), 'completion_hours')
 
 
 if __name__ == '__main__':

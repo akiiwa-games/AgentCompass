@@ -175,7 +175,9 @@ SCHEMA_VERSION = 4              # the newest data schema this code reads; bump w
 # Schema 4 (2026-11-13) moves per-model facts into accounts.json: `families`, `fast_capable` with `vendor_fast_mode`,
 # `list_price`, `listed_as` and `calibration_panel`. A schema-3 install keeps those facts in code tables and would apply
 # a later model addition only in part (no fast mode, no price, no family fold), so it stays on its last accepted set
-# until it is updated; this code needs the new fields and does not read schema-3 sets.
+# until it is updated; this code needs the new fields and does not read schema-3 sets. five-axis-scores/3 (level-3
+# ceilings, `anchor.sd_panel`, `anchor.panel_change`) ships with schema 4; axis_scores.require_level3_ceilings names a
+# file without ceilings instead of failing with a KeyError.
 MIN_SCHEMA_VERSION = 4
 UPDATE_APP = 'update AgentCompass to the latest release to receive new reference data'
 FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'five-axis-scores.json', 'user-scores.json')

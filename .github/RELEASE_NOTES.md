@@ -26,4 +26,4 @@ AgentCompass v0.5.1 shows a dollar API key as the dollars it has spent, releases
 
 The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.5.1/packaging/SIGNING.md).
 
-Status: alpha. Customize the reference fleet for your own subscriptions.
+Status: alpha. Accounts come from discovery on your machine; choose which ones take part in the tray.

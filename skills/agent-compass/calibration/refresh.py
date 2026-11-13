@@ -1,8 +1,8 @@
 """Rebuild every shipped calibrated file, generated capability view and `public-data.json` in topological order,
 validate the result, and report each source's age.
 
-`agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--model ID ...]`
-`python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--model ID ...] [--references DIR]`
+`agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`
+`python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...] [--references DIR]`
 
 `--model ID` (repeatable) adds or updates only those models' measurement rows: step 2 builds the measurements from the
 boards as usual, but writes to the shipped `public-measurements.json` only the named rows, each board z-score recomputed
@@ -10,15 +10,18 @@ from its raw reading on the shipped scale of its source (`sources[<id>].scale`: 
 Every other row, the panel, the source table and the targets stay as shipped. An entry is left out when its source is
 not in the shipped table, its scale is not recorded there (the arena.ai Overall `tier` field), or the anchor's raw
 reading moved between the shipped fetch and this one. A panel model or the anchor is refused: it changes the scale and
-needs the full refresh. Steps 3..7 run as usual; values fitted over all measured models (tier fits, fleet effort ratios)
-still move for other models, and the run prints how many did.
+needs the full refresh. Steps 3..7 run as usual: the panel, sd_panel, targets and `anchor.panel_change` stay as
+shipped, a level-3 ceiling moves only when the added model sets it, and values fitted over all measured models (tier
+fits, fleet effort ratios) still move for other models; the run prints how many did.
 
 Topological chain:
 1. Fetch (skipped with `--no-fetch`): `sources.fetch` downloads the benchmark boards and community pages into `DIR` and
    writes `fetch-manifest.json` (url, fetched_at, sha256 per file). A source that fails is recorded missing and its old
    copy deleted, so a value is never carried over silently from an earlier download.
 2. `measurements.py` -> `references/public-measurements.json`.
-3. `five_axis.py` -> `references/five-axis-scores.json`.
+3. `five_axis.py` -> `references/five-axis-scores.json`. Both documents are built before either is written: when the
+   panel's members differ from the shipped `five-axis-scores.json`, the run prints the change (`five_axis.guard_panel`),
+   writes no reference file and exits 2, unless `--accept-panel-change` records it in `anchor.panel_change`.
 4. `capability_catalog.py` -> `references/model-capabilities.json` and `references/model-capabilities.md`.
 5. `public_data.py manifest --write` -> `references/public-data.json` (unchanged content keeps the manifest byte-identical).
 6. Validate: `public-data` manifest and provenance checks, `references/user-scores.json` maintainer schema, and generated
@@ -236,7 +239,8 @@ def blast_radius(before, after, names):
             f'change {largest[0]:.4g} at {largest[1]}')
 
 
-def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, models=()):
+def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, accept_panel_change=False,
+            models=()):
     """Steps 2..6. With `models`, step 2 merges only those rows into the shipped measurements (merge_model_rows), and
     the returned five-axis document carries `_model_merge` {left_out, blast_radius} for the caller to print."""
     target = Path(target)
@@ -259,13 +263,14 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
         merge = {'left_out': left_out, 'before': before}
     meas = _preserve_generated_at(meas_path, built)
     raw = (json.dumps(meas, indent=1, ensure_ascii=False) + '\n').encode('utf-8')
-    meas_path.parent.mkdir(parents=True, exist_ok=True)
-    meas_path.write_bytes(raw)
-
+    # Built before anything is written: a refused panel change (five_axis.PanelChangeRefused) leaves every file as it was.
     doc = _preserve_generated_at(
         scores_path,
-        five_axis.build(meas, acc, plans, distrust=distrust, meas_bytes=raw, now=now),
+        five_axis.build(meas, acc, plans, distrust=distrust, meas_bytes=raw, now=now,
+                        previous=five_axis.previous_doc(scores_path), accept_panel_change=accept_panel_change),
     )
+    meas_path.parent.mkdir(parents=True, exist_ok=True)
+    meas_path.write_bytes(raw)
     scores_path.parent.mkdir(parents=True, exist_ok=True)
     scores_path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
 
@@ -328,6 +333,8 @@ def main(argv=None, prog=None):
     ap.add_argument('--report', help='also write the source-age table (markdown) here')
     ap.add_argument('--distrust', action='append', default=[], help='a source id to leave out of every field (repeatable)')
     ap.add_argument('--references', help='references directory to rebuild and validate (default: skills/agent-compass/references)')
+    ap.add_argument('--accept-panel-change', action='store_true',
+                    help='write the rebuilt files although the panel members differ from the shipped five-axis-scores.json')
     ap.add_argument('--model', action='append', default=[],
                     help="add or update only this model's measurement rows, on the shipped scale (repeatable)")
     args = ap.parse_args(argv)
@@ -341,7 +348,8 @@ def main(argv=None, prog=None):
             sources.manifest(target)
         else:
             sources.fetch(target)
-        _, doc = rebuild(target, references=args.references, distrust=args.distrust, models=args.model)
+        _, doc = rebuild(target, references=args.references, distrust=args.distrust,
+                         accept_panel_change=args.accept_panel_change, models=args.model)
     except (OSError, ValueError) as exc:
         sys.stderr.write(f'{exc}\n')
         return 2

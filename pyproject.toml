@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "agentcompass"
 dynamic = ["version"]
-description = "Deterministic multi-agent task router and subscription quota scheduler."
+description = "Multi-agent task router and subscription quota scheduler: a small-model classifier profiles each task, and allocation is deterministic for a given profile."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
@@ -75,3 +75,10 @@ markers = [
   "slow: tests that start real subprocesses, packaging, sandbox checks or real Tk main loops",
 ]
 
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Real defects only: syntax errors, undefined names, unused imports and variables.
+select = ["E9", "F63", "F7", "F82", "F401", "F841"]

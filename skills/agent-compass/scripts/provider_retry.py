@@ -37,7 +37,7 @@ None is special-cased here. This module records each such dispatch once in <stat
     anyway, and a dispatch launched after the hold whose turn ended on the model's reply clears the account's hold,
     its pool's and that model's (dispatch_registry.observe; a start, a stop or a cancel does not); or, on an account
     with a usage reader, a good usage reading newer than a hold, or a different credential (re-login), which lifts that
-    account or pool hold and its model holds (`lift_after_reading`, from provider_inventory.apply).
+    account or pool hold and its model holds (`lift_after_reading`, from provider_inventory.discover).
 The message is stored, capped, because the account list must show it; nothing here decides from it.
 """
 from datetime import datetime, timedelta, timezone
@@ -594,7 +594,7 @@ def _lifted(entries, account, last_good, credential_key):
 
 
 def lift_after_reading(account, *, last_good=None, credential_key=None, path=None):
-    """Re-login recovery for an account with a usage reader (provider_inventory.apply): a good usage reading newer than
+    """Re-login recovery for an account with a usage reader (provider_inventory.discover): a good usage reading newer than
     the account's hold or one of its pool holds, or a credential other than the one that hold was taken under, lifts
     that hold and its model holds (the pool's, for a pool hold). Compare-and-clear: a hold recorded after the read is
     kept. Returns whether anything was lifted."""

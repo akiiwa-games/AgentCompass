@@ -8,6 +8,9 @@
 !/CLAUDE.md
 !LICENSE
 !/THIRD_PARTY_NOTICES.md
+!/SECURITY.md
+!/CONTRIBUTING.md
+!/CHANGELOG.md
 !/examples/
 !examples/**
 !/llms.txt
@@ -29,6 +32,8 @@
 !/audit/
 /audit/*
 !/audit/*.py
+!/audit/calibrate/
+!/audit/calibrate/**
 !/setup/
 /setup/*
 !/setup/*.py

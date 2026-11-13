@@ -9,7 +9,7 @@ Nothing of the real home, credentials, worktree or services is mapped. Safety ru
   * it refuses to start when any Windows Sandbox is already running (it never touches a sandbox it did not start);
   * the sandbox window is minimised without activation right after start (no focus stealing);
   * it always runs `wsb stop` for the sandbox it started, then confirms `wsb list` is empty again;
-  * every run writes a new directory under .route-briefs/windows-sandbox-report/ and never clears old ones.
+  * every run writes a new directory under windows-sandbox-report/ in the repository root and never clears old ones.
 
     python -X utf8 packaging/windows_sandbox_check.py [--keep-stage] [--only STEP ...]
 """
@@ -129,7 +129,7 @@ def config(stage_in: Path, out: Path) -> str:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--report", type=Path, default=ROOT / ".route-briefs" / "windows-sandbox-report")
+    parser.add_argument("--report", type=Path, default=ROOT / "windows-sandbox-report")
     parser.add_argument("--keep-stage", action="store_true")
     parser.add_argument("--only", nargs="*", help="guest steps to run (isolation, stage and install always run)")
     parser.add_argument("--connect", action="store_true", help="open an interactive session with `wsb connect` (hidden helper) so ExistingLogin and GUI steps can run")

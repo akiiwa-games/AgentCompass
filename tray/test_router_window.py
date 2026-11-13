@@ -55,6 +55,13 @@ class ScoreDimensionTests(unittest.TestCase):
         self.assertEqual(raw["tool_operation"], {"tool_operation": -0.5, "share_tool_operation": 0.8})
         self.assertEqual(raw["divergence"], {})
         self.assertEqual(raw["economy"], {"opportunity_cost": 0.08, "boost": 0.35})
+        # a level-3 category also names its credit above the anchor and the ceiling; the spoke value is untouched
+        components = {"divergence": 0.3, "share_divergence": 1.0}
+        headroom = {"divergence": {"above_anchor": 0.3, "ceiling": 0.5, "model": "best-model"}}
+        raw3 = radar_chart.score_raw(components, headroom)
+        self.assertEqual(raw3["divergence"]["above_anchor"], "+0.300")
+        self.assertEqual(raw3["divergence"]["ceiling"], "+0.500 (best-model)")
+        self.assertEqual(radar_chart.score_dimensions(components)["divergence"], 1.0)
 
 
 class DnaDimensionTests(unittest.TestCase):

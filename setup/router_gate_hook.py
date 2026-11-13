@@ -14,6 +14,7 @@ import importlib
 import json
 import os
 import re
+import shlex
 import sys
 import sqlite3
 import warnings
@@ -22,7 +23,6 @@ from pathlib import Path
 HOME = Path.home()
 DEFAULT_LEDGER = HOME / ".agent-compass" / "router-ledger.jsonl"
 LEDGER_TAIL_BYTES = 1024 * 1024
-DEFAULT_USAGE_CACHE = HOME / ".agent-compass" / "usage-cache.json"
 def router_command() -> str:
     """What the deny messages tell the agent to run: the console script when installed, else this checkout's package directory."""
     if getattr(sys, "frozen", False):
@@ -110,28 +110,6 @@ LAUNCH_PROVIDER_RE = re.compile(
 UUID_RE = re.compile(r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b", re.I)
 TURN_TARGET_ARG_RE = re.compile(
     r"\b(?:agentId|agent_id|id|target)\s*:\s*(?:\\?[\"']([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\?[\"']|([A-Za-z_$][\w$]*))",
-    re.I,
-)
-
-# Match actual worker-spawning CLI invocations at the start of a command segment.
-# A command segment ends at an unquoted ;, &&, ||, | or newline; quoted separators are argument text.
-SHELL_SEGMENT_RE = re.compile(r"""(?:"(?:\\.|[^"\\])*"?|'[^']*'?|&(?!&)|[^;|&\r\n"'])+""")
-LEADING_WRAPPERS_RE = re.compile(
-    r"^\s*(?:(?:env|[A-Za-z_][A-Za-z0-9_]*=(?:\"[^\"]*\"|'[^']*'|\S+))\s+)*"
-    r"(?:(?:&|call|start|nohup|bash|sh|zsh|pwsh|powershell(?:\.exe)?|cmd(?:\.exe)?\s+/c)\s+)*"
-    r"(?:-\w+\s+)*",
-    re.I,
-)
-
-SHELL_SPAWN_PATTERNS = (
-    ("paseo agent create", re.compile(r"\bpaseo(?:\.cmd|\.exe)?\s+(?:agent\s+(?:create|start|spawn|run)|create_agent|run)\b(?!.*--help)", re.I)),
-    ("run_dot_task.py", re.compile(r"\b(?:run_dot_task\.py|dot-subagent(?:\.cmd)?(?![/\\]))\b(?!.*(?:--help|-h|--check-only|\bdoctor\b|\bstatus\b|--task-id\b))", re.I)),
-    ("orca worker launch", re.compile(r"(?:^|[/\\])orca(?:\.cmd|\.exe)?\s+(?:orchestration\s+worker-start|agent\s+launch)\b(?!.*--help)", re.I)),
-    ("codex exec", re.compile(r"(?:^|[/\\])codex(?:\.cmd|\.exe)?\s+exec\b(?!.*--help)", re.I)),
-)
-
-READ_ONLY_CMD_PREFIX_RE = re.compile(
-    r"^\s*(?:git\s+(?:commit|log|diff|show|status|grep)|rg|grep|Select-String|Get-Content|cat|head|tail|sed|awk|echo|printf|Write-Output|python(?:\.exe)?\s+(?:-\S+\s+)*-m\s+unittest)\b",
     re.I,
 )
 
@@ -310,24 +288,351 @@ UNKNOWN_CLI_VALUE = "<not a literal>"
 
 # The Paseo CLI (commander): global options are accepted before and between command words, on the root and on
 # `schedule`/`agent` alike (`paseo --json schedule create`, `paseo schedule --json create`).
-PASEO_EXES = frozenset({"paseo", "paseo.cmd", "paseo.exe", "paseo.ps1"})
 PASEO_VALUE_OPTIONS = frozenset({"-o", "--format", "--host", "--home"})
 PASEO_GROUP_COMMANDS = frozenset({"agent", "schedule"})
 # Commands that create and start an agent. A schedule launch is judged as the MCP schedule tools.
 PASEO_LAUNCH_COMMANDS = frozenset({("run",), ("agent", "run"), ("agent", "create"), ("agent", "start"),
                                    ("agent", "spawn"), ("create_agent",)})
 PASEO_SCHEDULE_COMMANDS = {("schedule", "create"): "create_schedule", ("schedule", "update"): "update_schedule"}
-PASEO_CLI_LAUNCH = "paseo_cli_launch"   # a cli_turn_calls entry for PASEO_LAUNCH_COMMANDS; judged on the shell call
+# A cli_turn_calls entry for a worker launcher a shell command runs, args {"trigger": "shell:<launcher>"}; the launch
+# itself is judged on the shell call.
+SHELL_LAUNCH = "shell_launch"
+# Words of the Dot runner that only inspect: help, a dry check, diagnostics, or an existing task's status or result.
+DOT_INSPECT_WORDS = frozenset({"--help", "-h", "--check-only", "doctor", "status", "--task-id"})
+ORCA_LAUNCH_COMMANDS = frozenset({("orchestration", "worker-start"), ("agent", "launch")})
 # Programs that run another command line: shells take it after -c / -Command / /c, package runners as their argv.
 SHELL_PROGRAMS = frozenset({"bash", "sh", "zsh", "dash", "pwsh", "powershell", "cmd"})
-SHELL_COMMAND_FLAGS = frozenset({"-c", "-command", "/c", "/k"})
+POSIX_SHELL_COMMAND_FLAG_RE = re.compile(r"-[A-Za-z]*c[A-Za-z]*")   # `-c`, `-lc`, `-ec`
+# `//c` is `/c` written through Git Bash, which would otherwise convert `/c` into a path.
+WINDOWS_SHELL_COMMAND_FLAGS = frozenset({"-c", "-command", "/c", "/k", "//c", "//k"})
+# Options of a POSIX shell that take a value; its first other non-option word is a script file.
+POSIX_SHELL_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
 PACKAGE_RUNNERS = {"npx": (), "bunx": (), "pnpm": ("dlx", "exec"), "yarn": ("dlx", "exec")}
 START_PROCESS = frozenset({"start-process", "saps"})
+PYTHON_STEM_RE = re.compile(r"py|python(?:\d+(?:\.\d+)*)?w?")
+PYTHON_VALUE_FLAGS = frozenset({"-X", "-W"})
+NODE_VALUE_FLAGS = frozenset({"-r", "--require", "--import", "--loader", "--experimental-loader", "-C", "--conditions"})
+NODE_CODE_FLAGS = frozenset({"-e", "--eval", "-p", "--print"})
+# Words before a program that run it rather than being it: shell keywords and prefix commands without options.
+COMMAND_PREFIX_WORDS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "time", "exec",
+                                  "command", "call"})
+ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*", re.S)
+# Programs that run the command after their own options: name -> (subcommands of which one must follow, options that
+# take a value, positional arguments before the command). `timeout 600 <command>`, `uv tool run <command>`.
+UV_VALUE_OPTIONS = frozenset({"--with", "--with-requirements", "--python", "-p", "--project", "--directory",
+                              "--package", "--extra", "--group", "--env-file", "--index", "--from"})
+PASS_THROUGH_WRAPPERS = {
+    "env": ((), frozenset({"-u", "--unset", "-C", "--chdir"}), 0),   # -S / --split-string: command_words
+    "timeout": ((), frozenset({"-s", "--signal", "-k", "--kill-after"}), 1),
+    "sudo": ((), frozenset({"-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt", "-C", "-D",
+                            "--chdir", "-r", "--role", "-t", "--type", "-U", "--other-user"}), 0),
+    "nice": ((), frozenset({"-n", "--adjustment"}), 0),
+    "nohup": ((), frozenset(), 0),
+    "setsid": ((), frozenset(), 0),
+    "stdbuf": ((), frozenset({"-i", "-o", "-e", "--input", "--output", "--error"}), 0),
+    "winpty": ((), frozenset(), 0),
+    "wsl": ((), frozenset({"-d", "--distribution", "-u", "--user", "--cd"}), 0),
+    "uv": ((("run",), ("tool", "run")), UV_VALUE_OPTIONS, 0),
+    "uvx": ((), UV_VALUE_OPTIONS, 0),
+    "pipx": ((("run",),), frozenset({"--spec", "--python", "--pip-args"}), 0),
+    "poetry": ((("run",),), frozenset({"-C", "--directory", "-P", "--project"}), 0),
+}
+ENV_SPLIT_OPTIONS = ("-S", "--split-string")
+LAUNCHER_SUFFIXES = (".exe", ".cmd", ".bat", ".ps1", ".js", ".mjs", ".cjs")
 
 
 def program_name(word: str) -> str:
     """`C:\\x\\Paseo.CMD` -> `paseo.cmd`; the program a command word runs, lower-cased."""
     return word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+
+
+def program_stem(word: str) -> str:
+    """`C:\\x\\Paseo.CMD` -> `paseo`: the program name without a Windows or Node launcher suffix."""
+    name = program_name(word)
+    return next((name[:-len(s)] for s in LAUNCHER_SUFFIXES if name.endswith(s)), name)
+
+
+class ShellParseError(ValueError):
+    """A command line no shell would run: an unterminated quote, substitution, comment or here-string."""
+
+
+# How a command line is read: by the shell of the tool that sent it, or the shell a wrapper starts.
+POSIX, POWERSHELL, CMD = "posix", "powershell", "cmd"
+SHELL_TOOL_DIALECTS = {"Bash": POSIX, "bash": POSIX, "PowerShell": POWERSHELL, "powershell": POWERSHELL}
+HOST_SHELL_DIALECT = POWERSHELL if os.name == "nt" else POSIX
+# A line the chosen dialect cannot parse is read in this one before it counts as undecidable.
+FALLBACK_DIALECT = {POSIX: POWERSHELL, POWERSHELL: POSIX}
+SHELL_ESCAPE = {POSIX: "\\", POWERSHELL: "`", CMD: "^"}
+# Characters a POSIX backslash outside quotes escapes. Before any other character it is kept, as a Windows path
+# separator in a command a host sends through bash.
+POSIX_ESCAPED = frozenset(" \t\"'\\;&|()<>{}$`#")
+HEREDOC_RE = re.compile(r"""<<(-?)[ \t]*(['"]?)([^\s'"<>;|&()]+)\2""")
+# cmd keeps the quotes of `cmd /c "<program>" ...` only for a quoted executable name (`cmd /?`).
+CMD_SPECIAL = frozenset('&<>()@^|')
+CMD_EXECUTABLE_SUFFIXES = (".exe", ".cmd", ".bat", ".com")
+
+
+def program_dialect(program: object) -> str | None:
+    """The dialect of a shell named as a program (`powershell`, `bash.exe`, `/bin/sh`, `cmd`), else None."""
+    if not isinstance(program, str):
+        return None
+    stem = program_stem(program.strip())
+    return (POWERSHELL if stem in ("pwsh", "powershell") else CMD if stem == "cmd"
+            else POSIX if stem in SHELL_PROGRAMS else None)
+
+
+def shell_dialect(tool_name: str, tool_input: dict) -> str:
+    """The shell a call's command line is written for, decided from the call.
+
+    A tool that names its shell keeps it (`Bash`, `PowerShell`). Any other shell tool (Codex `exec_command` and
+    `exec`, Antigravity `run_command`, `shell`) runs the shell its `shell` argument names, else the host's default
+    shell: PowerShell on Windows, a POSIX shell elsewhere.
+    """
+    named = SHELL_TOOL_DIALECTS.get(base_tool_name(tool_name))
+    return named or program_dialect(tool_input.get("shell")) or HOST_SHELL_DIALECT
+
+
+def read_heredoc(line: str, i: int, delimiter: str, strip_tabs: bool) -> tuple[str, int]:
+    """The body of a here-document that starts at `i`, and the index after its delimiter line (or the end)."""
+    lines = []
+    while i < len(line):
+        end = line.find("\n", i)
+        end = len(line) if end < 0 else end
+        text = line[i:end].rstrip("\r")
+        i = end + 1
+        if (text.lstrip("\t") if strip_tabs else text) == delimiter:
+            break
+        lines.append(text)
+    return "\n".join(lines), min(i, len(line))
+
+
+def arithmetic_end(line: str, start: int) -> int:
+    """Index of the `)` that balances the `(` at `start` of a POSIX `((...))` arithmetic text."""
+    depth = 0
+    for i in range(start, len(line)):
+        depth += {"(": 1, ")": -1}.get(line[i], 0)
+        if not depth:
+            return i
+    raise ShellParseError("unterminated ((")
+
+
+def simple_commands(line: str, dialect: str = POSIX) -> list[tuple[list[str], list[str]]]:
+    """Each simple command a line runs, as (words, here-document bodies fed to its stdin), read in `dialect`.
+
+    Commands end at an unquoted `;` `&&` `||` `|` `&` newline or bracket; the commands inside `$(...)` are included.
+    Quotes are removed from words; quoted text, here-document bodies and PowerShell here-strings and `@(...)`
+    arrays are argument text. Raises ShellParseError when the line does not parse.
+    """
+    return parse_commands(line, 0, dialect, nested=False)[0]
+
+
+def parse_commands(line: str, i: int, dialect: str, nested: bool) -> tuple[list, int]:
+    """simple_commands from `i`; when `nested`, up to the `)` that closes a `$(` and that index."""
+    posix, powershell, cmd = dialect == POSIX, dialect == POWERSHELL, dialect == CMD
+    escape = SHELL_ESCAPE[dialect]
+    commands, words, stdin, heredocs = [], [], [], []
+    word, in_word, depth, n = [], False, 0, len(line)
+
+    def end_word():
+        nonlocal word, in_word
+        if in_word:
+            words.append("".join(word))
+        word, in_word = [], False
+
+    def end_command():
+        nonlocal stdin
+        end_word()
+        if words:
+            commands.append((list(words), stdin))
+            words.clear()
+            stdin = []
+
+    def substitution(start: int) -> int:
+        """Collect the commands of the `$(` whose `(` is at `start`; the index of its `)`."""
+        if posix and line[start + 1:start + 2] == "(":     # `$(( 1 << 2 ))` is arithmetic, not commands
+            return arithmetic_end(line, start)
+        inner, end = parse_commands(line, start + 1, dialect, nested=True)
+        commands.extend(inner)
+        return end
+
+    def standalone(at: int) -> bool:
+        return line[at + 1:at + 2] in ("", " ", "\t", "\r", "\n", ";", "|", "&", ")")
+
+    while i < n:
+        c, nxt = line[i], line[i + 1:i + 2]
+        if c == escape and line.startswith(("\n", "\r\n"), i + 1):    # line continuation
+            i = line.index("\n", i) + 1
+        elif c == escape and nxt and (not posix or nxt in POSIX_ESCAPED):
+            word.append(nxt)
+            in_word, i = True, i + 2
+        elif c in " \t\r":
+            end_word()
+            i += 1
+        elif c == "\n":
+            end_command()
+            i += 1
+            for delimiter, strip_tabs, bodies in heredocs:
+                body, i = read_heredoc(line, i, delimiter, strip_tabs)
+                bodies.append(body)
+            heredocs.clear()
+        elif c == "#" and not in_word and not cmd:
+            end = line.find("\n", i)
+            i = n if end < 0 else end
+        elif powershell and c == "<" and nxt == "#" and not in_word:
+            end = line.find("#>", i + 2)
+            if end < 0:
+                raise ShellParseError("unterminated <#")
+            i = end + 2
+        elif powershell and c == "@" and not in_word and nxt in ("'", '"') and line.startswith(("\n", "\r\n"), i + 2):
+            body = line.index("\n", i) + 1
+            end = line.find("\n" + nxt + "@", body - 1)
+            if end < 0:
+                raise ShellParseError("unterminated here-string")
+            word.append(line[body:end].rstrip("\r"))
+            in_word, i = True, end + 3
+        elif powershell and c == "@" and not in_word and nxt == "(":
+            # An array `@('a','b')`: its items are argument values, kept with their quotes for Start-Process.
+            end = parse_commands(line, i + 2, dialect, nested=True)[1]
+            word.append(line[i:end + 1])
+            in_word, i = True, end + 1
+        elif c == "'" and not cmd:
+            end = line.find("'", i + 1)
+            if end < 0:
+                raise ShellParseError("unterminated '")
+            word.append(line[i + 1:end])
+            in_word, i = True, end + 1
+        elif c == '"':
+            in_word, i = True, i + 1
+            while i < n and line[i] != '"':
+                ch, after = line[i], line[i + 1:i + 2]
+                if after and ((posix and ch == "\\" and after in '"\\$`\n') or (powershell and ch == "`")):
+                    word.append("" if after == "\n" else after)
+                    i += 2
+                elif ch == "$" and after == "(" and not cmd:
+                    end = substitution(i + 1)
+                    word.append(line[i:end + 1])
+                    i = end + 1
+                else:
+                    word.append(ch)
+                    i += 1
+            if i >= n:
+                raise ShellParseError('unterminated "')
+            i += 1
+        elif c == "$" and nxt == "(" and not cmd:
+            end = substitution(i + 1)
+            word.append(line[i:end + 1])
+            in_word, i = True, end + 1
+        elif c == "$" and nxt == "{" and not cmd:
+            end = line.find("}", i)
+            if end < 0:
+                raise ShellParseError("unterminated ${")
+            word.append(line[i:end + 1])
+            in_word, i = True, end + 1
+        elif posix and c == "<" and nxt == "<" and line[i + 2:i + 3] != "<" and HEREDOC_RE.match(line, i):
+            match = HEREDOC_RE.match(line, i)
+            heredocs.append((match.group(3), bool(match.group(1)), stdin))
+            end_word()
+            i = match.end()
+        elif c == ")" and nested and not depth:
+            end_command()
+            return commands, i
+        elif posix and c == "(" and nxt == "(" and not in_word and not words:
+            end_command()       # `(( x = 1 << 2 ))`: an arithmetic command, whose `<<` is a shift
+            i = arithmetic_end(line, i) + 1
+        elif c in "()":
+            depth += 1 if c == "(" else -1
+            end_command()
+            i += 1
+        elif c in "{}" and (powershell or (posix and not in_word and standalone(i))):
+            # PowerShell script blocks; a POSIX `{ ...; }` group, not brace expansion inside a word (`{a,b}`).
+            end_command()
+            i += 1
+        elif c in ";|&":
+            end_command()
+            i += 1
+        else:
+            word.append(c)
+            in_word, i = True, i + 1
+    if nested:
+        raise ShellParseError("unterminated $(")
+    end_command()
+    return commands, n
+
+
+def cmd_command_line(args: list[str]) -> str:
+    """The line `cmd /c` runs: its arguments as Windows quotes them, then cmd's outer-quote rule (`cmd /?`).
+
+    The quotes stay only around a quoted executable name with whitespace (`"C:\\Program Files\\x\\paseo.cmd" run`);
+    otherwise the first and last quote go (`"cd x & paseo run"` runs `cd x & paseo run`).
+    """
+    line = " ".join(f'"{arg}"' if not arg or re.search(r"\s", arg) else arg for arg in args)
+    if not line.startswith('"'):
+        return line
+    quoted = line[1:].partition('"')[0]
+    if (line.count('"') == 2 and not CMD_SPECIAL & set(quoted) and re.search(r"\s", quoted)
+            and program_name(quoted).endswith(CMD_EXECUTABLE_SUFFIXES)):
+        return line
+    last = line.rfind('"')
+    return line[1:last] + line[last + 1:] if last > 0 else line[1:]
+
+
+def posix_shell_script(args: list) -> bool:
+    """Whether a POSIX shell's arguments name a script file: a non-option word, unless `-s` reads stdin."""
+    i = 0
+    while i < len(args) and isinstance(args[i], str):
+        word = args[i]
+        if word in ("-", "--"):     # end of options: the next word, if any, is the script
+            return i + 1 < len(args)
+        if word in POSIX_SHELL_VALUE_OPTIONS:
+            i += 2
+        elif word.startswith(("-", "+")):
+            if word.startswith("-") and not word.startswith("--") and "s" in word[1:]:
+                return False
+            i += 1
+        else:
+            return True
+    return False
+
+
+def command_words(words: list) -> list:
+    """A simple command from its program on: leading assignments, shell keywords and wrappers removed."""
+    i = 0
+    while i < len(words) and isinstance(words[i], str):
+        word = words[i]
+        stem = program_stem(word)
+        if ENV_ASSIGNMENT_RE.fullmatch(word) or word.lower() in COMMAND_PREFIX_WORDS:
+            i += 1
+        elif word.startswith("$") and i + 1 < len(words) and words[i + 1] == "=":   # PowerShell `$out = <command>`
+            i += 2
+        elif stem in PASS_THROUGH_WRAPPERS:
+            subcommands, value_options, positionals = PASS_THROUGH_WRAPPERS[stem]
+            subcommand = next((s for s in subcommands if tuple(words[i + 1:i + 1 + len(s)]) == s), None)
+            if subcommands and subcommand is None:
+                break   # another subcommand of the wrapper (`uv pip install`): the wrapper is the program
+            i += 1 + len(subcommand or ())
+            while i < len(words) and isinstance(words[i], str) and words[i].startswith("-") and words[i] != "-":
+                option, sep, value = words[i].partition("=")
+                if stem == "env" and option in ENV_SPLIT_OPTIONS:
+                    # `env -S 'prog args'` splits its value into the command, before the words that follow.
+                    value = value if sep else words[i + 1] if i + 1 < len(words) else None
+                    try:
+                        split = shlex.split(value) if isinstance(value, str) else []
+                    except ValueError:
+                        split = []
+                    return command_words([*split, *words[i + (1 if sep else 2):]]) if split else []
+                i += 2 if words[i] in value_options else 1
+                if words[i - 1] == "--":
+                    break
+            i += positionals
+        elif word.lower() == "start":
+            # cmd `start ["title"] [/b ...] <program>`; in PowerShell `start` is Start-Process.
+            i += 1
+            while i < len(words) and isinstance(words[i], str) and (not words[i] or words[i].startswith("/")):
+                i += 1
+            return ["Start-Process", *words[i:]]
+        else:
+            break
+    return words[i:]
 
 
 def paseo_command(args: list) -> tuple[tuple[str, ...], list] | None:
@@ -369,32 +674,58 @@ def paseo_cli_options(words: list) -> dict[str, str]:
 
 
 def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
-    """Normalize static Paseo CLI sends and schedule launches; never execute shell or Python code.
+    """Normalize the static Paseo CLI sends, schedule launches and worker launchers a call runs; never execute it.
 
-    Only command positions and subprocess arguments count, not quoted prompt
-    text. Unknown/dynamic expressions retain the existing fail-open behavior.
+    A shell line is parsed, in the dialect of the call (shell_dialect), into simple commands, and each is judged by the
+    program it runs, seen through interpreters, shells and wrappers (`python <script>`, `bash -c`, `bash <<EOF`,
+    `cmd /c`, `eval`, `iex`, `Start-Process`, `npx`, PASS_THROUGH_WRAPPERS). A launcher name that
+    is an argument, a path, a search pattern or quoted text given to another program is not a launch. A line that
+    does not parse, and a program or argument that is not a literal, is undecidable and is not a launch: the gate's
+    fail-open degrade, since it guards against accidental launches and is not a security boundary.
     """
     if tool_name not in SHELL_TOOLS | CODEMODE_TOOLS:
         return []
     targets = []
 
-    def argv(words: list, depth: int):
+    def launch(label: str):
+        targets.append((SHELL_LAUNCH, {"trigger": f"shell:{label}"}))
+
+    def argv(words: list, depth: int, stdin: list = ()):
+        words = command_words(words)
         if not words or not isinstance(words[0], str) or depth > 4:
             return
-        if re.search(r"\s", program_name(words[0].strip())):
-            # A quoted command line left by a stripped wrapper (`bash -c "..."`), not a program path with spaces
-            # (`C:\Program Files\Paseo\paseo.cmd`).
-            shell(words[0], depth + 1)
-            return
         exe = program_name(words[0])
-        stem = exe.rsplit(".", 1)[0] if exe.endswith((".exe", ".cmd", ".ps1")) else exe
-        if exe in PASEO_EXES:
-            paseo(words[1:])
+        stem = program_stem(words[0])
+        args = words[1:]
+        literal_args = [w for w in args if isinstance(w, str)]
+        if stem == "paseo":
+            paseo(args)
+        elif exe == "run_dot_task.py" or stem == "dot-subagent":
+            if not any(isinstance(w, str) and (w in DOT_INSPECT_WORDS or w.startswith("--task-id=")) for w in args):
+                launch("run_dot_task.py")
+        elif stem == "orca":
+            if tuple(args[:2]) in ORCA_LAUNCH_COMMANDS and "--help" not in args:
+                launch("orca worker launch")
+        elif stem == "codex":
+            if args[:1] == ["exec"] and "--help" not in args:
+                launch("codex exec")
         elif stem in SHELL_PROGRAMS:
-            flags = [i for i, w in enumerate(words) if isinstance(w, str) and w.lower() in SHELL_COMMAND_FLAGS]
-            if flags:
-                rest = [w for w in words[flags[0] + 1:] if isinstance(w, str)]
-                shell(rest[0] if len(rest) == 1 else " ".join(rest), depth + 1)
+            dialect = CMD if stem == "cmd" else POWERSHELL if stem in ("pwsh", "powershell") else POSIX
+            flags = [i for i, w in enumerate(words) if isinstance(w, str) and (
+                POSIX_SHELL_COMMAND_FLAG_RE.fullmatch(w) if dialect == POSIX
+                else w.lower() in WINDOWS_SHELL_COMMAND_FLAGS)]
+            rest = [w for w in words[flags[0] + 1:] if isinstance(w, str)] if flags else []
+            if rest:
+                # A POSIX shell runs the one string after -c; PowerShell joins what follows; cmd as cmd_command_line.
+                shell(rest[0] if dialect == POSIX else " ".join(rest) if dialect == POWERSHELL
+                      else cmd_command_line(rest), depth + 1, dialect)
+            elif not flags and dialect == POSIX and not posix_shell_script(args):
+                for body in stdin:      # `bash <<'EOF'`: the here-document is the script, unless a script file is
+                    shell(body, depth + 1, POSIX)   # given (`bash run.sh <<EOF`: it is that script's stdin)
+        elif stem == "eval":
+            shell(" ".join(literal_args), depth + 1, POSIX)
+        elif stem in ("invoke-expression", "iex"):
+            shell(" ".join(w for w in literal_args if w.lower() != "-command"), depth + 1, POWERSHELL)
         elif stem in PACKAGE_RUNNERS:
             rest = words[1:]
             if PACKAGE_RUNNERS[stem]:
@@ -405,11 +736,41 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
                 rest = rest[2:] if rest[0] in ("-p", "--package") else rest[1:]
             argv(rest, depth + 1)
         elif exe in START_PROCESS:
-            start_process(words[1:], depth)
-        elif stem in ('python', 'python3', 'py') and '-c' in words:
-            index = words.index('-c') + 1
-            if index < len(words) and isinstance(words[index], str):
-                python(words[index], depth + 1)
+            start_process(args, depth)
+        elif PYTHON_STEM_RE.fullmatch(stem):
+            python_interpreter(args, depth)
+        elif stem == "node":
+            node_interpreter(args, depth)
+
+    def python_interpreter(args: list, depth: int):
+        """`python [options] <script> ...` runs the script; `-c` runs code; `-m` and stdin run no script by path."""
+        i = 0
+        while i < len(args) and isinstance(args[i], str):
+            word = args[i]
+            if word == "-c":
+                if i + 1 < len(args) and isinstance(args[i + 1], str):
+                    python(args[i + 1], depth + 1)
+                return
+            if word in ("-m", "-"):
+                return
+            if word.startswith("-"):
+                i += 2 if word in PYTHON_VALUE_FLAGS else 1
+                continue
+            argv(args[i:], depth + 1)
+            return
+
+    def node_interpreter(args: list, depth: int):
+        """`node [options] <script> ...` runs the script; inline `-e` code is not read."""
+        i = 0
+        while i < len(args) and isinstance(args[i], str):
+            word = args[i]
+            if word in NODE_CODE_FLAGS:
+                return
+            if word.startswith("-"):
+                i += 2 if word in NODE_VALUE_FLAGS else 1
+                continue
+            argv(args[i:], depth + 1)
+            return
 
     def paseo(args: list):
         if '--help' in args or '-h' in args:
@@ -422,7 +783,7 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
             # Same launch as MCP create_schedule / update_schedule: the provider settings become its arguments.
             targets.append((PASEO_SCHEDULE_COMMANDS[path], paseo_cli_options(rest)))
         elif path in PASEO_LAUNCH_COMMANDS:
-            targets.append((PASEO_CLI_LAUNCH, paseo_cli_options(rest)))
+            launch("paseo agent create")
         elif path in (('send',), ('agent', 'send')):
             ids = [w for w in rest if not (isinstance(w, str) and w.startswith('-'))]
             if ids and isinstance(ids[0], str) and UUID_RE.fullmatch(ids[0]):
@@ -453,10 +814,18 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
                 i += 1
         if not isinstance(program, str) or not program:
             return
-        items = []
-        for match in re.finditer(r'"([^"]*)"|\'([^\']*)\'|([^\s,]+)', " ".join(listed)):
-            item = next(group for group in match.groups() if group is not None)
-            items.extend(item.split() if match.group(3) is None and re.search(r'\s', item) else [item])
+        elements = []
+        for word in listed:
+            if word.startswith("@(") and word.endswith(")"):    # an array literal, kept raw by the tokenizer
+                for match in re.finditer(r"""'((?:[^']|'')*)'|"((?:[^"`]|`.)*)"|([^\s,]+)""", word[2:-1]):
+                    single, double, bare = match.groups()
+                    elements.append(single.replace("''", "'") if single is not None
+                                    else re.sub(r"`(.)", r"\1", double) if double is not None else bare)
+            else:
+                elements.extend(part for part in word.split(",") if part)
+        # Start-Process joins the elements with spaces into one Windows command line and adds no quotes, so only
+        # double quotes written into an element keep a spaced path together (its documented `"`"C:\x y\a.py`""`).
+        items = [item.replace('"', '') for item in re.findall(r'(?:"[^"]*"|[^\s"])+', " ".join(elements))]
         argv([program, *items], depth + 1)
 
     def python(code: str, depth: int):
@@ -494,23 +863,27 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
                 if isinstance(value, list):
                     argv(value, depth)
                 elif isinstance(value, str):
-                    shell(value, depth + 1)
+                    shell(value, depth + 1, POSIX)
 
-    def shell(command: str, depth: int = 0):
+    def shell(command: str, depth: int, dialect: str):
         if depth > 4:
             return
         # Also accepts a Python script supplied directly as a wrapper's code.
         python(command, depth)
-        for segment in SHELL_SEGMENT_RE.findall(command):
-            segment = LEADING_WRAPPERS_RE.sub('', segment.strip())
-            if READ_ONLY_CMD_PREFIX_RE.match(segment):
-                continue
-            words = re.findall(r'''"(?:\\.|[^"\\])*"|'[^']*'|[^\s]+''', segment)
-            argv([word[1:-1] if len(word) >= 2 and word[0] == word[-1]
-                  and word[0] in ('"', "'") else word for word in words], depth)
+        commands = None
+        for reading in (dialect, FALLBACK_DIALECT.get(dialect)):
+            try:
+                commands = simple_commands(command, reading) if reading else None
+            except ShellParseError:
+                continue    # read it in the other dialect before it counts as undecidable
+            break
+        if not commands:
+            return   # undecidable in both readings: not a launch (see the docstring)
+        for words, stdin in commands:
+            argv(words, depth, stdin)
 
     for command in extract_shell_commands(tool_input):
-        shell(command)
+        shell(command, 0, shell_dialect(tool_name, tool_input))
     return targets
 
 
@@ -530,21 +903,8 @@ def detect_subagent_launch(tool_name: str, tool_input: dict) -> str | None:
     if tool_name in SHELL_TOOLS:
         if any(name in DIRECT_SUBAGENT_TOOLS for name, _ in wrapped_agent_calls(tool_name, tool_input)):
             return f"{tool_name}:create_agent"
-        if any(name == PASEO_CLI_LAUNCH for name, _ in cli_turn_calls(tool_name, tool_input)):
-            return "shell:paseo agent create"
-        for command in extract_shell_commands(tool_input):
-            if not command:
-                continue
-            for raw_segment in SHELL_SEGMENT_RE.findall(command):
-                segment = raw_segment.strip()
-                if not segment or READ_ONLY_CMD_PREFIX_RE.match(segment):
-                    continue
-                stripped = LEADING_WRAPPERS_RE.sub("", segment)
-                if READ_ONLY_CMD_PREFIX_RE.match(stripped):
-                    continue
-                for label, pattern in SHELL_SPAWN_PATTERNS:
-                    if pattern.search(stripped):
-                        return f"shell:{label}"
+        return next((args["trigger"] for name, args in cli_turn_calls(tool_name, tool_input)
+                     if name == SHELL_LAUNCH), None)
     return None
 
 
@@ -625,6 +985,21 @@ def detect_target_agent_ids(tool_name: str, tool_input: dict) -> list[str]:
     return []
 
 
+class RouterTreeMismatch(Exception):
+    """The skill tree the hook loads lacks a module or function this hook version calls (hook and skill from different installs)."""
+
+
+def router_owner(module: str, *names: str):
+    """The named functions of a router module (one function: itself). A missing module or function is one explicit
+    outcome, RouterTreeMismatch, which evaluate_payload turns into a denial that names the action."""
+    try:
+        loaded = router_module(module)
+        found = tuple(getattr(loaded, name) for name in names)
+    except (ImportError, AttributeError) as exc:
+        raise RouterTreeMismatch(f"{module}.{'/'.join(names)}: {exc}") from exc
+    return found[0] if len(found) == 1 else found
+
+
 def router_module(name: str):
     checkout = Path(__file__).resolve().parents[1] / "skills/agent-compass"
     skill = Path(os.environ.get("ROUTER_SKILL_ROOT") or (
@@ -699,17 +1074,16 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
     account = target.get("account") or (
         "antigravity" if provider == "antigravity-resilient" else provider if provider in table else None)
     candidates = []
-    for name, spec in table.items():
-        for bundle_id, bundle in (spec.get("bundles") or {}).items():
-            if target.get("bundle_id"):
-                matched = bundle_id == target["bundle_id"]
-            else:
-                matched = bool(target.get("model")) and account in (None, name) and (
-                    same_launch_value("model", target["model"], bundle.get("model"))
-                    and target.get("effort") in (None, bundle.get("effort"))
-                    and (not provider or (bundle.get("provider") == "pi") == (provider == "pi")))
-            if matched:
-                candidates.append(dict(bundle, account=name, bundle_id=bundle_id))
+    if target.get("bundle_id") and table:
+        candidates = router_owner("account_fleet", "bundle_rows")(accounts, target["bundle_id"])
+    elif not target.get("bundle_id"):
+        for name, spec in table.items():
+            for bundle_id, bundle in (spec.get("bundles") or {}).items():
+                if bool(target.get("model")) and account in (None, name) and (
+                        same_launch_value("model", target["model"], bundle.get("model"))
+                        and target.get("effort") in (None, bundle.get("effort"))
+                        and (not provider or (bundle.get("provider") == "pi") == (provider == "pi"))):
+                    candidates.append(dict(bundle, account=name, bundle_id=bundle_id))
     if not account and len({c["account"] for c in candidates}) == 1:
         account = candidates[0]["account"]
     return account, [c for c in candidates if c["account"] == account]
@@ -731,15 +1105,11 @@ def check_target_disabled(
     if not account:
         return None
     where = f" (agent_id={target['agent_id']})" if target.get("agent_id") else ""
-    legacy = ((accounts or {}).get("accounts") or {}).get(account, {}).get("legacy_meter")
-    if isinstance(legacy, str) and legacy.strip():
-        cause = legacy
-    elif policy is not None and account not in (policy.get("allowed_accounts") or []):
-        cause = f"账号 {account} 已在本机禁用（不在 host-policy.json 的 allowed_accounts 中）"
-    elif candidates and all(c.get("disabled") for c in candidates):
-        cause = "档位 " + ", ".join(c["bundle_id"] for c in candidates) + " 已在模型管理中停用"
-    else:
+    disabled_cause, disabled_text = router_owner("host_policy", "disabled_cause", "disabled_text")
+    found = disabled_cause(account, candidates, accounts, policy)
+    if not found:
         return None
+    cause = disabled_text(account, found, "zh")
     return f"[Router Gate] 拦截向已禁用账号/档位启动或续派任务{where}：{cause}。" + DISABLED_RECOVERY
 
 
@@ -767,27 +1137,6 @@ def target_windows(candidates: list[dict], accounts: dict | None) -> list[str] |
         return None
 
 
-def usage_row(account: str, usage_cache_path: Path | None = None) -> dict | None:
-    """The account's usage reading from the collector's cache (or ROUTER_USAGE_CACHE)."""
-    try:
-        cache = router_module("usage_cache")
-    except ImportError:
-        cache = None
-    if cache is not None:
-        providers = cache.read(usage_cache_path, HOME)[0]
-    else:
-        providers = None
-        named = usage_cache_path or os.environ.get("ROUTER_USAGE_CACHE")
-        path = Path(named) if named else DEFAULT_USAGE_CACHE
-        try:
-            providers = json.loads(path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError):
-            providers = None
-    rows = providers.get("providers") if isinstance(providers, dict) else None
-    row = rows.get(account) if isinstance(rows, dict) else None
-    return row if isinstance(row, dict) else None
-
-
 def check_account_quota_exhausted(
     account: str | None,
     usage_cache_path: Path | None = None,
@@ -813,28 +1162,17 @@ def check_account_quota_exhausted(
     if not account:
         return None
     now = now or dt.datetime.now(dt.timezone.utc)
-    row = usage_row(account, usage_cache_path)
+    latched, without_own, window_refusal = router_owner("turn_refusal", "latched", "without_own", "window_refusal")
     # Confirmed upstream exhaustion is durable even with no/stale usage cache.
     # This applies to new launches and resumed turns, never to read-only investigation.
-    try:
-        exhaustion = router_module('quota_exhaustion')
-    except ImportError:
-        exhaustion = None
-    if exhaustion is not None and exhaustion.blocked(account, row, windows=windows):
+    if latched(account, windows, usage_cache_path, HOME):
         return (
             '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear '
             'the exhaustion record. While the owned worker is running, send a control message with completion '
             f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
         )
     try:
-        account_fleet = router_module("account_fleet")
-        axis_scores = router_module("axis_scores")
-        quota_pools = router_module("quota_pools")
-        judge = router_module("route_judge")
-        inventory = router_module("provider_inventory")
-        accounts = accounts if accounts is not None else account_fleet.load_accounts()
-        usage = judge.usage_snapshot(usage_cache_path, [account], now, inventory=accounts.get("_discovery") or {})
-        usage = inventory.merge_usage(usage, accounts, now, names={account})
+        accounts = accounts if accounts is not None else router_module("account_fleet").load_accounts()
         if records is None:
             try:
                 registry = router_module("dispatch_registry")
@@ -847,24 +1185,13 @@ def check_account_quota_exhausted(
                 router_module("dispatch_flow").deliver_end_notices(now=now)
             except Exception:
                 pass
-        if records and (exclude_dispatch_id or exclude_agent_id):
-            records = [
-                r for r in records
-                if not isinstance(r, dict)
-                or ((not exclude_dispatch_id or r.get("dispatch_id") != exclude_dispatch_id)
-                    and (not exclude_agent_id or r.get("agent_id") != exclude_agent_id))
-            ]
-        probes = [dict(b, id=b.get("bundle_id") or b.get("id")) for b in bundles or ()] or [
-            {"account": account, "model": model or ""}]
-        priced = axis_scores.five_axis_overlay(accounts)      # once for every probe
-        found = [(probe, refusal) for probe in probes
-                 for refusal in quota_pools.launch_blockers(probe, priced, usage, now, records=records)]
+        records = without_own(records, exclude_dispatch_id, exclude_agent_id)
+        found = window_refusal(account, accounts, now, usage_cache_path, records, bundles, model)
     except Exception:
         return None
     if not found:
         return None
-    probe, (wid, why) = found[0]
-    what = probe.get("id") or probe.get("model") or "?"
+    what, wid, why = found
     return (
         f"[Router Gate] 拦截向额度不足的窗口派发或续跑任务：{account} 的 {what} 所用窗口 {wid} 不可用（{why}）。"
         "运行中的受控子会话仍可由父会话直接发送控制消息收尾；idle 或运行状态未知的 worker 请先收取已有输出，"
@@ -1199,26 +1526,32 @@ def evaluate_payload(
             agent_ids = [agent_id for agent_id in detect_target_agent_ids(name, args) or
                          detect_target_agent_ids(tool_name, tool_input) if agent_id not in upward]
             docs = {agent_id: load_paseo_agent(agent_id, paseo_agents_dir) for agent_id in agent_ids}
-            targets = [dict(target_spec(doc, agent_labels(doc)), agent_id=agent_id)
+            targets = [dict(target_spec(doc, agent_labels(doc)), agent_id=agent_id,
+                            dispatch_id=agent_labels(doc).get("router.dispatch_id"))
                        for agent_id, doc in docs.items() if isinstance(doc, dict)]
         dispatch_id = args.get("labels", {}).get("router.dispatch_id") if isinstance(args.get("labels"), dict) else None
         for target in targets:
-            account, candidates = resolve_target(target, accounts)
-            controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
-            reason = None if controlling else (
-                check_target_disabled(target, account, candidates, accounts, policy)
-                or check_account_quota_exhausted(
-                    account or target.get("provider"),
-                    usage_cache_path=usage_cache_path,
-                    now=now,
-                    accounts=accounts,
-                    windows=target_windows(candidates, accounts),
-                    bundles=candidates,
-                    model=target.get("model"),
-                    exclude_dispatch_id=dispatch_id,
-                    exclude_agent_id=target.get("agent_id"),
+            try:
+                account, candidates = resolve_target(target, accounts)
+                controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
+                reason = None if controlling else (
+                    check_target_disabled(target, account, candidates, accounts, policy)
+                    or check_account_quota_exhausted(
+                        account or target.get("provider"),
+                        usage_cache_path=usage_cache_path,
+                        now=now,
+                        accounts=accounts,
+                        windows=target_windows(candidates, accounts),
+                        bundles=candidates,
+                        model=target.get("model"),
+                        exclude_dispatch_id=dispatch_id or target.get("dispatch_id"),
+                        exclude_agent_id=target.get("agent_id"),
+                    )
                 )
-            )
+            except RouterTreeMismatch as exc:
+                return format_response(False, harness_kind,
+                    f"[Router Gate] 拦截：本钩子与已加载的 agent-compass 技能目录版本不一致（{exc}）。"
+                    "请运行 `agentcompass setup` 使钩子与技能目录来自同一次安装后重试。")
             if reason:
                 return format_response(False, harness_kind, reason)
         if not trigger:

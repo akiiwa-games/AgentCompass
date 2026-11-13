@@ -28,18 +28,29 @@ flowchart LR
 ```
 
 ```text
-fit        = sum_a w_a * (min(z_a, t_a) - t1_a) / sum_a w_a   (in panel standard deviations; zero point t1_a = panel weakest)
+fit        = sum_a w_a * (min(z_a, c_a) - t1_a) / sum_a w_a   (in panel standard deviations; zero point t1_a = panel weakest)
 targets    = t1: panel minimum, t2: panel median, t3: anchor (claude-opus-5-5 at High = 0.0)
+cap c_a    = t_a at demand levels 1 and 2; ceiling_a at level 3 (the highest measured or interpolated High value of any
+             catalogued model, never an estimate, converted or manual value)
 continuity = max positive (t3 - t2) among highest-demand categories when coupling == "high", else 0
 score N    = fit + continuity + boost - quota_cost
 ```
 
 The classifier states how much the task needs (0–3) of `divergence`, `coding`, `aesthetics` and `tool_operation` (`tool_operation`
 level 1 imposes no ability requirement; level 2 evaluates per-effort `responsiveness`; level 3 evaluates
-`min(responsiveness, image_recognition)` and requires image input). A model's category scores are panel standard scores (`z`)
+`min(responsiveness, image_recognition)` and requires image input; it applies the cap per facet). Routine levels pay nothing
+for ability above their target; a level-3 demand keeps crediting ability up to the category's ceiling, so the hardest tasks
+can prefer a model measured above the anchor. `t3` stays the anchor: the origin of `z`, level 3 of the manual 1–3 scale and the
+upper end of `continuity`. A model's category scores are panel standard scores (`z`)
 from public cited boards; a facet a model lacks is estimated from its same-series sibling or its `arena.ai` Overall tier fit (see
 [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). `quota_cost` is the quota economy: the part of the
-task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. Equal net scores
+task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. The window's
+price comes from a value ladder built over the demand grid `quota_economy.FIVE_AXIS_DEMAND_GRID` (levels 0–3 on the thinking
+categories), and its level-3 points read the fit with the ceiling as cap. So a model that raises a ceiling moves quota prices
+for every task, at every demand level, not only for level-3 tasks. Measured on the test fixtures when the ceilings were
+introduced (2026-11-13), the fit unchanged in both cases: the Claude window priced at 0.02511 before and 0.01043 after
+(`Fleet` fixture, Claude and Codex 60% used), and ChatGPT Web's cadence pool for a level-1 divergence task with 0 of 5 seats
+used and 9 h to reset priced at 0.003385 before and 0.006497 after (cost 0.0049 → 0.0097). Equal net scores
 `N` go to the candidate that starts sooner (shorter wait before reset), then finishes sooner, then spends fewer list-price USD,
 then has the higher demand-weighted category level and preferred harness (`candidate_ranking.five_axis_order`). Expiring quota is
 not a tie-break: under-line allowance already lowers `quota_cost`.
@@ -50,6 +61,12 @@ several pools must clear every window; the tightest window binds. The same model
 (Codex vs Pi is only a tie-break step for read-heavy vs. edit-heavy work). Unknown capacity stays unknown: the account stays
 out of automatic routing until public data has it.
 A metered USD account is not one of those resetting windows. The account, the spend reading, the balance, and the leftover-field cleanup are defined in [Metered USD](#metered-usd).
+Panel membership is derived from the rule above, never a hand list. Adding a non-panel model moves no panel score and no
+target (it can raise a ceiling). A change of members moves `sd_panel`, `t1` and `t2`, and with them the level-2 cap and the
+exchange rate between ability and quota cost, so `agentcompass data refresh` (and `five_axis.py`) compares the panel it computed
+with the shipped `five-axis-scores.json`: when the members differ it prints the added and removed models and, per category and
+facet, the old and new `sd_panel`, `t1`, `t2` and ceiling, then exits 2 and writes nothing unless `--accept-panel-change` is
+passed. An accepted change is recorded in `anchor.panel_change` (date, added, removed, shifts) and carried forward until the next.
 Category scores live in [`skills/agent-compass/references/five-axis-scores.json`](../skills/agent-compass/references/five-axis-scores.json),
 and plan window structure in [`skills/agent-compass/references/plan-templates.json`](../skills/agent-compass/references/plan-templates.json).
 
@@ -143,7 +160,7 @@ Companion repositories and runtime directories are separate local checkouts or i
 | `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`), including the split allocator modules (`allocator`, `account_fleet`, `task_intake`, `axis_scores`, `quota_economy`, `quota_pools`, `quota_overrides`, `candidate_eval`, `candidate_ranking`, `ledger_snapshot`, `worker_sessions`), dispatch/usage scripts, and `calibration/` (`agentcompass data refresh`). |
 | `setup/` | Onboarding (`onboard.py`), global host rule and skill sync (`sync_host_globals.py`, `host_rules.py`), `PreToolUse` / `tool_call` spawn and rotation gate (`router_gate_hook.py`), and Paseo SDK dispatch bridge (`paseo_dispatch_bridge.mjs`). |
 | `tray/` | Windows tray (`app.pyw`), decision console shell (`router_window.py`) and page mixins (`panel_scoring.py`, `panel_quota.py`, `panel_policy.py`, `panel_models.py`, `panel_strategy.py`, `panel_system.py`, `panel_plugins.py`, `panel_widgets.py`), Tk-free view model (`router_data.py`), `radar_chart.py`, `quota_line.py`, `decision_theatre.py`, updaters, and service supervisor. |
-| `packaging/` & `audit/` | Wheel/PyInstaller/Inno Setup bundling (`app_bundle.py`, `app_bootstrap.py`, `check_payload.py`), behavioral harnesses (`verify_release.py`, `sandbox_check.py`, `foreign_machine_check.py`, `zero_dispatch_check.py`), and read-only ledger compliance audit (`audit/router_audit.py`). |
+| `packaging/` & `audit/` | Wheel/PyInstaller/Inno Setup bundling (`app_bundle.py`, `app_bootstrap.py`, `check_payload.py`), behavioral harnesses (`verify_release.py`, `sandbox_check.py`, `foreign_machine_check.py`, `zero_dispatch_check.py`), read-only ledger compliance audit (`audit/router_audit.py`), and the maintainer calibration report (`audit/calibration_report.py`). |
 | `usage-float/`, `gemini-web/`, `dot2api/`, `codex-chatgpt-web/`, `easytier/` | Optional companion checkouts and runtime state; see [usage-float](https://github.com/akiiwa-games/usage-float#readme) and [gemini-web](https://github.com/akiiwa-games/gemini-web#readme). |
 
 ---
@@ -179,7 +196,7 @@ The account's Paseo provider extends Claude Code with both `CLAUDE_CONFIG_DIR` a
 
 After signing in to the isolated home:
 1. Close the Usage Float window (so its shutdown does not overwrite `config.json`).
-2. Run `python setup/claude2_config.py --account team-backup --home <signed-in-home> --label 'Team backup'`. The script backs up existing settings, registers the named Paseo provider, enables that account's `7d` and `5h` Usage Float rows, and adds its projects directory to capacity analytics. The historical filename and no-argument `claude-2` default remain compatibility shortcuts.
+2. Run `python setup/register_claude_account.py --account team-backup --home <signed-in-home> --label 'Team backup'`. The script backs up existing settings, registers the named Paseo provider, enables that account's `7d` and `5h` Usage Float rows, and adds its projects directory to capacity analytics. `--account` is required; `--home` defaults to `~/.<account>`.
 3. Run `paseo reload` and reopen Usage Float.
 
 ---
@@ -210,7 +227,7 @@ The tray icon displays a status dot: **green** when core usage collection and al
   - **Ledger Replay**: Browse the last 30 router decisions and click any entry to replay its historical parameters against current live quota windows.
   - **Decision film** (`decision_theatre.py`): Replays a decision step by step (`task → kind → routes → ranking → five-axis radar`) comparing the winner against the best-ranked other model (routes of the same model share axis scores).
   - **Quota line** (`quota_line.py`): Plots up to four windows on their own reset clocks (the chosen window first, then sibling and remaining windows): the straight recovery line `C × elapsed / period`, actual usage up to now (**Used first** under the line, **Held back** over it; solid where readings were recorded in the current period, dotted when fitted; display-only and never read by the router's economics), the chosen task's projected spend up to the reset edge, and the closing pace line to reset. Simulations and snapshots without a saved block derive it via `ledger_snapshot.with_quota_line` from `decision.system.quota_windows` and candidate `economy`; malformed fields degrade gracefully without blocking the rest of the decision.
-  - **Radar Comparison**: Switch between **Decision Score (5D)** (the winner against the best-ranked other model on creativity (`divergence`), coding, aesthetics, tool operation, and quota economy, mapped to `0..1` shares `(min(z, t3) - t1) / (t3 - t1)`) and **Model DNA (5D)** (any two models on the same five axes from their static profiles; quota economy there is price economy `1 − usd_per_hour / max_usd_per_hour`, not live quota). Each model is a sheet of tinted glass inside a hairline frame of full scale, and the chart shows the two models' five values and nothing else. Hovering any vertex shows the formula and raw values.
+  - **Radar Comparison**: Switch between **Decision Score (5D)** (the winner against the best-ranked other model on creativity (`divergence`), coding, aesthetics, tool operation, and quota economy, mapped to `0..1` shares `(min(z, t3) - t1) / (t3 - t1)`) and **Model DNA (5D)** (any two models on the same five axes from their static profiles; quota economy there is price economy `1 − usd_per_hour / max_usd_per_hour`, not live quota). Each model is a sheet of tinted glass inside a hairline frame of full scale, and the chart shows the two models' five values and nothing else. Hovering any vertex shows the formula and raw values; in a decision, a category the task demands at level 3 also shows its score above the anchor and the level-3 cap (the ceiling, with the model that sets it), since the spoke stops at the anchor.
 - **Account Quotas & In-Flight Tasks**:
   - Live status badges (`Ready`, `Paused`, `Plugin Disabled`, `Blocked by Host Policy`), remaining percentage and API-equivalent USD per window, 3h/24h burn rates, reset countdowns, one-click quota refresh, and active worker sessions with their cumulative uncompressed context against the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray).
 - **Model Settings** — three tabs: **Models & Boost**, **Scores & Capabilities**, and **System Options**.
@@ -303,18 +320,41 @@ Safety properties of the sync (`agentcompass setup` runs the same code):
 
 ## 8. Deployment & Tests
 
+**Installed product** (the normal machine). The installer registers the "AgentCompass" logon task, and runs `agentcompass setup --yes` only when it was started with `/SETUP=hooks` or `/SETUP=nohooks` (the hook flag follows that value; without either, setup is not run); the tray's **Update AgentCompass** button does the update (code package or full installer, see section 3). The tray executable also runs its bundled helper modules, and these are the command-line forms of the same steps:
+
 ```powershell
-# Deployment & service management
-python tray\deploy.py check                        # Inspect current installation state
-python tray\deploy.py install                      # Apply ChatGPT Web patches, build launcher, register logon task
-python tray\deploy.py restart                      # Restart the tray UI without stopping background services
-python tray\deploy.py all                          # Install and restart
-python tray\updates.py check                       # Check how many commits each managed repo is behind upstream
-python tray\updates.py update                      # Fast-forward pull, rebuild, and restart enabled components
+$tray = "$env:LOCALAPPDATA\AgentCompass\AgentCompass.exe"          # the installer's default directory
+& $tray --run-component deploy check                 # report what is in place and what is not; changes nothing
+& $tray --run-component deploy install               # ChatGPT Web patch and build, startup task, user environment variables
+& $tray --run-component deploy restart               # restart the tray without stopping background services
+& $tray --run-component updates check                # print whether a newer GitHub release exists (downloads nothing), then one line each for the Dot2API, ChatGPT Web and Usage Float clones: version and commits behind upstream
+& $tray --run-component updates update               # fast-forward the enabled plugin clones (Dot2API, ChatGPT Web, Usage Float, Gemini Web, Muse2API), then print the same release notice
+& $tray --run-component updates update-agentcompass  # what the tray button runs: update AgentCompass itself and restart the tray
 ```
+
+`deploy install` does not link skills in the installed product (`agentcompass setup` does), and `updates update` never updates AgentCompass itself.
+
+**Git checkout** (development). `python tray\deploy.py <check|install|restart|all|icons|startup>` and `python tray\updates.py <check|build|update|update-agentcompass>` take the same actions. Differences: `deploy install` also links the checkout's `skills/` into `~/.codex/skills` and `~/.claude/skills`, `updates check` prints the checkout's `git describe` and a `git pull` hint instead of a release comparison (the three clone lines follow in both shapes), and `update-agentcompass` fast-forwards the checkout (`git pull --ff-only`, refused when the tree is dirty or the branch does not track `origin`).
 
 ```powershell
 # Hermetic pytest suites (isolated temp HOME/APPDATA per xdist worker; no manual env redirection needed)
 pytest <test files of the touched feature>   # a feature change within a version: only its own tests
 pytest -n auto                              # regression: the full suite, only before a release
 ```
+
+**CI (`.github/workflows/ci.yml`, on push to `main` and on pull requests):**
+
+- `tests` (`windows-latest`): installs `-e ".[dev,tray]"` and runs `pytest -n auto -m "not slow"`, the fast suite under the same hermetic setup (`conftest.py`, `hermetic_run.py`). Tests marked `slow` (real subprocesses, packaging, sandbox checks, real Tk main loops) are not run there.
+- `posix-cli` (`ubuntu-latest`): builds the wheel, installs it into a fresh virtualenv and runs `agentcompass plan --demo --dry-run` and `agentcompass doctor`, the macOS / Linux CLI path of the README.
+- Packaging, sandbox and tray-installer checks stay in `release.yml` (tag push). `python -X utf8 packaging/verify_release.py` runs the pre-release verification with the running interpreter, which must have the dev and tray extras installed (it names any missing module and stops); its report goes to `verify-release-report/` in the repository root unless `--report` says otherwise.
+- Lint: `[tool.ruff]` in `pyproject.toml` selects only defect rules (syntax errors, undefined names, unused imports and variables). `ruff check` is not a CI step until the tree is clean under that rule set.
+
+### Calibration report (`audit/calibration_report.py`)
+
+Maintainer-only and read-only for the whole run: it reads `dispatch.sqlite3` and `router-ledger.jsonl` from the state directory, takes prices and capacities from the shipped reference data plus the plan facts already in the state directory's `provider-inventory.json` (never through fleet discovery, which rewrites that file), and writes only `report.md` and `report.json`. It compares expectation with outcome: classifier `expected_hours` against active duration (by work kind and by dominant demand category); recorded tokens at public list price against `expected_usd`, with the actual list-price USD per active hour against the `usd_per_hour` the estimate used (so the hours error and the rate error read apart) and the share of the window's cited capacity (by model and effort); and how dispatches ended (completed, failed, relaunched on another candidate, canceled, other, open, plus how many workers rotation replaced and how many started by rotation). Cache-write tokens are priced where the data lists a cache-write price; otherwise the USD is a lower bound (`>=`) with the cache-write token count beside it. Pinned (`user_override`) and `--keep-whole` dispatches are their own groups and stay out of the routed tables. Every cell shows its sample size, and a cell under `MIN_CELL` samples is marked too small to read. Ratios are medians of the per-dispatch ratios, and a retried task's later attempts are left out of the hours and spend cells (only the completed attempt carries active time). A **Coverage** block names what was not measured or not read: only completed dispatches carry active time and tokens, only Claude and Codex session logs are read, so other harnesses, non-Paseo hosts and failed or canceled dispatches record no measurement; unreadable rows and ledger lines are counted there.
+
+```powershell
+python -X utf8 audit/calibration_report.py --since 2026-11-01 --until 2026-11-13   # writes <state dir>/calibration/<run date>/report.{md,json}
+```
+
+A missing state directory or an unreadable database stops the run with a message naming the file. The default output directory is under the state directory; `--out DIR` writes the two files to `DIR` instead, the one place the run may write elsewhere. The files hold counts, medians and group names only (no task text, paths, ids or credentials), and nothing in them is a routing input: recorded outcomes never reach allocation. The maintainer reads the report and edits shipped reference data by hand; the loop and its boundaries are in `audit/calibrate/SKILL.md`.

@@ -21,8 +21,13 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# The audit runs from a checkout (it is not in the wheel); put the checkout root on the path so the package that owns
+# the skill location, agentcompass/locations.py, imports the same way when run as `python audit/router_audit.py`.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from agentcompass import locations
+
 HOME = Path.home()
-SKILL_SCRIPTS = Path(os.environ.get("ROUTER_SKILL_DIR", HOME / ".codex" / "skills" / "agent-compass" / "scripts"))
+SKILL_SCRIPTS = locations.skill_root() / "agent-compass" / "scripts"
 LEDGER = Path(os.environ.get("ROUTER_LEDGER", HOME / ".agent-compass" / "router-ledger.jsonl"))
 DOT_DB = HOME / ".dot2api" / "data" / "dot2api.sqlite3"
 REPORT_DIR = Path(__file__).resolve().parent / "reports"
@@ -807,9 +812,10 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
     for name, row in sorted(ctx["usage_now"].get("accounts", {}).items()):
         window = router.tightest_window(row)
         flag = " ⚠标志冲突" if row.get("flag_conflict") else ""
+        reset_days = "—" if not window else f"{window['seconds_until_reset'] / 86400:.1f}d"
         lines.append(f"| {name}{' (按量)' if name.lower() in METERED else ''} | {row.get('status')}{flag} | {(window or {}).get('id', '—')} | "
                      f"{fmt_pct((window or {}).get('remaining_pct_before_reset'))} | "
-                     f"{'—' if not window else f'{window['seconds_until_reset'] / 86400:.1f}d'} | {(row.get('fetched_at') or '—')[:16]} |")
+                     f"{reset_days} | {(row.get('fetched_at') or '—')[:16]} |")
     series = quota_series(rows + [ctx["now_row"]])
     if series:
         lines += ["", "### codex 额度曲线(同一重置窗口内;“理由”= 取自 judge 理由文字,调用方裁掉了用量块)", "",

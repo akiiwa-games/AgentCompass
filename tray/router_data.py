@@ -430,7 +430,8 @@ def candidate_rows(result: dict) -> list[dict]:
             "id": c.get("id"), "model": bundle.get("model"), "account": bundle.get("account"),
             "effort": bundle.get("effort"), "fast": bool(bundle.get("fast")), "score": c.get("score"), "fit": comp.get("fit"),
             "opportunity_cost": comp.get("opportunity_cost"), "boost": comp.get("boost") or 0,
-            "excluded": list(c.get("excluded") or []), "components": comp})
+            "excluded": list(c.get("excluded") or []), "components": comp,
+            "headroom": c.get("five_axis_headroom") or {}})
     return rows
 
 
@@ -450,7 +451,7 @@ def decision_pair(result: dict, first: str | None = None, second: str | None = N
 def decision_series(pair: list[dict]) -> tuple[list[dict], list[dict]]:
     series = [{"label": f"{display_names.candidate_label(r)} · {r['score']:.3f}", "values": radar_chart.score_dimensions(r["components"]),
                "estimated": _estimated_axes(r)} for r in pair]
-    raw = [radar_chart.score_raw(r["components"]) for r in pair]
+    raw = [radar_chart.score_raw(r["components"], r.get("headroom")) for r in pair]
     return series, raw
 
 

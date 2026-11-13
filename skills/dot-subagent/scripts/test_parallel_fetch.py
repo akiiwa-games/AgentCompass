@@ -1,8 +1,10 @@
 import http.server
 import threading
 import time
+import types
 import unittest
 import urllib.error
+from unittest import mock
 
 import parallel_fetch
 
@@ -38,17 +40,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-class ParallelFetchTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
-        cls.base = f"http://127.0.0.1:{cls.server.server_address[1]}"
+class Server(http.server.ThreadingHTTPServer):
+    # The default backlog of 5 is what a burst of back-to-back connections overflows on Windows, which answers with a refusal.
+    request_queue_size = 128
 
-    @classmethod
-    def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
+
+class ParallelFetchTests(unittest.TestCase):
+    def setUp(self):
+        # Own server and counters per test: no test depends on a class-level server surviving the scheduler's ordering
+        # (pytest-xdist may run the tests of one class on different workers, interleaved with other classes).
+        # Binding and listening finish inside the constructor, so the port accepts connections before the first request.
+        Handler.flaky = {}
+        Handler.active = Handler.peak = 0
+        self.server = Server(("127.0.0.1", 0), Handler)
+        self.addCleanup(self.server.server_close)
+        thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def no_pause_between_retries(self):
+        # Only this module's retry pause is removed; time.sleep stays real for the server's handler threads.
+        stub = types.SimpleNamespace(sleep=lambda seconds: None)
+        patcher = mock.patch.object(parallel_fetch, "time", stub)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_downloads_overlap_and_each_url_keeps_its_own_bytes(self):
         urls = [f"{self.base}/f{i}" for i in range(16)]
@@ -58,18 +75,14 @@ class ParallelFetchTests(unittest.TestCase):
         self.assertGreater(Handler.peak, 1)
 
     def test_a_404_is_none_and_a_flaky_server_is_retried(self):
-        original = parallel_fetch.time.sleep
-        parallel_fetch.time.sleep = lambda seconds: None
-        self.addCleanup(lambda: setattr(parallel_fetch.time, "sleep", original))
+        self.no_pause_between_retries()
         got = parallel_fetch.fetch_all([f"{self.base}/missing", f"{self.base}/flaky1"], threads=2)
         self.assertIsNone(got[f"{self.base}/missing"])
         self.assertEqual(got[f"{self.base}/flaky1"], b"/flaky1")
         self.assertEqual(Handler.flaky["/flaky1"], 3)
 
     def test_a_url_that_keeps_failing_raises_after_the_tries(self):
-        original = parallel_fetch.time.sleep
-        parallel_fetch.time.sleep = lambda seconds: None
-        self.addCleanup(lambda: setattr(parallel_fetch.time, "sleep", original))
+        self.no_pause_between_retries()
         Handler.flaky["/flaky9"] = -100
         with self.assertRaises(urllib.error.HTTPError):
             parallel_fetch.fetch_all([f"{self.base}/flaky9"], threads=1, tries=3)

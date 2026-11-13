@@ -13,6 +13,7 @@ Runs the full pre-release verification suite:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import subprocess
 import sys
@@ -24,18 +25,15 @@ ROOT = HERE.parent
 USAGE_FLOAT_DIR = ROOT / "usage-float"
 
 
-def _find_tray_python() -> str:
-    candidates = [
-        Path(sys.executable),
-        Path.home() / "AppData/Local/Programs/Python/Python313/python.exe",
-        Path.home() / "AppData/Local/Programs/Python/Python312/python.exe",
-    ]
-    for cand in candidates:
-        if not cand.is_file():
-            continue
-        res = subprocess.run([str(cand), "-c", "import pystray, PIL, psutil, pytest"], capture_output=True)
-        if res.returncode == 0:
-            return str(cand)
+REQUIRED_MODULES = ("pystray", "PIL", "psutil", "pytest")
+
+
+def _check_interpreter() -> str:
+    """The running interpreter runs every step; it must hold the tray and test dependencies."""
+    missing = [m for m in REQUIRED_MODULES if importlib.util.find_spec(m) is None]
+    if missing:
+        raise SystemExit(f"{sys.executable} lacks required module(s): {', '.join(missing)}; run this script with an "
+                         'interpreter that has the dev and tray extras installed (pip install -e ".[dev,tray]")')
     return sys.executable
 
 
@@ -65,10 +63,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--wheel", type=Path, help="Existing wheel to verify.")
     parser.add_argument("--with-windows-sandbox", action="store_true", help="Also run windows_sandbox_check.py --connect (W01).")
-    parser.add_argument("--report", type=Path, default=ROOT / ".route-briefs" / "verify-release-report")
+    parser.add_argument("--report", type=Path, default=ROOT / "verify-release-report")
     args = parser.parse_args(argv)
 
-    py = _find_tray_python()
+    py = _check_interpreter()
     started = time.time()
     steps: list[dict] = []
 

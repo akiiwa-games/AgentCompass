@@ -59,6 +59,9 @@ def _snapshot_row(candidate, detail):
         for k in ('fit', 'opportunity_cost'):
             if k in comps:
                 row['components'][k] = _round(comps[k])
+    if candidate.get('five_axis_headroom') and not excluded:
+        row['five_axis_headroom'] = {a: {k: _round(v) if k != 'model' else v for k, v in h.items()}
+                                     for a, h in candidate['five_axis_headroom'].items()}
     econ = candidate.get('economy')
     if isinstance(econ, dict) and not excluded:
         # What the README page reads (round 13): per priced window the candidate's spend, cost and need probability at the

@@ -377,6 +377,42 @@ class RefreshEntryTests(unittest.TestCase):
         refresh.rebuild(self.data_dir, now=t_fixed, references=self.refs_dir)
         self.assertEqual((self.refs_dir / 'public-data.json').read_bytes(), fixed_manifest_bytes)
 
+    def test_a_panel_change_is_refused_unless_accepted_and_then_recorded(self):
+        """Brief 2026-11-13: when the panel's members differ from the shipped five-axis-scores.json the refresh prints the
+        change, writes nothing and exits 2; `--accept-panel-change` writes it and records it in `anchor.panel_change`,
+        and a later run with the same members carries that record forward."""
+        code, stdout, stderr = self._run_refresh('--no-fetch')
+        self.assertEqual(code, 0, stderr + stdout)
+        scores = self.refs_dir / 'five-axis-scores.json'
+        doc = json.loads(scores.read_text(encoding='utf-8'))
+        members = list(doc['anchor']['panel'])
+        self.assertGreater(len(members), 1)
+        self.assertIsNone(doc['anchor']['panel_change'])
+        dropped = members[-1]
+        doc['anchor']['panel'] = [*members[:-1], 'gone-model']        # the shipped panel had gone-model, not `dropped`
+        scores.write_text(json.dumps(doc, indent=1) + '\n', encoding='utf-8', newline='\n')
+        before = {p.name: p.read_bytes() for p in self.refs_dir.iterdir() if p.is_file()}
+
+        code, stdout, stderr = self._run_refresh('--no-fetch')
+        self.assertEqual(code, 2, stderr + stdout)
+        self.assertIn(f'added {dropped}', stderr)
+        self.assertIn('removed gone-model', stderr)
+        self.assertIn('--accept-panel-change', stderr)
+        for category in ('divergence', 'coding', 'aesthetics', 'tool_operation'):
+            self.assertIn(f'  {category}', stderr)
+        self.assertEqual({p.name: p.read_bytes() for p in self.refs_dir.iterdir() if p.is_file()}, before)
+
+        code, stdout, stderr = self._run_refresh('--no-fetch', '--accept-panel-change')
+        self.assertEqual(code, 0, stderr + stdout)
+        record = json.loads(scores.read_text(encoding='utf-8'))['anchor']['panel_change']
+        self.assertEqual((record['added'], record['removed']), ([dropped], ['gone-model']))
+        self.assertRegex(record['date'], r'^\d{4}-\d{2}-\d{2}$')
+        self.assertEqual(set(record['shifts']), {'divergence', 'coding', 'aesthetics', 'tool_operation'})
+
+        code, stdout, stderr = self._run_refresh('--no-fetch')
+        self.assertEqual(code, 0, stderr + stdout)
+        self.assertEqual(json.loads(scores.read_text(encoding='utf-8'))['anchor']['panel_change'], record)
+
     def test_missing_source_exits_2_as_before(self):
         # Missing board source (`designarena-svg.html`) rebuilds, reports missing in source-age table, and exits 2.
         (self.data_dir / 'designarena-svg.html').unlink()
@@ -581,6 +617,51 @@ class ModelRowMergeTests(unittest.TestCase):
             code = refresh.main(['--data', str(root / 'data'), '--references', str(root), '--model', anchor])
         self.assertEqual(code, 2)
         self.assertIn('full refresh', err.getvalue())
+
+    def test_adding_a_non_panel_model_keeps_the_scale_targets_and_panel_record_and_a_ceiling_moves_only_to_it(self):
+        """End to end over synthetic boards and the five-axis-scores/3 file: the shipped panel, sd_panel, panel_change
+        and level 1..3 targets stay; a level-3 ceiling (highest measured model, any catalogued model) stays unless the
+        added model now sets it."""
+        root = Path(tempfile.mkdtemp(prefix='refresh-model-e2e-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        shipped_data, refs = build_calibration_fixture(root / 'shipped', now)
+        refresh.rebuild(shipped_data, now=now, references=refs)
+        added = 'gpt-5.6-sol'
+        with patch(f'{__name__}.PANEL_MODELS', (*PANEL_MODELS, (added, 'GPT-5.6 Sol', 'OpenAI'))):
+            fresh_data, _ = build_calibration_fixture(root / 'fresh', now)
+        read = lambda name: json.loads((refs / name).read_text(encoding='utf-8'))
+        meas_before, scores_before = read('public-measurements.json'), read('five-axis-scores.json')
+        refresh.rebuild(fresh_data, now=now, references=refs, models=[added])
+        meas_after, scores_after = read('public-measurements.json'), read('five-axis-scores.json')
+        self.assertTrue(meas_after['models'][added])
+        self.assertEqual({m: r for m, r in meas_after['models'].items() if m != added},
+                         {m: r for m, r in meas_before['models'].items() if m != added})
+        self.assertEqual(meas_after['panel'], meas_before['panel'])
+        for key in ('panel', 'panel_n', 'sd_panel', 'panel_change'):
+            self.assertEqual(scores_after['anchor'].get(key), scores_before['anchor'].get(key), key)
+
+        def walk(node, path=()):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    yield from walk(value, (*path, key))
+            else:
+                yield path, node
+        strip = lambda targets: {p: v for p, v in walk(targets) if 'ceiling' not in p}
+        self.assertEqual(strip(scores_after['anchor']['targets']), strip(scores_before['anchor']['targets']))
+
+        def ceilings(targets):
+            out = {}
+            for path, value in walk(targets):
+                if 'ceiling' in path and path[-1] in ('value', 'model'):
+                    out.setdefault(path[:path.index('ceiling')], {})[path[-1]] = value
+            return out
+        before, after = ceilings(scores_before['anchor']['targets']), ceilings(scores_after['anchor']['targets'])
+        self.assertEqual(set(after), set(before))
+        for where, cap in after.items():
+            if cap != before[where]:
+                self.assertEqual(cap['model'], added, where)
+                self.assertGreaterEqual(cap['value'], before[where]['value'], where)
 
     def test_the_blast_radius_counts_only_other_models_values(self):
         before = {'models': {'a': {'x': 1.0, 'y': {'z': 2}}, 'new-m': {'x': 0}}}

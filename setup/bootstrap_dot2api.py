@@ -11,8 +11,9 @@ from pathlib import Path
 
 WORKSPACE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WORKSPACE / 'tray'))
+sys.path.append(str(WORKSPACE))
+from agentcompass.ports import get as service_port
 from runtime_paths import uv_path
-from service_ports import get as service_port
 
 ROOT = WORKSPACE / 'dot2api'
 UV = uv_path()

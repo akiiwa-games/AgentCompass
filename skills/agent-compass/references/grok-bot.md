@@ -94,7 +94,7 @@ agentcompass providers
 agentcompass roll --brief <task.md> --hours 0.1
 ```
 
-The first four lines are Grok Bot's own installer and setup tool, which `agentcompass` does not wrap; they only exist at these paths in a source checkout (an installed package ships the same files under `agentcompass/data/skills/agent-compass/`). In a checkout without an install, write `python -X utf8 agentcompass` for `agentcompass` (from the repository root that is a valid path).
+The first four lines are Grok Bot's own installer and setup tool, which `agentcompass` does not wrap; they only exist at these paths in a source checkout (an installed package ships the same files under `data/skills/agent-compass/` inside its own `agentcompass` package folder). In a checkout without an install, write `python -X utf8 agentcompass` for `agentcompass` (from the repository root that is a valid path).
 
 No provider flags are needed for automatic selection. To honor a user explicitly
 requesting Grok Bot, the existing override remains available:

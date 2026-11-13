@@ -32,7 +32,7 @@ question or permitted transfer is unclear, return the specific gap to the parent
 intact; never infer broader permission.
 
 Every outgoing prompt, summary, bundle, manifest, attachment and substantive follow-up falls under
-the router's [transfer rules](../agent-compass/SKILL.md#4-dispatch-authority-and-context).
+the router's [transfer rules](../agent-compass/SKILL.md#dispatch).
 Credentials, authentication material, private keys, personal/regulated or live financial account
 data are never inputs. A leaf cannot broaden or substitute the package; return proposed changes to
 the parent. Existing session authorization covers revisions within its scope.

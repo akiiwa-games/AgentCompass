@@ -307,20 +307,42 @@ def launch_request(bundle, launch):
     return canonical_request(dict(launch, provider=provider + '/' + model, settings=settings))
 
 
-def active_records(connection, now):
+def held_records(stored, now):
+    """The live reservations among stored dispatch rows, one per worker."""
     import quota_pools
     live = [{'stage': 'dispatch', 'dispatch_id': r['dispatch_id'], 'state': r['state'],
              'at': r['created_at'], 'lease_until': r['lease_until'], 'choice': r['bundle']['bundle_id'],
              'bundle': r['bundle'], 'expected_usd': r['expected_usd'], 'usage': r['usage'],
              **({'agent_id': r['agent_id']} if r.get('agent_id') else {})}
-            for r in rows(connection, 'dispatches')
+            for r in stored
             if r.get('dispatch_mode', 'paseo') == 'paseo' and r['state'] in ACTIVE and parse(r['lease_until']) > now]
     return quota_pools.live_dispatch_holds(live)
 
 
-def _read_only(path):
-    connection = sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True)
+def active_records(connection, now):
+    return held_records(rows(connection, 'dispatches'), now)
+
+
+def _read_only(path, timeout=5.0):
+    connection = sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True, timeout=timeout)
     return connection
+
+
+def read_dispatches(path=None, timeout=0.5):
+    """Every stored dispatch row, read without writing, creating the file, or waiting on a writer longer than `timeout`
+    seconds (sqlite3.OperationalError then). [] when no registry exists yet."""
+    target = Path(path or db_path())
+    if not target.exists():
+        return []
+    connection = _read_only(target, timeout)
+    try:
+        return rows(connection, 'dispatches')
+    except sqlite3.OperationalError as exc:
+        if 'no such table' in str(exc):
+            return []
+        raise
+    finally:
+        connection.close()
 
 
 def reservations(now=None, path=None, read_only=False):

@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 import roll
+import turn_refusal
 import worker_sessions
 
 from router_test_support import isolated_router_state
@@ -16,6 +17,12 @@ def setUpModule():
 
 
 class RollNotificationTests(unittest.TestCase):
+    def setUp(self):
+        # The account side of the verdict is test_turn_refusal.py's; here the carried context alone decides.
+        patcher = patch.object(turn_refusal, 'worker_refusal', return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_continuation_uses_carried_sum_and_threshold(self):
         with patch.object(worker_sessions, 'rotation_threshold', return_value=2000000):
             for context, expected in ((999999, 'same worker'), (1000000, 'rotate')):

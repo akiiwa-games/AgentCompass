@@ -5,7 +5,6 @@ only; product files and cached usage are read without any network requests.
 """
 from __future__ import annotations
 
-import base64
 import copy
 from contextlib import closing
 from datetime import datetime, timezone
@@ -17,6 +16,7 @@ import shutil
 import sqlite3
 import tempfile
 import tomllib
+from typing import NamedTuple
 import account_state
 import antigravity_plan
 import grok_bot_paths
@@ -989,6 +989,31 @@ def discover(home=None, environ=None, now=None):
     return _discover(home, environ, now)
 
 
+class _UsageCache(NamedTuple):
+    """The collector's cached readings, polls and attempts by account (usage_cache), read once per discovery."""
+    rows: dict
+    polls: dict
+    attempts: dict
+
+
+def _read_usage_cache(home, environ):
+    cache = usage_cache.read(None, home, environ)[0] or {}
+    return _UsageCache(*(cache.get(key) if isinstance(cache.get(key), dict) else {}
+                         for key in ('providers', 'poll', 'attempts')))
+
+
+def _merge(result, known_bindings, accounts=None, launchers=None, bindings=None):
+    """Add one source's rows in the order it found them. A row of None takes that account out again (Oh My Pi's API
+    side when only subscription logins exist)."""
+    for name, row in (accounts or {}).items():
+        if row is None:
+            result['accounts'].pop(name, None)
+        else:
+            result['accounts'][name] = row
+    result['launchers'].update(launchers or {})
+    known_bindings.update(bindings or {})
+
+
 def _discover(home=None, environ=None, now=None):
     environ = os.environ if environ is None else environ
     home = Path(home) if home is not None else Path(environ.get('ROUTER_PROVIDER_HOME') or Path.home())
@@ -1000,113 +1025,175 @@ def _discover(home=None, environ=None, now=None):
     definitions = agents.get('providers') or {}
     if not isinstance(definitions, dict):
         definitions = {}
-    cache = usage_cache.read(None, home, environ)[0] or {}
-    cache_rows = cache.get('providers') if isinstance(cache.get('providers'), dict) else {}
-    cache_polls = cache.get('poll') if isinstance(cache.get('poll'), dict) else {}
-    cache_attempts = cache.get('attempts') if isinstance(cache.get('attempts'), dict) else {}
+    cache = _read_usage_cache(home, environ)
     result = {'schema': 'agent-compass.providers.v2.local', 'generated_at': now.isoformat(),
               'accounts': {}, 'launchers': {}, 'saved': [], 'source_paths': {},
               'sources': {'paseo': paseo_error or 'read'}}
-    # Conventional alternate homes (.claude-*, .codex-*) are also shown when they have no launcher.
-    slots, orca_slots = _harness_slots(home, environ, definitions)
     # Sources retain private binding material only until this function returns.
     bindings = {}
-    for name, (family, default_home) in slots.items():
-        env, enabled, account_home, credential_home = _slot_layout(name, family, default_home, home, definitions)
-        auth, error = read_json(credential_home / ('.credentials.json' if family == 'claude' else 'auth.json'))
-        profile_path = home / '.claude.json' if credential_home == home / '.claude' else credential_home / '.claude.json'
-        profile, _ = read_json(profile_path) if family == 'claude' else ({}, None)
-        facts = auth_facts(family, auth, credential_home, profile.get('oauthAccount'))
-        config, base, token, models = _product_reading(family, account_home, env, auth)
-        if family == 'claude':
-            oauth_token = config['env'].get('CLAUDE_CODE_OAUTH_TOKEN')
-            if isinstance(oauth_token, str) and oauth_token:
-                facts.update(present=True, identity=digest('claude', oauth_token),
-                             credential_identity=digest('claude', oauth_token), credential_version=digest(oauth_token, ''),
-                             credential_key=digest(_resolved(credential_home), oauth_token), plan=None)
-        is_api = bool(base and token)
-        is_orca = name in orca_slots
-        bound = name == family or name in definitions or is_orca
-        row = {'family': family, 'provider': name, 'home': str(account_home),
-               'cli_installed': bool(_which(family, environ.get('PATH'))),
-               'sources': ['native'] + (['paseo'] if name in definitions else []) + (['orca'] if is_orca else []),
-               'status': 'ready' if bound and enabled and (facts['present'] or is_api) else
-                         'disabled' if not enabled else 'saved' if not bound else 'missing_credentials',
-               # No plan from the login: a live reading sets it below (usage_api / profile_api), else it is unknown.
-               'plan': None, 'plan_source': None,
-               'credential_key': facts['credential_key'],
-               'identity': facts['identity'], 'billing': ('metered' if base in OFFICIAL_API_ORIGINS
-                                                         else 'unknown') if is_api else 'subscription'}
-        bindings[name] = {'identity': facts['identity'], 'base': base, 'key': digest(token) if token else None}
-        bindings[name]['credential_identity'] = facts.get('credential_identity')
-        bindings[name]['credential_version'] = facts.get('credential_version')
-        if is_api:
-            row.update(plan=None, plan_source=None,
-                       credential_key=digest('api', _resolved(account_home), base, token),
-                       identity=digest(base, token))
-            bindings[name].update(identity=row['identity'], credential_identity=None, credential_version=None)
-            if models:
-                row['models'] = models
-        # This is the collector's local cache binding, not a gateway request.
-        cached = obj(cache_rows.get(name))
-        is_magpie, magpie_key = _magpie_state(family, account_home, config, token, is_api, cached)
-        if magpie_key:
-            row['credential_key'] = magpie_key
-        if is_api and is_magpie:
-            row['billing'] = 'subscription'
-        if (cached.get('credential_key') and cached.get('credential_key') == row.get('credential_key')):
-            row['usage_binding'] = 'matches'
-            if row['status'] == 'ready' and account_state.usage_refused_plan(cached):
-                retry_at = account_state.usage_refused_retry_at(
-                    cached, poll=cache_polls.get(name), attempt=cache_attempts.get(name), now=now
-                )
-                row.update(
-                    status=account_state.PLAN_INACTIVE,
-                    reason=account_state.usage_refused_reason(cached, retry_at=retry_at),
-                    **({'plan_inactive_at': cached.get('error_at') or cached.get('fetched_at')}
-                       if (cached.get('error_at') or cached.get('fetched_at')) else {}),
-                    **({'plan_inactive_retry_at': retry_at} if retry_at else {}),
-                )
-            elif row['status'] == 'ready' and account_state.usage_refused_credentials(cached, COLLECTOR_REJECTED[family]):
-                row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
-            label = cached.get('plan_label') if isinstance(cached.get('plan_label'), str) else ''
-            online = configured_plan(family, label) if label.strip() else None
-            if online and family == 'codex' and not is_api:
-                # The usage API's plan_type of a reading taken with the current credential: the only Codex plan source.
-                row.update(plan=online, plan_source='usage_api', plan_read_at=cached.get('fetched_at'))
-            elif online and family == 'claude' and not is_api and cached.get('plan_source') == 'profile_api':
-                # The live OAuth profile read with this credential's usage reading: the only Claude plan source.
-                row.update(plan=online, plan_source='profile_api', plan_read_at=cached.get('fetched_at'))
-            elif not row.get('plan') and online and not (family == 'claude' and not is_api):
-                row.update(plan=online, plan_source='collector', plan_read_at=cached.get('fetched_at'))
-        elif cached:
-            row['usage_binding'] = 'changed'
-        # A self-built key is a candidate only. Billing becomes metered when this credential's /key/info spend is cached.
-        # A live ANTHROPIC_AUTH_TOKEN subscription source is not a candidate.
-        if (is_api and not is_magpie and enabled and base not in OFFICIAL_API_ORIGINS
-                and not _live_auth_token_subscription(
-                    family, account_home, env, name, home, environ)):
-            row['usd_candidate'] = True
-            evidence = _metered_spend_evidence(cached, row.get('credential_key'))
-            if evidence is not None:
-                row['billing'] = 'metered'
-                row['backend_kind'] = 'metered_usd'
-                row['plan'] = 'metered USD'
-                if evidence['budget_usd'] is not None:
-                    row['budget_usd'] = evidence['budget_usd']
-            elif _metered_category_evidence(cached, row.get('credential_key')):
-                # The category stays. The latest read did not supply an amount, so no budget is copied from it.
-                row['billing'] = 'metered'
-                row['backend_kind'] = 'metered_usd'
-                row['plan'] = 'metered USD'
-        result['accounts'][name] = row
-        result['launchers'][name] = {'family': family, 'status': row['status']}
+    accounts, launchers = result['accounts'], result['launchers']
+    _merge(result, bindings, **_discover_native_slots(home, environ, now, definitions, cache))
     # Existing independent harnesses keep their established account association.
+    _merge(result, bindings, launchers=_definition_launchers(definitions, launchers))
+    _merge(result, bindings, accounts={'antigravity': _discover_antigravity(home, environ, now, state_dir, cache.rows)})
+    _merge(result, bindings, **_discover_opencode(home, environ, launchers['opencode']))
+    _merge(result, bindings, **_discover_grok(home, environ, now, definitions, cache))
+    _merge(result, bindings, **_discover_omp(home, environ, definitions, accounts))
+    _merge(result, bindings, **_paseo_recognized_only(definitions, accounts))
+    _merge(result, bindings, accounts=_paseo_advertised(definitions, accounts, launchers))
+    _merge(result, bindings, **_discover_pi(home, environ, now, definitions, cache, accounts, launchers['pi']))
+    override_doc = _load_accounts_override(environ, state_dir)
+    _merge(result, bindings, **_override_meters(override_doc, cache.rows, accounts))
+    # Configuration validity only; whether the local service answers is checked at dispatch.
+    web_home = consult_home(home, environ)
+    result['source_paths']['chatgpt-web'] = str(web_home)
+    _merge(result, bindings, accounts=_web_bridges(home, environ, web_home))
+    _merge(result, bindings, **_discover_grok_bot(state_dir, environ))
+    read_cc_switch(home, environ, definitions, result, bindings)
+    read_magpie(home, environ, result, bindings)
+    previous = _previous_inventory(state_dir)
+    apply_removals(result, previous)
+    _pause_disabled_plugins(result, state_dir)
+    _sync_launcher_status(result)
+    # One subscription can be exposed through multiple launchers/products. Keep
+    # its quota owner stable instead of giving each alias a full allowance.
+    _assign_quota_owners(accounts)
+    _latch_exhausted_quota(accounts, state_dir, cache.rows)
+    _share_online_plan(accounts)
+    _settle_account_states(result, cache.rows, previous, state_dir, now, environ, override_doc, bindings)
+    return result
+
+
+def _apply_collector_refusal(row, cached, poll, attempt, now, rejected):
+    """A ready account whose matching usage reading was refused: its plan is inactive, or its login was rejected."""
+    if row['status'] != 'ready':
+        return
+    if account_state.usage_refused_plan(cached):
+        retry_at = account_state.usage_refused_retry_at(cached, poll=poll, attempt=attempt, now=now)
+        row.update(
+            status=account_state.PLAN_INACTIVE,
+            reason=account_state.usage_refused_reason(cached, retry_at=retry_at),
+            **({'plan_inactive_at': cached.get('error_at') or cached.get('fetched_at')}
+               if (cached.get('error_at') or cached.get('fetched_at')) else {}),
+            **({'plan_inactive_retry_at': retry_at} if retry_at else {}),
+        )
+    elif account_state.usage_refused_credentials(cached, rejected):
+        row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
+
+
+def _discover_native_slots(home, environ, now, definitions, cache):
+    """Claude and Codex sign-ins: the default homes, conventional alternate homes (.claude-*, .codex-*, also shown when
+    they have no launcher), Paseo provider homes and Orca's per-account Codex homes."""
+    slots, orca_slots = _harness_slots(home, environ, definitions)
+    accounts, launchers, bindings = {}, {}, {}
+    for name, (family, default_home) in slots.items():
+        row, bindings[name] = _native_slot(name, family, default_home, name in orca_slots,
+                                           home, environ, now, definitions, cache)
+        accounts[name] = row
+        launchers[name] = {'family': family, 'status': row['status']}
+    return {'accounts': accounts, 'launchers': launchers, 'bindings': bindings}
+
+
+def _native_slot(name, family, default_home, is_orca, home, environ, now, definitions, cache):
+    """One Claude or Codex slot's row and its private binding material."""
+    env, enabled, account_home, credential_home = _slot_layout(name, family, default_home, home, definitions)
+    auth, _error = read_json(credential_home / ('.credentials.json' if family == 'claude' else 'auth.json'))
+    profile_path = home / '.claude.json' if credential_home == home / '.claude' else credential_home / '.claude.json'
+    profile, _ = read_json(profile_path) if family == 'claude' else ({}, None)
+    facts = auth_facts(family, auth, credential_home, profile.get('oauthAccount'))
+    config, base, token, models = _product_reading(family, account_home, env, auth)
+    if family == 'claude':
+        oauth_token = config['env'].get('CLAUDE_CODE_OAUTH_TOKEN')
+        if isinstance(oauth_token, str) and oauth_token:
+            facts.update(present=True, identity=digest('claude', oauth_token),
+                         credential_identity=digest('claude', oauth_token), credential_version=digest(oauth_token, ''),
+                         credential_key=digest(_resolved(credential_home), oauth_token), plan=None)
+    is_api = bool(base and token)
+    bound = name == family or name in definitions or is_orca
+    row = {'family': family, 'provider': name, 'home': str(account_home),
+           'cli_installed': bool(_which(family, environ.get('PATH'))),
+           'sources': ['native'] + (['paseo'] if name in definitions else []) + (['orca'] if is_orca else []),
+           'status': 'ready' if bound and enabled and (facts['present'] or is_api) else
+                     'disabled' if not enabled else 'saved' if not bound else 'missing_credentials',
+           # No plan from the login: a live reading sets it below (usage_api / profile_api), else it is unknown.
+           'plan': None, 'plan_source': None,
+           'credential_key': facts['credential_key'],
+           'identity': facts['identity'], 'billing': ('metered' if base in OFFICIAL_API_ORIGINS
+                                                     else 'unknown') if is_api else 'subscription'}
+    binding = {'identity': facts['identity'], 'base': base, 'key': digest(token) if token else None,
+               'credential_identity': facts.get('credential_identity'),
+               'credential_version': facts.get('credential_version')}
+    if is_api:
+        row.update(plan=None, plan_source=None,
+                   credential_key=digest('api', _resolved(account_home), base, token),
+                   identity=digest(base, token))
+        binding.update(identity=row['identity'], credential_identity=None, credential_version=None)
+        if models:
+            row['models'] = models
+    # This is the collector's local cache binding, not a gateway request.
+    cached = obj(cache.rows.get(name))
+    is_magpie, magpie_key = _magpie_state(family, account_home, config, token, is_api, cached)
+    if magpie_key:
+        row['credential_key'] = magpie_key
+    if is_api and is_magpie:
+        row['billing'] = 'subscription'
+    if (cached.get('credential_key') and cached.get('credential_key') == row.get('credential_key')):
+        row['usage_binding'] = 'matches'
+        _apply_collector_refusal(row, cached, cache.polls.get(name), cache.attempts.get(name), now,
+                                 COLLECTOR_REJECTED[family])
+        _apply_cached_plan(row, cached, family, is_api)
+    elif cached:
+        row['usage_binding'] = 'changed'
+    # A self-built key is a candidate only. Billing becomes metered when this credential's /key/info spend is cached.
+    # A live ANTHROPIC_AUTH_TOKEN subscription source is not a candidate.
+    if (is_api and not is_magpie and enabled and base not in OFFICIAL_API_ORIGINS
+            and not _live_auth_token_subscription(
+                family, account_home, env, name, home, environ)):
+        _apply_metered_usd(row, cached)
+    return row, binding
+
+
+def _apply_cached_plan(row, cached, family, is_api):
+    """The plan of a usage reading taken with this slot's current credential."""
+    label = cached.get('plan_label') if isinstance(cached.get('plan_label'), str) else ''
+    online = configured_plan(family, label) if label.strip() else None
+    if online and family == 'codex' and not is_api:
+        # The usage API's plan_type of a reading taken with the current credential: the only Codex plan source.
+        row.update(plan=online, plan_source='usage_api', plan_read_at=cached.get('fetched_at'))
+    elif online and family == 'claude' and not is_api and cached.get('plan_source') == 'profile_api':
+        # The live OAuth profile read with this credential's usage reading: the only Claude plan source.
+        row.update(plan=online, plan_source='profile_api', plan_read_at=cached.get('fetched_at'))
+    elif not row.get('plan') and online and not (family == 'claude' and not is_api):
+        row.update(plan=online, plan_source='collector', plan_read_at=cached.get('fetched_at'))
+
+
+def _apply_metered_usd(row, cached):
+    """A self-built API-key slot is a dollar candidate; a cached /key/info reading for its credential makes it metered."""
+    row['usd_candidate'] = True
+    evidence = _metered_spend_evidence(cached, row.get('credential_key'))
+    # Without an amount in the latest read the category stays, and no budget is copied from it.
+    if evidence is None and not _metered_category_evidence(cached, row.get('credential_key')):
+        return
+    row['billing'] = 'metered'
+    row['backend_kind'] = 'metered_usd'
+    row['plan'] = 'metered USD'
+    if evidence is not None and evidence['budget_usd'] is not None:
+        row['budget_usd'] = evidence['budget_usd']
+
+
+def _definition_launchers(definitions, launchers):
+    """Launchers of Paseo definitions and the independent harnesses that no slot has already listed."""
+    found = {}
     for name in set(definitions) | {'antigravity-resilient', 'opencode', 'pi'}:
-        if name in result['launchers']:
+        if name in launchers:
             continue
         family, _, enabled = resolve_definition(name, definitions)
-        result['launchers'][name] = {'family': family, 'status': 'ready' if enabled else 'disabled'}
+        found[name] = {'family': family, 'status': 'ready' if enabled else 'disabled'}
+    return found
+
+
+def _discover_antigravity(home, environ, now, state_dir, cache_rows):
+    """The agy sign-in, proven by a /usage reading or the account tier Google reports (antigravity_plan)."""
     agy = obj(cache_rows.get('antigravity'))
     agy_present = bool(_which('agy', environ.get('PATH')))
     agy_cli = bool(agy_present or _which('gemini', environ.get('PATH')))
@@ -1121,7 +1208,7 @@ def _discover(home=None, environ=None, now=None):
     agy_resolved = configured_plan('antigravity', agy_tier) if agy_tier else None
     agy_known = set(plan_table({}, 'antigravity'))
     agy_plan = agy.get('plan_label') or (agy_resolved if agy_resolved in agy_known else agy_tier)
-    result['accounts']['antigravity'] = {'family': 'antigravity', 'provider': 'antigravity-resilient',
+    row = {'family': 'antigravity', 'provider': 'antigravity-resilient',
         'home': str(home / '.gemini'), 'cli_installed': agy_cli,
         'sources': ['native'] + (['usage-cache'] if agy_read else []) + (['account-tier'] if agy_tier else []),
         'status': 'ready' if agy_present else 'missing_client',
@@ -1134,23 +1221,30 @@ def _discover(home=None, environ=None, now=None):
     if agy_present and agy_flapping:
         # Two Google accounts take turns in agy's one keyring slot: no reading says which account a tier or a quota
         # belongs to, so the account is neither ready nor inactive (antigravity_plan module docstring).
-        result['accounts']['antigravity'].update(
+        row.update(
             status=account_state.AGY_ACCOUNT_FLAPPING,
             reason=(f"{agy_flapping['accounts']} Google accounts in agy's keyring slot within "
                     f"{agy_flapping['window_minutes']} min, since {agy_flapping['since']}"),
             plan_source=None, plan=None)
-        result['accounts']['antigravity'].pop('plan_read_at', None)
-        result['accounts']['antigravity'].pop('plan_error', None)
-    opencode = result['launchers']['opencode']
+        row.pop('plan_read_at', None)
+        row.pop('plan_error', None)
+    return row
+
+
+def _discover_opencode(home, environ, launcher):
+    """OpenCode's free models need no sign-in; its launcher needs the installed client."""
     installed = bool(_which('opencode', environ.get('PATH')))
-    if opencode['status'] == 'ready' and not installed:
-        opencode['status'] = 'missing_client'
-    result['accounts']['opencode'] = {'family': 'opencode', 'provider': 'opencode',
+    status = 'missing_client' if launcher['status'] == 'ready' and not installed else launcher['status']
+    row = {'family': 'opencode', 'provider': 'opencode',
         'home': str(home / '.config/opencode'), 'cli_installed': installed,
-        'sources': ['native'], 'status': opencode['status'], 'plan': 'free', 'billing': 'subscription'}
-    # Grok's ACP launcher is not an OAuth Claude/Codex slot. A cached reading is
-    # metadata only; it cannot by itself prove that a client is installed.
-    grok_cached = obj(cache_rows.get('grok'))
+        'sources': ['native'], 'status': status, 'plan': 'free', 'billing': 'subscription'}
+    return {'accounts': {'opencode': row}, 'launchers': {'opencode': {**launcher, 'status': status}}}
+
+
+def _discover_grok(home, environ, now, definitions, cache):
+    """Grok's ACP launcher is not an OAuth Claude/Codex slot. A cached reading is
+    metadata only; it cannot by itself prove that a client is installed."""
+    grok_cached = obj(cache.rows.get('grok'))
     grok_home = home / '.grok'
     grok_native = bool(_which('grok', environ.get('PATH'))) or grok_home.is_dir()
     grok_defined = 'grok' in definitions
@@ -1189,7 +1283,7 @@ def _discover(home=None, environ=None, now=None):
         **({'credential_key': grok_facts['credential_key'], 'identity': grok_facts['identity']}
            if grok_facts['present'] else {}),
     }
-    bindings['grok'] = {
+    binding = {
         'identity': grok_facts['identity'],
         'credential_identity': grok_facts['credential_identity'],
         'base': '',
@@ -1204,26 +1298,20 @@ def _discover(home=None, environ=None, now=None):
             grok_row['plan_error'] = str(grok_plan_err or 'subscription tier not reported by Grok API')
         if grok_has_failure:
             grok_row['usage_read_failed'] = True
-        if grok_row['status'] == 'ready' and account_state.usage_refused_plan(grok_cached):
-            grok_retry_at = account_state.usage_refused_retry_at(
-                grok_cached, poll=cache_polls.get('grok'), attempt=cache_attempts.get('grok'), now=now
-            )
-            grok_row.update(
-                status=account_state.PLAN_INACTIVE,
-                reason=account_state.usage_refused_reason(grok_cached, retry_at=grok_retry_at),
-                **({'plan_inactive_at': grok_cached.get('error_at') or grok_cached.get('fetched_at')}
-                   if (grok_cached.get('error_at') or grok_cached.get('fetched_at')) else {}),
-                **({'plan_inactive_retry_at': grok_retry_at} if grok_retry_at else {}),
-            )
-        elif grok_row['status'] == 'ready' and account_state.usage_refused_credentials(grok_cached, COLLECTOR_REJECTED.get('grok', ())):
-            grok_row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
+        _apply_collector_refusal(grok_row, grok_cached, cache.polls.get('grok'), cache.attempts.get('grok'), now,
+                                 COLLECTOR_REJECTED['grok'])
     elif grok_cached and grok_ckey:
         grok_row['usage_binding'] = 'changed'
-    result['accounts']['grok'] = grok_row
-    result['launchers']['grok'] = {'family': 'grok', 'status': grok_row['status']}
-    # Oh My Pi is Paseo's built-in `omp` provider. The `omp` account is its API-key side (~/.omp/agent/models.yml or
-    # stored API keys), so it is metered: explicit selection only. OAuth subscription logins are accounts of their own
-    # below.
+    return {'accounts': {'grok': grok_row}, 'launchers': {'grok': {'family': 'grok', 'status': grok_row['status']}},
+            'bindings': {'grok': binding}}
+
+
+def _discover_omp(home, environ, definitions, accounts):
+    """Oh My Pi is Paseo's built-in `omp` provider. The `omp` account is its API-key side (~/.omp/agent/models.yml or
+    stored API keys), so it is metered: explicit selection only. Each OAuth subscription login in omp is its own
+    account. Like Pi on ChatGPT, one that signs in as a native account (same identity) shares that account's quota
+    (`quota_account`); otherwise it is the subscription's only way in and routes on the family's plan defaults. Billing
+    is subscription either way."""
     omp_native = (bool(_which('omp', environ.get('PATH')))
                   or (home / '.bun' / 'bin' / ('omp.exe' if os.name == 'nt' else 'omp')).is_file())
     omp_defined = 'omp' in definitions
@@ -1231,12 +1319,10 @@ def _discover(home=None, environ=None, now=None):
     omp_status = ('disabled' if not omp_enabled or not omp_defined
                   else 'ready' if omp_native or obj(definitions.get('omp')).get('command') else 'missing_client')
     omp_sources = (['native'] if omp_native else []) + (['paseo'] if omp_defined else [])
-    result['accounts']['omp'] = {'family': 'omp', 'provider': 'omp',
-        'sources': omp_sources, 'status': omp_status, 'plan': 'API (Oh My Pi)', 'billing': 'metered'}
-    result['launchers']['omp'] = {'family': 'omp', 'status': omp_status}
-    # Each OAuth subscription login in omp is its own account. Like Pi on ChatGPT, one that signs in as a native
-    # account (same identity) shares that account's quota (`quota_account`); otherwise it is the subscription's only
-    # way in and routes on the family's plan defaults. Billing is subscription either way.
+    found = {'omp': {'family': 'omp', 'provider': 'omp',
+        'sources': omp_sources, 'status': omp_status, 'plan': 'API (Oh My Pi)', 'billing': 'metered'}}
+    launchers = {'omp': {'family': 'omp', 'status': omp_status}}
+    bindings = {}
     omp_dir = home / '.omp' / 'agent'
     omp_found = omp_credentials(omp_dir)
     logins = omp_found['logins']
@@ -1246,10 +1332,10 @@ def _discover(home=None, environ=None, now=None):
         # Nothing shows an API key (no models.yml, no stored key; keys only in environment variables cannot be seen).
         # With only subscription logins there is no API side to report; an unreadable database hides both.
         if omp_found['problem']:
-            result['accounts']['omp'].update(status='missing_credentials', reason='agent.db unreadable')
+            found['omp'].update(status='missing_credentials', reason='agent.db unreadable')
         elif logins:
-            del result['accounts']['omp']
-            result['launchers']['omp']['api_side'] = False
+            found['omp'] = None
+            launchers['omp']['api_side'] = False
     taken = {}
     for login in logins:
         provider, family = login['provider'], login['family']
@@ -1257,11 +1343,13 @@ def _discover(home=None, environ=None, now=None):
         name = f'omp-{provider}' + (f'-{taken[provider]}' if taken[provider] > 1 else '')
         auth, profile = omp_auth(family, login['data'])
         facts = auth_facts(family, auth, omp_dir, profile)
-        owner = next((cname for cname, crow in result['accounts'].items()
-                      if crow.get('family') == family and crow.get('identity') and crow['identity'] == facts['identity']),
+        # The rows this source adds or replaces are omp rows, never an owner.
+        owner = next((cname for cname, crow in accounts.items()
+                      if cname not in found and crow.get('family') == family
+                      and crow.get('identity') and crow['identity'] == facts['identity']),
                      None)
-        plan = facts['plan'] or (result['accounts'][owner].get('plan') if owner else None)
-        result['accounts'][name] = {
+        plan = facts['plan'] or (accounts[owner].get('plan') if owner else None)
+        found[name] = {
             'family': 'omp', 'provider': 'omp', 'quota_family': family, 'omp_provider': provider,
             'home': str(omp_dir), 'sources': omp_sources, 'status': omp_status,
             'plan': plan, 'identity': facts['identity'], 'billing': 'subscription',
@@ -1270,51 +1358,67 @@ def _discover(home=None, environ=None, now=None):
         }
         bindings[name] = {'identity': facts['identity'], 'credential_identity': facts.get('credential_identity'),
                           'base': '', 'key': None}
-    # Other Paseo built-in launchers are recognized from their Paseo entry alone. Their
-    # billing is unknown and no model is invented, so they produce no bundle until the
-    # user configures models; unknown billing then stays explicit-selection only.
+    return {'accounts': found, 'launchers': launchers, 'bindings': bindings}
+
+
+def _paseo_recognized_only(definitions, accounts):
+    """Other Paseo built-in launchers are recognized from their Paseo entry alone. Their
+    billing is unknown and no model is invented, so they produce no bundle until the
+    user configures models; unknown billing then stays explicit-selection only."""
+    found, launchers = {}, {}
     for name in PASEO_RECOGNIZED_ONLY:
-        if name in definitions and name not in result['accounts']:
+        if name in definitions and name not in accounts:
             _, _, enabled = resolve_definition(name, definitions)
             models = [m if isinstance(m, str) else m['id'] for m in array(obj(definitions[name]).get('models'))
                       if isinstance(m, str) or isinstance(m, dict) and isinstance(m.get('id'), str)]
-            result['accounts'][name] = {'family': name, 'provider': name, 'sources': ['paseo'],
+            found[name] = {'family': name, 'provider': name, 'sources': ['paseo'],
                 'status': 'ready' if enabled else 'disabled', 'billing': 'metered' if name == 'dsh' else 'unknown',
                 **({'plan': 'API (DeepSeek Harness)'} if name == 'dsh' else {}),
                 **({'models': models} if models else {})}
-            result['launchers'][name] = {'family': name, 'status': 'ready' if enabled else 'disabled'}
-    # Other explicitly configured launchers can supply their own advertised IDs.
-    # Saved product profiles alone do not imply a launchable client.
+            launchers[name] = {'family': name, 'status': 'ready' if enabled else 'disabled'}
+    return {'accounts': found, 'launchers': launchers}
+
+
+def _paseo_advertised(definitions, accounts, launchers):
+    """Other explicitly configured launchers can supply their own advertised IDs.
+    Saved product profiles alone do not imply a launchable client."""
+    found = {}
     for name, definition in definitions.items():
-        if name in result['accounts']:
+        if name in accounts:
             continue
         models = [m for m in array(obj(definition).get('models')) if isinstance(m, str)]
         if models:
-            launcher = result['launchers'][name]
-            result['accounts'][name] = {'family': launcher['family'], 'provider': name,
+            launcher = launchers[name]
+            found[name] = {'family': launcher['family'], 'provider': name,
                 'sources': ['paseo'], 'status': launcher['status'], 'models': models,
                 'billing': 'unknown'}
+    return found
+
+
+def _discover_pi(home, environ, now, definitions, cache, accounts, launcher):
+    """Pi signed in to ChatGPT. Signed in as a native Codex account it shares that account's quota (`quota_account`)."""
     raw_pi = resolve_definition('pi', definitions)[1].get('PI_CODING_AGENT_DIR')
     pi_home = _expand_home(raw_pi, home) if raw_pi else home / '.pi/agent'
     pi_auth, _ = read_json(pi_home / 'auth.json')
     pi_codex = obj(pi_auth.get('openai-codex'))
     pi_installed = bool(_which('pi', environ.get('PATH')))
-    pi_launcher = result['launchers']['pi']
-    if pi_launcher['status'] == 'ready' and not pi_installed and not pi_codex.get('access'):
-        pi_launcher['status'] = 'missing_client'
+    status = launcher['status']
+    if status == 'ready' and not pi_installed and not pi_codex.get('access'):
+        status = 'missing_client'
+    launchers = {'pi': {**launcher, 'status': status}}
     if pi_codex.get('access'):
         pi_facts = auth_facts('codex', {'tokens': {'access_token': pi_codex.get('access'),
                                                    'account_id': pi_codex.get('accountId')}}, pi_home)
         matched_codex = next(
-            (cname for cname, crow in result['accounts'].items()
+            (cname for cname, crow in accounts.items()
              if crow.get('family') == 'codex' and crow.get('identity') and crow.get('identity') == pi_facts.get('identity')),
             None,
         )
-        pi_cached = obj(cache_rows.get('pi'))
+        pi_cached = obj(cache.rows.get('pi'))
         pi_matches = bool(pi_cached.get('credential_key') and pi_cached.get('credential_key') == pi_facts.get('credential_key'))
         # Pi's login carries no id_token; its plan is what the usage API or the account it signs in as reports.
         pi_online = configured_plan('codex', pi_cached.get('plan_label')) if pi_matches and pi_cached.get('plan_label') else None
-        pi_plan = pi_facts['plan'] or pi_online or (result['accounts'][matched_codex].get('plan') if matched_codex else None)
+        pi_plan = pi_facts['plan'] or pi_online or (accounts[matched_codex].get('plan') if matched_codex else None)
         pi_row = {
             'family': 'pi',
             'quota_family': 'codex',
@@ -1322,7 +1426,7 @@ def _discover(home=None, environ=None, now=None):
             'home': str(pi_home),
             'cli_installed': pi_installed,
             'sources': ['native'] + (['paseo'] if 'pi' in definitions else []),
-            'status': 'ready' if pi_launcher['status'] == 'ready' else pi_launcher['status'],
+            'status': status,
             'plan': pi_plan,
             'credential_key': pi_facts['credential_key'],
             'identity': pi_facts['identity'],
@@ -1330,43 +1434,58 @@ def _discover(home=None, environ=None, now=None):
             **({'plan_source': 'usage_api', 'plan_read_at': pi_cached.get('fetched_at')} if not pi_facts['plan'] and pi_online else {}),
             **({'quota_account': matched_codex} if matched_codex else {}),
         }
-        bindings['pi'] = {'identity': pi_facts['identity'], 'credential_identity': pi_facts.get('credential_identity'),
-                          'base': '', 'key': None}
+        binding = {'identity': pi_facts['identity'], 'credential_identity': pi_facts.get('credential_identity'),
+                   'base': '', 'key': None}
         if pi_matches:
             pi_row['usage_binding'] = 'matches'
-            if pi_row['status'] == 'ready' and account_state.usage_refused_plan(pi_cached):
-                pi_retry_at = account_state.usage_refused_retry_at(
-                    pi_cached, poll=cache_polls.get('pi'), attempt=cache_attempts.get('pi'), now=now
-                )
-                pi_row.update(
-                    status=account_state.PLAN_INACTIVE,
-                    reason=account_state.usage_refused_reason(pi_cached, retry_at=pi_retry_at),
-                    **({'plan_inactive_at': pi_cached.get('error_at') or pi_cached.get('fetched_at')}
-                       if (pi_cached.get('error_at') or pi_cached.get('fetched_at')) else {}),
-                    **({'plan_inactive_retry_at': pi_retry_at} if pi_retry_at else {}),
-                )
-            elif pi_row['status'] == 'ready' and account_state.usage_refused_credentials(pi_cached, COLLECTOR_REJECTED['codex']):
-                pi_row.update(status=account_state.AUTH_FAILED, reason='credentials_rejected_by_collector')
+            _apply_collector_refusal(pi_row, pi_cached, cache.polls.get('pi'), cache.attempts.get('pi'), now,
+                                     COLLECTOR_REJECTED['codex'])
         elif pi_cached:
             pi_row['usage_binding'] = 'changed'
-        result['accounts']['pi'] = pi_row
-    elif pi_installed or pi_home.is_dir() or (home / '.pi').is_dir():
-        result['accounts']['pi'] = {
+        return {'accounts': {'pi': pi_row}, 'launchers': launchers, 'bindings': {'pi': binding}}
+    if pi_installed or pi_home.is_dir() or (home / '.pi').is_dir():
+        return {'accounts': {'pi': {
             'family': 'pi',
             'provider': 'pi',
             'home': str(pi_home),
             'cli_installed': pi_installed,
             'sources': ['native'] + (['paseo'] if 'pi' in definitions else []),
-            'status': 'disabled' if pi_launcher['status'] == 'disabled' else 'missing_credentials',
+            'status': 'disabled' if status == 'disabled' else 'missing_credentials',
             'plan': None,
             'billing': 'subscription',
-        }
+        }}, 'launchers': launchers}
+    return {'launchers': launchers}
+
+
+def _load_accounts_override(environ, state_dir):
     override_env = environ.get('AGENTCOMPASS_ACCOUNTS_OVERRIDE')
     override_path = Path(override_env).expanduser() if override_env else state_dir / 'accounts-override.json'
     import accounts_override
-    override_doc = accounts_override.load_override(override_path) or {}
+    return accounts_override.load_override(override_path) or {}
+
+
+def _override_budget(pspec, pcached):
+    """A positive budget from the override or the cached reading's details, else a '$N' plan label."""
+    details = obj(pcached.get('usage_details'))
+    for raw_budget in (pspec.get('budget_usd'), details.get('budget_usd')):
+        if isinstance(raw_budget, (int, float)) and not isinstance(raw_budget, bool) and raw_budget > 0:
+            return float(raw_budget)
+    plabel = str(pcached.get('plan_label') or '').strip()
+    if plabel.startswith('$'):
+        try:
+            parsed = float(plabel[1:].split()[0].replace(',', ''))
+        except ValueError:
+            parsed = 0.0
+        if parsed > 0:
+            return parsed
+    return None
+
+
+def _override_meters(override_doc, cache_rows, accounts):
+    """Metered dollar accounts the user declared in accounts-override.json with an endpoint and an API key."""
+    found, launchers = {}, {}
     for pname, pspec in obj(override_doc.get('accounts')).items():
-        if pname in result['accounts'] or not isinstance(pspec, dict) or pspec.get('disabled') is True:
+        if pname in accounts or not isinstance(pspec, dict) or pspec.get('disabled') is True:
             continue
         if str(pspec.get('billing') or '').strip().lower() != 'metered':
             continue
@@ -1377,7 +1496,7 @@ def _discover(home=None, environ=None, now=None):
             # The fields are not a budget and not a window. A complete account is listed so the tray can say why.
             if ep and key:
                 pfamily = str(pspec.get('family') or pspec.get('provider') or 'codex')
-                result['accounts'][pname] = {
+                found[pname] = {
                     'family': pfamily,
                     'provider': pname,
                     'sources': ['router-override'],
@@ -1387,29 +1506,14 @@ def _discover(home=None, environ=None, now=None):
                     'billing': 'metered',
                     'backend_kind': 'metered_usd',
                 }
-                result['launchers'][pname] = {'family': pfamily, 'status': 'paused'}
+                launchers[pname] = {'family': pfamily, 'status': 'paused'}
             continue
         if not ep or not key:
             continue
-        pcached = obj(cache_rows.get(pname))
-        details = obj(pcached.get('usage_details'))
-        budget_usd = None
-        for raw_budget in (pspec.get('budget_usd'), details.get('budget_usd')):
-            if isinstance(raw_budget, (int, float)) and not isinstance(raw_budget, bool) and raw_budget > 0:
-                budget_usd = float(raw_budget)
-                break
-        if budget_usd is None:
-            plabel = str(pcached.get('plan_label') or '').strip()
-            if plabel.startswith('$'):
-                try:
-                    parsed = float(plabel[1:].split()[0].replace(',', ''))
-                except ValueError:
-                    parsed = 0.0
-                if parsed > 0:
-                    budget_usd = parsed
+        budget_usd = _override_budget(pspec, obj(cache_rows.get(pname)))
         pfamily = str(pspec.get('family') or pspec.get('provider') or 'codex')
         pmodels = [m for m in array(pspec.get('models')) if isinstance(m, str)]
-        result['accounts'][pname] = {
+        found[pname] = {
             'family': pfamily,
             'provider': pname,
             'sources': ['router-override'],
@@ -1421,27 +1525,38 @@ def _discover(home=None, environ=None, now=None):
             **({'models': pmodels} if pmodels else {}),
             **({'cwd_regex': pspec['cwd_regex']} if pspec.get('cwd_regex') else {}),
         }
-        result['launchers'][pname] = {'family': pfamily, 'status': 'ready'}
-    # Configuration validity only; whether the local service answers is checked at dispatch.
-    web_home = consult_home(home, environ)
-    result['source_paths']['chatgpt-web'] = str(web_home)
-    for name, status in (('dot', dot_configuration(home, environ)),
-                         ('chatgpt-web', consult_configuration(web_home))):
-        result['accounts'][name] = {'family': name, 'provider': name, 'sources': ['native'], 'status': status}
+        launchers[pname] = {'family': pfamily, 'status': 'ready'}
+    return {'accounts': found, 'launchers': launchers}
+
+
+def _web_bridges(home, environ, web_home):
+    """Dot and the ChatGPT Web bridge, from their local configuration."""
+    found = {name: {'family': name, 'provider': name, 'sources': ['native'], 'status': status}
+             for name, status in (('dot', dot_configuration(home, environ)),
+                                  ('chatgpt-web', consult_configuration(web_home)))}
     # The bridge is only ready when its config reports proAvailable: a ready bridge is a Pro web seat.
-    if result['accounts']['chatgpt-web']['status'] == 'ready':
-        result['accounts']['chatgpt-web']['plan'] = 'pro'
-    # Remote external runner. No model benchmarks, inferred quota or credential reads.
+    if found['chatgpt-web']['status'] == 'ready':
+        found['chatgpt-web']['plan'] = 'pro'
+    return found
+
+
+def _discover_grok_bot(state_dir, environ):
+    """Remote external runner. No model benchmarks, inferred quota or credential reads."""
     bot_config, bot_error = read_json(state_dir / 'grok-bot/config.json')
     bot_configured = bot_error is None and isinstance(bot_config.get('bot_id'), str) and bool(bot_config['bot_id'].strip())
     bot_status = 'missing_configuration' if not bot_configured else \
         'ready' if GROK_BOT_CLI.is_file() and _which('node', environ.get('PATH')) else 'missing_client'
-    result['accounts']['grok-bot'] = {
+    row = {
         'family': 'grok-bot', 'provider': 'grok-bot', 'sources': ['native'], 'status': bot_status,
         'billing': 'unknown', 'execution': 'remote', 'dispatch': 'automatic',
         'capabilities': ['text_prompt', 'thread_read'], 'auth_check': 'upstream_at_dispatch',
     }
-    result['launchers']['grok-bot'] = {'family': 'grok-bot', 'status': bot_status}
+    return {'accounts': {'grok-bot': row}, 'launchers': {'grok-bot': {'family': 'grok-bot', 'status': bot_status}}}
+
+
+def read_cc_switch(home, environ, definitions, result, bindings):
+    """CC Switch records bind to the accounts already found; unbound records are listed as saved."""
+    _, _, grok_enabled = resolve_definition('grok', definitions)
     cc_path = product_root('cc-switch', home, environ) / 'cc-switch.db'
     result['source_paths']['cc-switch'] = str(cc_path)
     rows, cc_error = cc_switch(cc_path)
@@ -1474,7 +1589,10 @@ def _discover(home=None, environ=None, now=None):
                 result['accounts'][name].update(status='paused', reason='unhealthy_in_cc_switch')
         result['saved'].append({**entry, 'bound_to': matched, 'models': models,
                                 'plan': facts.get('plan'), 'status': 'paused' if entry.get('healthy') is False else 'bound' if matched else 'saved'})
-    read_magpie(home, environ, result, bindings)
+
+
+def _previous_inventory(state_dir):
+    """The last published inventory; a file of an older shape stops discovery with its upgrade message."""
     inv_path = state_dir / 'provider-inventory.json'
     if inv_path.exists():
         import state_upgrade
@@ -1482,23 +1600,30 @@ def _discover(home=None, environ=None, now=None):
         if inv_issue:
             raise ValueError(inv_issue)
     previous, _ = read_json(inv_path)
-    apply_removals(result, previous)
-    # A plugin the user switched off in the AgentCompass panel takes its account out of routing at once.
+    return previous
+
+
+def _pause_disabled_plugins(result, state_dir):
+    """A plugin the user switched off in the AgentCompass panel takes its account out of routing at once."""
     plugin_state, _ = read_json(state_dir / 'plugins.json')
     plugin_rows = obj(plugin_state.get('plugins'))
     for plugin_id, account in (('dot2api', 'dot'), ('chatgpt-web', 'chatgpt-web')):
         if obj(plugin_rows.get(plugin_id)).get('enabled') is False and account in result['accounts']:
             result['accounts'][account].update(status='paused', reason='plugin_disabled_in_agentcompass')
+
+
+def _sync_launcher_status(result):
     for name, row in result['accounts'].items():
         if name in result['launchers']:
             result['launchers'][name]['status'] = row['status']
-    # One subscription can be exposed through multiple launchers/products. Keep
-    # its quota owner stable instead of giving each alias a full allowance.
-    _assign_quota_owners(result['accounts'])
+
+
+def _latch_exhausted_quota(accounts, state_dir, cache_rows):
+    """Confirmed quota exhaustion (quota_exhaustion) holds the whole account, or only the windows that ran out."""
     import quota_exhaustion
     exhaustion_path = state_dir / 'quota-exhaustion.json'
     exhausted_accounts = obj(read_json(exhaustion_path)[0].get('accounts')) if exhaustion_path.is_file() else {}
-    for name, row in result['accounts'].items():
+    for name, row in accounts.items():
         if not obj(exhausted_accounts.get(name)).get('blocked'):
             continue
         latched = quota_exhaustion.exhausted_windows(name, cache_rows.get(name), path=exhaustion_path)
@@ -1507,9 +1632,6 @@ def _discover(home=None, environ=None, now=None):
         elif latched:
             # Only these windows are out; the account's other windows stay routable.
             row['exhausted_windows'] = sorted(latched)
-    _share_online_plan(result['accounts'])
-    _settle_account_states(result, cache_rows, previous, state_dir, now, environ, override_doc, bindings)
-    return result
 
 
 def _assign_quota_owners(accounts):
@@ -1570,25 +1692,25 @@ def _reads_usage(name, row, override_doc=None):
     return family == 'grok' and bool(row.get('usage_windows') or row.get('usage_read_failed'))
 
 
-def _settle_account_states(result, cache_rows, previous, state_dir, now, environ, override_doc, bindings=None):
-    """Give each account its one state (account_state). A snapshot with no rows at all means no collector has run on
-    this machine; route_judge.readiness_gap reports that, so accounts are not each marked as failing."""
-    rows = result['accounts']
+def _credential_identity(slot, rows, bindings):
+    return (bindings or {}).get(slot, {}).get('credential_identity') or rows[slot].get('credential_key')
+
+
+def _refused_at(slot, cache_rows):
+    crow = obj(cache_rows.get(slot))
+    return account_state._time(crow.get('error_at') or crow.get('fetched_at'))
+
+
+def _quota_members(rows):
+    """Account names by the subscription (quota owner) they draw on."""
     members = {}
     for name, row in rows.items():
         members.setdefault(row.get('quota_account') or name, []).append(name)
-    previous_rows = obj(previous.get('accounts'))
-    hours = account_state.exclude_after_hours(environ, override_doc)
-    latches = account_state.latched(state_dir)
+    return members
 
-    def _cred_id(slot):
-        return (bindings or {}).get(slot, {}).get('credential_identity') or rows[slot].get('credential_key')
 
-    def _refused_at(slot):
-        crow = obj(cache_rows.get(slot))
-        return account_state._time(crow.get('error_at') or crow.get('fetched_at'))
-
-    # A sibling with a good reading newer than a cached refusal supersedes that stale refusal (e.g. after renewal).
+def _lift_superseded_refusals(rows, members, cache_rows, now, bindings):
+    """A sibling with a good reading newer than a cached refusal supersedes that stale refusal (e.g. after renewal)."""
     for group in members.values():
         good_by_slot = {}
         for slot in group:
@@ -1603,7 +1725,7 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
         newest_group_good = max(good_by_slot.values(), default=None)
         for slot in group:
             crow = obj(cache_rows.get(slot))
-            ref_at = _refused_at(slot)
+            ref_at = _refused_at(slot, cache_rows)
             if rows[slot].get('status') == account_state.PLAN_INACTIVE and account_state.usage_refused_plan(crow):
                 if newest_group_good is not None and (ref_at is None or newest_group_good > ref_at):
                     rows[slot]['status'] = account_state.READY
@@ -1611,83 +1733,100 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
                     rows[slot].pop('plan_inactive_at', None)
                     rows[slot].pop('plan_inactive_retry_at', None)
             elif rows[slot].get('status') == account_state.AUTH_FAILED:
-                cid = _cred_id(slot)
-                newest_cred_good = max((t for s, t in good_by_slot.items() if cid and _cred_id(s) == cid), default=None)
+                cid = _credential_identity(slot, rows, bindings)
+                newest_cred_good = max((t for s, t in good_by_slot.items()
+                                        if cid and _credential_identity(s, rows, bindings) == cid), default=None)
                 if newest_cred_good is not None and (ref_at is None or newest_cred_good > ref_at):
                     rows[slot]['status'] = account_state.READY
                     rows[slot].pop('reason', None)
 
-    for name, row in rows.items():
-        reads = _reads_usage(name, row, override_doc)
-        group = sorted(members.get(row.get('quota_account') or name) or [name], key=lambda other: other != name)
-        problem, last_good = None, None
-        if reads:
-            # Readings of the same subscription count for each other; a reading taken with another credential does not.
-            found = [('credential_changed', None) if rows[other].get('usage_binding') == 'changed'
-                     else account_state.reading(cache_rows.get(other), now) for other in group]
-            good = [last for issue, last in found if issue is None]
-            times = sorted(last for _, last in found if last)
-            problem, last_good = (None, max(good)) if good else (found[0][0], times[-1] if times else None)
-            row['last_success_at'] = last_good
-        latch_name = name if name in latches else row.get('quota_account') if row.get('quota_account') in latches else None
-        latch = latches.get(latch_name) if latch_name else None
-        if latch and not latch.get('credential_key'):
-            latch_row = rows.get(latch_name) or row
-            if latch_row.get('credential_key'):
-                online_plan = latch_row.get('plan') if latch_row.get('plan_source') in account_state.ONLINE_PLAN_SOURCES else None
-                account_state.seal_latch_credential(latch_name, latch_row['credential_key'], online_plan=online_plan,
-                                                    state_dir=state_dir, expected_observed_at=latch.get('observed_at'))
-                latch['credential_key'] = latch_row['credential_key']
-                if online_plan and not latch.get('online_plan'):
-                    latch['online_plan'] = online_plan
-        if latch and account_state.latch_outlived(latch, last_good if problem is None else None, row, now=now):
-            if account_state.clear_latch(latch_name, state_dir=state_dir, expected_observed_at=latch.get('observed_at')):
-                latches.pop(latch_name, None)
-                latch = None
-        # Re-login recovery: an account held because its provider refused it (provider_retry) lifts the same way, on a
-        # good usage reading newer than the hold or another credential. Accounts without a usage reader keep a clear.
-        if reads:
-            try:
-                provider_retry.lift_after_reading(name, last_good=last_good if problem is None else None,
-                                                  credential_key=row.get('credential_key'),
-                                                  path=Path(state_dir) / provider_retry.FILE
-                                                  if state_dir and not os.environ.get('ROUTER_PROVIDER_RETRY') else None)
-            except OSError:
-                pass
-        if row.get('status') != account_state.READY:
-            continue
-        inactive_peer = next(
-            (rows[other] for other in group
-             if rows[other].get('usage_binding') != 'changed' and rows[other].get('status') == account_state.PLAN_INACTIVE),
-            None,
-        )
-        cred_id = _cred_id(name)
-        auth_peer = next(
-            (rows[other] for other in group
-             if rows[other].get('usage_binding') != 'changed' and rows[other].get('status') == account_state.AUTH_FAILED
-             and cred_id and cred_id == _cred_id(other)),
-            None,
-        )
-        if inactive_peer is not None:
-            row.update(status=account_state.PLAN_INACTIVE, reason=inactive_peer.get('reason'))
-            for k in ('plan_inactive_at', 'plan_inactive_retry_at'):
-                if inactive_peer.get(k):
-                    row[k] = inactive_peer[k]
-        elif auth_peer is not None:
-            row.update(status=account_state.AUTH_FAILED, reason=auth_peer.get('reason'))
-        elif account_state.plan_is_inactive(row.get('quota_family') or row.get('family'), row.get('plan')):
-            row.update(status=account_state.PLAN_INACTIVE, reason=f"plan {row.get('plan')}")
-        elif latch:
-            row.update(status=account_state.PLAN_INACTIVE, reason=account_state.latch_reason(latch),
-                       plan_inactive_at=latch.get('observed_at'),
-                       plan_inactive_retry_at=account_state.latch_retry_at(latch))
-        elif reads and problem and cache_rows:
-            cached_at = next((obj(cache_rows.get(o)).get('error_at') or obj(cache_rows.get(o)).get('fetched_at')
-                              for o in group
-                              if obj(cache_rows.get(o)).get('error_at') or obj(cache_rows.get(o)).get('fetched_at')), None)
-            account_state.failing(row, problem, last_good, previous_rows.get(name), now, hours, cached_at=cached_at)
-        if name in result['launchers'] and not account_state.dispatchable(row):
-            result['launchers'][name]['status'] = row['status']
+
+def _usage_reading(name, row, rows, group, cache_rows, now, override_doc):
+    """Whether the collector reads this account and, when it does, the reading's problem and last good time.
+    Readings of the same subscription count for each other; a reading taken with another credential does not."""
+    if not _reads_usage(name, row, override_doc):
+        return False, None, None
+    found = [('credential_changed', None) if rows[other].get('usage_binding') == 'changed'
+             else account_state.reading(cache_rows.get(other), now) for other in group]
+    good = [last for issue, last in found if issue is None]
+    times = sorted(last for _, last in found if last)
+    problem, last_good = (None, max(good)) if good else (found[0][0], times[-1] if times else None)
+    row['last_success_at'] = last_good
+    return True, problem, last_good
+
+
+def _live_latch(name, row, rows, latches, good_at, state_dir, now):
+    """The plan-inactive latch holding this account (its own or its quota owner's), sealed to the credential it holds;
+    a latch the account has outlived is cleared."""
+    latch_name = name if name in latches else row.get('quota_account') if row.get('quota_account') in latches else None
+    latch = latches.get(latch_name) if latch_name else None
+    if latch and not latch.get('credential_key'):
+        latch_row = rows.get(latch_name) or row
+        if latch_row.get('credential_key'):
+            online_plan = latch_row.get('plan') if latch_row.get('plan_source') in account_state.ONLINE_PLAN_SOURCES else None
+            account_state.seal_latch_credential(latch_name, latch_row['credential_key'], online_plan=online_plan,
+                                                state_dir=state_dir, expected_observed_at=latch.get('observed_at'))
+            latch['credential_key'] = latch_row['credential_key']
+            if online_plan and not latch.get('online_plan'):
+                latch['online_plan'] = online_plan
+    if latch and account_state.latch_outlived(latch, good_at, row, now=now):
+        if account_state.clear_latch(latch_name, state_dir=state_dir, expected_observed_at=latch.get('observed_at')):
+            latches.pop(latch_name, None)
+            latch = None
+    return latch
+
+
+def _lift_provider_hold(name, row, good_at, state_dir):
+    """Re-login recovery: an account held because its provider refused it (provider_retry) lifts the same way, on a
+    good usage reading newer than the hold or another credential. Accounts without a usage reader keep a clear."""
+    try:
+        provider_retry.lift_after_reading(name, last_good=good_at,
+                                          credential_key=row.get('credential_key'),
+                                          path=Path(state_dir) / provider_retry.FILE
+                                          if state_dir and not os.environ.get('ROUTER_PROVIDER_RETRY') else None)
+    except OSError:
+        pass
+
+
+def _settle_ready_account(name, row, rows, group, latch, reads, problem, last_good, cache_rows, previous_row, now,
+                          hours, bindings):
+    """A ready account takes, in order, a quota sibling's inactive plan or rejected login, its own inactive plan, its
+    latch, or its failing reading."""
+    inactive_peer = next(
+        (rows[other] for other in group
+         if rows[other].get('usage_binding') != 'changed' and rows[other].get('status') == account_state.PLAN_INACTIVE),
+        None,
+    )
+    cred_id = _credential_identity(name, rows, bindings)
+    auth_peer = next(
+        (rows[other] for other in group
+         if rows[other].get('usage_binding') != 'changed' and rows[other].get('status') == account_state.AUTH_FAILED
+         and cred_id and cred_id == _credential_identity(other, rows, bindings)),
+        None,
+    )
+    if inactive_peer is not None:
+        row.update(status=account_state.PLAN_INACTIVE, reason=inactive_peer.get('reason'))
+        for k in ('plan_inactive_at', 'plan_inactive_retry_at'):
+            if inactive_peer.get(k):
+                row[k] = inactive_peer[k]
+    elif auth_peer is not None:
+        row.update(status=account_state.AUTH_FAILED, reason=auth_peer.get('reason'))
+    elif account_state.plan_is_inactive(row.get('quota_family') or row.get('family'), row.get('plan')):
+        row.update(status=account_state.PLAN_INACTIVE, reason=f"plan {row.get('plan')}")
+    elif latch:
+        row.update(status=account_state.PLAN_INACTIVE, reason=account_state.latch_reason(latch),
+                   plan_inactive_at=latch.get('observed_at'),
+                   plan_inactive_retry_at=account_state.latch_retry_at(latch))
+    elif reads and problem and cache_rows:
+        cached_at = next((obj(cache_rows.get(o)).get('error_at') or obj(cache_rows.get(o)).get('fetched_at')
+                          for o in group
+                          if obj(cache_rows.get(o)).get('error_at') or obj(cache_rows.get(o)).get('fetched_at')), None)
+        account_state.failing(row, problem, last_good, previous_row, now, hours, cached_at=cached_at)
+
+
+def _mirror_grok_onto_bot(result):
+    """A ready grok-bot takes the state of a Grok account that is not dispatchable for its plan, login or reading."""
+    rows = result['accounts']
     row = rows.get('grok')
     bot_row = rows.get('grok-bot')
     if (isinstance(row, dict) and isinstance(bot_row, dict)
@@ -1702,6 +1841,31 @@ def _settle_account_states(result, cache_rows, previous, state_dir, now, environ
             bot_row['reason'] = row.get('reason')
         if 'grok-bot' in result['launchers']:
             result['launchers']['grok-bot']['status'] = bot_row['status']
+
+
+def _settle_account_states(result, cache_rows, previous, state_dir, now, environ, override_doc, bindings=None):
+    """Give each account its one state (account_state). A snapshot with no rows at all means no collector has run on
+    this machine; route_judge.readiness_gap reports that, so accounts are not each marked as failing."""
+    rows = result['accounts']
+    members = _quota_members(rows)
+    previous_rows = obj(previous.get('accounts'))
+    hours = account_state.exclude_after_hours(environ, override_doc)
+    latches = account_state.latched(state_dir)
+    _lift_superseded_refusals(rows, members, cache_rows, now, bindings)
+    for name, row in rows.items():
+        group = sorted(members.get(row.get('quota_account') or name) or [name], key=lambda other: other != name)
+        reads, problem, last_good = _usage_reading(name, row, rows, group, cache_rows, now, override_doc)
+        good_at = last_good if problem is None else None
+        latch = _live_latch(name, row, rows, latches, good_at, state_dir, now)
+        if reads:
+            _lift_provider_hold(name, row, good_at, state_dir)
+        if row.get('status') != account_state.READY:
+            continue
+        _settle_ready_account(name, row, rows, group, latch, reads, problem, last_good, cache_rows,
+                              previous_rows.get(name), now, hours, bindings)
+        if name in result['launchers'] and not account_state.dispatchable(row):
+            result['launchers'][name]['status'] = row['status']
+    _mirror_grok_onto_bot(result)
     _assign_quota_owners(rows)
 
 
@@ -1926,232 +2090,272 @@ def apply(accounts, inventory=None, *, live=None):
     specs = accounts['accounts']
     templates = copy.deepcopy(specs)
     if inventory.get('accounts'):
-        for name in list(specs):
-            family = account_family(name, accounts, inventory)
-            if family in ('claude', 'codex') and name != family:
-                row = inventory['accounts'].get(name)
-                if not row or row.get('status') == 'missing_credentials':
-                    specs.pop(name, None)
-            # Oh My Pi's API-key side (the template `omp` account) when discovery found only subscription logins.
-            if (family == 'omp' and name not in inventory['accounts']
-                    and obj(obj(inventory.get('launchers')).get('omp')).get('api_side') is False):
-                specs.pop(name, None)
+        _drop_undiscovered_templates(accounts, inventory)
     known_models = accounts.get('models') if isinstance(accounts.get('models'), dict) else {}
     aliases = accounts.get('aliases') if isinstance(accounts.get('aliases'), dict) else {}
     model_families = family_patterns(accounts)
     shipped_templates = _shipped_plan_templates()
 
     for name, row in inventory['accounts'].items():
-        family = row['family']
-        is_metered_usd = row.get('backend_kind') == 'metered_usd'
         if name not in specs:
             if row['status'] not in account_state.LISTED_STATES:
                 continue
-            if is_metered_usd:
-                spec = {
-                    'plan': row.get('plan') or 'metered USD',
-                    'billing': 'metered',
-                    'backend_kind': 'metered_usd',
-                    'verified': True,
-                    'expires_at': None,
-                    'windows': {},
-                    'bundles': {},  # auto_bundles derives one bundle per advertised model below
-                }
-                if row.get('status') == account_state.LEGACY_METER:
-                    import state_upgrade
-                    spec['legacy_meter'] = row.get('reason') or state_upgrade.LEGACY_METER_REASON
-                else:
-                    budget = row.get('budget_usd')
-                    if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
-                        spec['windows'] = {'balance': {}}
-                        spec['capacity_usd'] = {'balance': float(budget)}
-                specs[name] = spec
-            elif family == 'pi':
-                if row.get('quota_account') and row.get('quota_account') != name:
-                    continue
-                base_tpl = copy.deepcopy(templates.get('codex', {}))
-                base_tpl['plan'] = row.get('plan') or 'unknown'
-                base_tpl['billing'] = 'subscription'
-                base_tpl['bundles'] = {
-                    f'{name}__{bid}': {**{k: v for k, v in b.items() if k != 'modeId'}, 'provider': 'pi', 'harness': 'pi'}
-                    for bid, b in base_tpl.get('bundles', {}).items()
-                    if b.get('provider') == 'pi'
-                }
-                specs[name] = base_tpl
-            elif family == 'omp' and row.get('quota_family') in templates:
-                # The family's own bundles, launched through omp with omp's `<provider>/<model>` ids. A login that
-                # shares a native account's quota hands these to that account below (quota_account), beside its
-                # native and Pi siblings; harness_order ranks the siblings.
-                qfamily = row['quota_family']
-                spec = copy.deepcopy(templates[qfamily])
-                spec['billing'] = 'subscription'
-                cached = set(row.get('omp_models') or [])
-                spec['bundles'] = {
-                    f'{name}__{bid}': {'model': b['model'], **({'effort': b['effort']} if b.get('effort') else {}),
-                                       'provider': 'omp', 'harness': 'omp',
-                                       'launch_model': f"{row['omp_provider']}/{b.get('launch_model') or b['model']}"}
-                    for bid, b in spec.get('bundles', {}).items()
-                    if b.get('provider', qfamily) == qfamily and (not cached or (b.get('launch_model') or b['model']) in cached)}
-                specs[name] = spec
-            elif family == 'grok':
-                specs[name] = copy.deepcopy(templates.get('grok') or {
-                    'plan': 'unknown', 'billing': 'subscription', 'expires_at': None,
-                    'unmetered': True, 'windows': {},
-                    'bundles': {'grok47_high': {'provider': name, 'harness': 'grok', 'model': 'grok-4.7', 'effort': 'high'}},
-                })
-            elif family == 'grok-bot':
-                specs[name] = {'plan': 'unknown', 'billing': 'unknown',
-                    'windows': {}, 'bundles': {
-                    'grok_bot': {'provider': name, 'harness': 'grok-bot', 'model': 'grok-bot'},
-                }}
-            elif family in ('claude', 'codex') and family in templates:
-                spec = copy.deepcopy(templates[family])
-                if row.get('billing') == 'unknown':
-                    spec['billing'] = 'metered'
-                spec['bundles'] = {f'{name}__{bid}': {**b, 'provider': name, 'harness': family} for bid, b in spec['bundles'].items()
-                                   if b.get('provider', family) == family}
-                for bundle in spec['bundles'].values():
-                    bundle.setdefault('modeId', 'bypassPermissions' if family == 'claude' else 'full-access')
-                efforts = accounts.get('dispatch_efforts')
-                if isinstance(efforts, dict) and family in efforts and name not in efforts:
-                    efforts[name] = copy.deepcopy(efforts[family])
-                specs[name] = spec
-            elif row.get('models'):
-                specs[name] = {'plan': row.get('plan') or 'discovered',
-                    'billing': row.get('billing') or 'unknown', 'windows': {},
-                    'bundles': {}}  # auto_bundles derives these below
-            else:
+            spec = _discovered_spec(name, row, templates, accounts)
+            if spec is None:
                 continue
+            specs[name] = spec
         spec = specs[name]
         spec['verified'] = launch_verified(row, spec.get('verified'))
         spec['discovery_status'] = row['status']
         if row.get('cwd_regex') and 'cwd_regex' not in spec:
             spec['cwd_regex'] = row['cwd_regex']
-        if is_metered_usd:
-            spec['billing'] = 'metered'
-            spec['backend_kind'] = 'metered_usd'
-            row_plan = row.get('plan')
-            if isinstance(row_plan, str) and row_plan.strip():
-                spec['plan'] = row_plan
-            if row.get('status') == account_state.LEGACY_METER:
-                import state_upgrade
-                spec['legacy_meter'] = row.get('reason') or state_upgrade.LEGACY_METER_REASON
-                spec['windows'] = {}
-                spec.pop('capacity_usd', None)
-                spec.setdefault('bundles', {})
-                continue
-            spec.pop('legacy_meter', None)
+        if row.get('backend_kind') == 'metered_usd':
+            _settle_metered_usd_spec(spec, row)
+            continue
+        template, plan, quota_family = _settle_plan(spec, row, accounts, shipped_templates)
+        _settle_unknown_tier(spec, row, template, plan, quota_family)
+        _settle_bundles(spec, name, row, inventory, known_models, aliases, model_families)
+    _apply_auto_bundles(accounts, inventory, live)
+    _fold_into_quota_owners(accounts, inventory, known_models, aliases, model_families)
+    apply_shared_quota(accounts)
+    return accounts
+
+
+def _drop_undiscovered_templates(accounts, inventory):
+    """Template accounts discovery did not find on this machine leave the account document."""
+    specs = accounts['accounts']
+    for name in list(specs):
+        family = account_family(name, accounts, inventory)
+        if family in ('claude', 'codex') and name != family:
+            row = inventory['accounts'].get(name)
+            if not row or row.get('status') == 'missing_credentials':
+                specs.pop(name, None)
+        # Oh My Pi's API-key side (the template `omp` account) when discovery found only subscription logins.
+        if (family == 'omp' and name not in inventory['accounts']
+                and obj(obj(inventory.get('launchers')).get('omp')).get('api_side') is False):
+            specs.pop(name, None)
+
+
+def _discovered_spec(name, row, templates, accounts):
+    """The account document entry for a discovered account the document does not name, or None when it gets none."""
+    family = row['family']
+    if row.get('backend_kind') == 'metered_usd':
+        spec = {
+            'plan': row.get('plan') or 'metered USD',
+            'billing': 'metered',
+            'backend_kind': 'metered_usd',
+            'verified': True,
+            'expires_at': None,
+            'windows': {},
+            'bundles': {},  # auto_bundles derives one bundle per advertised model below
+        }
+        if row.get('status') == account_state.LEGACY_METER:
+            import state_upgrade
+            spec['legacy_meter'] = row.get('reason') or state_upgrade.LEGACY_METER_REASON
+        else:
             budget = row.get('budget_usd')
             if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
                 spec['windows'] = {'balance': {}}
-                cap = spec.get('capacity_usd')
-                if not isinstance(cap, dict):
-                    cap = {}
-                    spec['capacity_usd'] = cap
-                cap['balance'] = float(budget)
-            else:
-                spec['windows'] = {}
-                cap = spec.get('capacity_usd')
-                if isinstance(cap, dict):
-                    cap.pop('balance', None)
-                    if not cap:
-                        spec.pop('capacity_usd', None)
-            spec.setdefault('bundles', {})
-            continue
-        plan = row.get('plan')
-        quota_family = row.get('quota_family') or family   # an omp OAuth login uses the plans of the family it signs in to
-        # A plan the user wrote in the account document seeds the template when discovery reports none
-        # (claude/codex without a discovered plan stay unknown below).
-        template_plan = configured_plan(
-            quota_family,
-            plan or (spec.get('plan') if family not in ('claude', 'codex') else None),
-            accounts=accounts,
-            shipped=shipped_templates,
-        )
-        template = plan_defaults(accounts, quota_family, template_plan, shipped=shipped_templates) if template_plan else None
-        # A plan no template names is unknown: it is priced at the family's smallest paid plan and warned about, never
-        # at the largest. An account on a metered API key has no plan to know.
-        priced_as = UNKNOWN_PLAN_PRICED_AS.get(quota_family) if template is None and row.get('billing') == 'subscription' else None
-        spec.pop('plan_unknown', None)
-        spec.pop('plan_priced_as', None)
-        if priced_as and not account_state.plan_is_inactive(quota_family, plan):
-            template = plan_defaults(accounts, quota_family, priced_as, shipped=shipped_templates)
-            spec.update(plan_unknown=str(plan or template_plan or 'not reported'), plan_priced_as=priced_as)
-        if plan:
-            previous_plan = configured_plan(quota_family, spec.get('plan'), accounts=accounts, shipped=shipped_templates)
-            spec['plan'] = plan
-            if previous_plan == template_plan:
-                pass  # same named plan can have account-specific promotional capacity
-            elif template and family != 'grok':
-                for key in TEMPLATE_KEYS:
-                    if key in template:
-                        spec[key] = copy.deepcopy(template[key])
-                    else:
-                        spec.pop(key, None)
-        if template and family != 'grok' and not (family in ('claude', 'codex') and not plan):
-            fill_template_gaps(spec, template)
-        if row.get('billing') and row['billing'] != 'unknown':
-            spec['billing'] = row['billing']
-        if family in ('claude', 'codex') and (not plan or row.get('billing') == 'metered'):
-            spec['plan'] = 'API' if row.get('billing') == 'metered' else 'unknown'
-            if row.get('billing') == 'metered':
-                spec['windows'] = {}
-            elif spec.get('plan_priced_as'):
-                for key in TEMPLATE_KEYS:
-                    if key in template:
-                        spec[key] = copy.deepcopy(template[key])
-        if family == 'antigravity' and template is None and not account_state.plan_is_inactive(quota_family, plan):
-            raw_label = str(plan or spec.get('plan') or '').strip()
-            is_placeholder = account_state.plan_without_vendor(raw_label) in ('', 'unknown', 'subscription')
-            spec['plan'] = 'unknown'
-            spec['plan_unknown'] = str(
-                row.get('plan_error')
-                or ('subscription tier not reported by loadCodeAssist' if is_placeholder else f'unrecognized Antigravity tier {raw_label!r}')
-            )
-        if family == 'grok':
-            window_ids = row.get('usage_windows') or []
-            spec['unmetered'] = not bool(window_ids)
-            if window_ids:
-                spec.setdefault('windows', {}).update({wid: {'hours': 168, 'launch_min_remaining_pct': 5}
-                                                       for wid in window_ids if wid not in spec.get('windows', {})})
-            if template is None:
-                raw_label = str(plan or '').strip()
-                is_placeholder = account_state.plan_without_vendor(raw_label) in ('', 'unknown', 'subscription')
-                spec['plan'] = 'unknown'
-                spec['plan_unknown'] = str(
-                    row.get('plan_error')
-                    or ('subscription tier not reported by Grok API' if is_placeholder else f'unrecognized tier {raw_label!r}')
-                )
-        advertised = row.get('models')
-        for bundle in spec.get('bundles', {}).values():
-            reason = unavailable_reason(inventory, name, bundle.get('provider', name))
-            if reason:
-                bundle['discovery_unavailable'] = reason
-            if isinstance(advertised, list):
-                match = bundle.get('launch_model') if bundle.get('launch_model') in advertised else next((m for m in advertised if (resolve_canonical_model(m, known_models, aliases, model_families) or m.rsplit('/', 1)[-1])
-                              == (resolve_canonical_model(bundle['model'], known_models, aliases, model_families) or bundle['model'])), None)
-                if match:
-                    bundle['launch_model'] = match
+                spec['capacity_usd'] = {'balance': float(budget)}
+        return spec
+    if family == 'pi':
+        if row.get('quota_account') and row.get('quota_account') != name:
+            return None
+        base_tpl = copy.deepcopy(templates.get('codex', {}))
+        base_tpl['plan'] = row.get('plan') or 'unknown'
+        base_tpl['billing'] = 'subscription'
+        base_tpl['bundles'] = {
+            f'{name}__{bid}': {**{k: v for k, v in b.items() if k != 'modeId'}, 'provider': 'pi', 'harness': 'pi'}
+            for bid, b in base_tpl.get('bundles', {}).items()
+            if b.get('provider') == 'pi'
+        }
+        return base_tpl
+    if family == 'omp' and row.get('quota_family') in templates:
+        # The family's own bundles, launched through omp with omp's `<provider>/<model>` ids. A login that
+        # shares a native account's quota hands these to that account below (quota_account), beside its
+        # native and Pi siblings; harness_order ranks the siblings.
+        qfamily = row['quota_family']
+        spec = copy.deepcopy(templates[qfamily])
+        spec['billing'] = 'subscription'
+        cached = set(row.get('omp_models') or [])
+        spec['bundles'] = {
+            f'{name}__{bid}': {'model': b['model'], **({'effort': b['effort']} if b.get('effort') else {}),
+                               'provider': 'omp', 'harness': 'omp',
+                               'launch_model': f"{row['omp_provider']}/{b.get('launch_model') or b['model']}"}
+            for bid, b in spec.get('bundles', {}).items()
+            if b.get('provider', qfamily) == qfamily and (not cached or (b.get('launch_model') or b['model']) in cached)}
+        return spec
+    if family == 'grok':
+        return copy.deepcopy(templates.get('grok') or {
+            'plan': 'unknown', 'billing': 'subscription', 'expires_at': None,
+            'unmetered': True, 'windows': {},
+            'bundles': {'grok47_high': {'provider': name, 'harness': 'grok', 'model': 'grok-4.7', 'effort': 'high'}},
+        })
+    if family == 'grok-bot':
+        return {'plan': 'unknown', 'billing': 'unknown',
+            'windows': {}, 'bundles': {
+            'grok_bot': {'provider': name, 'harness': 'grok-bot', 'model': 'grok-bot'},
+        }}
+    if family in ('claude', 'codex') and family in templates:
+        spec = copy.deepcopy(templates[family])
+        if row.get('billing') == 'unknown':
+            spec['billing'] = 'metered'
+        spec['bundles'] = {f'{name}__{bid}': {**b, 'provider': name, 'harness': family} for bid, b in spec['bundles'].items()
+                           if b.get('provider', family) == family}
+        for bundle in spec['bundles'].values():
+            bundle.setdefault('modeId', 'bypassPermissions' if family == 'claude' else 'full-access')
+        efforts = accounts.get('dispatch_efforts')
+        if isinstance(efforts, dict) and family in efforts and name not in efforts:
+            efforts[name] = copy.deepcopy(efforts[family])
+        return spec
+    if row.get('models'):
+        return {'plan': row.get('plan') or 'discovered',
+            'billing': row.get('billing') or 'unknown', 'windows': {},
+            'bundles': {}}  # auto_bundles derives these below
+    return None
+
+
+def _settle_metered_usd_spec(spec, row):
+    """A metered dollar account: its plan label, and a balance window sized by its budget when it has one."""
+    spec['billing'] = 'metered'
+    spec['backend_kind'] = 'metered_usd'
+    row_plan = row.get('plan')
+    if isinstance(row_plan, str) and row_plan.strip():
+        spec['plan'] = row_plan
+    if row.get('status') == account_state.LEGACY_METER:
+        import state_upgrade
+        spec['legacy_meter'] = row.get('reason') or state_upgrade.LEGACY_METER_REASON
+        spec['windows'] = {}
+        spec.pop('capacity_usd', None)
+        spec.setdefault('bundles', {})
+        return
+    spec.pop('legacy_meter', None)
+    budget = row.get('budget_usd')
+    if isinstance(budget, (int, float)) and not isinstance(budget, bool) and budget > 0:
+        spec['windows'] = {'balance': {}}
+        cap = spec.get('capacity_usd')
+        if not isinstance(cap, dict):
+            cap = {}
+            spec['capacity_usd'] = cap
+        cap['balance'] = float(budget)
+    else:
+        spec['windows'] = {}
+        cap = spec.get('capacity_usd')
+        if isinstance(cap, dict):
+            cap.pop('balance', None)
+            if not cap:
+                spec.pop('capacity_usd', None)
+    spec.setdefault('bundles', {})
+
+
+def _settle_plan(spec, row, accounts, shipped_templates):
+    """The discovered plan with its template's windows and capacity, and the discovered billing. Returns the template
+    (None when no template names the plan), the plan and the family whose plans apply."""
+    family = row['family']
+    plan = row.get('plan')
+    quota_family = row.get('quota_family') or family   # an omp OAuth login uses the plans of the family it signs in to
+    # A plan the user wrote in the account document seeds the template when discovery reports none
+    # (claude/codex without a discovered plan stay unknown below).
+    template_plan = configured_plan(
+        quota_family,
+        plan or (spec.get('plan') if family not in ('claude', 'codex') else None),
+        accounts=accounts,
+        shipped=shipped_templates,
+    )
+    template = plan_defaults(accounts, quota_family, template_plan, shipped=shipped_templates) if template_plan else None
+    # A plan no template names is unknown: it is priced at the family's smallest paid plan and warned about, never
+    # at the largest. An account on a metered API key has no plan to know.
+    priced_as = UNKNOWN_PLAN_PRICED_AS.get(quota_family) if template is None and row.get('billing') == 'subscription' else None
+    spec.pop('plan_unknown', None)
+    spec.pop('plan_priced_as', None)
+    if priced_as and not account_state.plan_is_inactive(quota_family, plan):
+        template = plan_defaults(accounts, quota_family, priced_as, shipped=shipped_templates)
+        spec.update(plan_unknown=str(plan or template_plan or 'not reported'), plan_priced_as=priced_as)
+    if plan:
+        previous_plan = configured_plan(quota_family, spec.get('plan'), accounts=accounts, shipped=shipped_templates)
+        spec['plan'] = plan
+        if previous_plan == template_plan:
+            pass  # same named plan can have account-specific promotional capacity
+        elif template and family != 'grok':
+            for key in TEMPLATE_KEYS:
+                if key in template:
+                    spec[key] = copy.deepcopy(template[key])
                 else:
-                    bundle['discovery_unavailable'] = 'model not advertised by the configured provider'
-    _apply_auto_bundles(accounts, inventory, live)
+                    spec.pop(key, None)
+    if template and family != 'grok' and not (family in ('claude', 'codex') and not plan):
+        fill_template_gaps(spec, template)
+    if row.get('billing') and row['billing'] != 'unknown':
+        spec['billing'] = row['billing']
+    if family in ('claude', 'codex') and (not plan or row.get('billing') == 'metered'):
+        spec['plan'] = 'API' if row.get('billing') == 'metered' else 'unknown'
+        if row.get('billing') == 'metered':
+            spec['windows'] = {}
+        elif spec.get('plan_priced_as'):
+            for key in TEMPLATE_KEYS:
+                if key in template:
+                    spec[key] = copy.deepcopy(template[key])
+    return template, plan, quota_family
+
+
+def _mark_unknown_tier(spec, row, raw_label, not_reported, unrecognized):
+    """A tier no plan template names: the plan is unknown, with the reader's own error or which label was not known."""
+    is_placeholder = account_state.plan_without_vendor(raw_label) in ('', 'unknown', 'subscription')
+    spec['plan'] = 'unknown'
+    spec['plan_unknown'] = str(row.get('plan_error') or (not_reported if is_placeholder else f'{unrecognized} {raw_label!r}'))
+
+
+def _settle_unknown_tier(spec, row, template, plan, quota_family):
+    """Antigravity and Grok tiers that no template names, and Grok's usage windows."""
+    family = row['family']
+    if family == 'antigravity' and template is None and not account_state.plan_is_inactive(quota_family, plan):
+        _mark_unknown_tier(spec, row, str(plan or spec.get('plan') or '').strip(),
+                           'subscription tier not reported by loadCodeAssist', 'unrecognized Antigravity tier')
+    if family == 'grok':
+        window_ids = row.get('usage_windows') or []
+        spec['unmetered'] = not bool(window_ids)
+        if window_ids:
+            spec.setdefault('windows', {}).update({wid: {'hours': 168, 'launch_min_remaining_pct': 5}
+                                                   for wid in window_ids if wid not in spec.get('windows', {})})
+        if template is None:
+            _mark_unknown_tier(spec, row, str(plan or '').strip(),
+                               'subscription tier not reported by Grok API', 'unrecognized tier')
+
+
+def _settle_bundles(spec, name, row, inventory, known_models, aliases, model_families):
+    """Mark bundles discovery cannot launch, and bind each to a model the configured provider advertises."""
+    advertised = row.get('models')
+    for bundle in spec.get('bundles', {}).values():
+        reason = unavailable_reason(inventory, name, bundle.get('provider', name))
+        if reason:
+            bundle['discovery_unavailable'] = reason
+        if isinstance(advertised, list):
+            match = bundle.get('launch_model') if bundle.get('launch_model') in advertised else next((m for m in advertised if (resolve_canonical_model(m, known_models, aliases, model_families) or m.rsplit('/', 1)[-1])
+                          == (resolve_canonical_model(bundle['model'], known_models, aliases, model_families) or bundle['model'])), None)
+            if match:
+                bundle['launch_model'] = match
+            else:
+                bundle['discovery_unavailable'] = 'model not advertised by the configured provider'
+
+
+def _fold_into_quota_owners(accounts, inventory, known_models, aliases, model_families):
+    """A second account on the owner's subscription (Pi signed in as the Codex account) re-derives what the owner
+    already launches through the same launcher; the owner's rows and its enable/disable curation stand."""
     from account_fleet import bundle_harness
+    specs = accounts['accounts']
+
+    def launch_key(bid, bundle, account):
+        model = resolve_canonical_model(bundle.get('model'), known_models, aliases, model_families) or bundle.get('model')
+        return bundle.get('provider', account), bundle_harness(bundle, account, bid), model, bundle.get('effort')
+
     for name, row in inventory['accounts'].items():
         owner = row.get('quota_account')
         if owner and owner != name and name in specs and owner in specs:
-            # A second account on the owner's subscription (Pi signed in as the Codex account) re-derives what the
-            # owner already launches through the same launcher; the owner's rows and its enable/disable curation stand.
-            def launch_key(bid, bundle, account):
-                model = resolve_canonical_model(bundle.get('model'), known_models, aliases, model_families) or bundle.get('model')
-                return bundle.get('provider', account), bundle_harness(bundle, account, bid), model, bundle.get('effort')
             offered = {launch_key(bid, b, owner) for bid, b in specs[owner].get('bundles', {}).items()}
             for bid, bundle in specs[name].get('bundles', {}).items():
                 if launch_key(bid, bundle, name) not in offered:
                     specs[owner]['bundles'][bid] = {**bundle, 'provider': bundle.get('provider', name)}
             specs[name]['bundles'] = {}
             specs[name]['quota_account'] = owner
-    apply_shared_quota(accounts)
-    return accounts
 
 
 def merge_usage(usage, accounts, now, names=None):

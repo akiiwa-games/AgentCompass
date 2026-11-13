@@ -14,15 +14,19 @@ import csv
 import io
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
 import easytier_paths
 import psutil
-import service_ports
+from agentcompass import ports
 
 CREATE_NO_WINDOW = 0x08000000
-ROOT = Path(__file__).resolve().parents[1]
 HOME = easytier_paths.home()      # as found at import; installed() and peers() look again, a migration moves it
 BIN = HOME / "bin"
 PRIVATE = HOME / "private"
@@ -33,7 +37,7 @@ CLI = BIN / "easytier-cli.exe"
 SUPERVISOR = BIN / "easytier-supervisor.ps1"
 CONFIG = PRIVATE / "node.toml"
 TASK_NAME = "AgentCompass EasyTier"
-RPC_PORTAL = f"127.0.0.1:{service_ports.get('easytier_rpc')}"
+RPC_PORTAL = f"127.0.0.1:{ports.get('easytier_rpc')}"
 # Task Scheduler's TASK_STATE values.
 TASK_DISABLED, TASK_QUEUED, TASK_READY, TASK_RUNNING = 1, 2, 3, 4
 STOP_WAIT = 20.0

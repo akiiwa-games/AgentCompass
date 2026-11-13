@@ -1,8 +1,8 @@
 """Register an already signed-in isolated Claude account (any name, any home). Never copies tokens.
 
 Close the hosted Usage Float UI first (shutdown saves its old settings).
-Run: python setup/claude2_config.py [--account claude-work] [--home <dir>] [--label "Claude Work"]
-The account defaults to claude-2 with its home at ~/.<account>.
+Run: python setup/register_claude_account.py --account claude-work [--home <dir>] [--label "Claude Work"]
+The account name is required; its home defaults to ~/.<account>.
 Then reload Paseo (no daemon restart) and start the hosted Usage Float UI.
 """
 from __future__ import annotations
@@ -16,14 +16,8 @@ import shutil
 import uuid
 
 
-DEFAULT_ACCOUNT = 'claude-2'
-
-
 def usage_rows(account: str) -> list[str]:
     return [f'{account}:7d', f'{account}:5h']
-
-
-SECOND_ROWS = usage_rows(DEFAULT_ACCOUNT)
 
 
 def validate_account(account: str) -> str:
@@ -36,7 +30,7 @@ def default_label(account: str) -> str:
     return 'Claude ' + account.removeprefix('claude-').replace('-', ' ').title()
 
 
-def provider_config(home: Path, account: str = DEFAULT_ACCOUNT, account_home: Path | None = None,
+def provider_config(home: Path, account: str, account_home: Path | None = None,
                     label: str | None = None) -> dict:
     account_home = account_home or home / f'.{account}'
     return {
@@ -56,7 +50,7 @@ def provider_config(home: Path, account: str = DEFAULT_ACCOUNT, account_home: Pa
     }
 
 
-def float_config(config: dict, rows: list[str] = SECOND_ROWS) -> dict:
+def float_config(config: dict, rows: list[str]) -> dict:
     """Keep all existing visibility choices; enable only the account's two new rows."""
     for key in ('providers', 'provider_order'):
         values = config.setdefault(key, [])
@@ -94,10 +88,10 @@ def load(path: Path) -> dict:
     return data
 
 
-def sync_shared_claude_assets(home: Path, account_home: Path | None = None) -> None:
+def sync_shared_claude_assets(home: Path, account_home: Path) -> None:
     """Ensure the account home shares CLAUDE.md, settings.json, and skills with ~/.claude."""
     primary = home / '.claude'
-    account = account_home or home / f'.{DEFAULT_ACCOUNT}'
+    account = account_home
     if not primary.is_dir() or not account.is_dir():
         return
     src_md = primary / 'CLAUDE.md'
@@ -127,7 +121,7 @@ def launch_settings(spec: dict) -> dict:
     return {key: spec.get(key) for key in ('extends', 'enabled', 'env')} if isinstance(spec, dict) else {}
 
 
-def configure(home: Path, account: str = DEFAULT_ACCOUNT, account_home: Path | None = None,
+def configure(home: Path, account: str, account_home: Path | None = None,
               label: str | None = None) -> None:
     account = validate_account(account)
     account_home = Path(account_home).expanduser() if account_home else home / f'.{account}'
@@ -159,7 +153,7 @@ def configure(home: Path, account: str = DEFAULT_ACCOUNT, account_home: Path | N
 
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--account', default=DEFAULT_ACCOUNT, help='Paseo provider / router account name (for example team-backup)')
+    parser.add_argument('--account', required=True, help='Paseo provider / router account name (for example team-backup)')
     parser.add_argument('--home', type=Path, help='The signed-in CLAUDE_CONFIG_DIR (default ~/.<account>)')
     parser.add_argument('--label', help='Display name (default derived from the account name)')
     args = parser.parse_args(argv)

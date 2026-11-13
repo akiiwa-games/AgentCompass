@@ -796,6 +796,8 @@ EN = {
     'max(t3 − t2)，取 {0}：{1:.3f} − ({2:.3f}) = {3:.3f}': 'max(t3 − t2), from {0}: {1:.3f} − ({2:.3f}) = {3:.3f}',
     '面板标准分 z：以锚点模型 High 档为 0.000，1 个单位为 1 个面板标准差（L1 面板最弱、L2 面板中位数、L3 锚点）。': 'Panel z-score: 0.000 at the anchor model (High), 1 unit = 1 panel standard deviation (L1 panel weakest, L2 panel median, L3 anchor).',
     '等级 {0}：{1}（{2}）': 'Level {0}: {1} ({2})',
+    '等级 3 上限（契合度读取）：{0}（{1}）；等级 1、2 封顶在目标': 'Level-3 cap the fit reads: {0} ({1}); levels 1 and 2 are capped at their target',
+    '本分项最高实测：{0}（{1}）': 'Best measured on this facet: {0} ({1})',
     '额度经济：暂无已计价的长周期窗口读数': 'Quota economy: no priced long-window readings',
     '{0} {1}/{2}（线 {3} · λ {4:.4f}）': '{0} {1}/{2} (line {3} · λ {4:.4f})',
     ' 等 {0} 个窗口': ' ({0} windows total)',

@@ -2338,7 +2338,7 @@ def verify_f13_product_layout(ctx: dict):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--wheel", type=Path, help="Install this wheel instead of building one from the working tree.")
-    parser.add_argument("--report", type=Path, default=ROOT / ".route-briefs" / "foreign-machine-report")
+    parser.add_argument("--report", type=Path, default=ROOT / "foreign-machine-report")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--only", nargs="+", metavar="FXX", help="Run only these features (F09 always runs), e.g. --only F10.")
     args = parser.parse_args(argv)
