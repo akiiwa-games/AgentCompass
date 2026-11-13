@@ -23,11 +23,13 @@ import account_fleet
 #   factors, no difficulty floors, no free-usage bonus.
 # - Targets come from the panel (five-axis-scores.json `anchor.targets`): level 1 the panel's weakest, level 2 its median,
 #   level 3 the anchor. tool_operation asks per facet: level 1 nothing, level 2 responsiveness, level 3 responsiveness
-#   and image recognition, never less of a facet than the level below.
-# - Fit (five_axis_fit) = sum_a w_a x (min(z_a, t_a) - t1_a) / sum_a w_a over the demanded categories, w_a the demand
-#   level, t_a the level's target and t1_a the level-1 target (the panel's weakest). It is in panel standard deviations:
-#   0 is the panel's weakest model on every demanded category, the anchor scores t_a - t1_a, and no score above the
-#   target earns more. A candidate below the panel's weakest scores below 0. The economy reads the same fit, and 0 is
+#   and image recognition, never less of a facet than the level below. Each level-3 row also carries its `ceiling`, the
+#   best measured High value among the catalogued models (owner, 2026-11-13).
+# - Fit (five_axis_fit) = sum_a w_a x (min(z_a, c_a) - t1_a) / sum_a w_a over the demanded categories, w_a the demand
+#   level, t1_a the level-1 target (the panel's weakest) and c_a the cap: the level's target at levels 1 and 2, the
+#   ceiling at level 3. It is in panel standard deviations: 0 is the panel's weakest model on every demanded category,
+#   routine levels give no credit above their target, and the hardest level keeps rewarding ability up to the best
+#   measured model. A candidate below the panel's weakest scores below 0. The economy reads the same fit, and 0 is
 #   its total loss (a candidate at or below it is never an outside alternative).
 # - Continuity: continuing a related worker (coupling high, the same bundle) is worth one demand level, the largest
 #   positive t3 - t2 among the task's highest-demand categories (else 0); the context rotation cap (worker_worn) stands.
@@ -101,6 +103,25 @@ def load_five_axis(path=None, *, use_effective=True):
     default_file = account_fleet.REFERENCES / 'five-axis-scores.json'
     target = Path(path) if path is not None else (public_data.effective(default_file) if use_effective else default_file)
     return json.loads(target.read_text(encoding='utf-8'))
+
+
+def require_level3_ceilings(data):
+    """Fail fast on a five-axis-scores.json written before level-3 ceilings (schema agent-compass.five-axis-scores/3): the
+    fit reads `ceiling` on every level-3 row that has a target (per facet for tool_operation), so an older file is named
+    with what to run instead of failing later with a KeyError."""
+    targets = (data.get('anchor') or {}).get('targets') or {}
+    missing = []
+    for a in FIVE_AXES:
+        level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
+        rows = (level3.get('by_facet') or {}).items() if a == 'tool_operation' else [(None, level3)]
+        for f, r in rows:
+            if r.get('target') is not None and not isinstance((r.get('ceiling') or {}).get('value'), (int, float)):
+                missing.append(a if f is None else f'{a}.{f}')
+    if missing:
+        raise ValueError(
+            f"five-axis-scores.json (schema {data.get('schema')!r}) has no level-3 ceiling for {', '.join(missing)}; this "
+            'code reads agent-compass.five-axis-scores/3. In an install run `agentcompass data --refresh` (or update '
+            'AgentCompass); in a checkout run `python -X utf8 agentcompass data refresh --no-fetch`.')
 
 
 def load_public_user_scores(path=None, *, use_effective=True):
@@ -492,6 +513,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     if not anchor.get('model') or set(targets) != set(FIVE_AXES):
         raise ValueError('five-axis-scores.json names no anchor model or no panel targets for the four categories: the fit '
                          'has nothing to stand on')
+    require_level3_ceilings(data)
     out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor['model'], 'targets': targets,
                          'panel_n': anchor.get('panel_n')}
     pub_manual = public_scores if public_scores is not None else (
@@ -551,7 +573,10 @@ def five_axis_values(state, effort):
 
 def five_axis_targets(demand, targets):
     """{category: the demanded level's target row} from five-axis-scores.json `anchor.targets`, for every demanded category
-    that asks for something (tool_operation level 1 asks for nothing)."""
+    that asks for something (tool_operation level 1 asks for nothing). `cap` is where the fit stops counting: the target
+    itself at levels 1 and 2, the level-3 row's `ceiling` (the best measured model) at level 3."""
+    def row_of(r, w):
+        return {'target': r['target'], 'zero': r['zero'], 'cap': r['ceiling']['value'] if w == 3 else r['target']}
     out = {}
     for a, w in demand.items():
         if w <= 0:
@@ -559,17 +584,19 @@ def five_axis_targets(demand, targets):
         row = ((targets.get(a) or {}).get('levels') or {}).get(str(w)) or {}
         if a == 'tool_operation':
             if row.get('by_facet'):
-                out[a] = {'by_facet': {f: {'target': r['target'], 'zero': r['zero']} for f, r in row['by_facet'].items()}}
+                out[a] = {'by_facet': {f: row_of(r, w) for f, r in row['by_facet'].items()}}
         elif row.get('target') is not None:
-            out[a] = {'target': row['target'], 'zero': row['zero']}
+            out[a] = row_of(row, w)
     return out
 
 
 def five_axis_fit(values, demand, targets):
-    """(fit, {category: row}): sum_a w_a x (min(z_a, t_a) - t1_a) / sum_a w_a over the demanded categories that ask for
-    something, in panel standard deviations (module comment above). tool_operation reads min over its level's facets of
-    (min(z_f, t_f) - t1_f). A category or facet without a value stands at its zero (the panel's weakest): rule B keeps
-    such a model out of automatic routing, so this only prices a named dispatch."""
+    """(fit, {category: row}): sum_a w_a x (min(z_a, c_a) - t1_a) / sum_a w_a over the demanded categories that ask for
+    something, in panel standard deviations (module comment above); c_a is the row's `cap` (five_axis_targets): the
+    target at levels 1 and 2, the category's ceiling at level 3. tool_operation reads min over its level's facets of
+    (min(z_f, c_f) - t1_f). The shortfall is still measured to the target. A category or facet without a value stands at
+    its zero (the panel's weakest): rule B keeps such a model out of automatic routing, so this only prices a named
+    dispatch."""
     rows, value, total = {}, 0.0, 0
     for a, w in demand.items():
         tgt = targets.get(a)
@@ -580,7 +607,7 @@ def five_axis_fit(values, demand, targets):
             for f, t in tgt['by_facet'].items():
                 z = (values.get(a) or {}).get(f)
                 parts[f] = {'score': None if z is None else round(z, 4), 'target': t['target'], 'zero': t['zero'],
-                            'term': round((min(z, t['target']) - t['zero']) if z is not None else 0.0, 4)}
+                            'cap': t['cap'], 'term': round((min(z, t['cap']) - t['zero']) if z is not None else 0.0, 4)}
             scored = list(parts.values())
             term = min(p['term'] for p in scored)
             rows[a] = {'demand': w, 'facets': parts, 'term': term,
@@ -588,20 +615,44 @@ def five_axis_fit(values, demand, targets):
                                               else p['target'] - p['zero'] for p in scored), 4)}
         else:
             z = values.get(a)
-            term = round((min(z, tgt['target']) - tgt['zero']) if z is not None else 0.0, 4)
+            term = round((min(z, tgt['cap']) - tgt['zero']) if z is not None else 0.0, 4)
             rows[a] = {'demand': w, 'score': None if z is None else round(z, 4), 'target': tgt['target'],
-                       'zero': tgt['zero'], 'term': term,
+                       'zero': tgt['zero'], 'cap': tgt['cap'], 'term': term,
                        'shortfall': round(max(0.0, tgt['target'] - z) if z is not None else tgt['target'] - tgt['zero'], 4)}
         value += w * term
         total += w
     return (value / total if total else 0.0), rows
 
 
+def five_axis_headroom(rows, targets):
+    """{category: {'above_anchor', 'ceiling', 'model'}} for the categories `rows` (five_axis_fit) demand at level 3: the
+    level-3 cap the fit reads there (the category's ceiling, with the model that sets it) and the part of the candidate's
+    score above the anchor that the fit counts, min(z, ceiling) above z = 0 (z is anchor-relative, so this is the same
+    reference as the ceiling; 0 at or below the anchor). tool_operation reports the facet that decides its term
+    (`facet`). Display only (the decision radar's hover): the radar spoke itself stays five_axis_shares."""
+    out = {}
+    for a, r in rows.items():
+        if r['demand'] != 3:
+            continue
+        level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
+        facet = {}
+        if 'facets' in r:
+            f, part = min(r['facets'].items(), key=lambda kv: kv[1]['term'])
+            r, ceiling, facet = part, level3['by_facet'][f]['ceiling'], {'facet': f}
+        else:
+            ceiling = level3['ceiling']
+        z = r['score']
+        out[a] = {'above_anchor': None if z is None else round(max(0.0, min(z, ceiling['value'])), 4),
+                  'ceiling': ceiling['value'], 'model': ceiling['model'], **facet}
+    return out
+
+
 def five_axis_shares(values, targets):
     """{category: 0..1} for display (the tray radar): (min(z, t3) - t1) / (t3 - t1), where t1 is the level-1 target (the
-    panel's weakest) and t3 the level-3 target (the anchor): 0 at the panel's weakest, 1 at the level the hardest demand
-    asks, never more (the fit gives no credit above a target either). tool_operation takes the weakest of its level-3
-    facets when all required level-3 facets have a value; None where any required facet has no value."""
+    panel's weakest) and t3 the level-3 target (the anchor): 0 at the panel's weakest, 1 at the anchor, never more; a
+    level-3 demand's credit above the anchor up to the ceiling is shown in the decision hover (five_axis_headroom).
+    tool_operation takes the weakest of its level-3 facets when all required level-3 facets have a value; None where any
+    required facet has no value."""
     def share(z, row):
         if z is None or not row or row.get('target') is None or row['target'] <= row['zero']:
             return None

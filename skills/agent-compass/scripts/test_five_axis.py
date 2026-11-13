@@ -39,20 +39,27 @@ PROFILE = {'reasoning_depth': 2, 'code_complexity': 2,
 EFFORT_NAMES = ('low', 'medium', 'high', 'xhigh', 'max')
 
 
-def level_targets(t1=-1.0, t2=-0.5, t3=0.0):
+def ceiling_row(value):
+    return {'value': value, 'model': 'best', 'status': 'measured', 'n': 12}
+
+
+def level_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
     """One category's panel targets as five-axis-scores.json writes them (level 1 the panel's weakest, 2 the median, 3
-    the anchor; `zero` is the level-1 target). tool_operation asks per facet."""
+    the anchor; `zero` is the level-1 target; the level-3 row carries the `ceiling`, the best measured model, t3 unless
+    given). tool_operation asks per facet."""
     def lv(t, name):
         return {'target': t, 'zero': t1, 'statistic': name, 'n': 12}
-    return {'levels': {'1': lv(t1, 'panel minimum'), '2': lv(t2, 'panel median'), '3': lv(t3, 'anchor')},
+    return {'levels': {'1': lv(t1, 'panel minimum'), '2': lv(t2, 'panel median'),
+                       '3': {**lv(t3, 'anchor'), 'ceiling': ceiling_row(t3 if ceiling is None else ceiling)}},
             'continuity': round(t3 - t2, 4)}
 
 
-def tool_targets(t1=-1.0, t2=-0.5, t3=0.0):
+def tool_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
     facet = lambda t: {'target': t, 'zero': t1, 'n': 12}
+    top = lambda t: {**facet(t), 'ceiling': ceiling_row(t if ceiling is None else max(t, ceiling))}
     return {'levels': {'1': {'by_facet': {}, 'reason': 'no ability requirement'},
                        '2': {'by_facet': {'responsiveness': facet(t2)}},
-                       '3': {'by_facet': {'responsiveness': facet(max(t2, t3)), 'image_recognition': facet(t3)}}},
+                       '3': {'by_facet': {'responsiveness': top(max(t2, t3)), 'image_recognition': top(t3)}}},
             'continuity': round(max(t2, t3) - t2, 4)}
 
 
@@ -171,19 +178,20 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual(sol_high(coding)['components']['five_axis_shortfall'], 0.0)
 
     def test_fit_is_the_capped_distance_from_the_panel_weakest_in_panel_sd_units(self):
-        """Q7 (user, 2026-11-11): fit = sum w (min(z, t) - t1) / sum w; 0 is the panel's weakest, no credit above the
-        target, below the weakest is negative. tool_operation level 1 asks for nothing; level 3 is min over its facets."""
+        """Q7 (user, 2026-11-11): fit = sum w (min(z, c) - t1) / sum w; 0 is the panel's weakest, below the weakest is
+        negative; c is the target at levels 1 and 2 and the ceiling at level 3 (owner, 2026-11-13). tool_operation level 1
+        asks for nothing; level 3 is min over its facets."""
         d = demand(3, 1, 0, 2)
         targets = axis_scores.five_axis_targets(d, TARGETS)
-        self.assertEqual(targets, {'divergence': {'target': 0.0, 'zero': -1.0}, 'coding': {'target': -1.0, 'zero': -1.0},
-                                   'tool_operation': {'by_facet': {'responsiveness': {'target': -0.5, 'zero': -1.0}}}})
+        self.assertEqual(targets, {'divergence': {'target': 0.0, 'zero': -1.0, 'cap': 0.0},
+                                   'coding': {'target': -1.0, 'zero': -1.0, 'cap': -1.0},
+                                   'tool_operation': {'by_facet': {'responsiveness': {'target': -0.5, 'zero': -1.0,
+                                                                                      'cap': -0.5}}}})
         values = {'divergence': -0.3, 'coding': 0.4, 'aesthetics': -3.0,
                   'tool_operation': {'responsiveness': -0.8, 'image_recognition': -5.0}}
         fit, rows = axis_scores.five_axis_fit(values, d, targets)
         self.assertAlmostEqual(fit, (3 * 0.7 + 1 * 0.0 + 2 * 0.2) / 6, places=4)
         self.assertNotIn('aesthetics', rows)                 # an undemanded category does not count
-        above = axis_scores.five_axis_fit({**values, 'divergence': 1.5}, d, targets)[0]
-        self.assertAlmostEqual(above, (3 * 1.0 + 0 + 2 * 0.2) / 6, places=4)        # capped at the target
         below = axis_scores.five_axis_fit({**values, 'divergence': -2.0}, d, targets)[0]
         self.assertLess(below, 0.2)
         self.assertAlmostEqual(below, (3 * -1.0 + 0 + 2 * 0.2) / 6, places=4)       # below the weakest: negative term
@@ -197,6 +205,91 @@ class FiveAxisTests(unittest.TestCase):
         fit3, rows3 = axis_scores.five_axis_fit(values, demand(0, 0, 0, 3), {'tool_operation': {'by_facet': t3}})
         self.assertAlmostEqual(fit3, -4.0, places=4)
         self.assertEqual(rows3['tool_operation']['facets']['image_recognition']['term'], -4.0)
+
+    def test_levels_one_and_two_stop_at_the_target_and_level_three_climbs_to_the_ceiling(self):
+        """Owner 2026-11-13: routine levels pay nothing for surplus ability; a level-3 demand is capped at the category's
+        ceiling (the best measured model): its fit is non-decreasing in z, strictly increasing between t3 and the
+        ceiling, and the same min cuts anything above the ceiling."""
+        targets = {'divergence': level_targets(-1.0, -0.5, 0.0, ceiling=0.6), 'coding': level_targets(),
+                   'aesthetics': level_targets(), 'tool_operation': tool_targets(-1.0, -0.5, 0.0, ceiling=0.6)}
+        zs = [x / 10 for x in range(-15, 16)]
+
+        def fit_at(d, t, z):
+            return axis_scores.five_axis_fit(
+                {'divergence': z, 'tool_operation': {'responsiveness': z, 'image_recognition': z}}, d, t)[0]
+        for level in (1, 2):
+            for d, key in ((demand(level, 0, 0, 0), 'divergence'), (demand(0, 0, 0, level), 'tool_operation')):
+                t = axis_scores.five_axis_targets(d, targets)
+                rows = [t[key]] if key == 'divergence' else list((t.get(key) or {}).get('by_facet', {}).values())
+                if not rows:
+                    continue                                     # tool_operation level 1 asks for nothing
+                target = max(r['target'] for r in rows)
+                self.assertEqual({fit_at(d, t, z) for z in zs if z >= target}, {fit_at(d, t, target)})
+        for d, key in ((demand(3, 0, 0, 0), 'divergence'), (demand(0, 0, 0, 3), 'tool_operation')):
+            t = axis_scores.five_axis_targets(d, targets)
+            fits = [fit_at(d, t, z) for z in zs]
+            self.assertTrue(all(b >= a for a, b in zip(fits, fits[1:])))
+            row3 = targets[key]['levels']['3']
+            rows = [row3] if key == 'divergence' else list(row3['by_facet'].values())
+            t3, ceiling = max(r['target'] for r in rows), min(r['ceiling']['value'] for r in rows)
+            between = [z for z in zs if t3 <= z <= ceiling]
+            self.assertGreater(len(between), 2)
+            self.assertTrue(all(fit_at(d, t, b) > fit_at(d, t, a) for a, b in zip(between, between[1:])))
+            self.assertEqual(fit_at(d, t, ceiling + 1.0), fit_at(d, t, ceiling))
+
+    def test_a_candidate_at_or_below_t3_scores_as_before_the_ceiling(self):
+        """Owner 2026-11-13: the ceiling changes only what lies above t3; any candidate with every demanded z <= t3 has
+        the fit it had when the level-3 cap was t3 (a ceiling equal to t3)."""
+        import random
+        raised = {a: tool_targets(ceiling=0.8) if a == 'tool_operation' else level_targets(ceiling=0.8) for a in TARGETS}
+        rng = random.Random(7)
+        for _ in range(200):
+            d = demand(*(rng.randint(0, 3) for _ in range(4)))
+            values = {a: rng.uniform(-3.0, 0.0) for a in ('divergence', 'coding', 'aesthetics')}
+            values['tool_operation'] = {f: rng.uniform(-3.0, 0.0) for f in ('responsiveness', 'image_recognition')}
+            before = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, TARGETS))[0]
+            after = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, raised))[0]
+            self.assertEqual(before, after)
+
+    def test_the_radar_stops_at_the_anchor_and_the_hover_names_the_level_three_headroom(self):
+        """The radar spoke is (min(z, t3) - t1) / (t3 - t1) whatever the ceiling; a level-3 demand's credit above the
+        anchor and its cap (the ceiling with the model that sets it) are display facts for the hover, computed from the
+        fit rows, and only for categories demanded at level 3."""
+        targets = {**TARGETS, 'divergence': level_targets(-1.0, -0.5, 0.0, ceiling=1.0),
+                   'tool_operation': tool_targets(-1.0, -0.5, 0.0, ceiling=0.6)}
+        values = {'divergence': 0.5, 'coding': -0.2, 'aesthetics': None,
+                  'tool_operation': {'responsiveness': 0.3, 'image_recognition': 0.1}}
+        shares = axis_scores.five_axis_shares(values, targets)
+        self.assertEqual((shares['divergence'], shares['tool_operation']), (1.0, 1.0))
+        self.assertEqual(shares, axis_scores.five_axis_shares(values, TARGETS))     # the ceiling never moves a spoke
+        d = demand(3, 2, 0, 3)
+        rows = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, targets))[1]
+        headroom = axis_scores.five_axis_headroom(rows, targets)
+        self.assertEqual(set(headroom), {'divergence', 'tool_operation'})            # coding is demanded at level 2
+        self.assertEqual(headroom['divergence'], {'above_anchor': 0.5, 'ceiling': 1.0, 'model': 'best'})
+        name, deciding = min(rows['tool_operation']['facets'].items(), key=lambda kv: kv[1]['term'])
+        tool = headroom['tool_operation']
+        self.assertEqual(tool['facet'], name)
+        self.assertEqual(tool['above_anchor'], round(max(0.0, min(deciding['score'], tool['ceiling'])), 4))
+        t = axis_scores.five_axis_targets(d, targets)
+        for z, shown in ((-0.4, 0.0), (1.4, 1.0)):       # nothing at or below the anchor; never more than the ceiling
+            rows_z = axis_scores.five_axis_fit({**values, 'divergence': z}, d, t)[1]
+            self.assertEqual(axis_scores.five_axis_headroom(rows_z, targets)['divergence']['above_anchor'], shown)
+
+    def test_a_five_axis_file_without_level_three_ceilings_is_named_with_what_to_run(self):
+        """A file written before schema /3 fails with a message naming the missing rows and the command, never a KeyError."""
+        old = copy.deepcopy(TARGETS)
+        del old['coding']['levels']['3']['ceiling']
+        del old['tool_operation']['levels']['3']['by_facet']['image_recognition']['ceiling']
+        doc = {'schema': 'agent-compass.five-axis-scores/2', 'anchor': {**ANCHOR, 'targets': old}}
+        with self.assertRaises(ValueError) as caught:
+            axis_scores.require_level3_ceilings(doc)
+        text = str(caught.exception)
+        for part in ('coding', 'tool_operation.image_recognition', 'five-axis-scores/2', 'agentcompass data'):
+            self.assertIn(part, text)
+        self.assertNotIn('divergence', text)
+        axis_scores.require_level3_ceilings({'anchor': ANCHOR})                    # the current shape passes
+        axis_scores.require_level3_ceilings(axis_scores.load_five_axis())           # and so does the shipped file
 
     def test_continuity_is_one_demand_level_of_the_highest_demanded_categories(self):
         targets = {**TARGETS, 'coding': level_targets(-2.0, -1.4, 0.0), 'tool_operation': tool_targets(-1.7, 0.14, 0.0)}
@@ -888,6 +981,38 @@ class HighFillTests(unittest.TestCase):
                          (-2.0, -1.0, 3))
         self.assertEqual(targets['facets'][key[1]]['levels']['1']['n'], 3)
 
+    def test_the_level_three_ceiling_is_the_best_measured_high_value_of_any_catalogued_model(self):
+        """Owner 2026-11-13: the ceiling is computed from the data: the highest measured or interpolated High value among
+        all catalogued models (a model outside the panel included), never an estimate; t3 itself stays the anchor."""
+        import five_axis
+        import measurements
+
+        def row(value, status, tool=None):
+            facet = {'value': value, 'by_effort': {'high': value}, 'status': status}
+            axes = {a: {} for a in five_axis.AXES}
+            axes['divergence'] = {'value': value, 'status': status, 'facets': {'creative_writing': facet}}
+            tool_facet = {'value': tool if tool is not None else value, 'status': status}
+            axes['tool_operation'] = {'facets': {f: dict(tool_facet) for f in five_axis.AXES['tool_operation']}}
+            return {'axes': axes}
+        rng = np.random.default_rng(3)
+        panel_vals = sorted(rng.uniform(-2.0, 0.5, 4).round(4))
+        rows = {measurements.ANCHOR: row(0.0, 'measured'),
+                **{f'p{i}': row(float(v), 'measured') for i, v in enumerate(panel_vals)},
+                'outside': row(float(max(panel_vals)) + 0.7, 'interpolated'),
+                'guess': row(float(max(panel_vals)) + 5.0, 'estimated')}
+        panel = [measurements.ANCHOR, *(f'p{i}' for i in range(len(panel_vals)))]
+        targets = self.scorer().targets(rows, panel)
+        best = max((r['axes']['divergence']['value'], m) for m, r in rows.items()
+                   if r['axes']['divergence']['status'] in five_axis.TARGET_STATUSES)
+        for lv in (targets['divergence']['levels']['3'], targets['divergence']['facets']['creative_writing']['levels']['3'],
+                   *targets['tool_operation']['levels']['3']['by_facet'].values()):
+            self.assertEqual((lv['ceiling']['value'], lv['ceiling']['model']), (round(best[0], 4), best[1]))
+            self.assertEqual(lv['ceiling']['status'], 'interpolated')
+            self.assertGreaterEqual(lv['ceiling']['value'], lv['target'])
+        self.assertEqual(targets['divergence']['levels']['3']['target'], 0.0)        # t3 stays the anchor
+        for level in ('1', '2'):
+            self.assertNotIn('ceiling', targets['divergence']['levels'][level])
+
     def test_shipped_targets_ignore_the_estimated_grok_4_7_image_recognition(self):
         shipped = axis_scores.load_five_axis()
         grok = shipped['models']['grok-4.7']['axes']['tool_operation']['facets']['image_recognition']
@@ -1064,7 +1189,17 @@ class AnchorRelativeTests(unittest.TestCase):
         _, _, _, _, _, targets_after = self.score(build_meas({
             'newtop': {'divergence': [{'source': 'lmarena.creative_writing', 'facet': 'creative_writing', 'value': 3.5}]}
         }))
-        self.assertEqual(targets_before, targets_after)
+
+        def without_ceiling(node):
+            if isinstance(node, dict):
+                return {k: without_ceiling(v) for k, v in node.items() if k != 'ceiling'}
+            return node
+        self.assertEqual(without_ceiling(targets_before), without_ceiling(targets_after))
+        # The level-3 ceiling is not a panel statistic: a measured model above every other raises it (owner, 2026-11-13).
+        before_c = targets_before['divergence']['levels']['3']['ceiling']
+        after_c = targets_after['divergence']['levels']['3']['ceiling']
+        self.assertEqual(after_c['model'], 'newtop')
+        self.assertGreater(after_c['value'], before_c['value'])
 
     def test_board_best_scaling_would_have_drifted(self):
         """Win rate against the board best moves models relative to the anchor when a new top model appears; panel z does not."""

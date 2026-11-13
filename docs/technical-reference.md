@@ -28,18 +28,29 @@ flowchart LR
 ```
 
 ```text
-fit        = sum_a w_a * (min(z_a, t_a) - t1_a) / sum_a w_a   (in panel standard deviations; zero point t1_a = panel weakest)
+fit        = sum_a w_a * (min(z_a, c_a) - t1_a) / sum_a w_a   (in panel standard deviations; zero point t1_a = panel weakest)
 targets    = t1: panel minimum, t2: panel median, t3: anchor (claude-opus-5-5 at High = 0.0)
+cap c_a    = t_a at demand levels 1 and 2; ceiling_a at level 3 (the highest measured or interpolated High value of any
+             catalogued model, never an estimate, converted or manual value)
 continuity = max positive (t3 - t2) among highest-demand categories when coupling == "high", else 0
 score N    = fit + continuity + boost - quota_cost
 ```
 
 The classifier states how much the task needs (0–3) of `divergence`, `coding`, `aesthetics` and `tool_operation` (`tool_operation`
 level 1 imposes no ability requirement; level 2 evaluates per-effort `responsiveness`; level 3 evaluates
-`min(responsiveness, image_recognition)` and requires image input). A model's category scores are panel standard scores (`z`)
+`min(responsiveness, image_recognition)` and requires image input; it applies the cap per facet). Routine levels pay nothing
+for ability above their target; a level-3 demand keeps crediting ability up to the category's ceiling, so the hardest tasks
+can prefer a model measured above the anchor. `t3` stays the anchor: the origin of `z`, level 3 of the manual 1–3 scale and the
+upper end of `continuity`. A model's category scores are panel standard scores (`z`)
 from public cited boards; a facet a model lacks is estimated from its same-series sibling or its `arena.ai` Overall tier fit (see
 [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). `quota_cost` is the quota economy: the part of the
-task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. Equal net scores
+task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. The window's
+price comes from a value ladder built over the demand grid `quota_economy.FIVE_AXIS_DEMAND_GRID` (levels 0–3 on the thinking
+categories), and its level-3 points read the fit with the ceiling as cap. So a model that raises a ceiling moves quota prices
+for every task, at every demand level, not only for level-3 tasks. Measured on the test fixtures when the ceilings were
+introduced (2026-11-13), the fit unchanged in both cases: the Claude window priced at 0.02511 before and 0.01043 after
+(`Fleet` fixture, Claude and Codex 60% used), and ChatGPT Web's cadence pool for a level-1 divergence task with 0 of 5 seats
+used and 9 h to reset priced at 0.003385 before and 0.006497 after (cost 0.0049 → 0.0097). Equal net scores
 `N` go to the candidate that starts sooner (shorter wait before reset), then finishes sooner, then spends fewer list-price USD,
 then has the higher demand-weighted category level and preferred harness (`candidate_ranking.five_axis_order`). Expiring quota is
 not a tie-break: under-line allowance already lowers `quota_cost`.
@@ -50,6 +61,12 @@ several pools must clear every window; the tightest window binds. The same model
 (Codex vs Pi is only a tie-break step for read-heavy vs. edit-heavy work). Unknown capacity stays unknown: the account stays
 out of automatic routing until public data has it.
 A metered USD account is not one of those resetting windows. The account, the spend reading, the balance, and the leftover-field cleanup are defined in [Metered USD](#metered-usd).
+Panel membership is derived from the rule above, never a hand list. Adding a non-panel model moves no panel score and no
+target (it can raise a ceiling). A change of members moves `sd_panel`, `t1` and `t2`, and with them the level-2 cap and the
+exchange rate between ability and quota cost, so `agentcompass data refresh` (and `five_axis.py`) compares the panel it computed
+with the shipped `five-axis-scores.json`: when the members differ it prints the added and removed models and, per category and
+facet, the old and new `sd_panel`, `t1`, `t2` and ceiling, then exits 2 and writes nothing unless `--accept-panel-change` is
+passed. An accepted change is recorded in `anchor.panel_change` (date, added, removed, shifts) and carried forward until the next.
 Category scores live in [`skills/agent-compass/references/five-axis-scores.json`](../skills/agent-compass/references/five-axis-scores.json),
 and plan window structure in [`skills/agent-compass/references/plan-templates.json`](../skills/agent-compass/references/plan-templates.json).
 
@@ -210,7 +227,7 @@ The tray icon displays a status dot: **green** when core usage collection and al
   - **Ledger Replay**: Browse the last 30 router decisions and click any entry to replay its historical parameters against current live quota windows.
   - **Decision film** (`decision_theatre.py`): Replays a decision step by step (`task → kind → routes → ranking → five-axis radar`) comparing the winner against the best-ranked other model (routes of the same model share axis scores).
   - **Quota line** (`quota_line.py`): Plots up to four windows on their own reset clocks (the chosen window first, then sibling and remaining windows): the straight recovery line `C × elapsed / period`, actual usage up to now (**Used first** under the line, **Held back** over it; solid where readings were recorded in the current period, dotted when fitted; display-only and never read by the router's economics), the chosen task's projected spend up to the reset edge, and the closing pace line to reset. Simulations and snapshots without a saved block derive it via `ledger_snapshot.with_quota_line` from `decision.system.quota_windows` and candidate `economy`; malformed fields degrade gracefully without blocking the rest of the decision.
-  - **Radar Comparison**: Switch between **Decision Score (5D)** (the winner against the best-ranked other model on creativity (`divergence`), coding, aesthetics, tool operation, and quota economy, mapped to `0..1` shares `(min(z, t3) - t1) / (t3 - t1)`) and **Model DNA (5D)** (any two models on the same five axes from their static profiles; quota economy there is price economy `1 − usd_per_hour / max_usd_per_hour`, not live quota). Each model is a sheet of tinted glass inside a hairline frame of full scale, and the chart shows the two models' five values and nothing else. Hovering any vertex shows the formula and raw values.
+  - **Radar Comparison**: Switch between **Decision Score (5D)** (the winner against the best-ranked other model on creativity (`divergence`), coding, aesthetics, tool operation, and quota economy, mapped to `0..1` shares `(min(z, t3) - t1) / (t3 - t1)`) and **Model DNA (5D)** (any two models on the same five axes from their static profiles; quota economy there is price economy `1 − usd_per_hour / max_usd_per_hour`, not live quota). Each model is a sheet of tinted glass inside a hairline frame of full scale, and the chart shows the two models' five values and nothing else. Hovering any vertex shows the formula and raw values; in a decision, a category the task demands at level 3 also shows its score above the anchor and the level-3 cap (the ceiling, with the model that sets it), since the spoke stops at the anchor.
 - **Account Quotas & In-Flight Tasks**:
   - Live status badges (`Ready`, `Paused`, `Plugin Disabled`, `Blocked by Host Policy`), remaining percentage and API-equivalent USD per window, 3h/24h burn rates, reset countdowns, one-click quota refresh, and active worker sessions with their cumulative uncompressed context against the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray).
 - **Model Settings** — three tabs: **Models & Boost**, **Scores & Capabilities**, and **System Options**.

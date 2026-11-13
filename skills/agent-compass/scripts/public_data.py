@@ -107,6 +107,9 @@ SCHEMA_VERSION = 3              # the newest data schema this code reads; bump w
 # Schema 3 (2026-11-11) switches to the four-category taxonomy (`divergence`, `coding`, `aesthetics`, `tool_operation`),
 # ships `five-axis-scores.json` and maintainer `user-scores.json` in the public channel, and rejects schema-2 sets
 # whose `classifier-cases.json` used the retired four-axis `axis_demand` keys.
+# five-axis-scores/3 (2026-11-13, level-3 ceilings) is additive: a schema-3 reader ignores the new fields, so the channel
+# schema stays 3 and installed releases keep receiving data. Newer code never selects a set published before its own
+# shipped copy, and axis_scores.require_level3_ceilings names a file without ceilings instead of failing with a KeyError.
 MIN_SCHEMA_VERSION = 3
 FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'five-axis-scores.json', 'user-scores.json')
 MANIFEST = 'public-data.json'

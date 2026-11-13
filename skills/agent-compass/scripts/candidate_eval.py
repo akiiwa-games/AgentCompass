@@ -631,6 +631,9 @@ def evaluate_bundle(bundle, task, ctx):
                                                           / max(1, sum(r['demand'] for r in axis_rows.values())), 4))
     result['five_axis_demand'] = task['five_axis_demand']
     result['five_axis_fit'] = axis_rows
+    headroom = axis_scores.five_axis_headroom(axis_rows, ctx['accounts']['_five_axis']['targets'])
+    if headroom:
+        result['five_axis_headroom'] = headroom        # level-3 credit above the anchor, for the decision radar's hover
     usd_rate = 0.0 if spec.get('unlimited') or spec.get('unmetered') or billing == 'unknown' else quota_economy.model_usd_per_hour(model, info)       # dollars per hour of this candidate's own work; effort is in its duration
     result['five_axis_price'] = {'usd_per_hour': round(usd_rate, 4)}
     result['components'].update({'fit': round(fit, 3), 'continuity': 0.0})

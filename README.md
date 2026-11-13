@@ -61,7 +61,7 @@ agentcompass roll --task "<what the worker should do>"
 
 ### Key Rules & Controls
 
-- **Calibrated capability fit, capped at target** — Scores healthy `model × effort × account` candidates across **creativity**, **coding**, **aesthetics**, and **tool operation** (`0–3`) on public-leaderboard standard scores; fit caps at the task target so routine tasks do not over-spend on frontier effort (single-thread work stays in the main session; multi-deliverable briefs return `split`).
+- **Calibrated capability fit, capped by demand level** — Scores healthy `model × effort × account` candidates across **creativity**, **coding**, **aesthetics**, and **tool operation** (`0–3`) on public-leaderboard standard scores; routine demands cap the fit at their target so routine tasks do not over-spend on frontier effort, while the hardest demands keep crediting ability up to the best measured model (single-thread work stays in the main session; multi-deliverable briefs return `split`).
 - **Per-window quota recovery line** — Each 5h / weekly window recovers linearly along its own reset clock: spend **under** the line is expiring surplus (`0` quota cost, used first); spend **over** the line borrows from the remainder of the period and raises quota cost (held back). Pre-reset demand from other work is projected solely from that window's current-period usage, never from past periods or task history. Full formulas live in [`docs/technical-reference.md`](docs/technical-reference.md#1-how-scoring--allocation-work).
 - **Task profile from a small model** — The task text is sent to the configured scorer (the System-One classifier), which runs on your own subscription CLI or a configured API, and returns the task profile. Allocation is deterministic for a given profile.
 - **Explicit pins & offline preview** — Specify a model or effort in chat and `--model ... --effort ... --basis "<your words>"` passes straight through; `agentcompass plan --demo --dry-run` (or `--input examples/task.json --dry-run`) prints candidate scores and exclusion reasons offline.
@@ -128,7 +128,7 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 
 ### 关键规则与控制权
 
-- **公开榜单标准分，到标封顶** — 按**创意、编码、审美、工具操作**四类需求（`0–3`）评估各健康 `模型 × 档位 × 账号` 的公开榜单校准分；能力满足任务目标后不再加分（单线任务留在主会话执行，多独立交付物退回拆分）。
+- **公开榜单标准分，按需求档位封顶** — 按**创意、编码、审美、工具操作**四类需求（`0–3`）评估各健康 `模型 × 档位 × 账号` 的公开榜单校准分；常规需求（1、2 级）满足目标后不再加分，最难的 3 级需求继续计分到实测最强模型（单线任务留在主会话执行，多独立交付物退回拆分）。
 - **单窗口独立额度恢复线** — 每个 5h / 周窗口按各自重置时钟线性恢复：**线下**差额为重置前未用即作废的已恢复余量（计 `0` 成本，优先使用）；**线上**花费为向本期剩余时间预支（计入成本自动降权）。重置前其他任务的预计占用仅由该窗口本周期当前用量推算，不依赖历史周期或任务记录。完整公式见 [`docs/technical-reference.md`](docs/technical-reference.md#1-how-scoring--allocation-work)。
 - **任务画像来自小模型** — 任务文本会发送给已配置的打分器（System-One 分类器）；它运行在你自己的订阅 CLI 或已配置的 API 上，返回任务画像。给定画像后，分配结果是确定的。
 - **点名透传与离线预览** — 对话中指定模型或档位时，`--model ... --effort ... --basis "<原话>"` 原样透传；`agentcompass plan --demo --dry-run`（或 `--input examples/task.json --dry-run`）可离线查看候选得分与排除原因。
