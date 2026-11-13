@@ -104,7 +104,10 @@ expiry, required modalities (`needs_visual`, `needs_gui`, or `tool_operation >= 
 category the task demands (`>= 1`). It then scores eligible candidates: the fit of the model's four category scores
 (`divergence`, `coding`, `aesthetics`, `tool_operation`, in panel standard deviations at that effort, with each demanded
 category's level-1 panel-weakest target as zero point) to the task's demand, continuity (`t3 - t2` on `coupling == "high"`),
-and the quota economy's price for the spend.
+and the quota economy's price for the spend. A category's term is `min(z, c) - t1`: at demand levels 1 and 2 the cap `c` is
+the level's target, at level 3 it is the category's `ceiling` in `anchor.targets.<category>.levels.3` (per facet for
+`tool_operation`), the highest measured or interpolated High value of any catalogued model, so a level-3 task can prefer a
+model above the anchor. `t3` stays the anchor (origin of `z`, level 3 of manual scores, upper end of continuity).
 For `tool_operation`, level 1 imposes no ability requirement; level 2 evaluates per-effort `responsiveness` (`aa.ttfa`,
 `-ln(seconds)` from Artificial Analysis `timeToFirstAnswerToken`); and level 3 evaluates `min(responsiveness, image_recognition)`
 (`aa.mmmu_pro`, `lmarena.vision`) and requires image-input support.

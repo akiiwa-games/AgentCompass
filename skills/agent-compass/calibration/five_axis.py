@@ -1,6 +1,6 @@
 """Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.
 
-`python -X utf8 five_axis.py [--distrust SOURCE ...] [--measurements PATH] [--out PATH]`
+`python -X utf8 five_axis.py [--distrust SOURCE ...] [--measurements PATH] [--out PATH] [--accept-panel-change]`
 
 Writes `references/five-axis-scores.json`, the only model scoring the router reads (axis_scores.five_axis_overlay). The
 user's taxonomy (2026-11-11): four categories, each made of facets, each facet read from public boards; the router
@@ -42,7 +42,14 @@ scores on the four categories and the quota economy together. Nothing else score
   panel median, level 3 the anchor; `zero` is the level-1 target, the fit's zero point. tool_operation asks per facet,
   and a level never asks less of a facet than the level below (the anchor's responsiveness, 0, is below the panel
   median, so levels 2 and 3 both ask the panel median). `continuity` is t3 - t2 (tool_operation: the largest positive
-  t3 - t2 across its level-3 facets).
+  t3 - t2 across its level-3 facets). Each level-3 row (category, facet, and tool_operation per facet) carries its
+  `ceiling`: the highest measured or interpolated High value among the catalogued models, with the model that sets it
+  and its status (owner, 2026-11-13). A level-3 demand is capped there instead of at t3; levels 1 and 2 stay capped at
+  their target.
+- Panel guard (`panel_change`): the panel this run computed is compared with the panel of the five-axis-scores.json being
+  replaced. When the members differ, the run prints the added and removed models and the old and new `sd_panel` per
+  board, t1, t2 and ceiling per category and facet, and writes nothing (`PanelChangeRefused`) unless the change is
+  accepted (`--accept-panel-change`); an accepted change is recorded in `anchor.panel_change` and carried forward.
 - Checks: structural ones drop a listing (a variant tag that is not an effort, a raw value out of range, one listing
   matched to two models, a duplicate board); statistical ones only note (`checks`).
 - The tier (calibration/tiers.py) is the model's overall level at High relative to the anchor (`tier.arena_overall`,
@@ -892,7 +899,9 @@ class Scorer:
         anchor) of it). `continuity` is t3 - t2 (tool_operation: the largest positive t3 - t2 across its level-3 facets).
         Only measured High values enter (user 2026-11-12, `TARGET_STATUSES`): an own-curve interpolation lies between two
         of the model's measurements and counts; an estimate (panel effort step, sibling, tier fit, same_model) is derived
-        from the panel and would move it, so it never does."""
+        from the panel and would move it, so it never does. Every level-3 row also carries its `ceiling` (owner,
+        2026-11-13): the highest such High value among all catalogued models, the cap a level-3 demand reads instead of
+        t3; it is not a panel statistic, so a model outside the panel can raise it."""
         anchor = rows.get(measurements.ANCHOR, {}).get('axes') or {}
 
         def measured(cell):
@@ -900,16 +909,29 @@ class Scorer:
             return cell.get('value') if cell.get('status') in TARGET_STATUSES else None
 
         def stats(pick):
-            vals = [v for m in panel if (v := pick(rows[m]['axes'])) is not None]
+            vals = [v for m in panel if (v := measured(pick(rows[m]['axes']))) is not None]
             if not vals:
                 return None
+            at_anchor = measured(pick(anchor))
             return {'min': round(float(min(vals)), 4), 'median': round(float(np.median(vals)), 4),
-                    'anchor': None if pick(anchor) is None else round(float(pick(anchor)), 4), 'n': len(vals)}
+                    'anchor': None if at_anchor is None else round(float(at_anchor), 4), 'n': len(vals),
+                    'ceiling': ceiling(pick)}
+
+        def ceiling(pick):
+            """The level-3 cap: the highest measured High value among every catalogued model (not only the panel), the
+            model that sets it and its status; the same row kinds the panel targets read, so no estimate sets it."""
+            found = [(v, m, pick(rows[m]['axes'])['status']) for m in sorted(rows)
+                     if (v := measured(pick(rows[m]['axes']))) is not None]
+            if not found:
+                return None
+            v, m, status = max(found, key=lambda t: t[0])
+            return {'value': round(float(v), 4), 'model': m, 'status': status, 'n': len(found),
+                    'statistic': 'highest measured value at High among catalogued models'}
         out = {}
         for a in AXES:
             facet_targets = {}
             for f in AXES[a]:
-                fst = stats(lambda ax, a=a, f=f: measured((ax[a].get('facets') or {}).get(f)))
+                fst = stats(lambda ax, a=a, f=f: (ax[a].get('facets') or {}).get(f))
                 if fst is not None:
                     t1_f, t2_f = fst['min'], max(fst['min'], fst['median'])
                     raw_t3 = fst['anchor'] if fst['anchor'] is not None else t2_f
@@ -917,10 +939,12 @@ class Scorer:
                     facet_targets[f] = {'levels': {'1': {'target': t1_f, 'zero': t1_f, 'statistic': 'panel minimum', 'n': fst['n']},
                                                    '2': {'target': t2_f, 'zero': t1_f, 'statistic': 'panel median', 'n': fst['n']},
                                                    '3': {'target': t3_f, 'zero': t1_f, 'statistic': f'anchor {measurements.ANCHOR}', 'n': fst['n'],
-                                                         **({'raised_to_level_below': t2_f} if t2_f > raw_t3 else {})}}}
+                                                         **({'raised_to_level_below': t2_f} if t2_f > raw_t3 else {}),
+                                                         'ceiling': fst['ceiling']}}}
             if a != 'tool_operation':
-                st = stats(lambda ax, a=a: measured(ax[a]))
-                levels = {str(level): ({'target': st[key], 'zero': st['min'], 'statistic': name, 'n': st['n']} if st else
+                st = stats(lambda ax, a=a: ax[a])
+                levels = {str(level): ({'target': st[key], 'zero': st['min'], 'statistic': name, 'n': st['n'],
+                                        **({'ceiling': st['ceiling']} if level == 3 else {})} if st else
                                        {'target': None, 'zero': None, 'reason': 'no panel model has a value'})
                           for level, key, name in ((1, 'min', 'panel minimum'), (2, 'median', 'panel median'),
                                                    (3, 'anchor', f'anchor {measurements.ANCHOR}'))}
@@ -929,8 +953,7 @@ class Scorer:
                 ) else None
                 out[a] = {'levels': levels, 'facets': facet_targets, 'continuity': None if gap is None else round(gap, 4)}
                 continue
-            per = {f: stats(lambda ax, f=f: measured((ax['tool_operation'].get('facets') or {}).get(f)))
-                   for f in AXES[a]}
+            per = {f: stats(lambda ax, f=f: (ax['tool_operation'].get('facets') or {}).get(f)) for f in AXES[a]}
             levels, prev = {}, {}
             for level in (1, 2, 3):
                 chosen = TOOL_LEVEL_FACETS[level]
@@ -946,7 +969,8 @@ class Scorer:
                     target = max(own, prev[f]) if f in prev and own is not None else own
                     by[f] = {'target': target, 'zero': st['min'], 'n': st['n'],
                              'statistic': 'panel median' if level == 2 else f'anchor {measurements.ANCHOR}',
-                             **({'raised_to_level_below': prev[f]} if f in prev and own is not None and prev[f] > own else {})}
+                             **({'raised_to_level_below': prev[f]} if f in prev and own is not None and prev[f] > own else {}),
+                             **({'ceiling': st['ceiling']} if level == 3 else {})}
                 levels[str(level)] = {'by_facet': by}
                 prev = {f: r['target'] for f, r in by.items()}
             l3_facets = levels['3']['by_facet']
@@ -1409,7 +1433,98 @@ def convert_usd(usd, rows, scorer, meas, acc, tier):
             }
 
 
-def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None):
+class PanelChangeRefused(ValueError):
+    """The panel's members changed and the change was not accepted (`--accept-panel-change`): nothing is written."""
+
+
+def previous_doc(path):
+    """The five-axis-scores.json a run is about to replace, or None when there is none yet."""
+    target = Path(path)
+    return json.loads(target.read_text(encoding='utf-8-sig')) if target.is_file() else None
+
+
+def panel_sd(meas):
+    """{'<category>.<facet>': {board: sd_panel}}: each scaled capability board's panel standard deviation in its raw unit
+    (measurements.py `scale`), kept so the next run can report how a panel change moves it."""
+    out = {}
+    for src, (axis, facet) in measurements.CAPABILITY_SOURCES.items():
+        scale = ((meas.get('sources') or {}).get(src) or {}).get('scale')
+        if scale:
+            out.setdefault(f'{axis}.{facet}', {})[src] = scale['sd_panel']
+    return out
+
+
+def _level_points(levels):
+    """t1, t2 and the level-3 ceiling of one `levels` map (a category's or a facet's)."""
+    levels = levels or {}
+    return {'t1': (levels.get('1') or {}).get('target'), 't2': (levels.get('2') or {}).get('target'),
+            'ceiling': ((levels.get('3') or {}).get('ceiling') or {}).get('value')}
+
+
+def panel_change(previous, anchor):
+    """None when this run's `anchor` block has the same panel members as `previous` (the anchor block it replaces); else
+    {'added', 'removed', 'shifts'}, `shifts` holding per category (and per facet) the old and new t1, t2 and ceiling, and
+    per facet the old and new sd_panel of each board."""
+    old_members, new_members = set(previous['panel']), set(anchor['panel'])
+    if old_members == new_members:
+        return None
+    pair = lambda old, new: {'old': old, 'new': new}
+    old_sd, new_sd = previous.get('sd_panel') or {}, anchor['sd_panel']
+    shifts = {}
+    for a, facets in AXES.items():
+        old_t, new_t = previous['targets'].get(a) or {}, anchor['targets'].get(a) or {}
+        row = {}
+        if a != 'tool_operation':
+            o, n = _level_points(old_t.get('levels')), _level_points(new_t.get('levels'))
+            row = {k: pair(o[k], n[k]) for k in o}
+        row['facets'] = {}
+        for f in facets:
+            key = f'{a}.{f}'
+            o = _level_points(((old_t.get('facets') or {}).get(f) or {}).get('levels'))
+            n = _level_points(((new_t.get('facets') or {}).get(f) or {}).get('levels'))
+            boards = sorted(set(old_sd.get(key) or {}) | set(new_sd.get(key) or {}))
+            row['facets'][f] = {**{k: pair(o[k], n[k]) for k in o},
+                                'sd_panel': {b: pair((old_sd.get(key) or {}).get(b), (new_sd.get(key) or {}).get(b))
+                                             for b in boards}}
+        shifts[a] = row
+    return {'added': sorted(new_members - old_members), 'removed': sorted(old_members - new_members), 'shifts': shifts}
+
+
+def panel_change_text(change):
+    """The panel change as the lines a refresh prints."""
+    num = lambda v: '-' if v is None else f'{v:g}'
+    moved = lambda rec, keys: ', '.join(f"{k} {num(rec[k]['old'])} -> {num(rec[k]['new'])}" for k in keys if k in rec)
+    lines = [f"panel membership changed: added {', '.join(change['added']) or 'none'}; "
+             f"removed {', '.join(change['removed']) or 'none'}"]
+    for a, row in change['shifts'].items():
+        cat = moved(row, ('t1', 't2', 'ceiling'))
+        lines.append(f'  {a}' + (f': {cat}' if cat else ''))
+        for f, rec in row['facets'].items():
+            lines.append(f"    {a}.{f}: {moved(rec, ('t1', 't2', 'ceiling'))}; "
+                         f"sd_panel {moved(rec['sd_panel'], rec['sd_panel']) or '-'}")
+    return '\n'.join(lines)
+
+
+def guard_panel(previous, anchor, accept, stamp):
+    """The `anchor.panel_change` record to write (module docstring, panel guard). No previous file: None. Same members:
+    the previous record, carried forward. Changed members: refused (`PanelChangeRefused`, carrying the report) unless
+    `accept`, then printed and recorded with the date."""
+    if previous is None:
+        return None
+    change = panel_change(previous['anchor'], anchor)
+    if change is None:
+        return previous['anchor'].get('panel_change')
+    text = panel_change_text(change)
+    if not accept:
+        raise PanelChangeRefused(f'{text}\nnothing written: a panel change moves sd_panel, t1, t2 and the exchange rate '
+                                 'between ability and quota cost; rerun with --accept-panel-change to accept it')
+    print(text)
+    return {'date': stamp.date().isoformat(), **change}
+
+
+def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None, accept_panel_change=False):
+    """The five-axis-scores.json document. `previous` is the document it replaces (None when there is none): a panel whose
+    members differ from it is refused unless `accept_panel_change` (`guard_panel`)."""
     scorer = Scorer(meas, acc, distrust)
     rows, tier, fits, rejected, links, targets = scorer.score()
     usd = usd_community_mix(scorer, rows, meas)
@@ -1477,6 +1592,10 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None):
                      'intelligence_index': idx[0]['value'] if idx else None,
                      'tier': tier[m], 'evidence': evidence, 'data_errors': model_errors}
     stamp = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    anchor = {'model': measurements.ANCHOR, 'value': 0.0, 'scale': 'panel standard score',
+              'panel': (meas.get('panel') or {}).get('models') or [], 'panel_n': (meas.get('panel') or {}).get('n'),
+              'targets': targets, 'sd_panel': panel_sd(meas)}
+    anchor['panel_change'] = guard_panel(previous, anchor, accept_panel_change, stamp)
     doc = {'schema': SCHEMA, 'generated_at': stamp.isoformat(timespec='seconds'),
            'measurements_sha256': hashlib.sha256(meas_bytes).hexdigest() if meas_bytes else None,
            'distrusted_sources': sorted(distrust),
@@ -1492,9 +1611,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None):
                            'community_over_usd': (round(h['value'] / usd[h['model']]['value'], 2)
                                                     if (usd.get(h['model']) or {}).get('value') else None)}
                           for h in (meas.get('capacity') or {}).get('hourly_checks') or ()],
-           'anchor': {'model': measurements.ANCHOR, 'value': 0.0, 'scale': 'panel standard score',
-                      'panel': (meas.get('panel') or {}).get('models') or [], 'panel_n': (meas.get('panel') or {}).get('n'),
-                      'targets': targets},
+           'anchor': anchor,
            'links': links, 'effort_correlations': scorer.effort_correlations, 'high_fill_refused': scorer.high_refused,
            'checks': meas.get('checks') or [],
            'models': models, 'data_errors': errors}
@@ -1506,9 +1623,16 @@ def main():
     ap.add_argument('--measurements', default=str(measurements.OUT))
     ap.add_argument('--distrust', action='append', default=[], help='a source id to leave out of every field (repeatable)')
     ap.add_argument('--out', default=str(OUT))
+    ap.add_argument('--accept-panel-change', action='store_true',
+                    help='write the document although the panel members differ from the file being replaced')
     args = ap.parse_args()
     raw = Path(args.measurements).read_bytes()
-    doc = build(json.loads(raw), sources.accounts(), json.loads(PLANS.read_text(encoding='utf-8')), args.distrust, raw)
+    try:
+        doc = build(json.loads(raw), sources.accounts(), json.loads(PLANS.read_text(encoding='utf-8')), args.distrust, raw,
+                    previous=previous_doc(args.out), accept_panel_change=args.accept_panel_change)
+    except PanelChangeRefused as exc:
+        sys.stderr.write(f'{exc}\n')
+        return 2
     Path(args.out).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
     print(f'{len(doc["models"])} models -> {args.out}')
     print(f'{"model":28s} {"usd/h":>7}  ' + ' '.join(f'{a[:10]:>10}' for a in AXES))

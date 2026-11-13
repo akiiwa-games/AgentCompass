@@ -1,15 +1,17 @@
 """Rebuild every shipped calibrated file, generated capability view and `public-data.json` in topological order,
 validate the result, and report each source's age.
 
-`agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE]`
-`python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--references DIR]`
+`agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change]`
+`python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--references DIR]`
 
 Topological chain:
 1. Fetch (skipped with `--no-fetch`): `sources.fetch` downloads the benchmark boards and community pages into `DIR` and
    writes `fetch-manifest.json` (url, fetched_at, sha256 per file). A source that fails is recorded missing and its old
    copy deleted, so a value is never carried over silently from an earlier download.
 2. `measurements.py` -> `references/public-measurements.json`.
-3. `five_axis.py` -> `references/five-axis-scores.json`.
+3. `five_axis.py` -> `references/five-axis-scores.json`. Both documents are built before either is written: when the
+   panel's members differ from the shipped `five-axis-scores.json`, the run prints the change (`five_axis.guard_panel`),
+   writes no reference file and exits 2, unless `--accept-panel-change` records it in `anchor.panel_change`.
 4. `capability_catalog.py` -> `references/model-capabilities.json` and `references/model-capabilities.md`.
 5. `public_data.py manifest --write` -> `references/public-data.json` (unchanged content keeps the manifest byte-identical).
 6. Validate: `public-data` manifest and provenance checks, `references/user-scores.json` maintainer schema, and generated
@@ -120,7 +122,7 @@ def validate(references=None):
     return manifest
 
 
-def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None):
+def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, accept_panel_change=False):
     target = Path(target)
     ref_dir = Path(references) if references is not None else (sources.REPO / 'references')
     meas_path = Path(meas_out) if meas_out is not None else (ref_dir / 'public-measurements.json')
@@ -133,13 +135,14 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
 
     meas = _preserve_generated_at(meas_path, measurements.Builder(target, acc, now=now).build())
     raw = (json.dumps(meas, indent=1, ensure_ascii=False) + '\n').encode('utf-8')
-    meas_path.parent.mkdir(parents=True, exist_ok=True)
-    meas_path.write_bytes(raw)
-
+    # Built before anything is written: a refused panel change (five_axis.PanelChangeRefused) leaves every file as it was.
     doc = _preserve_generated_at(
         scores_path,
-        five_axis.build(meas, acc, plans, distrust=distrust, meas_bytes=raw, now=now),
+        five_axis.build(meas, acc, plans, distrust=distrust, meas_bytes=raw, now=now,
+                        previous=five_axis.previous_doc(scores_path), accept_panel_change=accept_panel_change),
     )
+    meas_path.parent.mkdir(parents=True, exist_ok=True)
+    meas_path.write_bytes(raw)
     scores_path.parent.mkdir(parents=True, exist_ok=True)
     scores_path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
 
@@ -199,6 +202,8 @@ def main(argv=None, prog=None):
     ap.add_argument('--report', help='also write the source-age table (markdown) here')
     ap.add_argument('--distrust', action='append', default=[], help='a source id to leave out of every field (repeatable)')
     ap.add_argument('--references', help='references directory to rebuild and validate (default: skills/agent-compass/references)')
+    ap.add_argument('--accept-panel-change', action='store_true',
+                    help='write the rebuilt files although the panel members differ from the shipped five-axis-scores.json')
     args = ap.parse_args(argv)
     target = sources.data_dir(args.data, create=not args.no_fetch)
     try:
@@ -206,7 +211,8 @@ def main(argv=None, prog=None):
             sources.manifest(target)
         else:
             sources.fetch(target)
-        _, doc = rebuild(target, references=args.references, distrust=args.distrust)
+        _, doc = rebuild(target, references=args.references, distrust=args.distrust,
+                         accept_panel_change=args.accept_panel_change)
     except (OSError, ValueError) as exc:
         sys.stderr.write(f'{exc}\n')
         return 2

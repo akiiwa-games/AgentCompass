@@ -1,7 +1,8 @@
 """One five-axis radar: four capability categories and quota economy, from decisions or model settings.
 
-A category's spoke is its share (axis_scores.five_axis_shares): 0 at the panel's weakest model, 1 at the level-3 target
-(the anchor), from the panel standard scores of five-axis-scores.json.
+A category's spoke is its share (axis_scores.five_axis_shares): 0 at the panel's weakest model, 1 at the category's
+ceiling (the best measured model at High), cut at the cap the fit reads for the demanded level (a decision) or at the
+ceiling (the model table), from the panel standard scores of five-axis-scores.json.
 
 The maths (dimension values, polygon geometry) is plain Python so it is unit-tested without a display;
 RadarChartCanvas draws it on a tk.Canvas.
@@ -31,18 +32,18 @@ def clamp(value, low=0.0, high=1.0) -> float:
 
 # (key, label, formula shown on hover)
 SCORE_AXES = (
-    ("divergence", "创意", "创意：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
-    ("coding", "编码能力", "编码能力：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
-    ("aesthetics", "审美能力", "审美能力：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
-    ("tool_operation", "工具操作", "工具操作：响应速度与读图中较弱者，在面板最弱（0）到三级目标（1）之间的位置"),
+    ("divergence", "创意", "创意：本档位的标准分在面板最弱（0）到最高实测（1）之间的位置，按本单需求档位的上限截断"),
+    ("coding", "编码能力", "编码能力：本档位的标准分在面板最弱（0）到最高实测（1）之间的位置，按本单需求档位的上限截断"),
+    ("aesthetics", "审美能力", "审美能力：本档位的标准分在面板最弱（0）到最高实测（1）之间的位置，按本单需求档位的上限截断"),
+    ("tool_operation", "工具操作", "工具操作：响应速度与读图中较弱者，在面板最弱（0）到最高实测（1）之间的位置，按本单需求档位的上限截断"),
     ("economy", "额度经济", "clamp(1 − opportunity_cost + boost)：本次额度成本（额度价格 × 消耗）与临时加成"),
 )
 SCORE_AXES = LocalizedSequence(SCORE_AXES)
 
 DNA_AXES = (
-    ("divergence", "创意", "创意：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
-    ("coding", "编码能力", "编码能力：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
-    ("aesthetics", "审美能力", "审美能力：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
+    ("divergence", "创意", "创意：High 档标准分在面板最弱（0）到最高实测（1）之间的位置；带 ~ 表示含估算值"),
+    ("coding", "编码能力", "编码能力：High 档标准分在面板最弱（0）到最高实测（1）之间的位置；带 ~ 表示含估算值"),
+    ("aesthetics", "审美能力", "审美能力：High 档标准分在面板最弱（0）到最高实测（1）之间的位置；带 ~ 表示含估算值"),
     ("tool_operation", "工具操作", "工具操作：High 档响应速度与读图中较弱者的位置；带 ~ 表示含估算值"),
     ("economy", "额度经济", "1 − usd_per_hour / 模型表中最高的 usd_per_hour：静态价格经济性，免费为 1，未知为 0；不代表实时剩余额度"),
 )

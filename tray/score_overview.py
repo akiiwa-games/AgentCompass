@@ -102,7 +102,8 @@ def category_overview(data: dict, models: dict) -> list[dict]:
             facets.append({"key": facet, "label": facet_label(facet), "boards": boards,
                            "panel_n": link.get("panel_n"), "dates": (dates[0], dates[-1]) if dates else None,
                            "targets": {lv: ((levels.get(lv) or {}).get("target"), (levels.get(lv) or {}).get("statistic"))
-                                       for lv in ("1", "2", "3")}})
+                                       for lv in ("1", "2", "3")},
+                           "ceiling": (levels.get("3") or {}).get("ceiling")})
         coverage = {}
         for row in models.values():
             status = (((row or {}).get("five_axis") or {}).get("axis_status") or {}).get(key, "missing")
@@ -138,6 +139,10 @@ def z_targets_note() -> str:
 def targets_tip(facet: dict) -> str:
     rows = [_tr("等级 {0}：{1}（{2}）").format(lv, f"{value:+.4f}" if _number(value) else "—", statistic or "—")
             for lv, (value, statistic) in facet["targets"].items()]
+    ceiling = facet.get("ceiling") or {}
+    if _number(ceiling.get("value")):
+        rows.append(_tr("等级 3 上限：{0}（最高实测 {1}）；等级 1、2 封顶在目标").format(
+            f"{ceiling['value']:+.4f}", ceiling.get("model") or "—"))
     return "\n".join([z_targets_note(), *rows])
 
 

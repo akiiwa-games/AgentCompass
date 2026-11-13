@@ -23,11 +23,13 @@ import account_fleet
 #   factors, no difficulty floors, no free-usage bonus.
 # - Targets come from the panel (five-axis-scores.json `anchor.targets`): level 1 the panel's weakest, level 2 its median,
 #   level 3 the anchor. tool_operation asks per facet: level 1 nothing, level 2 responsiveness, level 3 responsiveness
-#   and image recognition, never less of a facet than the level below.
-# - Fit (five_axis_fit) = sum_a w_a x (min(z_a, t_a) - t1_a) / sum_a w_a over the demanded categories, w_a the demand
-#   level, t_a the level's target and t1_a the level-1 target (the panel's weakest). It is in panel standard deviations:
-#   0 is the panel's weakest model on every demanded category, the anchor scores t_a - t1_a, and no score above the
-#   target earns more. A candidate below the panel's weakest scores below 0. The economy reads the same fit, and 0 is
+#   and image recognition, never less of a facet than the level below. Each level-3 row also carries its `ceiling`, the
+#   best measured High value among the catalogued models (owner, 2026-11-13).
+# - Fit (five_axis_fit) = sum_a w_a x (min(z_a, c_a) - t1_a) / sum_a w_a over the demanded categories, w_a the demand
+#   level, t1_a the level-1 target (the panel's weakest) and c_a the cap: the level's target at levels 1 and 2, the
+#   ceiling at level 3. It is in panel standard deviations: 0 is the panel's weakest model on every demanded category,
+#   routine levels give no credit above their target, and the hardest level keeps rewarding ability up to the best
+#   measured model. A candidate below the panel's weakest scores below 0. The economy reads the same fit, and 0 is
 #   its total loss (a candidate at or below it is never an outside alternative).
 # - Continuity: continuing a related worker (coupling high, the same bundle) is worth one demand level, the largest
 #   positive t3 - t2 among the task's highest-demand categories (else 0); the context rotation cap (worker_worn) stands.
@@ -551,7 +553,10 @@ def five_axis_values(state, effort):
 
 def five_axis_targets(demand, targets):
     """{category: the demanded level's target row} from five-axis-scores.json `anchor.targets`, for every demanded category
-    that asks for something (tool_operation level 1 asks for nothing)."""
+    that asks for something (tool_operation level 1 asks for nothing). `cap` is where the fit stops counting: the target
+    itself at levels 1 and 2, the level-3 row's `ceiling` (the best measured model) at level 3."""
+    def row_of(r, w):
+        return {'target': r['target'], 'zero': r['zero'], 'cap': r['ceiling']['value'] if w == 3 else r['target']}
     out = {}
     for a, w in demand.items():
         if w <= 0:
@@ -559,17 +564,19 @@ def five_axis_targets(demand, targets):
         row = ((targets.get(a) or {}).get('levels') or {}).get(str(w)) or {}
         if a == 'tool_operation':
             if row.get('by_facet'):
-                out[a] = {'by_facet': {f: {'target': r['target'], 'zero': r['zero']} for f, r in row['by_facet'].items()}}
+                out[a] = {'by_facet': {f: row_of(r, w) for f, r in row['by_facet'].items()}}
         elif row.get('target') is not None:
-            out[a] = {'target': row['target'], 'zero': row['zero']}
+            out[a] = row_of(row, w)
     return out
 
 
 def five_axis_fit(values, demand, targets):
-    """(fit, {category: row}): sum_a w_a x (min(z_a, t_a) - t1_a) / sum_a w_a over the demanded categories that ask for
-    something, in panel standard deviations (module comment above). tool_operation reads min over its level's facets of
-    (min(z_f, t_f) - t1_f). A category or facet without a value stands at its zero (the panel's weakest): rule B keeps
-    such a model out of automatic routing, so this only prices a named dispatch."""
+    """(fit, {category: row}): sum_a w_a x (min(z_a, c_a) - t1_a) / sum_a w_a over the demanded categories that ask for
+    something, in panel standard deviations (module comment above); c_a is the row's `cap` (five_axis_targets): the
+    target at levels 1 and 2, the category's ceiling at level 3. tool_operation reads min over its level's facets of
+    (min(z_f, c_f) - t1_f). The shortfall is still measured to the target. A category or facet without a value stands at
+    its zero (the panel's weakest): rule B keeps such a model out of automatic routing, so this only prices a named
+    dispatch."""
     rows, value, total = {}, 0.0, 0
     for a, w in demand.items():
         tgt = targets.get(a)
@@ -580,7 +587,7 @@ def five_axis_fit(values, demand, targets):
             for f, t in tgt['by_facet'].items():
                 z = (values.get(a) or {}).get(f)
                 parts[f] = {'score': None if z is None else round(z, 4), 'target': t['target'], 'zero': t['zero'],
-                            'term': round((min(z, t['target']) - t['zero']) if z is not None else 0.0, 4)}
+                            'cap': t['cap'], 'term': round((min(z, t['cap']) - t['zero']) if z is not None else 0.0, 4)}
             scored = list(parts.values())
             term = min(p['term'] for p in scored)
             rows[a] = {'demand': w, 'facets': parts, 'term': term,
@@ -588,32 +595,43 @@ def five_axis_fit(values, demand, targets):
                                               else p['target'] - p['zero'] for p in scored), 4)}
         else:
             z = values.get(a)
-            term = round((min(z, tgt['target']) - tgt['zero']) if z is not None else 0.0, 4)
+            term = round((min(z, tgt['cap']) - tgt['zero']) if z is not None else 0.0, 4)
             rows[a] = {'demand': w, 'score': None if z is None else round(z, 4), 'target': tgt['target'],
-                       'zero': tgt['zero'], 'term': term,
+                       'zero': tgt['zero'], 'cap': tgt['cap'], 'term': term,
                        'shortfall': round(max(0.0, tgt['target'] - z) if z is not None else tgt['target'] - tgt['zero'], 4)}
         value += w * term
         total += w
     return (value / total if total else 0.0), rows
 
 
-def five_axis_shares(values, targets):
-    """{category: 0..1} for display (the tray radar): (min(z, t3) - t1) / (t3 - t1), where t1 is the level-1 target (the
-    panel's weakest) and t3 the level-3 target (the anchor): 0 at the panel's weakest, 1 at the level the hardest demand
-    asks, never more (the fit gives no credit above a target either). tool_operation takes the weakest of its level-3
-    facets when all required level-3 facets have a value; None where any required facet has no value."""
-    def share(z, row):
-        if z is None or not row or row.get('target') is None or row['target'] <= row['zero']:
+def five_axis_shares(values, targets, demand=None):
+    """{category: 0..1} for display (the tray radars): (min(z, c) - t1) / (ceiling - t1), where t1 is the level-1 target
+    (the panel's weakest), `ceiling` the level-3 row's ceiling (the best measured model) and c the cap the fit reads for
+    the demanded level (five_axis_targets): the target at levels 1 and 2, the ceiling at level 3 or without a demand. So a
+    spoke shows the same capped score the fit counts, on one scale from the panel's weakest (0) to the best measured
+    model (1). tool_operation takes the weakest of its level-3 facets when all of them have a value (a facet the demanded
+    level does not ask for is capped at its ceiling); None where any of them has no value."""
+    demand = demand or {}
+
+    def share(z, row, cap_row):
+        ceiling = (row.get('ceiling') or {}).get('value') if row else None
+        if z is None or ceiling is None or row.get('zero') is None or ceiling <= row['zero']:
             return None
-        return round(max(0.0, (min(z, row['target']) - row['zero']) / (row['target'] - row['zero'])), 4)
+        cap = cap_row['target'] if cap_row and cap_row.get('target') is not None else ceiling
+        return round(max(0.0, (min(z, cap, ceiling) - row['zero']) / (ceiling - row['zero'])), 4)
+
     out = {}
     for a in FIVE_AXES:
-        level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
+        levels = (targets.get(a) or {}).get('levels') or {}
+        level3 = levels.get('3') or {}
+        w = demand.get(a, 0)
+        demanded = (levels.get(str(w)) or {}) if w in (1, 2) else {}
         if a == 'tool_operation':
-            parts = [share((values.get(a) or {}).get(f), r) for f, r in (level3.get('by_facet') or {}).items()]
+            capped = demanded.get('by_facet') or {}
+            parts = [share((values.get(a) or {}).get(f), r, capped.get(f)) for f, r in (level3.get('by_facet') or {}).items()]
             out[a] = min(parts) if parts and all(p is not None for p in parts) else None
         else:
-            out[a] = share(values.get(a), level3)
+            out[a] = share(values.get(a), level3, demanded)
     return out
 
 

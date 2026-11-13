@@ -25,7 +25,8 @@ TARGETS = {
                                                               '2': {'target': -2.0, 'statistic': 'panel median'},
                                                               '3': {'target': 0.0, 'statistic': 'anchor'}}}}},
     'coding': {'continuity': 1.5, 'facets': {
-        'execution': {'levels': {'1': {'target': -3.0}, '2': {'target': -1.5}, '3': {'target': 0.0}}},
+        'execution': {'levels': {'1': {'target': -3.0}, '2': {'target': -1.5},
+                                 '3': {'target': 0.0, 'ceiling': {'value': 0.42, 'model': 'best-model', 'status': 'measured'}}}},
         'faithfulness': {'levels': {'1': {'target': -2.0}, '2': {'target': -0.5}, '3': {'target': 0.0}}}}},
     'aesthetics': {'continuity': 1.0, 'facets': {
         'design': {'levels': {'1': {'target': -2.0}, '2': {'target': -1.0}, '3': {'target': 0.0}}}}},
@@ -181,6 +182,7 @@ def test_category_overview_lists_boards_dates_targets_and_continuity():
     assert so.facet_dates_text(execution) == '2026-10-16 – 2026-11-09'
     assert execution['targets']['2'][0] == -1.5
     assert '面板标准分 z' in so.targets_tip(execution)
+    assert '+0.4200' in so.targets_tip(execution) and 'best-model' in so.targets_tip(execution)
     assert blocks['coding']['continuity'] == 1.5
     assert '1.500' in blocks['coding']['derivation']
     assert blocks['divergence']['coverage'] == {'measured': 1, 'estimated': 1}

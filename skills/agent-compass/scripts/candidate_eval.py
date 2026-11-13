@@ -625,7 +625,8 @@ def evaluate_bundle(bundle, task, ctx):
     shown = {**{a: values[a] for a in axis_scores.FIVE_AXES if a != 'tool_operation'}, 'tool_operation': min(tool) if tool else None}
     result['components'].update({a: None if v is None else round(v, 4) for a, v in shown.items()})
     result['components'].update({f'share_{a}': v for a, v in
-                                 axis_scores.five_axis_shares(values, ctx['accounts']['_five_axis']['targets']).items()})
+                                 axis_scores.five_axis_shares(values, ctx['accounts']['_five_axis']['targets'],
+                                                                 task['five_axis_demand']).items()})
     result['components'].update(five_axis_level=round(axis_scores.five_axis_level(axis_rows), 4),
                                 five_axis_shortfall=round(sum(r['demand'] * r['shortfall'] for r in axis_rows.values())
                                                           / max(1, sum(r['demand'] for r in axis_rows.values())), 4))
