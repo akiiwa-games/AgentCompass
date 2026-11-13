@@ -807,9 +807,10 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
     for name, row in sorted(ctx["usage_now"].get("accounts", {}).items()):
         window = router.tightest_window(row)
         flag = " ⚠标志冲突" if row.get("flag_conflict") else ""
+        reset_days = "—" if not window else f"{window['seconds_until_reset'] / 86400:.1f}d"
         lines.append(f"| {name}{' (按量)' if name.lower() in METERED else ''} | {row.get('status')}{flag} | {(window or {}).get('id', '—')} | "
                      f"{fmt_pct((window or {}).get('remaining_pct_before_reset'))} | "
-                     f"{'—' if not window else f'{window['seconds_until_reset'] / 86400:.1f}d'} | {(row.get('fetched_at') or '—')[:16]} |")
+                     f"{reset_days} | {(row.get('fetched_at') or '—')[:16]} |")
     series = quota_series(rows + [ctx["now_row"]])
     if series:
         lines += ["", "### codex 额度曲线(同一重置窗口内;“理由”= 取自 judge 理由文字,调用方裁掉了用量块)", "",
