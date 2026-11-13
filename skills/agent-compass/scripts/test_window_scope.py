@@ -5,14 +5,14 @@ import unittest
 
 import account_fleet
 import quota_pools
-import route_judge
+import usage_reading
 import window_scope
 
 NOW = datetime(2026, 11, 4, 4, 0, tzinfo=timezone.utc)
 
 
 def reading(wid, used, hours=3, **extra):
-    return route_judge.window_state({'id': wid, 'used_pct': used,
+    return usage_reading.window_state({'id': wid, 'used_pct': used,
                                      'resets_at': (NOW + timedelta(hours=hours)).isoformat(), **extra}, NOW)
 
 
@@ -62,7 +62,7 @@ class WindowScopeTests(unittest.TestCase):
                 self.assertEqual(bool(quota_pools.launch_blockers({'account': 'acme', 'model': model}, accounts,
                                                                 observed, NOW)), blocked)
                 row = observed['accounts']['acme']
-                self.assertEqual([w['id'] for w in route_judge.applicable_windows(row, model)],
+                self.assertEqual([w['id'] for w in usage_reading.applicable_windows(row, model)],
                                  ['weekly_quartz', 'seven_day'] if blocked else ['seven_day'])
 
     def test_an_unscoped_observed_window_binds_every_model(self):

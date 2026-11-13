@@ -11,6 +11,7 @@ import allocator
 import account_fleet
 import ledger_snapshot
 import route_judge as router
+import decision_ledger
 from router_test_support import isolated_router_state, profile
 
 
@@ -21,11 +22,11 @@ class DecisionLedgerTests(unittest.TestCase):
         scorer_env = patch.dict(os.environ, {'ROUTER_DISABLE_LIVE_SCORER': '1'})
         scorer_env.start()
         self.addCleanup(scorer_env.stop)
-        self.addCleanup(setattr, router, 'LEDGER_WRITES', True)
+        self.addCleanup(setattr, decision_ledger, 'LEDGER_WRITES', True)
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.ledger = Path(self.directory.name) / 'ledger.jsonl'
-        patcher = patch.object(router, 'ledger_path', return_value=self.ledger)
+        patcher = patch.object(decision_ledger, 'ledger_path', return_value=self.ledger)
         patcher.start()
         self.addCleanup(patcher.stop)
         window = lambda wid, used, hours: {'id': wid, 'used_pct': used, 'resets_at': (self.now + timedelta(hours=hours)).isoformat()}
@@ -48,7 +49,7 @@ class DecisionLedgerTests(unittest.TestCase):
         return code, json.loads(shown.call_args.args[0])
 
     def plan_rows(self):
-        return [row for row in router.read_ledger() if row.get('stage') == 'plan']
+        return [row for row in decision_ledger.read_ledger() if row.get('stage') == 'plan']
 
     def test_plan_line_carries_ranking_components_and_scoring_system(self):
         code, result = self.run_plan()
@@ -103,10 +104,10 @@ class DecisionLedgerTests(unittest.TestCase):
         self.assertTrue(all({'fit', 'opportunity_cost'} <= set(row['components']) for row in compact))
 
     def test_dry_run_and_non_ranking_stages_write_no_snapshot(self):
-        before = len(router.read_ledger())
+        before = len(decision_ledger.read_ledger())
         self.run_plan('--dry-run')
-        self.assertEqual(len(router.read_ledger()), before)
-        self.assertIsNone(router.decision_snapshot({'stage': 'record'}))
+        self.assertEqual(len(decision_ledger.read_ledger()), before)
+        self.assertIsNone(decision_ledger.decision_snapshot({'stage': 'record'}))
         self.assertIsNone(ledger_snapshot.decision_snapshot({'stage': 'record'}))
 
     def test_snapshot_survives_a_later_change_of_configuration_and_quota(self):
@@ -122,10 +123,10 @@ class DecisionLedgerTests(unittest.TestCase):
 
     def test_tail_read_keeps_a_ledger_over_the_cap_usable(self):
         small = 4096
-        with patch.object(router, 'LEDGER_TAIL_BYTES', small):
+        with patch.object(decision_ledger, 'LEDGER_TAIL_BYTES', small):
             lines = [json.dumps({'v': 1, 'stage': 'plan', 'choice': f'bundle{i}', 'pad': 'x' * 200}) for i in range(100)]
             self.ledger.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-            rows = router.read_ledger()
+            rows = decision_ledger.read_ledger()
         self.assertTrue(rows)
         self.assertLess(len(rows), 100)
         self.assertEqual(rows[-1]['choice'], 'bundle99')

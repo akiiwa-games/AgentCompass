@@ -21,6 +21,8 @@ import ledger_snapshot
 import quota_economy
 import task_intake
 import route_judge
+import scorer_client
+import usage_reading
 import route_simulation as sim
 from router_test_support import isolated_router_state
 from test_fleet_parity import shipped_template, snapshot
@@ -769,7 +771,7 @@ class FiveAxisTests(unittest.TestCase):
 
     def test_the_scorer_always_asks_for_axis_demand(self):
         caps = {'routes': {'general_implementation': {}, 'other_or_mixed': {}}}
-        schema = route_judge.scorer_schema(caps)
+        schema = scorer_client.scorer_schema(caps)
         self.assertIn('axis_demand', schema['properties'])
         self.assertIn('axis_demand', schema['required'])
         self.assertEqual(schema['properties']['axis_demand'], axis_scores.FIVE_AXIS_DEMAND_SCHEMA)
@@ -874,14 +876,14 @@ class FiveAxisTests(unittest.TestCase):
             buf = io.StringIO()
             with patch.object(sys, 'argv', argv), \
                     patch.object(route_judge, 'plan_stage', side_effect=fake_plan_stage), \
-                    patch.object(route_judge, 'usage_snapshot', return_value=usage), \
+                    patch.object(usage_reading, 'usage_snapshot', return_value=usage), \
                     patch.object(route_judge.public_data, 'refresh_in_background'), \
                     patch.object(route_judge.antigravity_plan, 'refresh_in_background'), \
                     patch.object(roll, 'resolve_parent', return_value=('parent-1', 'cli', 'parent-1')), \
                     patch.object(roll.registry, 'pending', return_value=[]), \
                     patch.object(roll.registry, 'reusable_workers', return_value=[]), \
                     patch.object(roll, 'can_launch_via_paseo', return_value=False), \
-                    patch.object(roll, 'cli', side_effect=lambda _a, out, b, _txt, _j: (
+                    patch.object(roll, 'cli', side_effect=lambda _a, out, b, _txt: (
                         launched_bundles.append((b['account'], b['model'])) or
                         (dict(out, launched=True, dispatch_mode='cli',
                               caller_action='already_launched_do_not_respawn',

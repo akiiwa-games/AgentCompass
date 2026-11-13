@@ -2,6 +2,7 @@
 import copy
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import timedelta
 import hashlib
 import json
@@ -22,11 +23,24 @@ import axis_scores
 import provider_inventory
 import quota_economy
 import quota_pools
+import scorer_client
+import subscription_cli
+import usage_reading
 import worker_sessions
 import dispatch_flow as flow
 import dispatch_registry as registry
 
 from router_test_support import isolated_router_state, profile, profile_for, temporary_root
+
+
+def fake_owners(test):
+    """The usage reading and subscription CLI a fake-judge roll runs with: the test's usage, this environment, and the
+    CLI name itself as its command."""
+    stack = ExitStack()
+    stack.enter_context(patch.object(usage_reading, 'usage_snapshot', side_effect=lambda *_, **__: test.usage))
+    stack.enter_context(patch.object(subscription_cli, 'subscription_env', side_effect=lambda account=None: dict(os.environ)))
+    stack.enter_context(patch.object(subscription_cli, 'cli_prefix', side_effect=lambda name: [name]))
+    return stack
 
 
 def setUpModule():
@@ -66,9 +80,10 @@ class DispatchTests(unittest.TestCase):
         self.assertTrue(row['bundle']['fast'])
         self.assertEqual(row['request']['settings']['features'], {'fast_mode': True})
         self.accounts['models']['claude-opus-5-5']['fast_capable'] = False
-        import route_judge
+        import scorer_client
+        import usage_reading
         with patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
-                patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
+                patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
             with self.assertRaisesRegex(ValueError, 'fast_capable'):
                 registry.claim(row['request'], parent_id='parent-a', call_id='fixture', now=self.now)
             self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'prepared')
@@ -267,14 +282,15 @@ class DispatchTests(unittest.TestCase):
             registry.prepare(decision['decision_id'], self.task, self.launch, exhausted, now=self.now)
 
     def test_fresh_claude2_eighty_percent_protects_prepare_mcp_and_sdk_claim(self):
-        import route_judge
+        import scorer_client
+        import usage_reading
         self.task['expected_hours'] = 0.001
         row = self.prepare()  # Existing quota permits preparation; it can change before launch.
         raw = {'providers': {'claude-lab': {'available': True, 'stale': False, 'fetched_at': self.now.isoformat(),
             'windows': [{'id': 'five_hour', 'used_pct': 80,
                          'resets_at': (self.now + timedelta(hours=2)).isoformat()}]}}}
         (self.root / 'usage.json').write_text(json.dumps(raw))
-        usage = route_judge.usage_snapshot(now=self.now)
+        usage = usage_reading.usage_snapshot(now=self.now)
         other_task = dict(self.task, task_id='another-task')
         decision = self.issue(other_task)
         with self.assertRaisesRegex(ValueError, 'launch protection'):
@@ -296,7 +312,7 @@ class DispatchTests(unittest.TestCase):
             observation = copy.deepcopy(raw)
             observation['providers']['claude-lab'].update(changes)
             (self.root / 'usage.json').write_text(json.dumps(observation))
-            registry.check_launch_quota(row['bundle'], self.accounts, route_judge.usage_snapshot(now=self.now), self.now)
+            registry.check_launch_quota(row['bundle'], self.accounts, usage_reading.usage_snapshot(now=self.now), self.now)
         # A local 429 session limit in .claude-lab blocks launch until resets_at even when usage.json is stale.
         stale_obs = copy.deepcopy(raw)
         stale_obs['providers']['claude-lab'].update({'stale': True, 'fetched_at': (self.now - timedelta(minutes=20)).isoformat()})
@@ -312,7 +328,7 @@ class DispatchTests(unittest.TestCase):
             'message': {'content': [{'type': 'text', 'text': f"API Error: Request rejected (429) · Claude Code: You've hit your session limit · resets {reset_utc} (UTC)"}]},
         }) + '\n', encoding='utf-8')
         with self.assertRaisesRegex(ValueError, 'launch protection'):
-            registry.check_launch_quota(row['bundle'], self.accounts, route_judge.usage_snapshot(now=self.now), self.now)
+            registry.check_launch_quota(row['bundle'], self.accounts, usage_reading.usage_snapshot(now=self.now), self.now)
         log_file.unlink()
         (self.root / '.agent-compass' / 'rate-limits.json').unlink(missing_ok=True)
 
@@ -1314,6 +1330,8 @@ except ValueError as e:
     def test_cli_prepare_launch_and_automatic_status_reconcile_fake_host(self):
         # Exercise the executable entrypoints, not only the in-memory state machine.
         import route_judge
+        import scorer_client
+        import usage_reading
         raw = {'providers': {'claude-lab': {'fetched_at': self.now.isoformat(), 'stale': False,
                     'available': True, 'windows': self.usage['accounts']['claude-lab']['windows']}}}
         (self.root / 'usage.json').write_text(json.dumps(raw))
@@ -1396,10 +1414,8 @@ class RollTests(unittest.TestCase):
         def plan_stage(document, _):
             seen.update(document)
             return dict(decision, **registry.issue(decision, document['task'], self.now)), 0
-        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage),
-                                   'usage_snapshot': staticmethod(lambda _: self.usage),
-                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
-                                   'cli_prefix': staticmethod(lambda name: [name])})
+        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage)})
+        self.enterContext(fake_owners(self))
         base_env = {
             'PASEO_AGENT_ID': parent,
             'ROUTER_PARENT_AGENT_ID': '',
@@ -1574,9 +1590,9 @@ class RollTests(unittest.TestCase):
         def plan_stage(document, _):
             order.append(document['task']['objective'])
             return dict(stage='plan', choice='self', selected_bundle={}, decision={'action': 'self'}), 0
-        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage),
-                                   'prefetch_scores': staticmethod(lambda tasks, timeout: prefetched.append(
-                                       [t['objective'] for t in tasks]))})
+        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage)})
+        self.enterContext(patch.object(scorer_client, 'prefetch_scores', side_effect=lambda tasks, timeout: prefetched.append(
+            [t['objective'] for t in tasks])))
         args = argparse.Namespace(brief=briefs, task=None, file=[], apply_to=None, local_only=None, keep_whole=None,
                                   hours=None, title=None, workspace=None, task_id=None, parent_id=None,
                                   parent_host=None, parent_address=None, provider=None, account=None, model=None,
@@ -1661,7 +1677,7 @@ class RollTests(unittest.TestCase):
         fake.write_text(self.FAKE_GROK, encoding='utf-8')
         seen = []
 
-        def command(family, provider, judge):
+        def command(family, provider):
             seen.append((family, provider))
             return [sys.executable, '-I', str(fake)]
         rec_file = self.root / 'grok-record.json'
@@ -1714,40 +1730,40 @@ class RollTests(unittest.TestCase):
         bin_dir.mkdir()
         agent, grok = bin_dir / 'agent.exe', bin_dir / 'grok.exe'
         agent.write_bytes(b'')
-        judge = type('Judge', (), {'cli_prefix': staticmethod(lambda name: ['discovered-' + name])})
+        self.enterContext(patch.object(subscription_cli, 'cli_prefix', side_effect=lambda name: ['discovered-' + name]))
 
         def configure(providers):
             (self.root / '.paseo' / 'config.json').write_text(json.dumps({'agents': {'providers': providers}}))
         with patch.dict(os.environ, {'PASEO_HOME': str(self.root / '.paseo')}):
             configure({'grok': {'extends': 'acp', 'command': [str(agent), 'agent', '--always-approve', 'stdio']},
                        'grok-2': {'extends': 'grok'}})
-            self.assertEqual(roll_module.cli_command('grok', 'grok', judge), [str(agent)])
+            self.assertEqual(roll_module.cli_command('grok', 'grok'), [str(agent)])
             grok.write_bytes(b'')  # the sibling grok binary is the CLI when the definition names agent
-            self.assertEqual(roll_module.cli_command('grok', 'grok-2', judge), [str(grok)])
+            self.assertEqual(roll_module.cli_command('grok', 'grok-2'), [str(grok)])
             agent.unlink()
             grok.unlink()
             with self.assertRaisesRegex(RuntimeError, 'configured for .grok.*missing'):
-                roll_module.cli_command('grok', 'grok', judge)
+                roll_module.cli_command('grok', 'grok')
             for command in (['wrapper.cmd', 'stdio'], ['npx', '-y', 'some-grok-acp']):
                 configure({'grok': {'extends': 'acp', 'command': command}})
                 with self.assertRaisesRegex(RuntimeError, 'not a Grok executable'):
-                    roll_module.cli_command('grok', 'grok', judge)
+                    roll_module.cli_command('grok', 'grok')
             bare = self.root / 'on-path' / 'agent.exe'
             bare.parent.mkdir()
             bare.write_bytes(b'')
             configure({'grok': {'extends': 'acp', 'command': ['agent', 'stdio']}})
             with patch.object(roll_module.shutil, 'which', lambda name: str(bare) if name == 'agent' else None):
-                self.assertEqual(roll_module.cli_command('grok', 'grok', judge), [str(bare)])
+                self.assertEqual(roll_module.cli_command('grok', 'grok'), [str(bare)])
             (self.root / 'agent').write_bytes(b'')  # a file in the worker's cwd is never the configured command
             here = os.getcwd()
             os.chdir(self.root)
             self.addCleanup(os.chdir, here)
             with patch.object(roll_module.shutil, 'which', return_value=None),                     self.assertRaisesRegex(RuntimeError, 'missing: agent'):
-                roll_module.cli_command('grok', 'grok', judge)
+                roll_module.cli_command('grok', 'grok')
             os.chdir(here)
             configure({'grok': {'extends': 'acp'}})
-            self.assertEqual(roll_module.cli_command('grok', 'grok', judge), ['discovered-grok'])
-            self.assertEqual(roll_module.cli_command('codex', 'codex', judge), ['discovered-codex'])
+            self.assertEqual(roll_module.cli_command('grok', 'grok'), ['discovered-grok'])
+            self.assertEqual(roll_module.cli_command('codex', 'codex'), ['discovered-codex'])
 
     def test_routes_that_cannot_launch_here_do_not_launch(self):
         paseo = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle, decision={'action': 'start'})
@@ -2101,10 +2117,8 @@ class RollTests(unittest.TestCase):
         b1.write_text('# Step 1: Initial implementation\n', encoding='utf-8')
         b2.write_text('# Step 1-Rev: Address review comments\n', encoding='utf-8')
         b3.write_text('# Step 1-Fresh: Independent task\n', encoding='utf-8')
-        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
-                                   'usage_snapshot': staticmethod(lambda _: self.usage),
-                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
-                                   'cli_prefix': staticmethod(lambda name: [name])})
+        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage)})
+        self.enterContext(fake_owners(self))
         base_args = dict(task=None, file=[], apply_to=None, local_only='local daemon test', keep_whole=None,
                          hours=0.5, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
                          parent_host=None, parent_address=None, provider=None, account=None, model=None,
@@ -2180,10 +2194,8 @@ class RollTests(unittest.TestCase):
         import roll
         b1 = self.root / 'turn1.md'
         b1.write_text('# Turn 1: Heavy exploration\n', encoding='utf-8')
-        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
-                                   'usage_snapshot': staticmethod(lambda _: self.usage),
-                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
-                                   'cli_prefix': staticmethod(lambda name: [name])})
+        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage)})
+        self.enterContext(fake_owners(self))
         base_args = dict(task=None, file=[], apply_to=None, local_only='local daemon test', keep_whole=None,
                          hours=0.5, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
                          parent_host=None, parent_address=None, provider=None, account=None, model=None,
@@ -2246,11 +2258,9 @@ class RollTests(unittest.TestCase):
         b1b = self.root / 'brief-step1b.md'
         b1a.write_text('# Step 1A: Refactor auth module\n', encoding='utf-8')
         b1b.write_text('# Step 1B: Refactor storage module\n', encoding='utf-8')
-        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage),
-                                   'prefetch_scores': staticmethod(lambda tasks, timeout: None),
-                                   'usage_snapshot': staticmethod(lambda _: self.usage),
-                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
-                                   'cli_prefix': staticmethod(lambda name: [name])})
+        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage)})
+        self.enterContext(fake_owners(self))
+        self.enterContext(patch.object(scorer_client, 'prefetch_scores'))
         batch_args = dict(task=None, file=[], apply_to=None, local_only=None, keep_whole=None,
                           hours=None, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
                           parent_host=None, parent_address=None, provider=None, account=None, model=None,
@@ -2287,8 +2297,8 @@ class RollTests(unittest.TestCase):
             'plan_stage': staticmethod(lambda doc, _: (
                 {'stage': 'plan', 'status': 'blocked', 'choice': 'none', 'error': 'scorer_unavailable',
                  'scorer': {'source': 'scorer_unavailable', 'fallback_reason': 'no_classifier_available'}}, 2)),
-            'usage_snapshot': staticmethod(lambda _: self.usage),
         })
+        self.enterContext(fake_owners(self))
         ns = argparse.Namespace(brief=None, task='Do work', file=[], apply_to=None, local_only='local daemon',
                                 keep_whole=None, hours=1.0, title=None, workspace=None, task_id='t-blocked',
                                 wait=0, parent_id='parent-a', parent_host=None, parent_address=None,
@@ -2336,8 +2346,8 @@ class RollTests(unittest.TestCase):
             'classify_pinned': staticmethod(lambda t, a: {'task': dict(t, profile=review_prof), 'scorer': None,
                                                          'hours_estimate': None, 'alerts': []}),
             'record_constraint': staticmethod(fake_record_constraint),
-            'usage_snapshot': staticmethod(lambda _: self.usage),
         })
+        self.enterContext(fake_owners(self))
         ns_named_resume = argparse.Namespace(
             brief=None, task='Review the diff only', file=[], apply_to=None, local_only='local daemon',
             keep_whole=None, hours=0.5, title=None, workspace=None, task_id='t-impl',
@@ -2381,9 +2391,11 @@ class PinnedRollTests(unittest.TestCase):
 
     def judged(self, scored):
         import route_judge
+        import scorer_client
+        import usage_reading
         return route_judge, (patch.object(account_fleet, 'load_accounts', return_value=self.accounts),
-                             patch.object(route_judge, 'usage_snapshot', return_value=copy.deepcopy(self.usage)),
-                             patch.object(route_judge, 'score_task', return_value=scored))
+                             patch.object(usage_reading, 'usage_snapshot', return_value=copy.deepcopy(self.usage)),
+                             patch.object(scorer_client, 'score_task', return_value=scored))
 
     def test_a_pinned_roll_gets_the_classifier_hours_and_a_nonzero_reservation(self):
         import roll
@@ -2451,9 +2463,10 @@ class CreateLifecycleTests(unittest.TestCase):
         return self.claim_row(row)
 
     def claim_row(self, row):
-        import route_judge
+        import scorer_client
+        import usage_reading
         with patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
-                patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
+                patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
             return registry.claim(registry.inspect(row['dispatch_id'])['request'], parent_id='parent-a', now=self.now)
 
     def observe_only(self, creation):
@@ -2689,7 +2702,8 @@ class CreateLifecycleTests(unittest.TestCase):
     def sent_create(self, pause, **prepare):
         """The create a launch sends when the process stalls for `pause` seconds right after the claim."""
         import account_fleet
-        import route_judge
+        import scorer_client
+        import usage_reading
         row = self.prepare() if not prepare else registry.prepare(self.issue()['decision_id'], self.task, self.launch, self.usage,
                                                                   accounts=self.accounts, now=self.now, **prepare)
         sent, offset = {}, [0]
@@ -2709,7 +2723,7 @@ class CreateLifecycleTests(unittest.TestCase):
             return {'ok': True, 'agent': None, 'creation': None}
         with patch.object(registry, 'claim', claim), patch.object(registry, 'utcnow', lambda: real_now() + timedelta(seconds=offset[0])), \
                 patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
-                patch.object(route_judge, 'usage_snapshot', return_value=self.usage):
+                patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
             flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)
         launched = registry.parse(registry.inspect(row['dispatch_id'])['launched_at'])
         return sent, launched, real_now
@@ -3608,10 +3622,8 @@ class ModelLatchTests(unittest.TestCase):
             self.choices.append(planned['choice'])
             self.chosen.append(planned.get('selected_bundle') or {})
             return dict(planned, **registry.issue(planned, document['task'], self.now)), 0
-        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage),
-                                   'usage_snapshot': staticmethod(lambda _: self.usage),
-                                   'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
-                                   'cli_prefix': staticmethod(lambda name: [name])})
+        judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage)})
+        self.enterContext(fake_owners(self))
         with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a', 'ROUTER_PARENT_AGENT_ID': ''}), \
                 patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'worker-prompts'), \
                 patch.object(roll, 'RESULTS_DIR', self.root / 'roll-results'), \
@@ -4018,23 +4030,24 @@ class ProviderRetryTests(unittest.TestCase):
         self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'launching')   # the registry decides its state
 
     def test_the_scope_comes_from_the_configured_classifier_and_a_silent_one_reads_as_unknown(self):
-        import route_judge
+        import scorer_client
+        import usage_reading
         asked = []   # the real classify_scope, with the classifier backend faked
 
         def run(scorer_type, instructions, text, schema, timeout, config, account=None):
             asked.append(text)
             return {'scope': 'account', 'reason': 'a free-usage quota shared by the free models'}, 'claude', 'haiku'
-        with patch.object(route_judge, 'scorer_accounts', return_value=['claude']), \
-                patch.object(route_judge, 'load_scorer_config', return_value={'scorer_type': 'claude_haiku_low'}), \
-                patch.object(route_judge, 'run_structured', side_effect=run):
+        with patch.object(scorer_client, 'scorer_accounts', return_value=['claude']), \
+                patch.object(scorer_client, 'load_scorer_config', return_value={'scorer_type': 'claude_haiku_low'}), \
+                patch.object(scorer_client, 'run_structured', side_effect=run):
             scope, meta = self.real_classify('opencode', 'opencode', 'glm-5.3-flash-free', self.V2_MESSAGE,
                                              'provider_turn_failed')
         self.assertEqual((scope, meta['source']), ('account', 'system_one'))
         self.assertIn(self.V2_MESSAGE, asked[0])
         self.assertIn('provider_turn_failed', asked[0])
-        with patch.object(route_judge, 'scorer_accounts', return_value=['claude']), \
-                patch.object(route_judge, 'load_scorer_config', return_value={'scorer_type': 'claude_haiku_low'}), \
-                patch.object(route_judge, 'run_structured', return_value=({'scope': 'quota'}, 'claude', 'haiku')):
+        with patch.object(scorer_client, 'scorer_accounts', return_value=['claude']), \
+                patch.object(scorer_client, 'load_scorer_config', return_value={'scorer_type': 'claude_haiku_low'}), \
+                patch.object(scorer_client, 'run_structured', return_value=({'scope': 'quota'}, 'claude', 'haiku')):
             self.assertEqual(self.real_classify('opencode', 'opencode', 'm', self.MESSAGE)[0], 'unknown')
         self.assertEqual(self.real_classify('opencode', 'opencode', 'm', None)[0], 'unknown')
 
@@ -4177,10 +4190,8 @@ class LiveModelCheckTests(unittest.TestCase):
 
         judge = type('Judge', (), {
             'plan_stage': staticmethod(plan_stage),
-            'usage_snapshot': staticmethod(lambda _: self.usage),
-            'subscription_env': staticmethod(lambda account=None: dict(os.environ)),
-            'cli_prefix': staticmethod(lambda name: [name]),
         })
+        self.enterContext(fake_owners(self))
         with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a', 'ROUTER_PARENT_AGENT_ID': ''}), \
                 patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'worker-prompts'), \
                 patch.object(roll, 'RESULTS_DIR', self.root / 'roll-results'), \

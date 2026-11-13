@@ -14,6 +14,7 @@ import axis_scores
 import host_policy
 import quota_economy
 import quota_pools
+import usage_reading
 import provider_inventory as real_inventory
 
 
@@ -27,7 +28,7 @@ class AccountStateCardTests(unittest.TestCase):
         fake.host_policy.load_policy.return_value = None
         fake.host_policy.account_allowed.return_value = allowed
         router.usage_snapshot.return_value = {'accounts': {}} if usage is None else {'accounts': {name: usage}}
-        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), patch.object(usage_reading, 'usage_snapshot', router.usage_snapshot), \
              patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
              patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
              patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
@@ -132,7 +133,7 @@ class AccountStateCardTests(unittest.TestCase):
                 }
             }
         }
-        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), patch.object(usage_reading, 'usage_snapshot', router.usage_snapshot), \
              patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
              patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
              patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
@@ -176,7 +177,7 @@ class AccountStateCardTests(unittest.TestCase):
                 }
             }
         }
-        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), patch.object(usage_reading, 'usage_snapshot', router.usage_snapshot), \
              patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
              patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
              patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
@@ -198,7 +199,7 @@ class AccountStateCardTests(unittest.TestCase):
 
         # Case 2: available=False upgrades to usage_failing with localized text (never raw token 'stale_reading').
         router.usage_snapshot.return_value['accounts']['claude-2']['available'] = False
-        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), patch.object(usage_reading, 'usage_snapshot', router.usage_snapshot), \
              patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
              patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
              patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
@@ -237,7 +238,7 @@ class AccountStateCardTests(unittest.TestCase):
         fake.host_policy.load_policy.return_value = None
         fake.host_policy.account_allowed.return_value = True
         router.usage_snapshot.return_value = {'accounts': {}}
-        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), patch.object(usage_reading, 'usage_snapshot', router.usage_snapshot), \
              patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
              patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
              patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \
@@ -289,7 +290,7 @@ class AccountStateCardTests(unittest.TestCase):
                 }
             }
         }
-        with patch.object(router_data, 'modules', return_value=(fake, router)), \
+        with patch.object(router_data, 'modules', return_value=(fake, router)), patch.object(usage_reading, 'usage_snapshot', router.usage_snapshot), \
              patch.object(account_fleet, 'load_accounts', fake.load_accounts), \
              patch.object(host_policy, 'load_policy', fake.host_policy.load_policy), \
              patch.object(host_policy, 'account_allowed', fake.host_policy.account_allowed), \

@@ -14,7 +14,7 @@ import axis_scores
 import antigravity_plan
 import plan_state_residue
 import provider_inventory as inventory
-import route_judge
+import usage_reading
 import usage_core
 
 from router_test_support import isolated_router_state, temporary_root
@@ -105,7 +105,7 @@ class Machine(unittest.TestCase):
 
     def route(self, account='codex'):
         accounts = account_fleet.load_accounts()
-        usage = route_judge.usage_snapshot(accounts=list(accounts['accounts']), inventory=accounts.get('_discovery'))
+        usage = usage_reading.usage_snapshot(accounts=list(accounts['accounts']), inventory=accounts.get('_discovery'))
         result = allocator.plan(TASK, usage, accounts=accounts, overrides=[], records=[])
         rows = [c for c in result['ranking'] if (c.get('bundle') or {}).get('account') == account]
         return rows, result['decision'].get('warnings') or []

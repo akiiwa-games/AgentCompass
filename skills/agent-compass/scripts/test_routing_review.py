@@ -22,6 +22,9 @@ import dispatch_registry
 import launch_failures
 import roll
 import route_judge
+import decision_ledger
+import scorer_client
+import usage_reading
 from router_test_support import usage_windows
 from test_routing_parity import FULL_QUOTA, LIVE, NOW, PROFILE, RouterCase
 
@@ -37,10 +40,11 @@ class RecordCase(RouterCase):
             'basis': 'User asked', 'account': 'claude', 'provider': 'claude', 'model': FLAGSHIP, 'effort': None,
             'input': None, 'usage_cache': None, 'accounts': None, 'constraint': 'user_override', 'specialty': None,
             'reason_category': None, 'fast': False, 'parent_id': None, **fields})
-        with patch.object(route_judge, 'usage_snapshot', return_value=copy.deepcopy(self.usage)), \
+        with patch.object(usage_reading, 'usage_snapshot', return_value=copy.deepcopy(self.usage)), \
                 patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(accounts or self.accounts)), \
-                patch.object(route_judge, 'datetime', wraps=datetime) as clock:
-            clock.now.return_value = NOW
+                patch.object(route_judge, 'datetime', wraps=datetime) as clock, \
+                patch.object(decision_ledger, 'datetime', wraps=datetime) as ledger_clock:
+            clock.now.return_value = ledger_clock.now.return_value = NOW
             return route_judge.record_constraint(args, task)
 
     def launched(self, accounts=None, **fields):
@@ -264,13 +268,13 @@ class MinorFindingTests(RecordCase):
         caps = account_fleet.load_capabilities()
         config = {'scorer_type': 'claude_haiku_low', 'fallback_to_agy': False}
         task = {'objective': 'hello world'}
-        key = route_judge.score_cache_key(task, caps, route_judge.scorer_attempt_order(config)[1], config)
+        key = scorer_client.score_cache_key(task, caps, scorer_client.scorer_attempt_order(config)[1], config)
         good = task_intake.validate_profile(dict(PROFILE))
         with patch.dict(os.environ, {'ROUTER_SCORE_CACHE': str(Path(self.root) / 'cache.json')}):
-            route_judge.score_cache_put(key, dict(PROFILE, expected_hours=10 ** 400), {'source': 'system_one', 'scorer_type': 'claude_haiku_low'})
-            with patch.object(route_judge, 'scorer_accounts', return_value=[None]), \
-                    patch.object(route_judge, 'run_scorer', return_value=(good, 'p', 'm')) as scorer:
-                self.assertEqual(route_judge.score_task(task, caps, scorer_config=config)[0], good)
+            scorer_client.score_cache_put(key, dict(PROFILE, expected_hours=10 ** 400), {'source': 'system_one', 'scorer_type': 'claude_haiku_low'})
+            with patch.object(scorer_client, 'scorer_accounts', return_value=[None]), \
+                    patch.object(scorer_client, 'run_scorer', return_value=(good, 'p', 'm')) as scorer:
+                self.assertEqual(scorer_client.score_task(task, caps, scorer_config=config)[0], good)
             scorer.assert_called_once()
 
     def test_a_cooldown_recorded_under_any_spelling_cools_the_model(self):

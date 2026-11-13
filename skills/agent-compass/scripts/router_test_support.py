@@ -15,9 +15,10 @@ def temporary_root(add_cleanup):
 
 def isolated_router_state(add_cleanup, *, discovery=True, policy=True):
     """Install isolated defaults; individual tests may override any boundary."""
+    import decision_ledger
+    import env_vars
     import host_policy
     import provider_inventory
-    import route_judge
 
     stack = ExitStack()
     add_cleanup(stack.close)
@@ -41,8 +42,8 @@ def isolated_router_state(add_cleanup, *, discovery=True, policy=True):
     stack.enter_context(patch.dict(os.environ, env, clear=True))
     stack.enter_context(patch.object(Path, 'home', return_value=root))
     # user_env otherwise falls back to the Windows registry, outside the fixture.
-    stack.enter_context(patch.object(route_judge, 'user_env', side_effect=os.environ.get))
-    stack.enter_context(patch.object(route_judge, 'LEDGER_WRITES', True))
+    stack.enter_context(patch.object(env_vars, 'user_env', side_effect=os.environ.get))
+    stack.enter_context(patch.object(decision_ledger, 'LEDGER_WRITES', True))
     if discovery:
         stack.enter_context(patch.object(provider_inventory, 'current',
                                         return_value={'accounts': {}, 'launchers': {}}))

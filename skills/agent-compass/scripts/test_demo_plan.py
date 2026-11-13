@@ -16,7 +16,8 @@ import demo_plan
 import host_policy
 import provider_inventory
 import quota_overrides
-import route_judge
+import decision_ledger
+import usage_reading
 import worker_sessions
 
 pytestmark = pytest.mark.slow
@@ -53,7 +54,7 @@ class DemoTests(unittest.TestCase):
         with ExitStack() as stack:
             for obj, name in ((provider_inventory, 'current'), (host_policy, 'load_policy'),
                               (quota_overrides, 'load_overrides'), (worker_sessions, 'session_state'),
-                              (route_judge, 'usage_snapshot'), (route_judge, 'read_ledger'),
+                              (usage_reading, 'usage_snapshot'), (decision_ledger, 'read_ledger'),
                               (Path, 'home')):
                 stack.enter_context(patch.object(obj, name, side_effect=AssertionError('live state read')))
             result = demo_plan.plan(document)

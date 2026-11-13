@@ -1394,9 +1394,9 @@ def claim(request, parent_id=None, call_id=None, now=None, path=None):
         if row['state'] != 'prepared' or parse(row['lease_until']) <= now:
             raise ValueError('Dispatch already claimed, terminal or expired; reconcile instead of replaying create_agent')
         import account_fleet
-        import route_judge
+        import usage_reading
         try:
-            check_launch_quota(row['bundle'], account_fleet.load_accounts(), route_judge.usage_snapshot(now=now), now)
+            check_launch_quota(row['bundle'], account_fleet.load_accounts(), usage_reading.usage_snapshot(now=now), now)
         except ValueError as exc:
             raise CapacityChanged(str(exc)) from exc
         row.update(claim_id=call_id or str(uuid.uuid4()), launched_at=stamp(now),

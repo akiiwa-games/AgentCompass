@@ -14,8 +14,8 @@ import host_policy
 import model_latch
 import provider_retry
 import quota_exhaustion
-import route_judge
 import turn_refusal
+import usage_reading
 import worker_sessions
 
 from router_test_support import isolated_router_state
@@ -36,7 +36,7 @@ def setUpModule():
 
 def usage(left):
     """A fresh reading of the account's one window with `left` percent remaining, resetting in 40 hours."""
-    window = route_judge.window_state({'id': 'seven_day', 'used_pct': 100 - left,
+    window = usage_reading.window_state({'id': 'seven_day', 'used_pct': 100 - left,
                                        'resets_at': (NOW + timedelta(hours=40)).isoformat()}, NOW)
     return {'accounts': {'acme': {'status': 'fresh', 'fetched_at': NOW.isoformat(), 'available': True,
                                   'windows': [window]}}}
@@ -55,7 +55,7 @@ class VerdictTestCase(unittest.TestCase):
         self.fleet = copy.deepcopy(FLEET)
         self.left, self.holds, self.latches, self.policy, self.receipt = 80, {}, {}, None, None
         for new in (patch.object(account_fleet, 'load_accounts', side_effect=lambda: self.fleet),
-                    patch.object(route_judge, 'usage_snapshot', side_effect=lambda *a, **k: usage(self.left)),
+                    patch.object(usage_reading, 'usage_snapshot', side_effect=lambda *a, **k: usage(self.left)),
                     patch.object(host_policy, 'load_policy', side_effect=lambda: self.policy),
                     patch.object(provider_retry, 'active', side_effect=lambda **k: self.holds),
                     patch.object(model_latch, 'active', side_effect=lambda **k: self.latches),

@@ -13,7 +13,6 @@ import argparse
 import collections
 import datetime as dt
 import glob
-import importlib.util
 import json
 import os
 import re
@@ -69,11 +68,11 @@ def local(ts: dt.datetime) -> dt.datetime:
     return ts.astimezone()
 
 
-def load_router():
-    spec = importlib.util.spec_from_file_location("route_judge", SKILL_SCRIPTS / "route_judge.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def load_usage_reading():
+    if str(SKILL_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SKILL_SCRIPTS))
+    import usage_reading
+    return usage_reading
 
 
 # ---------------------------------------------------------------- decisions
@@ -657,7 +656,7 @@ def build_findings(ctx: dict) -> list[dict]:
     if judge_calls:
         top, n = judge_calls.most_common(1)[0]
         account = "codex" if top and "sol" in top else "claude"
-        window = ctx["router"].tightest_window(accounts.get(account, {}), top or "")
+        window = ctx["usage_reading"].tightest_window(accounts.get(account, {}), top or "")
         if window and window["remaining_pct_before_reset"] <= LOW_REMAINING_PCT:
             pins = ctx["pinned"]
             add("warn", "judge-account", f"judge 调用集中在额度见底的账户({account})",
@@ -667,12 +666,12 @@ def build_findings(ctx: dict) -> list[dict]:
     for name, row in accounts.items():
         if name.lower() in METERED:
             continue
-        window = ctx["router"].tightest_window(row)
+        window = ctx["usage_reading"].tightest_window(row)
         if window and window["remaining_pct_before_reset"] <= LOW_REMAINING_PCT and window["seconds_until_reset"] > 48 * 3600:
             idle = [f"{a}({ctx['router'].tightest_window(r)['remaining_pct_before_reset']:.0f}% 余,近期峰值已用 "
                     f"{max([v for (acc, _), v in ctx['peaks'].items() if acc == a] or [0]):.0f}%)" for a, r in accounts.items()
-                    if a != name and a.lower() not in METERED and r.get("status") == "fresh" and ctx["router"].tightest_window(r)
-                    and ctx["router"].tightest_window(r)["remaining_pct_before_reset"] >= 80]
+                    if a != name and a.lower() not in METERED and r.get("status") == "fresh" and ctx["usage_reading"].tightest_window(r)
+                    and ctx["usage_reading"].tightest_window(r)["remaining_pct_before_reset"] >= 80]
             add("crit", f"cliff-{name}", f"{name} 额度见底且重置还很远",
                 f"{name}/{window['id']} 仅剩 {window['remaining_pct_before_reset']:.0f}%,{window['seconds_until_reset'] / 86400:.1f} 天后重置。"
                 + (f" 同期几乎闲置:{', '.join(idle)}。" if idle else ""),
@@ -756,7 +755,7 @@ def fmt_pct(value):
 
 
 def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
-    rows, router = ctx["rows"], ctx["router"]
+    rows, usage_reading = ctx["rows"], ctx["usage_reading"]
     now = ctx["now"]
     lines = [f"# Router 每日巡检 — {local(now):%Y-%m-%d %H:%M}(本地时间)", ""]
     if commentary:
@@ -810,7 +809,7 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
                      f"{((s or d).get('judge') or '-').replace('claude-', '').replace('gpt-6.1-', '')} | {used} | {reason} |")
     lines += ["", "## 4. 当前用量快照", "", "| 账户 | 状态 | 最紧窗口 | 余量 | 重置 | 观测时间 |", "|---|---|---|---|---|---|"]
     for name, row in sorted(ctx["usage_now"].get("accounts", {}).items()):
-        window = router.tightest_window(row)
+        window = usage_reading.tightest_window(row)
         flag = " ⚠标志冲突" if row.get("flag_conflict") else ""
         reset_days = "—" if not window else f"{window['seconds_until_reset'] / 86400:.1f}d"
         lines.append(f"| {name}{' (按量)' if name.lower() in METERED else ''} | {row.get('status')}{flag} | {(window or {}).get('id', '—')} | "
@@ -889,7 +888,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=REPORT_DIR)
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args()
-    router = load_router()
+    usage_reading = load_usage_reading()
     now = dt.datetime.now(UTC)
     since_dt = now - dt.timedelta(days=args.days)
     since = since_dt.timestamp()
@@ -915,10 +914,10 @@ def main() -> int:
             if n >= HEAVY_SESSION_CALLS:
                 heavy_by_day[day] += 1
                 heavy_detail[day].append(f"{s['model']}/{s['effort']}×{n}")
-    usage_now = router.usage_snapshot()
+    usage_now = usage_reading.usage_snapshot()
     now_row = {"usage": usage_points(usage_now)}
     ctx = {"now": now, "rows": rows, "ledger_rows": ledger_rows, "ledger_skipped": skipped_ledger[0] if skipped_ledger else 0,
-           "transcript_rows": transcript_rows, "router": router,
+           "transcript_rows": transcript_rows, "usage_reading": usage_reading,
            "usage_now": usage_now, "now_row": now_row, "sessions": sessions, "spawns": spawns,
            "pinned": count_pinned(codex_files + claude_files),
            "codex_days": {d: v for d, v in codex_days.items() if d >= since_day}, "claude_days": scan_claude(claude_files, since_day),

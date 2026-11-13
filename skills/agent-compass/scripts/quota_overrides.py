@@ -1,6 +1,8 @@
-"""Manual quota overrides: loading, landing on reset, retiring, and applying them to the usage reading."""
+"""Manual quota overrides: the `override` stage that writes them, loading, landing on reset, retiring, and applying them
+to the usage reading."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -293,3 +295,167 @@ def apply_overrides(overrides, usage, accounts, now):
                           reset_expectation_status='overdue_uncertain' if resets <= now else 'unconfirmed')
         applied.append(intent)
     return usage, accounts, applied
+
+
+def manage_overrides(args, now=None):
+    with override_store.locked(overrides_path()):
+        return _manage_overrides_locked(args, now)
+
+
+def _manage_overrides_locked(args, now=None):
+    """Upsert priority/reset intent or expiry, under the caller-held store lock."""
+    import decision_ledger
+    import usage_reading
+    now = now or datetime.now(timezone.utc)
+    path = overrides_path()
+    try:
+        document = json.loads(path.read_text(encoding='utf-8-sig'))
+    except FileNotFoundError:
+        document = {}
+    rows = [o for o in (document.get('overrides') or []) if isinstance(o, dict)]
+    accounts = account_fleet.load_accounts()
+    usage = usage_reading.usage_snapshot(getattr(args, 'usage_cache', None), None, now)
+    active = load_overrides(now, path, usage=usage, accounts=accounts, prune=False)
+    if args.list:
+        return {'stage': 'override', 'path': str(path), 'active': active}
+    if args.clear:
+        kept = [] if args.clear == 'all' else [o for o in rows if o.get('id') != args.clear]
+        if len(kept) == len(rows):
+            raise ValueError(f'No override with id {args.clear!r}.')
+        removed = len(rows) - len(kept)
+        rows = kept
+    else:
+        if not args.account or not (args.basis or '').strip():
+            raise ValueError('override requires --account and --basis (quote the user).')
+        if args.account not in accounts['accounts']:
+            raise ValueError(f'Unknown account {args.account!r}.')
+
+        def moment(at, hours, name):
+            if at and hours is not None:
+                raise ValueError(f'Give --{name}-at or --{name}-in, not both.')
+            if hours is not None:
+                return now + timedelta(hours=hours)
+            if at:
+                parsed = quota_pools.parse_time(at)
+                if parsed is None:
+                    raise ValueError(f'--{name}-at needs an ISO time with a zone, e.g. 2026-10-12T21:00+08:00.')
+                return parsed
+            return None
+
+        resets, expires = moment(args.resets_at, args.resets_in, 'resets'), moment(args.expires_at, args.expires_in, 'expires')
+        if args.window and args.window not in accounts['accounts'][args.account].get('windows', {}):
+            raise ValueError(f'{args.account} has no window {args.window!r}.')
+        explicit_stop_on_reset = bool(getattr(args, 'stop_on_reset', False))
+        stop_on_reset = (explicit_stop_on_reset or (resets is not None)
+                         or bool(getattr(args, 'reset_confirmation', None)) or bool(getattr(args, 'rebaseline', False)))
+        if args.until:
+            until = quota_pools.parse_time(args.until)
+        elif stop_on_reset:
+            until = max([t for t in (resets, expires) if t] + [now + timedelta(hours=24)])
+        else:
+            until = max([t for t in (resets, expires) if t] or [now + timedelta(hours=24)])
+        if until is None or until <= now:
+            raise ValueError('--until must be a future ISO time with a zone.')
+        baseline_windows = _reset_baseline(args, usage, accounts, now) if stop_on_reset else None
+        rows = [o for o in rows if (until_o := quota_pools.parse_time(o.get('until'))) is not None and until_o > now
+                and not override_reset_landed(o, usage, accounts, now)
+                and not override_depleted(o, usage, accounts)]
+        intent = (getattr(args, 'intent', None) or ' '.join(args.basis.split())).strip()
+        model = account_fleet.canonical(args.model, accounts) if args.model else None
+        boost = 0.1 if args.boost is None else args.boost
+        if not expires and override_depleted({'account': args.account, 'model': model, 'window': args.window,
+                                                        'boost': boost}, usage, accounts):
+            raise ValueError(f'{args.account} is at or below the {accounts["scoring"]["safety_margin_pct"]}% safety margin; '
+                             'the router dispatches no new work there, so a priority would be retired at once.')
+        key = (intent, args.account, model, args.window)
+        previous = next((o for o in rows if (
+            o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'),
+            account_fleet.canonical(o.get('model'), accounts) if o.get('model') else None, o.get('window')) == key), None)
+        rebaseline = bool(getattr(args, 'rebaseline', False))
+        if rebaseline:
+            if previous is None:
+                raise ValueError('--rebaseline requires an existing matching intent/account/model/window.')
+            if not baseline_windows or any(
+                    not isinstance(w.get('used_pct'), (int, float)) or not 0 <= w['used_pct'] <= 100
+                    or quota_pools.parse_time(w.get('resets_at')) is None
+                    for w in baseline_windows.values()):
+                raise ValueError('--rebaseline needs fresh, valid quota observations; the existing override is unchanged.')
+        confirmation = (getattr(args, 'reset_confirmation', None)
+                        or (previous or {}).get('reset_confirmation') or 'cycle')
+        if confirmation not in ('cycle', 'replenishment'):
+            raise ValueError('Unknown reset confirmation mode.')
+        entry_id = hashlib.sha256(json.dumps(key, ensure_ascii=False).encode('utf-8')).hexdigest()[:24]
+        if previous and previous.get('stop_on_reset'):
+            stop_on_reset = True  # A boost-only update is not permission to disable reset retirement.
+        entry = {'id': previous['id'] if previous else entry_id, 'intent': intent,
+                 'account': args.account, 'window': args.window, 'model': model,
+                 'expected_reset_at': resets.isoformat() if resets else (previous or {}).get('expected_reset_at', (previous or {}).get('resets_at')),
+                 'expires_at': expires.isoformat() if expires else (previous or {}).get('expires_at'),
+                 'boost': boost, 'until': until.isoformat(),
+                 'stop_on_reset': True if stop_on_reset else None,
+                 'baseline_windows': baseline_windows, 'reset_confirmation': confirmation,
+                 'basis': args.basis.strip()[:400], 'created_at': now.isoformat()}
+        if previous:
+            entry['created_at'] = previous.get('created_at', entry['created_at'])
+            if not args.until:
+                entry['until'] = previous['until']
+            entry['baseline_windows'] = baseline_windows if rebaseline else previous.get('baseline_windows') or baseline_windows
+            if rebaseline:
+                entry['baseline_repaired_at'] = now.isoformat()
+            elif previous.get('baseline_repaired_at'):
+                entry['baseline_repaired_at'] = previous['baseline_repaired_at']
+        rows = [o for o in rows if (
+            o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'),
+            account_fleet.canonical(o.get('model'), accounts) if o.get('model') else None, o.get('window')) != key]
+        rows.append({k: v for k, v in entry.items() if v is not None})
+        removed = 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    override_store.write(path, {**document, 'v': 1, 'overrides': rows})
+    ledger_row = {'v': 1, 'at': now.isoformat(), 'stage': 'override',
+                  'action': 'clear' if args.clear else 'upsert', 'removed': removed}
+    if not args.clear:
+        ledger_row.update({'account': args.account, 'model': model, 'basis': args.basis.strip()[:400],
+                           'boost': boost, 'until': until.isoformat()})
+    decision_ledger.append_ledger(ledger_row)
+    return {'stage': 'override', 'path': str(path), 'removed': removed, 'active': load_overrides(now, path, usage=usage, accounts=accounts, prune=False)}
+
+
+def _reset_baseline(args, usage, accounts, now):
+    """The windows a stop-on-reset override watches, as one fresh observation (at most 15 minutes old) shows them;
+    None without such an observation. A reset lands when usage recovers from this baseline."""
+    acct_row = (usage.get('accounts') or {}).get(args.account) or {}
+    fetched = quota_pools.parse_time(acct_row.get('fetched_at'))
+    if (acct_row.get('status') == 'fresh' and acct_row.get('stale') is not True
+            and acct_row.get('available') is not False
+            and acct_row.get('account', args.account) == args.account
+            and fetched is not None and 0 <= (now - fetched).total_seconds() <= 900):
+        spec = accounts['accounts'][args.account]
+        short = accounts['scoring']['short_window_hours']
+        bw = {}
+        for w in acct_row.get('windows') or ():
+            if not isinstance(w, dict):
+                continue
+            wid = quota_pools.canonical_window_id(spec, w.get('id'))
+            hours = (spec.get('windows', {}).get(wid) or {}).get('hours', 168)
+            if (wid == quota_pools.canonical_window_id(spec, args.window)) if args.window else hours >= short:
+                used_val = w.get('used_pct')
+                rem_val = w.get('remaining_pct_before_reset')
+                if rem_val is None:
+                    rem_val = w.get('observed_remaining_pct')
+                if used_val is None and rem_val is not None:
+                    used_val = 100.0 - float(rem_val)
+                row_bw = {
+                    k: v for k, v in (
+                        ('account', args.account),
+                        ('fetched_at', acct_row.get('fetched_at')),
+                        ('observation_id', acct_row.get('observation_id')),
+                        ('used_pct', used_val),
+                        ('remaining_pct', rem_val),
+                        ('resets_at', w.get('resets_at')),
+                    ) if v is not None
+                }
+                if row_bw:
+                    bw[wid] = row_bw
+        if bw:
+            return bw
+    return None
