@@ -1,7 +1,7 @@
 {
-  "schema_version": 3,
-  "version": "fa3726faae51",
-  "published_at": "2026-11-13T02:47:46Z",
+  "schema_version": 4,
+  "version": "8b6a17b4d2dd",
+  "published_at": "2026-11-13T03:08:10Z",
   "files": {
     "accounts.json": {
       "sha256": "150e7ac4a7ba4118bb98efd7427c17b99e1a96e5ca91a7ddafedbc87d7d89e76",

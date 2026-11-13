@@ -5,7 +5,8 @@ user-scores.json under references/, with references/public-data.json listing the
 the set was published. This module fetches that manifest and the files from the repository's main branch over plain
 HTTPS (no credentials, proxies from the environment) into <state dir>/public-data/, verifies every hash, and makes the
 router read the fetched set instead of the shipped one only when the set is complete, its schema is one this code reads
-and it was published after the shipped copy. A newer schema is noted and ignored, never half-applied.
+and it was published after the shipped copy. A newer schema is noted and ignored, never half-applied; an older
+schema, or a set this code rejects, is noted once per published version and never downloaded again.
 
 Precedence: shipped < fetched < the user's own settings. Nothing here writes
 accounts-override.json, local user-scores.json or host policy; their loaders layer them on top of whichever set is in effect.
@@ -167,11 +168,16 @@ def _validate_catalog_tables(doc):
         raise ValueError(f'calibration_panel anchor and models must be model rows, the anchor among the models'
                          + (f' (no row: {", ".join(map(str, unknown))})' if unknown else ''))
 
-SCHEMA_VERSION = 3              # the newest data schema this code reads; bump with any breaking data change
+SCHEMA_VERSION = 4              # the newest data schema this code reads; bump with any breaking data change
 # Schema 3 (2026-11-11) switches to the four-category taxonomy (`divergence`, `coding`, `aesthetics`, `tool_operation`),
 # ships `five-axis-scores.json` and maintainer `user-scores.json` in the public channel, and rejects schema-2 sets
 # whose `classifier-cases.json` used the retired four-axis `axis_demand` keys.
-MIN_SCHEMA_VERSION = 3
+# Schema 4 (2026-11-13) moves per-model facts into accounts.json: `families`, `fast_capable` with `vendor_fast_mode`,
+# `list_price`, `listed_as` and `calibration_panel`. A schema-3 install keeps those facts in code tables and would apply
+# a later model addition only in part (no fast mode, no price, no family fold), so it stays on its last accepted set
+# until it is updated; this code needs the new fields and does not read schema-3 sets.
+MIN_SCHEMA_VERSION = 4
+UPDATE_APP = 'update AgentCompass to the latest release to receive new reference data'
 FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'five-axis-scores.json', 'user-scores.json')
 MANIFEST = 'public-data.json'
 CONFIG_FILE = 'public-data-config.json'
@@ -468,16 +474,26 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
     if isinstance(schema, int) and schema > SCHEMA_VERSION:
         state.update(checked_at=_stamp(now), last_error=None, remote_schema_version=schema,
                      note=(f'published data uses schema {schema}; this install reads up to {SCHEMA_VERSION}. '
-                           'It is ignored until AgentCompass is updated.'))
+                           f'The last accepted set stays in effect: {UPDATE_APP}.'))
         return {'status': 'schema_too_new', 'remote_schema_version': schema, 'schema_version': SCHEMA_VERSION}
-    if not isinstance(schema, int) or schema < MIN_SCHEMA_VERSION or _parse(manifest.get('published_at')) is None:
+    if isinstance(schema, int) and schema < MIN_SCHEMA_VERSION:
+        state.update(checked_at=_stamp(now), last_error=None, remote_schema_version=schema,
+                     note=(f'published data uses schema {schema}; this install reads {MIN_SCHEMA_VERSION}..'
+                           f'{SCHEMA_VERSION}. The last accepted set stays in effect; nothing to run, it is replaced '
+                           'when data for this release is published.'))
+        return {'status': 'schema_too_old', 'remote_schema_version': schema, 'schema_version': SCHEMA_VERSION}
+    if not isinstance(schema, int) or _parse(manifest.get('published_at')) is None:
         raise ValueError('published manifest has no usable schema_version or published_at')
     version = set_version(manifest)
+    if state.get('rejected_version') == version:
+        state.update(checked_at=_stamp(now), last_error=None)
+        return {'status': 'rejected', 'version': version, 'detail': state.get('note')}
     target = cache / 'sets' / version
     if check_set(target, _read_json(target / MANIFEST))[0] == 'ok':
         state.update(version=version, published_at=manifest['published_at'], schema_version=schema,
                      checked_at=_stamp(now), last_error=None, note=None, url=cfg['url'])
-        state.pop('remote_schema_version', None)
+        for key in ('remote_schema_version', 'rejected_version'):
+            state.pop(key, None)
         return {'status': 'unchanged', 'version': version}
     staging = cache / 'sets' / f'.staging-{uuid.uuid4().hex[:8]}'
     staging.mkdir(parents=True, exist_ok=True)
@@ -498,6 +514,13 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
             json.loads(data.decode('utf-8-sig'))
             (staging / name).write_bytes(data)
         (staging / MANIFEST).write_bytes(raw)
+        verdict, detail = check_set(staging, manifest)
+        if verdict != 'ok':
+            state.update(checked_at=_stamp(now), last_error=None, rejected_version=version,
+                         note=(f'published set {version} is not usable by this install ({verdict}: {detail}). '
+                               f'The last accepted set stays in effect: {UPDATE_APP}; if it is already the latest '
+                               'release, the published data is defective and must be republished.'))
+            return {'status': 'rejected', 'version': version, 'detail': detail}
         try:
             os.replace(staging, target)
         except OSError:
@@ -508,7 +531,8 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
     previous = state.get('version')
     state.update(version=version, published_at=manifest['published_at'], schema_version=schema, fetched_at=_stamp(now),
                  checked_at=_stamp(now), last_error=None, note=None, url=cfg['url'])
-    state.pop('remote_schema_version', None)
+    for key in ('remote_schema_version', 'rejected_version'):
+        state.pop(key, None)
     _prune(cache / 'sets', {version, previous})
     return {'status': 'updated', 'version': version, 'previous': previous, 'downloaded': downloaded}
 
@@ -555,10 +579,11 @@ def status(environ=None, bundled=None):
     cfg = config(environ)
     chosen = selection(bundled, environ)
     state = read_state(environ)
+    notes = list(dict.fromkeys(note for note in (chosen['note'], state.get('note')) if note))  # both: why this set, and what the last check found
     return {'enabled': cfg['enabled'], 'switch': cfg['switch'], 'source': chosen['source'], 'version': chosen['version'],
             'published_at': chosen['published_at'], 'schema_version': chosen['schema_version'],
             'reads_schema': SCHEMA_VERSION, 'bundled_version': chosen['bundled_version'], 'dir': chosen['dir'],
-            'note': chosen['note'] or state.get('note'), 'fetched_at': state.get('fetched_at'),
+            'note': '; '.join(notes) or None, 'fetched_at': state.get('fetched_at'),
             'checked_at': state.get('checked_at'), 'last_error': state.get('last_error'), 'url': cfg['url'],
             'interval_hours': cfg['interval_hours'], 'cache': str(cache_dir(environ))}
 
