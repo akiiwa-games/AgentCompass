@@ -310,12 +310,27 @@ PYTHON_STEM_RE = re.compile(r"py|python(?:\d+(?:\.\d+)*)?w?")
 PYTHON_VALUE_FLAGS = frozenset({"-X", "-W"})
 NODE_VALUE_FLAGS = frozenset({"-r", "--require", "--import", "--loader", "--experimental-loader", "-C", "--conditions"})
 NODE_CODE_FLAGS = frozenset({"-e", "--eval", "-p", "--print"})
-# Words before a program that run it rather than being it: shell keywords and prefix commands. `env` and `start`
-# take their own options and are read by command_words.
+# Words before a program that run it rather than being it: shell keywords and prefix commands without options.
 COMMAND_PREFIX_WORDS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "time", "exec",
-                                  "nohup", "command", "call"})
+                                  "command", "call"})
 ENV_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*", re.S)
-ENV_VALUE_FLAGS = frozenset({"-u", "--unset", "-C", "--chdir", "-S", "--split-string"})
+# Programs that run the command after their own options: name -> (subcommand that must follow, options that take a
+# value, positional arguments before the command). `timeout 600 <command>`, `uv run <command>`.
+PASS_THROUGH_WRAPPERS = {
+    "env": ("", frozenset({"-u", "--unset", "-C", "--chdir", "-S", "--split-string"}), 0),
+    "timeout": ("", frozenset({"-s", "--signal", "-k", "--kill-after"}), 1),
+    "sudo": ("", frozenset({"-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt", "-C", "-D",
+                            "--chdir", "-r", "--role", "-t", "--type", "-U", "--other-user"}), 0),
+    "nice": ("", frozenset({"-n", "--adjustment"}), 0),
+    "nohup": ("", frozenset(), 0),
+    "setsid": ("", frozenset(), 0),
+    "stdbuf": ("", frozenset({"-i", "-o", "-e", "--input", "--output", "--error"}), 0),
+    "winpty": ("", frozenset(), 0),
+    "wsl": ("", frozenset({"-d", "--distribution", "-u", "--user", "--cd"}), 0),
+    "uv": ("run", frozenset({"--with", "--with-requirements", "--python", "-p", "--project", "--directory",
+                             "--package", "--extra", "--group", "--env-file", "--index", "--from"}), 0),
+    "poetry": ("run", frozenset({"-C", "--directory", "-P", "--project"}), 0),
+}
 LAUNCHER_SUFFIXES = (".exe", ".cmd", ".bat", ".ps1", ".js", ".mjs", ".cjs")
 
 
@@ -331,61 +346,57 @@ def program_stem(word: str) -> str:
 
 
 class ShellParseError(ValueError):
-    """A command line no shell would run: an unterminated quote, substitution or here-string."""
+    """A command line no shell would run: an unterminated quote, substitution, comment or here-string."""
 
 
-# Unquoted characters that end a simple command. `(` `)` `{` `}` open and close subshells, groups and PowerShell
-# script blocks, whose body is commands of its own; a single `&` is a background or PowerShell call operator, and
-# either way the next word is a program.
-SHELL_COMMAND_BREAKS = frozenset(";|&\n(){}")
-# Characters a backslash outside quotes escapes. Before any other character it is a Windows path separator.
-SHELL_ESCAPED = frozenset(" \t\"'\\;&|()<>{}$`#")
+# How a command line is read: by the shell of the tool that sent it, or the shell a wrapper starts.
+POSIX, POWERSHELL, CMD = "posix", "powershell", "cmd"
+POWERSHELL_TOOLS = frozenset({"PowerShell", "powershell"})
+SHELL_ESCAPE = {POSIX: "\\", POWERSHELL: "`", CMD: "^"}
+# Characters a POSIX backslash outside quotes escapes. Before any other character it is kept, as a Windows path
+# separator in a command a host sends through bash.
+POSIX_ESCAPED = frozenset(" \t\"'\\;&|()<>{}$`#")
 HEREDOC_RE = re.compile(r"""<<(-?)[ \t]*(['"]?)([^\s'"<>;|&()]+)\2""")
+# cmd keeps the quotes of `cmd /c "<program>" ...` only for a quoted executable name (`cmd /?`).
+CMD_SPECIAL = frozenset('&<>()@^|')
+CMD_EXECUTABLE_SUFFIXES = (".exe", ".cmd", ".bat", ".com")
 
 
-def closing_paren(line: str, start: int) -> int:
-    """Index of the `)` that closes the `(` at `start`, skipping quoted text."""
-    depth, i = 0, start
-    while i < len(line):
-        c = line[i]
-        if c in "'\"":
-            end = line.find(c, i + 1)
-            while c == '"' and end > 0 and line[end - 1] == "\\":
-                end = line.find(c, end + 1)
-            if end < 0:
-                raise ShellParseError(f"unterminated {c} inside $(")
-            i = end
-        elif c == "(":
-            depth += 1
-        elif c == ")":
-            depth -= 1
-            if not depth:
-                return i
-        i += 1
-    raise ShellParseError("unterminated $(")
+def shell_dialect(tool_name: str) -> str:
+    """The shell a tool's command line is written for: PowerShell for the PowerShell tools, else a POSIX shell."""
+    return POWERSHELL if base_tool_name(tool_name) in POWERSHELL_TOOLS else POSIX
 
 
-def skip_heredoc(line: str, i: int, delimiter: str, strip_tabs: bool) -> int:
-    """Index after the body of a here-document that starts at `i`: up to its delimiter line, or the end."""
+def read_heredoc(line: str, i: int, delimiter: str, strip_tabs: bool) -> tuple[str, int]:
+    """The body of a here-document that starts at `i`, and the index after its delimiter line (or the end)."""
+    lines = []
     while i < len(line):
         end = line.find("\n", i)
         end = len(line) if end < 0 else end
         text = line[i:end].rstrip("\r")
         i = end + 1
         if (text.lstrip("\t") if strip_tabs else text) == delimiter:
-            return i
-    return len(line)
+            break
+        lines.append(text)
+    return "\n".join(lines), min(i, len(line))
 
 
-def simple_commands(line: str) -> tuple[list[list[str]], list[str]]:
-    """The words of each simple command of a POSIX-shell or PowerShell line, and the lines its `$(...)` run.
+def simple_commands(line: str, dialect: str = POSIX) -> list[tuple[list[str], list[str]]]:
+    """Each simple command a line runs, as (words, here-document bodies fed to its stdin), read in `dialect`.
 
-    Commands end at an unquoted `;` `&&` `||` `|` `&` newline or bracket. Quotes are removed from words; quoted text,
-    here-document bodies and PowerShell here-strings are argument text, never commands. Raises ShellParseError when
-    the line does not parse.
+    Commands end at an unquoted `;` `&&` `||` `|` `&` newline or bracket; the commands inside `$(...)` are included.
+    Quotes are removed from words; quoted text, here-document bodies and PowerShell here-strings and `@(...)`
+    arrays are argument text. Raises ShellParseError when the line does not parse.
     """
-    commands, substitutions, words, heredocs = [], [], [], []
-    word, in_word, i, n = [], False, 0, len(line)
+    return parse_commands(line, 0, dialect, nested=False)[0]
+
+
+def parse_commands(line: str, i: int, dialect: str, nested: bool) -> tuple[list, int]:
+    """simple_commands from `i`; when `nested`, up to the `)` that closes a `$(` and that index."""
+    posix, powershell, cmd = dialect == POSIX, dialect == POWERSHELL, dialect == CMD
+    escape = SHELL_ESCAPE[dialect]
+    commands, words, stdin, heredocs = [], [], [], []
+    word, in_word, depth, n = [], False, 0, len(line)
 
     def end_word():
         nonlocal word, in_word
@@ -394,16 +405,27 @@ def simple_commands(line: str) -> tuple[list[list[str]], list[str]]:
         word, in_word = [], False
 
     def end_command():
+        nonlocal stdin
         end_word()
         if words:
-            commands.append(list(words))
+            commands.append((list(words), stdin))
             words.clear()
+            stdin = []
+
+    def substitution(start: int) -> int:
+        """Collect the commands of the `$(` whose `(` is at `start`; the index of its `)`."""
+        inner, end = parse_commands(line, start + 1, dialect, nested=True)
+        commands.extend(inner)
+        return end
+
+    def standalone(at: int) -> bool:
+        return line[at + 1:at + 2] in ("", " ", "\t", "\r", "\n", ";", "|", "&", ")")
 
     while i < n:
         c, nxt = line[i], line[i + 1:i + 2]
-        if c in "\\`" and line.startswith(("\n", "\r\n"), i + 1):    # line continuation
+        if c == escape and line.startswith(("\n", "\r\n"), i + 1):    # line continuation
             i = line.index("\n", i) + 1
-        elif c == "\\" and nxt and nxt in SHELL_ESCAPED:
+        elif c == escape and nxt and (not posix or nxt in POSIX_ESCAPED):
             word.append(nxt)
             in_word, i = True, i + 2
         elif c in " \t\r":
@@ -412,20 +434,31 @@ def simple_commands(line: str) -> tuple[list[list[str]], list[str]]:
         elif c == "\n":
             end_command()
             i += 1
-            for delimiter, strip_tabs in heredocs:
-                i = skip_heredoc(line, i, delimiter, strip_tabs)
+            for delimiter, strip_tabs, bodies in heredocs:
+                body, i = read_heredoc(line, i, delimiter, strip_tabs)
+                bodies.append(body)
             heredocs.clear()
-        elif c == "#" and not in_word:
+        elif c == "#" and not in_word and not cmd:
             end = line.find("\n", i)
             i = n if end < 0 else end
-        elif c == "@" and not in_word and nxt in ("'", '"') and line.startswith(("\n", "\r\n"), i + 2):
+        elif powershell and c == "<" and nxt == "#" and not in_word:
+            end = line.find("#>", i + 2)
+            if end < 0:
+                raise ShellParseError("unterminated <#")
+            i = end + 2
+        elif powershell and c == "@" and not in_word and nxt in ("'", '"') and line.startswith(("\n", "\r\n"), i + 2):
             body = line.index("\n", i) + 1
             end = line.find("\n" + nxt + "@", body - 1)
             if end < 0:
                 raise ShellParseError("unterminated here-string")
             word.append(line[body:end].rstrip("\r"))
             in_word, i = True, end + 3
-        elif c == "'":
+        elif powershell and c == "@" and not in_word and nxt == "(":
+            # An array `@('a','b')`: its items are argument values, kept with their quotes for Start-Process.
+            end = parse_commands(line, i + 2, dialect, nested=True)[1]
+            word.append(line[i:end + 1])
+            in_word, i = True, end + 1
+        elif c == "'" and not cmd:
             end = line.find("'", i + 1)
             if end < 0:
                 raise ShellParseError("unterminated '")
@@ -435,12 +468,11 @@ def simple_commands(line: str) -> tuple[list[list[str]], list[str]]:
             in_word, i = True, i + 1
             while i < n and line[i] != '"':
                 ch, after = line[i], line[i + 1:i + 2]
-                if (ch == "\\" and after and after in '"\\$`\n') or (ch == "`" and after and after in '"`'):
+                if after and ((posix and ch == "\\" and after in '"\\$`\n') or (powershell and ch == "`")):
                     word.append("" if after == "\n" else after)
                     i += 2
-                elif ch == "$" and after == "(":
-                    end = closing_paren(line, i + 1)
-                    substitutions.append(line[i + 2:end])
+                elif ch == "$" and after == "(" and not cmd:
+                    end = substitution(i + 1)
                     word.append(line[i:end + 1])
                     i = end + 1
                 else:
@@ -449,47 +481,82 @@ def simple_commands(line: str) -> tuple[list[list[str]], list[str]]:
             if i >= n:
                 raise ShellParseError('unterminated "')
             i += 1
-        elif c == "$" and nxt == "(":
-            end = closing_paren(line, i + 1)
-            substitutions.append(line[i + 2:end])
+        elif c == "$" and nxt == "(" and not cmd:
+            end = substitution(i + 1)
             word.append(line[i:end + 1])
             in_word, i = True, end + 1
-        elif c == "$" and nxt == "{":
+        elif c == "$" and nxt == "{" and not cmd:
             end = line.find("}", i)
             if end < 0:
                 raise ShellParseError("unterminated ${")
             word.append(line[i:end + 1])
             in_word, i = True, end + 1
-        elif c == "<" and nxt == "<" and line[i + 2:i + 3] != "<" and HEREDOC_RE.match(line, i):
+        elif posix and c == "<" and nxt == "<" and line[i + 2:i + 3] != "<" and HEREDOC_RE.match(line, i):
             match = HEREDOC_RE.match(line, i)
-            heredocs.append((match.group(3), bool(match.group(1))))
+            heredocs.append((match.group(3), bool(match.group(1)), stdin))
             end_word()
             i = match.end()
-        elif c in SHELL_COMMAND_BREAKS:
+        elif c == ")" and nested and not depth:
+            end_command()
+            return commands, i
+        elif c in "()":
+            depth += 1 if c == "(" else -1
+            end_command()
+            i += 1
+        elif c in "{}" and (powershell or (posix and not in_word and standalone(i))):
+            # PowerShell script blocks; a POSIX `{ ...; }` group, not brace expansion inside a word (`{a,b}`).
+            end_command()
+            i += 1
+        elif c in ";|&":
             end_command()
             i += 1
         else:
             word.append(c)
             in_word, i = True, i + 1
+    if nested:
+        raise ShellParseError("unterminated $(")
     end_command()
-    return commands, substitutions
+    return commands, n
+
+
+def cmd_command_line(args: list[str]) -> str:
+    """The line `cmd /c` runs: its arguments as Windows quotes them, then cmd's outer-quote rule (`cmd /?`).
+
+    The quotes stay only around a quoted executable name with whitespace (`"C:\\Program Files\\x\\paseo.cmd" run`);
+    otherwise the first and last quote go (`"cd x & paseo run"` runs `cd x & paseo run`).
+    """
+    line = " ".join(f'"{arg}"' if not arg or re.search(r"\s", arg) else arg for arg in args)
+    if not line.startswith('"'):
+        return line
+    quoted = line[1:].partition('"')[0]
+    if (line.count('"') == 2 and not CMD_SPECIAL & set(quoted) and re.search(r"\s", quoted)
+            and program_name(quoted).endswith(CMD_EXECUTABLE_SUFFIXES)):
+        return line
+    last = line.rfind('"')
+    return line[1:last] + line[last + 1:] if last > 0 else line[1:]
 
 
 def command_words(words: list) -> list:
-    """A simple command from its program on: leading assignments, shell keywords and prefix commands removed."""
+    """A simple command from its program on: leading assignments, shell keywords and wrappers removed."""
     i = 0
     while i < len(words) and isinstance(words[i], str):
         word = words[i]
-        lower = word.lower()
-        if ENV_ASSIGNMENT_RE.fullmatch(word) or lower in COMMAND_PREFIX_WORDS:
+        stem = program_stem(word)
+        if ENV_ASSIGNMENT_RE.fullmatch(word) or word.lower() in COMMAND_PREFIX_WORDS:
             i += 1
         elif word.startswith("$") and i + 1 < len(words) and words[i + 1] == "=":   # PowerShell `$out = <command>`
             i += 2
-        elif lower == "env":
-            i += 1
-            while i < len(words) and isinstance(words[i], str) and words[i].startswith("-"):
-                i += 2 if words[i] in ENV_VALUE_FLAGS else 1
-        elif lower == "start":
+        elif stem in PASS_THROUGH_WRAPPERS:
+            subcommand, value_options, positionals = PASS_THROUGH_WRAPPERS[stem]
+            if subcommand and words[i + 1:i + 2] != [subcommand]:
+                break   # another subcommand of the wrapper (`uv pip install`): the wrapper is the program
+            i += 2 if subcommand else 1
+            while i < len(words) and isinstance(words[i], str) and words[i].startswith("-") and words[i] != "-":
+                i += 2 if words[i] in value_options else 1
+                if words[i - 1] == "--":
+                    break
+            i += positionals
+        elif word.lower() == "start":
             # cmd `start ["title"] [/b ...] <program>`; in PowerShell `start` is Start-Process.
             i += 1
             while i < len(words) and isinstance(words[i], str) and (not words[i] or words[i].startswith("/")):
@@ -541,8 +608,9 @@ def paseo_cli_options(words: list) -> dict[str, str]:
 def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
     """Normalize the static Paseo CLI sends, schedule launches and worker launchers a call runs; never execute it.
 
-    A shell line is parsed into simple commands and each is judged by the program it runs, seen through
-    interpreters and wrappers (`python <script>`, `bash -c`, `cmd /c`, `Start-Process`, `npx`). A launcher name that
+    A shell line is parsed, in the dialect of the tool that sent it, into simple commands, and each is judged by the
+    program it runs, seen through interpreters, shells and wrappers (`python <script>`, `bash -c`, `bash <<EOF`,
+    `cmd /c`, `eval`, `iex`, `Start-Process`, `npx`, PASS_THROUGH_WRAPPERS). A launcher name that
     is an argument, a path, a search pattern or quoted text given to another program is not a launch. A line that
     does not parse, and a program or argument that is not a literal, is undecidable and is not a launch: the gate's
     fail-open degrade, since it guards against accidental launches and is not a security boundary.
@@ -554,13 +622,14 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
     def launch(label: str):
         targets.append((SHELL_LAUNCH, {"trigger": f"shell:{label}"}))
 
-    def argv(words: list, depth: int):
+    def argv(words: list, depth: int, stdin: list = ()):
         words = command_words(words)
         if not words or not isinstance(words[0], str) or depth > 4:
             return
         exe = program_name(words[0])
         stem = program_stem(words[0])
         args = words[1:]
+        literal_args = [w for w in args if isinstance(w, str)]
         if stem == "paseo":
             paseo(args)
         elif exe == "run_dot_task.py" or stem == "dot-subagent":
@@ -573,14 +642,22 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
             if args[:1] == ["exec"] and "--help" not in args:
                 launch("codex exec")
         elif stem in SHELL_PROGRAMS:
-            posix = stem not in ("pwsh", "powershell", "cmd")
+            dialect = CMD if stem == "cmd" else POWERSHELL if stem in ("pwsh", "powershell") else POSIX
             flags = [i for i, w in enumerate(words) if isinstance(w, str) and (
-                POSIX_SHELL_COMMAND_FLAG_RE.fullmatch(w) if posix else w.lower() in WINDOWS_SHELL_COMMAND_FLAGS)]
-            if flags:
-                rest = [w for w in words[flags[0] + 1:] if isinstance(w, str)]
-                if rest:
-                    # A POSIX shell runs the one string after -c; PowerShell and cmd join what follows.
-                    shell(rest[0] if posix else " ".join(rest), depth + 1)
+                POSIX_SHELL_COMMAND_FLAG_RE.fullmatch(w) if dialect == POSIX
+                else w.lower() in WINDOWS_SHELL_COMMAND_FLAGS)]
+            rest = [w for w in words[flags[0] + 1:] if isinstance(w, str)] if flags else []
+            if rest:
+                # A POSIX shell runs the one string after -c; PowerShell joins what follows; cmd as cmd_command_line.
+                shell(rest[0] if dialect == POSIX else " ".join(rest) if dialect == POWERSHELL
+                      else cmd_command_line(rest), depth + 1, dialect)
+            elif not flags and dialect == POSIX:
+                for body in stdin:      # `bash <<'EOF'`: the here-document is the script
+                    shell(body, depth + 1, POSIX)
+        elif stem == "eval":
+            shell(" ".join(literal_args), depth + 1, POSIX)
+        elif stem in ("invoke-expression", "iex"):
+            shell(" ".join(w for w in literal_args if w.lower() != "-command"), depth + 1, POWERSHELL)
         elif stem in PACKAGE_RUNNERS:
             rest = words[1:]
             if PACKAGE_RUNNERS[stem]:
@@ -670,6 +747,7 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
         if not isinstance(program, str) or not program:
             return
         items = []
+        listed = [item[2:-1] if item.startswith("@(") and item.endswith(")") else item for item in listed]
         for match in re.finditer(r'"([^"]*)"|\'([^\']*)\'|([^\s,]+)', " ".join(listed)):
             item = next(group for group in match.groups() if group is not None)
             items.extend(item.split() if match.group(3) is None and re.search(r'\s', item) else [item])
@@ -710,24 +788,22 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
                 if isinstance(value, list):
                     argv(value, depth)
                 elif isinstance(value, str):
-                    shell(value, depth + 1)
+                    shell(value, depth + 1, POSIX)
 
-    def shell(command: str, depth: int = 0):
+    def shell(command: str, depth: int, dialect: str):
         if depth > 4:
             return
         # Also accepts a Python script supplied directly as a wrapper's code.
         python(command, depth)
         try:
-            commands, substitutions = simple_commands(command)
+            commands = simple_commands(command, dialect)
         except ShellParseError:
             return   # undecidable: not a launch (see the docstring)
-        for words in commands:
-            argv(words, depth)
-        for nested in substitutions:
-            shell(nested, depth + 1)
+        for words, stdin in commands:
+            argv(words, depth, stdin)
 
     for command in extract_shell_commands(tool_input):
-        shell(command)
+        shell(command, 0, shell_dialect(tool_name))
     return targets
 
 
