@@ -295,8 +295,11 @@ def launch_request(bundle, launch):
     if bundle.get('effort') and family != 'antigravity-resilient':
         settings['thinkingOptionId'] = bundle['effort']
     if bundle.get('fast'):
+        import account_fleet
         from fast_modes import validate
-        validate(family, bundle['model'])
+        accounts = account_fleet.load_accounts()
+        model = account_fleet.canonical(bundle['model'], accounts)
+        validate(family, model, account_fleet.model_spec(accounts, model))
     if family == 'codex':
         settings['features'] = {'service_tier': 'priority' if bundle.get('fast') else 'default'}
     elif family == 'claude':

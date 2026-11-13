@@ -15,6 +15,15 @@ _VENDOR_TAG = re.compile(r'(?:@\d{8}|-\d{8}|-\d{4}-\d{2}-\d{2}|:\w+|\[\w+\]|-(?:
 DIRECT_SOURCES = ('exact', 'alias')
 
 
+def family_patterns(accounts):
+    """The catalog's ordered family patterns ([{'pattern', 'models'}]) from its `families` maintainer declaration."""
+    table = accounts.get('families') if isinstance(accounts, dict) else None
+    if not isinstance(table, dict) or not isinstance(table.get('patterns'), list):
+        raise ValueError('accounts has no families table: the catalog needs `families` {kind, as_of, statement, '
+                         'patterns: [{pattern, models}]} (references/accounts.json)')
+    return table['patterns']
+
+
 def split_model_effort(raw):
     """('claude-opus-5-5', 'medium') for 'claude-opus-5-5:medium'; (raw, None) without an effort suffix."""
     name = str(raw or '').strip()
@@ -22,12 +31,15 @@ def split_model_effort(raw):
     return (match['name'], match['effort'].lower()) if match else (name, None)
 
 
-def resolve_model(raw_model_name, known_models, aliases=None):
+def resolve_model(raw_model_name, known_models, aliases, families):
     """The one model-name resolver: {'key', 'source', 'effort', 'bare'}.
 
     source: `exact` (the directory has this name), `alias` (found after dropping a provider prefix, case, date,
     -latest/-preview, a vendor tag or an effort suffix, or through `aliases`), `family` (only a fuzzy family match),
     `unknown` (key None). `effort` is what the name itself asked for. `bare` is the undecorated lowercase name.
+
+    `families` is the catalog's ordered family patterns (family_patterns): the first pattern that matches the bare
+    name decides, and the name resolves to the first of its models the directory knows (none known: unknown).
     """
     aliases = aliases or {}
     known = {k for k, v in known_models.items() if isinstance(v, dict)}
@@ -50,9 +62,6 @@ def resolve_model(raw_model_name, known_models, aliases=None):
     for candidate in (raw.rsplit('/', 1)[-1], raw.lower(), name):
         if match := exact(candidate):
             return found(match, 'alias')
-    # Grok Bot is a remote service selector, not a Grok Build/model-family alias.
-    if name == 'grok-bot':
-        return found(None, 'unknown')
     while True:
         stripped = _VENDOR_TAG.sub('', name)
         if stripped == name:
@@ -63,43 +72,7 @@ def resolve_model(raw_model_name, known_models, aliases=None):
     if dashed := _DASH_EFFORT.match(name):
         if match := exact(dashed['name']):
             return found(match, 'alias', dashed['effort'])
-    families = (
-        (r'^claude-opus', ('claude-opus-5-5',)),
-        (r'^claude-sonnet', ('claude-sonnet-5-5',)),
-        (r'^claude-fable', ('claude-fable-5-2',)),
-        (r'^claude-haiku', ('claude-haiku-5-5',)),
-        (r'^gpt-6.*luna', ('gpt-6-luna',)),
-        (r'^gpt-6.*terra', ('gpt-6.1-terra', 'gpt-6-astra')),
-        (r'^gpt-6.*sol', ('gpt-6.1-sol', 'gpt-6-astra')),
-        (r'^gpt-6.*pro', ('gpt-6-pro', 'gpt-6-astra')),
-        (r'^gpt-6', ('gpt-6-astra',)),
-        (r'^gemini.*flash', ('gemini-3.8-flash-high',)),
-        (r'^gemini', ('gemini-4-argon-high',)),
-        (r'^grok.*(?:mini|fast)|^grok-code', ('grok-4.7-build-fast', 'grok-4.7')),
-        (r'^grok', ('grok-4.7',)),
-        (r'^deepseek.*flash', ('deepseek-v4.1-flash-free',)),
-        (r'^deepseek', ('deepseek-v4-pro',)),
-        (r'^qwen.*flash', ('qwen3-flash-2025-07-28',)),
-        (r'^qwen.*coder', ('qwen3-coder-next', 'qwen3.8-max')),
-        (r'^qwen', ('qwen3.8-max',)),
-        (r'^kimi|^moonshot', ('kimi-k3.1-pro',)),
-        (r'^glm.*flash', ('glm-5.3-flash-free',)),
-        (r'^glm', ('glm-5.3',)),
-        (r'^minimax.*flash', ('minimax-m3.1-flash',)),
-        (r'^minimax|^abab', ('minimax-m3',)),
-        (r'^doubao', ('doubao-seed-2-1-pro-260628',)),
-        (r'^mimo.*flash', ('mimo-v2.6-flash-free',)),
-        (r'^mimo', ('mimo-v2.6-pro',)),
-        (r'^nemotron.*lightning', ('nemotron-3.5-lightning-free', 'nemotron-3-ultra-free')),
-        (r'^nemotron.*(?:super|vl)', ('nemotron-3.5-super-vl-free', 'nemotron-3-ultra-free')),
-        (r'^nemotron', ('nemotron-3-ultra-free',)),
-        (r'^muse', ('muse-wonder-1.0',)),
-        # No new Llama ID in the October catalog. Use the generic baseline,
-        # rather than resurrecting Llama 4 or pretending Muse is a Llama alias.
-        (r'^llama', ()),
-        (r'^mistral|^codestral|^devstral', ('mistral-large-4',)),
-    )
-    family_candidates = next((targets for pattern, targets in families if re.search(pattern, name)), None)
+    family_candidates = next((f['models'] for f in families if re.search(f['pattern'], name)), None)
     if family_candidates is not None:
         target = next((t for t in family_candidates if t in known), None)
         return found(target, 'family' if target else 'unknown')
@@ -111,9 +84,9 @@ def resolve_model(raw_model_name, known_models, aliases=None):
     return found(None, 'unknown')
 
 
-def resolve_canonical_model(raw_model_name, known_models, aliases=None):
+def resolve_canonical_model(raw_model_name, known_models, aliases, families):
     """Return a known canonical ID, or None for the generic baseline.
 
     Unknown launch IDs remain untouched by callers: matching affects scores only.
     """
-    return resolve_model(raw_model_name, known_models, aliases)['key']
+    return resolve_model(raw_model_name, known_models, aliases, families)['key']

@@ -2,7 +2,7 @@
 (`divergence`, `coding`, `aesthetics`, `tool_operation`), continuity with a coupled chain's existing worker,
 and the opportunity cost of the quota the work would use.
 
-Scores are panel standard deviations (`z = (x - x_anchor) / sd_panel`, anchor `claude-opus-5-5` at High = 0) from
+Scores are panel standard deviations (`z = (x - x_anchor) / sd_panel`, the accounts.json `calibration_panel` anchor at High = 0) from
 `references/five-axis-scores.json`. In `five_axis_fit`, each demanded category's zero point is its level-1 target `t1`
 (the panel's weakest model), level 2 targets the panel median `t2`, and level 3 targets the anchor `t3`:
 `fit = sum_a w_a * (min(z_a, c_a) - t1_a) / sum_a w_a`, the cap `c_a` being the target at levels 1 and 2 and the

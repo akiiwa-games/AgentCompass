@@ -3,7 +3,7 @@
 A window's scope is data, never a window id or model name in code:
 
 - ``models``: tags; the window binds a model whose id contains one of them as whole tokens
-  (``fable`` binds ``claude-fable-5-1`` and ``claude-fable-5-2``; ``gemini`` binds ``gemini-4-argon-high``).
+  (``fable`` binds every ``claude-fable-*`` id; ``gemini`` binds ``gemini-4-argon-high``).
 - ``models_except``: tags; the window binds every model except those (Antigravity's third-party pool
   is ``models_except: ["gemini"]``).
 

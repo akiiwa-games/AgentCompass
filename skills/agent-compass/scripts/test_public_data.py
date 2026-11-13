@@ -170,6 +170,50 @@ class FetchTests(ChannelCase):
         self.assertEqual(self.remote.calls, [URL + public_data.MANIFEST])  # no data file was fetched
         self.assertEqual(self.effective_accounts()['scoring']['safety_margin_pct'], 0.5)
         self.assertIn('schema', public_data.status(self.env, self.bundled)['note'])
+        self.assertIn(public_data.UPDATE_APP, public_data.read_state(self.env)['note'])
+
+    def test_older_schema_is_noted_without_downloading_and_the_last_good_set_stays(self):
+        self.refresh()
+        self.publish(safety_margin_pct=0.7, at=T0 + timedelta(days=3), schema=public_data.MIN_SCHEMA_VERSION - 1)
+        self.remote.calls.clear()
+        outcome = self.refresh(force=True, now=T0 + timedelta(days=4))
+        self.assertEqual(outcome['status'], 'schema_too_old')
+        self.assertEqual(self.remote.calls, [URL + public_data.MANIFEST])
+        self.assertEqual(self.effective_accounts()['scoring']['safety_margin_pct'], 0.5)
+        state = public_data.read_state(self.env)
+        self.assertIn('nothing to run', state['note'])
+        self.assertIsNone(state['last_error'])
+
+    def test_a_set_this_install_rejects_is_named_once_and_never_downloaded_again(self):
+        """A verified download that fails validation (e.g. a set made for other code) is not stored, keeps the last
+        accepted set, names the action, and a later refresh of the same published version fetches only the manifest."""
+        self.refresh()
+        accounts = json.loads((self.remote_dir / 'accounts.json').read_text(encoding='utf-8-sig'))
+        del accounts['families']
+        write_json(self.remote_dir / 'accounts.json', accounts)
+        write_json(self.remote_dir / public_data.MANIFEST, public_data.build_manifest(self.remote_dir, now=T0 + timedelta(days=3)))
+        outcome = self.refresh(force=True, now=T0 + timedelta(days=4))
+        self.assertEqual(outcome['status'], 'rejected', outcome)
+        self.assertIn('families', outcome['detail'])
+        self.assertEqual(self.effective_accounts()['scoring']['safety_margin_pct'], 0.5)
+        self.assertIn(public_data.UPDATE_APP, public_data.status(self.env, self.bundled)['note'])
+        self.remote.calls.clear()
+        again = self.refresh(force=True, now=T0 + timedelta(days=5))
+        self.assertEqual(again['status'], 'rejected')
+        self.assertEqual(self.remote.calls, [URL + public_data.MANIFEST])
+        # An updated install (a different reader) looks at the same published version again.
+        self.remote.calls.clear()
+        with patch.object(public_data, 'reader_id', return_value='updated-reader'):
+            self.refresh(force=True, now=T0 + timedelta(days=6))
+        self.assertIn(URL + 'accounts.json', self.remote.calls)
+
+    def test_the_schema_note_names_a_single_schema_without_a_range(self):
+        self.refresh()
+        self.publish(safety_margin_pct=0.7, at=T0 + timedelta(days=3), schema=public_data.MIN_SCHEMA_VERSION - 1)
+        self.refresh(force=True, now=T0 + timedelta(days=4))
+        note = public_data.read_state(self.env)['note']
+        if public_data.MIN_SCHEMA_VERSION == public_data.SCHEMA_VERSION:
+            self.assertIn(f'reads schema {public_data.SCHEMA_VERSION}.', note)
 
     def test_offline_falls_back_to_the_cache_then_to_the_shipped_copy(self):
         self.refresh()
@@ -298,6 +342,14 @@ class LoaderPrecedenceTests(ChannelCase):
 class ProvenanceTests(unittest.TestCase):
     """R2-F2: public reference files accept cited https:// URLs or dated kind='maintainer' declarations, and reject
     uncited kind='user' or undated declarations."""
+
+    def test_families_must_be_a_dated_maintainer_declaration(self):
+        accounts = json.loads((public_data.BUNDLED / 'accounts.json').read_text(encoding='utf-8'))
+        public_data.validate_accounts_provenance(accounts)
+        for broken in (accounts['families']['patterns'], {**accounts['families'], 'as_of': None},
+                       {key: value for key, value in accounts['families'].items() if key != 'patterns'}):
+            with self.subTest(broken=str(broken)[:60]), self.assertRaisesRegex(ValueError, 'families'):
+                public_data.validate_accounts_provenance({**accounts, 'families': broken})
 
     def test_accounts_provenance_accepts_dated_maintainer_and_rejects_uncited_user(self):
         with tempfile.TemporaryDirectory() as directory:

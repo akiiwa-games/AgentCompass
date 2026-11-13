@@ -41,7 +41,7 @@ install and health:
   setup       first-run onboarding (--dry-run previews)
   uninstall   undo what setup changed
   doctor      read-only report of Python, CLIs, accounts, cache, reference data, plugins, ports and hooks
-  data        which public reference data routing reads (shipped or fetched); `data --refresh` checks for newer data now; `data refresh [--no-fetch] [--accept-panel-change]` rebuilds shipped data in a checkout
+  data        which public reference data routing reads (shipped or fetched); `data --refresh` checks for newer data now; `data refresh [--no-fetch] [--accept-panel-change] [--model ID]` rebuilds shipped data in a checkout
 
 other stages: score, scorer, delegate, select, dispatch, launch
 follow-up of a roll result (its next_argv already spells these): dot status, grok-bot status, chatgpt-web, herdr status

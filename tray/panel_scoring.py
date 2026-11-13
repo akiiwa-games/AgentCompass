@@ -235,7 +235,7 @@ class ScoringPage:
                 label = self.data_module().model_label(m)
                 self.pick_ids[m if label in self.pick_ids else label] = m
             labels = list(self.pick_ids)
-            defaults = ["claude-opus-5-5", "gemini-4-argon-high"]
+            defaults = list(self.pick_ids.values())[:2]
         else:
             rows = [r for r in self.data_module().candidate_rows(self.plan_result or {}) if not r["excluded"]]
             labels = display_names.unique_labels(rows, self.data_module().account_label)

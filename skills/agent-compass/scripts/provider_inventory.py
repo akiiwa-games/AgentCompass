@@ -20,7 +20,7 @@ from typing import NamedTuple
 import account_state
 import antigravity_plan
 import grok_bot_paths
-from model_resolution import resolve_canonical_model
+from model_resolution import family_patterns, resolve_canonical_model
 import provider_retry
 import public_data
 import usage_cache
@@ -2021,7 +2021,7 @@ def _apply_auto_bundles(accounts, inventory, live):
     state = Path(os.environ.get('ROUTER_STATE_DIR') or home / '.agent-compass')
     seen = auto_bundles.read_seen(state / 'auto-bundles-seen.json') if live else {}
     derived = auto_bundles.derive(accounts, _auto_catalog(inventory, live, now_epoch), now_epoch,
-                                  seen=seen, families=families)
+                                  seen=seen, account_families=families)
     for account, rows in derived['bundles'].items():
         for bundle in rows.values():
             reason = unavailable_reason(inventory, account, bundle.get('provider', account))
@@ -2093,6 +2093,7 @@ def apply(accounts, inventory=None, *, live=None):
         _drop_undiscovered_templates(accounts, inventory)
     known_models = accounts.get('models') if isinstance(accounts.get('models'), dict) else {}
     aliases = accounts.get('aliases') if isinstance(accounts.get('aliases'), dict) else {}
+    model_families = family_patterns(accounts)
     shipped_templates = _shipped_plan_templates()
 
     for name, row in inventory['accounts'].items():
@@ -2113,9 +2114,9 @@ def apply(accounts, inventory=None, *, live=None):
             continue
         template, plan, quota_family = _settle_plan(spec, row, accounts, shipped_templates)
         _settle_unknown_tier(spec, row, template, plan, quota_family)
-        _settle_bundles(spec, name, row, inventory, known_models, aliases)
+        _settle_bundles(spec, name, row, inventory, known_models, aliases, model_families)
     _apply_auto_bundles(accounts, inventory, live)
-    _fold_into_quota_owners(accounts, inventory, known_models, aliases)
+    _fold_into_quota_owners(accounts, inventory, known_models, aliases, model_families)
     apply_shared_quota(accounts)
     return accounts
 
@@ -2320,7 +2321,7 @@ def _settle_unknown_tier(spec, row, template, plan, quota_family):
                                'subscription tier not reported by Grok API', 'unrecognized tier')
 
 
-def _settle_bundles(spec, name, row, inventory, known_models, aliases):
+def _settle_bundles(spec, name, row, inventory, known_models, aliases, model_families):
     """Mark bundles discovery cannot launch, and bind each to a model the configured provider advertises."""
     advertised = row.get('models')
     for bundle in spec.get('bundles', {}).values():
@@ -2328,22 +2329,22 @@ def _settle_bundles(spec, name, row, inventory, known_models, aliases):
         if reason:
             bundle['discovery_unavailable'] = reason
         if isinstance(advertised, list):
-            match = bundle.get('launch_model') if bundle.get('launch_model') in advertised else next((m for m in advertised if (resolve_canonical_model(m, known_models, aliases) or m.rsplit('/', 1)[-1])
-                          == (resolve_canonical_model(bundle['model'], known_models, aliases) or bundle['model'])), None)
+            match = bundle.get('launch_model') if bundle.get('launch_model') in advertised else next((m for m in advertised if (resolve_canonical_model(m, known_models, aliases, model_families) or m.rsplit('/', 1)[-1])
+                          == (resolve_canonical_model(bundle['model'], known_models, aliases, model_families) or bundle['model'])), None)
             if match:
                 bundle['launch_model'] = match
             else:
                 bundle['discovery_unavailable'] = 'model not advertised by the configured provider'
 
 
-def _fold_into_quota_owners(accounts, inventory, known_models, aliases):
+def _fold_into_quota_owners(accounts, inventory, known_models, aliases, model_families):
     """A second account on the owner's subscription (Pi signed in as the Codex account) re-derives what the owner
     already launches through the same launcher; the owner's rows and its enable/disable curation stand."""
     from account_fleet import bundle_harness
     specs = accounts['accounts']
 
     def launch_key(bid, bundle, account):
-        model = resolve_canonical_model(bundle.get('model'), known_models, aliases) or bundle.get('model')
+        model = resolve_canonical_model(bundle.get('model'), known_models, aliases, model_families) or bundle.get('model')
         return bundle.get('provider', account), bundle_harness(bundle, account, bid), model, bundle.get('effort')
 
     for name, row in inventory['accounts'].items():

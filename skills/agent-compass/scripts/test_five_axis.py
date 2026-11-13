@@ -1043,17 +1043,20 @@ class AnchorRelativeTests(unittest.TestCase):
     def setUpClass(cls):
         import five_axis
         import measurements
+        import sources
         import tiers
         cls.fa, cls.ms, cls.tiers = five_axis, measurements, tiers
+        cls.anchors = tiers.panel(sources.accounts())[1]
 
     def panel_models(self):
-        anchors = list(self.tiers.ANCHORS)
+        anchors = list(self.anchors)
         extras = [f'p{i}' for i in range(max(4, self.ms.MIN_PANEL + 2 - len(anchors)))]
         return anchors + extras
 
     def test_panel_standard_scores_put_anchor_at_zero_and_reject_unanchored_or_thin_boards(self):
         members = self.panel_models()
         b = self.ms.Builder.__new__(self.ms.Builder)
+        b.panel_ids = self.anchors
         b.source_rows = {s: {'file': 'f'} for s in ('lmarena.webdev', 'designarena.website', 'aa.mmmu_pro',
                                                     'no_anchor', 'too_few', 'flat')}
         b.missing, b.manifest = {}, {}
@@ -1079,7 +1082,7 @@ class AnchorRelativeTests(unittest.TestCase):
 
     def test_structural_and_statistical_checks_drop_bad_listings_and_flag_non_monotone_high(self):
         b = self.ms.Builder.__new__(self.ms.Builder)
-        b.acc = {'models': {'m_bad_tag': {}, 'm_range': {}, 'm_dup1': {}, 'm_dup2': {}, 'm_stat': {}, 'm_ok': {}}}
+        b.acc = {'models': {'m_bad_tag': {}, 'm_range': {}, 'm_dup1': {}, 'm_dup2': {}, 'm_stat': {}, 'm_ok': {}}, 'families': {'patterns': []}}
         b.checks, b.missing, b.manifest = [], {}, {}
         boards = {
             'aa.terminalbench_4': {
@@ -1133,7 +1136,7 @@ class AnchorRelativeTests(unittest.TestCase):
                  'listed_as': 'M1 High', 'listed_effort': 'high'},
             ]},
         }}
-        rows, _, _, _, _, _ = self.fa.Scorer(meas, {'models': {self.ms.ANCHOR: {}, 'm1': {}}}).score()
+        rows, _, _, _, _, _ = self.fa.Scorer(meas, {'models': {self.ms.ANCHOR: {}, 'm1': {}}, 'families': {'patterns': []}}).score()
         ex = rows['m1']['axes']['coding']['facets']['execution']
         self.assertEqual(ex['status'], 'measured')
         self.assertEqual(ex['sources']['arena.agent_code']['effort_shift'], 'aa')
@@ -1159,6 +1162,7 @@ class AnchorRelativeTests(unittest.TestCase):
         raw = {'lmarena.creative_writing': {m: 1500.0 - 20.0 * i for i, m in enumerate(members)}}
         b1 = self.ms.Builder.__new__(self.ms.Builder)
         b1.source_rows, b1.missing, b1.manifest = {'lmarena.creative_writing': {'file': 'f'}}, {}, {}
+        b1.panel_ids = self.anchors
         panel1, _, scale1 = b1.panel(raw)
         grown = {'lmarena.creative_writing': {**raw['lmarena.creative_writing'], 'newtop': 1700.0}}  # not on all core boards if added to one
         # Add a second core board where newtop is absent so newtop is outside the panel
@@ -1170,11 +1174,13 @@ class AnchorRelativeTests(unittest.TestCase):
         b_before = self.ms.Builder.__new__(self.ms.Builder)
         b_before.source_rows = {s: {'file': 'f'} for s in raw2}
         b_before.missing, b_before.manifest = {}, {}
+        b_before.panel_ids = self.anchors
         panel_a, _, scale_a = b_before.panel(raw2)
 
         b_after = self.ms.Builder.__new__(self.ms.Builder)
         b_after.source_rows = {s: {'file': 'f'} for s in grown2}
         b_after.missing, b_after.manifest = {}, {}
+        b_after.panel_ids = self.anchors
         panel_b, _, scale_b = b_after.panel(grown2)
 
         self.assertEqual(panel_a, panel_b)
@@ -1285,7 +1291,9 @@ class AnchorRelativeTests(unittest.TestCase):
         return {'panel': {'models': panel}, 'models': models}
 
     def score(self, meas):
-        return self.fa.Scorer(meas, {'models': {m: {} for m in meas['models']}}).score()
+        # The fable rows form one series through this catalog's family pattern (model_resolution `families`).
+        families = {'patterns': [{'pattern': '^claude-fable', 'models': ['claude-fable-5-2']}]}
+        return self.fa.Scorer(meas, {'models': {m: {} for m in meas['models']}, 'families': families}).score()
 
     def test_the_tier_is_read_only_from_the_overall_boards(self):
         measured = self.tiered(4.0)
@@ -1420,7 +1428,7 @@ class AnchorRelativeTests(unittest.TestCase):
              'z_by_effort': dict.fromkeys(EFFORT_NAMES, -0.1)}],
             tool_operation=[{'source': 'lmarena.vision', 'facet': 'image_recognition', 'value': -0.15}])
         meas['models']['channel'] = {}
-        acc = {'models': {m: {} for m in meas['models']},
+        acc = {'models': {m: {} for m in meas['models']}, 'families': {'patterns': []},
                'same_model': {'channel': {'model': 'astra', 'carries': ['coding'], 'url': 'https://openai.com/index/introducing-dots/'}}}
         rows, tier, _, _, _, _ = self.fa.Scorer(meas, acc).score()
         self.assertEqual((tier['channel']['value'], tier['channel']['method'], tier['channel']['base_model']), (4.2, 'sibling', 'astra'))
@@ -1433,7 +1441,7 @@ class AnchorRelativeTests(unittest.TestCase):
         tool = rows['channel']['axes']['tool_operation']
         self.assertEqual((tool['status'], tool.get('flag'), tool['facets']), ('missing', 'missing', {}))
         # without the declaration the row has no tier and nothing to estimate from
-        rows, tier, _, _, _, _ = self.fa.Scorer(meas, {'models': acc['models']}).score()
+        rows, tier, _, _, _, _ = self.fa.Scorer(meas, {'models': acc['models'], 'families': acc['families']}).score()
         self.assertEqual(tier['channel']['method'], 'none')
         self.assertEqual(rows['channel']['axes']['coding']['status'], 'missing')
 
@@ -1505,7 +1513,7 @@ class SourceMergeTests(unittest.TestCase):
         meas = {'models': {'m': {'usd_per_hour': self.entries(), 'aesthetics': [
             {'source': 'designarena.website', 'facet': 'design', 'value': -1.2},
             {'source': 'lmarena.webdev', 'facet': 'design', 'value': 0.4}]}}}
-        scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=['arena.agent_sessions', 'designarena.website'])
+        scorer = self.fa.Scorer(meas, {'models': {'m': {}}, 'families': {'patterns': []}}, distrust=['arena.agent_sessions', 'designarena.website'])
         usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas)
         self.assertEqual((usd['m']['value'], usd['m']['fallback']), (31.0, True))
         rows, _, _, _, _, _ = scorer.score()
@@ -1530,7 +1538,7 @@ class DurationTests(unittest.TestCase):
 
     def build(self, models, **acc_extra):
         rows = {m: {'fields': {'throughput': tps}} for m, tps in models.items()}
-        acc = {'models': {m: {} for m in models}, 'aliases': {}, **acc_extra}
+        acc = {'models': {m: {} for m in models}, 'aliases': {}, 'families': {'patterns': []}, **acc_extra}
         scorer = self.fa.Scorer({'models': {m: r['fields'] for m, r in rows.items()}}, acc)
         tier = {m: {'value': None, 'method': 'none'} for m in rows}
         return self.fa.durations(scorer, rows, acc, {}, {}, tier)
@@ -1959,7 +1967,7 @@ class DerivedUsdTests(unittest.TestCase):
             {'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max', 'value': 6.125},
             {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 13.688},
         ]}}}
-        scorer = self.fa.Scorer(meas, {'models': {'m': {}}}, distrust=('arena.agent_sessions',))
+        scorer = self.fa.Scorer(meas, {'models': {'m': {}}, 'families': {'patterns': []}}, distrust=('arena.agent_sessions',))
         usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas)
         self.assertEqual((usd['m']['value'], usd['m']['fallback']), (13.688, True))
         self.assertIn('arena.agent_sessions distrusted', usd['m']['merge'])
@@ -2042,7 +2050,9 @@ class ArenaCaptureTests(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / 'fetch-manifest.json').write_text('{"files": {}}', encoding='utf-8')
-            builder = self.ms.Builder(Path(tmp), {'models': {}})
+            anchor = self.ms.ANCHOR
+            builder = self.ms.Builder(Path(tmp), {'models': {anchor: {'listed_as': {'arena': 'A', 'aa': 'A'}}},
+                                                  'calibration_panel': {'anchor': anchor, 'models': [anchor]}})
             builder.boards()
         for src in self.ms.ARENA_CAPTURES:
             self.assertIn('not captured', builder.missing[src]['reason'], src)

@@ -30,7 +30,7 @@ The router scores a model on **four capability categories** (`divergence`, `codi
 | `five_axis.py [--distrust SOURCE] [--accept-panel-change]` | Writes `references/five-axis-scores.json`: per-effort facet curves, parallel-board link offsets, category scores, `estimate_fits` (`r`, `skill`, `loo_rmse`, `n`), `usd_per_hour`, `duration_multiplier`, community plan capacities, panel `anchor.targets` (`levels` 1..3 with the level-3 `ceiling`, `continuity = t3 - t2`), `anchor.sd_panel` and `anchor.panel_change`, and surfaced data errors. Refuses a panel change unless accepted. |
 | `arena_capture.py import CAPTURE.json ...` / `show` | Imports browser-captured `arena.ai` Agent / Code and Alignment boards and preserves their manifest entries across `sources.py fetch`. |
 | `community.py` | Reads community real-usage measurements of subscription window capacity, token mix, vendor plan multipliers, and usd-per-hour check rows. |
-| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`): runs fetch (unless `--no-fetch`), `measurements.py`, `five_axis.py`, `capability_catalog.py`, `public_data.py manifest --write`, validates `public-data` checks and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing, invalid or a refused panel change (nothing written). |
+| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`; `--model ID` merges only that model's rows on the shipped scale, see To add a model): runs fetch (unless `--no-fetch`), `measurements.py`, `five_axis.py`, `capability_catalog.py`, `public_data.py manifest --write`, validates `public-data` checks and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing or invalid, 3 refused with nothing written (a refused panel change or `--model`; the staleness report never exits 3). |
 
 ## Refresh
 
@@ -40,14 +40,55 @@ agentcompass data refresh --no-fetch          # rebuild and validate from cached
 agentcompass data refresh --no-fetch --accept-panel-change   # write a rebuild whose panel members changed (refused otherwise)
 ```
 
-Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--accept-panel-change]`.
+Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`.
 
 One command runs the full chain in topological order: `sources.py fetch` (skipped with `--no-fetch`) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> `public_data.py manifest --write` -> validation (`public-data` checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
 
-To add a model, put its source names in `tiers.NAMES` (or `measurements.EXTRA_NAMES`), then run `agentcompass data refresh --no-fetch` (or `agentcompass data refresh`). Every written value names its sources and dates.
+## To add a model or a score
+
+Every per-model fact is reference data under `references/`; adding a model or a score changes no Python and no test.
+
+1. **The row.** In `references/accounts.json`, add `models["<id>"]` (copy a sibling row and edit it): `label` (tray name),
+   and when they apply `api_family` (`claude` / `codex`: the native CLI), `context_window`, `image_input_source` or
+   `text_only_source` (cited or dated maintainer statement), and `fast_capable: true` only for a verified fast launch
+   ([fast-modes.md](../references/fast-modes.md)).
+2. **Board names.** `listed_as: {"arena": "...", "aa": "..."}` gives the name arena.ai / LMArena and Artificial Analysis list
+   the model under, when the automatic matcher cannot derive it from the id (a dated listing, other wording). Leave out a
+   board that lists it under its id or does not list it.
+3. **Prices (optional, cited).** `list_price` (`input`, `cache_write_5m`, `cache_write_1h`, `cache_read`, `output`, USD per
+   million tokens) with `list_price_source` (`kind: "vendor"`, https `url`, `as_of`) prices local session logs in the tray;
+   `vendor_fast_mode` (price and speed multipliers, fast and standard prices, `url`, `pricing_url`, `as_of`, `statement`)
+   adds the fast variant's measurement.
+4. **Launch and family.** A bundle under `accounts[<account>].bundles` and its efforts under `dispatch_efforts[<harness>]`
+   make it launchable (discovery adds auto bundles for what a CLI advertises). When it is the newest model of a family,
+   point that family's entry in `families.patterns` (ordered `{pattern, models}`; the first matching pattern decides; move
+   the declaration's `as_of` to the day of the edit) and the family's short `aliases` at it, and list the older model
+   under `superseded`.
+5. **Rebuild its row.** Run `agentcompass data refresh --model <id>` (repeatable for several new models). It fetches the
+   boards into the data directory, builds the measurements, and writes to `public-measurements.json` only the named
+   models' entries, conflicts and checks, every entry the full refresh writes for them: with the panel scale unchanged,
+   the model's row and its five-axis block equal those of a full refresh over the same boards. A board z-score whose
+   source scale (`sources[<id>].scale`) moved since the shipped fetch is recomputed on the shipped scale,
+   `(raw - anchor_raw) / sd_panel` (recorded at 6 significant digits, so such a z can differ in the fourth decimal); the
+   `tier` is standardized over the fetched board itself and kept as built. Every other row, the panel and the scales stay
+   as shipped. It prints each entry it left out and why (two reasons only: the anchor's reading moved since the shipped
+   fetch, or a z-score whose source has no shipped scale) and notes what else it did; a model no board lists, or an entry
+   it cannot merge for another reason, stops the run before anything is written (exit 3; a run that writes exits with
+   the staleness status 0, 1 or 2). It then validates the catalog
+   (`public_data.validate_accounts_provenance`) and rebuilds `five-axis-scores.json`, `model-capabilities.{json,md}` and
+   the `public-data.json` manifest. Values fitted over all measured models (the tier fits, the fleet effort ratios) still
+   move for other models; the run prints how many moved, by field. A model in `calibration_panel` (or the anchor) is
+   refused: it changes the scale, so it needs the full refresh (`agentcompass data refresh`, or `--no-fetch` from cached
+   downloads), which rebuilds every row. Commit the changed files under `references/`.
+
+A **maintainer manual score** is `agentcompass score set <model> ... --public`, which writes `references/user-scores.json`
+and the manifest; then run the refresh. A **measured score** comes from the boards on the next refresh. The calibration
+scale itself (the anchor and the panel's sentinel models) is `calibration_panel` in `accounts.json`, a dated maintainer
+declaration; changing it rescales every score. Every written value names its sources and dates.
 
 ## Rules the data follows
 
 - The anchor tiers are the user's judgment. The scripts report contradictions with them and never change them.
 - Public cited data only. A value without a trusted source is missing, and missing is a surfaced data error, never a default.
-- No model names in router code. Everything above is data under `references/`.
+- No model names in router code. Everything above is data under `references/`, including each model's board names,
+  prices, fast-mode multipliers, family patterns and the calibration panel.

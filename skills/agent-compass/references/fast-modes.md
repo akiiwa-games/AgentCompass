@@ -2,14 +2,16 @@
 
 Verified 2026-10-30. Fast preserves the selected model and effort. It does not
 switch Sonnet/Haiku to Opus. Pi has no implemented fast feature and no modeId.
-The effective model policy's explicit `fast_capable: false` disables fast even
-for a verified pair. An absent flag does not disable a verified pair. Automatic
-selection, explicit records and launch revalidation honor this same opt-out.
+The verified models are data: a model row in `accounts.json` declares
+`fast_capable: true`, and fast runs only on the harness of the row's `api_family`
+(`codex` or `claude`). An absent flag or `fast_capable: false` (also in the
+effective local policy) means no fast. Automatic selection, explicit records and
+launch revalidation read this same declaration.
 
-| Harness | Verified model IDs | Paseo creation | CLI creation |
+| Harness | Verified models | Paseo creation | CLI creation |
 |---|---|---|---|
-| Codex | gpt-6.1-sol, gpt-6.1-terra, gpt-6-astra, gpt-6-sol, gpt-6-luna | features.service_tier = priority/default | -c features.fast_mode=true/false and -c service_tier="priority"/"default" |
-| Claude | claude-opus-5-5, claude-opus-5, claude-opus-4-8 | features.fast_mode = true/false | --settings '{"fastMode":true/false}' (CLI >= 2.1.205) |
+| Codex | rows with `api_family: codex`, `fast_capable: true` | features.service_tier = priority/default | -c features.fast_mode=true/false and -c service_tier="priority"/"default" |
+| Claude | rows with `api_family: claude`, `fast_capable: true` | features.fast_mode = true/false | --settings '{"fastMode":true/false}' (CLI >= 2.1.205) |
 
 Normal launches explicitly pass the off/default value to avoid inheriting saved
 global preferences. These settings are session-scoped; the router does not edit

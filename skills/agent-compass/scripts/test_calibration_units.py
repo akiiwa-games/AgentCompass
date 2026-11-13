@@ -14,7 +14,7 @@ import tiers  # noqa: E402
 
 class SeriesTests(unittest.TestCase):
     ACC = {'models': {m: {} for m in ('gpt-6-luna', 'gpt-5.6-luna', 'gpt-6-astra', 'dot', 'claude-opus-5-5')},
-           'aliases': {},
+           'aliases': {}, 'families': {'patterns': []},
            'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}},
            'same_model': {'dot': {'model': 'gpt-6-astra', 'carries': ['divergence'], 'url': 'https://example.test/dot'}}}
 
@@ -123,7 +123,8 @@ class FitterTests(unittest.TestCase):
             'Model C': (1490.0, 1485.0, 1495.0, 'Model C', '2026-11-09'),
             'Model D': (1520.0, 1515.0, 1525.0, 'Model D', '2026-11-09'),
         })
-        f.anchor_raw, f.sd = f.overall_scale(f.overall)
+        f.anchor_name = 'Claude Opus 5.5'
+        f.anchor_raw, f.sd = f.overall_scale(f.overall, f.anchor_name)
         f.aa = {'Model A': 40.0, 'Model B': 50.0, 'Model C': 60.0, 'Model D': 70.0, 'Only AA': 55.0}
         f.maps = {'aa.index': f.board_map(f.aa)}
         return f
@@ -196,7 +197,7 @@ class UsdConversionTests(unittest.TestCase):
         usd = {'gpt-5.6-luna': {'value': 4.0, 'status': 'ok', 'kind': 'community'},
                'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'},
                'claude-opus-5-5': {'value': 7.0, 'status': 'ok', 'kind': 'community'}}
-        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
+        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'patterns': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         scorer = fa.Scorer(meas, acc)
         fa.convert_usd(usd, rows, scorer, meas, acc, {m: {'value': None, 'method': 'none'} for m in rows})
@@ -210,7 +211,7 @@ class UsdConversionTests(unittest.TestCase):
         rows = {'gpt-5.6-luna': {'fields': {'price': []}}, 'gpt-6-luna': {'fields': {'price': []}}}
         usd = {'gpt-5.6-luna': {'value': 4.0, 'status': 'ok', 'kind': 'community'},
                'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'}}
-        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
+        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'patterns': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc, {m: {'value': None} for m in rows})
         self.assertIsNone(usd['gpt-6-luna']['value'])

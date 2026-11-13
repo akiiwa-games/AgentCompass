@@ -19,7 +19,7 @@ NOW = 2_000_000_000.0
 
 def public(accounts):
     return {'models': REAL['models'], 'aliases': REAL.get('aliases', {}), 'superseded': REAL.get('superseded', {}),
-            'accounts': accounts}
+            'families': REAL['families'], 'accounts': accounts}
 
 
 def proxy_accounts():

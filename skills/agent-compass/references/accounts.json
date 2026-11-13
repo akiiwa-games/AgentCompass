@@ -196,13 +196,255 @@
       }
     }
   },
+  "calibration_panel": {
+    "anchor": "claude-opus-5-5",
+    "models": [
+      "claude-opus-5-5",
+      "gpt-6-astra",
+      "claude-sonnet-5-5",
+      "gpt-6.1-sol",
+      "grok-4.7",
+      "gemini-3.8-flash-high"
+    ],
+    "kind": "maintainer",
+    "as_of": "2026-11-04",
+    "statement": "maintainer: the anchor (0 on every board) and the sentinel models whose shared board coverage defines the calibration panel (calibration/measurements.py)"
+  },
+  "families": {
+    "kind": "maintainer",
+    "as_of": "2026-11-13",
+    "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py)",
+    "patterns": [
+      {
+        "pattern": "^grok-bot$",
+        "models": []
+      },
+      {
+        "pattern": "^claude-opus",
+        "models": [
+          "claude-opus-5-5"
+        ]
+      },
+      {
+        "pattern": "^claude-sonnet",
+        "models": [
+          "claude-sonnet-5-5"
+        ]
+      },
+      {
+        "pattern": "^claude-fable",
+        "models": [
+          "claude-fable-5-2"
+        ]
+      },
+      {
+        "pattern": "^claude-haiku",
+        "models": [
+          "claude-haiku-5-5"
+        ]
+      },
+      {
+        "pattern": "^gpt-6.*luna",
+        "models": [
+          "gpt-6-luna"
+        ]
+      },
+      {
+        "pattern": "^gpt-6.*terra",
+        "models": [
+          "gpt-6.1-terra",
+          "gpt-6-astra"
+        ]
+      },
+      {
+        "pattern": "^gpt-6.*sol",
+        "models": [
+          "gpt-6.1-sol",
+          "gpt-6-astra"
+        ]
+      },
+      {
+        "pattern": "^gpt-6.*pro",
+        "models": [
+          "gpt-6-pro",
+          "gpt-6-astra"
+        ]
+      },
+      {
+        "pattern": "^gpt-6",
+        "models": [
+          "gpt-6-astra"
+        ]
+      },
+      {
+        "pattern": "^gemini.*flash",
+        "models": [
+          "gemini-3.8-flash-high"
+        ]
+      },
+      {
+        "pattern": "^gemini",
+        "models": [
+          "gemini-4-argon-high"
+        ]
+      },
+      {
+        "pattern": "^grok.*(?:mini|fast)|^grok-code",
+        "models": [
+          "grok-4.7-build-fast",
+          "grok-4.7"
+        ]
+      },
+      {
+        "pattern": "^grok",
+        "models": [
+          "grok-4.7"
+        ]
+      },
+      {
+        "pattern": "^deepseek.*flash",
+        "models": [
+          "deepseek-v4.1-flash-free"
+        ]
+      },
+      {
+        "pattern": "^deepseek",
+        "models": [
+          "deepseek-v4-pro"
+        ]
+      },
+      {
+        "pattern": "^qwen.*flash",
+        "models": [
+          "qwen3-flash-2025-07-28"
+        ]
+      },
+      {
+        "pattern": "^qwen.*coder",
+        "models": [
+          "qwen3-coder-next",
+          "qwen3.8-max"
+        ]
+      },
+      {
+        "pattern": "^qwen",
+        "models": [
+          "qwen3.8-max"
+        ]
+      },
+      {
+        "pattern": "^kimi|^moonshot",
+        "models": [
+          "kimi-k3.1-pro"
+        ]
+      },
+      {
+        "pattern": "^glm.*flash",
+        "models": [
+          "glm-5.3-flash-free"
+        ]
+      },
+      {
+        "pattern": "^glm",
+        "models": [
+          "glm-5.3"
+        ]
+      },
+      {
+        "pattern": "^minimax.*flash",
+        "models": [
+          "minimax-m3.1-flash"
+        ]
+      },
+      {
+        "pattern": "^minimax|^abab",
+        "models": [
+          "minimax-m3"
+        ]
+      },
+      {
+        "pattern": "^doubao",
+        "models": [
+          "doubao-seed-2-1-pro-260628"
+        ]
+      },
+      {
+        "pattern": "^mimo.*flash",
+        "models": [
+          "mimo-v2.6-flash-free"
+        ]
+      },
+      {
+        "pattern": "^mimo",
+        "models": [
+          "mimo-v2.6-pro"
+        ]
+      },
+      {
+        "pattern": "^nemotron.*lightning",
+        "models": [
+          "nemotron-3.5-lightning-free",
+          "nemotron-3-ultra-free"
+        ]
+      },
+      {
+        "pattern": "^nemotron.*(?:super|vl)",
+        "models": [
+          "nemotron-3.5-super-vl-free",
+          "nemotron-3-ultra-free"
+        ]
+      },
+      {
+        "pattern": "^nemotron",
+        "models": [
+          "nemotron-3-ultra-free"
+        ]
+      },
+      {
+        "pattern": "^muse",
+        "models": [
+          "muse-wonder-1.0"
+        ]
+      },
+      {
+        "pattern": "^llama",
+        "models": []
+      },
+      {
+        "pattern": "^mistral|^codestral|^devstral",
+        "models": [
+          "mistral-large-4"
+        ]
+      }
+    ]
+  },
   "models": {
     "deepseek-v4.1-flash-free": {
-      "label": "DeepSeek Flash"
+      "label": "DeepSeek Flash",
+      "listed_as": {
+        "aa": "DeepSeek V4.1 Flash 1017"
+      }
     },
     "claude-fable-5-1": {
       "label": "Fable 5.1",
-      "api_family": "claude"
+      "api_family": "claude",
+      "listed_as": {
+        "arena": "Claude Fable 5.1",
+        "aa": "Claude Fable 5.1"
+      },
+      "list_price": {
+        "input": 10.0,
+        "cache_write_5m": 12.5,
+        "cache_write_1h": 20.0,
+        "cache_read": 0.25,
+        "output": 50.0
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
     },
     "claude-fable-5-2": {
       "label": "Fable 5.2",
@@ -212,35 +454,164 @@
         "kind": "maintainer",
         "statement": "maintainer: claude-fable-5-2 accepts image input",
         "as_of": "2026-11-12"
+      },
+      "listed_as": {
+        "arena": "Claude Fable 5.2",
+        "aa": "Claude Fable 5.2"
+      },
+      "vendor_fast_mode": {
+        "price_multiplier": 2.0,
+        "speed_multiplier": 2.5,
+        "fast_price": {
+          "input": 16.0,
+          "output": 80.0,
+          "cache_read": 0.4
+        },
+        "standard_price": {
+          "input": 8.0,
+          "output": 40.0,
+          "cache_read": 0.2
+        },
+        "as_of": "2026-11-10",
+        "url": "https://code.claude.com/docs/en/fast-mode",
+        "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "statement": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Fable 5.2 fast mode is $16/$80 per MTok (2x standard $8/$40, cache read $0.20) with up to 2.5x output tokens per second."
+      },
+      "list_price": {
+        "input": 8.0,
+        "cache_write_5m": 10.0,
+        "cache_write_1h": 16.0,
+        "cache_read": 0.2,
+        "output": 40.0
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "as_of": "2026-11-10",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
       }
     },
     "claude-opus-5-5": {
       "label": "Opus 5.5",
       "fast_capable": true,
-      "api_family": "claude"
+      "api_family": "claude",
+      "listed_as": {
+        "arena": "Claude Opus 5.5",
+        "aa": "Claude Opus 5.5"
+      },
+      "vendor_fast_mode": {
+        "price_multiplier": 2.0,
+        "speed_multiplier": 2.5,
+        "fast_price": {
+          "input": 8.0,
+          "output": 40.0,
+          "cache_read": 0.4
+        },
+        "standard_price": {
+          "input": 4.0,
+          "output": 20.0,
+          "cache_read": 0.2
+        },
+        "as_of": "2026-11-10",
+        "url": "https://code.claude.com/docs/en/fast-mode",
+        "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "statement": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Opus 5.5 fast mode is $8/$40 per MTok (2x standard $4/$20, cache read $0.20) with up to 2.5x output tokens per second."
+      },
+      "list_price": {
+        "input": 4.0,
+        "cache_write_5m": 5.0,
+        "cache_write_1h": 8.0,
+        "cache_read": 0.2,
+        "output": 20.0
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
     },
     "gpt-6.1-sol": {
       "label": "Sol 6.1",
       "fast_capable": true,
-      "api_family": "codex"
+      "api_family": "codex",
+      "listed_as": {
+        "arena": "GPT-6.1 Sol",
+        "aa": "GPT-6.1 Sol"
+      },
+      "list_price": {
+        "input": 2.0,
+        "cache_write_5m": 2.5,
+        "cache_write_1h": 2.5,
+        "cache_read": 0.1,
+        "output": 10.0
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://developers.openai.com/api/docs/pricing",
+        "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
     },
     "gpt-6-astra": {
       "label": "Astra 6",
       "fast_capable": true,
-      "api_family": "codex"
+      "api_family": "codex",
+      "listed_as": {
+        "arena": "GPT-6 Astra",
+        "aa": "GPT-6 Astra"
+      },
+      "list_price": {
+        "input": 10.0,
+        "cache_write_5m": 12.5,
+        "cache_write_1h": 12.5,
+        "cache_read": 1.0,
+        "output": 50.0
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://developers.openai.com/api/docs/pricing",
+        "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
     },
     "gemini-4-argon-high": {
       "label": "Argon 4"
     },
     "claude-sonnet-5-5": {
       "label": "Sonnet 5.5",
-      "api_family": "claude"
+      "api_family": "claude",
+      "listed_as": {
+        "arena": "Claude Sonnet 5.5",
+        "aa": "Claude Sonnet 5.5"
+      },
+      "list_price": {
+        "input": 2.0,
+        "cache_write_5m": 2.5,
+        "cache_write_1h": 4.0,
+        "cache_read": 0.1,
+        "output": 10.0
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
     },
     "grok-4.7": {
-      "label": "Grok 4.7"
+      "label": "Grok 4.7",
+      "listed_as": {
+        "arena": "Grok 4.7",
+        "aa": "Grok 4.7"
+      }
     },
     "gemini-3.8-flash-high": {
-      "label": "Flash 3.8"
+      "label": "Flash 3.8",
+      "listed_as": {
+        "arena": "Gemini 3.8 Flash",
+        "aa": "Gemini 3.8 Flash"
+      }
     },
     "grok-bot": {
       "label": "Grok Bot",
@@ -277,25 +648,76 @@
     },
     "claude-haiku-5-5": {
       "label": "Haiku 5.5",
-      "api_family": "claude"
+      "api_family": "claude",
+      "listed_as": {
+        "arena": "Claude Haiku 5.5",
+        "aa": "Claude Haiku 5.5"
+      },
+      "list_price": {
+        "input": 0.1,
+        "cache_write_5m": 0.125,
+        "cache_write_1h": 0.2,
+        "cache_read": 0.01,
+        "output": 0.5
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
     },
     "gpt-6.1-terra": {
       "label": "Terra 6.1",
       "fast_capable": true,
       "context_window": 500000,
-      "api_family": "codex"
+      "api_family": "codex",
+      "listed_as": {
+        "arena": "GPT-6.1 Terra",
+        "aa": "GPT-6.1 Terra"
+      }
     },
     "gpt-6-sol": {
       "label": "Sol 6",
       "fast_capable": true,
       "context_window": 272000,
-      "api_family": "codex"
+      "api_family": "codex",
+      "list_price": {
+        "input": 2.0,
+        "cache_write_5m": 2.5,
+        "cache_write_1h": 2.5,
+        "cache_read": 0.2,
+        "output": 10.0
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://developers.openai.com/api/docs/pricing",
+        "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
     },
     "gpt-6-luna": {
       "label": "Luna 6",
       "fast_capable": true,
       "context_window": 272000,
-      "api_family": "codex"
+      "api_family": "codex",
+      "listed_as": {
+        "arena": "GPT-6 Luna",
+        "aa": "GPT-6 Luna"
+      },
+      "list_price": {
+        "input": 0.1,
+        "cache_write_5m": 0.125,
+        "cache_write_1h": 0.125,
+        "cache_read": 0.01,
+        "output": 0.5
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://developers.openai.com/api/docs/pricing",
+        "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
     },
     "gpt-5.6-sol": {
       "label": "Sol 5.6",
@@ -316,7 +738,10 @@
       "label": "Grok 4.7 Build Fast"
     },
     "deepseek-v4-pro": {
-      "label": "DeepSeek V4 Pro"
+      "label": "DeepSeek V4 Pro",
+      "listed_as": {
+        "aa": "DeepSeek V4 Pro 0813"
+      }
     },
     "glm-5.3": {
       "label": "GLM 5.3"
@@ -325,10 +750,16 @@
       "label": "GLM 5.3 Flash"
     },
     "qwen3-coder-next": {
-      "label": "Qwen 3 Coder Next"
+      "label": "Qwen 3 Coder Next",
+      "listed_as": {
+        "aa": "Qwen3 Coder Next"
+      }
     },
     "qwen3.8-max": {
-      "label": "Qwen 3.8 Max"
+      "label": "Qwen 3.8 Max",
+      "listed_as": {
+        "aa": "Qwen3.8 Max"
+      }
     },
     "kimi-k3.1-pro": {
       "label": "Kimi K3.1 Pro"
@@ -343,7 +774,10 @@
       "label": "MiniMax M3.1 Flash"
     },
     "doubao-seed-2-1-pro-260628": {
-      "label": "Seed 2.1 Pro"
+      "label": "Seed 2.1 Pro",
+      "listed_as": {
+        "arena": "Seed2.1 Pro Preview"
+      }
     },
     "mimo-v2.6-pro": {
       "label": "MiMo V2.6 Pro"
@@ -352,22 +786,39 @@
       "label": "MiMo V2.6 Flash"
     },
     "nemotron-3-ultra-free": {
-      "label": "Nemotron 3 Ultra"
+      "label": "Nemotron 3 Ultra",
+      "listed_as": {
+        "aa": "Nemotron 3 Ultra 550B A55B"
+      }
     },
     "nemotron-3.5-super-vl-free": {
-      "label": "Nemotron 3.5 Super VL"
+      "label": "Nemotron 3.5 Super VL",
+      "listed_as": {
+        "arena": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B",
+        "aa": "Nemotron 3.5 Super VL"
+      }
     },
     "nemotron-3.5-lightning-free": {
-      "label": "Nemotron 3.5 Lightning"
+      "label": "Nemotron 3.5 Lightning",
+      "listed_as": {
+        "arena": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B",
+        "aa": "Nemotron 3.5 Lightning"
+      }
     },
     "mistral-large-4": {
       "label": "Mistral Large 4"
     },
     "muse-wonder-1.0": {
-      "label": "Muse Wonder 1.0"
+      "label": "Muse Wonder 1.0",
+      "listed_as": {
+        "aa": "Muse Wonder"
+      }
     },
     "beam-free": {
-      "label": "Beam"
+      "label": "Beam",
+      "listed_as": {
+        "arena": "Beam 1.0 501B A23B"
+      }
     },
     "flint-40b-free": {
       "label": "Flint 40B"
@@ -389,53 +840,99 @@
     },
     "gpt-oss-120b": {
       "label": "GPT OSS 120B",
-      "api_family": "codex"
+      "api_family": "codex",
+      "listed_as": {
+        "arena": "gpt-oss-120b",
+        "aa": "gpt-oss-120b"
+      }
     },
     "gemini-3.1-flash-lite": {
-      "label": "Flash 3.1 Lite"
+      "label": "Flash 3.1 Lite",
+      "listed_as": {
+        "arena": "Gemini 3.1 Flash-Lite Preview"
+      }
     },
     "kimi-k2.7-code": {
-      "label": "Kimi K2.7 Code"
+      "label": "Kimi K2.7 Code",
+      "listed_as": {
+        "arena": "Kimi K2.7 Code",
+        "aa": "Kimi K2.7 Code"
+      }
     },
     "qwen3.6-plus": {
-      "label": "Qwen 3.6 Plus"
+      "label": "Qwen 3.6 Plus",
+      "listed_as": {
+        "arena": "Qwen3.6-Plus"
+      }
     },
     "claude-opus-4-7": {
       "label": "Opus 4.7",
-      "api_family": "claude"
+      "api_family": "claude",
+      "listed_as": {
+        "arena": "Claude Opus 4.7"
+      }
     },
     "claude-opus-4-8": {
       "label": "Opus 4.8",
       "fast_capable": true,
-      "api_family": "claude"
+      "api_family": "claude",
+      "listed_as": {
+        "arena": "Claude Opus 4.8"
+      }
     },
     "grok-4.5": {
-      "label": "Grok 4.5"
+      "label": "Grok 4.5",
+      "listed_as": {
+        "arena": "Grok 4.5"
+      }
     },
     "grok-4.6": {
-      "label": "Grok 4.6"
+      "label": "Grok 4.6",
+      "listed_as": {
+        "arena": "Grok 4.6"
+      }
     },
     "gemini-3.1-pro-preview": {
-      "label": "Gemini 3.1 Pro"
+      "label": "Gemini 3.1 Pro",
+      "listed_as": {
+        "arena": "Gemini 3.1 Pro Preview",
+        "aa": "Gemini 3.1 Pro Preview"
+      }
     },
     "gemini-3.7-flash": {
-      "label": "Flash 3.7"
+      "label": "Flash 3.7",
+      "listed_as": {
+        "arena": "Gemini 3.7 Flash"
+      }
     },
     "kimi-k2.6": {
-      "label": "Kimi K2.6"
+      "label": "Kimi K2.6",
+      "listed_as": {
+        "arena": "Kimi K2.6"
+      }
     },
     "qwen3-max": {
-      "label": "Qwen 3 Max"
+      "label": "Qwen 3 Max",
+      "listed_as": {
+        "arena": "Qwen3-Max"
+      }
     },
     "qwen3.7-max": {
-      "label": "Qwen 3.7 Max"
+      "label": "Qwen 3.7 Max",
+      "listed_as": {
+        "arena": "Qwen3.7-Max"
+      }
     },
     "qwen3-flash-2025-07-28": {
       "label": "Qwen 3 Flash",
       "context_window": 1000000
     },
     "gemini-4-carbon": {
-      "label": "Carbon 4"
+      "label": "Carbon 4",
+      "listed_as": {
+        "arena": "Gemini 4 Carbon",
+        "aa": "Gemini 4 Carbon"
+      }
     }
   },
   "dispatch_efforts": {

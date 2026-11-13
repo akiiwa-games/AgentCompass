@@ -1281,7 +1281,7 @@ class DiscoverySnapshotTests(unittest.TestCase):
 
 class PlanTemplateTests(unittest.TestCase):
     def apply(self, spec, family='antigravity', name='antigravity', plan=None, accounts_extra=None):
-        accounts = {'accounts': {name: spec}, **(accounts_extra or {})}
+        accounts = {'accounts': {name: spec}, 'families': {'patterns': []}, **(accounts_extra or {})}
         row = {'family': family, 'status': 'ready', 'billing': 'subscription'}
         if plan:
             row['plan'] = plan

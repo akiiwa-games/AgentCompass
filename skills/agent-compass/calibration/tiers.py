@@ -3,8 +3,8 @@
 `python -X utf8 tiers.py [--data DIR] [--json OUT] [model-id ...]`
 
 The tier is not a score. It is the continuous standard score of the model's High (or effort-less single-configuration)
-row on the arena.ai Overall leaderboard (`lmarena.text_overall`, `text_style_control` / `overall`, centered on
-`claude-opus-5-5` at High = 0.0), and it has one use: estimating a capability facet a model lacks (`five_axis.py`,
+row on the arena.ai Overall leaderboard (`lmarena.text_overall`, `text_style_control` / `overall`, centered on the
+accounts.json `calibration_panel.anchor` at High = 0.0), and it has one use: estimating a capability facet a model lacks (`five_axis.py`,
 through a validated `facet~tier` linear fit). Nothing routes on it.
 
 Sources, in order:
@@ -31,45 +31,36 @@ import numpy as np
 
 import sources
 
-ANCHOR_MODEL = 'claude-opus-5-5'
-# Sentinel fleet models whose shared board coverage defines the calibration panel (measurements.py).
-ANCHORS = {'claude-opus-5-5': 'Claude Opus 5.5', 'gpt-6-astra': 'GPT-6 Astra', 'claude-sonnet-5-5': 'Claude Sonnet 5.5',
-           'gpt-6.1-sol': 'GPT-6.1 Sol', 'grok-4.7': 'Grok 4.7', 'gemini-3.8-flash-high': 'Gemini 3.8 Flash'}
 EFFORT_TAG = re.compile(
     r'^(max|xhigh|high|medium|low|minimal|non-reasoning|none|default|default fallback|with fallback|'
     r'thinking|non-thinking|reasoning|instant|thinking\s+\d+k|\d+k|\d{2,4}|\d{6}|\d{8}|'
     r'\d{2,4}-\d{2}(?:-\d{2})?|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4})$'
 )
-# accounts.json model id -> the name each public source lists it under (None: not listed there).
-NAMES = {
-    'gpt-oss-120b': {'arena': 'gpt-oss-120b', 'swe': 'GPT OSS 120B', 'tb2': 'GPT OSS 120B', 'aa': 'gpt-oss-120b'},
-    'gemini-3.1-flash-lite': {'arena': 'Gemini 3.1 Flash-Lite Preview', 'swe': 'Gemini 3.1 Flash Lite Preview',
-                              'tb2': 'Gemini 3.1 Flash Lite Preview'},
-    'kimi-k2.7-code': {'arena': 'Kimi K2.7 Code', 'swe': 'Kimi K2.7 Code', 'aa': 'Kimi K2.7 Code'},
-    'qwen3.6-plus': {'arena': 'Qwen3.6-Plus', 'swe': 'Qwen 3.6 Plus', 'tb2': 'Qwen 3.6 Plus'},
-    'claude-opus-4-7': {'arena': 'Claude Opus 4.7', 'swe': 'Claude Opus 4.7', 'tb2': 'Claude Opus 4.7'},
-    'claude-opus-4-8': {'arena': 'Claude Opus 4.8', 'swe': 'Claude Opus 4.8', 'tb2': 'Claude Opus 4.8'},
-    'grok-4.5': {'arena': 'Grok 4.5', 'swe': 'Grok 4.5'},
-    'grok-4.6': {'arena': 'Grok 4.6', 'swe': 'Grok 4.6'},
-    'gemini-3.1-pro-preview': {'arena': 'Gemini 3.1 Pro Preview', 'swe': 'Gemini 3.1 Pro Preview (02/26)',
-                               'tb2': 'Gemini 3.1 Pro Preview (02/26)', 'aa': 'Gemini 3.1 Pro Preview'},
-    'gemini-3.7-flash': {'arena': 'Gemini 3.7 Flash', 'swe': 'Gemini 3.7 Flash'},
-    'kimi-k2.6': {'arena': 'Kimi K2.6', 'swe': 'Kimi K2.6', 'tb2': 'Kimi K2.6'},
-    'qwen3-max': {'arena': 'Qwen3-Max', 'tb2': 'Qwen 3 Max'},
-    'qwen3.7-max': {'arena': 'Qwen3.7-Max', 'swe': 'Qwen 3.7 Max', 'tb2': 'Qwen 3.7 Max'},
-    'doubao-seed-2-1-pro-260628': {'arena': 'Seed2.1 Pro Preview'},
-    'nemotron-3.5-lightning-free': {'arena': 'NVIDIA-Nemotron-3.5-Lightning-30B-A3B', 'swe': 'Nemotron 3.5 Lightning',
-                                    'aa': 'Nemotron 3.5 Lightning'},
-    'qwen3-coder-next': {'aa': 'Qwen3 Coder Next'},
-    'gemini-4-carbon': {'arena': 'Gemini 4 Carbon', 'aa': 'Gemini 4 Carbon'},
-    'claude-fable-5-1': {'arena': 'Claude Fable 5.1', 'aa': 'Claude Fable 5.1'},
-    'claude-fable-5-2': {'arena': 'Claude Fable 5.2', 'aa': 'Claude Fable 5.2'},
-    'claude-haiku-5-5': {'arena': 'Claude Haiku 5.5', 'aa': 'Claude Haiku 5.5'},
-    'gpt-6-luna': {'arena': 'GPT-6 Luna', 'aa': 'GPT-6 Luna'},
-    'gpt-6.1-terra': {'arena': 'GPT-6.1 Terra', 'aa': 'GPT-6.1 Terra'},
-    'grok-4.7-build-fast': {},
-    'flint-40b-free': {},
-}
+LISTING_BOARDS = ('arena', 'aa')   # accounts.json `listed_as` keys: the arena.ai / LMArena name and the Artificial Analysis name
+
+
+def listed_as(models, model, board):
+    """The name `board` lists `model` under (accounts.json `models[model].listed_as[board]`), or None when the row
+    declares none (the automatic matcher then looks for the id's own spellings)."""
+    return ((models.get(model) or {}).get('listed_as') or {}).get(board)
+
+
+def panel(acc):
+    """(anchor id, panel ids, anchor's arena.ai name) from accounts.json `calibration_panel` (a maintainer declaration:
+    the anchor is 0 on every board, the panel models' shared board coverage defines the calibration panel)."""
+    spec = acc.get('calibration_panel')
+    if not isinstance(spec, dict) or not isinstance(spec.get('anchor'), str) or not isinstance(spec.get('models'), list):
+        raise ValueError('accounts.json has no calibration_panel {anchor, models}: the calibration scale is undefined')
+    anchor, members = spec['anchor'], list(spec['models'])
+    if anchor not in members:
+        raise ValueError(f'calibration_panel anchor {anchor!r} is not one of its models')
+    models = acc.get('models') or {}
+    for m in members:
+        if not listed_as(models, m, 'arena') or not listed_as(models, m, 'aa'):
+            raise ValueError(f'calibration_panel model {m!r} needs models[{m!r}].listed_as.arena and .aa')
+    return anchor, members, listed_as(models, anchor, 'arena')
+
+
 # Non-arena overall (aggregate) boards that may place a model on the tier scale: id -> (label, cited url).
 OVERALL_BOARDS = {'aa.index': ('Artificial Analysis Intelligence Index', 'https://artificialanalysis.ai/leaderboards/models')}
 
@@ -204,18 +195,18 @@ class Interpolation:
 
 
 class Fitter:
-    def __init__(self, target):
+    def __init__(self, target, anchor_name):
+        self.anchor_name = anchor_name
         read = datetime.fromtimestamp((target / 'aa-models.html').stat().st_mtime, timezone.utc).date().isoformat() \
             if (target / 'aa-models.html').exists() else None
         self.aa_read = read
         self.overall = arena_high_rows(sources.arena_rows(target, 'text_style_control', 'overall'))
-        self.anchor_raw, self.sd = self.overall_scale(self.overall)
+        self.anchor_raw, self.sd = self.overall_scale(self.overall, anchor_name)
         self.aa = aa_high_index(sources.aa_records(target))
         self.maps = {'aa.index': self.board_map(self.aa)}
 
     @staticmethod
-    def overall_scale(board):
-        anchor_name = ANCHORS[ANCHOR_MODEL]
+    def overall_scale(board, anchor_name):
         if anchor_name not in board:
             raise ValueError(f'anchor {anchor_name!r} has no High row on arena.ai Overall')
         vals = [float(r[0]) for r in board.values()]
@@ -257,10 +248,10 @@ class Fitter:
         return out
 
 
-def basis_arena(row, tier, anchor_raw, sd):
+def basis_arena(row, tier, anchor_raw, sd, anchor_name):
     value, lo, hi, listed, date = row
     return (f'arena.ai Overall {date} {listed} {value:.1f} [{lo:.1f},{hi:.1f}] at High standardized against '
-            f'{ANCHORS[ANCHOR_MODEL]} ({anchor_raw:.1f}, sd {sd:.2f}): tier {tier:.4f}')
+            f'{anchor_name} ({anchor_raw:.1f}, sd {sd:.2f}): tier {tier:.4f}')
 
 
 def main():
@@ -269,19 +260,20 @@ def main():
     ap.add_argument('--data')
     ap.add_argument('--json')
     args = ap.parse_args()
-    fitter = Fitter(sources.data_dir(args.data))
+    acc = sources.accounts()
+    models = acc['models']
+    fitter = Fitter(sources.data_dir(args.data), panel(acc)[2])
     for board, mapping in fitter.maps.items():
         print(f'{board}: {mapping.n if mapping else 0} models common with arena Overall at High')
     result = {}
-    for key in args.models or list(NAMES):
-        names = NAMES.get(key, {})
-        explicit = names.get('arena') or ANCHORS.get(key)
+    for key in args.models or [m for m, row in models.items() if isinstance(row, dict) and row.get('listed_as')]:
+        explicit = listed_as(models, key, 'arena')
         arena = fitter.overall.get(explicit) if explicit else None
         entry = {'id': key}
         if arena:
             entry.update(method='arena_overall', tier=round(fitter.arena_overall_tier(explicit), 4))
         else:
-            others = fitter.other_overall({'aa.index': names.get('aa') or ANCHORS.get(key)})
+            others = fitter.other_overall({'aa.index': listed_as(models, key, 'aa')})
             entry.update(method='other_overall' if others else 'none', boards=others,
                          tier=round(float(np.mean([o['tier'] for o in others.values()])), 4) if others else None)
         result[key] = entry

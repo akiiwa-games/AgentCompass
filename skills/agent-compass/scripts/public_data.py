@@ -5,7 +5,8 @@ user-scores.json under references/, with references/public-data.json listing the
 the set was published. This module fetches that manifest and the files from the repository's main branch over plain
 HTTPS (no credentials, proxies from the environment) into <state dir>/public-data/, verifies every hash, and makes the
 router read the fetched set instead of the shipped one only when the set is complete, its schema is one this code reads
-and it was published after the shipped copy. A newer schema is noted and ignored, never half-applied.
+and it was published after the shipped copy. A newer schema is noted and ignored, never half-applied; an older
+schema, or a set this code rejects, is noted once per published version and never downloaded again.
 
 Precedence: shipped < fetched < the user's own settings. Nothing here writes
 accounts-override.json, local user-scores.json or host policy; their loaders layer them on top of whichever set is in effect.
@@ -102,15 +103,83 @@ def validate_accounts_provenance(doc):
         for field in ('text_only_source', 'image_input_source'):
             if field in spec and not _valid_public_declaration(spec.get(field)):
                 raise ValueError(f'models[{model!r}].{field} requires an https url or dated kind="maintainer" (with as_of)')
+        _validate_model_data(model, spec)
+    _validate_catalog_tables(doc)
 
-SCHEMA_VERSION = 3              # the newest data schema this code reads; bump with any breaking data change
+
+LISTING_BOARDS = ('arena', 'aa')        # calibration/tiers.py LISTING_BOARDS: `listed_as` keys
+LIST_PRICE_FIELDS = ('input', 'cache_write_5m', 'cache_write_1h', 'cache_read', 'output')
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0
+
+
+def _price_table(value, fields):
+    return isinstance(value, dict) and set(value) == set(fields) and all(_number(value[f]) for f in fields)
+
+
+def _validate_model_data(model, spec):
+    """Shape of the per-model reference fields (`listed_as`, `list_price`, `vendor_fast_mode`, `fast_capable`)."""
+    if 'listed_as' in spec:
+        names = spec['listed_as']
+        if (not isinstance(names, dict) or not names or not set(names) <= set(LISTING_BOARDS)
+                or not all(isinstance(v, str) and v.strip() for v in names.values())):
+            raise ValueError(f'models[{model!r}].listed_as maps {"/".join(LISTING_BOARDS)} to the name each board lists the model under')
+    if 'list_price' in spec:
+        if not _price_table(spec['list_price'], LIST_PRICE_FIELDS):
+            raise ValueError(f'models[{model!r}].list_price needs numeric {", ".join(LIST_PRICE_FIELDS)} (USD per million tokens)')
+        if not _valid_vendor_price_source(spec.get('list_price_source')):
+            raise ValueError(f'models[{model!r}].list_price requires list_price_source with kind="vendor", https url and ISO as_of')
+    if 'vendor_fast_mode' in spec:
+        fast = spec['vendor_fast_mode']
+        ok = (isinstance(fast, dict) and _number(fast.get('price_multiplier')) and _number(fast.get('speed_multiplier'))
+              and all(_price_table(fast.get(k), ('input', 'output', 'cache_read')) for k in ('fast_price', 'standard_price'))
+              and all(str(fast.get(k) or '').startswith('https://') for k in ('url', 'pricing_url'))
+              and bool(_ISO_DATE.match(str(fast.get('as_of') or ''))) and isinstance(fast.get('statement'), str))
+        if not ok:
+            raise ValueError(f'models[{model!r}].vendor_fast_mode needs price_multiplier, speed_multiplier, fast_price, '
+                             'standard_price, https url and pricing_url, ISO as_of and the vendor statement')
+    if 'fast_capable' in spec and not isinstance(spec['fast_capable'], bool):
+        raise ValueError(f'models[{model!r}].fast_capable must be true or false')
+
+
+def _validate_catalog_tables(doc):
+    """The catalog-wide model tables: `families` (model_resolution) and `calibration_panel` (calibration/measurements.py)."""
+    models = {k for k, v in (doc.get('models') or {}).items() if isinstance(v, dict)}
+    families = doc.get('families')
+    if not _valid_public_declaration(families) or not isinstance(families.get('patterns'), list):
+        raise ValueError('accounts.json needs families {patterns: [{pattern, models}]} as a dated maintainer declaration')
+    for i, entry in enumerate(families['patterns']):
+        if not isinstance(entry, dict) or not isinstance(entry.get('pattern'), str) or not isinstance(entry.get('models'), list):
+            raise ValueError(f'families.patterns[{i}] needs a pattern and a models list')
+        try:
+            re.compile(entry['pattern'])
+        except re.error as exc:
+            raise ValueError(f'families.patterns[{i}].pattern {entry["pattern"]!r} is not a regular expression: {exc}') from None
+        unknown = [m for m in entry['models'] if m not in models]
+        if unknown:
+            raise ValueError(f'families.patterns[{i}] ({entry["pattern"]}) names models without a row: {", ".join(map(str, unknown))}')
+    panel = doc.get('calibration_panel')
+    if not _valid_public_declaration(panel) or not isinstance(panel.get('anchor'), str) or not isinstance(panel.get('models'), list):
+        raise ValueError('accounts.json needs calibration_panel {anchor, models} as a dated maintainer declaration')
+    unknown = [m for m in [panel['anchor'], *panel['models']] if m not in models]
+    if unknown or panel['anchor'] not in panel['models']:
+        raise ValueError(f'calibration_panel anchor and models must be model rows, the anchor among the models'
+                         + (f' (no row: {", ".join(map(str, unknown))})' if unknown else ''))
+
+SCHEMA_VERSION = 4              # the newest data schema this code reads; bump with any breaking data change
 # Schema 3 (2026-11-11) switches to the four-category taxonomy (`divergence`, `coding`, `aesthetics`, `tool_operation`),
 # ships `five-axis-scores.json` and maintainer `user-scores.json` in the public channel, and rejects schema-2 sets
 # whose `classifier-cases.json` used the retired four-axis `axis_demand` keys.
-# five-axis-scores/3 (2026-11-13, level-3 ceilings) is additive: a schema-3 reader ignores the new fields, so the channel
-# schema stays 3 and installed releases keep receiving data. Newer code never selects a set published before its own
-# shipped copy, and axis_scores.require_level3_ceilings names a file without ceilings instead of failing with a KeyError.
-MIN_SCHEMA_VERSION = 3
+# Schema 4 (2026-11-13) moves per-model facts into accounts.json: `families`, `fast_capable` with `vendor_fast_mode`,
+# `list_price`, `listed_as` and `calibration_panel`. A schema-3 install keeps those facts in code tables and would apply
+# a later model addition only in part (no fast mode, no price, no family fold), so it stays on its last accepted set
+# until it is updated; this code needs the new fields and does not read schema-3 sets. five-axis-scores/3 (level-3
+# ceilings, `anchor.sd_panel`, `anchor.panel_change`) ships with schema 4; axis_scores.require_level3_ceilings names a
+# file without ceilings instead of failing with a KeyError.
+MIN_SCHEMA_VERSION = 4
+UPDATE_APP = 'update AgentCompass to the latest release to receive new reference data'
 FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'five-axis-scores.json', 'user-scores.json')
 MANIFEST = 'public-data.json'
 CONFIG_FILE = 'public-data-config.json'
@@ -231,7 +300,7 @@ def check_set(directory, manifest):
         return 'no_manifest', 'no public-data.json'
     schema = manifest.get('schema_version')
     if not isinstance(schema, int) or not MIN_SCHEMA_VERSION <= schema <= SCHEMA_VERSION:
-        return 'schema', f'data schema {schema!r}; this install reads {MIN_SCHEMA_VERSION}..{SCHEMA_VERSION}'
+        return 'schema', f'data schema {schema!r}; this install reads {_schema_range()}'
     if _parse(manifest.get('published_at')) is None:
         return 'incomplete', 'manifest has no published_at'
     files = manifest.get('files') if isinstance(manifest.get('files'), dict) else {}
@@ -398,6 +467,20 @@ def refresh(force=False, environ=None, fetch=None, now=None, bundled=None, timeo
     return result
 
 
+def _schema_range():
+    return (f'schema {SCHEMA_VERSION}' if MIN_SCHEMA_VERSION == SCHEMA_VERSION
+            else f'schema {MIN_SCHEMA_VERSION}..{SCHEMA_VERSION}')
+
+
+def reader_id():
+    """Content hash of the code that judges a published set (this module and user_scores.py). A set it rejected is
+    recorded with it (`rejected_by`), so an updated install, whose reader differs, looks at that set again."""
+    digest = hashlib.sha256()
+    for path in (Path(__file__), Path(__file__).with_name('user_scores.py')):
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
 def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
     raw = fetch(cfg['url'] + MANIFEST, timeout)
     manifest = json.loads(raw.decode('utf-8-sig'))
@@ -407,16 +490,26 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
     if isinstance(schema, int) and schema > SCHEMA_VERSION:
         state.update(checked_at=_stamp(now), last_error=None, remote_schema_version=schema,
                      note=(f'published data uses schema {schema}; this install reads up to {SCHEMA_VERSION}. '
-                           'It is ignored until AgentCompass is updated.'))
+                           f'The last accepted set stays in effect: {UPDATE_APP}.'))
         return {'status': 'schema_too_new', 'remote_schema_version': schema, 'schema_version': SCHEMA_VERSION}
-    if not isinstance(schema, int) or schema < MIN_SCHEMA_VERSION or _parse(manifest.get('published_at')) is None:
+    if isinstance(schema, int) and schema < MIN_SCHEMA_VERSION:
+        state.update(checked_at=_stamp(now), last_error=None, remote_schema_version=schema,
+                     note=(f'published data uses schema {schema}; this install reads {_schema_range()}. The last '
+                           'accepted set stays in effect; nothing to run, it is replaced when data for this release is '
+                           'published.'))
+        return {'status': 'schema_too_old', 'remote_schema_version': schema, 'schema_version': SCHEMA_VERSION}
+    if not isinstance(schema, int) or _parse(manifest.get('published_at')) is None:
         raise ValueError('published manifest has no usable schema_version or published_at')
     version = set_version(manifest)
+    if state.get('rejected_version') == version and state.get('rejected_by') == reader_id():
+        state.update(checked_at=_stamp(now), last_error=None)
+        return {'status': 'rejected', 'version': version, 'detail': state.get('note')}
     target = cache / 'sets' / version
     if check_set(target, _read_json(target / MANIFEST))[0] == 'ok':
         state.update(version=version, published_at=manifest['published_at'], schema_version=schema,
                      checked_at=_stamp(now), last_error=None, note=None, url=cfg['url'])
-        state.pop('remote_schema_version', None)
+        for key in ('remote_schema_version', 'rejected_version', 'rejected_by'):
+            state.pop(key, None)
         return {'status': 'unchanged', 'version': version}
     staging = cache / 'sets' / f'.staging-{uuid.uuid4().hex[:8]}'
     staging.mkdir(parents=True, exist_ok=True)
@@ -437,6 +530,13 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
             json.loads(data.decode('utf-8-sig'))
             (staging / name).write_bytes(data)
         (staging / MANIFEST).write_bytes(raw)
+        verdict, detail = check_set(staging, manifest)
+        if verdict != 'ok':
+            state.update(checked_at=_stamp(now), last_error=None, rejected_version=version, rejected_by=reader_id(),
+                         note=(f'published set {version} is not usable by this install ({verdict}: {detail}). '
+                               f'The last accepted set stays in effect: {UPDATE_APP}; if it is already the latest '
+                               'release, the published data is defective and must be republished.'))
+            return {'status': 'rejected', 'version': version, 'detail': detail}
         try:
             os.replace(staging, target)
         except OSError:
@@ -447,7 +547,8 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
     previous = state.get('version')
     state.update(version=version, published_at=manifest['published_at'], schema_version=schema, fetched_at=_stamp(now),
                  checked_at=_stamp(now), last_error=None, note=None, url=cfg['url'])
-    state.pop('remote_schema_version', None)
+    for key in ('remote_schema_version', 'rejected_version', 'rejected_by'):
+        state.pop(key, None)
     _prune(cache / 'sets', {version, previous})
     return {'status': 'updated', 'version': version, 'previous': previous, 'downloaded': downloaded}
 
@@ -494,10 +595,11 @@ def status(environ=None, bundled=None):
     cfg = config(environ)
     chosen = selection(bundled, environ)
     state = read_state(environ)
+    notes = list(dict.fromkeys(note for note in (chosen['note'], state.get('note')) if note))  # both: why this set, and what the last check found
     return {'enabled': cfg['enabled'], 'switch': cfg['switch'], 'source': chosen['source'], 'version': chosen['version'],
             'published_at': chosen['published_at'], 'schema_version': chosen['schema_version'],
             'reads_schema': SCHEMA_VERSION, 'bundled_version': chosen['bundled_version'], 'dir': chosen['dir'],
-            'note': chosen['note'] or state.get('note'), 'fetched_at': state.get('fetched_at'),
+            'note': '; '.join(notes) or None, 'fetched_at': state.get('fetched_at'),
             'checked_at': state.get('checked_at'), 'last_error': state.get('last_error'), 'url': cfg['url'],
             'interval_hours': cfg['interval_hours'], 'cache': str(cache_dir(environ))}
 
@@ -517,7 +619,7 @@ def summary_line(report):
 
 
 USAGE = """usage: agentcompass data [--refresh]
-       agentcompass data refresh [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE]
+       agentcompass data refresh [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--model ID ...]
 
 Shows which public reference data (accounts.json, plan-templates.json, classifier-cases.json, five-axis-scores.json,
 user-scores.json) routing reads: the copy shipped with this install, or the newer set fetched from the AgentCompass
@@ -527,6 +629,8 @@ repository's main branch.
 
 Maintainers (in a git checkout):
   agentcompass data refresh [--no-fetch]   rebuild calibrated data, capability views and public-data.json, then validate
+  agentcompass data refresh --model ID     after adding model ID to accounts.json: merge only its measurement rows on the
+                                           shipped scale and rebuild the rest (a panel model needs the full refresh)
   public_data.py manifest [--check | --write]   verify or rewrite references/public-data.json after hand edits
 Off switch: AGENTCOMPASS_PUBLIC_DATA=off, or {"enabled": false} in ~/.agent-compass/public-data-config.json.
 """

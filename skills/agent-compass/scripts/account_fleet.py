@@ -1,9 +1,12 @@
 """Account and inventory loading: the fleet document, discovery overlay, model identity, bundles and harness capabilities."""
 
+import atexit
 import json
 import os
 from pathlib import Path
 import re
+import shutil
+import tempfile
 
 import host_policy
 import provider_retry
@@ -11,7 +14,7 @@ import provider_inventory
 import public_data
 import accounts_override
 import cwd_policy
-from model_resolution import DIRECT_SOURCES, resolve_model as _resolve_model, resolve_canonical_model, split_model_effort
+from model_resolution import DIRECT_SOURCES, family_patterns, resolve_model as _resolve_model, resolve_canonical_model, split_model_effort
 
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
@@ -48,9 +51,22 @@ def configured_quota_sources(environ=None):
     return provider_inventory.quota_sources(doc)
 
 
+_REFERENCE_FLEET = {}
+
+
 def reference_fleet_path():
-    """Checked-in fleet fixture for tests. It is not read from the user home."""
-    return Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json'
+    """Fleet fixture for tests, never read from the user home: the checked-in fixtures/reference-accounts.json completed
+    with the shipped catalog's `families` declaration, so the family patterns have one source. Written once per process
+    to a temporary file, removed at exit."""
+    if 'path' not in _REFERENCE_FLEET:
+        doc = json.loads((Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json').read_text(encoding='utf-8-sig'))
+        doc['families'] = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))['families']
+        folder = Path(tempfile.mkdtemp(prefix='agentcompass-reference-fleet-'))
+        atexit.register(shutil.rmtree, folder, True)
+        path = folder / 'reference-accounts.json'
+        path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
+        _REFERENCE_FLEET['path'] = path
+    return _REFERENCE_FLEET['path']
 
 
 def load_accounts(path=None):
@@ -116,11 +132,12 @@ def models_table(accounts):
 
 def resolve_model(model, accounts):
     """model_resolution.resolve_model against this document: {'key', 'source', 'effort', 'bare'}."""
-    return _resolve_model(model, accounts.get('models', {}), accounts.get('aliases', {}))
+    return _resolve_model(model, accounts.get('models', {}), accounts.get('aliases', {}), family_patterns(accounts))
 
 
 def canonical(model, accounts):
-    return resolve_canonical_model(model, accounts.get('models', {}), accounts.get('aliases', {})) or model
+    return resolve_canonical_model(model, accounts.get('models', {}), accounts.get('aliases', {}),
+                                   family_patterns(accounts)) or model
 
 
 def model_spec(accounts, model):

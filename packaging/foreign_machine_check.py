@@ -9,7 +9,7 @@ Designed the pstack way (behavior over implementation, prove it works from packa
   - Never touches the real user profile, real credentials, or external network (all HTTP goes through sandbox_check's
     sitecustomize netguard to local fixture servers; all CLIs are fixture executables in a throwaway PATH).
   - Covers every failure hit when syncing to a second host (LITTLESPRING / LS) and every 0.3.6 behavior:
-      F01  Stale install & public reference data channel (schema 3 fetch, sha256 & corrupt JSON rejection, schema-1 reader sees schema 3, opt-out, doctor line)
+      F01  Stale install & public reference data channel (shipped-schema fetch, sha256 & corrupt JSON rejection, schema-1 reader sees the shipped schema, opt-out, doctor line)
       F02  Fleet parity on a clean install with no accounts.local.json
       F03  Classifier cascade across families and multi-home accounts (jev absent, ~/.claude signed out, ~/.claude-2 signed in)
       F04  Quota, window scope, gate parity, control-message exemption, discovered model management, no twin bundles, and agy 3p pool-prior capacity
@@ -54,6 +54,9 @@ import zero_dispatch_check as zd  # noqa: E402
 
 ROOT = sc.ROOT
 USAGE_FLOAT_SRC = ROOT / "usage-float"
+# The data schema this checkout ships (router-internals, Public reference data); checks derive from it, never a literal.
+SHIPPED_SCHEMA = json.loads((ROOT / "skills" / "agent-compass" / "references" / "public-data.json")
+                            .read_text(encoding="utf-8"))["schema_version"]
 
 FOREIGN_ALLOWED_HOSTS = (
     "chatgpt.com",
@@ -215,7 +218,7 @@ class ForeignFixtureServer:
             "sha256": hashlib.sha256(self.updated_accounts_bytes).hexdigest(),
             "bytes": len(self.updated_accounts_bytes),
         }
-        schema_ver = int(manifest.get("schema_version") or 3)
+        schema_ver = manifest["schema_version"]
         public_files_order = tuple(files.keys())
         lines = [f"schema {schema_ver}"] + [f"{name} {files[name]['sha256']}" for name in public_files_order]
         self.updated_version = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:12]
@@ -458,7 +461,7 @@ def parse_json(text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# F01: Stale install & Public reference data channel (schema 3; a schema-1 reader still refuses a newer set)
+# F01: Stale install & Public reference data channel (shipped schema; a schema-1 reader still refuses a newer set)
 
 
 def verify_f01_public_data_and_installed_copy(ctx: dict):
@@ -467,23 +470,23 @@ def verify_f01_public_data_and_installed_copy(ctx: dict):
     box = make_profile(ctx, "f01-public-data")
     op = run.operation(
         "F01 stale-install & public reference data channel",
-        "Installed wheel runs from site-packages (not checkout), fetches sha256+schema-3 verified public reference data, rejects tampered/corrupt sets, preserves bundled set when a schema-1 reader sees schema 3, reports in doctor, and honours AGENTCOMPASS_PUBLIC_DATA=off",
+        "Installed wheel runs from site-packages (not checkout), fetches sha256+schema verified public reference data, rejects tampered/corrupt sets, preserves bundled set when a schema-1 reader sees the shipped schema, reports in doctor, and honours AGENTCOMPASS_PUBLIC_DATA=off",
     )
     env = base_cli_env(box, ctx, extra={"AGENTCOMPASS_PUBLIC_DATA": "1"})
 
     # 1. Verify installed copy location (not repo checkout) and default bundled status.
-    # Schema 3 is the only schema this install reads (router-internals, Public reference data).
+    # The shipped schema is the only one this install reads (router-internals, Public reference data).
     res_status = run_in_box(box, op, [box.agentcompass, "data"], env)
     doc_status = parse_json(res_status.stdout)
     op.check("agentcompass data exits 0", res_status.returncode == 0, res_status.stderr)
-    op.check("initial reference data source is bundled schema 3",
-             doc_status.get("source") == "bundled" and doc_status.get("schema_version") == 3,
+    op.check(f"initial reference data source is bundled schema {SHIPPED_SCHEMA}",
+             doc_status.get("source") == "bundled" and doc_status.get("schema_version") == SHIPPED_SCHEMA,
              doc_status)
     active_dir = Path(doc_status.get("dir") or "")
     op.check("active bundled dir is inside the venv's site-packages, never the repo checkout",
              "site-packages" in active_dir.parts and ROOT not in active_dir.parents, str(active_dir))
 
-    # 2. Refresh from GitHub main fixture (valid sha256 + valid schema 3)
+    # 2. Refresh from GitHub main fixture (valid sha256 + the shipped schema)
     fx.public_data_mode = "valid_update"
     res_refresh = run_in_box(box, op, [box.agentcompass, "data", "--refresh"], env)
     doc_refresh = parse_json(res_refresh.stdout)
@@ -502,12 +505,12 @@ def verify_f01_public_data_and_installed_copy(ctx: dict):
              cached_accounts.get("public_channel_verified") == "0.3.6-fetched",
              cached_accounts.get("public_channel_verified"))
 
-    # 3. Doctor reports Reference data: fetched ... schema 3 (public_data.summary_line).
+    # 3. Doctor reports Reference data: fetched ... schema <shipped> (public_data.summary_line).
     res_doc = run_in_box(box, op, [box.agentcompass, "doctor"], env)
-    op.check("doctor reports Reference data: fetched <version> (..., schema 3, ...)",
+    op.check(f"doctor reports Reference data: fetched <version> (..., schema {SHIPPED_SCHEMA}, ...)",
              res_doc.returncode == 0
              and f"Reference data: fetched {fx.updated_version}" in res_doc.stdout
-             and "schema 3" in res_doc.stdout,
+             and f"schema {SHIPPED_SCHEMA}" in res_doc.stdout,
              res_doc.stdout)
 
     # 4. Tampered sha256 is rejected and does not overwrite active fetched version
@@ -531,7 +534,7 @@ def verify_f01_public_data_and_installed_copy(ctx: dict):
              and doc_bad_json.get("version") == fx.updated_version,
              doc_bad_json)
 
-    # 6. A schema-1 reader fetching the published schema-3 set keeps its bundled set without error
+    # 6. A schema-1 reader fetching the published set of the shipped schema keeps its bundled set without error
     fx.public_data_mode = "valid_update"
     scripts_dir = box.data / "skills" / "agent-compass" / "scripts"
     compat_dir = box.root / "v035-bundled-refs"
@@ -560,7 +563,7 @@ def verify_f01_public_data_and_installed_copy(ctx: dict):
     op.check("a 0.3.5 install fetching newer-schema public data returns schema_too_new and keeps its bundled set without error",
              res_v035.returncode == 0
              and (doc_v035.get("outcome") or {}).get("status") == "schema_too_new"
-             and (doc_v035.get("outcome") or {}).get("remote_schema_version") == 3
+             and (doc_v035.get("outcome") or {}).get("remote_schema_version") == SHIPPED_SCHEMA
              and (doc_v035.get("status") or {}).get("source") == "bundled"
              and (doc_v035.get("status") or {}).get("version") == "v035bundled1"
              and (doc_v035.get("status") or {}).get("last_error") is None,

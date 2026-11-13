@@ -651,6 +651,8 @@ class Panel(ScoringPage, QuotaPage, PolicyPage, ModelsTab, StrategyTab, SystemTa
                 tip.destroy()
         def show(event):
             hide()
+            if not getattr(widget, "_tooltip_text", ""):
+                return
             tip = widget._tooltip_window = self.tk.Toplevel(self.root)
             tip.overrideredirect(True)
             tip.attributes("-topmost", True)

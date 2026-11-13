@@ -35,10 +35,9 @@ def isolated_router_state(add_cleanup, *, discovery=True, policy=True):
                AGENTCOMPASS_ACCOUNTS_OVERRIDE=str(root / 'accounts-override.json'),
                ROUTER_SCORER_CONFIG=str(root / 'scorer-config.json'), AGENTCOMPASS_PUBLIC_DATA='off',
                AGENTCOMPASS_ANTIGRAVITY_PLAN='off', AGENTCOMPASS_LIVE_MODELS='off')
-    # Point tests at the checked-in fixture so they do not depend on the current public data.
-    reference = Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json'
-    if reference.is_file():
-        env['ROUTER_ACCOUNTS_FILE'] = str(reference)
+    # Point tests at the fleet fixture so they do not depend on the current public data.
+    import account_fleet
+    env['ROUTER_ACCOUNTS_FILE'] = str(account_fleet.reference_fleet_path())
     stack.enter_context(patch.dict(os.environ, env, clear=True))
     stack.enter_context(patch.object(Path, 'home', return_value=root))
     # user_env otherwise falls back to the Windows registry, outside the fixture.

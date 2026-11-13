@@ -74,7 +74,7 @@ class RouterGateHookTests(unittest.TestCase):
             "ROUTER_DISPATCH_DB": str(self.state / "dispatch.sqlite3"),
             "ROUTER_HOST_POLICY": str(self.state / "host-policy.json"),
             "AGENTCOMPASS_ACCOUNTS_OVERRIDE": str(self.state / "accounts-override.json"),
-            "ROUTER_ACCOUNTS_FILE": str(Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts" / "fixtures" / "reference-accounts.json"),
+            "ROUTER_ACCOUNTS_FILE": str(gate.router_module("account_fleet").reference_fleet_path()),
         })
         env.start()
         self.addCleanup(env.stop)
@@ -624,7 +624,8 @@ class RouterGateHookTests(unittest.TestCase):
                 cache = self.exhausted_cache(**changes)
                 self.assertEqual(gate.check_account_quota_exhausted("claude-lab", cache, T0) is not None, blocked)
         # Dict-shaped window specs with custom launch_min_remaining_pct apply across non-Claude accounts too.
-        custom_accounts = {"accounts": {"team-proxy": {"windows": {"spend": {"hours": 168, "launch_min_remaining_pct": 15}}}}}
+        custom_accounts = {"families": {"patterns": []},
+                           "accounts": {"team-proxy": {"windows": {"spend": {"hours": 168, "launch_min_remaining_pct": 15}}}}}
         cache = self.state / "usage.json"
         for used_pct, blocked in ((86.0, True), (80.0, False)):
             cache.write_text(json.dumps({"providers": {"team-proxy": {
@@ -1680,7 +1681,7 @@ class BoundDispatchGateTests(unittest.TestCase):
             'ROUTER_GATE_BYPASS': '0', 'PASEO_AGENT_ID': '',
             'ROUTER_HOST_POLICY': str(root / 'host-policy.json'),
             'AGENTCOMPASS_ACCOUNTS_OVERRIDE': str(root / 'accounts-override.json'),
-            'ROUTER_ACCOUNTS_FILE': str(Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'scripts' / 'fixtures' / 'reference-accounts.json'),
+            'ROUTER_ACCOUNTS_FILE': str(gate.router_module('account_fleet').reference_fleet_path()),
         })
         env.start()
         self.addCleanup(env.stop)
