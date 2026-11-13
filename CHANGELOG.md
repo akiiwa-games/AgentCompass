@@ -2,6 +2,17 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.6.0 - 2026-11-13
+
+- Top-level (level 3) demands are capped at the best measured model, not at the anchor, so a model above the anchor is credited on the hardest tasks. A change of the calibration panel stops a data refresh until it is accepted.
+- Adding a model is a data edit: per-model facts moved from code into `references/accounts.json`, and `agentcompass data refresh --model <id>` merges only that model's measurements on the shipped scale.
+- Gemini 4 Hydrogen joins the catalogue, scored from public boards.
+- Antigravity Ultra: the Claude / GPT quota windows were sized at 5x / 20x the Pro figure, about fifty times too large. Ultra 20x now uses a maintainer measurement (about $24 per 5 hours and $48 per week at list prices); on Ultra 5x the capacity is unknown and those bundles leave automatic routing. The Gemini windows are unchanged.
+- The continuation verdict says "same worker" only when a new turn to that worker would be admitted; otherwise it says to roll and names the reason.
+- The spawn gate reads a shell call in the dialect it runs in and decides from the program each command runs.
+- Public reference data moves to schema 4: v0.5.1 and earlier keep their last data set until they update.
+- `agentcompass score list|set|clear` starts again; CI runs the fast test suite on every pull request.
+
 ## v0.5.1 - 2026-11-13
 
 - A dollar API key shows the dollars it has spent (read from the key's own spend endpoint, no completion request); a budget is a balance that does not recover. Self-built harness keys are found without a network call.
