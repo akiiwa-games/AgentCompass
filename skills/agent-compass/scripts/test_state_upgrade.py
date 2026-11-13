@@ -169,6 +169,8 @@ class StateUpgradeContractTests(unittest.TestCase):
             old_skill,
         ):
             self.assertTrue(any(str(expected_file) in issue for issue in issues), f'Missing issue for {expected_file}')
+        # Setup does not retire a link it never recorded, so the fix for the old skill link is to delete it.
+        self.assertTrue(any(issue.endswith(f'Fix: {state_upgrade.fix_delete(old_skill)}.') for issue in issues))
 
     def test_runtime_loaders_fail_fast_with_the_exact_same_message_as_doctor(self):
         env = self._env()

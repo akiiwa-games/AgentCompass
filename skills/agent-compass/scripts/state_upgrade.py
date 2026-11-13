@@ -665,8 +665,9 @@ def check_hooks_and_rules(home: Path, environ: dict | None = None) -> list[str]:
     for sroot in skill_roots:
         old_skill = sroot / 'route-agent-work'
         if old_skill.exists() or old_skill.is_symlink():
+            # Setup retires only the links its own manifest records; this one predates the manifest.
             issues.append(format_issue(
-                old_skill, 'older skill link route-agent-work (renamed to agent-compass)', FIX_SETUP,
+                old_skill, 'older skill link route-agent-work (renamed to agent-compass)', fix_delete(old_skill),
             ))
         cur_skill = sroot / 'agent-compass'
         try:
