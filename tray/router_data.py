@@ -732,6 +732,11 @@ def signed_out(row: dict | None) -> bool:
     return not (row.get("identity") or row.get("credential_key"))
 
 
+def capacity_price_error() -> str | None:
+    """The named price error of the last usage-statistics pass (capacity.json `price_error`), or None."""
+    return _read_json(STATE_DIR / "capacity.json").get("price_error")
+
+
 def account_cards() -> list[dict]:
     _, router = modules()
     import axis_scores

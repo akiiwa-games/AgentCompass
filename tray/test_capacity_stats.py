@@ -165,7 +165,7 @@ class ScanTests(Fixture):
         self.assertAlmostEqual(opus, 4 + 0.2 + 20)
         self.assertAlmostEqual(opus, 2 * sonnet)
         self.assertAlmostEqual(cs.list_usd("gpt-6-astra/high", out=1_000_000), 5 * cs.list_usd("gpt-6.1-sol", out=1_000_000))
-        self.assertEqual(cs.list_usd("gemini-3.8-flash-high", out=1_000_000), 0.0)     # unpriced: the token fit stays
+        self.assertIsNone(cs.list_usd("gemini-3.8-flash-high", out=1_000_000))     # unpriced, never a zero price
         base = self.root / ".claude" / "projects" / "p"
         call = json.dumps({"timestamp": stamp(0), "message": {"id": "m1", "model": "claude-opus-5-5", "usage": {
             "input_tokens": 1000, "cache_creation_input_tokens": 3000, "cache_creation": {"ephemeral_1h_input_tokens": 1000},
@@ -347,7 +347,7 @@ class AntigravityTests(Fixture):
         for name, hours in (("a", {1: 0.5, 2: 0.25}), ("b", {1: 0.5})):
             entry = cs.new_entry(Path(name), "antigravity")
             for hour, worked in hours.items():
-                entry["buckets"][cs.hour_key(T0 + hour * HOUR)] = {"gemini-3.8-flash-high": [worked * 3600, 5, 0, 0]}
+                entry["buckets"][cs.hour_key(T0 + hour * HOUR)] = {"gemini-3.8-flash-high": [worked * 3600, 5, 0, 0, 0.0, 5]}
             entries[name] = entry
         state = {"schema": cs.SCHEMA, "files": entries, "usage_samples": {}}
         stats = cs.daily_stats(state, T0 + 10 * HOUR)
@@ -357,11 +357,61 @@ class AntigravityTests(Fixture):
         self.assertAlmostEqual(hours, 1.25, places=3)
 
 
+class PriceTableTests(Fixture):
+    def catalog(self, models):
+        scripts = self.root / ".codex" / "skills" / "agent-compass" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "usage_cache.py").write_text("", encoding="utf-8")
+        (scripts / "public_data.py").write_text("def effective(path, environ=None):\n    return path\n", encoding="utf-8")
+        (scripts.parent / "references").mkdir()
+        (scripts.parent / "references" / "accounts.json").write_text(json.dumps({"models": models}), encoding="utf-8")
+        environ = mock.patch.dict(cs.os.environ, {"CODEX_HOME": str(self.root / ".codex")})
+        environ.start()
+        self.addCleanup(environ.stop)
+        path = mock.patch.object(cs.sys, "path", [str(scripts), *[p for p in cs.sys.path if not p.endswith("scripts")]])
+        path.start()
+        self.addCleanup(path.stop)
+        modules = mock.patch.dict(cs.sys.modules)
+        modules.start()
+        self.addCleanup(modules.stop)
+        cs.sys.modules.pop("public_data", None)
+
+    def test_a_catalog_with_no_list_price_at_all_is_a_named_error_not_an_empty_table(self):
+        self.catalog({"model-a": {"family": "x"}, "model-b": {"family": "x"}})
+        with self.assertRaises(cs.PriceTableError) as raised:
+            cs.load_prices()
+        self.assertIn("accounts.json", str(raised.exception))
+        self.assertIn("update AgentCompass", str(raised.exception))
+
+    def test_a_catalog_with_prices_loads_them(self):
+        price = {"input": 1, "cache_write_5m": 2, "cache_write_1h": 3, "cache_read": 0.5, "output": 4}
+        self.catalog({"model-a": {"list_price": price}, "model-b": {}})
+        self.assertEqual(cs.load_prices(), {"model-a": (1.0, 2.0, 3.0, 0.5, 4.0)})
+
+    def test_without_a_price_table_calls_are_unpriced_and_both_outputs_carry_the_error(self):
+        with mock.patch.object(cs, "PRICES", None), mock.patch.object(cs, "PRICE_ERROR", "no list_price"):
+            self.assertIsNone(cs.list_usd("model-a", out=1_000_000))
+            self.rollout(lines=[turn_context(model="model-a"), codex_call(0, 100)])
+            state = {"schema": cs.SCHEMA, "files": {}, "usage_samples": {}}
+            cs.scan_all(state, T0 + 1000, 14)
+            self.assertEqual(cs.measure(state, T0 + 1000)["price_error"], "no list_price")
+            stats = cs.daily_stats(state, T0 + 1000)
+        self.assertEqual(stats["price_error"], "no list_price")
+        row = next(v for day in stats["days"].values() for acc in day.values() for v in acc.values())
+        self.assertEqual((row["list_usd"], row["unpriced_calls"]), (None, row["calls"]))
+
+    def test_with_a_price_table_the_outputs_carry_no_error(self):
+        state = {"schema": cs.SCHEMA, "files": {}, "usage_samples": {}}
+        with mock.patch.object(cs, "PRICE_ERROR", None):
+            self.assertNotIn("price_error", cs.measure(state, T0))
+            self.assertNotIn("price_error", cs.daily_stats(state, T0))
+
+
 class MeasureTests(Fixture):
     def state_with(self, hours, readings, account="codex", tokens=(1000, 100)):
         entry = cs.new_entry(Path("x.jsonl"), account)
         for offset_hour, worker_hours in hours.items():
-            entry["buckets"][cs.hour_key(T0 + offset_hour * HOUR)] = {"b/x": [worker_hours * 3600, 10, tokens[0], tokens[1]]}
+            entry["buckets"][cs.hour_key(T0 + offset_hour * HOUR)] = {"b/x": [worker_hours * 3600, 10, tokens[0], tokens[1], 0.0, 0]}
         state = {"schema": cs.SCHEMA, "files": {"k": entry}, "usage_samples": {}}
         series = state["usage_samples"].setdefault(account, {}).setdefault("usage", [])
         for offset, used in readings:

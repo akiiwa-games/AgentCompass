@@ -367,6 +367,7 @@ class QuotaPage:
             bg=theme.BG, fg=theme.MUTED, font=(theme.FONT, 9), cursor="hand2")
         self.quota_updated.pack(side="right", padx=(0, 10))
         self.quota_updated.bind("<Button-1>", lambda _e: self.refresh_usage())
+        self.attach_tooltip(self.quota_updated)   # shows the usage statistics' price error, when there is one
 
         self.quota_cols = None
         self._configured_quota_cols = 0
@@ -581,12 +582,14 @@ class QuotaPage:
         if hasattr(self, "quota_updated"):
             read_stamp = quota_reading_stamp(cards)
             if read_stamp:
-                self.quota_updated.configure(
-                    text=f"{tr('剩余额度%', 'Remaining %')} · {tr('读数于', 'Read at')} {read_stamp} ↻")
+                text = f"{tr('剩余额度%', 'Remaining %')} · {tr('读数于', 'Read at')} {read_stamp} ↻"
             else:
-                stamp = time.strftime("%H:%M:%S")
-                self.quota_updated.configure(
-                    text=f"{tr('剩余额度%', 'Remaining %')} · {tr('更新于', 'Updated')} {stamp} ↻")
+                text = f"{tr('剩余额度%', 'Remaining %')} · {tr('更新于', 'Updated')} {time.strftime('%H:%M:%S')} ↻"
+            price_error = self.data_module().capacity_price_error()
+            if price_error:
+                text += f" · ⚠ {tr('用量无法计价', 'Usage unpriced')}"
+            self.quota_updated._tooltip_text = price_error or ""
+            self.quota_updated.configure(text=text)
         self.sync_quota_geometry()
 
     def quota_loaded(self, value):

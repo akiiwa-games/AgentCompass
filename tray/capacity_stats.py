@@ -71,8 +71,12 @@ USAGE_CACHE = Path(os.environ["ROUTER_USAGE_CACHE"]) if os.environ.get("ROUTER_U
 # cache write 1 h, cache read, output; cited in `list_price_source`). A subscription is not billed per token, but how much
 # of a window a call takes is assumed to follow these prices: an Opus token costs twice a Sonnet token, an Astra token five
 # times a Sol token. Without them one shared per-token rate made a model that moves fewer tokens look cheaper whatever its
-# price. A model without a list price keeps its account's token fit.
+# price. A call of a model without a list price is counted as unpriced (no dollars, never a zero price). A catalog with no
+# list price at all predates public data schema 4: that is PRICE_ERROR, written into capacity.json for the quota page.
 PRICE_FIELDS = ("input", "cache_write_5m", "cache_write_1h", "cache_read", "output")
+# One bucket slot per hour and model/effort: active seconds, calls, input tokens, output tokens, list-price dollars of the
+# priced calls, unpriced calls.
+SLOT_FIELDS = ("seconds", "calls", "input_tokens", "output_tokens", "list_usd", "unpriced_calls")
 
 
 # ------------------------------------------------------------------ small helpers
@@ -118,28 +122,43 @@ def skill_scripts() -> Path | None:
     return None
 
 
+class PriceTableError(RuntimeError):
+    """The catalog in effect has no list price on any model, so no call can be priced."""
+
+
 def load_prices() -> dict[str, tuple[float, ...]]:
     """{model id: list price per PRICE_FIELDS} from the catalog in effect (public_data.effective over the shipped copy)."""
     scripts = skill_scripts()
     if scripts is None:
         raise RuntimeError("agent-compass skill scripts not found: the catalog holding the models' list prices is unavailable")
     import public_data
-    doc = json.loads(public_data.effective(scripts.parent / "references" / "accounts.json").read_text(encoding="utf-8-sig"))
-    return {model: tuple(float(row["list_price"][f]) for f in PRICE_FIELDS)
-            for model, row in doc["models"].items() if isinstance(row, dict) and row.get("list_price")}
+    path = public_data.effective(scripts.parent / "references" / "accounts.json")
+    doc = json.loads(path.read_text(encoding="utf-8-sig"))
+    prices = {model: tuple(float(row["list_price"][f]) for f in PRICE_FIELDS)
+              for model, row in doc["models"].items() if isinstance(row, dict) and row.get("list_price")}
+    if not prices:
+        raise PriceTableError(f"the model catalog in effect ({path}) has no list_price on any model, so no call can be "
+                              "priced; update AgentCompass to the latest release to receive new reference data")
+    return prices
 
 
-PRICES = load_prices()
-# A state scanned under another price/model table is read from the logs again.
-PRICE_VERSION = short_hash(json.dumps(PRICES, sort_keys=True))
+try:
+    PRICES, PRICE_ERROR = load_prices(), None
+except PriceTableError as error:
+    PRICES, PRICE_ERROR = None, str(error)
+# A state scanned under another price/model table or slot shape is read from the logs again.
+PRICE_VERSION = short_hash(json.dumps({"slot": SLOT_FIELDS, "prices": PRICES}, sort_keys=True))
 
 
-def list_usd(model: str, fresh: int = 0, write_5m: int = 0, write_1h: int = 0, read: int = 0, out: int = 0) -> float:
-    """List-price dollars of one call, or 0.0 when the model has no price (its account then keeps the token fit)."""
+def list_usd(model: str, fresh: int = 0, write_5m: int = 0, write_1h: int = 0, read: int = 0, out: int = 0) -> float | None:
+    """List-price dollars of one call, or None when it cannot be priced: the model has no list price, or the catalog
+    has none at all (PRICE_ERROR)."""
+    if PRICES is None:
+        return None
     name = (model or "").split("/")[0]
     key = max((k for k in PRICES if name.startswith(k)), key=len, default=None)
     if key is None:
-        return 0.0
+        return None
     price = PRICES[key]
     return (fresh * price[0] + write_5m * price[1] + write_1h * price[2] + read * price[3] + out * price[4]) / 1e6
 
@@ -229,17 +248,21 @@ def new_entry(path: Path, account: str) -> dict:
             "last_bundle": None, "last_t": None, "buckets": {}, "samples": {}, "ids": []}
 
 
-def add_call(entry: dict, ts: float, bundle: str, tokens_in: int, tokens_out: int, usd: float = 0.0) -> None:
+def add_call(entry: dict, ts: float, bundle: str, tokens_in: int, tokens_out: int, usd: float | None) -> None:
+    """Fold one call into its hour's slot (SLOT_FIELDS); `usd` None counts the call as unpriced."""
     prev = entry["prev"]
     active = 0.0 if prev is None else max(0.0, min(ts - prev, ACTIVE_GAP_SECONDS))
     entry["prev"] = entry["last_t"] = ts
     entry["last_bundle"] = bundle
-    slot = entry["buckets"].setdefault(hour_key(ts), {}).setdefault(bundle, [0.0, 0, 0, 0, 0.0])
+    slot = entry["buckets"].setdefault(hour_key(ts), {}).setdefault(bundle, [0.0, 0, 0, 0, 0.0, 0])
     slot[0] += active
     slot[1] += 1
     slot[2] += tokens_in
     slot[3] += tokens_out
-    slot[4] += usd
+    if usd is None:
+        slot[5] += 1
+    else:
+        slot[4] += usd
 
 
 def read_new_lines(path: Path, entry: dict):
@@ -492,7 +515,7 @@ def scan_antigravity(path: Path, entry: dict) -> None:
         entry["total"] = idx + 1
         ts = step_time(bytes(blob)) if blob else None
         if ts is not None:
-            add_call(entry, float(ts), entry["model"] or "?", 0, 0)
+            add_call(entry, float(ts), entry["model"] or "?", 0, 0, None)   # no token counts: unpriced
     entry["offset"] = stamp
 
 
@@ -669,7 +692,7 @@ def usage_by_hour(state: dict, account: str) -> dict[str, dict[str, list[float]]
                     row[0] += slot[0] / 3600
                     row[1] += slot[2]
                     row[2] += slot[3]
-                    row[3] += slot[4] if len(slot) > 4 else 0.0
+                    row[3] += slot[4]
     return table
 
 
@@ -690,7 +713,7 @@ def rate_in(series: list[list[float]], now: float, hours: float, plan_changed: f
 
 def measure(state: dict, now: float, days: int = LOOKBACK_DAYS) -> dict:
     document = {"v": SCHEMA, "generated_at": iso(now), "lookback_days": days, "observed": {}, "active_workers": {},
-                "worker_hours": {}}
+                "worker_hours": {}, **({"price_error": PRICE_ERROR} if PRICE_ERROR else {})}
     accounts = {e["account"] for e in state["files"].values()} | set(state["usage_samples"])
     for account in sorted(accounts):
         table = usage_by_hour(state, account)
@@ -736,12 +759,13 @@ def daily_stats(state: dict, now: float, days: int = LOOKBACK_DAYS) -> dict:
             day = datetime.fromtimestamp(key_epoch(hour), UTC).astimezone(zone).date().isoformat()
             for bundle, slot in bundles.items():
                 seconds, calls, tokens_in, tokens_out = slot[:4]
-                row = table.setdefault(day, {}).setdefault(entry["account"], {}).setdefault(bundle, [0.0, 0, 0, 0, 0.0])
+                row = table.setdefault(day, {}).setdefault(entry["account"], {}).setdefault(bundle, [0.0, 0, 0, 0, 0.0, 0])
                 row[0] += seconds / 3600
                 row[1] += calls
                 row[2] += tokens_in
                 row[3] += tokens_out
-                row[4] += slot[4] if len(slot) > 4 else 0.0
+                row[4] += slot[4]
+                row[5] += slot[5]
                 if seconds > 0:
                     agents[(day, entry["account"])].add(key)
                 per_hour[(day, entry["account"])][hour] += seconds / 3600
@@ -750,14 +774,16 @@ def daily_stats(state: dict, now: float, days: int = LOOKBACK_DAYS) -> dict:
         days_out[day] = {}
         for account, bundles in accounts_.items():
             hours = per_hour[(day, account)]
+            # list_usd covers the priced calls only, and is None when no call of the bundle could be priced.
             days_out[day][account] = {bundle: {"worker_hours": round(v[0], 3), "calls": v[1], "input_tokens": v[2],
-                                               "output_tokens": v[3], "list_usd": round(v[4], 2)} for bundle, v in bundles.items()}
+                                               "output_tokens": v[3], "list_usd": None if v[1] and v[5] == v[1] else round(v[4], 2),
+                                               **({"unpriced_calls": v[5]} if v[5] else {})} for bundle, v in bundles.items()}
             # Agents that worked, and the busiest hour's mean concurrency (active hours in one clock hour = agents running).
             crowd.setdefault(day, {})[account] = {"agents": len(agents[(day, account)]),
                                                   "peak_hour_concurrency": round(max(hours.values(), default=0.0), 2)}
     return {"v": SCHEMA, "generated_at": iso(now),
             "unit": f"worker-hours = actively running session time; gaps over {ACTIVE_GAP_SECONDS}s are idle",
-            "days": days_out, "agents": crowd}
+            "days": days_out, "agents": crowd, **({"price_error": PRICE_ERROR} if PRICE_ERROR else {})}
 
 
 # ------------------------------------------------------------------ run
