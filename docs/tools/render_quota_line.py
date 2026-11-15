@@ -1,4 +1,4 @@
-"""Render docs/quota-line.gif off-screen: the Decision Compass "Quota line" tab replaying two synthetic decisions.
+"""Render docs/quota-line.webp off-screen: the Decision Compass "Quota line" tab replaying two synthetic decisions.
 
     python docs/tools/render_quota_line.py [--scale 1.5] [--fps 20] [--speed 1.6] [--check-dir DIR]
 
@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import render_hero as hero
 import render_ui_screenshots as shots
 
-OUTPUT = shots.ROOT / "docs" / "quota-line.gif"
+OUTPUT = shots.ROOT / "docs" / "quota-line.webp"
 POSTER_MS, LEAD_MS, HOLD_MS = 600, 400, 1400      # the opening still, the bare view before a replay, its settled result
 CHECKS = (0., 1.4, 3.5, 5.2, 7.6, 9.9)             # story times compared against the real window
 
@@ -91,8 +91,6 @@ def frames_from_window(args, state):
 
 
 def main() -> None:
-    from PIL import Image
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--scale", type=float, default=1.5, help="display scale; 1.5 gives a ~630 px wide card")
@@ -103,16 +101,7 @@ def main() -> None:
     import ui_theme
     ui_theme.dpi_aware()
     shots.offscreen(lambda state: frames_from_window(args, state), "agentcompass-quota-line-")
-    encoded = hero.encode(args.frames, args.stage)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    encoded[0].save(args.output, save_all=True, append_images=encoded[1:], duration=args.durations,
-                    loop=0, optimize=True, disposal=1)
-    size = args.output.stat().st_size
-    if size > 8 * 1024 * 1024:
-        raise RuntimeError("README GIF exceeds the 8 MiB limit")
-    with Image.open(args.output) as gif:
-        print(f"{args.output.name}: {gif.width}x{gif.height}, {gif.n_frames} frames, "
-              f"{args.fps} fps, {sum(args.durations)} ms, {size:,} bytes")
+    hero.save_animation(args.output, args.frames, args.durations, args.stage, args.fps)
 
 
 if __name__ == "__main__":

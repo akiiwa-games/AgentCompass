@@ -14,12 +14,12 @@
 <table>
   <tr>
     <td align="center" width="62%">
-      <img src="docs/hero.gif" width="520" alt="Decision Compass replaying a synthetic decision across five capability axes against the best-ranked other model">
+      <img src="docs/hero.webp" width="520" alt="Decision Compass replaying a synthetic decision across five capability axes against the best-ranked other model">
       <br>
       <sub><b>Decision Compass · 决策罗盘</b> — 5-axis capability fit vs. runner-up</sub>
     </td>
     <td align="center" width="38%">
-      <img src="docs/quota-line.gif" width="320" alt="Quota Recovery Line holding back an over-line window and spending under-line quota in fast mode before reset">
+      <img src="docs/quota-line.webp" width="320" alt="Quota Recovery Line holding back an over-line window and spending under-line quota in fast mode before reset">
       <br>
       <sub><b>Quota Recovery Line · 额度恢复线</b> — spare over-pace windows, spend expiring surplus first</sub>
     </td>

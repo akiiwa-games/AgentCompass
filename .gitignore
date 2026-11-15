@@ -18,7 +18,7 @@
 /docs/*
 !/docs/*.md
 !/docs/*.png
-!/docs/*.gif
+!/docs/*.webp
 !/docs/tools/
 /docs/tools/*
 !/docs/tools/*.py

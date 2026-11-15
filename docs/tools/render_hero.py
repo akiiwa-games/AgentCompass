@@ -1,4 +1,4 @@
-"""Render docs/hero.gif off-screen: the real Decision Compass window replaying the synthetic decision (Windows, Pillow).
+"""Render docs/hero.webp off-screen: the real Decision Compass window replaying the synthetic decision (Windows, Pillow).
 
     python docs/tools/render_hero.py [--scale 1.15] [--fps 25] [--check-dir DIR]
 
@@ -18,10 +18,9 @@ from PIL import Image, ImageChops
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import render_ui_screenshots as shots
 
-OUTPUT = shots.ROOT / "docs" / "hero.gif"
+OUTPUT = shots.ROOT / "docs" / "hero.webp"
 HOLD_MS = 2000
-# GitHub shows only the first frame when animated images do not autoplay, so the GIF opens on
-# the settled frame (the winner under the radar of it and the best-ranked other model) before replaying.
+# Opening on the settled frame lets non-autoplay previews show the winner under the radar before replaying.
 POSTER_STORY = 9.9
 POSTER_MS = 1500
 # Flat page and key ink colours kept exact so the paper tone never bands. The last two rows are the colours
@@ -120,6 +119,24 @@ def encode(frames, stage):
     return encoded
 
 
+def save_animation(output: Path, frames, durations: list[int], stage, fps: int) -> None:
+    """Write ``frames`` as animated WebP (lossless RGB) or GIF (shared palette) and verify size."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    if output.suffix.lower() == ".gif":
+        encoded = encode(frames, stage)
+        encoded[0].save(output, save_all=True, append_images=encoded[1:], duration=durations,
+                        loop=0, optimize=True, disposal=1)
+    else:
+        frames[0].save(output, format="WEBP", save_all=True, append_images=frames[1:],
+                       duration=durations, loop=0, lossless=True, method=4)
+    size = output.stat().st_size
+    if size > 8 * 1024 * 1024:
+        raise RuntimeError(f"README animation {output.name} exceeds the 8 MiB limit")
+    with Image.open(output) as anim:
+        print(f"{output.name}: {anim.width}x{anim.height}, {anim.n_frames} frames, "
+              f"{fps} fps, {sum(durations)} ms, {size:,} bytes")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=OUTPUT)
@@ -131,17 +148,8 @@ def main() -> None:
     import ui_theme
     ui_theme.dpi_aware()
     shots.offscreen(lambda state: frames_from_window(args, state), "agentcompass-hero-")
-    encoded = encode(args.frames, args.stage)
-    durations = [POSTER_MS] + [round(1000 / args.fps)] * (len(encoded) - 2) + [HOLD_MS]
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    encoded[0].save(args.output, save_all=True, append_images=encoded[1:], duration=durations,
-                    loop=0, optimize=True, disposal=1)
-    size = args.output.stat().st_size
-    if size > 8 * 1024 * 1024:
-        raise RuntimeError("README GIF exceeds the 8 MiB limit")
-    with Image.open(args.output) as gif:
-        print(f"{args.output.name}: {gif.width}x{gif.height}, {gif.n_frames} frames, "
-              f"{args.fps} fps, {sum(durations)} ms, {size:,} bytes")
+    durations = [POSTER_MS] + [round(1000 / args.fps)] * (len(args.frames) - 2) + [HOLD_MS]
+    save_animation(args.output, args.frames, durations, args.stage, args.fps)
 
 
 if __name__ == "__main__":
