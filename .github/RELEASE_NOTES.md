@@ -4,7 +4,7 @@ AgentCompass v0.6.3 adds Google's Gemini Decision 1 as a task classifier you can
   - Choose it in the tray under Settings > System options, or with `agentcompass scorer --action set --type gemini_decision --api-key -` (the key is read from stdin). The key can also come from `GEMINI_API_KEY`. `agentcompass scorer --action test` classifies one sample task with it.
   - The API bills input tokens, so it runs only when it is the chosen scorer type. A key alone, in the file or the environment, never adds it to the cascade.
   - When it fails or has no key, the other scorers are tried in turn (`claude_haiku_low`, `codex_terra_low`, `agy_flash_low`), as with any chosen scorer. It answers task profiles only; other classifier questions go to the next scorer.
-  - Not yet checked against the live API: the request and the answer parsing follow the published reference and are tested against fixtures in that shape.
+  - Checked against the live API: with a key saved, the tray's scorer test classified its sample task through `gemini-decision-1`.
 - **For contributors.** The question set and the answer parser are shared by the two question APIs (TypeSafe Jev, Gemini Decision 1); the `JEV_*` question tables in `scorer_client.py` are now `PROFILE_*`, and `parse_jev_response` is `parse_profile_answers`.
 
 The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.6.3/packaging/SIGNING.md).
