@@ -1,12 +1,12 @@
-AgentCompass v0.6.2 fixes the tray that the installer starts. It builds on v0.6.1. The installer itself changed, so the tray's "Update AgentCompass" downloads and runs the full installer.
+AgentCompass v0.6.3 adds Google's Gemini Decision 1 as a task classifier you can choose. It builds on v0.6.2.
 
-- **A tray started by the installer could not read the router's skill links.** The installer is built with Inno Setup, which since 6.7 turns on Windows' RedirectionGuard for itself; every process it starts inherits that, and such a process cannot follow a directory junction a normal (non-elevated) program made. The skill links `agentcompass setup` creates are such junctions. After an install or a full-installer update:
-  - Usage Float stopped at start with `WinError 448`, and tray pages that read the installed skill failed the same way, until the tray was next started at sign-in.
-  - The installer's own "setup follows the update" run (new in v0.6.1) stopped at the skill links on a machine that already had them.
-- **The fix.** The installer no longer turns the guard on (it installs per user and never elevates, so there was nothing for it to protect), and it starts the tray through the `AgentCompass` scheduled task instead of as its own child, so the tray inherits nothing from the installer or from the old tray that launched the update.
-- **Updating from v0.6.0 or v0.6.1.** If your tray was last started by one of those installers, this update is launched by that tray and its setup step can still stop once at the skill links; the tray it starts afterwards is clean. Run `agentcompass setup --yes` once after the update if you want the skill links and rules refreshed right away. If Usage Float is missing now, quitting the tray and starting it from the Start menu also brings it back.
-- **For contributors.** The Windows Sandbox check now follows v0.6.0 routing (a local quota fixture in the guest, a classified dry run, no assertion on which account wins) and asserts that no tray process started by the installer carries RedirectionGuard.
+- **Gemini Decision 1 (Decisions API) as the task classifier.** The classifier (the System-One scorer) reads a task and returns the profile the router allocates on. You can now pick `gemini_decision`: the router sends the task text and its fixed question set to Google's [Gemini Decisions API](https://aistudio.google.com/docs/decisions-api) (`POST /v1beta/decisions`, model `gemini-decision-1`) and builds the profile from the answers.
+  - Choose it in the tray under Settings > System options, or with `agentcompass scorer --action set --type gemini_decision --api-key -` (the key is read from stdin). The key can also come from `GEMINI_API_KEY`. `agentcompass scorer --action test` classifies one sample task with it.
+  - The API bills input tokens, so it runs only when it is the chosen scorer type. A key alone, in the file or the environment, never adds it to the cascade.
+  - When it fails or has no key, the other scorers are tried in turn (`claude_haiku_low`, `codex_terra_low`, `agy_flash_low`), as with any chosen scorer. It answers task profiles only; other classifier questions go to the next scorer.
+  - Not yet checked against the live API: the request and the answer parsing follow the published reference and are tested against fixtures in that shape.
+- **For contributors.** The question set and the answer parser are shared by the two question APIs (TypeSafe Jev, Gemini Decision 1); the `JEV_*` question tables in `scorer_client.py` are now `PROFILE_*`, and `parse_jev_response` is `parse_profile_answers`.
 
-The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.6.2/packaging/SIGNING.md).
+The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.6.3/packaging/SIGNING.md).
 
 Status: alpha. Accounts come from discovery on your machine; choose which ones take part in the tray.

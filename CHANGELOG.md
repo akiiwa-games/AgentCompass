@@ -2,6 +2,10 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.6.3 - 2026-11-16
+
+- Google Gemini Decision 1 (Decisions API) is a selectable task classifier (`scorer_type: gemini_decision`, key `gemini_api_key` or `GEMINI_API_KEY`). It bills input tokens, so it runs only when chosen.
+
 ## v0.6.2 - 2026-11-13
 
 - The installer starts the tray through its scheduled task and no longer turns on Inno Setup's RedirectionGuard: a tray or setup run started by the installer could not follow the skill links (`WinError 448`), which stopped Usage Float and the installer's own setup run.
