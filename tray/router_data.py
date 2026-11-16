@@ -2190,13 +2190,14 @@ SCORER_TYPES = (
     ("claude_haiku_low", "Claude · Haiku 5.5 Low（默认）", False, False, "本机 claude CLI 订阅，无需 Key"),
     ("codex_terra_low", "Codex · GPT-6.1 Terra Low", False, False, "本机 codex CLI 订阅，无需 Key"),
     ("agy_flash_low", "Antigravity · Gemini 3.8 Flash Low", False, False, "本机 agy CLI，无需 Key"),
+    ("gemini_decision", "Google · Gemini Decision 1 (Decisions API)", True, True,
+     "Gemini API Key；也可设环境变量 GEMINI_API_KEY（按输入 token 计费）"),
     ("openai_compatible", "自定义 OpenAI 兼容接口", True, True, "填写接口地址、模型名与 API Key（/v1/chat/completions）"),
 )
 SCORER_TYPES = LocalizedSequence(SCORER_TYPES)
 SCORER_LABELS = {row[0]: row[1] for row in SCORER_TYPES.rows}
 SCORER_SHORT = {"jev": "Jev", "claude_haiku_low": "Haiku", "codex_terra_low": "Terra",
-                "agy_flash_low": "Gemini Flash", "openai_compatible": "自定义接口"}
-SCORER_API_DEFAULTS = {"jev": ("https://api.typesafe.ai", "jev-latest"), "openai_compatible": ("", "")}
+                "agy_flash_low": "Gemini Flash", "gemini_decision": "Gemini Decision", "openai_compatible": "自定义接口"}
 
 
 def _scorer_file_key(scorer_type: str, path: Path | None) -> str:
@@ -2217,7 +2218,7 @@ def read_scorer_config(path: Path | None = None) -> dict:
     config = scorer_client.load_scorer_config(path)
     view = scorer_client.scorer_status(config, path)
     fields = {}
-    for scorer_type in ("jev", "openai_compatible"):
+    for scorer_type in scorer_client.SCORER_API_FIELDS:
         entry = view[scorer_type]
         source = entry["key_source"]
         stored = _scorer_file_key(scorer_type, path)
@@ -2246,13 +2247,14 @@ def _key_update(scorer_type: str, api_key: str | None, path: Path | None) -> str
 def save_scorer_config(scorer_type: str, api_key: str | None = None, base_url: str = "", model: str = "",
                        path: Path | None = None) -> str:
     """Validate and atomically write ~/.agent-compass/scorer-config.json. api_key: None or the masked placeholder keeps
-    the saved key, '' clears it. Empty base_url/model fall back to the scorer's defaults (Jev) or are required (custom)."""
+    the saved key, '' clears it. Empty base_url/model fall back to the scorer's defaults (Jev, Gemini Decision) or are
+    required (custom)."""
     modules()
     import scorer_client
     if scorer_type not in SCORER_LABELS:
         raise ValueError(_tr('未知小模型类型 {0}').format(f'{scorer_type}'))
-    if scorer_type in SCORER_API_DEFAULTS:
-        default_url, default_model = SCORER_API_DEFAULTS[scorer_type]
+    if scorer_type in scorer_client.SCORER_API_DEFAULTS:
+        default_url, default_model, _ = scorer_client.SCORER_API_DEFAULTS[scorer_type]
         url, name = (base_url or "").strip(), (model or "").strip()
         if scorer_type == "openai_compatible" and not (url and name):
             raise ValueError(_tr("自定义接口需要填写接口地址和模型名"))

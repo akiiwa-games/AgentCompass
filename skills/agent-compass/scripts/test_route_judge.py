@@ -944,6 +944,14 @@ JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 
                'needs_visual': True, 'needs_gui': True, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
                'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3}}
 SECRET = 'test-key-0000000000000000'
+# The same answers in the Gemini Decisions API's documented shape (https://aistudio.google.com/docs/decisions-api):
+# a type and confidence per answer, a legend on score answers, input-token usage, and no model name.
+DECISIONS_RESPONSE = {
+    'answers': {name: {'confidence': 0.5, **answer, **({'legend': {'0': 'Level 0', '1': 'Level 1'}} if answer['type'] == 'score' else {})}
+                for name, answer in JEV_RESPONSE['answers'].items()},
+    'usage': {'total_input_tokens': 900, 'input_tokens_by_modality': [{'modality': 'text', 'tokens': 900}],
+              'total_output_tokens': 0, 'total_tokens': 900},
+}
 
 
 class SelectableScorerTests(unittest.TestCase):
@@ -965,8 +973,8 @@ class SelectableScorerTests(unittest.TestCase):
     def score(self, config, post=None, run=None, prefix=('agy.exe',), cli=('cli.exe',)):
         calls = {'post': [], 'run': []}
 
-        def fake_post(url, body, api_key, timeout):
-            calls['post'].append({'url': url, 'body': body, 'key': api_key, 'timeout': timeout})
+        def fake_post(url, body, api_key, timeout, key_header=None):
+            calls['post'].append({'url': url, 'body': body, 'key': api_key, 'timeout': timeout, 'key_header': key_header})
             if isinstance(post, Exception):
                 raise post
             return post
@@ -1030,7 +1038,7 @@ class SelectableScorerTests(unittest.TestCase):
         self.assertEqual((questions['multi_task']['type'], questions['task_count']['type']), ('noul', 'choice'))
         self.assertEqual(list(questions['task_count']['criteria']), ['1', '2', '3', '>3'])
         answers = {**JEV_RESPONSE['answers'], 'multi_task': {'noul': 0.91}, 'task_count': {'choice': '2'}}
-        profile = scorer_client.parse_jev_response({'answers': answers})
+        profile = scorer_client.parse_profile_answers({'answers': answers})
         self.assertEqual((profile['multi_task'], profile['task_count']), (True, '2'))
 
     def test_jev_request_matches_typesafe_systemone_contract(self):
@@ -1057,7 +1065,7 @@ class SelectableScorerTests(unittest.TestCase):
             self.assertNotIn('criteria', questions[name])
 
     def test_jev_response_parsing_maps_every_dimension(self):
-        profile = scorer_client.parse_jev_response(JEV_RESPONSE)
+        profile = scorer_client.parse_profile_answers(JEV_RESPONSE)
         self.assertEqual(profile, JEV_PROFILE)
         self.assertEqual(task_intake.validate_profile(profile), profile)
         # Scores clamp into range; a bare value answer is accepted; noul below 0.5 is false and needs_gui implies visual only when true
@@ -1068,7 +1076,7 @@ class SelectableScorerTests(unittest.TestCase):
         answers['local_only'] = 0.5
         answers['work_kind'] = 'debug_review'
         answers['access'] = {'choice': 'write'}
-        p2 = scorer_client.parse_jev_response({'answers': answers})
+        p2 = scorer_client.parse_profile_answers({'answers': answers})
         self.assertEqual((p2['reasoning_depth'], p2['code_complexity'], p2['needs_gui'], p2['needs_visual'], p2['local_only'],
                           p2['work_kind'], p2['access']),
                          (4, 3, False, False, True, 'debug_review', 'write'))
@@ -1085,7 +1093,7 @@ class SelectableScorerTests(unittest.TestCase):
                        {'answers': {**answers, 'demand_divergence': {'score': float('nan')}}},
                        {'error': 'x'}):
             with self.assertRaises(ValueError):
-                scorer_client.parse_jev_response(broken)
+                scorer_client.parse_profile_answers(broken)
         for bad_prof in (
             {k: v for k, v in GUI_PROFILE.items() if k != 'wants_fast'},
             {k: v for k, v in GUI_PROFILE.items() if k != 'read_only_review'},
@@ -1096,10 +1104,10 @@ class SelectableScorerTests(unittest.TestCase):
 
     def test_jev_answers_effort_band_and_urgency_in_the_same_request(self):
         answers = {**JEV_RESPONSE['answers'], 'effort_band': {'choice': 'multi_file'}, 'urgency': {'choice': 'high'}}
-        profile = scorer_client.parse_jev_response({'answers': answers})
+        profile = scorer_client.parse_profile_answers({'answers': answers})
         self.assertEqual((profile['expected_hours'], profile['urgency'], 'hours_confidence' in profile), (2.0, 'high', False))
         for value in ('minutes', None):  # unknown or missing answers leave the allocator's difficulty default in force
-            plain = scorer_client.parse_jev_response({'answers': {**answers, 'effort_band': {'choice': value}, 'urgency': {'choice': value}}})
+            plain = scorer_client.parse_profile_answers({'answers': {**answers, 'effort_band': {'choice': value}, 'urgency': {'choice': value}}})
             self.assertNotIn('expected_hours', plain)
             self.assertNotIn('urgency', plain)
 
@@ -1108,8 +1116,8 @@ class SelectableScorerTests(unittest.TestCase):
         self.assertEqual(profile, JEV_PROFILE)
         self.assertEqual((meta['source'], meta['scorer_type'], meta['provider'], meta['model']),
                          ('system_one', 'jev', 'typesafe', 'jev-2026-10-01'))
-        self.assertEqual((calls['post'][0]['url'], calls['post'][0]['key'], calls['run']),
-                         ('https://api.typesafe.ai/v1/systemone', SECRET, []))
+        self.assertEqual((calls['post'][0]['url'], calls['post'][0]['key'], calls['post'][0]['key_header'], calls['run']),
+                         ('https://api.typesafe.ai/v1/systemone', SECRET, None, []))
         self.assertNotIn('chain', json.dumps(calls['post'][0]['body']))
         # Missing key: jev is absent on this host, so the next scorer in order answers and nothing counts as a failure
         _, meta, calls = self.score({'scorer_type': 'jev', 'fallback_to_agy': True})
@@ -1155,6 +1163,99 @@ class SelectableScorerTests(unittest.TestCase):
             self.assertEqual(scorer_client.post_json('https://api.typesafe.ai/v1/systemone', {'model': 'jev-latest'}, SECRET, 7), JEV_RESPONSE)
         self.assertEqual(seen, {'url': 'https://api.typesafe.ai/v1/systemone', 'auth': f'Bearer {SECRET}',
                                 'body': {'model': 'jev-latest'}, 'timeout': 7})
+
+    def test_decisions_request_follows_the_documented_contract(self):
+        # Request reference and limits: https://aistudio.google.com/docs/decisions-api
+        task = {**self.task, 'context': '重置前冲刺'}
+        request = scorer_client.build_decisions_request(task, self.capabilities)
+        self.assertEqual((set(request), request['model']), ({'model', 'input', 'questions'}, 'gemini-decision-1'))
+        # A JSON object goes in as text, whole, and it is the state the other question API gets.
+        jev = scorer_client.build_jev_request(task, self.capabilities)
+        self.assertIsInstance(request['input'], str)
+        self.assertIn('重置前冲刺', request['input'])
+        self.assertEqual((json.loads(request['input']), request['questions']), (jev['state'], jev['questions']))
+        self.assertTrue(1 <= len(request['questions']) <= 1000)
+        for key, question in request['questions'].items():
+            self.assertRegex(key, r'\A[A-Za-z0-9_-]{1,64}\Z')
+            # The model never sees the key, so the instructions carry the whole question.
+            self.assertTrue(isinstance(question['instructions'], str) and question['instructions'].strip(), key)
+            criteria = question.get('criteria')
+            if question['type'] == 'choice':
+                self.assertTrue(2 <= len(criteria) <= 255, key)
+                for option, description in criteria.items():
+                    self.assertTrue(1 <= len(option) <= 128 and option == option.strip() and option.isprintable(), (key, option))
+                    self.assertTrue(isinstance(description, str) and description, (key, option))
+            elif question['type'] == 'score':
+                self.assertTrue(isinstance(criteria, list) and 2 <= len(criteria) <= 255, key)
+                self.assertTrue(all(isinstance(level, str) and level for level in criteria), key)
+            else:
+                self.assertEqual((question['type'], criteria), ('noul', None), key)
+
+    def test_gemini_decision_scorer_dispatch_key_isolation_and_order(self):
+        config = {'scorer_type': 'gemini_decision', 'gemini_api_key': SECRET}
+        profile, meta, calls = self.score(config, post=DECISIONS_RESPONSE)
+        self.assertEqual(profile, JEV_PROFILE)
+        # The answer names no model, so the configured one is reported.
+        self.assertEqual((meta['source'], meta['scorer_type'], meta['provider'], meta['model']),
+                         ('system_one', 'gemini_decision', 'google', 'gemini-decision-1'))
+        call = calls['post'][0]
+        self.assertEqual((call['url'], call['key'], call['key_header'], calls['run']),
+                         ('https://generativelanguage.googleapis.com/v1beta/decisions', SECRET, 'x-goog-api-key', []))
+        self.assertNotIn('chain', json.dumps(call['body']))
+        _, meta, calls = self.score({**config, 'gemini_base_url': 'https://proxy.example.com', 'gemini_model': 'gemini-decision-2'},
+                                    post=DECISIONS_RESPONSE)
+        self.assertEqual((calls['post'][0]['url'], calls['post'][0]['body']['model'], meta['model']),
+                         ('https://proxy.example.com/v1beta/decisions', 'gemini-decision-2', 'gemini-decision-2'))
+        # One API's key is never resolved for another API.
+        self.assertEqual(scorer_client.scorer_api_settings('gemini_decision', {'api_key': 'sk-custom', 'jev_api_key': 'ts-key'})[:2],
+                         (None, None))
+        for other in ('jev', 'openai_compatible'):
+            self.assertIsNone(scorer_client.scorer_api_settings(other, {'gemini_api_key': SECRET})[0])
+        # A key alone, in the file or the environment, never enlists the billed API: only the chosen type runs it.
+        with patch.object(env_vars, 'user_env', side_effect=lambda name: 'env-key' if name == 'GEMINI_API_KEY' else None):
+            self.assertEqual(scorer_client.scorer_api_settings('gemini_decision', {}),
+                             ('env-key', 'env:GEMINI_API_KEY', 'https://generativelanguage.googleapis.com', 'gemini-decision-1'))
+            self.assertNotIn('gemini_decision',
+                             scorer_client.scorer_attempt_order({'scorer_type': 'claude_haiku_low', 'fallback_to_agy': True})[1])
+        self.assertNotIn('gemini_decision', scorer_client.scorer_attempt_order(
+            {'scorer_type': 'claude_haiku_low', 'gemini_api_key': SECRET, 'fallback_to_agy': True})[1])
+        configured, order = scorer_client.scorer_attempt_order({**config, 'fallback_to_agy': True})
+        self.assertEqual((configured, order[0], order.count('gemini_decision')), ('gemini_decision', 'gemini_decision', 1))
+        self.assertEqual(scorer_client.scorer_attempt_order({**config, 'fallback_to_agy': False}),
+                         ('gemini_decision', ['gemini_decision']))
+        # Missing key: absent on this host, so the next scorer in order answers and nothing counts as a failure.
+        _, meta, calls = self.score({'scorer_type': 'gemini_decision', 'fallback_to_agy': True})
+        self.assertEqual((meta['source'], meta['scorer_type'], calls['post']), ('system_one', 'claude_haiku_low', []))
+        self.assertNotIn('attempts', meta)
+        self.assertIn('GEMINI_API_KEY', meta['skipped'][0]['detail'])
+        # A refused call (HTTP 400: a limit, a blocked input, a bad key) is a failure, never a profile; no key in the metadata.
+        profile, meta, _ = self.score({**config, 'fallback_to_agy': False}, post=scorer_client.ScorerError('Scorer API answered HTTP 400.'))
+        self.assertEqual((profile, meta['source'], meta['fallback_detail']), (None, 'scorer_unavailable', 'Scorer API answered HTTP 400.'))
+        self.assertNotIn(SECRET, json.dumps(meta))
+        profile, meta, _ = self.score({**config, 'fallback_to_agy': False}, post={'error': {'code': 'safety', 'message': 'blocked'}})
+        self.assertEqual((profile, meta['fallback_reason']), (None, 'ValueError'))
+        # The question APIs answer task profiles only.
+        for scorer_type in scorer_client.QUESTION_API_SCORERS:
+            with self.assertRaises(scorer_client.ScorerUnavailable):
+                scorer_client.run_structured(scorer_type, 'question', 'text', {'type': 'object'}, 5, config)
+
+    def test_post_json_sends_the_key_in_the_named_header_only(self):
+        class Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+        seen = {}
+
+        def urlopen(request, timeout):
+            seen.update({name.lower(): value for name, value in request.header_items()})
+            return Response(b'{"answers": {}}')
+        with patch.object(router.urllib.request, 'urlopen', side_effect=urlopen):
+            scorer_client.post_json('https://generativelanguage.googleapis.com/v1beta/decisions', {}, SECRET, 5,
+                                    key_header='x-goog-api-key')
+        self.assertEqual(seen.get('x-goog-api-key'), SECRET)
+        self.assertNotIn('authorization', seen)
 
     def test_claude_codex_custom_and_heuristic_scorers(self):
         for scorer_type, model in (('claude_haiku_low', 'claude-haiku-5-5'),):

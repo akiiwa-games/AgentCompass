@@ -257,6 +257,7 @@ Always pass the explicit permission mode from `selected_bundle.modeId` (never re
 - [`model-capabilities.json`](model-capabilities.json) — Generated policy/model view; runtime derives its policy from effective accounts.
 - [`dispatch-lifecycle.md`](dispatch-lifecycle.md) — Reservation state machine (`planned` -> `started` -> `completed`) and in-flight quota deduction.
 - [`judge-workflow.md`](judge-workflow.md) — System-One `TaskProfile` schema (`score`) and low-effort judge stages (`delegate`, `select`).
+- [`jev-api.md`](jev-api.md) / [`gemini-decisions-api.md`](gemini-decisions-api.md) — The question-API task scorers (TypeSafe Jev, Google Gemini Decision 1): request, key, when each runs.
 - [`effort-matching.md`](effort-matching.md) — Per-model effort curves and the ledger `decision_snapshot` the tray replays.
 - [`provider-usage.md`](provider-usage.md) — Live usage snapshot precedence, `capacity.json` overlay, host policy, and temporary overrides.
 - [`public-data.json`](public-data.json) — Manifest of the public reference data (sha256 per file, data schema, publish time); see Public reference data below.

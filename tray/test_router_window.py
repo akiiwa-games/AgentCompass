@@ -1442,7 +1442,7 @@ class ScorerConfigTests(unittest.TestCase):
     def test_types_match_the_scorer_client(self):
         self.assertEqual([row[0] for row in router_data.SCORER_TYPES], list(scorer_client.SCORER_TYPES))
         self.assertEqual([row[0] for row in router_data.SCORER_TYPES[:4]], ["jev", "claude_haiku_low", "codex_terra_low", "agy_flash_low"])
-        self.assertEqual({row[0] for row in router_data.SCORER_TYPES if row[2]}, {"jev", "openai_compatible"})
+        self.assertEqual({row[0] for row in router_data.SCORER_TYPES if row[2]}, set(scorer_client.SCORER_API_FIELDS))
 
     def test_read_and_save_keep_masked_keys(self):
         config = router_data.read_scorer_config()
@@ -1479,6 +1479,24 @@ class ScorerConfigTests(unittest.TestCase):
         with mock.patch.object(env_vars, "user_env", side_effect=lambda n: "env-key-123456789" if n == "TYPESAFE_API_KEY" else None):
             field = router_data.read_scorer_config()["fields"]["jev"]
         self.assertEqual((field["env_key"], field["key_hint"], field["api_key_masked"]), (True, "使用环境变量 TYPESAFE_API_KEY", ""))
+
+    def test_gemini_decision_key_is_saved_apart_and_defaults_are_not_stored(self):
+        url, model, _ = scorer_client.SCORER_API_DEFAULTS["gemini_decision"]
+        router_data.save_scorer_config("jev", "ts-key-1111122222")
+        router_data.save_scorer_config("gemini_decision", SECRET, url, model)
+        stored = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertEqual(stored, {"scorer_type": "gemini_decision", "jev_api_key": "ts-key-1111122222", "gemini_api_key": SECRET})
+        field = router_data.read_scorer_config()["fields"]["gemini_decision"]
+        self.assertEqual((field["api_key_masked"], field["key_source"], field["base_url"], field["model"]),
+                         (scorer_client.mask_secret(SECRET), "file", url, model))
+        router_data.save_scorer_config("gemini_decision", field["api_key_masked"], "", "")
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["gemini_api_key"], SECRET)
+        router_data.save_scorer_config("gemini_decision", "")
+        with mock.patch.object(scorer_client, "post_json", side_effect=AssertionError("no call without a key")), \
+                mock.patch.object(scorer_client, "scorer_prefix", side_effect=AssertionError("no agy fallback in a test")):
+            message = router_data.test_scorer_config()
+        self.assertTrue(message.startswith("测试失败（Gemini Decision"), message)
+        self.assertIn("GEMINI_API_KEY", message)
 
     def test_test_scorer_reports_success_and_clear_failures(self):
         router_data.save_scorer_config("jev", SECRET)

@@ -789,8 +789,8 @@ def build_parser():
                         help='scorer: show the System-One scorer config (keys masked), set it, or test it live.')
     parser.add_argument('--type', dest='scorer_type', choices=tuple(scorer_client.SCORER_TYPES),
                         help='scorer set: which small model scores tasks; scorer test: test this type instead of the saved one.')
-    parser.add_argument('--api-key', help='scorer set: API key for jev/openai_compatible ("-" reads it from stdin, "" clears it).')
-    parser.add_argument('--base-url', help='scorer set: API base URL for jev/openai_compatible ("" clears it).')
+    parser.add_argument('--api-key', help='scorer set: API key for jev/gemini_decision/openai_compatible ("-" reads it from stdin, "" clears it).')
+    parser.add_argument('--base-url', help='scorer set: API base URL for jev/gemini_decision/openai_compatible ("" clears it).')
     parser.add_argument('--fallback-to-agy', choices=('on', 'off'), help='scorer set: fall back to agy when the chosen scorer fails.')
     parser.add_argument('--objective', help='scorer test: the sample task to classify.')
     parser.add_argument('--input', type=Path)

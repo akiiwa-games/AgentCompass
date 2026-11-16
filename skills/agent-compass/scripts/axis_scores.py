@@ -49,7 +49,7 @@ FIVE_AXIS_DEFAULTS = {
     'demanded_level': 1,         # rule B: a category demanded at this level or above must have data
 }
 # What each demand level 0..3 means per category: the one text both the schema of the JSON classifiers and the questions of
-# the System-One (Jev) classifier are built from (user, 2026-11-11).
+# the question-API classifiers (Jev, Gemini Decision) are built from (user, 2026-11-11).
 FIVE_AXIS_DEMAND_LEVELS = {
     'divergence': ('Divergent work: creative writing, brainstorming, research synthesis and data analysis, and decomposing '
                    'a problem from first principles outside the existing architecture.', (

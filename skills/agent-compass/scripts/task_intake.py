@@ -34,7 +34,7 @@ DIFFICULTY_ORDER = ('routine', 'hard', 'coupled', 'frontier')
 HOURS_RANGE = (0.05, 24.0)
 CONFIDENCE_LEVELS = ('low', 'medium', 'high')
 URGENCY_LEVELS = ('unknown', 'low', 'normal', 'high')
-# Whether the brief bundles separate tasks. One question for every scorer (LLM schema field, Jev noul/choice); the
+# Whether the brief bundles separate tasks. One question for every scorer (LLM schema field, question-API noul/choice); the
 # parent, not the router, then works out what the tasks are.
 TASK_COUNTS = ('1', '2', '3', '>3')
 MULTI_TASK_QUESTION = (

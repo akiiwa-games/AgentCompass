@@ -35,12 +35,18 @@ DEFAULT_SCORER_ORDER = ('jev', 'claude_haiku_low', 'codex_terra_low', 'agy_flash
 JEV_DEFAULT_BASE_URL = 'https://api.typesafe.ai'
 JEV_DEFAULT_MODEL = 'jev-latest'
 JEV_KEY_ENVS = ('TYPESAFE_API_KEY', 'JEV_API_KEY')
+# Gemini Decisions API (https://aistudio.google.com/docs/decisions-api), Gemini Developer API v1beta.
+GEMINI_DECISION_DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com'
+GEMINI_DECISION_DEFAULT_MODEL = 'gemini-decision-1'
+GEMINI_DECISION_KEY_ENVS = ('GEMINI_API_KEY',)
 CUSTOM_KEY_ENV = 'ROUTER_SCORER_API_KEY'
 SCORER_TYPES = {
     'jev': {'provider': 'typesafe', 'model': JEV_DEFAULT_MODEL, 'label': 'TypeSafe · Jev (System One API)'},
     'claude_haiku_low': {'provider': 'claude', 'model': 'claude-haiku-5-5', 'label': 'Claude · Haiku 5.5 Low'},
     'codex_terra_low': {'provider': 'codex', 'model': 'gpt-6.1-terra', 'label': 'Codex · GPT-6.1 Terra Low'},
     'agy_flash_low': {'provider': 'agy', 'model': 'gemini-3.8-flash-low', 'label': 'Antigravity · Gemini 3.8 Flash Low'},
+    'gemini_decision': {'provider': 'google', 'model': GEMINI_DECISION_DEFAULT_MODEL,
+                        'label': 'Google · Gemini Decision 1 (Decisions API)'},
     'openai_compatible': {'provider': 'openai_compatible', 'model': None, 'label': 'OpenAI-compatible API'},
 }
 CLASSIFIER_CASES_PATH = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
@@ -258,11 +264,24 @@ def scorer_accounts(scorer_type, inventory=None, policy=None):
     return usable[:1] if family == 'antigravity' else usable
 
 
-SCORER_CONFIG_KEYS = ('scorer_type', 'jev_api_key', 'jev_base_url', 'jev_model', 'api_key', 'base_url', 'model',
-                      'fallback_to_agy')
-# (api key, base url, model) fields per API scorer, so a Jev key is never sent to a custom endpoint or the reverse.
+SCORER_CONFIG_KEYS = ('scorer_type', 'jev_api_key', 'jev_base_url', 'jev_model', 'gemini_api_key', 'gemini_base_url',
+                      'gemini_model', 'api_key', 'base_url', 'model', 'fallback_to_agy')
+# (api key, base url, model) fields per API scorer, so one API's key is never sent to another API's endpoint.
 SCORER_API_FIELDS = {'jev': ('jev_api_key', 'jev_base_url', 'jev_model'),
+                     'gemini_decision': ('gemini_api_key', 'gemini_base_url', 'gemini_model'),
                      'openai_compatible': ('api_key', 'base_url', 'model')}
+# (default base url, default model, key environment names) per API scorer; the custom endpoint has no defaults.
+SCORER_API_DEFAULTS = {'jev': (JEV_DEFAULT_BASE_URL, JEV_DEFAULT_MODEL, JEV_KEY_ENVS),
+                       'gemini_decision': (GEMINI_DECISION_DEFAULT_BASE_URL, GEMINI_DECISION_DEFAULT_MODEL,
+                                           GEMINI_DECISION_KEY_ENVS),
+                       'openai_compatible': ('', '', (CUSTOM_KEY_ENV,))}
+# These APIs answer a fixed question set (choice / score / noul) about the task; they take no free-form schema.
+QUESTION_API_SCORERS = ('jev', 'gemini_decision')
+SCORER_KEY_MISSING = {
+    'jev': 'TypeSafe API key not configured (scorer-config.json jev_api_key or TYPESAFE_API_KEY).',
+    'gemini_decision': 'Gemini API key not configured (scorer-config.json gemini_api_key or GEMINI_API_KEY).',
+    'openai_compatible': 'Custom scorer API key not configured.',
+}
 
 
 def scorer_config_path():
@@ -338,17 +357,16 @@ def mask_secret(value):
 
 
 def scorer_api_settings(scorer_type, config):
-    """(api_key, key_source, base_url, model) for an API scorer. Jev: jev_api_key, a bare api_key that is not paired
-    with a custom base_url, then TYPESAFE_API_KEY / JEV_API_KEY. Custom: api_key, then ROUTER_SCORER_API_KEY."""
-    if scorer_type == 'jev':
-        candidates = [('file', config.get('jev_api_key'))]
-        if not config.get('base_url'):
-            candidates.append(('file', config.get('api_key')))
-        candidates += [(f'env:{name}', None) for name in JEV_KEY_ENVS]
-        base, model = config.get('jev_base_url') or JEV_DEFAULT_BASE_URL, config.get('jev_model') or JEV_DEFAULT_MODEL
-    else:
-        candidates = [('file', config.get('api_key')), (f'env:{CUSTOM_KEY_ENV}', None)]
-        base, model = config.get('base_url') or '', config.get('model') or ''
+    """(api_key, key_source, base_url, model) for an API scorer: the scorer's own key field in the config, then its
+    environment names (Jev: TYPESAFE_API_KEY / JEV_API_KEY; Gemini Decision: GEMINI_API_KEY; custom:
+    ROUTER_SCORER_API_KEY). Jev also takes a bare api_key that is not paired with a custom base_url."""
+    key_field, url_field, model_field = SCORER_API_FIELDS[scorer_type]
+    default_base, default_model, key_envs = SCORER_API_DEFAULTS[scorer_type]
+    candidates = [('file', config.get(key_field))]
+    if scorer_type == 'jev' and not config.get('base_url'):
+        candidates.append(('file', config.get('api_key')))
+    candidates += [(f'env:{name}', None) for name in key_envs]
+    base, model = config.get(url_field) or default_base, config.get(model_field) or default_model
     for source, value in candidates:
         value = value or (env_vars.user_env(source[4:]) if source.startswith('env:') else None)
         if value:
@@ -356,9 +374,11 @@ def scorer_api_settings(scorer_type, config):
     return None, None, base, model
 
 
-def post_json(url, body, api_key, timeout):
+def post_json(url, body, api_key, timeout, key_header=None):
+    """The key goes out as a Bearer token, or alone in `key_header` for an API that names its own header."""
+    auth = {key_header: api_key} if key_header else {'Authorization': f'Bearer {api_key}'}
     request = urllib.request.Request(url, data=json.dumps(body, ensure_ascii=False).encode('utf-8'), method='POST',
-                                     headers={'Authorization': f'Bearer {api_key}', 'Content-Type': 'application/json',
+                                     headers={**auth, 'Content-Type': 'application/json',
                                               'Accept': 'application/json', 'User-Agent': 'agent-compass-scorer/1'})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -372,15 +392,17 @@ def post_json(url, body, api_key, timeout):
         raise ScorerError('Scorer API unreachable or timed out.') from None
 
 
-# TypeSafe System One (docs.typesafe.ai/api.md, primitives.md): choice criteria are an object, score criteria a list
-# whose positions are levels 0..N-1, and noul answers the probability of yes.
-JEV_STYLE_CRITERIA = {
+# The question set of the question-answering classifier APIs. TypeSafe System One (docs.typesafe.ai/api.md,
+# primitives.md) and the Gemini Decisions API (aistudio.google.com/docs/decisions-api) take the same three primitives:
+# choice criteria are an object, score criteria a list whose positions are levels 0..N-1, and noul answers the
+# probability of yes. Question keys are never shown to the model, so every instruction is a whole question.
+PROFILE_STYLE_CRITERIA = {
     'engineering': 'Writing, modifying, debugging, reviewing code, or running operational CLI/GUI engineering steps.',
     'exploration': 'Investigating a codebase, dataset, logs, or running quantitative research packets / creative hypothesis exploration.',
     'text_only': 'Drafting, translating, summarizing, or rewriting self-contained text.',
     'advisory': 'High-stakes strategic, mathematical, or architectural consultation.',
 }
-JEV_SCORE_QUESTIONS = {
+PROFILE_SCORE_QUESTIONS = {
     'reasoning_depth': ('Rate the reasoning depth required by the core task (do not inflate for long Markdown formatting or section headers).', [
         'Level 1 (Routine): Direct execution of an existing script/checklist/runbook, mechanical bulk edit, or trivial constant/config tweak with obvious steps.',
         'Level 2 (Standard/Hard): Single- or multi-module feature implementation, bug diagnosis/fix, read-only code review of a module/PR, or standard quantitative research packet execution.',
@@ -392,21 +414,22 @@ JEV_SCORE_QUESTIONS = {
         'Level 2 (Module): Standard production module or frontend component implementation/bugfix with unit tests.',
         'Level 3 (Systems): Complex cross-module systems, lock-free concurrency, or protocol refactoring.']),
 }
-# Jev has no number primitive, so expected_hours is a choice among bands, each with the hours the LLM scorers' schema
-# describes for the same band. Urgency is a choice too. Jev reports no confidence, so hours_confidence stays unset.
-JEV_EFFORT_BANDS = {
+# Neither API has a number primitive, so expected_hours is a choice among bands, each with the hours the LLM scorers'
+# schema describes for the same band. Urgency is a choice too. hours_confidence stays unset: Jev reports no confidence,
+# and the Decisions API's probability of the chosen band is not converted into a level by a threshold of our own.
+PROFILE_EFFORT_BANDS = {
     'quick': (0.1, 'A few tool calls: read a file, run one known command, a one-line change.'),
     'module': (0.5, 'One module fix or feature with its test.'),
     'multi_file': (2.0, 'A multi-file feature or an investigation across several files.'),
     'long': (4.0, 'A long multi-stage build, migration or research effort.'),
 }
-JEV_URGENCY_CRITERIA = {
+PROFILE_URGENCY_CRITERIA = {
     'unknown': 'The task text states no deadline, incident or "asap" (the usual case; never infer urgency from topic or tone).',
     'low': 'The text says there is no rush.',
     'normal': 'The text states an ordinary deadline.',
     'high': 'The text states an incident, an imminent deadline or "asap".',
 }
-JEV_NOUL_QUESTIONS = {
+PROFILE_NOUL_QUESTIONS = {
     'needs_visual': 'Does this task require inspecting images, screenshots, visual design frames, or operating a GUI?',
     'needs_gui': 'Does this task require operating a live desktop or browser GUI via mouse/keyboard/computer-use?',
     'local_only': ("Does this task explicitly depend on existing files, directories, or repositories on this machine "
@@ -414,32 +437,33 @@ JEV_NOUL_QUESTIONS = {
 }
 
 
-def jev_route_criteria(capabilities):
+def route_criteria(capabilities):
     defined = load_classifier_cases().get('route_definitions') or {}
     routes = capabilities.get('routes') or {}
     return {k: str(defined.get(k) or (routes[k] or {}).get('scope') or k)[:500] for k in routes if k != 'other_or_mixed'}
 
 
-def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
+def profile_questions(capabilities):
+    """Every task-profile question, keyed by the answer it fills; the same set for each question API."""
     questions = {
-        'work_kind': {'type': 'choice', 'criteria': jev_route_criteria(capabilities), 'instructions': (
+        'work_kind': {'type': 'choice', 'criteria': route_criteria(capabilities), 'instructions': (
             'Which canonical route classification best describes what this task itself demands? '
             'Ignore boilerplate role/receipt file references.')},
         'interaction_style': {'type': 'choice', 'instructions': 'What is the primary interaction style of this work?',
-                              'criteria': dict(JEV_STYLE_CRITERIA)},
+                              'criteria': dict(PROFILE_STYLE_CRITERIA)},
     }
-    questions['effort_band'] = {'type': 'choice', 'criteria': {k: v[1] for k, v in JEV_EFFORT_BANDS.items()}, 'instructions': (
+    questions['effort_band'] = {'type': 'choice', 'criteria': {k: v[1] for k, v in PROFILE_EFFORT_BANDS.items()}, 'instructions': (
         'How much active worker effort does this task need at an ordinary agent pace? Estimate work, never money or quota.')}
-    questions['urgency'] = {'type': 'choice', 'criteria': dict(JEV_URGENCY_CRITERIA),
+    questions['urgency'] = {'type': 'choice', 'criteria': dict(PROFILE_URGENCY_CRITERIA),
                             'instructions': 'Does the task text itself state urgency?'}
-    for name, (instructions, criteria) in JEV_SCORE_QUESTIONS.items():
+    for name, (instructions, criteria) in PROFILE_SCORE_QUESTIONS.items():
         questions[name] = {'type': 'score', 'instructions': instructions, 'criteria': list(criteria)}
     import axis_scores
     import task_intake
     for axis, (intro, levels) in axis_scores.FIVE_AXIS_DEMAND_LEVELS.items():
         questions[f'demand_{axis}'] = {'type': 'score', 'instructions': 'How much does this task need: ' + intro,
                                        'criteria': [f'Level {i}: {text}.' for i, text in enumerate(levels)]}
-    for name, instructions in JEV_NOUL_QUESTIONS.items():
+    for name, instructions in PROFILE_NOUL_QUESTIONS.items():
         questions[name] = {'type': 'noul', 'instructions': instructions}
     questions['wants_fast'] = {'type': 'noul', 'instructions': task_intake.WANTS_FAST_QUESTION}
     questions['read_only_review'] = {'type': 'noul', 'instructions': task_intake.READ_ONLY_REVIEW_QUESTION}
@@ -450,43 +474,56 @@ def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
     questions['task_count'] = {'type': 'choice', 'instructions': task_intake.TASK_COUNT_QUESTION,
                                'criteria': {'1': 'One task.', '2': 'Two separate tasks.', '3': 'Three separate tasks.',
                                             '>3': 'More than three separate tasks.'}}
-    return {'model': model or JEV_DEFAULT_MODEL,
-            'state': {'task': scorer_task_fields(task), 'rubric_notes': load_classifier_cases().get('dimension_rubric') or {}},
-            'questions': questions}
+    return questions
 
 
-def parse_jev_response(response):
-    """A validated task profile from a /v1/systemone answer: choice names, score = probability-weighted level index
-    0..N-1 (rounded, then offset to the profile's range), noul = probability of yes."""
+def profile_state(task):
+    """What the questions are asked about: the whole task text and the dimension rubric."""
+    return {'task': scorer_task_fields(task), 'rubric_notes': load_classifier_cases().get('dimension_rubric') or {}}
+
+
+def build_jev_request(task, capabilities, model=JEV_DEFAULT_MODEL):
+    return {'model': model or JEV_DEFAULT_MODEL, 'state': profile_state(task), 'questions': profile_questions(capabilities)}
+
+
+def build_decisions_request(task, capabilities, model=GEMINI_DECISION_DEFAULT_MODEL):
+    """POST /v1beta/decisions: `input` is the shared context of all questions; a JSON object goes in as its text."""
+    return {'model': model or GEMINI_DECISION_DEFAULT_MODEL, 'input': json.dumps(profile_state(task), ensure_ascii=False),
+            'questions': profile_questions(capabilities)}
+
+
+def parse_profile_answers(response):
+    """A validated task profile from a question API's `answers`: choice names, score = probability-weighted level
+    index 0..N-1 (rounded, then offset to the profile's range), noul = probability of yes."""
     import axis_scores
     import task_intake
     answers = response.get('answers') if isinstance(response, dict) else None
     if not isinstance(answers, dict):
-        raise ValueError('Jev response has no answers.')
+        raise ValueError('Classifier API response has no answers.')
 
     def field(name, key):
         answer = answers.get(name)
         value = answer.get(key) if isinstance(answer, dict) else answer
         if value is None:
-            raise ValueError(f'Jev answer {name} is missing.')
+            raise ValueError(f'Classifier API answer {name} is missing.')
         return value
 
     def level(name, low, high):
         score = float(field(name, 'score'))
         if not math.isfinite(score):
-            raise ValueError(f'Jev answer {name} is not finite.')
+            raise ValueError(f'Classifier API answer {name} is not finite.')
         return max(low, min(high, int(round(score)) + low))
 
     profile = {'work_kind': field('work_kind', 'choice'), 'interaction_style': field('interaction_style', 'choice')}
     for name, (low, high) in task_intake.PROFILE_INTEGERS.items():
         profile[name] = level(name, low, high)
     profile['axis_demand'] = {axis: level(f'demand_{axis}', 0, 3) for axis in axis_scores.FIVE_AXES}
-    for name in JEV_NOUL_QUESTIONS:
+    for name in PROFILE_NOUL_QUESTIONS:
         profile[name] = float(field(name, 'noul')) >= 0.5
     if profile['needs_gui']:
         profile['needs_visual'] = True
     # Optional: without an hours band the difficulty comes from the profile's reasoning depth; urgency stays unset.
-    for name, table in (('effort_band', JEV_EFFORT_BANDS), ('urgency', JEV_URGENCY_CRITERIA)):
+    for name, table in (('effort_band', PROFILE_EFFORT_BANDS), ('urgency', PROFILE_URGENCY_CRITERIA)):
         answer = answers.get(name)
         choice = answer.get('choice') if isinstance(answer, dict) else answer
         if choice in table:
@@ -584,15 +621,19 @@ def run_scorer(scorer_type, task, capabilities, timeout, config, account=None):
     if scorer_type in SCORER_API_FIELDS:
         key, _, base, model = scorer_api_settings(scorer_type, config)
         if not key:
-            raise ScorerUnavailable('TypeSafe API key not configured (scorer-config.json jev_api_key or TYPESAFE_API_KEY).'
-                                    if scorer_type == 'jev' else 'Custom scorer API key not configured.')
+            raise ScorerUnavailable(SCORER_KEY_MISSING[scorer_type])
         if not (base and model):
             raise ScorerError('Custom scorer needs base_url and model.')
         base = check_base_url(base)
         if scorer_type == 'jev':
             response = post_json(base + '/v1/systemone', build_jev_request(task, capabilities, model), key, timeout)
             served = response.get('model') if isinstance(response, dict) and isinstance(response.get('model'), str) else model
-            return parse_jev_response(response), spec['provider'], served
+            return parse_profile_answers(response), spec['provider'], served
+        if scorer_type == 'gemini_decision':
+            # The answer names no model, so the configured one is reported.
+            response = post_json(base + '/v1beta/decisions', build_decisions_request(task, capabilities, model), key,
+                                 timeout, key_header='x-goog-api-key')
+            return parse_profile_answers(response), spec['provider'], model
         request = build_openai_request(task, scorer_schema(capabilities), model)
         response = post_json(openai_chat_url(base), request, key, timeout)
         return task_intake.validate_profile(parse_openai_response(response)), spec['provider'], model
@@ -702,7 +743,9 @@ def _score_cache_put(key, profile, meta):
 def scorer_attempt_order(config):
     """Priority cascade of System-One scorers: lightest/fastest first (`jev` when keyed -> `claude_haiku_low` ->
     `codex_terra_low` -> `agy_flash_low`). An explicitly configured scorer leads; when `fallback_to_agy` is enabled
-    (the default), remaining lightweight scorers in `DEFAULT_SCORER_ORDER` follow."""
+    (the default), remaining lightweight scorers in `DEFAULT_SCORER_ORDER` follow. `gemini_decision` and
+    `openai_compatible` take part only when chosen: a key alone never enlists them (GEMINI_API_KEY is shared with
+    other Gemini tools, and the Decisions API bills each call)."""
     explicit = config.get('scorer_type') if config.get('scorer_type') in SCORER_TYPES else None
     has_jev_key = bool(scorer_api_settings('jev', config)[0])
     primary = explicit or ('jev' if has_jev_key else DEFAULT_SCORER_TYPE)
@@ -788,7 +831,8 @@ def score_task(task, capabilities, timeout=SCORER_TIMEOUT_SECONDS, use_model=Tru
 
 def run_structured(scorer_type, instructions, text, schema, timeout, config, account=None):
     """(answer object, provider, model) from one scorer backend reading `text` under `instructions`: the same backends
-    and accounts as the task scorer, for a question other than a task profile. Jev's API answers task profiles only."""
+    and accounts as the task scorer, for a question other than a task profile. The question APIs (Jev, Gemini
+    Decision) answer task profiles only."""
     spec = SCORER_TYPES[scorer_type]
     prompt = instructions + '\n\n' + text
     if scorer_type == 'agy_flash_low':
@@ -799,12 +843,12 @@ def run_structured(scorer_type, instructions, text, schema, timeout, config, acc
         return answer, SCORER['provider'], SCORER['model']
     if os.environ.get('ROUTER_DISABLE_LIVE_SCORER') == '1':
         raise ScorerError('Live scorer disabled by environment.')
-    if scorer_type == 'jev':
-        raise ScorerUnavailable('The TypeSafe System One API classifies tasks only.')
+    if scorer_type in QUESTION_API_SCORERS:
+        raise ScorerUnavailable(f"{spec['label']} classifies tasks only.")
     if scorer_type in SCORER_API_FIELDS:
         key, _, base, model = scorer_api_settings(scorer_type, config)
         if not key:
-            raise ScorerUnavailable('Custom scorer API key not configured.')
+            raise ScorerUnavailable(SCORER_KEY_MISSING[scorer_type])
         if not (base and model):
             raise ScorerError('Custom scorer needs base_url and model.')
         system = (instructions + '\nReturn exactly one JSON object (no Markdown) that satisfies this JSON schema:\n'

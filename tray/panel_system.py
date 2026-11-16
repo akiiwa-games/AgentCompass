@@ -211,7 +211,7 @@ class SystemTab:
         head = ttk.Frame(box, style="Card.TFrame")
         head.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
         ttk.Label(head, text=_tr("路由分类小模型（System-One Scorer）"), style="CardH3.TLabel").pack(anchor="w")
-        ttk.Label(head, text=_tr("route_judge 用它给任务分类打分；失败时回退到 Gemini Flash，再回退到离线规则"),
+        ttk.Label(head, text=_tr("路由用它给任务分类打分；失败时依次改用其余小模型，都不可用时不猜测"),
                   style="CardTiny.TLabel", wraplength=theme.px(630), justify="left").pack(anchor="w")
         self.scorer_types = data.SCORER_TYPES
         self.scorer_config = {}
@@ -221,7 +221,7 @@ class SystemTab:
         self.scorer_key_toggle = ttk.Button(box, text=_tr("显示"), style="Small.TButton", width=5, command=self.toggle_scorer_key)
         self.scorer_url_entry = ttk.Entry(box, textvariable=self.scorer_url_var, font=(self.mono, 9))
         self.scorer_model_entry = ttk.Entry(box, textvariable=self.scorer_model_var, font=(self.mono, 9))
-        fields = ((_tr("小模型类型"), self.scorer_type_box), (_tr("API Key（Jev / 自定义）"), self.scorer_key_entry),
+        fields = ((_tr("小模型类型"), self.scorer_type_box), (_tr("API Key"), self.scorer_key_entry),
                   (_tr("接口地址（可选）"), self.scorer_url_entry), (_tr("模型名（可选）"), self.scorer_model_entry))
         for row, (title, widget) in enumerate(fields, start=1):
             ttk.Label(box, text=title, style="Card.TLabel").grid(row=row, column=0, sticky="w", padx=(0, 12), pady=3)
