@@ -2,6 +2,13 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.6.7 - 2026-11-17
+
+- The classifier answers one of 11 work kinds with a depth (and an optional second kind); the four category demands are projected from a declared signature table instead of being asked one by one. The `divergence` category is renamed `creativity`.
+- Aesthetics levels 2 and 3 also ask image recognition. Manual scores move to schema 2; `agentcompass score suggest` lists manual scores that differ from measured boards.
+- After a watched launch, `roll` tells the coordinator to finish independent work and end its turn instead of polling in a shell.
+- Ledger and dispatch rows written by earlier versions carry the old profile; `agentcompass doctor` lists them.
+
 ## v0.6.6 - 2026-11-17
 
 - The default context rotation threshold rises from 2M to 4M carried tokens (the quota-saving preset from 1.5M to 3M), so workers are replaced less often.
