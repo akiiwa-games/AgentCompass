@@ -418,7 +418,7 @@ class DecisionBindingTests(unittest.TestCase):
         i18n.set_language("en")
         rows, _ = panel_scoring.verdict_summary(plan, router_data.decision_pair(plan))
         self.assertEqual(rows[1], ("Runner-up", "Sol 6.1 · High  0.450 · lead 0.0500"))
-        self.assertEqual(rows[2], ("Task", "Debug & review · Hard · 4h"))
+        self.assertEqual(rows[2], ("Task", "Code audit · Hard · 4h"))
         self.assertEqual(rows[3][1], "claude-weekly 40% left · this task ~3.5% · opportunity cost 0.010")
 
     def test_verdict_summary_marks_ties_and_falls_back_to_a_short_reason(self):
