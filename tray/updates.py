@@ -25,6 +25,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -41,6 +42,7 @@ import services
 LOCK = threading.Lock()
 _progress = threading.local()
 RELEASE_CHECK_INTERVAL_SECONDS = 6 * 3600
+RELEASE_FAILURE_COOLDOWN_SECONDS = 15 * 60
 RELEASE_CACHE_NAME = "product-release.json"
 # Written by `agentcompass setup` (setup/sync_host_globals.py manifest_path), removed by `agentcompass uninstall`.
 SETUP_MANIFEST_NAME = "setup-manifest.json"
@@ -1129,28 +1131,172 @@ def _parse_github_release(payload: dict, fallback_page: str) -> dict:
     }
 
 
+def _response_header(obj, name: str) -> str:
+    headers = getattr(obj, "headers", None)
+    if headers is None:
+        return ""
+    return str(headers.get(name) or "").strip()
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    text = (str(exc) or "").lower()
+    if isinstance(exc, urllib.error.HTTPError):
+        if exc.code == 429:
+            return True
+        if exc.code == 403:
+            return _response_header(exc, "X-RateLimit-Remaining") == "0" or "rate limit" in text
+        return False
+    return ("rate limit" in text) and ("403" in text or "429" in text)
+
+
+def _rate_limit_retry_after(exc: Exception, now: float) -> float:
+    if isinstance(exc, urllib.error.HTTPError) and _response_header(exc, "X-RateLimit-Remaining") == "0":
+        raw_reset = _response_header(exc, "X-RateLimit-Reset")
+        try:
+            reset_at = float(raw_reset)
+        except (TypeError, ValueError):
+            reset_at = 0.0
+        if reset_at > now:
+            return min(reset_at, now + 3600.0)
+    return now + RELEASE_FAILURE_COOLDOWN_SECONDS
+
+
+def _parse_expanded_assets_html(html: str, download_base: str) -> list[dict]:
+    digests: dict[str, str] = {}
+    for attrs in re.findall(r"<clipboard-copy\b([^>]*)>", html, flags=re.IGNORECASE):
+        label_match = re.search(r'aria-label="Copy to clipboard digest for ([^"]+)"', attrs)
+        value_match = re.search(r'value="(sha256:[0-9a-fA-F]{64})"', attrs)
+        if label_match and value_match:
+            digests[label_match.group(1).strip()] = value_match.group(1).lower()
+
+    assets: list[dict] = []
+    seen: set[str] = set()
+    for href in re.findall(r'href="([^"]*?/releases/download/[^"]+)"', html):
+        name = urllib.parse.unquote(href.rsplit("/", 1)[-1].split("?", 1)[0]).strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        assets.append({
+            "name": name,
+            "url": f"{download_base}/{urllib.parse.quote(name, safe='')}",
+            "digest": digests.get(name, ""),
+            "size": 0,
+        })
+    return assets
+
+
+def _latest_release_via_page(page: str, open_url) -> dict:
+    """Resolve the latest release tag and verified asset digests from GitHub's web release page."""
+    req = urllib.request.Request(page, headers={"User-Agent": "agentcompass"})
+    with open_url(req, timeout=20) as response:
+        final_url = str(getattr(response, "geturl", lambda: "")() or "").strip()
+    match = re.search(r"/releases/tag/([^/?#]+)", final_url)
+    if not match:
+        raise RuntimeError(f"release page redirect did not yield a tag ({final_url or page})")
+    tag = urllib.parse.unquote(match.group(1)).strip()
+    releases_base = final_url.split("/tag/", 1)[0]
+    encoded_tag = urllib.parse.quote(tag, safe="")
+    expanded_url = f"{releases_base}/expanded_assets/{encoded_tag}"
+    exp_req = urllib.request.Request(expanded_url, headers={"User-Agent": "agentcompass"})
+    with open_url(exp_req, timeout=20) as exp_response:
+        html = exp_response.read().decode("utf-8", errors="replace")
+    download_base = f"{releases_base}/download/{encoded_tag}"
+    assets = _parse_expanded_assets_html(html, download_base)
+    if not assets:
+        raise RuntimeError(f"no release assets found on {expanded_url}")
+    version_str = tag.lstrip("vV")
+    return {
+        "checked_at": time.time(),
+        "tag_name": f"v{version_str}" if version_str else tag,
+        "version": version_str,
+        "html_url": final_url,
+        "assets": assets,
+    }
+
+
+def _record_release_failure(cache_file: Path, cached: dict | None, error_text: str, retry_after: float) -> None:
+    payload = dict(cached) if isinstance(cached, dict) else {}
+    payload["retry_after"] = retry_after
+    payload["last_error"] = error_text
+    _write_cached_release(cache_file, payload)
+
+
+def _handle_release_api_error(
+    exc: Exception,
+    page: str,
+    open_url,
+    *,
+    force: bool,
+    cache_file: Path,
+    cached: dict | None,
+    persist_cache: bool,
+) -> tuple[dict, str]:
+    api_err = str(exc) or exc.__class__.__name__
+    if force and _is_rate_limit_error(exc):
+        try:
+            release = _latest_release_via_page(page, open_url)
+        except Exception as page_exc:
+            err_msg = f"{api_err} (fallback failed: {page_exc})"
+            if persist_cache:
+                _record_release_failure(cache_file, cached, err_msg, _rate_limit_retry_after(exc, time.time()))
+            return cached or {}, err_msg
+        if persist_cache:
+            _write_cached_release(cache_file, release)
+        return release, ""
+    if persist_cache:
+        _record_release_failure(cache_file, cached, api_err, _rate_limit_retry_after(exc, time.time()))
+    return cached or {}, api_err
+
+
 def _latest_release(api: str, page: str, force: bool = False, state_dir: Path | None = None, opener=None,
                     network: bool = True) -> tuple[dict, str]:
     """(release, error). Reads GitHub only when the cached release is older than RELEASE_CHECK_INTERVAL_SECONDS
-    (or when forced, or for a test opener). A failed read keeps the cached release and returns the error, so one
-    rate-limited call does not erase what the last good read saw."""
+    (or when forced, or for a test opener). Uses ETag conditional requests when cached, backs off after failures
+    for non-forced checks, and falls back to RELEASES_PAGE on forced rate-limit refusals."""
     cache_file = _release_cache_path(state_dir)
     cached = _read_cached_release(cache_file)
+    now = time.time()
     fresh = bool(
         cached
         and cached.get("tag_name")
-        and (time.time() - float(cached.get("checked_at") or 0)) < RELEASE_CHECK_INTERVAL_SECONDS
+        and (now - float(cached.get("checked_at") or 0)) < RELEASE_CHECK_INTERVAL_SECONDS
     )
-    if not network or not (force or opener is not None or not fresh):
+    in_cooldown = bool(cached and float(cached.get("retry_after") or 0) > now)
+    if not network or not (force or opener is not None or (not fresh and not in_cooldown)):
+        if in_cooldown and not fresh and not (cached and cached.get("tag_name")):
+            return {}, str(cached.get("last_error") or "")
         return cached or {}, ""
-    request = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json", "User-Agent": "agentcompass"})
+
+    headers = {"Accept": "application/vnd.github+json", "User-Agent": "agentcompass"}
+    if cached and cached.get("tag_name") and cached.get("etag"):
+        headers["If-None-Match"] = str(cached["etag"])
+    request = urllib.request.Request(api, headers=headers)
     open_url = opener or urllib.request.urlopen
+    persist_cache = state_dir is not None or opener is None
     try:
         with open_url(request, timeout=20) as response:
             release = _parse_github_release(json.loads(response.read().decode("utf-8")), page)
+            etag = _response_header(response, "ETag")
+            if etag:
+                release["etag"] = etag
+    except urllib.error.HTTPError as exc:
+        if exc.code == 304 and cached and cached.get("tag_name"):
+            updated = {k: v for k, v in cached.items() if k not in ("retry_after", "last_error")}
+            updated["checked_at"] = time.time()
+            etag = _response_header(exc, "ETag")
+            if etag:
+                updated["etag"] = etag
+            if persist_cache:
+                _write_cached_release(cache_file, updated)
+            return updated, ""
+        return _handle_release_api_error(
+            exc, page, open_url, force=force, cache_file=cache_file, cached=cached, persist_cache=persist_cache
+        )
     except Exception as exc:
-        return cached or {}, str(exc) or exc.__class__.__name__
-    if state_dir is not None or opener is None:
+        return _handle_release_api_error(
+            exc, page, open_url, force=force, cache_file=cache_file, cached=cached, persist_cache=persist_cache
+        )
+    if persist_cache:
         _write_cached_release(cache_file, release)
     return release, ""
 

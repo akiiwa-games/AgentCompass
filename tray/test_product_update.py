@@ -791,8 +791,10 @@ class IncrementalCodePackageUpdateTests(unittest.TestCase):
                     root=inst_root, home=home, state_dir=state_dir, which_path=None, frozen=False,
                     opener=opener, runner=lambda *a, **k: self.fail("nothing may run"), restart_fn=lambda: self.fail("no restart"),
                 )
+            from agentcompass.origin import RELEASES_API, RELEASES_PAGE
+
             self.assertIn("rate limit exceeded", str(raised.exception))
-            self.assertEqual(len(requested), 1)          # only the release check; no package download
+            self.assertEqual(requested, [RELEASES_API, RELEASES_PAGE])  # only the release check (+ rate-limit fallback); no package download
             self.assertEqual(updates.local_version(inst_root), "0.3.18")
 
     def test_mismatched_runtime_fingerprint_or_legacy_install_falls_back_to_full_installer(self):
@@ -1537,6 +1539,247 @@ class UninstallDisplayVersionTests(unittest.TestCase):
         reg = _FakeRegistry({})
         self.assertFalse(updates._sync_uninstall_display_version(Path("C:/x"), "0.4.6", registry=reg))
         self.assertFalse(updates._sync_uninstall_display_version(Path("C:/x"), "", registry=reg))
+
+
+class RateLimitAndFallbackTests(unittest.TestCase):
+    def _make_installer_install(self, base: Path, version: str = "0.3.8", runtime_fp: str = "rt-fp-1") -> tuple[Path, Path, Path]:
+        state_dir = base / "state"
+        home = base / "home"
+        home.mkdir()
+        inst_root = base / "installed"
+        inst_root.mkdir()
+        (inst_root / "AgentCompass.exe").write_bytes(b"MZ-tray")
+        (inst_root / "agentcompass").mkdir()
+        (inst_root / "agentcompass" / "__init__.py").write_text(f'__version__ = "{version}"\n', encoding="utf-8")
+        (inst_root / "runtime-info.json").write_text(
+            json.dumps({"version": version, "runtime_version": version, "runtime_fingerprint": runtime_fp}),
+            encoding="utf-8",
+        )
+        return inst_root, state_dir, home
+
+    def _make_code_package_zip(self, version: str = "0.4.0", runtime_fp: str = "rt-fp-1") -> bytes:
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        files = {
+            "agentcompass/__init__.py": f'__version__ = "{version}"\n'.encode("utf-8"),
+            "agentcompass/cli.py": b"def main(): return 0\n",
+            "tray/app.pyw": b"# tray\n",
+            "tray/component_launch.py": b"# launch\n",
+            "skills/agent-compass/SKILL.md": b"# skill\n",
+            "setup/onboard.py": b"# onboard\n",
+        }
+        app_manifest = {
+            "version": version,
+            "required_runtime_fingerprint": runtime_fp,
+            "files": {
+                rel: {"sha256": hashlib.sha256(content).hexdigest(), "size": len(content)}
+                for rel, content in files.items()
+            },
+        }
+        with zipfile.ZipFile(buf, "w") as zf:
+            for rel, content in files.items():
+                zf.writestr(rel, content)
+            zf.writestr("app-manifest.json", (json.dumps(app_manifest, indent=2) + "\n").encode("utf-8"))
+        return buf.getvalue()
+
+    def test_etag_304_revalidates_cached_release_without_rewriting_payload(self):
+        import email.message
+        import urllib.error
+
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            inst_root, state_dir, home = self._make_installer_install(base)
+            seen_if_none_match = []
+
+            class _RespWithHeaders(_Body):
+                def __init__(self, payload, etag: str):
+                    super().__init__(payload)
+                    self.headers = email.message.Message()
+                    self.headers["ETag"] = etag
+
+            def first_opener(req, timeout=20):
+                seen_if_none_match.append(req.get_header("If-none-match"))
+                return _RespWithHeaders(
+                    {
+                        "tag_name": "v0.4.0",
+                        "html_url": "https://github.com/akiiwa-games/AgentCompass/releases/tag/v0.4.0",
+                        "assets": [],
+                    },
+                    '"etag-v040"',
+                )
+
+            first = updates.check_product_release(
+                force=True, root=inst_root, state_dir=state_dir, opener=first_opener, home=home, which_path=None
+            )
+            self.assertTrue(first["ok"])
+            self.assertEqual(seen_if_none_match, [None])
+
+            def not_modified_opener(req, timeout=20):
+                seen_if_none_match.append(req.get_header("If-none-match"))
+                hdrs = email.message.Message()
+                hdrs["ETag"] = '"etag-v040"'
+                raise urllib.error.HTTPError(req.full_url, 304, "Not Modified", hdrs, None)
+
+            second = updates.check_product_release(
+                force=True, root=inst_root, state_dir=state_dir, opener=not_modified_opener, home=home, which_path=None
+            )
+            self.assertTrue(second["ok"])
+            self.assertEqual(second["remote_tag"], "v0.4.0")
+            self.assertEqual(seen_if_none_match, [None, '"etag-v040"'])
+
+    def test_non_forced_rate_limit_failure_sets_cooldown_and_stops_polling_api(self):
+        import email.message
+        import urllib.error
+
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            inst_root, state_dir, home = self._make_installer_install(base)
+            calls = []
+
+            def rate_limited(req, timeout=20):
+                calls.append(req.full_url)
+                hdrs = email.message.Message()
+                hdrs["X-RateLimit-Remaining"] = "0"
+                hdrs["X-RateLimit-Reset"] = str(int(time.time() + 1800))
+                raise urllib.error.HTTPError(req.full_url, 403, "rate limit exceeded", hdrs, None)
+
+            with mock.patch.object(updates.urllib.request, "urlopen", side_effect=rate_limited):
+                first = updates.check_product_release(
+                    force=False, root=inst_root, state_dir=state_dir, home=home, which_path=None, network=True
+                )
+                self.assertFalse(first["ok"])
+                self.assertEqual(len(calls), 1)
+
+                # Subsequent periodic (force=False) checks within the cooldown must not hit GitHub API again.
+                second = updates.check_product_release(
+                    force=False, root=inst_root, state_dir=state_dir, home=home, which_path=None, network=True
+                )
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(second["remote_tag"], "")
+
+    def test_explicit_update_falls_back_to_releases_page_on_rate_limit_and_verifies_hashes(self):
+        import email.message
+        import urllib.error
+
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            inst_root, state_dir, home = self._make_installer_install(base, version="0.3.8")
+            zip_bytes = self._make_code_package_zip(version="0.4.0")
+            zip_sha = hashlib.sha256(zip_bytes).hexdigest()
+            manifest_bytes = json.dumps({
+                "version": "0.4.0",
+                "runtime_fingerprint": "rt-fp-1",
+                "app_package": {
+                    "name": "app-0.4.0.zip",
+                    "size": len(zip_bytes),
+                    "sha256": zip_sha,
+                    "required_runtime_fingerprint": "rt-fp-1",
+                },
+            }).encode("utf-8")
+            manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+
+            expanded_html = f"""
+            <ul>
+              <li>
+                <a href="/akiiwa-games/AgentCompass/releases/download/v0.4.0/app-0.4.0.zip">app-0.4.0.zip</a>
+                <clipboard-copy aria-label="Copy to clipboard digest for app-0.4.0.zip" value="sha256:{zip_sha}"></clipboard-copy>
+              </li>
+              <li>
+                <a href="/akiiwa-games/AgentCompass/releases/download/v0.4.0/manifest.json">manifest.json</a>
+                <clipboard-copy aria-label="Copy to clipboard digest for manifest.json" value="sha256:{manifest_sha}"></clipboard-copy>
+              </li>
+            </ul>
+            """
+
+            class _PageResp(_Body):
+                def __init__(self, payload, final_url: str):
+                    super().__init__(payload)
+                    self._final_url = final_url
+
+                def geturl(self):
+                    return self._final_url
+
+            requested = []
+
+            def opener(req, timeout=20):
+                url = req.full_url
+                requested.append(url)
+                if "api.github.com" in url:
+                    hdrs = email.message.Message()
+                    hdrs["X-RateLimit-Remaining"] = "0"
+                    raise urllib.error.HTTPError(url, 403, "rate limit exceeded", hdrs, None)
+                if url.endswith("/releases/latest"):
+                    return _PageResp(b"<html></html>", "https://github.com/akiiwa-games/AgentCompass/releases/tag/v0.4.0")
+                if "/releases/expanded_assets/v0.4.0" in url:
+                    return _Body(expanded_html.encode("utf-8"))
+                if url.endswith("/releases/download/v0.4.0/manifest.json"):
+                    return _Body(manifest_bytes)
+                if url.endswith("/releases/download/v0.4.0/app-0.4.0.zip"):
+                    return _Body(zip_bytes)
+                raise AssertionError(f"unexpected URL: {url}")
+
+            summary = updates.update_agentcompass(
+                root=inst_root,
+                home=home,
+                state_dir=state_dir,
+                which_path=None,
+                frozen=False,
+                opener=opener,
+                runner=lambda args, cwd=None, env=None: "",
+                restart_fn=lambda: "restarted",
+            )
+            self.assertIn("v0.4.0", summary)
+            self.assertTrue(any("/releases/latest" in u for u in requested))
+            self.assertTrue(any("/releases/expanded_assets/v0.4.0" in u for u in requested))
+            self.assertEqual(updates.local_version(inst_root), "0.4.0")
+
+    def test_non_rate_limit_failure_does_not_fall_back_and_failed_fallback_names_limit(self):
+        import email.message
+        import urllib.error
+
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            inst_root, state_dir, home = self._make_installer_install(base, version="0.3.8")
+            seen_urls = []
+
+            def offline_opener(req, timeout=20):
+                seen_urls.append(req.full_url)
+                raise OSError("network unreachable")
+
+            with self.assertRaisesRegex(RuntimeError, "network unreachable"):
+                updates.update_agentcompass(
+                    root=inst_root,
+                    home=home,
+                    state_dir=state_dir,
+                    which_path=None,
+                    frozen=False,
+                    opener=offline_opener,
+                    runner=lambda args, cwd=None, env=None: "",
+                    restart_fn=lambda: "restarted",
+                )
+            self.assertEqual(len(seen_urls), 1)
+            self.assertIn("api.github.com", seen_urls[0])
+
+            def both_fail_opener(req, timeout=20):
+                if "api.github.com" in req.full_url:
+                    hdrs = email.message.Message()
+                    hdrs["X-RateLimit-Remaining"] = "0"
+                    raise urllib.error.HTTPError(req.full_url, 403, "rate limit exceeded", hdrs, None)
+                raise OSError("releases page unavailable")
+
+            with self.assertRaisesRegex(RuntimeError, r"rate limit exceeded.*releases page unavailable"):
+                updates.update_agentcompass(
+                    root=inst_root,
+                    home=home,
+                    state_dir=state_dir,
+                    which_path=None,
+                    frozen=False,
+                    opener=both_fail_opener,
+                    runner=lambda args, cwd=None, env=None: "",
+                    restart_fn=lambda: "restarted",
+                )
 
 
 if __name__ == "__main__":
