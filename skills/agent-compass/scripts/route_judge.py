@@ -448,7 +448,7 @@ def classify_task(task, needs, capabilities, policy, timeout, use_model=True):
     profile, scorer = scorer_client.score_task(task, capabilities, timeout, use_model=use_model)
     if profile is None:
         return None, task, needs, scorer, None, alerts
-    classified_kind = task_intake.profile_kind(profile, policy)
+    classified_kind = task_intake.profile_kind(profile)
     derived = task_intake.profile_difficulty(profile, policy)
     order = list(task_intake.DIFFICULTY_ORDER)
     if task.get('difficulty') in order and order.index(task['difficulty']) > order.index(derived):
@@ -630,7 +630,7 @@ def plan_stage(document, args):
                              'task_count': count,
                              'message': f'The classifier found {count} separate tasks; the caller kept them as one '
                                         'assignment: ' + keep_whole[:300]})
-    kind = task_intake.task_kind(task, capabilities, policy)
+    kind = task_intake.task_kind(task, capabilities)
     guard = capabilities.get('remote_reroute_guard') or {}
     guarded_bundle = guard.get('bundle_id')
     locked_route = (recent_route_lock(task, records, now, guarded_bundle, guard.get('window_seconds', 600))
@@ -749,7 +749,7 @@ def score_stage(args):
         return result, 2
     derived = task_intake.profile_difficulty(profile, policy)
     result = {'stage': 'score', 'source': scorer['source'], 'task_profile': profile, 'scorer': scorer,
-              'derived': {'kind': task_intake.task_kind({**task, 'profile': profile}, capabilities, policy),
+              'derived': {'kind': task_intake.task_kind({**task, 'profile': profile}, capabilities),
                           'difficulty': task.get('difficulty') or derived, 'profile_difficulty': derived}}
     return result, 0
 

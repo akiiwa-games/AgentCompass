@@ -987,4 +987,4 @@ def scorer_test(config, objective=None, timeout=SCORER_TIMEOUT_SECONDS):
     ok = profile is not None and meta['source'] == 'system_one' and meta.get('scorer_type') == config['scorer_type']
     return {'stage': 'scorer', 'action': 'test', 'ok': ok, 'scorer_type': config['scorer_type'],
             'latency_ms': int((time.monotonic() - started) * 1000), 'task_profile': profile, 'scorer': meta,
-            'derived_kind': task_intake.profile_kind(profile, account_fleet.load_accounts()['scoring']) if profile else None}
+            'derived_kind': task_intake.profile_kind(profile) if profile else None}

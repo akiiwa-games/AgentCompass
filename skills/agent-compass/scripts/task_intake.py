@@ -40,6 +40,8 @@ ROLE_FN = {
     'F2': lambda s: 2,
     'F3': lambda s: 3,
 }
+# The role each work kind gives each category: a maintainer declaration (2026-11-17), documented in
+# references/work-kinds.md. A design rule, not a measurement.
 WORK_KIND_SIGNATURES = {
     'creative_ideation': ('P', '0', 'B', '0'),
     'architecture_reasoning': ('S', 'P', '0', '0'),
@@ -170,7 +172,10 @@ def _check_int(raw, name, low, high):
 
 
 def validate_profile(raw):
-    """Validate a task profile and populate deterministic derived fields (`axis_demand`, `needs_gui`, `read_only_review`, `multi_task`)."""
+    """Validate a task profile and populate deterministic derived fields (`axis_demand`, `needs_gui`, `read_only_review`,
+    `multi_task`). A derived field the input already carries is checked against its derivation; an explicit `axis_demand`
+    stands as given (a validated profile read back, the simulation grid and the tray's quota probe name a point of the
+    demand space directly)."""
     if not isinstance(raw, dict):
         raise ValueError('task.profile must be an object')
     work_kind = raw.get('work_kind')
@@ -285,18 +290,16 @@ def task_count_bucket(value):
     raise ValueError('task.profile.task_count must be one of ' + ', '.join(TASK_COUNTS) + ' or a positive whole number')
 
 
-def profile_difficulty(profile, policy=None):
-    """Display label for a profile's primary_level (nothing scores or gates on it)."""
+def profile_difficulty(profile, policy):
+    """Display label for a profile's primary_level, from the policy's `profile.difficulty_by_level` (nothing scores or
+    gates on it)."""
     lvl = profile['primary_level']
     if lvl == 3 and (
         profile.get('work_kind') in ('architecture_reasoning', 'creative_ideation')
         or profile.get('secondary_level') == 3
     ):
         return 'frontier'
-    by_level = ((policy or {}).get('profile') or {}).get('difficulty_by_level') or {
-        '1': 'routine', '2': 'hard', '3': 'coupled',
-    }
-    return by_level[str(lvl)]
+    return policy['profile']['difficulty_by_level'][str(lvl)]
 
 
 def named_route(profile):
@@ -309,9 +312,9 @@ def named_route(profile):
     return None
 
 
-def profile_kind(profile, policy=None):
-    """The canonical route of a validated profile (`work_kind`)."""
-    del policy
+def profile_kind(profile):
+    """The route a profile names (`work_kind`); a profile that names none is `gui_control` when it needs a GUI, else the
+    unmatched bucket."""
     named = named_route(profile)
     if named:
         return named
@@ -320,7 +323,7 @@ def profile_kind(profile, policy=None):
     return 'other_or_mixed'
 
 
-def task_kind(task, capabilities, policy=None):
+def task_kind(task, capabilities):
     """The route plan() uses: the profile's work_kind when caller left work_kind unset or repeated it, else caller's valid route, else other_or_mixed."""
     routes = capabilities['routes']
     if not isinstance(task, dict):
@@ -336,7 +339,7 @@ def task_kind(task, capabilities, policy=None):
         return task['work_kind']
     if not task.get('work_kind') and prof is not None:
         try:
-            kind = profile_kind(validate_profile(prof), policy)
+            kind = profile_kind(validate_profile(prof))
         except ValueError:
             return 'other_or_mixed'
         return kind if kind in routes else 'other_or_mixed'
@@ -439,7 +442,7 @@ def normalize_task(raw, policy, capabilities, accounts):
         }
     if profile is None:
         raise ValueError('task.profile is required: the classifier always produces it, with its axis_demand')
-    kind = task_kind({**task, 'profile': profile}, capabilities, policy)
+    kind = task_kind({**task, 'profile': profile}, capabilities)
     derived = profile_difficulty(profile, policy)
     difficulty = task.get('difficulty') or derived
     source = 'caller' if task.get('difficulty') else 'profile'
@@ -454,7 +457,7 @@ def normalize_task(raw, policy, capabilities, accounts):
     hours = float(task.get('expected_hours') or profile['expected_hours'])
     constraints = task.get('constraints') if isinstance(task.get('constraints'), dict) else {}
     constraint_model, constraint_effort = named_pin(constraints, task, accounts)
-    implies = (capabilities['routes'].get(kind) or {}).get('implies') or {}
+    implies = capabilities['routes'][kind].get('implies') or {}
     # Caller false stands. The profile fills an unset flag. Route implies fill only what both left unset.
     needs.update(resolve_modality_needs(needs, profile, implies))
     worker = dict(chain['worker']) if isinstance(chain.get('worker'), dict) else None

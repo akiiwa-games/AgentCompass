@@ -93,6 +93,10 @@ def cell(z, status='measured'):
     return {'value': z, 'by_effort': dict.fromkeys(EFFORT_NAMES, z), 'status': status}
 
 
+# The facets the fit reads per category, as the shipped five-axis-scores.json carries them.
+FIXTURE_FACETS = {'aesthetics': ('design',), 'tool_operation': ('responsiveness', 'image_recognition')}
+
+
 def axes_of(scores, missing=()):
     out = {}
     for a in axis_scores.FIVE_AXES:
@@ -101,8 +105,7 @@ def axes_of(scores, missing=()):
                       'missing_facets': []}
             continue
         z = z_of(scores[a])
-        out[a] = {**cell(z), 'facets': ({'responsiveness': cell(z), 'image_recognition': cell(z)}
-                                        if a == 'tool_operation' else {})}
+        out[a] = {**cell(z), 'facets': {f: cell(z) for f in FIXTURE_FACETS.get(a, ())}}
     return out
 
 

@@ -457,7 +457,7 @@ class AllocatorTests(unittest.TestCase):
         ):
             with self.subTest(objective=objective, kind=kind):
                 prof = self.profile(work_kind=kind)
-                self.assertEqual(task_intake.task_kind({'objective': objective, 'profile': prof}, capabilities, policy), kind)
+                self.assertEqual(task_intake.task_kind({'objective': objective, 'profile': prof}, capabilities), kind)
 
     def test_classified_read_only_review_profile_and_its_own_hours(self):
         ro_prof = self.profile(work_kind='code_audit', read_only_review=True, access='read-only')

@@ -4,6 +4,8 @@ The System-One classifier classifies observable task activity (`work_kind`, `pri
 
 ## 1. The 11 Atomic `work_kind` Signatures
 
+The signature table is a maintainer declaration (2026-11-17): a design rule of this router, neither a measurement nor a value fitted to routing outcomes. `task_intake.WORK_KIND_SIGNATURES` is its one copy in code; change both together.
+
 Role codes for depth `s` in `{1, 2, 3}`:
 - `0` -> `0` (orthogonal)
 - `B` -> `I[s >= 2]` (caps at panel minimum `t1`, zero premium above baseline)

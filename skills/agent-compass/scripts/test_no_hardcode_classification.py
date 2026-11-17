@@ -973,7 +973,7 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
                         'def recent_route_lock(task, records, now, bundle_id, window_seconds):',
                         "_EDIT_ONLY_RX = re.compile(r'^\\s*patch(ing)? files?\\s*$', re.I)\n\n\ndef recent_route_lock(task, records, now, bundle_id, window_seconds):",
                     ),
-                    '    kind = task_intake.task_kind(task, capabilities, policy)\n    guard = capabilities',
+                    '    kind = task_intake.task_kind(task, capabilities)\n    guard = capabilities',
                     "    if needs.get('local_only') and _EDIT_ONLY_RX.match(str(needs.get('local_only_reason') or '')):\n        needs['local_only'] = False\n        task = {**task, 'needs': needs}\n    kind = task_intake.task_kind(task, capabilities, policy)\n    guard = capabilities",
                 ),
             ),

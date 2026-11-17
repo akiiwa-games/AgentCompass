@@ -540,8 +540,6 @@ def _facet_at_effort(cats, category, facet, effort):
     facets = cat_cell.get('facets') if isinstance(cat_cell, dict) else None
     if isinstance(facets, dict) and facet in facets:
         return _at_effort(facets.get(facet), effort)
-    if category == 'aesthetics' and facet == 'design' and not facets and not (cat_cell.get('missing_facets') if isinstance(cat_cell, dict) else None):
-        return _at_effort(cat_cell, effort)
     return None
 
 

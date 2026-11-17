@@ -31,7 +31,7 @@ Tray UI Python API contract:
   - `user_scores.set_score(model, target, level, *, public=False, note=None, as_of=None)` -> saved entry + path.
   - `user_scores.clear_score(model=None, target=None, *, clear_all=False, public=False)` -> `{"removed": int, "path": str}`.
   - `user_scores.suggest_scores(model=None, *, scope="all", threshold=0.4)` -> read-only comparison of manual scores
-    against underlying public board measurements (`measured_drift` / `measured_available`), never modifying any file.
+    against underlying public board measurements (`measured_drift`), never modifying any file.
 """
 from __future__ import annotations
 
@@ -779,8 +779,7 @@ def suggest_scores(model: str | None = None, *, scope: str = 'all',
 
     Manual scores (`user > maintainer > measured > estimated`) always remain authoritative in routing; this function
     never modifies `user-scores.json` and only surfaces entries where direct public board measurements (`measured`,
-    `measured_partial`, `interpolated`) either diverge by `>= threshold` demand levels (`measured_drift`) or newly
-    cover an entry marked as an unmeasured impression (`measured_available`).
+    `measured_partial`, `interpolated`) diverge by `>= threshold` demand levels (`measured_drift`).
     """
     if scope not in ('all', 'local', 'public'):
         raise ValueError(f'Unknown scope {scope!r}; expected all, local, or public.')
@@ -833,13 +832,9 @@ def suggest_scores(model: str | None = None, *, scope: str = 'all',
                 ref = _facet_data_reference(raw_facets.get(facet), cat, facet, rec['level'], targets_table)
             if ref['status'] not in MEASURED_DATA_STATUSES or ref['delta_level'] is None:
                 continue
-            note_text = str(rec.get('note') or '')
-            if abs(ref['delta_level']) >= thresh:
-                reason = 'measured_drift'
-            elif 'impression' in note_text.lower() or 'unmeasured' in note_text.lower():
-                reason = 'measured_available'
-            else:
+            if abs(ref['delta_level']) < thresh:
                 continue
+            note_text = str(rec.get('note') or '')
             manual_z = mapped_z_for_target(target, rec['level'], targets_table) if targets_table else None
             delta_z = round(float(ref['z']) - float(manual_z), 4) if (ref.get('z') is not None and manual_z is not None) else None
             suggestions.append({
@@ -857,7 +852,7 @@ def suggest_scores(model: str | None = None, *, scope: str = 'all',
                 'delta_z': delta_z,
                 'data_status': ref['status'],
                 'sources': ref['sources'],
-                'reason': reason,
+                'reason': 'measured_drift',
             })
     suggestions.sort(key=lambda r: (-abs(float(r['delta_level'])), r['model'], r['target']))
     return {

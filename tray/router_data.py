@@ -315,7 +315,7 @@ def plan_task(task: dict) -> dict:
     accounts = _cached_accounts()
     capabilities = _load_capabilities(accounts)
     policy = accounts["scoring"]
-    kind = task_intake.task_kind(task, capabilities, policy)
+    kind = task_intake.task_kind(task, capabilities)
     unavailable = []
     if task_intake.dot_may_take(kind, task.get("needs") or {}, capabilities) and router.dot_unreachable():
         unavailable.append("dot_text")
@@ -350,7 +350,7 @@ def simulate(objective: str, hours: float, local_only: bool = False, needs_visua
         }
     task["profile"] = profile
     if scorer.get("source") == "system_one":
-        task["work_kind"] = task_intake.profile_kind(profile, policy)
+        task["work_kind"] = task_intake.profile_kind(profile)
         task["difficulty"] = task_intake.profile_difficulty(profile, policy)
     return {**plan_task(task), "scorer": scorer}
 

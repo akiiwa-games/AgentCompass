@@ -127,7 +127,7 @@ class ManualScoreLayerTests(unittest.TestCase):
         self.assertEqual(ref_m['level'], ref_u['level'])
         self.assertIn('lmarena.creative_writing', ref_u['sources'])
 
-    def test_suggest_scores_is_read_only_and_flags_measured_drift_and_available(self):
+    def test_suggest_scores_is_read_only_and_flags_only_measured_drift(self):
         with tempfile.TemporaryDirectory() as tmp:
             pub_file = Path(tmp) / 'public-scores.json'
             loc_file = Path(tmp) / 'local-scores.json'
@@ -136,7 +136,7 @@ class ManualScoreLayerTests(unittest.TestCase):
                 'scores': {
                     # gpt-6.1-sol creativity is measured near level ~2.00; manual 3.2 drifts by > 0.4
                     'gpt-6.1-sol': {'creativity': {'level': 3.2, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
-                    # claude-opus-5-5 creativity is measured at 3.0; manual 2.9 with "maintainer impression" flags measured_available
+                    # claude-opus-5-5 creativity is measured at 3.0; manual 2.9 is inside the threshold whatever its note says
                     'claude-opus-5-5': {'creativity': {'level': 2.9, 'as_of': '2026-11-11', 'kind': 'maintainer', 'note': 'maintainer impression'}},
                     # flint-40b-free is missing on public boards -> never flagged
                     'flint-40b-free': {'creativity': {'level': 1.0, 'as_of': '2026-11-11', 'kind': 'maintainer', 'note': 'maintainer impression'}},
@@ -149,9 +149,8 @@ class ManualScoreLayerTests(unittest.TestCase):
             )
             self.assertEqual(pub_file.read_bytes(), pub_bytes)
             by_model = {r['model']: r for r in res['suggestions']}
-            self.assertEqual(set(by_model), {'gpt-6.1-sol', 'claude-opus-5-5'})
+            self.assertEqual(set(by_model), {'gpt-6.1-sol'})
             self.assertEqual(by_model['gpt-6.1-sol']['reason'], 'measured_drift')
-            self.assertEqual(by_model['claude-opus-5-5']['reason'], 'measured_available')
             self.assertFalse(loc_file.exists())
 
     def test_manual_score_fills_missing_facet_lifts_mode_b_and_surfaces_actionable_hint_when_absent(self):
