@@ -99,7 +99,7 @@ class UsageAwareSimulationTests(unittest.TestCase):
         import tempfile
         from router_test_support import profile
         current_profile = profile(local_only=True, expected_hours=0.5)
-        missing_axis = {k: v for k, v in current_profile.items() if k != 'axis_demand'}
+        missing_required = {k: v for k, v in current_profile.items() if k != 'primary_level'}
         pre_four_category = {
             **current_profile,
             'realtime_loop': True,
@@ -107,14 +107,14 @@ class UsageAwareSimulationTests(unittest.TestCase):
         }
         base_row = {
             'stage': 'plan', 'at': NOW.isoformat(), 'choice': 'sol_high',
-            'kind': 'general_implementation', 'difficulty': 'hard', 'hours': 1.0,
+            'kind': 'code_implementation', 'difficulty': 'hard', 'hours': 1.0,
             'usage': {'accounts': {}},
         }
         warnings = []
         with tempfile.TemporaryDirectory() as d:
             ledger_file = Path(d) / 'ledger.jsonl'
             rows = [
-                {**base_row, 'decision_snapshot': {'task': {'objective': 'missing axis', 'expected_hours': 1.0, 'profile': missing_axis}}},
+                {**base_row, 'decision_snapshot': {'task': {'objective': 'missing primary_level', 'expected_hours': 1.0, 'profile': missing_required}}},
                 {**base_row, 'decision_snapshot': {'task': {'objective': 'pre four category', 'expected_hours': 1.0, 'profile': pre_four_category}}},
                 {**base_row, 'decision_snapshot': {'task': {'objective': 'current row', 'expected_hours': 1.0, 'profile': current_profile}}},
             ]

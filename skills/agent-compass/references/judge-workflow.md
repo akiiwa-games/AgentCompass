@@ -17,34 +17,36 @@ The router separates fast structured task classification (**System-One Scorer**)
 
 Produced automatically by `score_task` (via the System-One scorer cascade grounded in [`classifier-cases.json`](classifier-cases.json)). There is **no offline keyword fallback**: when all System-One classifiers are unavailable, `score`, `plan`, `roll`, and `tray.router_data.simulate` return `status: "blocked"`, `choice: "none"`, `error: "scorer_unavailable"`.
 
-- `work_kind`: Canonical route (`computer_use`, `visual_analysis`, `frontend_implementation`, `tool_execution`, `bounded_bulk_work`, `debug_review`, `general_implementation`, `self_contained_code`, `exploration_analysis`, `research_packet`, `web_research`, `text_in_text_out`, `dot_execution`, `complex_build_plan`, `direction_reasoning`)
-- `reasoning_depth` (`1..4`): `1=routine`, `2=hard`, `3=coupled`, `4=frontier`
-- `code_complexity` (`0..3`): `0=no code`, `1=script/single-file`, `2=multi-file module`, `3=cross-cutting architecture`
-- `axis_demand` (object, every key required, each `0..3`): how much the task needs of `divergence`, `coding`, `aesthetics` and `tool_operation`. The levels are stated in `axis_scores.FIVE_AXIS_DEMAND_LEVELS`, which is the one text the JSON classifiers' schema and the System-One (Jev) questions are built from. Economy is not a task demand: the router prices it from cost and live quota. No other field is turned into a demand; a profile without `axis_demand` is rejected.
-- `needs_visual` (`bool`), `needs_gui` (`bool`), `local_only` (`bool`)
-- `wants_fast` (`bool`): `true` only when the assignment affirmatively requests fast mode, priority tier, urgent/ASAP turnaround, or a pre-reset quota sprint (`"pre-reset sprint"`, `"before quota resets"`, `"重置前冲刺"`) for the task itself without negation (`"do not use fast mode"` or `"no rush"` -> `false`; runtime step adverbs such as `"click Save immediately"` -> `false`). Strictly required boolean in classifier outputs. Precedence in `normalize_task`: explicit caller `needs.fast` -> `task.fast` -> `task.wants_fast` -> `profile.wants_fast` -> `false`.
-- `read_only_review` (`bool`): `true` only when the assignment is a read-only code, diff, branch, security, or release review/audit that inspects existing material and reports findings without writing or modifying repository production/test code (`code_complexity = 0`, even if saving a review report file to a specified output path). `false` when the worker implements, fixes, or refactors code (including fixing issues found by a prior review), runs operational commands, or performs general exploration/research. Strictly required boolean in classifier outputs; `read_only_review = true` with `code_complexity != 0` is rejected as contradictory by `validate_profile`. Used by `roll` and `plan_stage` to enforce independent reviewer selection (preventing a worker that authored or modified code from reviewing its own work).
-- `multi_task` (`bool`) & `task_count` (`"1" | "2" | "3" | ">3"`): `multi_task: true` when the brief bundles 2+ separate deliverables that different workers could produce in parallel without waiting on each other; `false` (`task_count: "1"`) for a single deliverable with sequential steps.
-- `expected_hours` (`0.05..24.0`), `hours_confidence` (`"low" | "medium" | "high"`), `urgency` (`"unknown" | "low" | "normal" | "high"`)
-- `interaction_style`: `"engineering" | "exploration" | "advisory" | "text_only"`
-- `reason` (optional): One-sentence justification of the classification and scores.
+- `work_kind`: One of the 11 atomic routes (`creative_ideation`, `architecture_reasoning`, `code_implementation`, `frontend_ui`, `code_audit`, `exploration_forensics`, `web_research`, `visual_analysis`, `text_processing`, `live_loop`, `gui_control`).
+- `primary_level` (`1..3`): Task depth (`1=routine/localized`, `2=standard module/analysis`, `3=frontier/coupled/fine-grained`).
+- `secondary_kind` (`"none"` or a distinct atomic `work_kind`) & `secondary_level` (`0..3`): Optional second domain for composite tasks (`secondary_level = 0` when `secondary_kind == "none"`).
+- `access`: `"read-only" | "write"` (`code_audit` is always `"read-only"`, even when saving a review report file; local repository `code_implementation` and `frontend_ui` are always `"write"`).
+- `local_only` (`bool`), `needs_visual` (`bool`)
+- `wants_fast` (`bool`): `true` only when the assignment affirmatively requests fast mode, priority tier, urgent/ASAP turnaround, or a pre-reset quota sprint (`"pre-reset sprint"`, `"before quota resets"`, `"重置前冲刺"`) for the task itself without negation (`"do not use fast mode"` or `"no rush"` -> `false`; runtime step adverbs such as `"click Save immediately"` -> `false`). Precedence in `normalize_task`: explicit caller `needs.fast` -> `task.fast` -> `task.wants_fast` -> `profile.wants_fast` -> `false`.
+- `expected_hours` (`0.05..24.0`), `task_count` (`"1" | "2" | "3" | ">3"`)
+- `reason` (optional): One-sentence justification when supplied by a caller profile.
+- **Deterministic projections in `task_intake.validate_profile`**:
+  - `axis_demand` (`0..3` over `creativity`, `coding`, `aesthetics`, `tool_operation`): projected via `task_intake.project_axis_demand(work_kind, primary_level, secondary_kind, secondary_level)` using `WORK_KIND_SIGNATURES` and the tropical max envelope `max(Phi(k1, s1), Phi(k2, s2))`. Economy is not a task demand: the router prices it from cost and live quota.
+  - `needs_gui` (`bool`): `true` when `"gui_control"` is in `(work_kind, secondary_kind)` (also promotes `needs_visual = true`, as does `"visual_analysis"`).
+  - `read_only_review` (`bool`): `true` when `work_kind == "code_audit"`, used by `roll` and `plan_stage` to enforce independent reviewer selection so authoring workers never self-review.
+  - `multi_task` (`bool`): `task_count != "1"`.
 
 ### Cross-Repo Sync Notes (for Magpie & Cindy)
 
 | Field | Type | Semantic Contract |
 | :--- | :--- | :--- |
 | `wants_fast` | `boolean` | Replaces `FAST_REQUEST_WORDS` / `infer_fast_preference(objective)`. Set by System-One classifier (`TASK_PROFILE_SCHEMA` boolean / question-API `noul` question) or explicit caller flag (`--fast`, `needs.fast`, `task.fast`, `task.wants_fast`). |
-| `read_only_review` | `boolean` | Replaces `READONLY_REVIEW_PHRASES` / `is_readonly_review_task` and `roll.py` `_REVIEW_RE` / `_AUTHORING_RE` / `is_review_title`. Gates independent-reviewer worker reuse so authoring workers never self-review. |
+| `read_only_review` | `boolean` | Derived from `work_kind == "code_audit"` (or explicit caller boolean). Gates independent-reviewer worker reuse so authoring workers never self-review. |
 | `local_only` | `boolean` | Replaces `OBJECTIVE_LOCAL_RUNTIME_RE`, `LOCAL_MACHINE_RE`, `BOGUS_LOCAL_ONLY_RE`, and `valid_local_only_reason`. |
-| `multi_task`, `task_count` | `boolean`, `"1"\|"2"\|"3"\|">3"` | Replaces `MULTI_TASK_MARK_RE` / `multi_task_marks(objective)`. |
+| `multi_task`, `task_count` | `boolean`, `"1"\|"2"\|"3"\|">3"` | Replaces `MULTI_TASK_MARK_RE` / `multi_task_marks(objective)`; `multi_task` is `task_count != "1"`. |
 
-When the System-One classifier runs on `plan`, its `work_kind` and `difficulty` (`reasoning_depth`) are authoritative and override any manual `work_kind` or `difficulty` supplied by the caller (`caller_classification_ignored`).
+When the System-One classifier runs on `plan`, its `work_kind` and derived `difficulty` (`primary_level`) are authoritative and override any manual `work_kind` or `difficulty` supplied by the caller (`caller_classification_ignored`).
 
 If `needs.local_only` is unset, the profile's `local_only: true` is also authoritative. The router copies the profile `reason` into `needs.local_only_reason` and emits `profile_local_only_applied`. Explicit caller values (`needs.local_only: true` or `false`, or `--local-only "<reason>"`) are respected directly without regex/length filtering.
 
-Route `implies` fill `local_only` and `visual` only when both the caller and the profile left that flag unset. A classifier `local_only: false` on `research_packet` or `exploration_analysis` does not exclude Dot.
+Route `implies` fill `local_only` and `visual` only when both the caller and the profile left that flag unset. A classifier `local_only: false` on `exploration_forensics` does not exclude Dot.
 
-`needs_gui` adds the visual requirement. It rewrites `work_kind` to `computer_use` only when the profile did not name a real route and the caller kind is missing or generic (`general_implementation`, `tool_execution`, `debug_review`, `other_or_mixed`). A classifier route such as `general_implementation` stays that route.
+`needs_gui` adds the visual requirement. It rewrites `work_kind` to `gui_control` only when the profile did not name a real route and the caller kind is missing or generic (`code_implementation`, `other_or_mixed`). A classifier route such as `code_implementation` stays that route.
 
 ## 3. Fit minus quota cost
 
@@ -53,7 +55,7 @@ Allocation has three layers. They do not mix.
 | Layer | What it decides | What it ignores |
 | :--- | :--- | :--- |
 | **Eligible set** | Model settings, account health, host policy, modality (`needs_visual`, `needs_gui`, or `tool_operation >= 3`), a demanded category (`>= 1`) with no data, and per-window reserves. | Fit and quota price. |
-| **Fit** | How well the model's four category scores (`divergence`, `coding`, `aesthetics`, `tool_operation`, in panel standard deviations at that effort) meet the task's demand: `sum_a w_a * (min(z_a, c_a) - t1_a) / sum_a w_a`, where `t1_a` (the panel's weakest) is the zero point, `t2_a` is the panel median, `t3_a` is the anchor (`0.0`), and the cap `c_a` is the demanded level's target at levels 1 and 2 and the category's ceiling (the best measured model) at level 3. `tool_operation` level 1 asks for nothing; level 2 evaluates `responsiveness`; level 3 evaluates `min(responsiveness, image_recognition)`. | Which pool pays. |
+| **Fit** | How well the model's four category scores (`creativity`, `coding`, `aesthetics`, `tool_operation`, in panel standard deviations at that effort) meet the task's demand: `sum_a w_a * (min(z_a, c_a) - t1_a) / sum_a w_a`, where `t1_a` (the panel's weakest) is the zero point, `t2_a` is the panel median, `t3_a` is the anchor (`0.0`), and the cap `c_a` is the demanded level's target at levels 1 and 2 and the category's ceiling (the best measured model) at level 3. `aesthetics` evaluates `design` at level 1 and `min(design, image_recognition)` at levels 2 and 3; `tool_operation` level 1 asks for nothing, level 2 evaluates `responsiveness`, and level 3 evaluates `min(responsiveness, image_recognition)`. | Which pool pays. |
 | **Quota economy** | Which window pays, and what other work that spend displaces: the part of the spend over the window's recovery line, priced in panel-SD score units. 5-hour windows are feasibility only; long reset-period windows carry the price. | Model quality, except through the value ladder of the candidates that draw the window. |
 
 ```text

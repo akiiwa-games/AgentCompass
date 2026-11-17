@@ -31,8 +31,9 @@ def setUpModule():
 
 NOW = datetime(2026, 11, 4, 12, tzinfo=timezone.utc)
 WEEK = 168.0
-PROFILE = {'reasoning_depth': 2, 'code_complexity': 2, 
-           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False, 'interaction_style': 'engineering', 'multi_task': False,
+PROFILE = {'work_kind': 'code_implementation', 'primary_level': 2,
+           'secondary_kind': 'none', 'secondary_level': 0, 'access': 'write',
+           'needs_visual': False, 'local_only': True, 'wants_fast': False,
            'task_count': '1', 'expected_hours': 1.0}
 MID, FRONTIER, CREATIVE = (2, 3, 2, 0), (2, 3, 3, 0), (3, 1, 0, 0)
 
@@ -48,9 +49,15 @@ def rec_of(capacity=1000.0, used_frac=0.5, elapsed=0.5, reset_hours=None, period
 def ladder_for(spend_scale=1.0, with_outside=0.0):
     """A realistic ladder: three models (cheap weak, middle, dear strong) over the real demand grid and panel z-score targets."""
     anchor_targets = axis_scores.load_five_axis()['anchor']['targets']
-    models = [(0.29 * spend_scale, {'divergence': -2.2, 'coding': -1.8, 'aesthetics': -1.9, 'tool_operation': {'responsiveness': 1.0, 'image_recognition': -1.5}}),
-              (12.59 * spend_scale, {'divergence': -0.8, 'coding': -0.6, 'aesthetics': -0.6, 'tool_operation': {'responsiveness': 0.2, 'image_recognition': -0.5}}),
-              (22.86 * spend_scale, {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0, 'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}})]
+    models = [(0.29 * spend_scale, {'creativity': -2.2, 'coding': -1.8,
+                                    'aesthetics': {'design': -1.9, 'image_recognition': -1.5},
+                                    'tool_operation': {'responsiveness': 1.0, 'image_recognition': -1.5}}),
+              (12.59 * spend_scale, {'creativity': -0.8, 'coding': -0.6,
+                                     'aesthetics': {'design': -0.6, 'image_recognition': -0.5},
+                                     'tool_operation': {'responsiveness': 0.2, 'image_recognition': -0.5}}),
+              (22.86 * spend_scale, {'creativity': 0.0, 'coding': 0.0,
+                                     'aesthetics': {'design': 0.0, 'image_recognition': 0.0},
+                                     'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}})]
     hulls = []
     for d in quota_economy.FIVE_AXIS_DEMAND_GRID:
         targets = axis_scores.five_axis_targets(d, anchor_targets)
@@ -1242,7 +1249,8 @@ class WeeklyWindowTests(unittest.TestCase):
         overlaid = axis_scores.five_axis_overlay(copy.deepcopy(self.fleet.accounts))
         stateless = {'bundle': {'account': 'claude', 'id': 'x'}, 'components': {'fit': 0.9}, 'expected_usd': 5.0,
                      '_five_window_states': {},
-                     '_five_values': {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0,
+                     '_five_values': {'creativity': 0.0, 'coding': 0.0,
+                                      'aesthetics': {'design': 0.0, 'image_recognition': 0.0},
                                       'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}}}
         econ = quota_economy.FiveAxisEconomy([stateless], overlaid, {}, {'hours': 2.0})
         self.assertEqual(econ.entries, [])
@@ -1418,7 +1426,7 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
 
     def _plan(self, *, claude_plan='pro', codex_plan='plus', claude_used=0.15, codex_used=0.15,
               claude_reset_h=84.0, codex_reset_h=84.0, seats_used=0, cadence_reset_h=9.0,
-              divergence=1, hours=0.3, local_only=True, records=None):
+              creativity=1, hours=0.3, local_only=True, records=None):
         acc = copy.deepcopy(self.accounts)
         acc['accounts']['claude']['plan'] = claude_plan
         acc['accounts']['codex']['plan'] = codex_plan
@@ -1451,11 +1459,11 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         else:
             recs = records
         profile = {
-            'reasoning_depth': divergence, 'code_complexity': 0,
-            'axis_demand': {'divergence': divergence, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0},
-            'needs_visual': False, 'needs_gui': False, 'local_only': local_only,
-            'wants_fast': False, 'read_only_review': True,
-            'interaction_style': 'advisory', 'multi_task': False, 'task_count': '1',
+            'work_kind': 'creative_ideation', 'primary_level': creativity,
+            'secondary_kind': 'none', 'secondary_level': 0, 'access': 'read-only',
+            'axis_demand': {'creativity': creativity, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0},
+            'needs_visual': False, 'local_only': local_only,
+            'wants_fast': False, 'task_count': '1',
             'expected_hours': hours,
         }
         return allocator.plan(
@@ -1468,7 +1476,7 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         costs = []
         for seats in range(5):
             d = self._plan(claude_plan='pro', codex_plan='plus', claude_used=0.35, codex_used=0.35,
-                           seats_used=seats, cadence_reset_h=9.0, divergence=1, hours=0.3, local_only=True)
+                           seats_used=seats, cadence_reset_h=9.0, creativity=1, hours=0.3, local_only=True)
             cw = window_reports(d)['chatgpt-web/cadence']
             self.assertEqual(cw['capacity_usd'], 5.0)
             self.assertEqual(cw['used_usd'], float(seats))
@@ -1482,7 +1490,7 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
             prev = None
             for seats in range(5):
                 d = self._plan(claude_plan=cl_plan, codex_plan=cx_plan, claude_used=used, codex_used=used,
-                               seats_used=seats, cadence_reset_h=9.0, divergence=1, hours=0.3, local_only=True)
+                               seats_used=seats, cadence_reset_h=9.0, creativity=1, hours=0.3, local_only=True)
                 ids = [c['id'] for c in eligible(d)]
                 pro = row(d, 'pro_max')
                 now_ = (pro['components']['opportunity_cost'], ids.index('pro_max') if 'pro_max' in ids else len(ids))
@@ -1493,7 +1501,7 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
 
         # Dot stays unmetered (no cadence window, zero opportunity cost).
         d_remote = self._plan(claude_plan='pro', codex_plan='plus', claude_used=0.35, codex_used=0.35,
-                              seats_used=4, cadence_reset_h=9.0, divergence=1, hours=0.3, local_only=False)
+                              seats_used=4, cadence_reset_h=9.0, creativity=1, hours=0.3, local_only=False)
         dot_row = row(d_remote, 'dot_text')
         self.assertEqual(dot_row['components']['opportunity_cost'], 0.0)
         self.assertNotIn('dot/cadence', window_reports(d_remote))
@@ -1505,7 +1513,7 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         # available), asserted pairwise on the two candidates.
         d_tie = self._plan(claude_plan='max_20x', codex_plan='pro', claude_used=0.50, codex_used=0.50,
                            claude_reset_h=2.0, codex_reset_h=84.0,
-                           seats_used=0, cadence_reset_h=1 / 6, divergence=1, hours=0.3, local_only=True)
+                           seats_used=0, cadence_reset_h=1 / 6, creativity=1, hours=0.3, local_only=True)
         pro_tie = row(d_tie, 'pro_max')
         opus_fast = row(d_tie, 'opus55_medium', fast=True)
         self.assertLess(pro_tie['components']['opportunity_cost'], 5e-5)

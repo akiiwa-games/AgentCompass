@@ -165,7 +165,7 @@ class SharedHooks(unittest.TestCase):
         merged = json.loads(json.dumps(REAL))
         owner, bid = next((o, b) for o, s in merged['accounts'].items() for b in (s.get('bundles') or {}))
         merged['accounts'][owner]['bundles'][bid].update(disabled=True, discovery_unavailable=True)
-        task = {'work_kind': 'general_implementation', 'difficulty': 'routine', 'needs': {'local_only': True}}
+        task = {'work_kind': 'code_implementation', 'difficulty': 'routine', 'needs': {'local_only': True}}
         row = next(c for c in allocator.plan(task, {'read_ok': True, 'accounts': {}}, datetime.now(timezone.utc),
                                              accounts=merged)['ranking'] if c['id'] == bid)
         self.assertIn('unchecked in model management', row['excluded'])

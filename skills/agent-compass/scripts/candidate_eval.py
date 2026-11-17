@@ -193,7 +193,10 @@ def evaluate_bundle(bundle, task, ctx):
                     else f'{billing} billing: explicit selection only')
     if not spec.get('verified', True) and not task['include_unverified']:
         exclude('account not verified as launchable')
-    if info.get('advisor_only') and kind not in info.get('advisor_for', ()):
+    if info.get('advisor_only') and (
+        kind not in info.get('advisor_for', ())
+        or (task.get('profile') or {}).get('access') == 'write'
+    ):
         exclude('advisor only; cannot execute')
     account_out = bool(result['excluded'])      # out by the host, the checkbox, a hold or billing: not by this task
     if info.get('excluded_when') == 'local_only' and task['local_only']:
@@ -230,11 +233,12 @@ def evaluate_bundle(bundle, task, ctx):
     def _missing_targets(axis, level):
         if level < five['demanded_level']:
             return []
-        if axis == 'tool_operation':
-            selected = axis_scores.TOOL_LEVEL_FACETS.get(level) or ()
+        if axis in axis_scores.LEVEL_FACETS:
+            selected = axis_scores.LEVEL_FACETS[axis].get(level) or ()
             if not selected:
                 return []
-            return [f'tool_operation.{f}' for f in selected if (values.get('tool_operation') or {}).get(f) is None]
+            return [f'{axis_scores.FACET_CATEGORY[f]}.{f}' for f in selected
+                    if (values.get(axis) or {}).get(f) is None]
         if values.get(axis) is not None:
             return []
         cat_cell = (state.get('categories') or {}).get(axis) or {}
@@ -255,9 +259,13 @@ def evaluate_bundle(bundle, task, ctx):
                 missing_targets.extend(miss)
     if blind:
         first_target = missing_targets[0]
-        eff_note = f' at effort {eff}' if eff and any(
-            ((state.get('categories') or {}).get(a) or {}).get('value') is not None for a in blind
-        ) else ''
+        cats_map = state.get('categories') or {}
+        has_high = any(
+            axis_scores._facet_at_effort(cats_map, *t.split('.', 1), 'high') is not None if '.' in t
+            else ((cats_map.get(t) or {}).get('value') is not None)
+            for t in missing_targets
+        )
+        eff_note = f' at effort {eff}' if eff and has_high else ''
         blind_msg = (
             f'no trusted data for the demanded category {", ".join(blind)} on {model}{eff_note} '
             f'(missing {", ".join(missing_targets)}; fill with `agentcompass score set {model} {first_target} <1..3>` '
@@ -622,10 +630,15 @@ def evaluate_bundle(bundle, task, ctx):
     # extra burn is priced in its usd and its gain in the categories' effort shift). The economy decides.
     fit, axis_rows = axis_scores.five_axis_fit(values, task['five_axis_demand'], task['five_axis_targets'])
     result['_five_values'] = values         # the economy re-reads this candidate's scores at its effort over the demand grid
-    # The candidate's four category scores at this effort: what the radar and the explanation show (tool_operation: the
-    # weaker of its facets that have a value).
-    tool = [z for z in values['tool_operation'].values() if z is not None]
-    shown = {**{a: values[a] for a in axis_scores.FIVE_AXES if a != 'tool_operation'}, 'tool_operation': min(tool) if tool else None}
+    # The candidate's four category scores at this effort: what the radar and the explanation show (`aesthetics` and
+    # `tool_operation`: the weaker of their facets that have a value).
+    shown = {}
+    for a in axis_scores.FIVE_AXES:
+        if a in axis_scores.LEVEL_FACETS:
+            present = [z for z in (values.get(a) or {}).values() if z is not None]
+            shown[a] = min(present) if present else None
+        else:
+            shown[a] = values.get(a)
     result['components'].update({a: None if v is None else round(v, 4) for a, v in shown.items()})
     result['components'].update({f'share_{a}': v for a, v in
                                  axis_scores.five_axis_shares(values, ctx['accounts']['_five_axis']['targets']).items()})

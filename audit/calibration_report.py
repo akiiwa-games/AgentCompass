@@ -37,7 +37,7 @@ UTC = dt.timezone.utc
 
 MIN_CELL = 5                   # samples a cell needs before its median is read; below it the cell is marked
 DEFAULT_DAYS = 30
-AXES = ("divergence", "coding", "aesthetics", "tool_operation")
+AXES = ("creativity", "coding", "aesthetics", "tool_operation")
 ROUTED, PINNED, KEPT_WHOLE = "routed", "pinned", "keep_whole"
 GROUPS = (ROUTED, PINNED, KEPT_WHOLE)
 OPEN_STATES = ("prepared", "launching", "launched", "started")

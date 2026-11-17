@@ -38,9 +38,9 @@ class DecisionLedgerTests(unittest.TestCase):
             'antigravity': row(window('gemini-5h', 10, 3), window('gemini-weekly', 20, 100))}}), encoding='utf-8')
         self.task = Path(self.directory.name) / 'task.json'
         self.task.write_text(json.dumps({'task': {
-            'objective': 'Fix the pagination bug', 'work_kind': 'general_implementation', 'expected_hours': 1,
+            'objective': 'Fix the pagination bug', 'work_kind': 'code_implementation', 'expected_hours': 1,
             'needs': {'local_only': True},
-            'profile': profile(reasoning_depth=3, local_only=True, expected_hours=1.0, reason='private reasoning')}}), encoding='utf-8')
+            'profile': profile(primary_level=3, local_only=True, expected_hours=1.0, reason='private reasoning')}}), encoding='utf-8')
 
     def run_plan(self, *extra):
         argv = ['route_judge.py', 'plan', '--input', str(self.task), '--usage-cache', str(self.cache), *extra]
@@ -74,7 +74,7 @@ class DecisionLedgerTests(unittest.TestCase):
         self.assertEqual(winner['capacity']['window'], live['capacity']['window'])
         self.assertEqual((winner['expected_pct'], winner['expected_usd']), (round(live['expected_pct'], 4), round(live['expected_usd'], 4)))
         self.assertEqual(winner['action'], live['action'])
-        self.assertTrue({'divergence', 'coding', 'aesthetics', 'tool_operation'} <= set(winner['components']))
+        self.assertTrue({'creativity', 'coding', 'aesthetics', 'tool_operation'} <= set(winner['components']))
         self.assertTrue(all('capacity' in row or row['expected_pct'] is None for row in full if 'expected_pct' in row))
         # Blocked candidates keep their reasons; the scoring system and the task demand are recorded with the decision.
         blocked = [row for row in ranking if row['excluded']]
@@ -115,7 +115,7 @@ class DecisionLedgerTests(unittest.TestCase):
         [before] = self.plan_rows()
         accounts = account_fleet.load_accounts()
         accounts['accounts']['codex']['verified'] = False             # the fleet is reconfigured afterwards
-        later = allocator.plan({'work_kind': 'general_implementation', 'needs': {'local_only': True}, 'profile': profile(local_only=True)},
+        later = allocator.plan({'work_kind': 'code_implementation', 'needs': {'local_only': True}, 'profile': profile(local_only=True)},
                                {'read_ok': True, 'accounts': {}}, self.now + timedelta(days=3), accounts=accounts, overrides=[])
         self.assertNotEqual(later['choice'], before['choice'])
         [after] = self.plan_rows()

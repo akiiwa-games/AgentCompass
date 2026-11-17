@@ -1087,7 +1087,7 @@ class DiscoveryTests(unittest.TestCase):
         accounts = self.apply(self.discover())
         accounts['accounts']['codex']['verified'] = True
         omp_id = next(bid for bid, b in account_fleet.bundles(accounts).items() if b.get('harness') == 'omp')
-        task = {'objective': 'Fix a bug in parser.py', 'work_kind': 'general_implementation', 'expected_hours': 1,
+        task = {'objective': 'Fix a bug in parser.py', 'work_kind': 'code_implementation', 'expected_hours': 1,
                 'constraints': {'model': account_fleet.bundles(accounts)[omp_id]['model']}}
         usage = usage_windows(self.now, {'codex': [('usage', 80, 100)]})
         plan = allocator.plan(task, usage, self.now, accounts=accounts, overrides=[], records=[], host_policy_config=None)

@@ -20,7 +20,7 @@ import score_overview as so
 import user_scores
 
 TARGETS = {
-    'divergence': {'levels': {}, 'continuity': 2.0,
+    'creativity': {'levels': {}, 'continuity': 2.0,
                    'facets': {'creative_writing': {'levels': {'1': {'target': -3.0, 'statistic': 'panel minimum'},
                                                               '2': {'target': -2.0, 'statistic': 'panel median'},
                                                               '3': {'target': 0.0, 'statistic': 'anchor'}}}}},
@@ -39,6 +39,14 @@ for _cat in TARGETS.values():
     _cat['levels'] = first
 TARGETS['coding']['levels'] = {**TARGETS['coding']['levels'],
                                '3': {'target': 0.0, 'ceiling': {'value': 0.0, 'model': 'category-best', 'status': 'measured'}}}
+TARGETS['aesthetics']['levels'] = {
+    '1': {'by_facet': {'design': {'target': -2.0, 'zero': -2.0}}},
+    '2': {'by_facet': {'design': {'target': -1.0, 'zero': -2.0}, 'image_recognition': {'target': -0.7, 'zero': -2.8}}},
+    '3': {'by_facet': {
+        'design': {'target': 0.0, 'zero': -2.0, 'ceiling': {'value': 0.15, 'model': 'design-best', 'status': 'measured'}},
+        'image_recognition': {'target': 0.0, 'zero': -2.8, 'ceiling': {'value': 0.0, 'model': 'vision-best', 'status': 'measured'}},
+    }},
+}
 
 
 def cell(value, status='measured', **extra):
@@ -48,12 +56,12 @@ def cell(value, status='measured', **extra):
 def model(z, status='measured'):
     return {'five_axis': {
         'categories': {
-            'divergence': {**cell(z, status), 'facets': {'creative_writing': cell(z, status, sources={
+            'creativity': {**cell(z, status), 'facets': {'creative_writing': cell(z, status, sources={
                 'lmarena.creative_writing': {'listed_as': 'Model X (High)'}})}},
             'coding': {**cell(z), 'facets': {'execution': cell(z), 'faithfulness': cell(z)}},
             'aesthetics': {**cell(z), 'facets': {'design': cell(z)}},
             'tool_operation': {'facets': {'responsiveness': cell(0.5), 'image_recognition': cell(z)}}},
-        'axis_status': {'divergence': status, 'coding': 'measured', 'aesthetics': 'measured', 'tool_operation': 'measured'}}}
+        'axis_status': {'creativity': status, 'coding': 'measured', 'aesthetics': 'measured', 'tool_operation': 'measured'}}}
 
 
 def test_level_text_clamps_above_three():
@@ -75,12 +83,12 @@ def test_radar_axes_use_display_names_in_both_languages():
         for seq in (radar_chart.SCORE_AXES, radar_chart.DNA_AXES):
             formulas = [formula for _, _, formula in seq]
             assert formulas[0].startswith('创意：')
-            assert not any(f.startswith(('divergence', 'coding', 'aesthetics', 'tool_operation')) for f in formulas)
+            assert not any(f.startswith(('creativity', 'coding', 'aesthetics', 'tool_operation')) for f in formulas)
         i18n.set_language('en')
         for seq in (radar_chart.SCORE_AXES, radar_chart.DNA_AXES):
             formulas = [formula for _, _, formula in seq]
             assert formulas[0].startswith('Creativity:')
-            assert not any(f.startswith(('divergence:', 'coding:', 'aesthetics:', 'tool_operation:')) for f in formulas)
+            assert not any(f.startswith(('creativity:', 'coding:', 'aesthetics:', 'tool_operation:')) for f in formulas)
     finally:
         i18n.set_language(prev)
 
@@ -88,12 +96,14 @@ def test_radar_axes_use_display_names_in_both_languages():
 def test_model_rows_read_levels_through_z_to_level():
     rows = so.model_rows({'m': model(-2.0), 'top': model(0.5)}, TARGETS)
     by = {r['model']: r for r in rows}
-    assert by['m']['cells']['divergence']['level'] == pytest.approx(2.0)
-    assert so.cell_text(by['top']['cells']['divergence']) == '3.0+'
-    # tool_operation: the weakest of its existing facets; responsiveness above t3 is at least the median
+    assert by['m']['cells']['creativity']['level'] == pytest.approx(2.0)
+    assert so.cell_text(by['top']['cells']['creativity']) == '3.0+'
+    # aesthetics and tool_operation: the weakest of their existing facets; responsiveness above t3 is at least the median
+    assert by['m']['cells']['aesthetics']['level'] == pytest.approx(
+        min(user_scores.z_to_level(-2.0, -2.0, -1.0, 0.0), user_scores.z_to_level(-2.0, -2.8, -0.7, 0.0)))
     assert by['m']['cells']['tool_operation']['level'] == pytest.approx(
         min(user_scores.z_to_level(-2.0, -2.8, -0.7, 0.0), user_scores.z_to_level(0.5, -1.6, 0.1, 0.1)))
-    tip = so.cell_tip('M', 'divergence', by['m']['cells']['divergence'], model_key='m-raw')
+    tip = so.cell_tip('M', 'creativity', by['m']['cells']['creativity'], model_key='m-raw')
     assert 'M (m-raw) · 创意' in tip
     assert 'lmarena.creative_writing — Model X (High)' in tip
     assert '3.0+' in tip
@@ -103,7 +113,7 @@ def test_cells_show_only_levels_while_hover_and_editor_show_deciding_source():
     # Parent steer + Finding A: table cells show plain levels only (no ✎ ◆ ~ markers); source comes from deciding facet.
     for status in ('estimated', 'user', 'maintainer', 'measured'):
         row = so.model_rows({'m': model(-2.0, status)}, TARGETS)[0]
-        assert so.cell_text(row['cells']['divergence']) == '2.0'
+        assert so.cell_text(row['cells']['creativity']) == '2.0'
     assert so.SOURCE_OF['partial'] == '部分'
     assert so.source_label('partial') != '实测'
 
@@ -190,7 +200,7 @@ def test_category_overview_lists_boards_dates_targets_and_continuity():
     assert '本分项最高实测：+0.4200（facet-best）' in tip
     assert blocks['coding']['continuity'] == 1.5
     assert '1.500' in blocks['coding']['derivation']
-    assert blocks['divergence']['coverage'] == {'measured': 1, 'estimated': 1}
+    assert blocks['creativity']['coverage'] == {'measured': 1, 'estimated': 1}
 
 
 def test_demand_grid_n_and_live_economy_text_are_derived_from_router_data():
@@ -234,8 +244,23 @@ def test_editor_prefill_is_never_lossy_and_category_clear_warns_when_facet_overr
     assert so.prefill_level(initial, 'tool_operation') is None
     # Clamped 3.0+ and collapsed responsiveness > t3 also do not prefill lossy numbers.
     top_row = so.model_rows({'top': model(0.5)}, TARGETS)[0]
-    assert so.prefill_level(top_row, 'divergence') is None
+    assert so.prefill_level(top_row, 'creativity') is None
     assert so.prefill_level(top_row, 'tool_operation.responsiveness') is None
+
+    # Manual score tooltip displays read-only public data reference (`公开数据对照` / `Public data reference`) without overwriting manual level.
+    router_data.set_manual_score('gpt-6.1-sol', 'creativity', 2.4)
+    prev_lang = i18n.get_language()
+    try:
+        i18n.set_language('zh')
+        manual_zh = {r['model']: r for r in router_data.score_overview()['models']}['gpt-6.1-sol']
+        assert manual_zh['cells']['creativity']['level'] == pytest.approx(2.4)
+        assert '公开数据对照：' in so.cell_tip('Sol 6.1', 'creativity', manual_zh['cells']['creativity'], model_key='gpt-6.1-sol')
+        i18n.set_language('en')
+        manual_en = {r['model']: r for r in router_data.score_overview()['models']}['gpt-6.1-sol']
+        assert 'Public data reference:' in so.cell_tip('Sol 6.1', 'creativity', manual_en['cells']['creativity'], model_key='gpt-6.1-sol')
+    finally:
+        i18n.set_language(prev_lang)
+    router_data.clear_manual_score('gpt-6.1-sol', 'creativity')
 
     # Whole-category tool_operation = 3.0 prefills exact 3.0 (not the 2.0 responsiveness ceiling).
     router_data.set_manual_score('gpt-6.1-sol', 'tool_operation', 3.0)
@@ -285,7 +310,7 @@ def test_manual_score_changes_allocator_plan_winner_when_reading_local_state(tmp
         'expected_hours': 1.0,
         'needs': {'local_only': True, 'local_only_reason': 'test'},
         'profile': router_test_support.profile(local_only=True, axis_demand={
-            'divergence': 1, 'coding': 3, 'aesthetics': 0, 'tool_operation': 2,
+            'creativity': 1, 'coding': 3, 'aesthetics': 0, 'tool_operation': 2,
         }),
     }
     caps = account_fleet.load_capabilities(accounts=accounts)

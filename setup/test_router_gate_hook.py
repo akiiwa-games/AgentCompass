@@ -1741,12 +1741,12 @@ class BoundDispatchGateTests(unittest.TestCase):
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         bundle = dict(account_fleet.bundles(accounts)['argon_high'], bundle_id='argon_high')
         self.task = {'parent_agent_id': 'parent-fixture', 'task_id': 'task-fixture',
-                     'work_kind': 'general_implementation', 'expected_hours': 0.5, 'needs': {'local_only': True},
-                     'profile': {'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 1,
-                                 'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False, 'access': 'write', 'expected_hours': 0.5,
-                                 'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'engineering',
+                     'work_kind': 'code_implementation', 'expected_hours': 0.5, 'needs': {'local_only': True},
+                     'profile': {'work_kind': 'code_implementation', 'primary_level': 2, 'secondary_kind': 'none', 'secondary_level': 0,
+                                 'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
+                                 'read_only_review': False, 'access': 'write', 'expected_hours': 0.5,
                                  'multi_task': False, 'task_count': '1',
-                                 'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 0}}}
+                                 'axis_demand': {'creativity': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1}}}
         self.now = dt.datetime.now(UTC)
         decision = dispatch_registry.issue({'choice': 'argon_high', 'selected_bundle': bundle}, self.task, self.now)
         self.row = dispatch_registry.prepare(decision['decision_id'], self.task,
@@ -2059,6 +2059,9 @@ class UsageRowTests(unittest.TestCase):
         self.old_float = gate.HOME / ".usage-float" / "usage-cache.json"
         self.addCleanup(lambda: [path.unlink() for path in (self.canonical, self.old_float) if path.exists()])
         os.environ.pop("ROUTER_USAGE_CACHE", None)
+        reg = mock.patch.object(gate.router_module("usage_cache"), "_registry", return_value="")
+        reg.start()
+        self.addCleanup(reg.stop)
 
     def write(self, path, used, fetched):
         path.parent.mkdir(parents=True, exist_ok=True)

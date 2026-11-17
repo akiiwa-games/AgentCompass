@@ -1,11 +1,11 @@
 {
- "schema": "agent-compass.five-axis-scores/3",
- "generated_at": "2026-11-13T04:40:12+00:00",
- "measurements_sha256": "6f01931d8c49dd5c4f2a18662af80a5ae1d5336dd2646eaf86a7b8185b3921c1",
+ "schema": "agent-compass.five-axis-scores/5",
+ "generated_at": "2026-11-17T11:00:00+00:00",
+ "measurements_sha256": "b7a93cc867435cec463d71b3dca2edc590c4ff02efe1a28416c86ac0aba32cdd",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
  "estimate_fits": {
-  "divergence.creative_writing~tier": {
+  "creativity.creative_writing~tier": {
    "a": -0.8977,
    "b": 3.9838,
    "r": 0.8991,
@@ -81,7 +81,7 @@
      "capacity_usd": 11.92,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -92,7 +92,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       }
@@ -105,7 +105,7 @@
      "capacity_usd": 155.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -116,7 +116,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       }
@@ -131,7 +131,7 @@
      "capacity_usd": 110.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 34,
+     "age_days": 38,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -142,7 +142,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "midpoint of the two full Max 5x sessions the page measured at the 5-hour limit",
-       "age_days": 34,
+       "age_days": 38,
        "stale": true,
        "rung": 1
       }
@@ -161,7 +161,7 @@
      "capacity_usd": 1217.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 34,
+     "age_days": 38,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -172,7 +172,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-       "age_days": 34,
+       "age_days": 38,
        "stale": true,
        "rung": 1
       }
@@ -191,7 +191,7 @@
      "capacity_usd": 608.5,
      "status": "stale",
      "rung": 1,
-     "age_days": 34,
+     "age_days": 38,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -211,12 +211,12 @@
          "as_of": "2026-10-10",
          "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-         "age_days": 34,
+         "age_days": 38,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 34,
+       "age_days": 38,
        "stale": true,
        "rung": 1
       }
@@ -237,7 +237,7 @@
      "capacity_usd": 271.75,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -248,7 +248,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       }
@@ -261,7 +261,7 @@
      "capacity_usd": 1704.5,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -272,7 +272,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       },
@@ -284,7 +284,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "one heavy user's measured full week at API-equivalent prices",
-       "age_days": 34,
+       "age_days": 38,
        "stale": true,
        "rung": 1
       }
@@ -297,7 +297,7 @@
      "capacity_usd": 852.25,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -317,7 +317,7 @@
          "as_of": "2026-11-02",
          "fetched_at": "2026-11-09T05:34:15+00:00",
          "method": "median measured account week at API rates (cache included)",
-         "age_days": 11,
+         "age_days": 15,
          "stale": false,
          "rung": 1
         },
@@ -329,12 +329,12 @@
          "as_of": "2026-10-10",
          "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "one heavy user's measured full week at API-equivalent prices",
-         "age_days": 34,
+         "age_days": 38,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       }
@@ -349,7 +349,7 @@
      "capacity_usd": 110.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 34,
+     "age_days": 38,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -360,7 +360,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "midpoint of the two full Max 5x sessions the page measured at the 5-hour limit",
-       "age_days": 34,
+       "age_days": 38,
        "stale": true,
        "rung": 1
       }
@@ -380,7 +380,7 @@
      "capacity_usd": 1217.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 34,
+     "age_days": 38,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -391,7 +391,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T06:36:08+00:00",
        "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-       "age_days": 34,
+       "age_days": 38,
        "stale": true,
        "rung": 1
       }
@@ -411,7 +411,7 @@
      "capacity_usd": 608.5,
      "status": "stale",
      "rung": 1,
-     "age_days": 34,
+     "age_days": 38,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -431,12 +431,12 @@
          "as_of": "2026-10-10",
          "fetched_at": "2026-11-09T06:36:08+00:00",
          "method": "measured lower bound: the busiest Max 5x week, scaled by the page to the current 125% limits, never reached the weekly cap",
-         "age_days": 34,
+         "age_days": 38,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 34,
+       "age_days": 38,
        "stale": true,
        "rung": 1
       }
@@ -460,7 +460,7 @@
      "capacity_usd": 61.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -471,7 +471,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       },
@@ -483,7 +483,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of measured full weekly windows at API prices",
-       "age_days": 34,
+       "age_days": 38,
        "stale": true,
        "rung": 1
       }
@@ -496,7 +496,7 @@
      "capacity_usd": 10.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -507,7 +507,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       }
@@ -522,7 +522,7 @@
      "capacity_usd": 61.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -533,7 +533,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       },
@@ -545,7 +545,7 @@
        "as_of": "2026-10-10",
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of measured full weekly windows at API prices",
-       "age_days": 34,
+       "age_days": 38,
        "stale": true,
        "rung": 1
       }
@@ -559,7 +559,7 @@
      "capacity_usd": 10.0,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -570,7 +570,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "weekly value / full five-hour windows per week (both from the page)",
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       }
@@ -586,7 +586,7 @@
      "capacity_usd": 265.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 35,
+     "age_days": 39,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -597,7 +597,7 @@
        "as_of": "2026-10-09",
        "fetched_at": "2026-11-09T05:34:16+00:00",
        "method": "median of a heavy user's logged full weekly windows at API prices",
-       "age_days": 35,
+       "age_days": 39,
        "stale": true,
        "rung": 1
       },
@@ -609,7 +609,7 @@
        "as_of": "2026-10-04",
        "fetched_at": "2026-11-09T05:34:17+00:00",
        "method": "midpoint of the measured weekly range at API prices",
-       "age_days": 40,
+       "age_days": 44,
        "stale": true,
        "rung": 1
       }
@@ -630,7 +630,7 @@
      "capacity_usd": 615.5,
      "status": "ok",
      "rung": 1,
-     "age_days": 11,
+     "age_days": 15,
      "merge": "median of 2 value(s), rung 1",
      "sources": [
       {
@@ -641,7 +641,7 @@
        "as_of": "2026-11-02",
        "fetched_at": "2026-11-09T05:34:15+00:00",
        "method": "median measured account week at API rates (cache included)",
-       "age_days": 11,
+       "age_days": 15,
        "stale": false,
        "rung": 1
       },
@@ -653,7 +653,7 @@
        "as_of": "2026-10-04",
        "fetched_at": "2026-11-09T05:34:17+00:00",
        "method": "measured weekly window at API prices",
-       "age_days": 40,
+       "age_days": 44,
        "stale": true,
        "rung": 1
       }
@@ -670,7 +670,7 @@
      "capacity_usd": 400.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 66,
+     "age_days": 70,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -690,12 +690,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-         "age_days": 66,
+         "age_days": 70,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 66,
+       "age_days": 70,
        "stale": true,
        "rung": 3
       }
@@ -708,7 +708,7 @@
      "capacity_usd": 2580.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 66,
+     "age_days": 70,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -728,12 +728,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-         "age_days": 66,
+         "age_days": 70,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 66,
+       "age_days": 70,
        "stale": true,
        "rung": 3
       }
@@ -746,7 +746,7 @@
      "capacity_usd": 23.6,
      "status": "ok",
      "rung": 1,
-     "age_days": 0,
+     "age_days": 4,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -757,7 +757,7 @@
        "as_of": "2026-11-13",
        "fetched_at": null,
        "method": "Maintainer measurement on one Google AI Ultra 20x account driven through the Antigravity CLI: the list-priced spend of its Claude Opus 5.5 / Sonnet 5.5 turns (uncached input, cache reads, output, from the native session token counts) between two usage readings of the window, divided by the rise of the reading; 4 runs from 2026-11-05 to 2026-11-12, 185.6 points and 808 turns, 43.72 usd, 23.3 to 24.7 usd per full window run by run",
-       "age_days": 0,
+       "age_days": 4,
        "stale": false,
        "rung": 1
       }
@@ -770,7 +770,7 @@
      "capacity_usd": 47.6,
      "status": "ok",
      "rung": 1,
-     "age_days": 0,
+     "age_days": 4,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -781,7 +781,7 @@
        "as_of": "2026-11-13",
        "fetched_at": null,
        "method": "Maintainer measurement on one Google AI Ultra 20x account driven through the Antigravity CLI: the list-priced spend of its Claude Opus 5.5 / Sonnet 5.5 turns (uncached input, cache reads, output, from the native session token counts) between two usage readings of the window, divided by the rise of the reading; one run from 2026-11-11 to 2026-11-13 that ended at 100%, 94.65 points and 767 turns, 45.03 usd; the readings of the 5-hour and the weekly window rise 2.0 to 1 together",
-       "age_days": 0,
+       "age_days": 4,
        "stale": false,
        "rung": 1
       }
@@ -796,7 +796,7 @@
      "capacity_usd": 100.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 66,
+     "age_days": 70,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -816,12 +816,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-         "age_days": 66,
+         "age_days": 70,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 66,
+       "age_days": 70,
        "stale": true,
        "rung": 3
       }
@@ -834,7 +834,7 @@
      "capacity_usd": 645.0,
      "status": "stale",
      "rung": 3,
-     "age_days": 66,
+     "age_days": 70,
      "merge": "median of 1 value(s), rung 3",
      "sources": [
       {
@@ -854,12 +854,12 @@
          "as_of": "2026-09-08",
          "fetched_at": "2026-11-09T05:49:38+00:00",
          "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-         "age_days": 66,
+         "age_days": 70,
          "stale": true,
          "rung": 1
         }
        ],
-       "age_days": 66,
+       "age_days": 70,
        "stale": true,
        "rung": 3
       }
@@ -894,7 +894,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 66,
+     "age_days": 70,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -905,7 +905,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini 5-hour allowance at Google API rates, calibrated against the empirical Connect-RPC limits of one telemetry harness (about 93% cache reads)",
-       "age_days": 66,
+       "age_days": 70,
        "stale": true,
        "rung": 1
       }
@@ -918,7 +918,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 66,
+     "age_days": 70,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -929,7 +929,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Gemini weekly allowance at Google API rates, calibrated against empirical limits (weekly exhaustion recorded by the harness)",
-       "age_days": 66,
+       "age_days": 70,
        "stale": true,
        "rung": 1
       }
@@ -942,7 +942,7 @@
      "capacity_usd": 20.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 66,
+     "age_days": 70,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -953,7 +953,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track 5-hour capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 66,
+       "age_days": 70,
        "stale": true,
        "rung": 1
       }
@@ -966,7 +966,7 @@
      "capacity_usd": 129.0,
      "status": "stale",
      "rung": 1,
-     "age_days": 66,
+     "age_days": 70,
      "merge": "median of 1 value(s), rung 1",
      "sources": [
       {
@@ -977,7 +977,7 @@
        "as_of": "2026-09-08",
        "fetched_at": "2026-11-09T05:49:38+00:00",
        "method": "Google AI Pro Claude/GPT track weekly capacity: the dual-track diagram states the same figure for both tracks",
-       "age_days": 66,
+       "age_days": 70,
        "stale": true,
        "rung": 1
       }
@@ -1022,7 +1022,7 @@
    "source": "community.eneasf.antigravity",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 66,
+   "age_days": 70,
    "as_of": "2026-09-08",
    "threshold_days": 21,
    "windows": [
@@ -1038,7 +1038,7 @@
    "source": "community.finops.claude_max20",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 34,
+   "age_days": 38,
    "as_of": "2026-10-10",
    "threshold_days": 21,
    "windows": [
@@ -1053,7 +1053,7 @@
    "source": "community.finops.codex_plus",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 34,
+   "age_days": 38,
    "as_of": "2026-10-10",
    "threshold_days": 21,
    "windows": [
@@ -1066,7 +1066,7 @@
    "source": "community.finops.codex_pro100",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 35,
+   "age_days": 39,
    "as_of": "2026-10-09",
    "threshold_days": 21,
    "windows": [
@@ -1079,7 +1079,7 @@
    "source": "community.inventive.codex",
    "level": "yellow",
    "reason": "stale_source",
-   "age_days": 40,
+   "age_days": 44,
    "as_of": "2026-10-04",
    "threshold_days": 21,
    "windows": [
@@ -1095,7 +1095,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "aa.frontiercode_2": {
@@ -1103,7 +1103,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "aa.index": {
@@ -1111,7 +1111,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "aa.mmmu_pro": {
@@ -1119,7 +1119,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "aa.price": {
@@ -1127,7 +1127,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "aa.terminalbench_4": {
@@ -1135,7 +1135,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "aa.ttfa": {
@@ -1143,7 +1143,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "arena.agent_alignment": {
@@ -1151,7 +1151,7 @@
    "as_of": "2026-10-16",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:26:22+00:00",
-   "age_days": 28,
+   "age_days": 32,
    "stale": true
   },
   "arena.agent_code": {
@@ -1159,7 +1159,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:23:07+00:00",
-   "age_days": 5,
+   "age_days": 9,
    "stale": false
   },
   "arena.agent_sessions": {
@@ -1167,7 +1167,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:23:07+00:00",
-   "age_days": 5,
+   "age_days": 9,
    "stale": false
   },
   "community.eneasf.antigravity": {
@@ -1175,7 +1175,7 @@
    "as_of": "2026-09-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:49:38+00:00",
-   "age_days": 66,
+   "age_days": 70,
    "stale": true
   },
   "community.finops.claude_max20": {
@@ -1183,7 +1183,7 @@
    "as_of": "2026-10-10",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T06:36:08+00:00",
-   "age_days": 34,
+   "age_days": 38,
    "stale": true
   },
   "community.finops.codex_plus": {
@@ -1191,7 +1191,7 @@
    "as_of": "2026-10-10",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:16+00:00",
-   "age_days": 34,
+   "age_days": 38,
    "stale": true
   },
   "community.finops.codex_pro100": {
@@ -1199,7 +1199,7 @@
    "as_of": "2026-10-09",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:16+00:00",
-   "age_days": 35,
+   "age_days": 39,
    "stale": true
   },
   "community.inventive.codex": {
@@ -1207,7 +1207,7 @@
    "as_of": "2026-10-04",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:17+00:00",
-   "age_days": 40,
+   "age_days": 44,
    "stale": true
   },
   "community.wokey.claude": {
@@ -1215,7 +1215,7 @@
    "as_of": "2026-11-02",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:15+00:00",
-   "age_days": 11,
+   "age_days": 15,
    "stale": false
   },
   "community.wokey.codex": {
@@ -1223,7 +1223,7 @@
    "as_of": "2026-11-02",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T05:34:15+00:00",
-   "age_days": 11,
+   "age_days": 15,
    "stale": false
   },
   "derived.community_mix": {
@@ -1231,7 +1231,7 @@
    "as_of": "2026-11-02",
    "as_of_kind": "the older of the mix data date and the AA fetch date",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 11,
+   "age_days": 15,
    "stale": false
   },
   "designarena.3d": {
@@ -1239,7 +1239,7 @@
    "as_of": "2026-11-11",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-11T04:01:04+00:00",
-   "age_days": 2,
+   "age_days": 6,
    "stale": false
   },
   "designarena.svg": {
@@ -1247,7 +1247,7 @@
    "as_of": "2026-11-11",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-11T04:01:05+00:00",
-   "age_days": 2,
+   "age_days": 6,
    "stale": false
   },
   "designarena.website": {
@@ -1255,7 +1255,7 @@
    "as_of": "2026-11-11",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-11T04:01:03+00:00",
-   "age_days": 2,
+   "age_days": 6,
    "stale": false
   },
   "lmarena.creative_writing": {
@@ -1263,7 +1263,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:39+00:00",
-   "age_days": 5,
+   "age_days": 9,
    "stale": false
   },
   "lmarena.vision": {
@@ -1271,7 +1271,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:40+00:00",
-   "age_days": 5,
+   "age_days": 9,
    "stale": false
   },
   "lmarena.webdev": {
@@ -1279,7 +1279,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:37+00:00",
-   "age_days": 5,
+   "age_days": 9,
    "stale": false
   },
   "maintainer.antigravity.ultra20": {
@@ -1287,7 +1287,7 @@
    "as_of": "2026-11-13",
    "as_of_kind": "measurement date",
    "fetched_at": null,
-   "age_days": 0,
+   "age_days": 4,
    "stale": false
   },
   "openrouter.modality": {
@@ -1295,7 +1295,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:50+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "openrouter.price": {
@@ -1303,7 +1303,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:50+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "tier.aa_index": {
@@ -1311,7 +1311,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (the source publishes no data date)",
    "fetched_at": "2026-11-09T03:43:49+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "tier.arena_overall": {
@@ -1319,7 +1319,7 @@
    "as_of": "2026-11-08",
    "as_of_kind": "data date",
    "fetched_at": "2026-11-09T07:38:39+00:00",
-   "age_days": 5,
+   "age_days": 9,
    "stale": false
   },
   "vendor.anthropic.max": {
@@ -1327,7 +1327,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (no data date found on the page)",
    "fetched_at": "2026-11-09T06:36:12+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "vendor.fast_mode": {
@@ -1335,7 +1335,7 @@
    "as_of": "2026-11-10",
    "as_of_kind": "data date",
    "fetched_at": null,
-   "age_days": 3,
+   "age_days": 7,
    "stale": false
   },
   "vendor.google.ultra": {
@@ -1343,7 +1343,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (no data date found on the page)",
    "fetched_at": "2026-11-09T06:36:09+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "vendor.openai.pro100": {
@@ -1351,7 +1351,7 @@
    "as_of": "2026-11-09",
    "as_of_kind": "fetch date (no data date found on the page)",
    "fetched_at": "2026-11-09T06:36:13+00:00",
-   "age_days": 4,
+   "age_days": 8,
    "stale": false
   },
   "vendor.price": {
@@ -1359,7 +1359,7 @@
    "as_of": "2026-11-10",
    "as_of_kind": "data date",
    "fetched_at": null,
-   "age_days": 3,
+   "age_days": 7,
    "stale": false
   }
  },
@@ -1370,7 +1370,7 @@
    "level": "yellow",
    "reason": "stale_source",
    "component": "coding.faithfulness",
-   "age_days": 28,
+   "age_days": 32,
    "as_of": "2026-10-16",
    "threshold_days": 21,
    "effect": "still used; refresh the source"
@@ -1412,7 +1412,7 @@
   ],
   "panel_n": 12,
   "targets": {
-   "divergence": {
+   "creativity": {
     "levels": {
      "1": {
       "target": -3.3152,
@@ -1566,28 +1566,59 @@
    "aesthetics": {
     "levels": {
      "1": {
-      "target": -2.8934,
-      "zero": -2.8934,
-      "statistic": "panel minimum",
-      "n": 12
+      "by_facet": {
+       "design": {
+        "target": -2.8934,
+        "zero": -2.8934,
+        "n": 12,
+        "statistic": "panel minimum"
+       }
+      }
      },
      "2": {
-      "target": -1.2092,
-      "zero": -2.8934,
-      "statistic": "panel median",
-      "n": 12
+      "by_facet": {
+       "design": {
+        "target": -1.2092,
+        "zero": -2.8934,
+        "n": 12,
+        "statistic": "panel median"
+       },
+       "image_recognition": {
+        "target": -0.7322,
+        "zero": -2.8509,
+        "n": 11,
+        "statistic": "panel median"
+       }
+      }
      },
      "3": {
-      "target": 0.0,
-      "zero": -2.8934,
-      "statistic": "anchor claude-opus-5-5",
-      "n": 12,
-      "ceiling": {
-       "value": 0.1533,
-       "model": "claude-fable-5-2",
-       "status": "measured_partial",
-       "n": 51,
-       "statistic": "highest measured value at High among catalogued models"
+      "by_facet": {
+       "design": {
+        "target": 0.0,
+        "zero": -2.8934,
+        "n": 12,
+        "statistic": "anchor claude-opus-5-5",
+        "ceiling": {
+         "value": 0.1533,
+         "model": "claude-fable-5-2",
+         "status": "measured_partial",
+         "n": 51,
+         "statistic": "highest measured value at High among catalogued models"
+        }
+       },
+       "image_recognition": {
+        "target": 0.0,
+        "zero": -2.8509,
+        "n": 11,
+        "statistic": "anchor claude-opus-5-5",
+        "ceiling": {
+         "value": 0.0,
+         "model": "claude-opus-5-5",
+         "status": "measured",
+         "n": 28,
+         "statistic": "highest measured value at High among catalogued models"
+        }
+       }
       }
      }
     },
@@ -1616,6 +1647,35 @@
          "model": "claude-fable-5-2",
          "status": "measured_partial",
          "n": 51,
+         "statistic": "highest measured value at High among catalogued models"
+        }
+       }
+      }
+     },
+     "image_recognition": {
+      "levels": {
+       "1": {
+        "target": -2.8509,
+        "zero": -2.8509,
+        "statistic": "panel minimum",
+        "n": 11
+       },
+       "2": {
+        "target": -0.7322,
+        "zero": -2.8509,
+        "statistic": "panel median",
+        "n": 11
+       },
+       "3": {
+        "target": 0.0,
+        "zero": -2.8509,
+        "statistic": "anchor claude-opus-5-5",
+        "n": 11,
+        "ceiling": {
+         "value": 0.0,
+         "model": "claude-opus-5-5",
+         "status": "measured",
+         "n": 28,
          "statistic": "highest measured value at High among catalogued models"
         }
        }
@@ -1737,7 +1797,7 @@
    }
   },
   "sd_panel": {
-   "divergence.creative_writing": {
+   "creativity.creative_writing": {
     "lmarena.creative_writing": 35.423603
    },
    "coding.execution": {
@@ -1842,7 +1902,7 @@
    ],
    "panel_n": 12
   },
-  "divergence.creative_writing": {
+  "creativity.creative_writing": {
    "boards": [
     "lmarena.creative_writing"
    ],
@@ -2207,7 +2267,7 @@
  "models": {
   "deepseek-v4.1-flash-free": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.2715,
@@ -2542,7 +2602,7 @@
     }
    },
    "scores": {
-    "divergence": -2.2715,
+    "creativity": -2.2715,
     "coding": -2.0668,
     "aesthetics": -1.2975,
     "tool_operation": -1.6135
@@ -2708,7 +2768,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -2731,7 +2791,7 @@
   },
   "claude-fable-5-1": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -0.7919,
@@ -3144,7 +3204,7 @@
     }
    },
    "scores": {
-    "divergence": -0.7919,
+    "creativity": -0.7919,
     "coding": -0.5339,
     "aesthetics": -0.6494,
     "tool_operation": -0.0042
@@ -3293,7 +3353,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -3316,7 +3376,7 @@
   },
   "claude-fable-5-2": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -0.7919,
@@ -3337,7 +3397,7 @@
         "tier": 0.0298,
         "tier_source": "sibling",
         "shift": 0.0,
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -3557,7 +3617,7 @@
     }
    },
    "scores": {
-    "divergence": -0.7919,
+    "creativity": -0.7919,
     "coding": -0.5339,
     "aesthetics": 0.1533,
     "tool_operation": -0.0042
@@ -3756,7 +3816,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [
       "designarena.3d",
@@ -3770,7 +3830,7 @@
   },
   "claude-opus-5-5": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": 0.0,
@@ -4213,7 +4273,7 @@
     }
    },
    "scores": {
-    "divergence": 0.0,
+    "creativity": 0.0,
     "coding": 0.0,
     "aesthetics": 0.0,
     "tool_operation": 0.0
@@ -4361,7 +4421,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -4384,7 +4444,7 @@
   },
   "gpt-6.1-sol": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.0153,
@@ -4807,7 +4867,7 @@
     }
    },
    "scores": {
-    "divergence": -2.0153,
+    "creativity": -2.0153,
     "coding": -0.4061,
     "aesthetics": -0.3941,
     "tool_operation": -0.7322
@@ -4958,7 +5018,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -4988,7 +5048,7 @@
   },
   "gpt-6-astra": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.0295,
@@ -5431,7 +5491,7 @@
     }
    },
    "scores": {
-    "divergence": -2.0295,
+    "creativity": -2.0295,
     "coding": -0.0546,
     "aesthetics": 0.1092,
     "tool_operation": -1.0388
@@ -5582,7 +5642,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -5613,7 +5673,7 @@
   },
   "gemini-4-argon-high": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": 0.2371,
@@ -5884,7 +5944,7 @@
     }
    },
    "scores": {
-    "divergence": 0.2371,
+    "creativity": 0.2371,
     "coding": -0.808,
     "aesthetics": -0.6763,
     "tool_operation": -0.2025
@@ -6026,7 +6086,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -6047,7 +6107,7 @@
   },
   "gemini-4-hydrogen-high": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -0.2172,
@@ -6066,7 +6126,7 @@
         "tier": 0.0657,
         "tier_source": "other_overall",
         "shift": 0.5243,
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -6299,7 +6359,7 @@
     }
    },
    "scores": {
-    "divergence": -0.2172,
+    "creativity": -0.2172,
     "coding": -1.1836,
     "aesthetics": -0.789,
     "tool_operation": 0.2478
@@ -6496,7 +6556,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [],
      "tool_operation": []
@@ -6515,7 +6575,7 @@
   },
   "claude-sonnet-5-5": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.0216,
@@ -6928,7 +6988,7 @@
     }
    },
    "scores": {
-    "divergence": -2.0216,
+    "creativity": -2.0216,
     "coding": -1.132,
     "aesthetics": -0.5727,
     "tool_operation": -1.5199
@@ -7077,7 +7137,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -7100,7 +7160,7 @@
   },
   "grok-4.7": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.6001,
@@ -7475,7 +7535,7 @@
     }
    },
    "scores": {
-    "divergence": -2.6001,
+    "creativity": -2.6001,
     "coding": -1.5403,
     "aesthetics": -1.9349,
     "tool_operation": -1.9835
@@ -7636,7 +7696,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -7657,7 +7717,7 @@
   },
   "gemini-3.8-flash-high": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -0.7415,
@@ -8028,7 +8088,7 @@
     }
    },
    "scores": {
-    "divergence": -0.7415,
+    "creativity": -0.7415,
     "coding": -2.2139,
     "aesthetics": -1.4745,
     "tool_operation": -0.1225
@@ -8166,7 +8226,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -8189,7 +8249,7 @@
   },
   "grok-bot": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": 0.0,
@@ -8325,7 +8385,7 @@
     }
    },
    "scores": {
-    "divergence": 0.0,
+    "creativity": 0.0,
     "coding": 0.0,
     "aesthetics": 0.0,
     "tool_operation": null
@@ -8469,7 +8529,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [],
      "tool_operation": []
@@ -8495,7 +8555,7 @@
   },
   "dot": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.0295,
@@ -8635,7 +8695,7 @@
     }
    },
    "scores": {
-    "divergence": -2.0295,
+    "creativity": -2.0295,
     "coding": -0.0546,
     "aesthetics": 0.1092,
     "tool_operation": null
@@ -8740,7 +8800,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [],
      "tool_operation": []
@@ -8773,7 +8833,7 @@
   },
   "gpt-6-pro": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.0295,
@@ -8794,7 +8854,7 @@
         "tier": 0.1034,
         "tier_source": "sibling",
         "shift": 0.0,
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -8994,7 +9054,7 @@
     }
    },
    "scores": {
-    "divergence": -2.0295,
+    "creativity": -2.0295,
     "coding": -0.0546,
     "aesthetics": -2.4898,
     "tool_operation": -1.0388
@@ -9137,7 +9197,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [],
      "tool_operation": []
@@ -9163,7 +9223,7 @@
   },
   "claude-haiku-5-5": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -4.0846,
@@ -9531,7 +9591,7 @@
     }
    },
    "scores": {
-    "divergence": -4.0846,
+    "creativity": -4.0846,
     "coding": null,
     "aesthetics": -2.0256,
     "tool_operation": -2.2802
@@ -9663,7 +9723,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -9691,7 +9751,7 @@
   },
   "gpt-6.1-terra": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.3623,
@@ -9712,7 +9772,7 @@
         "tier": -0.0225,
         "tier_source": "other_overall",
         "shift": -0.347,
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -10077,7 +10137,7 @@
     }
    },
    "scores": {
-    "divergence": -2.3623,
+    "creativity": -2.3623,
     "coding": -0.6578,
     "aesthetics": -1.4885,
     "tool_operation": -0.7313
@@ -10227,7 +10287,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [
       "arena.agent_code"
      ],
@@ -10252,7 +10312,7 @@
   },
   "gpt-6-sol": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.5599,
@@ -10531,7 +10591,7 @@
     }
    },
    "scores": {
-    "divergence": -2.5599,
+    "creativity": -2.5599,
     "coding": -1.0614,
     "aesthetics": -1.3121,
     "tool_operation": -2.4703
@@ -10664,7 +10724,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [
       "arena.agent_alignment"
      ],
@@ -10690,7 +10750,7 @@
   },
   "gpt-6-luna": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -3.3152,
@@ -11133,7 +11193,7 @@
     }
    },
    "scores": {
-    "divergence": -3.3152,
+    "creativity": -3.3152,
     "coding": -2.3545,
     "aesthetics": -2.3032,
     "tool_operation": -2.8509
@@ -11286,7 +11346,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -11317,7 +11377,7 @@
   },
   "gpt-5.6-sol": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.3757,
@@ -11610,7 +11670,7 @@
     }
    },
    "scores": {
-    "divergence": -1.3757,
+    "creativity": -1.3757,
     "coding": -1.5644,
     "aesthetics": -0.8767,
     "tool_operation": -1.0956
@@ -11742,7 +11802,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [
       "arena.agent_alignment"
      ],
@@ -11755,7 +11815,7 @@
   },
   "gpt-5.6-terra": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.4513,
@@ -12014,7 +12074,7 @@
     }
    },
    "scores": {
-    "divergence": -2.4513,
+    "creativity": -2.4513,
     "coding": -2.3646,
     "aesthetics": -2.6919,
     "tool_operation": -1.4345
@@ -12146,7 +12206,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [
       "designarena.3d",
@@ -12161,7 +12221,7 @@
   },
   "gpt-5.6-luna": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.9873,
@@ -12420,7 +12480,7 @@
     }
    },
    "scores": {
-    "divergence": -2.9873,
+    "creativity": -2.9873,
     "coding": -2.3545,
     "aesthetics": -3.0273,
     "tool_operation": -1.7666
@@ -12605,7 +12665,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [
       "designarena.3d",
@@ -12620,7 +12680,7 @@
   },
   "grok-4.7-build-fast": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.7336,
@@ -12637,7 +12697,7 @@
         "tier": -0.3216,
         "tier_source": "sibling",
         "shift": 0.0,
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -12815,7 +12875,7 @@
     }
    },
    "scores": {
-    "divergence": -1.7336,
+    "creativity": -1.7336,
     "coding": -2.1824,
     "aesthetics": -2.1775,
     "tool_operation": -0.7861
@@ -12924,7 +12984,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [],
      "tool_operation": []
@@ -12957,7 +13017,7 @@
   },
   "deepseek-v4-pro": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.9314,
@@ -13214,7 +13274,7 @@
     }
    },
    "scores": {
-    "divergence": -1.9314,
+    "creativity": -1.9314,
     "coding": null,
     "aesthetics": -2.797,
     "tool_operation": -1.3435
@@ -13366,7 +13426,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -13392,7 +13452,7 @@
   },
   "glm-5.3": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.7839,
@@ -13735,7 +13795,7 @@
     }
    },
    "scores": {
-    "divergence": -1.7839,
+    "creativity": -1.7839,
     "coding": -1.9509,
     "aesthetics": -1.5321,
     "tool_operation": null
@@ -13877,7 +13937,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [
       "arena.agent_alignment"
      ],
@@ -13910,7 +13970,7 @@
   },
   "glm-5.3-flash-free": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.1579,
@@ -14159,7 +14219,7 @@
     }
    },
    "scores": {
-    "divergence": -2.1579,
+    "creativity": -2.1579,
     "coding": null,
     "aesthetics": -1.6783,
     "tool_operation": -1.4165
@@ -14311,7 +14371,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -14341,7 +14401,7 @@
   },
   "qwen3-coder-next": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.1982,
@@ -14358,7 +14418,7 @@
         "tier": -0.1731,
         "tier_source": "sibling",
         "shift": 0.0,
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -14545,7 +14605,7 @@
     }
    },
    "scores": {
-    "divergence": -1.1982,
+    "creativity": -1.1982,
     "coding": -3.1855,
     "aesthetics": -1.3965,
     "tool_operation": -0.607
@@ -14739,7 +14799,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [],
      "tool_operation": []
@@ -14758,7 +14818,7 @@
   },
   "qwen3.8-max": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.1982,
@@ -15034,7 +15094,7 @@
     }
    },
    "scores": {
-    "divergence": -1.1982,
+    "creativity": -1.1982,
     "coding": -1.6193,
     "aesthetics": -1.3965,
     "tool_operation": -1.6808
@@ -15187,7 +15247,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -15209,7 +15269,7 @@
   },
   "kimi-k3.1-pro": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -0.7169,
@@ -15226,7 +15286,7 @@
         "tier": 0.0218,
         "tier_source": "other_overall",
         "shift": 1.5262,
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -15484,7 +15544,7 @@
     }
    },
    "scores": {
-    "divergence": -0.7169,
+    "creativity": -0.7169,
     "coding": -1.3115,
     "aesthetics": -0.2361,
     "tool_operation": -2.2241
@@ -15653,7 +15713,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [
       "arena.agent_code"
      ],
@@ -15671,7 +15731,7 @@
   },
   "kimi-k3": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.7765,
@@ -15928,7 +15988,7 @@
     }
    },
    "scores": {
-    "divergence": -1.7765,
+    "creativity": -1.7765,
     "coding": -2.4398,
     "aesthetics": -0.4988,
     "tool_operation": -2.2241
@@ -16080,7 +16140,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [
       "arena.agent_alignment"
      ],
@@ -16098,7 +16158,7 @@
   },
   "minimax-m3": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -3.203,
@@ -16385,7 +16445,7 @@
     }
    },
    "scores": {
-    "divergence": -3.203,
+    "creativity": -3.203,
     "coding": -2.7927,
     "aesthetics": -2.8934,
     "tool_operation": -2.0438
@@ -16538,7 +16598,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -16561,7 +16621,7 @@
   },
   "minimax-m3.1-flash": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.7653,
@@ -16574,7 +16634,7 @@
         "method": "tier_fit",
         "tier": -0.4688,
         "tier_source": "other_overall",
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -16810,7 +16870,7 @@
     }
    },
    "scores": {
-    "divergence": -2.7653,
+    "creativity": -2.7653,
     "coding": null,
     "aesthetics": -1.5796,
     "tool_operation": -2.1363
@@ -16979,7 +17039,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [
       "arena.agent_code"
      ],
@@ -17005,7 +17065,7 @@
   },
   "doubao-seed-2-1-pro-260628": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "value": null,
      "by_effort": {},
      "status": "missing",
@@ -17076,13 +17136,13 @@
     }
    },
    "scores": {
-    "divergence": null,
+    "creativity": null,
     "coding": null,
     "aesthetics": -2.6605,
     "tool_operation": null
    },
    "missing_axes": [
-    "divergence",
+    "creativity",
     "coding",
     "tool_operation"
    ],
@@ -17130,7 +17190,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [
       "lmarena.webdev"
@@ -17163,7 +17223,7 @@
     },
     {
      "model": "doubao-seed-2-1-pro-260628",
-     "field": "divergence",
+     "field": "creativity",
      "reason": "no_trusted_source",
      "level": "red_if_demanded",
      "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"
@@ -17193,7 +17253,7 @@
   },
   "mimo-v2.6-pro": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.8221,
@@ -17465,7 +17525,7 @@
     }
    },
    "scores": {
-    "divergence": -1.8221,
+    "creativity": -1.8221,
     "coding": -1.5779,
     "aesthetics": -1.1209,
     "tool_operation": -1.3527
@@ -17617,7 +17677,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -17640,7 +17700,7 @@
   },
   "mimo-v2.6-flash-free": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -3.3128,
@@ -17871,7 +17931,7 @@
     }
    },
    "scores": {
-    "divergence": -3.3128,
+    "creativity": -3.3128,
     "coding": null,
     "aesthetics": -1.396,
     "tool_operation": -2.7355
@@ -18024,7 +18084,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -18051,7 +18111,7 @@
   },
   "nemotron-3-ultra-free": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -3.3716,
@@ -18064,7 +18124,7 @@
         "method": "tier_fit",
         "tier": -0.621,
         "tier_source": "other_overall",
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -18241,7 +18301,7 @@
     }
    },
    "scores": {
-    "divergence": -3.3716,
+    "creativity": -3.3716,
     "coding": null,
     "aesthetics": -4.9666,
     "tool_operation": -2.1435
@@ -18402,7 +18462,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [
       "arena.agent_code"
      ],
@@ -18434,7 +18494,7 @@
   },
   "nemotron-3.5-super-vl-free": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -3.3716,
@@ -18447,7 +18507,7 @@
         "method": "tier_fit",
         "tier": -0.621,
         "tier_source": "other_overall",
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -18642,7 +18702,7 @@
     }
    },
    "scores": {
-    "divergence": -3.3716,
+    "creativity": -3.3716,
     "coding": null,
     "aesthetics": -4.7197,
     "tool_operation": -2.1435
@@ -18810,7 +18870,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [
       "designarena.3d",
@@ -18832,7 +18892,7 @@
   },
   "nemotron-3.5-lightning-free": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -4.7596,
@@ -18845,7 +18905,7 @@
         "method": "tier_fit",
         "tier": -0.9694,
         "tier_source": "other_overall",
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -19029,7 +19089,7 @@
     }
    },
    "scores": {
-    "divergence": -4.7596,
+    "creativity": -4.7596,
     "coding": null,
     "aesthetics": -6.5344,
     "tool_operation": -2.3708
@@ -19197,7 +19257,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [],
      "tool_operation": []
@@ -19223,7 +19283,7 @@
   },
   "mistral-large-4": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -4.2885,
@@ -19513,7 +19573,7 @@
     }
    },
    "scores": {
-    "divergence": -4.2885,
+    "creativity": -4.2885,
     "coding": null,
     "aesthetics": -2.2774,
     "tool_operation": -1.9374
@@ -19660,7 +19720,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -19690,7 +19750,7 @@
   },
   "muse-wonder-1.0": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.3005,
@@ -19989,7 +20049,7 @@
     }
    },
    "scores": {
-    "divergence": -1.3005,
+    "creativity": -1.3005,
     "coding": -1.4703,
     "aesthetics": -0.6578,
     "tool_operation": -0.7313
@@ -20154,7 +20214,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -20174,7 +20234,7 @@
   },
   "beam-free": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -3.4242,
@@ -20351,7 +20411,7 @@
     }
    },
    "scores": {
-    "divergence": -3.4242,
+    "creativity": -3.4242,
     "coding": -3.0031,
     "aesthetics": -3.5431,
     "tool_operation": null
@@ -20478,7 +20538,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -20518,7 +20578,7 @@
   },
   "flint-40b-free": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "value": null,
      "by_effort": {},
      "status": "missing",
@@ -20566,13 +20626,13 @@
     }
    },
    "scores": {
-    "divergence": null,
+    "creativity": null,
     "coding": null,
     "aesthetics": null,
     "tool_operation": null
    },
    "missing_axes": [
-    "divergence",
+    "creativity",
     "coding",
     "aesthetics",
     "tool_operation"
@@ -20621,7 +20681,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [],
      "tool_operation": []
@@ -20652,7 +20712,7 @@
     },
     {
      "model": "flint-40b-free",
-     "field": "divergence",
+     "field": "creativity",
      "reason": "no_trusted_source",
      "level": "red_if_demanded",
      "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"
@@ -20689,7 +20749,7 @@
   },
   "claude-haiku-4-5": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -3.4452,
@@ -20906,7 +20966,7 @@
     }
    },
    "scores": {
-    "divergence": -3.4452,
+    "creativity": -3.4452,
     "coding": null,
     "aesthetics": -5.453,
     "tool_operation": -2.3708
@@ -21096,7 +21156,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -21122,7 +21182,7 @@
   },
   "claude-opus-4-6": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -0.4887,
@@ -21359,7 +21419,7 @@
     }
    },
    "scores": {
-    "divergence": -0.4887,
+    "creativity": -0.4887,
     "coding": -1.3915,
     "aesthetics": -2.0274,
     "tool_operation": -0.0839
@@ -21564,7 +21624,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -21584,7 +21644,7 @@
   },
   "claude-sonnet-4-6": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.8036,
@@ -21829,7 +21889,7 @@
     }
    },
    "scores": {
-    "divergence": -1.8036,
+    "creativity": -1.8036,
     "coding": -1.8315,
     "aesthetics": -2.324,
     "tool_operation": -0.9232
@@ -22019,7 +22079,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -22039,7 +22099,7 @@
   },
   "glm-5.2": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.0071,
@@ -22215,7 +22275,7 @@
     }
    },
    "scores": {
-    "divergence": -2.0071,
+    "creativity": -2.0071,
     "coding": null,
     "aesthetics": -1.9753,
     "tool_operation": null
@@ -22366,7 +22426,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [
       "designarena.3d",
@@ -22404,7 +22464,7 @@
   },
   "gpt-oss-120b": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -6.3169,
@@ -22618,7 +22678,7 @@
     }
    },
    "scores": {
-    "divergence": -6.3169,
+    "creativity": -6.3169,
     "coding": null,
     "aesthetics": -9.7253,
     "tool_operation": -2.3708
@@ -22708,7 +22768,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -22739,7 +22799,7 @@
   },
   "gemini-3.1-flash-lite": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.713,
@@ -22935,7 +22995,7 @@
     }
    },
    "scores": {
-    "divergence": -2.713,
+    "creativity": -2.713,
     "coding": -3.8733,
     "aesthetics": -5.516,
     "tool_operation": -1.9991
@@ -23120,7 +23180,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -23137,7 +23197,7 @@
   },
   "kimi-k2.7-code": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.2431,
@@ -23154,7 +23214,7 @@
         "tier": -0.3613,
         "tier_source": "sibling",
         "shift": 0.0,
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -23375,7 +23435,7 @@
     }
    },
    "scores": {
-    "divergence": -2.2431,
+    "creativity": -2.2431,
     "coding": -3.1317,
     "aesthetics": -2.7118,
     "tool_operation": -0.9247
@@ -23568,7 +23628,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [
       "designarena.3d",
@@ -23584,7 +23644,7 @@
   },
   "qwen3.6-plus": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.9179,
@@ -23808,7 +23868,7 @@
     }
    },
    "scores": {
-    "divergence": -2.9179,
+    "creativity": -2.9179,
     "coding": -3.0269,
     "aesthetics": -3.105,
     "tool_operation": -1.6808
@@ -23948,7 +24008,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -23974,7 +24034,7 @@
   },
   "claude-opus-4-7": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -0.7372,
@@ -24178,7 +24238,7 @@
     }
    },
    "scores": {
-    "divergence": -0.7372,
+    "creativity": -0.7372,
     "coding": -1.3915,
     "aesthetics": -2.2481,
     "tool_operation": -0.1255
@@ -24383,7 +24443,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -24400,7 +24460,7 @@
   },
   "claude-opus-4-8": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.2438,
@@ -24643,7 +24703,7 @@
     }
    },
    "scores": {
-    "divergence": -1.2438,
+    "creativity": -1.2438,
     "coding": -1.3915,
     "aesthetics": -2.5122,
     "tool_operation": -0.6106
@@ -24849,7 +24909,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -24879,7 +24939,7 @@
   },
   "grok-4.5": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.7336,
@@ -25110,7 +25170,7 @@
     }
    },
    "scores": {
-    "divergence": -1.7336,
+    "creativity": -1.7336,
     "coding": -2.1824,
     "aesthetics": -2.1775,
     "tool_operation": -0.7861
@@ -25301,7 +25361,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -25321,7 +25381,7 @@
   },
   "grok-4.6": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -1.9713,
@@ -25568,7 +25628,7 @@
     }
    },
    "scores": {
-    "divergence": -1.9713,
+    "creativity": -1.9713,
     "coding": -2.012,
     "aesthetics": -1.7871,
     "tool_operation": -1.3934
@@ -25718,7 +25778,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -25740,7 +25800,7 @@
   },
   "gemini-3.1-pro-preview": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -0.9261,
@@ -26006,7 +26066,7 @@
     }
    },
    "scores": {
-    "divergence": -0.9261,
+    "creativity": -0.9261,
     "coding": -2.9958,
     "aesthetics": -2.6652,
     "tool_operation": -0.8639
@@ -26156,7 +26216,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -26178,7 +26238,7 @@
   },
   "gemini-3.7-flash": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -0.7878,
@@ -26414,7 +26474,7 @@
     }
    },
    "scores": {
-    "divergence": -0.7878,
+    "creativity": -0.7878,
     "coding": -2.5475,
     "aesthetics": -1.4244,
     "tool_operation": -0.1415
@@ -26558,7 +26618,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -26581,7 +26641,7 @@
   },
   "kimi-k2.6": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.2431,
@@ -26806,7 +26866,7 @@
     }
    },
    "scores": {
-    "divergence": -2.2431,
+    "creativity": -2.2431,
     "coding": -3.1317,
     "aesthetics": -2.4691,
     "tool_operation": -0.9247
@@ -27006,7 +27066,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -27026,7 +27086,7 @@
   },
   "qwen3-max": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -3.2805,
@@ -27239,7 +27299,7 @@
     }
    },
    "scores": {
-    "divergence": -3.2805,
+    "creativity": -3.2805,
     "coding": -3.0544,
     "aesthetics": -5.802,
     "tool_operation": -1.986
@@ -27365,7 +27425,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [],
@@ -27397,7 +27457,7 @@
   },
   "qwen3.7-max": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": -2.9179,
@@ -27414,7 +27474,7 @@
         "tier": -0.5063,
         "tier_source": "sibling",
         "shift": 0.0,
-        "fit": "divergence.creative_writing~tier",
+        "fit": "creativity.creative_writing~tier",
         "r": 0.8991,
         "skill": 0.7935,
         "loo_rmse": 0.6378,
@@ -27621,7 +27681,7 @@
     }
    },
    "scores": {
-    "divergence": -2.9179,
+    "creativity": -2.9179,
     "coding": -3.0269,
     "aesthetics": -2.2727,
     "tool_operation": -1.6808
@@ -27773,7 +27833,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [
       "arena.agent_code"
      ],
@@ -27791,7 +27851,7 @@
   },
   "qwen3-flash-2025-07-28": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "value": null,
      "by_effort": {},
      "status": "missing",
@@ -27839,13 +27899,13 @@
     }
    },
    "scores": {
-    "divergence": null,
+    "creativity": null,
     "coding": null,
     "aesthetics": null,
     "tool_operation": null
    },
    "missing_axes": [
-    "divergence",
+    "creativity",
     "coding",
     "aesthetics",
     "tool_operation"
@@ -27894,7 +27954,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [],
+     "creativity": [],
      "coding": [],
      "aesthetics": [],
      "tool_operation": []
@@ -27925,7 +27985,7 @@
     },
     {
      "model": "qwen3-flash-2025-07-28",
-     "field": "divergence",
+     "field": "creativity",
      "reason": "no_trusted_source",
      "level": "red_if_demanded",
      "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"
@@ -27962,7 +28022,7 @@
   },
   "gemini-4-carbon": {
    "axes": {
-    "divergence": {
+    "creativity": {
      "facets": {
       "creative_writing": {
        "value": 0.0412,
@@ -28257,7 +28317,7 @@
     }
    },
    "scores": {
-    "divergence": 0.0412,
+    "creativity": 0.0412,
     "coding": -0.6078,
     "aesthetics": 0.0358,
     "tool_operation": -1.06
@@ -28399,7 +28459,7 @@
    },
    "evidence": {
     "independent_sources": {
-     "divergence": [
+     "creativity": [
       "lmarena.creative_writing"
      ],
      "coding": [
@@ -28600,7 +28660,7 @@
   },
   {
    "model": "doubao-seed-2-1-pro-260628",
-   "field": "divergence",
+   "field": "creativity",
    "reason": "no_trusted_source",
    "level": "red_if_demanded",
    "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"
@@ -28719,7 +28779,7 @@
   },
   {
    "model": "flint-40b-free",
-   "field": "divergence",
+   "field": "creativity",
    "reason": "no_trusted_source",
    "level": "red_if_demanded",
    "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"
@@ -28845,7 +28905,7 @@
   },
   {
    "model": "qwen3-flash-2025-07-28",
-   "field": "divergence",
+   "field": "creativity",
    "reason": "no_trusted_source",
    "level": "red_if_demanded",
    "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"

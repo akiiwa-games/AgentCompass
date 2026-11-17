@@ -52,6 +52,16 @@ the normal channels: shipped public reference data and releases.
 
    Write the change as a dated maintainer declaration: the date and the report's range go in the commit message, and
    `reviewed_at` in `accounts.json` moves when that file changes.
+   - **Classifier prompt & case hygiene (MECE / 不重不漏)**: Every edit to `SCORER_PROMPT`, `TASK_PROFILE_SCHEMA`,
+     `WORK_KIND_SIGNATURES`, or `route_definitions` / `dimension_rubric` / `calibration_cases` in `classifier-cases.json`
+     must audit and prune the entire prompt and case set rather than appending ad-hoc incident examples:
+     1. *Mutually exclusive (不重)*: Route definitions, role signatures, and rubric rules must have sharp, non-overlapping
+        boundaries and consistent hour bands across schema, question APIs, and rubric. Merge or replace existing cases on
+        the same boundary instead of piling up near-duplicate examples (`<= 5` cases per `work_kind`).
+     2. *Collectively exhaustive (不漏)*: `calibration_cases` must cover every route in `route_definitions`, every
+        `primary_level` (`1..3`) and `secondary_level` (`0..3`), projected `0..3` levels across all four capability
+        categories (`creativity`, `coding`, `aesthetics`, `tool_operation`), and both sides of each boolean/enum flag,
+        with all 10 required `TaskProfile` fields populated.
 4. Rebuild and validate the shipped data (any hand-edit to `accounts.json` or `classifier-cases.json` needs it):
 
    ```powershell

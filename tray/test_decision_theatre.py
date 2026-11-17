@@ -28,7 +28,7 @@ def result():
     def candidate(id, model, score, excluded=()):
         return dict(id=id,bundle=dict(model=model),score=score,excluded=list(excluded),
                     components=dict(fit=.7,opportunity_cost=.03,boost=.1))
-    return dict(task=dict(objective='# A real task\nprivate body',work_kind='research'),choice='a',
+    return dict(task=dict(objective='# A real task\nprivate body',work_kind='web_research'),choice='a',
                 ranking=[candidate('excluded','blocked',99,['offline']),candidate('b','beta',.6),
                          candidate('a','alpha',.9),candidate('a2','alpha',.8)])
 
@@ -415,8 +415,8 @@ def test_kind_resolves_below_the_underline_and_holds_readable_with_the_title():
     for i in range(round(dt.WINDOWS['gather'][1]*60)):
         calls.clear(); renderer.frame(i/60)
         shown={v:(xy,a) for v,xy,a in calls}
-        if 'Research' in shown or '开放式方案调研' in shown:
-            (_,y),alpha=shown.get('开放式方案调研',shown.get('Research'))
+        if 'Web research' in shown or '网络调研' in shown:
+            (_,y),alpha=shown.get('网络调研',shown.get('Web research'))
             # The kind's glyph box (12 px font) never reaches the underline's stroke.
             assert y-renderer.origin[1] >= 12*s
             if alpha>.95 and shown['A real task'][1]>.65:
@@ -505,7 +505,7 @@ def fitted(source, targets=(.3, .8, .8, .3)):
     """The same decision with the task's need recorded, and two models that differ on every axis."""
     source = copy.deepcopy(source)
     scores = {'alpha': (.7, .85, .9, .6), 'beta': (.95, .7, .75, .9), 'blocked': (.5, .5, .5, .5)}
-    keys = ('divergence', 'coding', 'aesthetics', 'tool_operation')
+    keys = ('creativity', 'coding', 'aesthetics', 'tool_operation')
     for item in source['ranking']:
         values = scores[item['bundle']['model']]
         item['components'].update(dict(zip(keys, values)), **{f'share_{k}': v for k, v in zip(keys, values)})
@@ -544,7 +544,7 @@ def test_the_radar_is_two_sheets_of_glass_and_nothing_else():
     for item in source['ranking']:
         if item['bundle']['model'] in small:
             vals = small[item['bundle']['model']]
-            keys = ('divergence', 'coding', 'aesthetics', 'tool_operation')
+            keys = ('creativity', 'coding', 'aesthetics', 'tool_operation')
             item['components'].update(dict(zip(keys, vals)), **{f'share_{k}': v for k, v in zip(keys, vals)})
     scene = dt.scene_from_result(source)
     assert not hasattr(scene, 'need')

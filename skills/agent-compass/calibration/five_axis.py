@@ -8,9 +8,9 @@ scores on the four categories and the quota economy together. Nothing else score
 
 | category | facet <- boards | combination |
 |---|---|---|
-| divergence | creative_writing <- lmarena.creative_writing | the facet |
+| creativity | creative_writing <- lmarena.creative_writing | the facet |
 | coding | execution <- arena.agent_code, aa.terminalbench_4, aa.frontiercode_2; faithfulness <- arena.agent_alignment | min |
-| aesthetics | design <- lmarena.webdev, designarena.website, designarena.3d, designarena.svg | the facet |
+| aesthetics | design <- lmarena.webdev, designarena.website, designarena.3d, designarena.svg; image_recognition (shared) | per level |
 | tool_operation | responsiveness <- aa.ttfa (-ln seconds); image_recognition <- aa.mmmu_pro, lmarena.vision | per level |
 
 - Scale (measurements.py): every board is a panel standard score, z = (x - x_anchor) / sd_panel, the anchor (Opus 5.5)
@@ -32,18 +32,20 @@ scores on the four categories and the quota economy together. Nothing else score
   the two efforts on that facet (n >= 2), status `estimated`, method `panel_effort_step`. A step that does not lower ability
   or speed up responsiveness relative to the effort above High is listed in `high_fill_refused` and not used. Targets
   read measured and `interpolated` High rows only; no estimate enters them.
-- tool_operation by level (TOOL_LEVEL_FACETS): level 1 asks no ability (the router's image-input check sits at level 3),
-  level 2 responsiveness, level 3 min(responsiveness, image recognition); `by_level` holds both per effort.
+- Per-level facet categories (`LEVEL_FACETS`): `aesthetics` asks `design` at level 1 and `min(design, image_recognition)`
+  at levels 2 and 3 (sharing `tool_operation.image_recognition`); `tool_operation` asks no ability at level 1 (its
+  image-input modality check sits at level 3), `responsiveness` at level 2, and `min(responsiveness, image_recognition)`
+  at level 3.
 - A facet a model lacks is estimated: the nearest same-series sibling's value moved along the facet's fit on the tier by
   the tier difference (calibration/series.py), else the fit at the model's tier. An estimate fit is accepted only when
   its slope is positive (`b > 0`) and its leave-one-out skill beats the panel mean (`skill > 0`); failing fits go to
   `rejected_fits`, leaving models without a measured sibling `missing` (mode B) and setting sibling shift to `0`.
 - Targets (`anchor.targets`, `targets`): per category and level, level 1 the panel's weakest value at High, level 2 the
-  panel median, level 3 the anchor; `zero` is the level-1 target, the fit's zero point. tool_operation asks per facet,
-  and a level never asks less of a facet than the level below (the anchor's responsiveness, 0, is below the panel
-  median, so levels 2 and 3 both ask the panel median). `continuity` is t3 - t2 (tool_operation: the largest positive
-  t3 - t2 across its level-3 facets). Each level-3 row (category, facet, and tool_operation per facet) carries its
-  `ceiling`: the highest measured or interpolated High value among the catalogued models, with the model that sets it
+  panel median, level 3 the anchor; `zero` is the level-1 target, the fit's zero point. `aesthetics` and `tool_operation`
+  ask per facet (`by_facet`), and a level never asks less of a facet than the level below (the anchor's responsiveness, 0,
+  is below the panel median, so levels 2 and 3 both ask the panel median). `continuity` is t3 - t2 (per-facet categories:
+  the largest positive t3 - t2 across level-3 facets). Each level-3 row (category, facet, and `by_facet` entries) carries
+  its `ceiling`: the highest measured or interpolated High value among the catalogued models, with the model that sets it
   and its status (owner, 2026-11-13). A level-3 demand is capped there instead of at t3; levels 1 and 2 stay capped at
   their target.
 - Panel guard (`panel_change`): the panel this run computed is compared with the panel of the five-axis-scores.json being
@@ -87,15 +89,23 @@ import tiers
 
 OUT = sources.REPO / 'references' / 'five-axis-scores.json'
 PLANS = sources.REPO / 'references' / 'plan-templates.json'
-# /3 (2026-11-13): every level-3 row carries `ceiling`, the anchor block `sd_panel` and `panel_change`. Readers before it
-# ignore the added fields; the runtime refuses a file without ceilings (axis_scores.require_level3_ceilings).
-SCHEMA = 'agent-compass.five-axis-scores/3'
+# /3 (2026-11-13): every level-3 row carries `ceiling`, the anchor block `sd_panel` and `panel_change`.
+# /4 (2026-11-17): `aesthetics` evaluates per-level facets (`design` at L1; `min(design, image_recognition)` at L2/L3).
+# /5 (2026-11-17): renames the creative category from `divergence` to `creativity`.
+SCHEMA = 'agent-compass.five-axis-scores/5'
 AXES = measurements.AXES
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+AESTHETICS_LEVEL_FACETS = {1: ('design',), 2: ('design', 'image_recognition'), 3: ('design', 'image_recognition')}
 # The facets each tool_operation level asks for (user, 2026-11-11): level 1 no ability beyond the image-input check of
 # level 3, level 2 responsiveness, level 3 responsiveness and image recognition; their `min`.
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
+LEVEL_FACETS = {'aesthetics': AESTHETICS_LEVEL_FACETS, 'tool_operation': TOOL_LEVEL_FACETS}
+FACET_OWNER = {
+    'design': ('aesthetics', 'design'),
+    'responsiveness': ('tool_operation', 'responsiveness'),
+    'image_recognition': ('tool_operation', 'image_recognition'),
+}
 # Window -> the model whose hours count the window's capacity (the plan's own flagship on that pool).
 REFERENCE_MODELS = {
     'claude': {'five_hour': 'claude-opus-5-5', 'seven_day': 'claude-opus-5-5', 'weekly_fable': 'claude-fable-5-1'},
@@ -894,9 +904,9 @@ class Scorer:
 
     def targets(self, rows, panel):
         """{category: {'levels': {level: ...}, 'continuity'}} from the panel's values at High (module docstring): level 1
-        the panel's weakest, level 2 its median, level 3 the anchor; the fit's zero is the panel weakest. divergence, coding
-        and aesthetics read the category value. tool_operation reads its facets one by one (`by_facet`): each level asks
-        for the facets TOOL_LEVEL_FACETS selects, its level 1 for nothing, and a level never asks less of a facet than the
+        the panel's weakest, level 2 its median, level 3 the anchor; the fit's zero is the panel weakest. creativity and coding
+        read the category value. aesthetics and tool_operation read their facets one by one (`by_facet`): each level asks
+        for the facets LEVEL_FACETS selects, tool_operation level 1 for nothing, and a level never asks less of a facet than the
         level below it (the anchor's responsiveness at High, 0, is below the panel median, so level 3 asks max(level 2,
         anchor) of it). `continuity` is t3 - t2 (tool_operation: the largest positive t3 - t2 across its level-3 facets).
         Only measured High values enter (user 2026-11-12, `TARGET_STATUSES`): an own-curve interpolation lies between two
@@ -931,9 +941,11 @@ class Scorer:
                     'statistic': 'highest measured value at High among catalogued models'}
         out = {}
         for a in AXES:
+            facet_names = list(dict.fromkeys([*AXES[a], *(LEVEL_FACETS[a][3] if a in LEVEL_FACETS else ())]))
             facet_targets = {}
-            for f in AXES[a]:
-                fst = stats(lambda ax, a=a, f=f: (ax[a].get('facets') or {}).get(f))
+            for f in facet_names:
+                own_a, own_f = FACET_OWNER.get(f, (a, f))
+                fst = stats(lambda ax, oa=own_a, of=own_f: (ax[oa].get('facets') or {}).get(of))
                 if fst is not None:
                     t1_f, t2_f = fst['min'], max(fst['min'], fst['median'])
                     raw_t3 = fst['anchor'] if fst['anchor'] is not None else t2_f
@@ -943,7 +955,7 @@ class Scorer:
                                                    '3': {'target': t3_f, 'zero': t1_f, 'statistic': f'anchor {measurements.ANCHOR}', 'n': fst['n'],
                                                          **({'raised_to_level_below': t2_f} if t2_f > raw_t3 else {}),
                                                          'ceiling': fst['ceiling']}}}
-            if a != 'tool_operation':
+            if a not in LEVEL_FACETS:
                 st = stats(lambda ax, a=a: ax[a])
                 levels = {str(level): ({'target': st[key], 'zero': st['min'], 'statistic': name, 'n': st['n'],
                                         **({'ceiling': st['ceiling']} if level == 3 else {})} if st else
@@ -955,26 +967,32 @@ class Scorer:
                 ) else None
                 out[a] = {'levels': levels, 'facets': facet_targets, 'continuity': None if gap is None else round(gap, 4)}
                 continue
-            per = {f: stats(lambda ax, f=f: (ax['tool_operation'].get('facets') or {}).get(f)) for f in AXES[a]}
+            per = {}
+            for f in facet_names:
+                own_a, own_f = FACET_OWNER.get(f, (a, f))
+                per[f] = stats(lambda ax, oa=own_a, of=own_f: (ax[oa].get('facets') or {}).get(of))
             levels, prev = {}, {}
+            level_spec = {1: ('min', 'panel minimum'), 2: ('median', 'panel median'),
+                          3: ('anchor', f'anchor {measurements.ANCHOR}')}
             for level in (1, 2, 3):
-                chosen = TOOL_LEVEL_FACETS[level]
+                chosen = LEVEL_FACETS[a][level]
                 if not chosen:
                     levels[str(level)] = {'by_facet': {}, 'reason': 'no ability requirement'}
                     continue
+                stat_key, stat_name = level_spec[level]
                 by = {}
                 for f in chosen:
                     st = per[f]
                     if st is None:
                         continue
-                    own = st['median'] if level == 2 else st['anchor']
+                    own = st[stat_key]
                     target = max(own, prev[f]) if f in prev and own is not None else own
                     by[f] = {'target': target, 'zero': st['min'], 'n': st['n'],
-                             'statistic': 'panel median' if level == 2 else f'anchor {measurements.ANCHOR}',
+                             'statistic': stat_name,
                              **({'raised_to_level_below': prev[f]} if f in prev and own is not None and prev[f] > own else {}),
                              **({'ceiling': st['ceiling']} if level == 3 else {})}
                 levels[str(level)] = {'by_facet': by}
-                prev = {f: r['target'] for f, r in by.items()}
+                prev = {f: r['target'] for f, r in by.items() if r.get('target') is not None}
             l3_facets = levels['3']['by_facet']
             facet_gaps = [
                 l3_facets[f]['target'] - facet_targets[f]['levels']['2']['target']
@@ -1484,7 +1502,7 @@ def panel_change(previous, anchor):
     for a, facets in AXES.items():
         old_t, new_t = previous['targets'].get(a) or {}, anchor['targets'].get(a) or {}
         row = {}
-        if a != 'tool_operation':
+        if a not in LEVEL_FACETS:
             o, n = _level_points(old_t.get('levels')), _level_points(new_t.get('levels'))
             row = {k: pair(o[k], n[k]) for k in o}
         row['facets'] = {}

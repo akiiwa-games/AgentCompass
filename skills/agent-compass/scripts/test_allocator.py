@@ -59,8 +59,8 @@ def setUpModule():
 
 
 class AllocatorTests(unittest.TestCase):
-    DOT_ROUTES = ('dot_execution', 'web_research', 'text_in_text_out', 'self_contained_code')
-    BULK = {'work_kind': 'bounded_bulk_work', 'difficulty': 'hard', 'expected_hours': 6}
+    DOT_ROUTES = ('web_research', 'text_processing', 'creative_ideation', 'architecture_reasoning')
+    BULK = {'work_kind': 'text_processing', 'difficulty': 'hard', 'expected_hours': 6}
     SCARCE = {'claude': [('five_hour', 90, 3), ('seven_day', 12, 100), ('weekly_fable', 100, 100)], 'codex': [('usage', 12, 100)]}
     PLENTY = {'claude': [('five_hour', 95, 3), ('seven_day', 95, 100), ('weekly_fable', 100, 100)], 'codex': [('usage', 95, 100)]}
 
@@ -94,7 +94,7 @@ class AllocatorTests(unittest.TestCase):
     def test_legacy_disabled_flag_excludes_only_affected_account(self):
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         accounts_override.apply(accounts, {'schema_version': 2, 'accounts': {'codex': {'verified': False}}})
-        result = self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 0.5}, accounts=accounts, overrides=[])
+        result = self.plan({'work_kind': 'code_implementation', 'difficulty': 'hard', 'expected_hours': 0.5}, accounts=accounts, overrides=[])
         rows = result['ranking']
         affected = [row for row in rows if row['bundle']['account'] == 'codex']
         others = [row for row in rows if row['bundle']['account'] != 'codex']
@@ -125,27 +125,27 @@ class AllocatorTests(unittest.TestCase):
         # the whole 6 h chain at xhigh is ~59% of the Codex window at the Artificial Analysis time (0.96x the anchor's High), so the
         # owner resumes with 80% left
         roomy = self.usage(codex=[('usage', 80, 100)])
-        resumed = self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled', 'expected_hours': 2, 'chain': self.chain()}, roomy)
+        resumed = self.plan({'work_kind': 'code_implementation', 'difficulty': 'coupled', 'expected_hours': 2, 'chain': self.chain()}, roomy)
         self.assertEqual((resumed['choice'], resumed['decision']['action'], resumed['decision']['needs_user_decision']),
                          ('sol_xhigh', 'resume', False))
         blocked_usage = self.usage(codex=[('usage', 1, 121)])
-        blocked = self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled', 'expected_hours': 2, 'chain': self.chain()}, blocked_usage)
+        blocked = self.plan({'work_kind': 'code_implementation', 'difficulty': 'coupled', 'expected_hours': 2, 'chain': self.chain()}, blocked_usage)
         self.assertTrue(blocked['decision']['needs_user_decision'])
         self.assertEqual(blocked['decision']['drift_risk'], 'high')
         self.assertAlmostEqual(blocked['decision']['wait_hours'], 121, delta=0.1)
         self.assertNotEqual(blocked['selected_bundle']['account'], 'codex')
-        low_c = self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 1,
+        low_c = self.plan({'work_kind': 'code_implementation', 'difficulty': 'hard', 'expected_hours': 1,
                            'chain': self.chain(coupling='low')}, blocked_usage)
         self.assertFalse(low_c['decision']['needs_user_decision'])
         self.assertNotEqual(low_c['selected_bundle']['account'], 'codex')
 
         # 2. Whole chain must fit for high coupling, only current step for medium coupling
         tight_usage = self.usage(codex=[('usage', 8, 100)])
-        task = {'work_kind': 'general_implementation', 'difficulty': 'coupled', 'expected_hours': 1, 'chain': self.chain(total=20)}
+        task = {'work_kind': 'code_implementation', 'difficulty': 'coupled', 'expected_hours': 1, 'chain': self.chain(total=20)}
         self.assertTrue(self.plan(task, tight_usage)['decision']['needs_user_decision'])
 
         # 4. Carried context (>=2M historical tokens) rotates unconditionally and unlocks re-allocation; compactions alone (<2M) still resume
-        base_task = {'work_kind': 'general_implementation', 'difficulty': 'coupled', 'expected_hours': 1}
+        base_task = {'work_kind': 'code_implementation', 'difficulty': 'coupled', 'expected_hours': 1}
         for chain_kw, expected_action in (
             ({'tokens': 120000, 'compacted': 360000, 'compactions': 2}, 'resume'),
             ({'tokens': 60000, 'compacted': 8 * 244000, 'handoff_ready': True}, 'rotate'),
@@ -202,7 +202,7 @@ class AllocatorTests(unittest.TestCase):
             self.assertEqual((st5['compactions'], st5['context_tokens'], st5['historical_context_tokens']), (1, 80100, 2030100))
             orig_log = worker_sessions.session_log
             with patch.object(worker_sessions, 'session_log', side_effect=lambda aid, h=None: orig_log(aid, home)):
-                rot = self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled',
+                rot = self.plan({'work_kind': 'code_implementation', 'difficulty': 'coupled',
                                  'chain': {'id': 'c5', 'coupling': 'high', 'worker': {'agent_id': 'a5', 'bundle': 'sol_xhigh', 'context_tokens': 80100}}})
                 self.assertEqual(rot['decision']['action'], 'rotate')
 
@@ -214,17 +214,20 @@ class AllocatorTests(unittest.TestCase):
 
         # antigravity is kept scarce so the harness order, not Argon's price, decides among the GPT siblings
         claude_low = self.no_flash(claude=[('five_hour', 90, 3), ('seven_day', 5, 100), ('weekly_fable', 100, 100)])
-        explore = self.plan({'work_kind': 'exploration_analysis'}, claude_low)
-        self.assertEqual(explore['selected_bundle']['provider'], 'pi')
+        explore = self.plan({'work_kind': 'exploration_forensics'}, claude_low)
+        gpt_exp = [c for c in explore['ranking'] if c['score'] is not None and c['bundle']['account'] == 'codex']
+        self.assertEqual(gpt_exp[0]['bundle']['provider'], 'pi')
         scores = {c['id']: c['score'] for c in explore['ranking']}
         # The harness order never touches the score: the Pi bundle and its Codex twin score alike and differ in place only.
-        self.assertAlmostEqual(scores[explore['choice']], scores[explore['choice'][3:]], places=6)
-        build = self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard'}, claude_low)
+        self.assertAlmostEqual(scores[gpt_exp[0]['id']], scores[gpt_exp[0]['id'][3:]], places=6)
+        build = self.plan({'work_kind': 'code_implementation', 'difficulty': 'hard'}, claude_low)
         gpt = [c for c in build['ranking'] if c['score'] is not None and c['bundle']['account'] == 'codex']
         self.assertEqual(gpt[0]['bundle']['provider'], 'codex')
-        self.assertEqual(self.plan({'work_kind': 'research_packet'}, claude_low)['selected_bundle']['provider'], 'pi')
+        research = self.plan({'work_kind': 'web_research', 'needs': {'local_only': True}}, claude_low)
+        gpt_res = [c for c in research['ranking'] if c['score'] is not None and c['bundle']['account'] == 'codex']
+        self.assertEqual(gpt_res[0]['bundle']['provider'], 'pi')
 
-        for kind in ('exploration_analysis', 'general_implementation', 'debug_review'):
+        for kind in ('exploration_forensics', 'code_implementation', 'code_audit'):
             with_pi = self.plan({'work_kind': kind})
             without = self.plan({'work_kind': kind}, unavailable=[b for b in bundles if b.startswith('pi_')])
             self.assertEqual((with_pi['selected_bundle']['model'], with_pi['selected_bundle']['effort']),
@@ -233,24 +236,25 @@ class AllocatorTests(unittest.TestCase):
 
     def test_dot_eligibility_respects_route_modality_and_local_needs(self):
         capabilities = reference_capabilities()
-        self.assertEqual(self.plan({'work_kind': 'dot_execution'})['choice'], 'dot_text')
         # Caller false stands. Route implies fill local_only only when the caller and the profile left it unset.
-        self.assertTrue(task_intake.dot_may_take('exploration_analysis', {'local_only': False}, capabilities))
-        self.assertTrue(task_intake.dot_may_take('exploration_analysis', {}, capabilities, {'local_only': False}))
-        self.assertTrue(task_intake.dot_may_take('research_packet', {}, capabilities, {'local_only': False}))
-        self.assertFalse(task_intake.dot_may_take('exploration_analysis', {}, capabilities, {'local_only': True}))
-        self.assertTrue(task_intake.dot_may_take('exploration_analysis', {'local_only': False}, capabilities, {'local_only': True}))
-        self.assertFalse(task_intake.dot_may_take('exploration_analysis', {}, capabilities))
-        self.assertFalse(task_intake.dot_may_take('general_implementation', {'visual': True}, capabilities))
-        for kind in ('research_packet', 'exploration_analysis'):
+        self.assertTrue(task_intake.dot_may_take('exploration_forensics', {'local_only': False}, capabilities))
+        self.assertTrue(task_intake.dot_may_take('exploration_forensics', {}, capabilities, {'local_only': False}))
+        self.assertTrue(task_intake.dot_may_take('web_research', {}, capabilities, {'local_only': False}))
+        self.assertFalse(task_intake.dot_may_take('exploration_forensics', {}, capabilities, {'local_only': True}))
+        self.assertTrue(task_intake.dot_may_take('exploration_forensics', {'local_only': False}, capabilities, {'local_only': True}))
+        self.assertFalse(task_intake.dot_may_take('exploration_forensics', {}, capabilities))
+        self.assertFalse(task_intake.dot_may_take('visual_analysis', {}, capabilities))
+        self.assertFalse(task_intake.dot_may_take('code_implementation', {'visual': True}, capabilities))
+        for kind in ('web_research', 'exploration_forensics'):
             opened = self.plan({'work_kind': kind, 'difficulty': 'hard', 'needs': {'local_only': False},
-                                'profile': self.profile(local_only=False)})
+                                'profile': self.profile(work_kind=kind, local_only=False)})
             admitted = {c['bundle']['model'] for c in opened['ranking'] if c['score'] is not None and not c['excluded']}
             self.assertIn('dot', admitted, kind)
 
-        # Eligibility only: Dot is admitted for these kinds; which candidate wins is not a rule (#9, deleted).
-        for kind in ('web_research', 'text_in_text_out', 'self_contained_code'):
-            res = self.plan({'work_kind': kind, 'difficulty': 'routine'}, self.usage(grok=[('credits', 100, 165)]))
+        # Eligibility only: Dot is admitted for non-local non-visual kinds; which candidate wins is not a rule.
+        for kind in ('web_research', 'text_processing', 'creative_ideation', 'code_implementation'):
+            res = self.plan({'work_kind': kind, 'difficulty': 'routine', 'needs': {'local_only': False}},
+                            self.usage(grok=[('credits', 100, 165)]))
             self.assertFalse(self.rows(res)['dot_text']['excluded'], kind)
             local = self.plan({'work_kind': kind, 'difficulty': 'routine', 'needs': {'local_only': True}})
             self.assertNotEqual(local['choice'], 'dot_text', kind)
@@ -286,13 +290,13 @@ class AllocatorTests(unittest.TestCase):
         )
         # Rule: an exhausted window excludes its candidates. With every big pool spent, only claude-lab rows stay eligible
         # and the plan still routes; which claude-lab effort wins is not pinned.
-        empty_plan = self.plan({'work_kind': 'exploration_analysis'}, all_big_empty)
+        empty_plan = self.plan({'work_kind': 'exploration_forensics'}, all_big_empty)
         open_rows = [c for c in empty_plan['ranking'] if c['score'] is not None and not c['excluded']]
         self.assertTrue(open_rows)
         self.assertEqual({c['bundle']['account'] for c in open_rows}, {'claude-lab'}, [c['id'] for c in open_rows])
         self.assertNotIn(empty_plan['choice'], (None, 'none'))
 
-        task = {'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 0.7, 'needs': {'local_only': True}}
+        task = {'work_kind': 'exploration_forensics', 'difficulty': 'hard', 'expected_hours': 0.7, 'needs': {'local_only': True}}
         usage_low = self.usage(**{'claude-lab': [('five_hour', 23, 2.5), ('seven_day', 61, 130)], 'claude': [('five_hour', 0, 2.0), ('seven_day', 0, 100)]})
         self.assertTrue(self.rows(self.plan(task, usage_low))['lab_sonnet55_high']['excluded'])
 
@@ -301,7 +305,7 @@ class AllocatorTests(unittest.TestCase):
         inflight = [{
             'at': (self.now + timedelta(seconds=10)).isoformat(), 'stage': 'dispatch', 'dispatch_id': 'fixture-dispatch',
             'state': 'started', 'lease_until': (self.now + timedelta(minutes=10)).isoformat(),
-            'choice': 'lab_sonnet55_high', 'hours': 0.7, 'expected_usd': 3.08, 'kind': 'exploration_analysis',
+            'choice': 'lab_sonnet55_high', 'hours': 0.7, 'expected_usd': 3.08, 'kind': 'exploration_forensics',
             'bundle': {'provider': 'claude-lab', 'account': 'claude-lab', 'model': 'claude-sonnet-5-5', 'bundle_id': 'lab_sonnet55_high', 'expected_usd': 3.08},
             'usage': {'claude-lab': {'windows': [{'id': 'five_hour', 'used_pct': 60.0}, {'id': 'seven_day', 'used_pct': 39.0}]}},
         }]
@@ -318,7 +322,7 @@ class AllocatorTests(unittest.TestCase):
         self.assertFalse(self.rows(self.plan(task, unstarted_5h))['lab_sonnet55_high']['excluded'])
         burst = [dict(inflight[0], dispatch_id=f'd-{i}', expected_usd=6.6) for i in (1, 2)]
         self.assertTrue(self.rows(allocator.plan(
-            {'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 1.5, 'needs': {'local_only': True}},
+            {'work_kind': 'exploration_forensics', 'difficulty': 'hard', 'expected_hours': 1.5, 'needs': {'local_only': True}},
             unstarted_5h, self.now + timedelta(minutes=2), records=burst))['lab_sonnet55_high']['excluded'])
 
         # Stale claude-lab with active 5h reset and unknown/clamped used_pct or oversized 3h task is excluded
@@ -338,7 +342,7 @@ class AllocatorTests(unittest.TestCase):
                  'observed_remaining_pct': 26.0, 'remaining_pct_before_reset': None},
             ],
         }
-        res_1h = self.plan({'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 1.0,
+        res_1h = self.plan({'work_kind': 'exploration_forensics', 'difficulty': 'hard', 'expected_hours': 1.0,
                             'needs': {'local_only': True}}, stale_c2)
         self.assertTrue(self.rows(res_1h)['lab_sonnet55_high']['excluded'])
         self.assertNotEqual(res_1h['selected_bundle']['account'], 'claude-lab')
@@ -348,18 +352,18 @@ class AllocatorTests(unittest.TestCase):
         missing_5h['accounts']['claude-lab']['windows'] = [missing_5h['accounts']['claude-lab']['windows'][1]]
         custom_acc = account_fleet.load_accounts()
         custom_acc['accounts']['claude-lab']['bundles']['lab_opus55_high'].pop('disabled', None)
-        res_opus_3h = self.plan({'work_kind': 'frontend_implementation', 'difficulty': 'hard', 'expected_hours': 3.0,
+        res_opus_3h = self.plan({'work_kind': 'frontend_ui', 'difficulty': 'hard', 'expected_hours': 3.0,
                                  'needs': {'local_only': True}}, missing_5h, accounts=custom_acc)
         self.assertTrue(self.rows(res_opus_3h)['lab_opus55_high']['excluded'])
-        res_sonnet_4h = self.plan({'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 3.8,
+        res_sonnet_4h = self.plan({'work_kind': 'exploration_forensics', 'difficulty': 'hard', 'expected_hours': 3.8,
                                    'needs': {'local_only': True}}, missing_5h)
         self.assertTrue(self.rows(res_sonnet_4h)['lab_sonnet55_high']['excluded'])
 
     def test_constraints_and_validation(self):
-        self.assertTrue(self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard',
+        self.assertTrue(self.plan({'work_kind': 'code_implementation', 'difficulty': 'hard',
                                    'constraints': {'model': 'claude-opus-5'}})['selected_bundle']['model'].startswith('claude-opus-5-5'))
         self.assertIn('account not verified as launchable',
-                      self.rows(self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled'}))['work_sol_xhigh']['excluded'])
+                      self.rows(self.plan({'work_kind': 'code_implementation', 'difficulty': 'coupled'}))['work_sol_xhigh']['excluded'])
         with self.assertRaises(ValueError):
             self.plan({'difficulty': 'impossible'})
         with self.assertRaises(ValueError):
@@ -375,7 +379,7 @@ class AllocatorTests(unittest.TestCase):
         accounts = account_fleet.load_accounts()
         for banned in (
             'infer_task_profile', 'infer_kind_from_objective', 'infer_fast_preference',
-            'is_readonly_review_task', 'infer_divergence', 'multi_task_marks',
+            'is_readonly_review_task', 'infer_creativity', 'multi_task_marks',
             'DIVERGENT_WORDS', 'FAST_REQUEST_WORDS', 'READONLY_REVIEW_PHRASES',
             'GUI_WORDS', 'COMPUTER_USE_PHRASES', 'CODE_FILE_RE',
             'OBJECTIVE_LOCAL_RUNTIME_RE', 'LOCAL_MACHINE_RE', 'MULTI_TASK_MARK_RE',
@@ -388,17 +392,23 @@ class AllocatorTests(unittest.TestCase):
                 # No default table: the caller's difficulty, else the one the profile derives.
                 self.assertEqual(normalized['difficulty'], difficulty or normalized['profile_difficulty'], task)
         good = self.profile()
-        for bad in (dict(good, reasoning_depth=5), dict(good, code_complexity=True),
-                    {k: v for k, v in good.items() if k != 'axis_demand'}, {k: v for k, v in good.items() if k != 'wants_fast'},
-                    dict(good, axis_demand={'divergence': 1, 'global_rigor': 1, 'module_precision': 1, 'vision_tools': 0}),
+        for bad in (dict(good, primary_level=5), dict(good, secondary_level=True),
+                    {k: v for k, v in good.items() if k != 'wants_fast'},
+                    {k: v for k, v in good.items() if k != 'secondary_kind'},
+                    dict(good, secondary_kind='none', secondary_level=2),
+                    dict(good, secondary_kind='live_loop', secondary_level=0),
+                    dict(good, secondary_kind=good['work_kind'], secondary_level=1),
+                    dict(good, axis_demand={'creativity': 1, 'global_rigor': 1, 'module_precision': 1, 'vision_tools': 0}),
                     dict(good, needs_gui='yes'), dict(good, wants_fast='yes'), dict(good, read_only_review=1),
-                    dict(good, interaction_style='coding'), 'deep'):
+                    dict(good, access='sudo'), 'deep'):
             with self.assertRaises(ValueError):
                 task_intake.validate_profile(bad)
         schema = task_intake.TASK_PROFILE_SCHEMA
         self.assertEqual(set(schema['required']), set(schema['properties']))
-        self.assertIn('wants_fast', schema['properties'])
-        self.assertIn('read_only_review', schema['properties'])
+        self.assertEqual(set(schema['required']), {
+            'work_kind', 'primary_level', 'secondary_kind', 'secondary_level',
+            'access', 'local_only', 'needs_visual', 'wants_fast', 'expected_hours', 'task_count',
+        })
         for name, prop in schema['properties'].items():
             if prop['type'] == 'integer':
                 self.assertNotIn('enum', prop, name)
@@ -431,37 +441,34 @@ class AllocatorTests(unittest.TestCase):
         capabilities = reference_capabilities()
         policy = account_fleet.load_accounts()['scoring']
         for objective, kind in (
-            ('Click the Save button in the desktop settings', 'debug_review'),
-            ('Compare screenshots with the UI mockup', 'general_implementation'),
+            ('Click the Save button in the desktop settings', 'code_audit'),
+            ('Compare screenshots with the UI mockup', 'code_implementation'),
             ('检查截图并列出布局差异', 'visual_analysis'),
-            ('Implement the desktop UI component in React', 'frontend_implementation'),
-            ('Batch rename i18n keys uniformly', 'bounded_bulk_work'),
+            ('Implement the desktop UI component in React', 'frontend_ui'),
+            ('Batch rename i18n keys uniformly', 'text_processing'),
             ('Search the web for public documentation', 'web_research'),
-            ('Translate the deployment runbook without executing it', 'text_in_text_out'),
-            ('Write a multi-phase system migration spec', 'complex_build_plan'),
-            ('Prove or refute this mathematical bound', 'direction_reasoning'),
-            ('Run a quantitative experiment and benchmark suite, report metrics', 'research_packet'),
-            ('Follow the CI release runbook and health check', 'tool_execution'),
-            ('Diagnose the memory leak in frontend rendering', 'debug_review'),
-            ('Explore the repository architecture', 'exploration_analysis'),
-            ('Implement a standalone algorithm', 'self_contained_code'),
-            ('Fix the keyboard shortcuts in editor.py.', 'debug_review'),
-            ('用鼠标点击设置里的保存', 'computer_use'),
+            ('Translate the deployment runbook without executing it', 'text_processing'),
+            ('Write a multi-phase system migration spec', 'architecture_reasoning'),
+            ('Invent a novel game mechanic combining rhythm and deduction', 'creative_ideation'),
+            ('Follow the CI release runbook and health check', 'live_loop'),
+            ('Diagnose the memory leak in frontend rendering', 'exploration_forensics'),
+            ('Implement a standalone algorithm', 'code_implementation'),
+            ('用鼠标点击设置里的保存', 'gui_control'),
         ):
             with self.subTest(objective=objective, kind=kind):
                 prof = self.profile(work_kind=kind)
                 self.assertEqual(task_intake.task_kind({'objective': objective, 'profile': prof}, capabilities, policy), kind)
 
     def test_classified_read_only_review_profile_and_its_own_hours(self):
-        ro_prof = self.profile(work_kind='debug_review', code_complexity=0, read_only_review=True)
+        ro_prof = self.profile(work_kind='code_audit', read_only_review=True, access='read-only')
         ro_norm = task_intake.normalize_task(
             {'objective': 'Independent review (read-only) of the authentication module', 'profile': ro_prof},
             account_fleet.load_accounts()['scoring'],
             reference_capabilities(),
             account_fleet.load_accounts(),
         )
-        self.assertEqual(ro_norm['kind'], 'debug_review')
-        self.assertEqual(ro_norm['profile']['code_complexity'], 0)
+        self.assertEqual(ro_norm['kind'], 'code_audit')
+        self.assertEqual(ro_norm['profile']['access'], 'read-only')
         self.assertTrue(ro_norm['read_only_review'])
         self.assertEqual(ro_norm['hours'], ro_prof['expected_hours'])      # the classifier's own estimate; no per-difficulty default
 
@@ -559,7 +566,7 @@ class AllocatorTests(unittest.TestCase):
         base = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         caps = account_fleet.load_capabilities(accounts=base)
         roomy = self.usage(codex=[('usage', 80, 100)])
-        step_task = {'work_kind': 'general_implementation', 'difficulty': 'coupled', 'expected_hours': 1}
+        step_task = {'work_kind': 'code_implementation', 'difficulty': 'coupled', 'expected_hours': 1}
 
         # 1. Thresholds below 250k (permitted by TUNING_LIMITS 100k..10M) scale context burn and rotate without a 250k floor.
         accounts_150k = copy.deepcopy(base)
@@ -695,7 +702,7 @@ class OverrideContractTests(unittest.TestCase):
 
     def test_overdue_forecast_cannot_grant_capacity_and_boost_targets_named_model(self):
         original = copy.deepcopy(self.usage)
-        plan = allocator.plan({'work_kind': 'general_implementation', 'difficulty': 'hard',
+        plan = allocator.plan({'work_kind': 'code_implementation', 'difficulty': 'hard',
                                'expected_hours': 1, 'needs': {'local_only': True}},
                               self.usage, self.now, accounts=self.accounts, overrides=[self.override])
         astra = next(r for r in plan['ranking'] if r['id'] == 'astra_high')
@@ -864,7 +871,7 @@ class AntigravityTelemetryTests(unittest.TestCase):
         now = datetime(2026, 10, 16, 9, tzinfo=timezone.utc)
         original_session_log = worker_sessions.session_log
         with patch.object(worker_sessions, 'session_log', side_effect=lambda agent_id, home=None: original_session_log(agent_id, self.home)):
-            plan = allocator.plan({'work_kind': 'general_implementation', 'difficulty': 'hard',
+            plan = allocator.plan({'work_kind': 'code_implementation', 'difficulty': 'hard',
                 'needs': {'local_only': True}, 'chain': {'coupling': 'high', 'handoff_ready': True,
                     'worker': {'bundle': 'argon_high', 'agent_id': 'agent'}}},
                 {'accounts': {}}, now, accounts=accounts, overrides=[])
@@ -912,25 +919,25 @@ class RouterIntegrationTests(unittest.TestCase):
 
             # 1. Chain ledgering and auto-resume
             task.write_text(self.dumps_task({'task': {
-                'objective': 'continue refactor', 'work_kind': 'general_implementation', 'difficulty': 'coupled',
+                'objective': 'continue refactor', 'work_kind': 'code_implementation', 'difficulty': 'coupled',
                 'expected_hours': 1, 'chain': {'id': 'c1', 'coupling': 'high', 'worker': {'bundle': 'sol_xhigh'}}}}), encoding='utf-8')
             code, res = self.run_main(['plan', '--input', str(task), '--usage-cache', cache])
             self.assertEqual((code, res['choice'], res['decision']['action']), (0, 'sol_xhigh', 'resume'))
-            task.write_text(self.dumps_task({'task': {'work_kind': 'general_implementation', 'difficulty': 'coupled',
+            task.write_text(self.dumps_task({'task': {'work_kind': 'code_implementation', 'difficulty': 'coupled',
                                                  'expected_hours': 1, 'chain': {'id': 'c1', 'coupling': 'high'}}}), encoding='utf-8')
             _, again = self.run_main(['plan', '--input', str(task), '--usage-cache', cache])
             self.assertEqual((again['choice'], again['decision']['action']), ('sol_xhigh', 'resume'))
 
             # 2. Dry-run leaves no extra ledger row; non-eligible exits 2
             before_count = len(decision_ledger.read_ledger())
-            task.write_text(self.dumps_task({'task': {'work_kind': 'frontend_implementation', 'difficulty': 'routine',
+            task.write_text(self.dumps_task({'task': {'work_kind': 'frontend_ui', 'difficulty': 'routine',
                                                  'expected_hours': 0.5, 'needs': {'local_only': True}}}), encoding='utf-8')
             code, dry = self.run_main(['plan', '--input', str(task), '--usage-cache', cache, '--dry-run'])
             self.assertEqual((code, len(decision_ledger.read_ledger())), (0, before_count))
             planned = dry['choice']
 
             # 3. Record agreement check
-            task.write_text(json.dumps({'task': {'work_kind': 'frontend_implementation', 'difficulty': 'routine',
+            task.write_text(json.dumps({'task': {'work_kind': 'frontend_ui', 'difficulty': 'routine',
                                                  'expected_hours': 0.5, 'needs': {'local_only': True}}}), encoding='utf-8')
             def record(basis, provider, account, model, effort, *extra):
                 return self.run_main(['record', '--input', str(task), '--usage-cache', cache,
@@ -947,12 +954,16 @@ class RouterIntegrationTests(unittest.TestCase):
             self.assertTrue(skipped_row['classifier_skipped'])
             self.assertIsNone(skipped_row['agrees'])
             task.write_text(json.dumps({'task': {
-                'work_kind': 'frontend_implementation', 'expected_hours': 0.5, 'needs': {'local_only': True},
-                'profile': profile(work_kind='frontend_implementation', reasoning_depth=1, local_only=True,
+                'work_kind': 'frontend_ui', 'expected_hours': 0.5, 'needs': {'local_only': True},
+                'profile': profile(work_kind='frontend_ui', primary_level=1, local_only=True,
                                    reason='caller profile')}}), encoding='utf-8')
-            profiled = record('User: Flash', 'antigravity-resilient', 'antigravity', 'gemini-3.8-flash-high', 'high')
-            self.assertEqual((profiled['classifier_skipped'], profiled['agrees'], profiled['router_choice']),
-                             (False, False, planned))
+            profiled_flash = record('User: Flash', 'antigravity-resilient', 'antigravity', 'gemini-3.8-flash-high', 'high')
+            profiled_sol = record('User: Sol max', 'codex', 'codex', 'gpt-6.1-sol', 'max')
+            self.assertEqual((profiled_flash['classifier_skipped'], profiled_flash['agrees'], profiled_flash['router_choice']),
+                             (False, planned == 'flash_high', planned))
+            self.assertEqual((profiled_sol['classifier_skipped'], profiled_sol['agrees'], profiled_sol['router_choice']),
+                             (False, planned == 'sol_max', planned))
+            self.assertIn(False, (profiled_flash['agrees'], profiled_sol['agrees']))
 
             task.write_text(self.dumps_task({'task': {'work_kind': 'visual_analysis', 'expected_hours': 0.5, 'needs': {'visual': True},
                                                  'constraints': {'model': 'grok-4.7'}}}), encoding='utf-8')
@@ -990,22 +1001,30 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
             'infer_realtime_loop',
         ):
             self.assertFalse(hasattr(allocator, banned_attr), f'{banned_attr} must be deleted')
-        self.assertNotIn('realtime_loop', task_intake.PROFILE_FLAGS)
+        self.assertNotIn('realtime_loop', task_intake.REQUIRED_BOOL_FLAGS)
         self.assertNotIn('realtime_loop', task_intake.TASK_PROFILE_SCHEMA['properties'])
         self.assertNotIn('realtime_loop', task_intake.TASK_PROFILE_SCHEMA['required'])
         self.assertFalse((Path(__file__).resolve().parent / 'refresh_speed_data.py').exists())
 
     def test_all_calibrated_classifier_cases_validate_and_plan(self):
+        from collections import Counter
         base_accounts = copy.deepcopy(account_fleet.load_accounts())
         capabilities = account_fleet.load_capabilities(accounts=base_accounts)
         usage = self.healthy_usage()
         cases_path = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
         doc = json.loads(cases_path.read_text(encoding='utf-8-sig'))
-        rubric_axis = (doc.get('dimension_rubric') or {}).get('axis_demand', '')
-        for cat in axis_scores.FIVE_AXES:
-            self.assertIn(cat, rubric_axis)
-        for case in doc['calibration_cases']:
+        rubric = doc.get('dimension_rubric') or {}
+        for key in ('anti_inflation_rule', 'creativity_vs_architecture', 'composite_secondary_kind', 'access_and_local_only'):
+            self.assertIn(key, rubric)
+        cases = doc['calibration_cases']
+        ids = [c['id'] for c in cases]
+        self.assertEqual(len(ids), len(set(ids)), 'duplicate calibration case ids')
+        required_keys = set(task_intake.TASK_PROFILE_SCHEMA['required'])
+        validated_profiles = []
+        for case in cases:
+            self.assertEqual(set(case['expected_profile']), required_keys, case['id'])
             prof = task_intake.validate_profile(dict(case['expected_profile']))
+            validated_profiles.append(prof)
             self.assertEqual(set(prof['axis_demand']), set(axis_scores.FIVE_AXES), case['id'])
             self.assertNotIn('realtime_loop', prof, case['id'])
             task_obj = case.get('task') if isinstance(case.get('task'), dict) else case
@@ -1019,12 +1038,23 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
                 usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
             )
             self.assertIn('choice', res, case['id'])
+        # MECE (不重不漏) invariants: every defined route and every demand/profile level covered without per-route pileup.
+        route_counts = Counter(p['work_kind'] for p in validated_profiles)
+        self.assertEqual(set(route_counts), set(doc['route_definitions']))
+        self.assertLessEqual(max(route_counts.values()), 5, route_counts)
+        for cat in axis_scores.FIVE_AXES:
+            self.assertEqual({p['axis_demand'][cat] for p in validated_profiles}, {0, 1, 2, 3}, cat)
+        self.assertEqual({p['primary_level'] for p in validated_profiles}, {1, 2, 3})
+        self.assertEqual({p['secondary_level'] for p in validated_profiles}, {0, 1, 2, 3})
+        self.assertEqual({p['access'] for p in validated_profiles}, set(task_intake.ACCESS_LEVELS))
+        for flag in (*task_intake.REQUIRED_BOOL_FLAGS, 'needs_gui', 'read_only_review', 'multi_task'):
+            self.assertEqual({p[flag] for p in validated_profiles}, {False, True}, flag)
 
     def test_tool_operation_levels_0_and_1_ask_for_no_ability_target(self):
         base_accounts = axis_scores.five_axis_overlay(copy.deepcopy(account_fleet.load_accounts()))
         targets = base_accounts['_five_axis']['targets']
-        self.assertEqual(axis_scores.five_axis_targets({'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}, targets).get('tool_operation'), None)
-        self.assertEqual(axis_scores.five_axis_targets({'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1}, targets).get('tool_operation'), None)
+        self.assertEqual(axis_scores.five_axis_targets({'creativity': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}, targets).get('tool_operation'), None)
+        self.assertEqual(axis_scores.five_axis_targets({'creativity': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1}, targets).get('tool_operation'), None)
 
         # Stripping tool_operation facet scores completely does not change choice, fit, or net score at tool_operation <= 1
         stripped = copy.deepcopy(base_accounts)
@@ -1040,8 +1070,8 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
             task = {
                 'objective': 'Implement the retry backoff module and unit tests',
                 'expected_hours': 0.5,
-                'profile': profile(work_kind='general_implementation', local_only=True, expected_hours=0.5,
-                                   axis_demand={'divergence': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': tool_level}),
+                'profile': profile(work_kind='code_implementation', local_only=True, expected_hours=0.5,
+                                   axis_demand={'creativity': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': tool_level}),
             }
             before = allocator.plan(task, usage, now=self.now, accounts=stripped, capabilities=capabilities, overrides=[])
             after = allocator.plan(task, usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[])
@@ -1056,9 +1086,9 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
                 'objective': 'Gather release dates from three public SDK changelogs',
                 'expected_hours': 0.3,
                 'needs': {'local_only': False, 'outbound_ok': True},
-                'profile': profile(work_kind='web_research', reasoning_depth=1, code_complexity=0,
+                'profile': profile(work_kind='web_research', primary_level=1,
                                    local_only=False, expected_hours=0.3,
-                                   axis_demand={'divergence': 1, 'coding': 0, 'aesthetics': 0, 'tool_operation': tool_level}),
+                                   axis_demand={'creativity': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': tool_level}),
             }
             planned_out = allocator.plan(outbound_task, usage, now=self.now, accounts=base_accounts,
                                          capabilities=capabilities, overrides=[])
@@ -1078,9 +1108,9 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
             'expected_hours': 0.5,
             'needs': {'local_only': False, 'outbound_ok': True},
             'profile': profile(
-                work_kind='tool_execution', reasoning_depth=1, code_complexity=0, expected_hours=0.5,
+                work_kind='live_loop', primary_level=1, expected_hours=0.5,
                 needs_visual=False, needs_gui=False, local_only=False,
-                axis_demand={'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2},
+                axis_demand={'creativity': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2},
             ),
         }
         res = allocator.plan(live_cli_task, usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[])
@@ -1101,7 +1131,7 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         # With shipped maintainer scores in references/user-scores.json, dot_text carries maintainer responsiveness;
         # when public manual scores are empty, channels with no responsiveness measurement leave automatic routing via Mode B.
         self.assertEqual(by_id['dot_text']['excluded'], [])
-        with patch.object(axis_scores, 'load_public_user_scores', return_value={'schema_version': 1, 'scores': {}}):
+        with patch.object(axis_scores, 'load_public_user_scores', return_value={'schema_version': 2, 'scores': {}}):
             res_unscored = allocator.plan(live_cli_task, usage, now=self.now, accounts=copy.deepcopy(base_accounts),
                                           capabilities=capabilities, overrides=[])
         by_id_unscored = {c['id']: c for c in res_unscored['ranking']}
@@ -1122,9 +1152,9 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
             'objective': '持续在模拟器窗口里根据画面点击完成日常任务',
             'expected_hours': 0.5,
             'profile': profile(
-                work_kind='computer_use', reasoning_depth=2, code_complexity=0, expected_hours=0.5,
+                work_kind='gui_control', primary_level=2, expected_hours=0.5,
                 needs_visual=True, needs_gui=True, local_only=False,
-                axis_demand={'divergence': 1, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3},
+                axis_demand={'creativity': 0, 'coding': 1, 'aesthetics': 1, 'tool_operation': 3},
             ),
         }
         base_accounts['accounts']['codex']['bundles']['deepseek_test'] = {
@@ -1170,16 +1200,16 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         accounts['accounts']['claude']['bundles']['fable52_high']['disabled'] = False
         capabilities = account_fleet.load_capabilities(accounts=accounts)
         usage = self.healthy_usage()
-        # High-divergence task (divergence=3, continuity = t3 - t2 = 1.19 SD):
-        # 1. `fable52_high` (divergence -0.93, within 1.19 SD of Argon +0.25 / Opus 0.0) stays when continuing (`coupling='high'`).
+        # High-creativity task (creativity=3, continuity = t3 - t2 = 1.19 SD):
+        # 1. `fable52_high` (creativity -0.93, within 1.19 SD of Argon +0.25 / Opus 0.0) stays when continuing (`coupling='high'`).
         close_chain = {'id': 'c-close', 'coupling': 'high', 'total_hours': 2,
                        'worker': {'bundle': 'fable52_high', 'context_tokens': 100000}}
         div_task = {
-            'objective': 'Continue deep research synthesis',
+            'objective': 'Continue open-ended cross-domain concept invention',
             'expected_hours': 0.5,
-            'profile': profile(work_kind='exploration_analysis', reasoning_depth=3, code_complexity=0,
-                               access='read-only', interaction_style='exploration', local_only=True, expected_hours=0.5,
-                               axis_demand={'divergence': 3, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0}),
+            'profile': profile(work_kind='creative_ideation', primary_level=3,
+                               access='read-only', local_only=True, expected_hours=0.5,
+                               axis_demand={'creativity': 3, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0}),
         }
         kept = allocator.plan({**div_task, 'chain': close_chain}, usage, now=self.now,
                               accounts=accounts, capabilities=capabilities, overrides=[])
@@ -1192,7 +1222,7 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         if kept_med['decision']['action'] == 'resume':
             self.assertEqual(kept_med['decision']['continuity'], 'medium-coupling chain stays with its owner')
 
-        # 2. A worker whose deficit exceeds continuity + rival cost (e.g. `sol_medium` with divergence ~ -2.1 vs `argon_high` +0.25)
+        # 2. A worker whose deficit exceeds continuity + rival cost (e.g. `sol_medium` with creativity ~ -2.1 vs `argon_high` +0.25)
         # switches to the stronger candidate instead of forcing a bad continuation.
         far_chain = {'id': 'c-far', 'coupling': 'high', 'total_hours': 2,
                      'worker': {'bundle': 'sol_medium', 'context_tokens': 100000}}
@@ -1210,7 +1240,7 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         policy = accounts['scoring']
         for task in (
             {'objective': 'Click the Save button in the dialog'},
-            {'work_kind': 'computer_use', 'objective': 'Operate the application'},
+            {'work_kind': 'gui_control', 'objective': 'Operate the application'},
             {'work_kind': 'other_or_mixed', 'objective': 'Take a screenshot of the result'},
             {'objective': 'Design a browser dashboard UI layout in React'},
         ):

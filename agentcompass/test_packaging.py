@@ -197,7 +197,7 @@ class PackagingTests(unittest.TestCase):
         for name in ("sandbox_check.py", "guest_check.py"):
             tree = ast.parse((ROOT / "packaging" / name).read_text(encoding="utf-8"))
             literals = [ast.literal_eval(node) for node in ast.walk(tree) if isinstance(node, ast.Dict)
-                        and any(isinstance(k, ast.Constant) and k.value == "interaction_style" for k in node.keys)]
+                        and any(isinstance(k, ast.Constant) and k.value == "primary_level" for k in node.keys)]
             self.assertTrue(literals, name)
             for literal in literals:
                 with self.subTest(file=name):

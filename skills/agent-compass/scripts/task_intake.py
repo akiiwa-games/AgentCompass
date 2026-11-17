@@ -1,4 +1,4 @@
-"""The task profile: classifier schema and validation, task kind, modality needs, and task normalization."""
+"""The task profile: 11 atomic work kinds, deterministic 4D capability envelope projection, validation, and normalization."""
 
 import math
 
@@ -8,133 +8,230 @@ import worker_sessions
 from model_resolution import DIRECT_SOURCES, split_model_effort
 
 
-INTERACTION_STYLES = ('engineering', 'exploration', 'text_only', 'advisory')
-PROFILE_INTEGERS = {'reasoning_depth': (1, 4), 'code_complexity': (0, 3)}
-PROFILE_FLAGS = ('needs_visual', 'needs_gui', 'local_only', 'wants_fast', 'read_only_review')
+WORK_KINDS = (
+    'creative_ideation',
+    'architecture_reasoning',
+    'code_implementation',
+    'frontend_ui',
+    'code_audit',
+    'exploration_forensics',
+    'web_research',
+    'visual_analysis',
+    'text_processing',
+    'live_loop',
+    'gui_control',
+)
+PROFILE_KINDS = WORK_KINDS + ('other_or_mixed',)
+SECONDARY_KINDS = ('none',) + WORK_KINDS
+GENERIC_CALLER_KINDS = (None, 'code_implementation', 'other_or_mixed')
+
+# Role codes per (creativity, coding, aesthetics, tool_operation) for depth s in {1, 2, 3}:
+#   '0'  -> 0           (orthogonal: never introduces cross-axis noise)
+#   'B'  -> I[s >= 2]   (baseline t1 cap at s >= 2: filters broken models, zero premium above t1)
+#   'S'  -> s - 1       (supporting axis: caps at panel median t2 at s = 3, never opening L3 ceiling)
+#   'P'  -> s           (primary bottleneck axis: 1:1 with depth, unlocking L3 ceiling at s = 3)
+#   'F2' -> 2           (real-time text/API loop responsiveness floor on tool_operation)
+#   'F3' -> 3           (real-time visual GUI control floor on tool_operation: responsiveness + image_recognition)
+ROLE_FN = {
+    '0': lambda s: 0,
+    'B': lambda s: 1 if s >= 2 else 0,
+    'S': lambda s: s - 1,
+    'P': lambda s: s,
+    'F2': lambda s: 2,
+    'F3': lambda s: 3,
+}
+WORK_KIND_SIGNATURES = {
+    'creative_ideation': ('P', '0', 'B', '0'),
+    'architecture_reasoning': ('S', 'P', '0', '0'),
+    'code_implementation': ('B', 'P', '0', 'B'),
+    'frontend_ui': ('B', 'P', 'P', 'B'),
+    'code_audit': ('B', 'P', '0', '0'),
+    'exploration_forensics': ('S', 'P', '0', 'B'),
+    'web_research': ('S', 'B', '0', 'B'),
+    'visual_analysis': ('B', 'B', 'P', '0'),
+    'text_processing': ('B', '0', 'B', '0'),
+    'live_loop': ('0', 'S', '0', 'F2'),
+    'gui_control': ('0', 'B', 'S', 'F3'),
+}
+
+PROFILE_INTEGERS = {'primary_level': (1, 3), 'secondary_level': (0, 3)}
+REQUIRED_BOOL_FLAGS = ('local_only', 'needs_visual', 'wants_fast')
+ACCESS_LEVELS = ('read-only', 'write')
+DIFFICULTY_ORDER = ('routine', 'hard', 'coupled', 'frontier')
+HOURS_RANGE = (0.05, 24.0)
+TASK_COUNTS = ('1', '2', '3', '>3')
+
+WORK_KIND_QUESTION = (
+    'Primary observable activity of the assignment (choose the core deliverable; ignore role/receipt boilerplate): '
+    'creative_ideation = cross-domain association, de-novo concept/mechanism invention, creative writing, dialogue, open brainstorming; '
+    'architecture_reasoning = first-principles system architecture, mathematical/formal proof, rigorous trade-off critique or planning without editing code; '
+    'code_implementation = write, fix, refactor, or test backend, CLI, library, algorithm, data/experiment script, or config code; '
+    'frontend_ui = implement or restyle user-facing UI, web/desktop views, CSS, animations, charts, or interactive components; '
+    'code_audit = independent read-only code, PR, diff, branch, security, or release review/audit (even when saving a report file); '
+    'exploration_forensics = read-only codebase mapping, log/database/metric forensics, or runtime root-cause diagnosis without modifying code; '
+    'web_research = open-web, literature, vendor, documentation, or multi-source public fact gathering and synthesis; '
+    'visual_analysis = static offline inspection of images, photos, screenshots, mockups, OCR, UI layout diffs, or fine-grained visual styling/material classification; '
+    'text_processing = bounded rule-based text cleaning, translation, formatting, mechanical extraction, or summarization; '
+    'live_loop = low-latency observe-act loop attached to a live external text/API stream (live market, ticket polling, live chat); '
+    'gui_control = operate a live desktop, browser, or mobile GUI via screenshots, mouse clicks, and keyboard actions.'
+)
+PRIMARY_LEVEL_QUESTION = (
+    'Depth of the primary work_kind (1..3), based on task complexity rather than prompt length: '
+    '1 = routine/localized (small script or config tweak, checklist/runbook, coarse OCR, simple lookup or formatting); '
+    '2 = standard module/analysis (implement, fix, or audit a production module with tests, standard UI page/chart or mockup diff, structured research synthesis); '
+    '3 = frontier/coupled/fine-grained (cross-module concurrency/protocol architecture, de-novo cross-domain invention, design-led UI system, or fine-grained outfit/material/lighting visual classification).'
+)
+SECONDARY_KIND_QUESTION = (
+    'Optional second distinct work_kind ONLY when a single worker must execute a genuinely composite task spanning two atomic domains '
+    '(e.g. code_implementation + creative_ideation for inventing a novel mechanism and coding it, frontend_ui + gui_control for coding UI and clicking through a live browser); '
+    'use "none" whenever the task belongs to one primary domain (including normal test running, git/CLI usage, or reading files before coding).'
+)
+SECONDARY_LEVEL_QUESTION = (
+    'Depth of secondary_kind: MUST be 0 when secondary_kind is "none"; otherwise 1..3 rating only the secondary part\'s own depth.'
+)
+ACCESS_QUESTION = (
+    'Whether this brief only reads, inspects, reviews, diagnoses, or returns output in its reply without modifying workspace files or state '
+    '("read-only"), or creates, edits, or deletes workspace files or runs mutating commands ("write"). '
+    'code_audit is ALWAYS "read-only" (even when saving a review report file); local repository code_implementation and frontend_ui are ALWAYS "write".'
+)
+LOCAL_ONLY_QUESTION = (
+    'True when the task explicitly depends on existing un-inlined files, directories, repositories, processes, or GUI on this machine. '
+    'False when all required inputs are inlined in the prompt or fetched from the public web—even if the brief has a workspace header or names a local output path.'
+)
+NEEDS_VISUAL_QUESTION = (
+    'True when the worker must inspect images, photos, screenshots, mockups, or operate a GUI (always true for visual_analysis and gui_control); '
+    'false for pure text/code work.'
+)
 WANTS_FAST_QUESTION = (
     'True ONLY when the assignment affirmatively requests fast mode, priority service tier, urgent/ASAP turnaround, '
     'or a pre-reset quota sprint (e.g. "pre-reset sprint", "before quota resets", "重置前冲刺") for the task itself, '
     'and does not negate or opt out of fast mode (e.g. "do not use fast mode", "no fast mode", or "not urgent" -> '
     'false). False for action adverbs inside runtime steps (e.g. "click Save immediately when the button appears"), '
-    'ordinary mentions of quota/reset without requesting fast execution, or ordinary tasks without an explicit speed/fast request.')
-READ_ONLY_REVIEW_QUESTION = (
-    'True ONLY when the assignment is a read-only code, diff, branch, security, or release review/audit that inspects '
-    'existing material and reports findings without writing or modifying repository production/test code (code_complexity = 0, '
-    'even if the reviewer saves its review report file to a specified output path). False when the worker implements, '
-    'fixes, or refactors code (including fixing issues found by a prior review), runs operational/release commands, '
-    'or performs general exploration/research that is not a code/diff/release audit.')
-ACCESS_LEVELS = ('read-only', 'write')
-ACCESS_QUESTION = (
-    'Whether this brief only reads, inspects, reviews, or analyzes without modifying workspace files or state '
-    '("read-only"), or writes, edits, creates, or deletes workspace files or runs mutating commands ("write"). '
-    'Any brief with read_only_review=true is "read-only"; any brief with code_complexity > 0 is "write".')
-DIFFICULTY_ORDER = ('routine', 'hard', 'coupled', 'frontier')
-# The System-One task profile (spec 2026-10-19). Integers carry minimum/maximum, never an integer enum: Gemini's
-# protobuf schema rejects integer enums ("enum[0] cannot be empty").
-HOURS_RANGE = (0.05, 24.0)
-CONFIDENCE_LEVELS = ('low', 'medium', 'high')
-URGENCY_LEVELS = ('unknown', 'low', 'normal', 'high')
-# Whether the brief bundles separate tasks. One question for every scorer (LLM schema field, question-API noul/choice); the
-# parent, not the router, then works out what the tasks are.
-TASK_COUNTS = ('1', '2', '3', '>3')
-MULTI_TASK_QUESTION = (
-    'True when the brief bundles more than one separate task: deliverables that different workers could produce at the '
-    'same time without waiting for each other\'s result (e.g. collect reference images, compare game engines, design '
-    'the gameplay loop). False for one task, however many steps: investigate-fix-test-release, implement plus its '
-    'tests, a review plus its report, the remaining steps of a handoff, a brief that already assigns one share of a '
-    'larger task, or a sequence where each part needs the previous part\'s output.')
-TASK_COUNT_QUESTION = 'How many separate tasks, in the sense of multi_task, the brief holds: 1 when multi_task is false.'
+    'ordinary mentions of quota/reset without requesting fast execution, or ordinary tasks without an explicit speed/fast request.'
+)
+TASK_COUNT_QUESTION = (
+    'How many independent parallel tasks the brief bundles ("1" when it is a single task, including multi-step sequential workflows '
+    'like investigate-fix-test, implement+tests, or review+report; "2", "3", or ">3" ONLY when different workers could produce '
+    'separate deliverables in parallel without waiting on one another).'
+)
+
+# Integers carry minimum/maximum, never an integer enum: Gemini's protobuf schema rejects integer enums ("enum[0] cannot be empty").
 TASK_PROFILE_SCHEMA = {
     'type': 'object',
     'properties': {
-        'reasoning_depth': {'type': 'integer', 'minimum': 1, 'maximum': 4, 'description': (
-            'How hard the thinking is, not how long the brief is. 1 = routine or direct execution with obvious steps, even '
-            'when the brief is long and sectioned (run an existing script, checklist, drift round, build/install/switch release '
-            'runbook; a mechanical edit or constant tweak; click and screenshot; reformat text); 2 = standard engineering or '
-            'analysis with a clear direction (implement or fix one module, a standard read-only review of a diff/module, '
-            'execute a structured research packet and report metrics, diagnose one subsystem); 3 = cross-module architectural '
-            'design/refactor, subtle concurrency or distributed-invariant debugging, or orchestrating a multi-stage research '
-            'line; 4 = frontier mathematical, strategic or architectural critique and formulation.')},
-        'code_complexity': {'type': 'integer', 'minimum': 0, 'maximum': 3, 'description': (
-            'Production code the worker itself writes or modifies (NOT the complexity of code being read or reviewed). '
-            '0 = none: ANY read-only code/release/diff review or independent audit (even when saving a review report file '
-            'to a specified path), diagnosis that only proposes, running existing CLI/release/test commands, log or data '
-            'exploration, text drafting; 1 = a small script, config/constant tweak, localized helper, or analysis scripts '
-            'inside a research packet; 2 = a production module implemented, fixed or refactored with its unit tests; '
-            '3 = complex multi-module, concurrency, protocol or core-library changes.')},
-        'needs_visual': {'type': 'boolean', 'description': 'True when the work must look at images, screenshots or other visual input.'},
-        'needs_gui': {'type': 'boolean', 'description': 'True when the work must operate a desktop or browser GUI through screenshots, mouse and keyboard.'},
-        'local_only': {'type': 'boolean', 'description': (
-            'True when the task explicitly depends on existing files, directories, or repositories on this machine '
-            '(reading, copying, searching, editing, building, or testing un-inlined local files) or on local processes/GUI/'
-            'environment. False when all required inputs are inlined in the prompt or fetched from the public web '
-            '(web_research, self_contained_code, text_in_text_out, direction_reasoning, complex_build_plan)—even if the '
-            'brief has a workspace header or names a local target path where the finished output will be saved.')},
-        'wants_fast': {'type': 'boolean', 'description': WANTS_FAST_QUESTION},
-        'read_only_review': {'type': 'boolean', 'description': READ_ONLY_REVIEW_QUESTION},
+        'work_kind': {'type': 'string', 'enum': list(WORK_KINDS), 'description': WORK_KIND_QUESTION},
+        'primary_level': {'type': 'integer', 'minimum': 1, 'maximum': 3, 'description': PRIMARY_LEVEL_QUESTION},
+        'secondary_kind': {'type': 'string', 'enum': list(SECONDARY_KINDS), 'description': SECONDARY_KIND_QUESTION},
+        'secondary_level': {'type': 'integer', 'minimum': 0, 'maximum': 3, 'description': SECONDARY_LEVEL_QUESTION},
         'access': {'type': 'string', 'enum': list(ACCESS_LEVELS), 'description': ACCESS_QUESTION},
-        'interaction_style': {'type': 'string', 'enum': list(INTERACTION_STYLES), 'description': (
-            'engineering = write or change software; exploration = explore a codebase, run experiments or backtests, '
-            'analyze logs or data; text_only = pure text in and out or public web lookup; advisory = direction '
-            'reasoning or complex build planning.')},
+        'local_only': {'type': 'boolean', 'description': LOCAL_ONLY_QUESTION},
+        'needs_visual': {'type': 'boolean', 'description': NEEDS_VISUAL_QUESTION},
+        'wants_fast': {'type': 'boolean', 'description': WANTS_FAST_QUESTION},
         'expected_hours': {'type': 'number', 'minimum': HOURS_RANGE[0], 'maximum': HOURS_RANGE[1], 'description': (
-            'Active worker-hours this task needs at an ordinary agent pace (a few tool calls = 0.1; one module fix with a '
-            'test = 0.5; a multi-file feature or investigation = 1-3; a long multi-stage build = 4 or more). Estimate '
-            'work, never money, quota or balances. Use 0.5 when the text gives no basis and set hours_confidence low.')},
-        'hours_confidence': {'type': 'string', 'enum': list(CONFIDENCE_LEVELS), 'description': (
-            'How well the text supports expected_hours: high = scope and steps are explicit; medium = scope is clear but steps '
-            'are not; low = guess.')},
-        'urgency': {'type': 'string', 'enum': list(URGENCY_LEVELS), 'description': (
-            'unknown unless the text itself states a deadline, an incident or "asap"; then high/normal/low. Never infer urgency '
-            'from topic or tone. Shown in the result so the caller can see it; fast mode is controlled by wants_fast or --fast, not urgency.')},
-        'multi_task': {'type': 'boolean', 'description': MULTI_TASK_QUESTION},
+            'Active worker-hours this task needs at an ordinary agent pace (quick check, runbook, or small review = 0.1-0.25; '
+            'standard investigation, bug fix, or 1-5 file feature with tests = 0.3-0.6; wide 8+ file refactor or broad survey = '
+            '1-3; multi-stage build or sustained live loop = 4 or more). Estimate work, never money, quota or balances; '
+            'brief length and boilerplate add nothing. Use 0.5 when the text gives no basis.')},
         'task_count': {'type': 'string', 'enum': list(TASK_COUNTS), 'description': TASK_COUNT_QUESTION},
     },
-    'required': list(PROFILE_INTEGERS) + list(PROFILE_FLAGS) + ['access', 'expected_hours', 'hours_confidence', 'urgency', 'interaction_style',
-                                                                 'multi_task', 'task_count'],
+    'required': [
+        'work_kind', 'primary_level', 'secondary_kind', 'secondary_level',
+        'access', 'local_only', 'needs_visual', 'wants_fast', 'expected_hours', 'task_count',
+    ],
 }
-PROFILE_KINDS = ('general_implementation', 'frontend_implementation', 'debug_review', 'bounded_bulk_work', 'tool_execution',
-                 'self_contained_code', 'exploration_analysis', 'research_packet', 'computer_use', 'visual_analysis',
-                 'text_in_text_out', 'web_research', 'dot_execution', 'direction_reasoning', 'complex_build_plan',
-                 'other_or_mixed')
-GENERIC_CALLER_KINDS = (None, 'general_implementation', 'tool_execution', 'debug_review', 'other_or_mixed')
+
+
+def project_axis_demand(work_kind, primary_level, secondary_kind='none', secondary_level=0):
+    """Project `(work_kind, primary_level, secondary_kind, secondary_level)` onto 4D `axis_demand` via tropical max envelope."""
+    if work_kind not in WORK_KIND_SIGNATURES:
+        raise ValueError('task.profile.work_kind must be one of ' + ', '.join(WORK_KINDS))
+    if isinstance(primary_level, bool) or not isinstance(primary_level, int) or not 1 <= primary_level <= 3:
+        raise ValueError('task.profile.primary_level must be an integer from 1 to 3')
+    if secondary_kind not in SECONDARY_KINDS:
+        raise ValueError('task.profile.secondary_kind must be one of ' + ', '.join(SECONDARY_KINDS))
+    if isinstance(secondary_level, bool) or not isinstance(secondary_level, int) or not 0 <= secondary_level <= 3:
+        raise ValueError('task.profile.secondary_level must be an integer from 0 to 3')
+    primary = [ROLE_FN[r](primary_level) for r in WORK_KIND_SIGNATURES[work_kind]]
+    if secondary_kind != 'none' and secondary_level > 0:
+        secondary = [ROLE_FN[r](secondary_level) for r in WORK_KIND_SIGNATURES[secondary_kind]]
+        levels = [max(a, b) for a, b in zip(primary, secondary)]
+    else:
+        levels = primary
+    return dict(zip(axis_scores.FIVE_AXES, levels))
+
+
+def _check_int(raw, name, low, high):
+    value = raw.get(name)
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValueError(f'task.profile.{name} must be an integer from {low} to {high}')
+    return value
 
 
 def validate_profile(raw):
-    """A task profile with every field checked, or ValueError. `reason`, `work_kind` and the hours estimate may be omitted."""
+    """Validate a task profile and populate deterministic derived fields (`axis_demand`, `needs_gui`, `read_only_review`, `multi_task`)."""
     if not isinstance(raw, dict):
         raise ValueError('task.profile must be an object')
-    profile = {}
-    if raw.get('work_kind') is not None:
-        if not isinstance(raw['work_kind'], str) or raw['work_kind'] not in PROFILE_KINDS:
-            raise ValueError('task.profile.work_kind must be one of ' + ', '.join(PROFILE_KINDS))
-        profile['work_kind'] = raw['work_kind']
-    for name, (low, high) in PROFILE_INTEGERS.items():
-        value = raw.get(name)
-        if isinstance(value, float) and value.is_integer():
-            value = int(value)
-        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-            raise ValueError(f'task.profile.{name} must be an integer from {low} to {high}')
-        profile[name] = value
-    for name in PROFILE_FLAGS:
+    work_kind = raw.get('work_kind')
+    if not isinstance(work_kind, str) or work_kind not in WORK_KINDS:
+        raise ValueError('task.profile.work_kind must be one of ' + ', '.join(WORK_KINDS))
+    primary_level = _check_int(raw, 'primary_level', 1, 3)
+    secondary_kind = raw.get('secondary_kind')
+    if not isinstance(secondary_kind, str) or secondary_kind not in SECONDARY_KINDS:
+        raise ValueError('task.profile.secondary_kind must be one of ' + ', '.join(SECONDARY_KINDS))
+    secondary_level = _check_int(raw, 'secondary_level', 0, 3)
+    if secondary_kind == 'none' and secondary_level != 0:
+        raise ValueError("task.profile.secondary_level must be 0 when secondary_kind is 'none'")
+    if secondary_kind != 'none' and secondary_level == 0:
+        raise ValueError("task.profile.secondary_level must be 1 to 3 when secondary_kind is not 'none'")
+    if secondary_kind == work_kind:
+        raise ValueError("task.profile.secondary_kind must differ from work_kind (use 'none' for single-domain tasks)")
+
+    profile = {
+        'work_kind': work_kind,
+        'primary_level': primary_level,
+        'secondary_kind': secondary_kind,
+        'secondary_level': secondary_level,
+    }
+    for name in REQUIRED_BOOL_FLAGS:
         if not isinstance(raw.get(name), bool):
             raise ValueError(f'task.profile.{name} must be true or false')
         profile[name] = raw[name]
-    if profile.get('read_only_review') is True and profile.get('code_complexity') != 0:
-        raise ValueError(
-            f"task.profile.read_only_review true contradicts task.profile.code_complexity {profile.get('code_complexity')!r} (must be 0)"
-        )
-    if raw.get('access') is not None:
-        if raw['access'] not in ACCESS_LEVELS:
-            raise ValueError('task.profile.access must be one of ' + ', '.join(ACCESS_LEVELS))
-        if raw['access'] == 'read-only' and profile.get('code_complexity') != 0:
-            raise ValueError(
-                f"task.profile.access 'read-only' contradicts task.profile.code_complexity {profile.get('code_complexity')!r} (must be 0)"
-            )
-        if profile.get('read_only_review') is True and raw['access'] == 'write':
-            raise ValueError("task.profile.access 'write' contradicts task.profile.read_only_review true")
-        profile['access'] = raw['access']
-    # The hours estimate is the classifier's to give; with no caller `expected_hours` it is the task's budget.
+
+    kinds_used = (work_kind,) if secondary_kind == 'none' else (work_kind, secondary_kind)
+    derived_gui = 'gui_control' in kinds_used
+    if 'needs_gui' in raw and raw['needs_gui'] is not None:
+        if not isinstance(raw['needs_gui'], bool):
+            raise ValueError('task.profile.needs_gui must be true or false')
+        if derived_gui and raw['needs_gui'] is False:
+            raise ValueError("task.profile.needs_gui false contradicts gui_control")
+        profile['needs_gui'] = raw['needs_gui']
+    else:
+        profile['needs_gui'] = derived_gui
+
+    if profile['needs_gui'] or 'visual_analysis' in kinds_used:
+        profile['needs_visual'] = True
+
+    derived_ro = work_kind == 'code_audit'
+    if 'read_only_review' in raw and raw['read_only_review'] is not None:
+        if not isinstance(raw['read_only_review'], bool):
+            raise ValueError('task.profile.read_only_review must be true or false')
+        if derived_ro and raw['read_only_review'] is False:
+            raise ValueError("task.profile.read_only_review false contradicts work_kind 'code_audit'")
+        profile['read_only_review'] = raw['read_only_review']
+    else:
+        profile['read_only_review'] = derived_ro
+
+    access = raw.get('access')
+    if access not in ACCESS_LEVELS:
+        raise ValueError('task.profile.access must be one of ' + ', '.join(ACCESS_LEVELS))
+    if profile['read_only_review'] is True and access == 'write':
+        raise ValueError("task.profile.access 'write' contradicts read_only_review / work_kind 'code_audit'")
+    if profile['local_only'] is True and work_kind in ('code_implementation', 'frontend_ui') and access == 'read-only':
+        raise ValueError(f"task.profile.access 'read-only' contradicts local {work_kind!r}")
+    profile['access'] = access
+
     hours = raw.get('expected_hours')
     if hours is not None:
         try:
@@ -144,28 +241,25 @@ def validate_profile(raw):
         if not finite:
             raise ValueError('task.profile.expected_hours must be a finite number')
         profile['expected_hours'] = round(min(max(float(hours), HOURS_RANGE[0]), HOURS_RANGE[1]), 2)
-    for name, levels in (('hours_confidence', CONFIDENCE_LEVELS), ('urgency', URGENCY_LEVELS)):
-        if raw.get(name) is not None:
-            if raw[name] not in levels:
-                raise ValueError(f'task.profile.{name} must be one of ' + ', '.join(levels))
-            profile[name] = raw[name]
-    if raw.get('interaction_style') not in INTERACTION_STYLES:
-        raise ValueError('task.profile.interaction_style must be one of ' + ', '.join(INTERACTION_STYLES))
-    profile['interaction_style'] = raw['interaction_style']
+
     reason = raw.get('reason')
     if isinstance(reason, str) and reason.strip():
         profile['reason'] = reason.strip()[:300].rstrip()
-    if not isinstance(raw.get('multi_task'), bool):
-        raise ValueError('task.profile.multi_task must be true or false')
-    profile['multi_task'] = raw['multi_task']
+
     profile['task_count'] = task_count_bucket(raw.get('task_count'))
-    if profile['multi_task'] != (profile['task_count'] != '1'):
-        raise ValueError(f"task.profile.multi_task {str(profile['multi_task']).lower()} contradicts "
-                         f"task.profile.task_count {profile['task_count']!r}")
-    # The classifier always answers the category demand.
-    if raw.get('axis_demand') is None:
-        raise ValueError('task.profile.axis_demand is required')
-    profile['axis_demand'] = axis_scores.validate_axis_demand(raw['axis_demand'])
+    derived_multi = profile['task_count'] != '1'
+    if 'multi_task' in raw and raw['multi_task'] is not None:
+        if not isinstance(raw['multi_task'], bool):
+            raise ValueError('task.profile.multi_task must be true or false')
+        if raw['multi_task'] != derived_multi:
+            raise ValueError(f"task.profile.multi_task {str(raw['multi_task']).lower()} contradicts "
+                             f"task.profile.task_count {profile['task_count']!r}")
+    profile['multi_task'] = derived_multi
+
+    if 'axis_demand' in raw and raw['axis_demand'] is not None:
+        profile['axis_demand'] = axis_scores.validate_axis_demand(raw['axis_demand'])
+    else:
+        profile['axis_demand'] = project_axis_demand(work_kind, primary_level, secondary_kind, secondary_level)
     return profile
 
 
@@ -191,10 +285,18 @@ def task_count_bucket(value):
     raise ValueError('task.profile.task_count must be one of ' + ', '.join(TASK_COUNTS) + ' or a positive whole number')
 
 
-def profile_difficulty(profile, policy):
-    """The label for a profile's reasoning depth, from the policy's `profile.difficulty_by_depth` (a display label: nothing
-    scores on it)."""
-    return policy['profile']['difficulty_by_depth'][str(profile['reasoning_depth'])]
+def profile_difficulty(profile, policy=None):
+    """Display label for a profile's primary_level (nothing scores or gates on it)."""
+    lvl = profile['primary_level']
+    if lvl == 3 and (
+        profile.get('work_kind') in ('architecture_reasoning', 'creative_ideation')
+        or profile.get('secondary_level') == 3
+    ):
+        return 'frontier'
+    by_level = ((policy or {}).get('profile') or {}).get('difficulty_by_level') or {
+        '1': 'routine', '2': 'hard', '3': 'coupled',
+    }
+    return by_level[str(lvl)]
 
 
 def named_route(profile):
@@ -202,47 +304,39 @@ def named_route(profile):
     if not isinstance(profile, dict):
         return None
     named = profile.get('work_kind')
-    if named in PROFILE_KINDS and named != 'other_or_mixed':
+    if named in WORK_KINDS:
         return named
     return None
 
 
-def profile_kind(profile, policy):
-    """The route a profile implies when the caller named none.
-
-    A named route stands. needs_gui becomes computer_use only when the profile did not name one;
-    the GUI requirement itself is needs_visual / needs_gui, not a route rewrite."""
+def profile_kind(profile, policy=None):
+    """The canonical route of a validated profile (`work_kind`)."""
+    del policy
     named = named_route(profile)
     if named:
         return named
-    if profile['needs_gui']:
-        return 'computer_use'
-    if profile['needs_visual'] and profile['code_complexity'] == 0 and profile['interaction_style'] != 'text_only':
-        return 'visual_analysis'
-    if profile['interaction_style'] == 'engineering' and profile['code_complexity'] == 0:
-        return 'tool_execution'
-    return ((policy.get('profile') or {}).get('kind_by_style') or {}).get(profile['interaction_style'], 'other_or_mixed')
+    if isinstance(profile, dict) and profile.get('needs_gui'):
+        return 'gui_control'
+    return 'other_or_mixed'
 
 
 def task_kind(task, capabilities, policy=None):
-    """The route plan() uses: the caller's work_kind, else the profile's when no work_kind was given, else other_or_mixed."""
+    """The route plan() uses: the profile's work_kind when caller left work_kind unset or repeated it, else caller's valid route, else other_or_mixed."""
     routes = capabilities['routes']
     if not isinstance(task, dict):
         return 'other_or_mixed'
     prof = task.get('profile') if isinstance(task.get('profile'), dict) else None
     caller = task.get('work_kind')
     named = named_route(prof)
-    # The classifier's route stands when the caller left the kind unset or repeated it.
-    # A generic caller kind plus needs_gui becomes computer_use only when the profile named no real route.
     if named in routes and (caller is None or caller == named):
         return named
     if prof and prof.get('needs_gui') and caller in GENERIC_CALLER_KINDS and named is None:
-        return 'computer_use'
+        return 'gui_control'
     if caller in routes:
         return task['work_kind']
     if not task.get('work_kind') and prof is not None:
         try:
-            kind = profile_kind(validate_profile(prof), policy or {})
+            kind = profile_kind(validate_profile(prof), policy)
         except ValueError:
             return 'other_or_mixed'
         return kind if kind in routes else 'other_or_mixed'
@@ -283,8 +377,7 @@ def resolve_modality_needs(needs, profile, implies):
 def dot_may_take(kind, needs, capabilities, profile=None):
     """Whether Dot is a candidate. It has its own computer and several ways to receive data and return files, so every route
     admits it except work that needs vision and work the caller or classifier marks needs.local_only (it must run on
-    this machine). dot_execution marked local-only is a contradiction, so Dot is not offered and the plan asks the user.
-    Explicit false is kept. Route implies fill a flag only when the caller and the profile left it unset."""
+    this machine). Explicit false is kept. Route implies fill a flag only when the caller and the profile left it unset."""
     route = capabilities['routes'].get(kind) or {}
     resolved = resolve_modality_needs(needs, profile, route.get('implies') or {})
     if resolved.get('local_only') or resolved.get('visual'):
@@ -361,7 +454,7 @@ def normalize_task(raw, policy, capabilities, accounts):
     hours = float(task.get('expected_hours') or profile['expected_hours'])
     constraints = task.get('constraints') if isinstance(task.get('constraints'), dict) else {}
     constraint_model, constraint_effort = named_pin(constraints, task, accounts)
-    implies = capabilities['routes'][kind].get('implies') or {}
+    implies = (capabilities['routes'].get(kind) or {}).get('implies') or {}
     # Caller false stands. The profile fills an unset flag. Route implies fill only what both left unset.
     needs.update(resolve_modality_needs(needs, profile, implies))
     worker = dict(chain['worker']) if isinstance(chain.get('worker'), dict) else None
@@ -379,7 +472,7 @@ def normalize_task(raw, policy, capabilities, accounts):
     elif profile is not None and _flag_present(profile, 'needs_gui'):
         needs_gui = bool(profile['needs_gui'])
     else:
-        needs_gui = bool(kind == 'computer_use')
+        needs_gui = bool(kind == 'gui_control')
     return {'kind': kind, 'difficulty': difficulty, 'difficulty_source': source, 'hours': hours,
             'profile': profile, 'profile_difficulty': derived,
             'needs_gui': needs_gui,

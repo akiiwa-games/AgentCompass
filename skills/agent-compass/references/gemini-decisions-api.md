@@ -12,10 +12,12 @@ with the key in the `x-goog-api-key` header. The request carries:
 
 - `input`: the whole task text and the dimension rubric, one JSON object serialized as text (the API takes a JSON
   object only as text). Nothing is cut or summarized.
-- `questions`: the same question set Jev gets. `choice` questions for `work_kind`, `interaction_style`, the effort
-  band, urgency, `access` and `task_count` (`1`, `2`, `3`, `>3`); `score` questions for the profile levels and the
-  four category demands; `noul` questions for `needs_visual`, `needs_gui`, `local_only`, `wants_fast`,
-  `read_only_review` and `multi_task`. The model never sees a question key, so every instruction is a whole question.
+- `questions`: the same 10-question set Jev gets. `choice` questions for `work_kind`, `secondary_kind` (`none` or a
+  second distinct atomic kind), the effort band, `access` and `task_count` (`1`, `2`, `3`, `>3`); `score` questions for
+  `primary_level` (`1..3`) and `secondary_level` (`0..3`); `noul` questions for `local_only`, `needs_visual` and
+  `wants_fast`. `task_intake.validate_profile` projects `axis_demand` (`creativity`, `coding`, `aesthetics`,
+  `tool_operation`) and derives `needs_gui`, `read_only_review` and `multi_task` deterministically. The model never sees
+  a question key, so every instruction is a whole question.
 
 The answers become the task profile the same way as Jev's: a `choice` gives the option, a `score` the
 probability-weighted level rounded to a level, a `noul` is true from 0.5. The answer names no model, so the scorer

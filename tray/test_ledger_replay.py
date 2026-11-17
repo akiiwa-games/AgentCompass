@@ -43,9 +43,9 @@ class LedgerReplayTests(unittest.TestCase):
             'antigravity': row(window('gemini-5h', 10, 3), window('gemini-weekly', 20, 100))}}), encoding='utf-8')
         self.task = Path(directory.name) / 'task.json'
         self.task.write_text(json.dumps({'task': {
-            'objective': 'Fix the pagination bug', 'work_kind': 'general_implementation', 'expected_hours': 1,
+            'objective': 'Fix the pagination bug', 'work_kind': 'code_implementation', 'expected_hours': 1,
             'needs': {'local_only': True},
-            'profile': profile(reasoning_depth=3, local_only=True, reason='test')}}), encoding='utf-8')
+            'profile': profile(primary_level=3, local_only=True, reason='test')}}), encoding='utf-8')
         argv = ['route_judge.py', 'plan', '--input', str(self.task), '--usage-cache', str(self.cache)]
         with patch('sys.argv', argv), patch('builtins.print') as shown:
             self.assertEqual(self.router.main(), 0)
@@ -78,7 +78,7 @@ class LedgerReplayTests(unittest.TestCase):
 
     def test_row_without_a_snapshot_is_recomputed(self):
         older = {k: v for k, v in self.row.items() if k != 'decision_snapshot'}
-        older.update(objective='Fix the pagination bug', hours=1, local_only=True, kind='general_implementation')
+        older.update(objective='Fix the pagination bug', hours=1, local_only=True, kind='code_implementation')
         calls = []
         sentinel = {'choice': 'x', 'ranking': [], 'task': {}}
         with patch.object(router_data, 'modules', return_value=(self.allocator, self.router)), \

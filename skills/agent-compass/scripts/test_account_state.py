@@ -24,8 +24,8 @@ def setUpModule():
     isolated_router_state(unittest.addModuleCleanup, discovery=False, policy=False)
 
 
-TASK = {'objective': 'Implement the parser module and tests', 'work_kind': 'self_contained_code', 'difficulty': 'routine',
-        'expected_hours': 1.0, 'reasoning_depth': 2, 'code_complexity': 2, 'wants_fast': False, 'read_only_review': False}
+TASK = {'objective': 'Implement the parser module and tests', 'work_kind': 'code_implementation', 'difficulty': 'routine',
+        'expected_hours': 1.0, 'primary_level': 2, 'wants_fast': False, 'read_only_review': False}
 
 
 def jwt(claims):

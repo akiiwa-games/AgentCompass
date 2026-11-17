@@ -249,17 +249,16 @@ def usage_for(state, accounts, now, pools=None):
 # --- grid -----------------------------------------------------------------------------------------
 def demand_task(demand, local, hours=2.0):
     """A task whose classifier profile asks `demand` (one point of the category demand space) of the four categories.
-    The grid sweeps the whole space; no work kind or difficulty is assumed. `reasoning_depth` follows the strongest
-    reasoning demand so the profile is complete."""
-    reasoning = max(demand['coding'], demand['divergence'])
+    The grid sweeps the whole space; `primary_level` follows the strongest category demand so the profile is complete."""
+    peak = max(1, min(3, max(demand.values(), default=1)))
     return {'objective': 'demand ' + ' '.join(f'{a}={demand[a]}' for a in axis_scores.FIVE_AXES), 'expected_hours': hours,
             'needs': {'local_only': local},
-            'profile': {'work_kind': 'general_implementation', 'reasoning_depth': min(4, 1 + reasoning),
-                        'code_complexity': 2 if demand['coding'] else 0,
+            'profile': {'work_kind': 'code_implementation', 'primary_level': peak,
+                        'secondary_kind': 'none', 'secondary_level': 0,
                         'needs_visual': demand['tool_operation'] >= axis_scores.IMAGE_INPUT_LEVEL,
                         'needs_gui': False, 'local_only': local, 'wants_fast': False,
-                        'read_only_review': False, 'access': 'write', 'expected_hours': hours, 'hours_confidence': 'medium',
-                        'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
+                        'read_only_review': False, 'access': 'write', 'expected_hours': hours,
+                        'multi_task': False, 'task_count': '1',
                         'axis_demand': dict(demand)}}
 
 

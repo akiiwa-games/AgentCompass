@@ -206,6 +206,14 @@ class SharedCacheTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         for name in ("ROUTER_STATE_DIR", "ROUTER_USAGE_CACHE", "AGENTCOMPASS_ACTIVITY_FILE"):
             os.environ.pop(name, None)
+        import sys
+        scripts = host.component_launch.skill_scripts()
+        if str(scripts) not in sys.path:
+            sys.path.insert(0, str(scripts))
+        import usage_cache
+        reg = mock.patch.object(usage_cache, "_registry", return_value="")
+        reg.start()
+        self.addCleanup(reg.stop)
         self.old_uf = self.home / ".usage-float" / "usage-cache.json"
         self.old_uf.parent.mkdir(parents=True)
         self.old_uf.write_text(json.dumps({"providers": {"codex": {"fetched_at": "2026-01-01T00:00:00+00:00", "windows": [{"id": "5h"}]}}}),
@@ -720,7 +728,7 @@ class HostedSingleReaderTests(unittest.TestCase):
         fleet = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         import router_test_support
         planned = self.allocator.plan(
-            {"work_kind": "general_implementation", "difficulty": "hard", "profile": router_test_support.profile()},
+            {"work_kind": "code_implementation", "difficulty": "hard", "profile": router_test_support.profile()},
             {"accounts": {"codex": {"status": "fresh", "available": True, "stale": False, "windows": [
                 {"id": "usage", "remaining_pct_before_reset": 75.0, "observed_remaining_pct": 75.0, "seconds_until_reset": 86400}
             ]}}},

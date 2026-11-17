@@ -26,7 +26,7 @@ def dispatch(n, *, state="completed", kind="coding_task", hours=1.0, active=3600
            "created_at": created, "cwd": f"/{SECRET}/dir", "brief_path": f"/{SECRET}/brief.md",
            "bundle": {"model": model, "effort": effort, "account": "acct"}, "expected_usd": 2.0,
            "profile": {"work_kind": kind, "expected_hours": hours,
-                       "axis_demand": demand or {"divergence": 0, "coding": 2, "aesthetics": 0, "tool_operation": 1}},
+                       "axis_demand": demand or {"creativity": 0, "coding": 2, "aesthetics": 0, "tool_operation": 1}},
            "ground_truth_recorded_at": created, "telemetry_harness": "codex"}
     if active is not None:
         row["active_seconds"] = active
@@ -86,7 +86,7 @@ class CalibrationReportTests(unittest.TestCase):
         self.assertAlmostEqual(cell["expected_hours_median"], 2.0)
 
     def test_demand_profile_is_the_dominant_category(self):
-        tie = {"axis_demand": {"divergence": 0, "coding": 3, "aesthetics": 1, "tool_operation": 3}}
+        tie = {"axis_demand": {"creativity": 0, "coding": 3, "aesthetics": 1, "tool_operation": 3}}
         self.assertEqual(report.demand_label(tie), "coding+tool_operation")
         self.assertEqual(report.demand_label({"axis_demand": dict.fromkeys(report.AXES, 0)}), "none")
         self.assertEqual(report.demand_label({}), "unclassified")

@@ -14,17 +14,20 @@ import account_fleet
 
 # --- Scoring: the four category scores and the quota economy (the only scoring) -----------------------------------------
 # Model data comes from references/five-axis-scores.json (calibration/five_axis.py, cited public sources only). The four
-# categories (user, 2026-11-11): divergence, coding, aesthetics, tool_operation. Every board is read as a panel standard
-# score: z = (x - x_anchor) / sd_panel, the anchor (Opus 5.5) at High is 0 and one unit is one panel standard deviation;
-# parallel boards of one facet are linked and averaged, the facets of a category combine by `min`, and a facet a model
-# lacks is estimated (same-series sibling, else the fit on the arena.ai Overall tier) and marked estimated.
-# - A task demands levels 0..3 on the four categories (the classifier's `axis_demand`, always produced) and nothing
-#   else scores or gates on quality: no scalar tier, no route preference or restriction lists, no harness quality
-#   factors, no difficulty floors, no free-usage bonus.
+# categories (user, 2026-11-11; unified 2026-11-17): creativity, coding, aesthetics, tool_operation. Every board is read as
+# a panel standard score: z = (x - x_anchor) / sd_panel, the anchor (Opus 5.5) at High is 0 and one unit is one panel
+# standard deviation; parallel boards of one facet are linked and averaged, the facets of a category combine by `min`, and a
+# facet a model lacks is estimated (same-series sibling, else the fit on the arena.ai Overall tier) and marked estimated.
+# - A task demands levels 0..3 on the four categories (`axis_demand`, projected deterministically in `task_intake` from the
+#   classifier's `work_kind`, `primary_level`, `secondary_kind`, and `secondary_level`) and nothing else scores or gates on
+#   quality: no scalar tier, no route preference or restriction lists, no harness quality factors, no difficulty floors, no
+#   free-usage bonus.
 # - Targets come from the panel (five-axis-scores.json `anchor.targets`): level 1 the panel's weakest, level 2 its median,
-#   level 3 the anchor. tool_operation asks per facet: level 1 nothing, level 2 responsiveness, level 3 responsiveness
-#   and image recognition, never less of a facet than the level below. Each level-3 row also carries its `ceiling`, the
-#   best measured High value among the catalogued models (owner, 2026-11-13).
+#   level 3 the anchor. `aesthetics` and `tool_operation` ask per facet (`LEVEL_FACETS`): `aesthetics` asks `design` at
+#   level 1 and `min(design, image_recognition)` at levels 2 and 3 (sharing `tool_operation.image_recognition`);
+#   `tool_operation` asks nothing at level 1, `responsiveness` at level 2, and `min(responsiveness, image_recognition)` at
+#   level 3, never less of a facet than the level below. Each level-3 row also carries its `ceiling`, the best measured
+#   High value among the catalogued models (owner, 2026-11-13).
 # - Fit (five_axis_fit) = sum_a w_a x (min(z_a, c_a) - t1_a) / sum_a w_a over the demanded categories, w_a the demand
 #   level, t1_a the level-1 target (the panel's weakest) and c_a the cap: the level's target at levels 1 and 2, the
 #   ceiling at level 3. It is in panel standard deviations: 0 is the panel's weakest model on every demanded category,
@@ -42,54 +45,22 @@ import account_fleet
 #   price (FiveAxisEconomy), counted in hours of the window's reference model.
 FIVE_AXIS_FILE = account_fleet.REFERENCES / 'five-axis-scores.json'
 USER_SCORES_FILE = account_fleet.REFERENCES / 'user-scores.json'
-FIVE_AXES = ('divergence', 'coding', 'aesthetics', 'tool_operation')
+FIVE_AXES = ('creativity', 'coding', 'aesthetics', 'tool_operation')
 FIVE_AXIS_DEFAULTS = {
     # fit and continuity are both in panel standard deviations: one unit each, not a hand-set trade-off
     'weights': {'fit': 1.0, 'continuity': 1.0},
     'demanded_level': 1,         # rule B: a category demanded at this level or above must have data
 }
-# What each demand level 0..3 means per category: the one text both the schema of the JSON classifiers and the questions of
-# the question-API classifiers (Jev, Gemini Decision) are built from (user, 2026-11-11).
-FIVE_AXIS_DEMAND_LEVELS = {
-    'divergence': ('Divergent work: creative writing, brainstorming, research synthesis and data analysis, and decomposing '
-                   'a problem from first principles outside the existing architecture.', (
-        'execute a known spec or checklist',
-        'small judgment calls or wording choices',
-        'several options or hypotheses to generate and compare, or a research or data-analysis question to investigate '
-        'and synthesize',
-        'open-ended creative writing, open research synthesis across many sources, or a first-principles redesign outside '
-        'the existing architecture')),
-    'coding': ('Coding ability: reading, writing, reviewing and changing code correctly, doing exactly what was asked and '
-               'reporting it honestly.', (
-        'no code read or written',
-        'a small script or config change, or a result a test verifies',
-        'a production module with its tests, or a review or audit of one',
-        'changes across coupled modules, concurrency, protocol or core-library work, a whole-system review or audit, or '
-        'a defect would be costly or irreversible')),
-    'aesthetics': ('Visual and design judgment: GUI and interaction design, layout and typesetting, tables and charts, '
-                   '2D or 3D modeling.', (
-        'no visual output',
-        'plain output where only tidy formatting matters',
-        'a user-facing screen, page, chart or document whose look matters',
-        'design-led work: a new interface or interaction, a visual identity, a 3D scene or model')),
-    'tool_operation': ('Operating tools fast: per-turn speed inside a tool loop, and reading images. Writing or fixing '
-                       'software about real-time systems is coding, not a live loop.', (
-        'reads files and runs a few shell commands',
-        'routine tool or API calls',
-        'heavy tool or API orchestration, or the worker itself stays inside a live external system (a game, a ticket '
-        'queue, an order book, a live page or chat) where slow turns degrade the outcome',
-        'must read images or screenshots inside the loop, or operate a desktop or browser GUI through screenshots')),
-}
-FIVE_AXIS_DEMAND_SCHEMA = {
-    'type': 'object', 'additionalProperties': False, 'required': list(FIVE_AXES),
-    'description': ('How much the task needs each capability category of the model, 0..3. Economy is not a task demand: '
-                    'the router prices it from cost and live quota.'),
-    'properties': {axis: {'type': 'integer', 'minimum': 0, 'maximum': 3,
-                          'description': intro + ' ' + '; '.join(f'{i} = {text}' for i, text in enumerate(levels)) + '.'}
-                   for axis, (intro, levels) in FIVE_AXIS_DEMAND_LEVELS.items()},
-}
-# tool_operation's facets per demand level (calibration/five_axis.TOOL_LEVEL_FACETS): level 1 imposes no ability requirement.
+# Per-level facets (`calibration/five_axis.LEVEL_FACETS`): aesthetics L1 asks design, L2/L3 ask min(design, image_recognition);
+# tool_operation L1 imposes no ability requirement, L2 asks responsiveness, L3 asks min(responsiveness, image_recognition).
+AESTHETICS_LEVEL_FACETS = {1: ('design',), 2: ('design', 'image_recognition'), 3: ('design', 'image_recognition')}
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
+LEVEL_FACETS = {'aesthetics': AESTHETICS_LEVEL_FACETS, 'tool_operation': TOOL_LEVEL_FACETS}
+FACET_CATEGORY = {
+    'design': 'aesthetics',
+    'responsiveness': 'tool_operation',
+    'image_recognition': 'tool_operation',
+}
 IMAGE_INPUT_LEVEL = 3           # tool_operation at this level must read images: a text-only model leaves the task
 
 
@@ -106,21 +77,25 @@ def load_five_axis(path=None, *, use_effective=True):
 
 
 def require_level3_ceilings(data):
-    """Fail fast on a five-axis-scores.json written before level-3 ceilings (schema agent-compass.five-axis-scores/3): the
-    fit reads `ceiling` on every level-3 row that has a target (per facet for tool_operation), so an older file is named
+    """Fail fast on a five-axis-scores.json written before schema agent-compass.five-axis-scores/5: the fit reads `ceiling`
+    on every level-3 row that has a target (per facet for `aesthetics` and `tool_operation`), so an older file is named
     with what to run instead of failing later with a KeyError."""
     targets = (data.get('anchor') or {}).get('targets') or {}
     missing = []
     for a in FIVE_AXES:
         level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
-        rows = (level3.get('by_facet') or {}).items() if a == 'tool_operation' else [(None, level3)]
-        for f, r in rows:
-            if r.get('target') is not None and not isinstance((r.get('ceiling') or {}).get('value'), (int, float)):
-                missing.append(a if f is None else f'{a}.{f}')
+        if a in LEVEL_FACETS:
+            by = level3.get('by_facet') or {}
+            for f in LEVEL_FACETS[a][3]:
+                r = by.get(f) or {}
+                if not isinstance((r.get('ceiling') or {}).get('value'), (int, float)):
+                    missing.append(f'{a}.{f}')
+        elif level3.get('target') is not None and not isinstance((level3.get('ceiling') or {}).get('value'), (int, float)):
+            missing.append(a)
     if missing:
         raise ValueError(
             f"five-axis-scores.json (schema {data.get('schema')!r}) has no level-3 ceiling for {', '.join(missing)}; this "
-            'code reads agent-compass.five-axis-scores/3. In an install run `agentcompass data --refresh` (or update '
+            'code reads agent-compass.five-axis-scores/5. In an install run `agentcompass data --refresh` (or update '
             'AgentCompass); in a checkout run `python -X utf8 agentcompass data refresh --no-fetch`.')
 
 
@@ -560,14 +535,23 @@ def _at_effort(cell, effort):
     return None if value is None else float(value)
 
 
+def _facet_at_effort(cats, category, facet, effort):
+    cat_cell = cats.get(category) or {}
+    facets = cat_cell.get('facets') if isinstance(cat_cell, dict) else None
+    if isinstance(facets, dict) and facet in facets:
+        return _at_effort(facets.get(facet), effort)
+    if category == 'aesthetics' and facet == 'design' and not facets and not (cat_cell.get('missing_facets') if isinstance(cat_cell, dict) else None):
+        return _at_effort(cat_cell, effort)
+    return None
+
+
 def five_axis_values(state, effort):
-    """{category: z}, with tool_operation as {facet: z}: this model's panel standard scores at `effort` (None where it has
-    no value). The thinking categories carry the model's own additive effort shift (five_axis.py); responsiveness is
-    measured per effort."""
+    """{category: z}, with aesthetics and tool_operation as {facet: z}: this model's panel standard scores at `effort`
+    (None where it has no value). Aesthetics shares `tool_operation.image_recognition` alongside its own `design` facet."""
     cats = (state or {}).get('categories') or {}
-    out = {a: _at_effort(cats.get(a), effort) for a in FIVE_AXES if a != 'tool_operation'}
-    facets = ((cats.get('tool_operation') or {}).get('facets')) or {}
-    out['tool_operation'] = {f: _at_effort(facets.get(f), effort) for f in TOOL_LEVEL_FACETS[3]}
+    out = {a: _at_effort(cats.get(a), effort) for a in FIVE_AXES if a not in LEVEL_FACETS}
+    for a, by_lvl in LEVEL_FACETS.items():
+        out[a] = {f: _facet_at_effort(cats, FACET_CATEGORY[f], f, effort) for f in by_lvl[3]}
     return out
 
 
@@ -582,7 +566,7 @@ def five_axis_targets(demand, targets):
         if w <= 0:
             continue
         row = ((targets.get(a) or {}).get('levels') or {}).get(str(w)) or {}
-        if a == 'tool_operation':
+        if a in LEVEL_FACETS:
             if row.get('by_facet'):
                 out[a] = {'by_facet': {f: row_of(r, w) for f, r in row['by_facet'].items()}}
         elif row.get('target') is not None:
@@ -660,8 +644,9 @@ def five_axis_shares(values, targets):
     out = {}
     for a in FIVE_AXES:
         level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
-        if a == 'tool_operation':
-            parts = [share((values.get(a) or {}).get(f), r) for f, r in (level3.get('by_facet') or {}).items()]
+        if a in LEVEL_FACETS:
+            val_map = values.get(a) if isinstance(values.get(a), dict) else {}
+            parts = [share(val_map.get(f), r) for f, r in (level3.get('by_facet') or {}).items()]
             out[a] = min(parts) if parts and all(p is not None for p in parts) else None
         else:
             out[a] = share(values.get(a), level3)

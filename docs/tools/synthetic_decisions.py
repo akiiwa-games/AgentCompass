@@ -17,9 +17,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "agent-compass" / "scripts"))
 import candidate_ranking  # noqa: E402
 
-AXES = ("divergence", "coding", "aesthetics", "tool_operation")
+AXES = ("creativity", "coding", "aesthetics", "tool_operation")
 HEADLINE = "Refactor payment retries with integration tests"
-HEADLINE_KIND = "complex_build_plan"
+HEADLINE_KIND = "architecture_reasoning"
 HOURS = 2.0
 ANCHOR = 0.8                                    # the score a demand of 3 asks for
 DEMAND = dict(zip(AXES, (1, 3, 3, 1)))          # classifier levels 0..3 per axis
@@ -44,7 +44,7 @@ EARLIER = {
 EARLIER_AT, EARLIER_WINNER = "2026-10-25T11:40:00+00:00", "opus55_high_b"
 
 # (bundle id, model, effort, account = its weekly window, fast, four axis scores, USD per hour)
-# The winner is rigor/precision-heavy and the runner-up divergence/vision-heavy, so the radar polygons differ.
+# The winner is rigor/precision-heavy and the runner-up creativity/vision-heavy, so the radar polygons differ.
 HEADLINE_SPECS = (
     ("opus55_high_fast", "claude-opus-5-5", "high", "claude-a", True, (.74, .86, .88, .70), 22.86),
     ("opus55_high", "claude-opus-5-5", "high", "claude-a", False, (.74, .86, .88, .70), 22.86),
@@ -57,11 +57,11 @@ HEADLINE_SPECS = (
 
 # Older rows for the "Recent decisions" list: (objective, kind, hours, winning bundle id)
 HISTORY = (
-    ("Fix a race condition in the upload queue", "debug_review", 1, "sol_high"),
-    ("Summarize last week's release notes", "text_in_text_out", 0.5, "flash_high"),
-    ("Compare three caching strategies for the API", "research_packet", 2, "argon_high"),
-    ("Run the nightly lint and type checks", "tool_execution", 1, "sonnet55_high"),
-    ("Migrate the report exporter to the new schema", "complex_build_plan", 3, "opus55_high"),
+    ("Fix a race condition in the upload queue", "code_implementation", 1, "sol_high"),
+    ("Summarize last week's release notes", "text_processing", 0.5, "flash_high"),
+    ("Compare three caching strategies for the API", "exploration_forensics", 2, "argon_high"),
+    ("Audit the nightly release security diff", "code_audit", 1, "sonnet55_high"),
+    ("Migrate the report exporter to the new schema", "architecture_reasoning", 3, "opus55_high"),
 )
 
 

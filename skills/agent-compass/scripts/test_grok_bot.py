@@ -182,7 +182,7 @@ class GrokBotTests(unittest.TestCase):
                 cache.write_text(json.dumps({'providers': providers}))
                 usage = usage_reading.usage_snapshot(cache, accounts=['grok-bot'], now=now)
                 # No public source gives the credits window a capacity, so the bot runs only when it is named.
-                plan = allocator.plan({'work_kind': 'text_in_text_out', 'difficulty': 'routine', 'expected_hours': .2,
+                plan = allocator.plan({'work_kind': 'text_processing', 'difficulty': 'routine', 'expected_hours': .2,
                                        'constraints': {'model': 'grok-bot'}},
                                       usage, now, accounts=accounts, records=[], overrides=[],
                                       host_policy_config={'allowed_accounts': ['grok-bot']})
@@ -399,7 +399,7 @@ class GrokBotTests(unittest.TestCase):
         bundle = account_fleet.bundles(applied)['grok_bot']
         self.assertEqual((bundle['provider'], bundle['account'], bundle['model'], bundle['effort']),
                          ('grok-bot', 'grok-bot', 'grok-bot', None))
-        task = {'objective': 'Rewrite this supplied paragraph as concise prose.', 'work_kind': 'text_in_text_out',
+        task = {'objective': 'Rewrite this supplied paragraph as concise prose.', 'work_kind': 'text_processing',
                 'difficulty': 'routine', 'expected_hours': 0.2}
         def plan(needs=None, allowed=True, usage=None, model=None):
             return allocator.plan({**task, 'needs': needs or {}, **({'constraints': {'model': model}} if model else {})},
@@ -475,12 +475,11 @@ class GrokBotTests(unittest.TestCase):
             'expected_hours': 1.0,
             'needs': {'local_only': False},
             'profile': {
-                'work_kind': 'text_in_text_out', 'reasoning_depth': 3, 'code_complexity': 0,
+                'work_kind': 'creative_ideation', 'primary_level': 2, 'secondary_kind': 'none', 'secondary_level': 0,
                 'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
                 'read_only_review': False, 'access': 'read-only', 'expected_hours': 1.0,
-                'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'exploration',
                 'multi_task': False, 'task_count': '1',
-                'axis_demand': {'divergence': 2, 'coding': 0, 'aesthetics': 1, 'tool_operation': 0},
+                'axis_demand': {'creativity': 2, 'coding': 0, 'aesthetics': 1, 'tool_operation': 0},
             },
         }
 
@@ -610,8 +609,8 @@ def accept(text, parent, task):
     return {'provider': 'grok-bot', 'task_id': 'a' * 32, 'state': 'accepted',
             'delivery': 'accepted', 'message_id': 'fixture-message', 'mocked_send': True}
 from router_test_support import profile
-fixture_profile = profile(work_kind='web_research', reasoning_depth=2, code_complexity=0, interaction_style='exploration',
-                          reason='fixture', access='read-only', axis_demand={'divergence': 1, 'coding': 1, 'aesthetics': 0, 'tool_operation': 0})
+fixture_profile = profile(work_kind='web_research', primary_level=2,
+                          reason='fixture', access='read-only', axis_demand={'creativity': 1, 'coding': 1, 'aesthetics': 0, 'tool_operation': 0})
 with patch.object(runner, 'submit', side_effect=accept), patch.object(
         inventory, 'GROK_BOT_CLI', fake_cli), patch.object(runner.shutil, 'which', side_effect=fixture_which), patch.object(
         scorer_client, 'score_task', return_value=(fixture_profile, {'source': 'system_one', 'model': 'fixture-scorer'})), patch.object(

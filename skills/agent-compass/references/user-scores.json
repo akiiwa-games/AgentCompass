@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "scores": {
     "claude-fable-5-2": {
       "aesthetics": {
@@ -17,7 +17,7 @@
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
-      "divergence": {
+      "creativity": {
         "level": 3.1,
         "as_of": "2026-11-11",
         "kind": "maintainer"
@@ -72,7 +72,7 @@
         "kind": "maintainer",
         "note": "maintainer impression"
       },
-      "divergence": {
+      "creativity": {
         "level": 1.0,
         "as_of": "2026-11-11",
         "kind": "maintainer",
@@ -104,7 +104,7 @@
         "kind": "maintainer",
         "note": "maintainer impression"
       },
-      "divergence": {
+      "creativity": {
         "level": 1.0,
         "as_of": "2026-11-11",
         "kind": "maintainer",
@@ -182,7 +182,7 @@
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
-      "divergence": {
+      "creativity": {
         "level": 3.0,
         "as_of": "2026-11-11",
         "kind": "maintainer"
@@ -209,7 +209,7 @@
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
-      "divergence": {
+      "creativity": {
         "level": 1.6,
         "as_of": "2026-11-11",
         "kind": "maintainer"
@@ -266,7 +266,7 @@
         "kind": "maintainer",
         "note": "maintainer impression"
       },
-      "divergence": {
+      "creativity": {
         "level": 1.0,
         "as_of": "2026-11-11",
         "kind": "maintainer",

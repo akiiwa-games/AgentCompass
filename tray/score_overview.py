@@ -10,7 +10,7 @@ from __future__ import annotations
 from i18n import translate as _tr, LocalizedSequence
 
 # (identifier, label): the four categories in the router's order (axis_scores.FIVE_AXES).
-CATEGORIES = LocalizedSequence((("divergence", "创意"), ("coding", "编码能力"), ("aesthetics", "审美能力"),
+CATEGORIES = LocalizedSequence((("creativity", "创意"), ("coding", "编码能力"), ("aesthetics", "审美能力"),
                                 ("tool_operation", "工具操作")))
 FACET_LABELS = {"creative_writing": "创意写作", "execution": "执行", "faithfulness": "忠实度", "design": "设计",
                 "responsiveness": "响应速度", "image_recognition": "图像识别"}
@@ -65,15 +65,33 @@ def facets_of(category: str) -> tuple:
     return tuple(user_scores.CATEGORY_FACETS[category])
 
 
+def display_facets_of(category: str) -> tuple:
+    import axis_scores
+    if category in axis_scores.LEVEL_FACETS:
+        return tuple(axis_scores.LEVEL_FACETS[category][3])
+    return facets_of(category)
+
+
+def _facet_owner(category: str, facet: str) -> str:
+    import axis_scores
+    return axis_scores.FACET_CATEGORY.get(facet, category)
+
+
 def _levels(targets: dict, category: str, facet: str) -> dict:
-    return ((((targets.get(category) or {}).get("facets") or {}).get(facet) or {}).get("levels")) or {}
+    own = ((((targets.get(category) or {}).get("facets") or {}).get(facet) or {}).get("levels")) or {}
+    if own:
+        return own
+    owner = _facet_owner(category, facet)
+    if owner != category:
+        return ((((targets.get(owner) or {}).get("facets") or {}).get(facet) or {}).get("levels")) or {}
+    return {}
 
 
 def level3_cap(targets: dict, category: str, facet: str) -> dict | None:
     """The level-3 cap the fit reads for this facet's category (axis_scores.five_axis_targets): the category's ceiling,
-    and for tool_operation the ceiling of this facet when level 3 asks for it."""
+    and for per-facet categories (`aesthetics`, `tool_operation`) the ceiling of this facet when level 3 asks for it."""
     level3 = (((targets.get(category) or {}).get("levels") or {}).get("3")) or {}
-    if category == "tool_operation":
+    if "by_facet" in level3:
         return ((level3.get("by_facet") or {}).get(facet) or {}).get("ceiling")
     return level3.get("ceiling")
 
@@ -82,7 +100,7 @@ def continuity_derivation(targets: dict, category: str) -> tuple[float | None, s
     """(the category's continuity value, how it is derived): the largest t3 − t2 over its facets, as the data computed it."""
     value = (targets.get(category) or {}).get("continuity")
     gaps = []
-    for facet in facets_of(category):
+    for facet in display_facets_of(category):
         lv = _levels(targets, category, facet)
         t2, t3 = (lv.get("2") or {}).get("target"), (lv.get("3") or {}).get("target")
         if _number(t2) and _number(t3):
@@ -103,8 +121,11 @@ def category_overview(data: dict, models: dict) -> list[dict]:
     out = []
     for key, label in CATEGORIES:
         facets = []
-        for facet in facets_of(key):
-            link = links.get(f"{key}.{facet}") or {}
+        level3_block = (((targets.get(key) or {}).get("levels") or {}).get("3")) or {}
+        per_facet = "by_facet" in level3_block
+        for facet in display_facets_of(key):
+            owner = _facet_owner(key, facet)
+            link = links.get(f"{key}.{facet}") or links.get(f"{owner}.{facet}") or {}
             boards = list(link.get("boards") or ())
             dates = sorted(str((ages.get(b) or {}).get("as_of")) for b in boards if (ages.get(b) or {}).get("as_of"))
             levels = _levels(targets, key, facet)
@@ -113,7 +134,7 @@ def category_overview(data: dict, models: dict) -> list[dict]:
                            "targets": {lv: ((levels.get(lv) or {}).get("target"), (levels.get(lv) or {}).get("statistic"))
                                        for lv in ("1", "2", "3")},
                            "cap": level3_cap(targets, key, facet),
-                           "facet_best": None if key == "tool_operation" else (levels.get("3") or {}).get("ceiling")})
+                           "facet_best": None if per_facet else (levels.get("3") or {}).get("ceiling")})
         coverage = {}
         for row in models.values():
             status = (((row or {}).get("five_axis") or {}).get("axis_status") or {}).get(key, "missing")
@@ -206,7 +227,8 @@ def facet_cell(targets: dict, category: str, facet: str, cell: dict | None) -> d
     t3 = (lv_map.get("3") or {}).get("target")
     collapsed = _number(z) and _number(t2) and _number(t3) and t3 <= t2 and z > t3 + 1e-6
     status = cell.get("status", "missing") if cell else "missing"
-    return {"z": z, "level": _level(targets, f"{category}.{facet}", z), "status": status,
+    owner = _facet_owner(category, facet)
+    return {"z": z, "level": _level(targets, f"{owner}.{facet}", z), "status": status,
             "collapsed": collapsed, "manual": cell.get("manual"), "evidence": evidence_lines(cell)}
 
 
@@ -221,6 +243,14 @@ def evidence_lines(cell: dict) -> list[str]:
         lines.append(_tr("手动 {0}：等级 {1} · {2}").format(source_label(manual.get("kind")), manual.get("level"),
                                                      manual.get("as_of") or "—")
                      + (f" · {manual['note']}" if manual.get("note") else ""))
+        ref = manual.get("data_reference")
+        if isinstance(ref, dict) and _number(ref.get("level")) and ref.get("status") not in ("missing", None):
+            srcs = ", ".join(ref.get("sources") or ())
+            delta = ref.get("delta_level")
+            delta_txt = f" ({delta:+.1f})" if _number(delta) else ""
+            lines.append(_tr("公开数据对照：{0}{1} · {2}").format(
+                level_text(ref["level"]), delta_txt, status_label(ref.get("status"))
+            ) + (f" ({srcs})" if srcs else ""))
     for board, src in (cell.get("sources") or {}).items():
         listed = (src or {}).get("listed_as") if isinstance(src, dict) else None
         lines.append(f"{board}" + (f" — {listed}" if listed else ""))
@@ -232,8 +262,8 @@ def evidence_lines(cell: dict) -> list[str]:
 
 
 def model_rows(models: dict, targets: dict, label=lambda name: name) -> list[dict]:
-    """Per model: every category's level, deciding facet and source, with its facets; the category level uses the router's
-    category scale (coding is min over its facets in the data; tool_operation the weakest of its existing facets)."""
+    """Per model: every category's level, deciding facet and source, with its facets; `coding` uses its category z scale,
+    while per-facet categories (`aesthetics`, `tool_operation`) take the weakest of their existing facets."""
     rows = []
     for name, info in sorted((models or {}).items(), key=lambda kv: str(label(kv[0])).lower()):
         five = (info or {}).get("five_axis") if isinstance(info, dict) else None
@@ -243,11 +273,16 @@ def model_rows(models: dict, targets: dict, label=lambda name: name) -> list[dic
         cells = {}
         for key, _ in CATEGORIES:
             cat_cell = cats.get(key) if isinstance(cats.get(key), dict) else {}
-            facets = {f: facet_cell(targets, key, f, (cat_cell.get("facets") or {}).get(f)) for f in facets_of(key)}
+            facets = {}
+            for f in display_facets_of(key):
+                owner = _facet_owner(key, f)
+                own_cat = cats.get(owner) if isinstance(cats.get(owner), dict) else {}
+                raw_fc = (own_cat.get("facets") or {}).get(f)
+                facets[f] = facet_cell(targets, key, f, raw_fc)
             present = [(f, fc) for f, fc in facets.items() if fc["z"] is not None and fc["level"] is not None]
             missing_facets = [f for f, fc in facets.items() if fc["level"] is None]
             if present:
-                if key == "tool_operation":
+                if key in ("aesthetics", "tool_operation"):
                     deciding_facet, deciding_fc = min(present, key=lambda kv: kv[1]["level"])
                     level = deciding_fc["level"]
                 else:
@@ -256,7 +291,7 @@ def model_rows(models: dict, targets: dict, label=lambda name: name) -> list[dic
                     level = _level(targets, key, z_val if z_val is not None else deciding_fc["z"])
                 deciding_level = deciding_fc["level"]
                 status = deciding_fc["status"]
-            elif _at(cat_cell) is not None and key != "tool_operation":
+            elif _at(cat_cell) is not None and key not in ("aesthetics", "tool_operation"):
                 deciding_facet, deciding_level = None, None
                 level = _level(targets, key, _at(cat_cell))
                 status = cat_cell.get("status") or (five.get("axis_status") or {}).get(key, "missing")
@@ -299,6 +334,8 @@ def cell_tip(model_label: str, category: str, cell: dict, model_key: str | None 
         lines.append(_tr("缺失子维度：{0}").format("、".join(facet_label(f) for f in missing)))
     if multi:
         lines.append(_tr("类别等级按路由器的类别目标换算。"))
+    if category == "aesthetics":
+        lines.append(_tr("等级 1 仅看设计；等级 2、3 取设计与图像识别（与工具操作共用）中较弱者。"))
     if category == "tool_operation":
         lines.append(_tr("响应速度的等级 ≥ 2 表示「至少达到面板中位数」：t2 与 t3 相同。"))
     lines.append(_tr("高于 3 的等级按 t3 − t2 外推，区间很窄，显示为 3.0+。"))

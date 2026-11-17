@@ -191,9 +191,9 @@ def test_plan_task_and_replay_derive_quota_line_for_live_and_legacy_decisions(mo
     monkeypatch.setattr(router, "dot_unreachable", lambda: True)
 
     profile = router_test_support.profile(local_only=True, axis_demand={
-        "divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 1,
+        "creativity": 1, "coding": 2, "aesthetics": 0, "tool_operation": 1,
     })
-    task = router_data.build_task("implement module fix", 1.0, True, False, "general_implementation", "routine", profile)
+    task = router_data.build_task("implement module fix", 1.0, True, False, "code_implementation", "routine", profile)
     planned = router_data.plan_task(task)
     assert isinstance((planned.get("quota_line") or {}).get("windows"), dict) and planned["quota_line"]["windows"]
     winner = next(c for c in planned["ranking"] if c["id"] == planned["choice"])
@@ -207,7 +207,7 @@ def test_plan_task_and_replay_derive_quota_line_for_live_and_legacy_decisions(mo
 
     # Replay of a snapshot-less row recomputes through plan_task and carries quota_line.
     replayed_legacy = router_data.replay({"at": "2026-11-12T02:00:00Z", "objective": "implement module fix",
-                                          "hours": 1.0, "local_only": True, "kind": "general_implementation",
+                                          "hours": 1.0, "local_only": True, "kind": "code_implementation",
                                           "difficulty": "routine", "profile": profile})
     assert replayed_legacy["theatre_source"] == "recomputed"
     assert isinstance((replayed_legacy.get("quota_line") or {}).get("windows"), dict)

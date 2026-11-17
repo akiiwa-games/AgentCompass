@@ -59,45 +59,75 @@ def usage_windows(now, accounts):
         for wid, rem, hours in rows]} for name, rows in accounts.items()}}
 
 
-DEPTH = {'routine': 1, 'hard': 2, 'coupled': 3, 'frontier': 4}
-STYLE_OF_KIND = {'exploration_analysis': 'exploration', 'research_packet': 'exploration', 'visual_analysis': 'exploration',
-                 'text_in_text_out': 'text_only', 'web_research': 'text_only', 'dot_execution': 'text_only',
-                 'direction_reasoning': 'advisory', 'complex_build_plan': 'advisory'}
+LEVEL_OF_DIFFICULTY = {'routine': 1, 'hard': 2, 'coupled': 3, 'frontier': 3}
+READONLY_KINDS = frozenset({'code_audit', 'architecture_reasoning', 'exploration_forensics', 'web_research', 'creative_ideation'})
 
 
 def profile(**changes):
     """A valid classifier profile for a bounded implementation task, with `changes` applied (`axis_demand` may be a
     partial dict). Tests that need a task the router can plan start from this."""
-    base = {'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
-            'needs_visual': False, 'needs_gui': False,
-            'local_only': False, 'wants_fast': False, 'read_only_review': False,
-            'access': 'write', 'expected_hours': 1.0, 'hours_confidence': 'medium', 'urgency': 'normal',
-            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-            'axis_demand': {'divergence': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}}
-    axis = {**base['axis_demand'], **(changes.pop('axis_demand', None) or {})}
-    return {**base, **changes, 'axis_demand': axis}
+    import task_intake
+    explicit_demand = changes.pop('axis_demand', None)
+    work_kind = changes.get('work_kind', 'code_implementation')
+    if 'work_kind' not in changes:
+        if changes.get('needs_gui') is True:
+            work_kind = 'gui_control'
+        elif changes.get('read_only_review') is True:
+            work_kind = 'code_audit'
+        elif changes.get('access') == 'read-only' and changes.get('local_only') is True:
+            work_kind = 'exploration_forensics'
+    primary_level = changes.get('primary_level', 2)
+    secondary_kind = changes.get('secondary_kind', 'none')
+    secondary_level = changes.get('secondary_level', 0 if secondary_kind == 'none' else 1)
+    needs_gui = bool(changes.get('needs_gui', 'gui_control' in (work_kind, secondary_kind)))
+    needs_visual = bool(changes.get('needs_visual', needs_gui or 'visual_analysis' in (work_kind, secondary_kind)))
+    read_only_review = bool(changes.get('read_only_review', work_kind == 'code_audit'))
+    default_access = 'read-only' if (read_only_review or work_kind == 'code_audit') else 'write'
+    task_count = changes.get('task_count', '2' if changes.get('multi_task') is True else '1')
+    multi_task = bool(changes.get('multi_task', task_count != '1'))
+    base = {
+        'work_kind': work_kind,
+        'primary_level': primary_level,
+        'secondary_kind': secondary_kind,
+        'secondary_level': secondary_level,
+        'needs_visual': needs_visual,
+        'needs_gui': needs_gui,
+        'local_only': False,
+        'wants_fast': False,
+        'read_only_review': read_only_review,
+        'access': default_access,
+        'expected_hours': 1.0,
+        'multi_task': multi_task,
+        'task_count': task_count,
+    }
+    merged = {**base, **changes}
+    projected = task_intake.project_axis_demand(
+        merged['work_kind'], merged['primary_level'], merged['secondary_kind'], merged['secondary_level'],
+    )
+    merged['axis_demand'] = {**projected, **(explicit_demand or {})}
+    return merged
 
 
 def profile_for(task):
     """The profile a classifier would give a task a test wrote with only a few fields (work_kind, difficulty, needs,
     expected_hours): the fields the test names are kept, the rest is `profile()`."""
+    import task_intake
     needs = task.get('needs') or {}
-    kind = task.get('work_kind') or 'general_implementation'
-    depth = DEPTH.get(task.get('difficulty') or 'hard', 2)
-    visual = bool(needs.get('visual') or needs.get('gui') or task.get('needs_visual') or task.get('needs_gui'))
-    gui = bool(needs.get('gui') or task.get('needs_gui'))
-    style = STYLE_OF_KIND.get(kind, 'engineering')
+    raw_kind = task.get('work_kind')
+    gui = bool(needs.get('gui') or task.get('needs_gui') or raw_kind == 'gui_control')
+    visual = bool(needs.get('visual') or gui or task.get('needs_visual') or raw_kind == 'visual_analysis')
+    kind = (
+        raw_kind if raw_kind in task_intake.WORK_KINDS
+        else 'gui_control' if gui
+        else 'visual_analysis' if visual
+        else 'code_implementation'
+    )
+    lvl = LEVEL_OF_DIFFICULTY.get(task.get('difficulty') or 'hard', 2)
     hours = task.get('expected_hours') or task.get('hours')
+    local = bool(needs.get('local_only') or task.get('local_only'))
+    access = 'read-only' if kind in READONLY_KINDS else 'write'
     return profile(
-        work_kind=kind, reasoning_depth=depth, needs_visual=visual, needs_gui=gui, interaction_style=style,
-        local_only=bool(needs.get('local_only') or task.get('local_only')),
+        work_kind=kind, primary_level=lvl, needs_visual=visual, needs_gui=gui,
+        local_only=local, access=access,
         **({'expected_hours': float(hours)} if hours else {}),
-        **({'code_complexity': 0, 'access': 'read-only'} if style in ('text_only', 'advisory') else {}),
-        axis_demand=demand_for(depth, style, visual))
-
-
-def demand_for(depth, style, visual):
-    """The category demand a test fixture gives a profile that names only its depth, style and visual need."""
-    return {'divergence': 2 if style in ('exploration', 'advisory') else 1,
-            'coding': max(max(1, depth - 1), 0 if style in ('text_only', 'advisory') else 2), 'aesthetics': 0,
-            'tool_operation': 3 if visual else 0}
+    )

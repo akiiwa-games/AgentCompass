@@ -18,12 +18,9 @@ SAMPLE_DOCUMENT = {'task': {
     'expected_hours': 1.5,
     'needs': {'local_only': True, 'local_only_reason': 'Runs pytest against local repository fixtures on this machine.'},
     'profile': {
-        'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
-        'needs_visual': False, 'needs_gui': False,
-        'local_only': True, 'wants_fast': False, 'read_only_review': False, 'access': 'write',
-        'expected_hours': 1.5, 'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'engineering',
-        'multi_task': False, 'task_count': '1',
-        'axis_demand': {'divergence': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0},
+        'work_kind': 'code_implementation', 'primary_level': 2, 'secondary_kind': 'none', 'secondary_level': 0,
+        'access': 'write', 'local_only': True, 'needs_visual': False, 'wants_fast': False,
+        'expected_hours': 1.5, 'task_count': '1',
     },
 }}
 

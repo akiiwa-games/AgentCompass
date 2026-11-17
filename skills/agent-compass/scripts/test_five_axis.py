@@ -35,8 +35,9 @@ def setUpModule():
 
 
 NOW = datetime(2026, 11, 4, 12, tzinfo=timezone.utc)
-PROFILE = {'reasoning_depth': 2, 'code_complexity': 2, 
-           'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False, 'read_only_review': False, 'interaction_style': 'engineering', 'multi_task': False,
+PROFILE = {'work_kind': 'code_implementation', 'primary_level': 2,
+           'secondary_kind': 'none', 'secondary_level': 0, 'access': 'write',
+           'needs_visual': False, 'local_only': True, 'wants_fast': False,
            'task_count': '1', 'expected_hours': 1.0}
 EFFORT_NAMES = ('low', 'medium', 'high', 'xhigh', 'max')
 
@@ -56,6 +57,15 @@ def level_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
             'continuity': round(t3 - t2, 4)}
 
 
+def aesthetics_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
+    facet = lambda t: {'target': t, 'zero': t1, 'n': 12}
+    top = lambda t: {**facet(t), 'ceiling': ceiling_row(t if ceiling is None else max(t, ceiling))}
+    return {'levels': {'1': {'by_facet': {'design': facet(t1)}},
+                       '2': {'by_facet': {'design': facet(t2), 'image_recognition': facet(t2)}},
+                       '3': {'by_facet': {'design': top(t3), 'image_recognition': top(t3)}}},
+            'continuity': round(t3 - t2, 4)}
+
+
 def tool_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
     facet = lambda t: {'target': t, 'zero': t1, 'n': 12}
     top = lambda t: {**facet(t), 'ceiling': ceiling_row(t if ceiling is None else max(t, ceiling))}
@@ -65,13 +75,13 @@ def tool_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
             'continuity': round(max(t2, t3) - t2, 4)}
 
 
-TARGETS = {'divergence': level_targets(), 'coding': level_targets(), 'aesthetics': level_targets(),
+TARGETS = {'creativity': level_targets(), 'coding': level_targets(), 'aesthetics': aesthetics_targets(),
            'tool_operation': tool_targets()}
 ANCHOR = {'model': 'claude-opus-5-5', 'value': 0.0, 'scale': 'panel standard score', 'panel_n': 12, 'targets': TARGETS}
 
 
-def demand(div, coding, aes, tool):
-    return {'divergence': div, 'coding': coding, 'aesthetics': aes, 'tool_operation': tool}
+def demand(cre, coding, aes, tool):
+    return {'creativity': cre, 'coding': coding, 'aesthetics': aes, 'tool_operation': tool}
 
 
 def z_of(s):
@@ -140,7 +150,7 @@ def _synthetic_doc_ctx(doc):
     @contextlib.contextmanager
     def _ctx():
         with patch.object(axis_scores, 'load_five_axis', lambda path=None, use_effective=True: doc), \
-                patch.object(axis_scores, 'load_public_user_scores', lambda path=None, use_effective=True: {'schema_version': 1, 'scores': {}}):
+                patch.object(axis_scores, 'load_public_user_scores', lambda path=None, use_effective=True: {'schema_version': 2, 'scores': {}}):
             yield
     return _ctx()
 
@@ -165,17 +175,17 @@ class FiveAxisTests(unittest.TestCase):
         return [c for c in decision['ranking'] if account_fleet.canonical(c['bundle']['model'], self.accounts) == model]
 
     def test_the_fit_follows_the_demanded_axes_continuously_and_no_floor_excludes(self):
-        # Sol: precise coder, weak divergence. Round 7: nothing excludes it on a creative task; its fit pays for the
+        # Sol: precise coder, weak creativity. Round 7: nothing excludes it on a creative task; its fit pays for the
         # shortfall on the demanded axis instead, continuously.
         doc = document(self.accounts['models'], **{'gpt-6.1-sol': row(demand(0.2, 0.9, 0.9, 0.5))})
         coding = self.plan(self.accounts, doc, profile={'axis_demand': demand(0, 2, 0, 0)})
-        creative = self.plan(self.accounts, doc, profile={'axis_demand': demand(3, 1, 0, 0), 'code_complexity': 0})
+        creative = self.plan(self.accounts, doc, profile={'work_kind': 'creative_ideation', 'axis_demand': demand(3, 1, 0, 0), 'access': 'read-only'})
         sol_high = lambda d: next(c for c in self.rows_for(d, 'gpt-6.1-sol') if c['bundle'].get('effort') == 'high')
         for d in (coding, creative):
             self.assertFalse([e for c in d['ranking'] for e in c['excluded'] if 'floor' in e])
             self.assertFalse([c for c in d['ranking'] if c.get('below_floor')])
         self.assertEqual(sol_high(creative)['excluded'], [])
-        self.assertGreater(sol_high(creative)['five_axis_fit']['divergence']['shortfall'], 0.5)
+        self.assertGreater(sol_high(creative)['five_axis_fit']['creativity']['shortfall'], 0.5)
         self.assertGreater(sol_high(coding)['components']['fit'], sol_high(creative)['components']['fit'] + 0.3)
         self.assertEqual(sol_high(coding)['components']['five_axis_shortfall'], 0.0)
 
@@ -185,16 +195,17 @@ class FiveAxisTests(unittest.TestCase):
         asks for nothing; level 3 is min over its facets."""
         d = demand(3, 1, 0, 2)
         targets = axis_scores.five_axis_targets(d, TARGETS)
-        self.assertEqual(targets, {'divergence': {'target': 0.0, 'zero': -1.0, 'cap': 0.0},
+        self.assertEqual(targets, {'creativity': {'target': 0.0, 'zero': -1.0, 'cap': 0.0},
                                    'coding': {'target': -1.0, 'zero': -1.0, 'cap': -1.0},
                                    'tool_operation': {'by_facet': {'responsiveness': {'target': -0.5, 'zero': -1.0,
                                                                                       'cap': -0.5}}}})
-        values = {'divergence': -0.3, 'coding': 0.4, 'aesthetics': -3.0,
+        values = {'creativity': -0.3, 'coding': 0.4,
+                  'aesthetics': {'design': -3.0, 'image_recognition': -3.0},
                   'tool_operation': {'responsiveness': -0.8, 'image_recognition': -5.0}}
         fit, rows = axis_scores.five_axis_fit(values, d, targets)
         self.assertAlmostEqual(fit, (3 * 0.7 + 1 * 0.0 + 2 * 0.2) / 6, places=4)
         self.assertNotIn('aesthetics', rows)                 # an undemanded category does not count
-        below = axis_scores.five_axis_fit({**values, 'divergence': -2.0}, d, targets)[0]
+        below = axis_scores.five_axis_fit({**values, 'creativity': -2.0}, d, targets)[0]
         self.assertLess(below, 0.2)
         self.assertAlmostEqual(below, (3 * -1.0 + 0 + 2 * 0.2) / 6, places=4)       # below the weakest: negative term
         # tool_operation level 1: no requirement, so it is not part of the fit at all
@@ -212,27 +223,34 @@ class FiveAxisTests(unittest.TestCase):
         """Owner 2026-11-13: routine levels pay nothing for surplus ability; a level-3 demand is capped at the category's
         ceiling (the best measured model): its fit is non-decreasing in z, strictly increasing between t3 and the
         ceiling, and the same min cuts anything above the ceiling."""
-        targets = {'divergence': level_targets(-1.0, -0.5, 0.0, ceiling=0.6), 'coding': level_targets(),
-                   'aesthetics': level_targets(), 'tool_operation': tool_targets(-1.0, -0.5, 0.0, ceiling=0.6)}
+        targets = {'creativity': level_targets(-1.0, -0.5, 0.0, ceiling=0.6), 'coding': level_targets(),
+                   'aesthetics': aesthetics_targets(-1.0, -0.5, 0.0, ceiling=0.6),
+                   'tool_operation': tool_targets(-1.0, -0.5, 0.0, ceiling=0.6)}
         zs = [x / 10 for x in range(-15, 16)]
 
         def fit_at(d, t, z):
             return axis_scores.five_axis_fit(
-                {'divergence': z, 'tool_operation': {'responsiveness': z, 'image_recognition': z}}, d, t)[0]
+                {'creativity': z,
+                 'aesthetics': {'design': z, 'image_recognition': z},
+                 'tool_operation': {'responsiveness': z, 'image_recognition': z}}, d, t)[0]
         for level in (1, 2):
-            for d, key in ((demand(level, 0, 0, 0), 'divergence'), (demand(0, 0, 0, level), 'tool_operation')):
+            for d, key in ((demand(level, 0, 0, 0), 'creativity'),
+                           (demand(0, 0, level, 0), 'aesthetics'),
+                           (demand(0, 0, 0, level), 'tool_operation')):
                 t = axis_scores.five_axis_targets(d, targets)
-                rows = [t[key]] if key == 'divergence' else list((t.get(key) or {}).get('by_facet', {}).values())
+                rows = [t[key]] if key == 'creativity' else list((t.get(key) or {}).get('by_facet', {}).values())
                 if not rows:
                     continue                                     # tool_operation level 1 asks for nothing
                 target = max(r['target'] for r in rows)
                 self.assertEqual({fit_at(d, t, z) for z in zs if z >= target}, {fit_at(d, t, target)})
-        for d, key in ((demand(3, 0, 0, 0), 'divergence'), (demand(0, 0, 0, 3), 'tool_operation')):
+        for d, key in ((demand(3, 0, 0, 0), 'creativity'),
+                       (demand(0, 0, 3, 0), 'aesthetics'),
+                       (demand(0, 0, 0, 3), 'tool_operation')):
             t = axis_scores.five_axis_targets(d, targets)
             fits = [fit_at(d, t, z) for z in zs]
             self.assertTrue(all(b >= a for a, b in zip(fits, fits[1:])))
             row3 = targets[key]['levels']['3']
-            rows = [row3] if key == 'divergence' else list(row3['by_facet'].values())
+            rows = [row3] if key == 'creativity' else list(row3['by_facet'].values())
             t3, ceiling = max(r['target'] for r in rows), min(r['ceiling']['value'] for r in rows)
             between = [z for z in zs if t3 <= z <= ceiling]
             self.assertGreater(len(between), 2)
@@ -243,40 +261,93 @@ class FiveAxisTests(unittest.TestCase):
         """Owner 2026-11-13: the ceiling changes only what lies above t3; any candidate with every demanded z <= t3 has
         the fit it had when the level-3 cap was t3 (a ceiling equal to t3)."""
         import random
-        raised = {a: tool_targets(ceiling=0.8) if a == 'tool_operation' else level_targets(ceiling=0.8) for a in TARGETS}
+        raised = {
+            a: (tool_targets(ceiling=0.8) if a == 'tool_operation'
+                else aesthetics_targets(ceiling=0.8) if a == 'aesthetics'
+                else level_targets(ceiling=0.8))
+            for a in TARGETS
+        }
         rng = random.Random(7)
         for _ in range(200):
             d = demand(*(rng.randint(0, 3) for _ in range(4)))
-            values = {a: rng.uniform(-3.0, 0.0) for a in ('divergence', 'coding', 'aesthetics')}
-            values['tool_operation'] = {f: rng.uniform(-3.0, 0.0) for f in ('responsiveness', 'image_recognition')}
+            values = {a: rng.uniform(-3.0, 0.0) for a in ('creativity', 'coding')}
+            img_z = rng.uniform(-3.0, 0.0)
+            values['aesthetics'] = {'design': rng.uniform(-3.0, 0.0), 'image_recognition': img_z}
+            values['tool_operation'] = {'responsiveness': rng.uniform(-3.0, 0.0), 'image_recognition': img_z}
             before = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, TARGETS))[0]
             after = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, raised))[0]
             self.assertEqual(before, after)
+
+    def test_aesthetics_shares_image_recognition_at_levels_two_and_three_and_keeps_level_one_design_only(self):
+        """Rule (2026-11-17): aesthetics level 1 reads design only (never excluding a model that lacks image_recognition);
+        aesthetics levels 2 and 3 read min(term_design, term_image_recognition) sharing tool_operation.image_recognition,
+        and exclude missing image_recognition under Mode B naming tool_operation.image_recognition."""
+        shipped = axis_scores.load_five_axis()['anchor']['targets']
+        t_l1 = axis_scores.five_axis_targets(demand(0, 0, 1, 0), shipped)['aesthetics']['by_facet']
+        t_l2 = axis_scores.five_axis_targets(demand(0, 0, 2, 0), shipped)['aesthetics']['by_facet']
+        t_l3 = axis_scores.five_axis_targets(demand(0, 0, 3, 0), shipped)['aesthetics']['by_facet']
+        self.assertEqual(set(t_l1), {'design'})
+        self.assertEqual(set(t_l2), {'design', 'image_recognition'})
+        self.assertEqual(set(t_l3), {'design', 'image_recognition'})
+
+        # Weak image_recognition bottlenecks aesthetics at L2 and L3, while L1 depends only on design.
+        strong_design_weak_vision = {
+            'creativity': 0.0, 'coding': 0.0,
+            'aesthetics': {'design': 0.0, 'image_recognition': -2.0},
+            'tool_operation': {'responsiveness': 0.5, 'image_recognition': -2.0},
+        }
+        strong_both = {
+            'creativity': 0.0, 'coding': 0.0,
+            'aesthetics': {'design': 0.0, 'image_recognition': 0.0},
+            'tool_operation': {'responsiveness': 0.5, 'image_recognition': 0.0},
+        }
+        for lvl, expected_equal in ((1, True), (2, False), (3, False)):
+            d = demand(0, 0, lvl, 0)
+            tgts = axis_scores.five_axis_targets(d, shipped)
+            f_weak = axis_scores.five_axis_fit(strong_design_weak_vision, d, tgts)[0]
+            f_strong = axis_scores.five_axis_fit(strong_both, d, tgts)[0]
+            if expected_equal:
+                self.assertEqual(f_weak, f_strong)
+            else:
+                self.assertLess(f_weak, f_strong)
+
+        # Mode B: missing image_recognition passes at aesthetics=1 and leaves automatic routing at aesthetics>=2.
+        target = 'claude-sonnet-5-5'
+        no_vision = row(demand(0.95, 0.95, 0.95, 0.9))
+        no_vision['axes']['tool_operation']['facets'].pop('image_recognition', None)
+        no_vision['axes']['tool_operation']['missing_facets'] = ['image_recognition']
+        doc = document(self.accounts['models'], **{target: no_vision})
+        at_l1 = self.plan(self.accounts, doc, profile={'axis_demand': demand(0, 1, 1, 0)})
+        at_l2 = self.plan(self.accounts, doc, profile={'axis_demand': demand(0, 1, 2, 0)})
+        self.assertFalse(any('no trusted data' in e for c in self.rows_for(at_l1, target) for e in c['excluded']))
+        self.assertTrue(all(any('missing tool_operation.image_recognition' in e for e in c['excluded'])
+                            for c in self.rows_for(at_l2, target)))
 
     def test_the_radar_stops_at_the_anchor_and_the_hover_names_the_level_three_headroom(self):
         """The radar spoke is (min(z, t3) - t1) / (t3 - t1) whatever the ceiling; a level-3 demand's credit above the
         anchor and its cap (the ceiling with the model that sets it) are display facts for the hover, computed from the
         fit rows, and only for categories demanded at level 3."""
-        targets = {**TARGETS, 'divergence': level_targets(-1.0, -0.5, 0.0, ceiling=1.0),
+        targets = {**TARGETS, 'creativity': level_targets(-1.0, -0.5, 0.0, ceiling=1.0),
                    'tool_operation': tool_targets(-1.0, -0.5, 0.0, ceiling=0.6)}
-        values = {'divergence': 0.5, 'coding': -0.2, 'aesthetics': None,
+        values = {'creativity': 0.5, 'coding': -0.2,
+                  'aesthetics': {'design': None, 'image_recognition': 0.1},
                   'tool_operation': {'responsiveness': 0.3, 'image_recognition': 0.1}}
         shares = axis_scores.five_axis_shares(values, targets)
-        self.assertEqual((shares['divergence'], shares['tool_operation']), (1.0, 1.0))
+        self.assertEqual((shares['creativity'], shares['tool_operation']), (1.0, 1.0))
         self.assertEqual(shares, axis_scores.five_axis_shares(values, TARGETS))     # the ceiling never moves a spoke
         d = demand(3, 2, 0, 3)
         rows = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, targets))[1]
         headroom = axis_scores.five_axis_headroom(rows, targets)
-        self.assertEqual(set(headroom), {'divergence', 'tool_operation'})            # coding is demanded at level 2
-        self.assertEqual(headroom['divergence'], {'above_anchor': 0.5, 'ceiling': 1.0, 'model': 'best'})
+        self.assertEqual(set(headroom), {'creativity', 'tool_operation'})            # coding is demanded at level 2
+        self.assertEqual(headroom['creativity'], {'above_anchor': 0.5, 'ceiling': 1.0, 'model': 'best'})
         name, deciding = min(rows['tool_operation']['facets'].items(), key=lambda kv: kv[1]['term'])
         tool = headroom['tool_operation']
         self.assertEqual(tool['facet'], name)
         self.assertEqual(tool['above_anchor'], round(max(0.0, min(deciding['score'], tool['ceiling'])), 4))
         t = axis_scores.five_axis_targets(d, targets)
         for z, shown in ((-0.4, 0.0), (1.4, 1.0)):       # nothing at or below the anchor; never more than the ceiling
-            rows_z = axis_scores.five_axis_fit({**values, 'divergence': z}, d, t)[1]
-            self.assertEqual(axis_scores.five_axis_headroom(rows_z, targets)['divergence']['above_anchor'], shown)
+            rows_z = axis_scores.five_axis_fit({**values, 'creativity': z}, d, t)[1]
+            self.assertEqual(axis_scores.five_axis_headroom(rows_z, targets)['creativity']['above_anchor'], shown)
 
     def test_a_five_axis_file_without_level_three_ceilings_is_named_with_what_to_run(self):
         """A file written before schema /3 fails with a message naming the missing rows and the command, never a KeyError."""
@@ -289,7 +360,7 @@ class FiveAxisTests(unittest.TestCase):
         text = str(caught.exception)
         for part in ('coding', 'tool_operation.image_recognition', 'five-axis-scores/2', 'agentcompass data'):
             self.assertIn(part, text)
-        self.assertNotIn('divergence', text)
+        self.assertNotIn('creativity', text)
         axis_scores.require_level3_ceilings({'anchor': ANCHOR})                    # the current shape passes
         axis_scores.require_level3_ceilings(axis_scores.load_five_axis())           # and so does the shipped file
 
@@ -301,16 +372,16 @@ class FiveAxisTests(unittest.TestCase):
 
     def test_missing_demanded_axis_leaves_automatic_routing_but_a_named_model_runs(self):
         target = 'claude-sonnet-5-5'
-        doc = document(self.accounts['models'], **{target: row(demand(0.0, 0.95, 0.95, 0.9), missing=['divergence'])})
+        doc = document(self.accounts['models'], **{target: row(demand(0.0, 0.95, 0.95, 0.9), missing=['creativity'])})
         blind = self.plan(self.accounts, doc, profile={'axis_demand': demand(2, 2, 0, 0)})
         sighted = self.plan(self.accounts, doc, profile={'axis_demand': demand(0, 2, 0, 0)})
         named = self.plan(self.accounts, doc, profile={'axis_demand': demand(2, 2, 0, 0)}, constraints={'model': target})
-        self.assertTrue(all(any('no trusted data for the demanded category divergence' in e for e in c['excluded'])
+        self.assertTrue(all(any('no trusted data for the demanded category creativity' in e for e in c['excluded'])
                             for c in self.rows_for(blind, target)))
         self.assertFalse(any('no trusted data' in e for c in self.rows_for(sighted, target) for e in c['excluded']))
         chosen = next(c for c in named['ranking'] if c['id'] == named['choice'])
         self.assertEqual(account_fleet.canonical(chosen['bundle']['model'], self.accounts), target)
-        self.assertIn('no trusted data for the demanded category divergence', ' '.join(chosen['notes']))
+        self.assertIn('no trusted data for the demanded category creativity', ' '.join(chosen['notes']))
 
     def test_missing_usd_is_removed_not_defaulted(self):
         acc = copy.deepcopy(self.accounts)
@@ -672,7 +743,7 @@ class FiveAxisTests(unittest.TestCase):
         self.assertTrue(quota_economy.usd_unpriced('newcomer-9', acc['models']['newcomer-9']))
         self.assertEqual(quota_economy.model_usd_per_hour('newcomer-9', acc['models']['newcomer-9']), 0.0)
         for state in ('ample', 'claude scarce'):
-            decision = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'reasoning_depth': 3}},
+            decision = allocator.plan({'objective': 't', 'profile': {**PROFILE, 'primary_level': 3}},
                                       self.usage(acc, state), NOW, accounts=copy.deepcopy(acc), overrides=[], records=[],
                                       host_policy_config=self.policy)
             rows = [c for c in decision['ranking'] if c['bundle']['model'] == 'newcomer-9']
@@ -763,26 +834,44 @@ class FiveAxisTests(unittest.TestCase):
         self.assertEqual({c['id']: c['score'] for c in clean['ranking']},
                          {c['id']: c['score'] for c in poisoned['ranking']})
 
-    def test_classifier_axis_demand_is_parsed_and_used(self):
+    def test_classifier_axis_demand_is_projected_deterministically_and_caller_demand_is_validated(self):
+        # Classifier profiles omit axis_demand and project it deterministically from (work_kind, primary_level, secondary_kind, secondary_level).
+        projected = task_intake.validate_profile(dict(PROFILE))
+        self.assertEqual(projected['axis_demand'], task_intake.project_axis_demand('code_implementation', 2))
+        self.assertEqual(projected['axis_demand'], demand(1, 2, 0, 1))
+        # Tropical max envelope properties across all 11 atomic work kinds: monotonicity in depth, identity on 'none'/0, idempotence, symmetry.
+        for kind in task_intake.WORK_KINDS:
+            d1, d2, d3 = (task_intake.project_axis_demand(kind, s) for s in (1, 2, 3))
+            self.assertTrue(all(d1[a] <= d2[a] <= d3[a] for a in axis_scores.FIVE_AXES), kind)
+            self.assertEqual(task_intake.project_axis_demand(kind, 2, 'none', 0), d2)
+            self.assertEqual(task_intake.project_axis_demand(kind, 2, kind, 2), d2)
+        for k1 in ('creative_ideation', 'architecture_reasoning', 'code_implementation'):
+            for k2 in ('frontend_ui', 'visual_analysis', 'live_loop'):
+                self.assertEqual(task_intake.project_axis_demand(k1, 2, k2, 3),
+                                 task_intake.project_axis_demand(k2, 3, k1, 2))
+        # Cognitive role invariants: creative_ideation is P on creativity and 0 on coding; architecture_reasoning is P on coding and S on creativity (caps at L2);
+        # live_loop holds tool_operation at 2 across depths; gui_control holds tool_operation at 3 across depths.
+        self.assertEqual(task_intake.project_axis_demand('creative_ideation', 3), demand(3, 0, 1, 0))
+        self.assertEqual(task_intake.project_axis_demand('architecture_reasoning', 3), demand(2, 3, 0, 0))
+        self.assertEqual([task_intake.project_axis_demand('live_loop', s)['tool_operation'] for s in (1, 2, 3)], [2, 2, 2])
+        self.assertEqual([task_intake.project_axis_demand('gui_control', s)['tool_operation'] for s in (1, 2, 3)], [3, 3, 3])
+        # Explicit caller axis_demand (e.g. grid sweeps) is validated strictly.
         prof = task_intake.validate_profile({**PROFILE, 'axis_demand': demand(1, 2, 3, 0)})
         self.assertEqual(prof['axis_demand'], demand(1, 2, 3, 0))
         self.assertEqual(axis_scores.five_axis_demand({'profile': prof}), demand(1, 2, 3, 0))
-        for bad in (demand(1, 2, 4, 0), {**demand(1, 2, 3, 0), 'economy': 1}, {'divergence': 1}, demand(True, 2, 3, 0)):
+        for bad in (demand(1, 2, 4, 0), {**demand(1, 2, 3, 0), 'economy': 1}, {'creativity': 1}, demand(True, 2, 3, 0)):
             with self.assertRaises(ValueError):
                 task_intake.validate_profile({**PROFILE, 'axis_demand': bad})
-        # No axis_demand is no profile: the classifier always answers it, nothing is derived from other fields.
-        without = {k: v for k, v in PROFILE.items() if k != 'axis_demand'}
-        with self.assertRaises(ValueError):
-            task_intake.validate_profile(without)
-        # An all-zero answer asks nothing of the categories; it is taken as it is.
         self.assertEqual(axis_scores.five_axis_demand({'profile': {**PROFILE, 'axis_demand': demand(0, 0, 0, 0)}}), demand(0, 0, 0, 0))
 
-    def test_the_scorer_always_asks_for_axis_demand(self):
-        caps = {'routes': {'general_implementation': {}, 'other_or_mixed': {}}}
+    def test_the_scorer_schema_asks_for_ten_observable_fields_and_never_raw_axis_demand(self):
+        caps = {'routes': {'code_implementation': {}, 'other_or_mixed': {}}}
         schema = scorer_client.scorer_schema(caps)
-        self.assertIn('axis_demand', schema['properties'])
-        self.assertIn('axis_demand', schema['required'])
-        self.assertEqual(schema['properties']['axis_demand'], axis_scores.FIVE_AXIS_DEMAND_SCHEMA)
+        expected = {'work_kind', 'primary_level', 'secondary_kind', 'secondary_level', 'access',
+                    'local_only', 'needs_visual', 'wants_fast', 'expected_hours', 'task_count'}
+        self.assertEqual(set(schema['properties']), expected)
+        self.assertEqual(set(schema['required']), expected)
+        self.assertNotIn('axis_demand', schema['properties'])
 
     def test_can_wait_hours_defers_only_for_higher_net_score_without_fixed_wait_cost_constant(self):
         """Rounds 8-13b + F3: no fixed 0.15 delay penalty and no 0.06 five_axis_wait_cost constant on the five-axis path.
@@ -798,7 +887,7 @@ class FiveAxisTests(unittest.TestCase):
                           'gpt-6.1-sol': row(demand(0.587, 0.787, 0.787, 0.732), usd=6.12)})
         # Without can_wait_hours: resolves to the best immediately startable candidate (never defer, never needs_user_decision).
         immediate = self.plan(self.accounts, doc, state='5h-only scarce',
-                              profile={'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0})
+                              profile={'work_kind': 'architecture_reasoning', 'axis_demand': demand(3, 3, 0, 0), 'access': 'read-only'})
         self.assertEqual(immediate['decision']['action'], 'start')
         self.assertFalse(immediate['decision']['needs_user_decision'])
         self.assertEqual(immediate['selected_bundle']['account'], 'codex')
@@ -807,9 +896,9 @@ class FiveAxisTests(unittest.TestCase):
         routine = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
                             profile={'axis_demand': demand(0, 1, 0, 0)})
         routine_free = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
-                                 profile={'axis_demand': demand(0, 1, 0, 0), 'local_only': False, 'code_complexity': 0})
+                                 profile={'work_kind': 'architecture_reasoning', 'axis_demand': demand(0, 1, 0, 0), 'local_only': False, 'access': 'read-only'})
         frontier = self.plan(self.accounts, doc, state='5h-only scarce', can_wait_hours=4.0,
-                             profile={'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0})
+                             profile={'work_kind': 'architecture_reasoning', 'axis_demand': demand(3, 3, 0, 0), 'access': 'read-only'})
         ready_now = max((c for c in routine['ranking'] if not c.get('excluded') and not c.get('available_in_hours')),
                         key=lambda c: c['score'])
         self.assertEqual(routine['ranking'][0]['score'], max(c['score'] for c in routine['ranking'] if not c.get('excluded')))
@@ -868,7 +957,7 @@ class FiveAxisTests(unittest.TestCase):
         def run_roll_cli(extra_argv=()):
             acc = copy.deepcopy(self.accounts)
             usage = self.usage(acc, '5h-only scarce')
-            profile = {**PROFILE, 'axis_demand': demand(3, 3, 0, 0), 'code_complexity': 0}
+            profile = {**PROFILE, 'work_kind': 'architecture_reasoning', 'axis_demand': demand(3, 3, 0, 0), 'access': 'read-only'}
 
             def fake_plan_stage(payload, cli_args):
                 t = dict(payload['task'], profile=profile)
@@ -930,7 +1019,7 @@ class HighFillTests(unittest.TestCase):
         return {'value': by.get('high'), 'by_effort': dict(by), 'status': status, 'sources': {}}
 
     def test_bracketed_high_interpolates_in_the_models_own_effort_rank(self):
-        key = ('divergence', 'creative_writing')
+        key = ('creativity', 'creative_writing')
         facets = {'m': {key: self.facet({'low': -2.0, 'max': -1.0}, 'measured_partial')}}
         self.assertEqual(self.scorer().fill_high(facets, []), [])
         rec = facets['m'][key]
@@ -977,16 +1066,16 @@ class HighFillTests(unittest.TestCase):
         """User 2026-11-12: panel targets read measured High rows; own-curve interpolation counts, an estimate never does."""
         import five_axis
         import measurements
-        key = ('divergence', 'creative_writing')
+        key = ('creativity', 'creative_writing')
 
         def row(value, status):
             facet = {'value': value, 'by_effort': {'high': value}, 'status': status}
             axes = {a: {} for a in five_axis.AXES}
-            axes['divergence'] = {'value': value, 'status': status, 'facets': {'creative_writing': facet}}
+            axes['creativity'] = {'value': value, 'status': status, 'facets': {'creative_writing': facet}}
             return {'axes': axes}
         rows = {measurements.ANCHOR: row(0.0, 'measured'), 'p1': row(-1.0, 'measured_partial'),
                 'p2': row(-2.0, 'interpolated'), 'p3': row(-9.0, 'estimated')}
-        targets = self.scorer().targets(rows, list(rows))['divergence']
+        targets = self.scorer().targets(rows, list(rows))['creativity']
         self.assertEqual((targets['levels']['1']['target'], targets['levels']['2']['target'], targets['levels']['2']['n']),
                          (-2.0, -1.0, 3))
         self.assertEqual(targets['facets'][key[1]]['levels']['1']['n'], 3)
@@ -1000,7 +1089,7 @@ class HighFillTests(unittest.TestCase):
         def row(value, status, tool=None):
             facet = {'value': value, 'by_effort': {'high': value}, 'status': status}
             axes = {a: {} for a in five_axis.AXES}
-            axes['divergence'] = {'value': value, 'status': status, 'facets': {'creative_writing': facet}}
+            axes['creativity'] = {'value': value, 'status': status, 'facets': {'creative_writing': facet}}
             tool_facet = {'value': tool if tool is not None else value, 'status': status}
             axes['tool_operation'] = {'facets': {f: dict(tool_facet) for f in five_axis.AXES['tool_operation']}}
             return {'axes': axes}
@@ -1012,16 +1101,17 @@ class HighFillTests(unittest.TestCase):
                 'guess': row(float(max(panel_vals)) + 5.0, 'estimated')}
         panel = [measurements.ANCHOR, *(f'p{i}' for i in range(len(panel_vals)))]
         targets = self.scorer().targets(rows, panel)
-        best = max((r['axes']['divergence']['value'], m) for m, r in rows.items()
-                   if r['axes']['divergence']['status'] in five_axis.TARGET_STATUSES)
-        for lv in (targets['divergence']['levels']['3'], targets['divergence']['facets']['creative_writing']['levels']['3'],
+        best = max((r['axes']['creativity']['value'], m) for m, r in rows.items()
+                   if r['axes']['creativity']['status'] in five_axis.TARGET_STATUSES)
+        for lv in (targets['creativity']['levels']['3'], targets['creativity']['facets']['creative_writing']['levels']['3'],
+                   *targets['aesthetics']['levels']['3']['by_facet'].values(),
                    *targets['tool_operation']['levels']['3']['by_facet'].values()):
             self.assertEqual((lv['ceiling']['value'], lv['ceiling']['model']), (round(best[0], 4), best[1]))
             self.assertEqual(lv['ceiling']['status'], 'interpolated')
             self.assertGreaterEqual(lv['ceiling']['value'], lv['target'])
-        self.assertEqual(targets['divergence']['levels']['3']['target'], 0.0)        # t3 stays the anchor
+        self.assertEqual(targets['creativity']['levels']['3']['target'], 0.0)        # t3 stays the anchor
         for level in ('1', '2'):
-            self.assertNotIn('ceiling', targets['divergence']['levels'][level])
+            self.assertNotIn('ceiling', targets['creativity']['levels'][level])
 
     def test_shipped_targets_ignore_the_estimated_grok_4_7_image_recognition(self):
         shipped = axis_scores.load_five_axis()
@@ -1033,8 +1123,8 @@ class HighFillTests(unittest.TestCase):
     def test_shipped_glm_5_3_and_deepseek_v4_pro_have_high(self):
         models = axis_scores.load_five_axis()['models']
         glm = models['glm-5.3']['axes']
-        self.assertEqual(glm['divergence']['facets']['creative_writing']['status'], 'interpolated')
-        self.assertEqual(glm['divergence']['by_effort']['high'], round((-1.9724 + -1.5955) / 2, 4))
+        self.assertEqual(glm['creativity']['facets']['creative_writing']['status'], 'interpolated')
+        self.assertEqual(glm['creativity']['by_effort']['high'], round((-1.9724 + -1.5955) / 2, 4))
         ds = models['deepseek-v4-pro']['axes']['tool_operation']['facets']['responsiveness']
         self.assertEqual((ds['status'], ds['estimate']['method']), ('estimated', 'panel_effort_step'))
         self.assertGreater(ds['by_effort']['high'], ds['by_effort']['max'])
@@ -1196,14 +1286,14 @@ class AnchorRelativeTests(unittest.TestCase):
         # And Scorer targets depend only on panel models: adding newtop outside the panel moves no target.
         def build_meas(extra_models):
             sc = scale_a['lmarena.creative_writing']
-            models = {m: {'divergence': [{'source': 'lmarena.creative_writing', 'facet': 'creative_writing',
+            models = {m: {'creativity': [{'source': 'lmarena.creative_writing', 'facet': 'creative_writing',
                                           'value': round((raw2['lmarena.creative_writing'][m] - sc['anchor_raw']) / sc['sd'], 4)}]}
                       for m in members}
             models.update(extra_models)
             return {'panel': {'models': panel_a}, 'models': models}
         _, _, _, _, _, targets_before = self.score(build_meas({}))
         _, _, _, _, _, targets_after = self.score(build_meas({
-            'newtop': {'divergence': [{'source': 'lmarena.creative_writing', 'facet': 'creative_writing', 'value': 3.5}]}
+            'newtop': {'creativity': [{'source': 'lmarena.creative_writing', 'facet': 'creative_writing', 'value': 3.5}]}
         }))
 
         def without_ceiling(node):
@@ -1212,8 +1302,8 @@ class AnchorRelativeTests(unittest.TestCase):
             return node
         self.assertEqual(without_ceiling(targets_before), without_ceiling(targets_after))
         # The level-3 ceiling is not a panel statistic: a measured model above every other raises it (owner, 2026-11-13).
-        before_c = targets_before['divergence']['levels']['3']['ceiling']
-        after_c = targets_after['divergence']['levels']['3']['ceiling']
+        before_c = targets_before['creativity']['levels']['3']['ceiling']
+        after_c = targets_after['creativity']['levels']['3']['ceiling']
         self.assertEqual(after_c['model'], 'newtop')
         self.assertGreater(after_c['value'], before_c['value'])
 
@@ -1270,11 +1360,16 @@ class AnchorRelativeTests(unittest.TestCase):
                     self.assertEqual(facet['value'], 0.0, f'{axis}.{name}')
         # targets are non-decreasing from L1 -> L2 -> L3, including tool_operation.responsiveness (raised_to_level_below)
         targets = scores['anchor']['targets']
-        for axis in ('divergence', 'coding', 'aesthetics'):
+        for axis in ('creativity', 'coding'):
             lv = targets[axis]['levels']
             self.assertLessEqual(lv['1']['target'], lv['2']['target'], axis)
             self.assertLessEqual(lv['2']['target'], lv['3']['target'], axis)
             self.assertEqual(lv['1']['zero'], lv['1']['target'], axis)
+        des = targets['aesthetics']['levels']
+        self.assertLessEqual(des['1']['by_facet']['design']['target'], des['2']['by_facet']['design']['target'])
+        self.assertLessEqual(des['2']['by_facet']['design']['target'], des['3']['by_facet']['design']['target'])
+        self.assertLessEqual(des['2']['by_facet']['image_recognition']['target'],
+                             des['3']['by_facet']['image_recognition']['target'])
         resp2 = targets['tool_operation']['levels']['2']['by_facet']['responsiveness']['target']
         resp3 = targets['tool_operation']['levels']['3']['by_facet']['responsiveness']['target']
         self.assertGreaterEqual(resp3, resp2)
@@ -1465,8 +1560,8 @@ class AnchorRelativeTests(unittest.TestCase):
         bot, opus = models['grok-bot'], models['claude-opus-5-5']
         self.assertEqual(bot['image_input']['status'], 'yes')
         self.assertEqual(bot['image_input']['value'], True)
-        self.assertEqual(sorted(declared['carries']), ['aesthetics', 'coding', 'divergence', 'duration', 'usd_per_hour'])
-        for axis in ('divergence', 'coding', 'aesthetics'):
+        self.assertEqual(sorted(declared['carries']), ['aesthetics', 'coding', 'creativity', 'duration', 'usd_per_hour'])
+        for axis in ('creativity', 'coding', 'aesthetics'):
             mine, theirs = bot['axes'][axis], opus['axes'][axis]
             self.assertEqual(mine['value'], theirs['value'], axis)
             self.assertEqual(set(mine['facets']), set(theirs['facets']), axis)
@@ -1627,7 +1722,7 @@ class DurationTests(unittest.TestCase):
                   'dot': [], 'other': []}
         same = {'dot': {'model': 'gpt-6-astra', 'carries': ['duration'], 'url': 'https://openai.com/index/introducing-dots/',
                         'as_of': '2026-09-29'},
-                'other': {'model': 'gpt-6-astra', 'carries': ['divergence']}}
+                'other': {'model': 'gpt-6-astra', 'carries': ['creativity']}}
         out, _, _ = self.build(models, same_model=same)
         self.assertEqual(out['dot']['by_effort'], {'high': 2.0, 'max': 4.0})
         basis = out['dot']['basis_by_effort']['high']
@@ -1652,7 +1747,7 @@ class DurationTests(unittest.TestCase):
     def test_a_channel_row_that_does_not_carry_the_time_does_not_take_a_series_time(self):
         aa = 'aa.cost_time'
         models = {self.anchor: [self.tp(aa, 'high', 10.0)], 'gpt-6-astra': [self.tp(aa, 'high', 20.0)], 'chan': []}
-        same = {'chan': {'model': 'gpt-6-astra', 'carries': ['divergence']}}
+        same = {'chan': {'model': 'gpt-6-astra', 'carries': ['creativity']}}
         self.assertEqual(self.build(models, same_model=same)[0]['chan']['status'], 'missing')
 
     def fleet(self, points, target, anchor_high=10.0):
@@ -2056,7 +2151,7 @@ class ArenaCaptureTests(unittest.TestCase):
     def test_the_users_mapping_of_the_agent_boards_onto_the_axes(self):
         cap = self.ms.CAPABILITY_SOURCES
         self.assertEqual(cap, {
-            'lmarena.creative_writing': ('divergence', 'creative_writing'),
+            'lmarena.creative_writing': ('creativity', 'creative_writing'),
             'arena.agent_code': ('coding', 'execution'),
             'aa.terminalbench_4': ('coding', 'execution'),
             'aa.frontiercode_2': ('coding', 'execution'),

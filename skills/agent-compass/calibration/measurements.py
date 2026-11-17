@@ -20,7 +20,7 @@ Fields
 - `price`: input / output / cache-read USD per million tokens (OpenRouter, AA), for cross-checks only.
 - The four categories (user, 2026-11-11, Revision 2 of the taxonomy report), one entry per (facet, source); a facet is one
   ability, its boards are parallel measurements of it (CAPABILITY_SOURCES):
-  - `divergence` creative_writing: LMArena Text, Creative Writing (style control).
+  - `creativity` creative_writing: LMArena Text, Creative Writing (style control).
   - `coding` execution: arena.ai Agent / Code (Net Improvement), AA Terminal-Bench 4.0 and AA FrontierCode 2.0;
     faithfulness: the arena.ai Agent Alignment Index (acting only as asked, reporting faithfully).
   - `aesthetics` design: LMArena WebDev, and Design Arena Website, 3D Design and SVG (blind human votes; each correlates
@@ -81,7 +81,7 @@ SCHEMA = 'agent-compass.public-measurements/1'
 
 # Every scoring board: source -> (category, facet). Parallel boards of one facet are linked and averaged (five_axis.py).
 CAPABILITY_SOURCES = {
-    'lmarena.creative_writing': ('divergence', 'creative_writing'),
+    'lmarena.creative_writing': ('creativity', 'creative_writing'),
     'arena.agent_code': ('coding', 'execution'),
     'aa.terminalbench_4': ('coding', 'execution'),
     'aa.frontiercode_2': ('coding', 'execution'),
@@ -94,7 +94,7 @@ CAPABILITY_SOURCES = {
     'aa.mmmu_pro': ('tool_operation', 'image_recognition'),
     'lmarena.vision': ('tool_operation', 'image_recognition'),
 }
-AXES = {'divergence': ('creative_writing',), 'coding': ('execution', 'faithfulness'), 'aesthetics': ('design',),
+AXES = {'creativity': ('creative_writing',), 'coding': ('execution', 'faithfulness'), 'aesthetics': ('design',),
         'tool_operation': ('responsiveness', 'image_recognition')}
 # arena.ai boards transcribed from the user's browser (arena_capture.py): source -> (capture, category, value, method).
 ARENA_CAPTURES = {

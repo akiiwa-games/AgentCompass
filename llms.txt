@@ -4,7 +4,7 @@
 
 ## When to Use or Reference This Repository
 
-- You want to route coding-agent subtasks across multiple flat-rate AI subscriptions (`Claude Max`, `ChatGPT Pro`, `Google Antigravity`, `Grok`) based on 5-hour and 7-day quota windows, reset countdowns, and four-category model capability fit (`divergence`, `coding`, `aesthetics`, `tool_operation`).
+- You want to route coding-agent subtasks across multiple flat-rate AI subscriptions (`Claude Max`, `ChatGPT Pro`, `Google Antigravity`, `Grok`) based on 5-hour and 7-day quota windows, reset countdowns, and four-category model capability fit (`creativity`, `coding`, `aesthetics`, `tool_operation`).
 - You need a `PreToolUse` / `tool_call` spawn gate hook that blocks unrouted sub-agent launches (`Claude Agent`, `Codex spawn_agent`, `Antigravity invoke_subagent`, `Paseo create_agent`) or enforces the configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray).
 - You want a headless multi-account subscription quota collector (`~/.claude*`, `~/.codex*`, `agy`, Grok, Magpie) or a Windows 11 decision console and floating quota HUD.
 

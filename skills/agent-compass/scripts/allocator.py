@@ -1,5 +1,5 @@
-"""Deterministic worker allocation: capability gates, task fit across the four R2 capability categories
-(`divergence`, `coding`, `aesthetics`, `tool_operation`), continuity with a coupled chain's existing worker,
+"""Deterministic worker allocation: capability gates, task fit across the four capability categories
+(`creativity`, `coding`, `aesthetics`, `tool_operation`), continuity with a coupled chain's existing worker,
 and the opportunity cost of the quota the work would use.
 
 Scores are panel standard deviations (`z = (x - x_anchor) / sd_panel`, the accounts.json `calibration_panel` anchor at High = 0) from

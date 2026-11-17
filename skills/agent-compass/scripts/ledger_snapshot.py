@@ -32,7 +32,11 @@ def _snapshot_row(candidate, detail):
     if candidate.get('estimated_axes'):
         row['estimated_axes'] = list(candidate['estimated_axes'])
     if candidate.get('manual_scores'):
-        row['manual_scores'] = copy.deepcopy(candidate['manual_scores'])
+        row['manual_scores'] = {
+            axis: {k: copy.deepcopy(v) for k, v in entry.items() if k != 'data_reference'}
+            for axis, entry in candidate['manual_scores'].items()
+            if isinstance(entry, dict)
+        }
     if candidate.get('unscored_named_dispatch'):
         row['unscored_named_dispatch'] = True
     if detail:

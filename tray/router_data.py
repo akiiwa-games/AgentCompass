@@ -503,8 +503,10 @@ def live_economy_windows() -> list[dict]:
             "expected_hours": 1.0,
             "needs": {},
             "profile": {
-                "reasoning_depth": 2,
-                "code_complexity": 1,
+                "work_kind": "code_implementation",
+                "primary_level": 1,
+                "secondary_kind": "none",
+                "secondary_level": 0,
                 "needs_visual": False,
                 "needs_gui": False,
                 "local_only": False,
@@ -512,12 +514,9 @@ def live_economy_windows() -> list[dict]:
                 "read_only_review": False,
                 "access": "write",
                 "expected_hours": 1.0,
-                "hours_confidence": "medium",
-                "urgency": "normal",
-                "interaction_style": "engineering",
                 "multi_task": False,
                 "task_count": "1",
-                "axis_demand": {"divergence": 0, "coding": 0, "aesthetics": 0, "tool_operation": 0},
+                "axis_demand": {"creativity": 0, "coding": 0, "aesthetics": 0, "tool_operation": 0},
             },
         }
         result = allocator.plan(probe, usage, now, records=records)
@@ -2289,7 +2288,8 @@ def test_scorer_config(scorer_type: str | None = None, api_key: str | None = Non
     result = scorer_client.scorer_test(config, objective)
     label, meta, profile = _tr(SCORER_SHORT.get(chosen, chosen)), result["scorer"], result["task_profile"]
     if result["ok"]:
-        dims = f"D{profile['reasoning_depth']} C{profile['code_complexity']}"
+        sec = profile.get("secondary_kind", "none")
+        dims = f"L{profile['primary_level']}" + (f" + {sec} L{profile['secondary_level']}" if sec != "none" else "")
         return _tr('测试成功（{0} · {1}ms）：{2} · {3}').format(f'{label}', f"{result['latency_ms']}", f"{result['derived_kind']}", f'{dims}')
     why = meta.get("fallback_detail") or meta.get("fallback_reason") or _tr("未知原因")
     return _tr('测试失败（{0} · {1}ms）：{2}；路由时将回退').format(f'{label}', f"{result['latency_ms']}", f'{why}')

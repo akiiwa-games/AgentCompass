@@ -94,13 +94,11 @@ class ScorerServer:
                 if "SCORER-GARBAGE" in user:
                     return self._send(200, {"choices": [{"message": {"content": "I cannot classify this."}}]})
                 is_rt = "REALTIME-LOOP" in user
-                profile = {"multi_task": False, "task_count": "1", "work_kind": "computer_use" if is_rt else "general_implementation",
-                           "reasoning_depth": 2, "code_complexity": 0 if is_rt else 1,
-                           "axis_demand": {"divergence": 0 if is_rt else 1, "coding": 0 if is_rt else 2, "aesthetics": 0, "tool_operation": 3 if is_rt else 0},
-                           "needs_visual": is_rt, "needs_gui": is_rt,
-                           "local_only": is_rt, "wants_fast": False, "read_only_review": False,
-                           "access": "read-only" if is_rt else "write", "expected_hours": 0.5, "hours_confidence": "medium",
-                           "urgency": "normal", "interaction_style": "engineering",
+                profile = {"work_kind": "gui_control" if is_rt else "code_implementation",
+                           "primary_level": 2, "secondary_kind": "none", "secondary_level": 0,
+                           "needs_visual": is_rt, "local_only": is_rt, "wants_fast": False,
+                           "access": "read-only" if is_rt else "write", "expected_hours": 0.5,
+                           "task_count": "1",
                            "reason": "fixture classification of a small bounded edit"}
                 self._send(200, {"choices": [{"message": {"content": json.dumps(profile)}}]})
 

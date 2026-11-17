@@ -403,7 +403,7 @@ class RefreshEntryTests(unittest.TestCase):
         self.assertIn(f'added {dropped}', stderr)
         self.assertIn('removed gone-model', stderr)
         self.assertIn('--accept-panel-change', stderr)
-        for category in ('divergence', 'coding', 'aesthetics', 'tool_operation'):
+        for category in ('creativity', 'coding', 'aesthetics', 'tool_operation'):
             self.assertIn(f'  {category}', stderr)
         self.assertEqual({p.name: p.read_bytes() for p in self.refs_dir.iterdir() if p.is_file()}, before)
 
@@ -412,7 +412,7 @@ class RefreshEntryTests(unittest.TestCase):
         record = json.loads(scores.read_text(encoding='utf-8'))['anchor']['panel_change']
         self.assertEqual((record['added'], record['removed']), ([dropped], ['gone-model']))
         self.assertRegex(record['date'], r'^\d{4}-\d{2}-\d{2}$')
-        self.assertEqual(set(record['shifts']), {'divergence', 'coding', 'aesthetics', 'tool_operation'})
+        self.assertEqual(set(record['shifts']), {'creativity', 'coding', 'aesthetics', 'tool_operation'})
 
         code, stdout, stderr = self._run_refresh('--no-fetch')
         self.assertEqual(code, 0, stderr + stdout)
@@ -463,7 +463,7 @@ class RefreshEntryTests(unittest.TestCase):
 
         bad_docs = [
             ('kind_not_maintainer', {
-                'schema_version': 1,
+                'schema_version': 2,
                 'scores': {'dot': {'aesthetics': {'level': 2.5, 'as_of': '2026-11-11', 'kind': 'user'}}},
             }),
             ('missing_schema_version', {
@@ -474,11 +474,11 @@ class RefreshEntryTests(unittest.TestCase):
                 'scores': {'dot': {'aesthetics': {'level': 2.5, 'as_of': '2026-11-11', 'kind': 'maintainer'}}},
             }),
             ('missing_as_of', {
-                'schema_version': 1,
+                'schema_version': 2,
                 'scores': {'dot': {'aesthetics': {'level': 2.5, 'kind': 'maintainer'}}},
             }),
             ('unexpected_record_key', {
-                'schema_version': 1,
+                'schema_version': 2,
                 'scores': {'dot': {'aesthetics': {'level': 2.5, 'as_of': '2026-11-11', 'kind': 'maintainer', 'typo': 1}}},
             }),
         ]

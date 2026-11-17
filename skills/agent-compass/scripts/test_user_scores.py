@@ -62,7 +62,7 @@ class ManualScoreLayerTests(unittest.TestCase):
 
     def test_level_to_z_mapping_exact_interpolation_and_extrapolation(self):
         targets = self.five['anchor']['targets']
-        t1, t2, t3 = user_scores.target_triad(targets, 'divergence')
+        t1, t2, t3 = user_scores.target_triad(targets, 'creativity')
         self.assertAlmostEqual(user_scores.level_to_z(1.0, t1, t2, t3), t1, places=6)
         self.assertAlmostEqual(user_scores.level_to_z(2.0, t1, t2, t3), t2, places=6)
         self.assertAlmostEqual(user_scores.level_to_z(3.0, t1, t2, t3), t3, places=6)
@@ -82,30 +82,30 @@ class ManualScoreLayerTests(unittest.TestCase):
 
     def test_maintainer_score_wins_over_measured_and_local_user_beats_maintainer(self):
         maintainer_doc = {
-            'schema_version': 1,
+            'schema_version': 2,
             'scores': {
                 'gpt-6.1-sol': {
-                    'divergence': {'level': 3.2, 'as_of': '2026-11-11', 'kind': 'maintainer'},
+                    'creativity': {'level': 3.2, 'as_of': '2026-11-11', 'kind': 'maintainer'},
                 }
             },
         }
         local_doc = {
-            'schema_version': 1,
+            'schema_version': 2,
             'scores': {
                 'gpt-6.1-sol': {
-                    'divergence': {'level': 1.2, 'as_of': '2026-11-11', 'kind': 'user'},
+                    'creativity': {'level': 1.2, 'as_of': '2026-11-11', 'kind': 'user'},
                 }
             },
         }
         targets = self.five['anchor']['targets']
-        expected_m = user_scores.mapped_z_for_target('divergence', 3.2, targets)
-        expected_u = user_scores.mapped_z_for_target('divergence', 1.2, targets)
+        expected_m = user_scores.mapped_z_for_target('creativity', 3.2, targets)
+        expected_u = user_scores.mapped_z_for_target('creativity', 1.2, targets)
 
         only_m = axis_scores.five_axis_overlay(
             copy.deepcopy(self.accounts), data=self.five, public_scores=maintainer_doc, local_scores=None,
             read_local_state=False,
         )
-        ax_m = only_m['models']['gpt-6.1-sol']['five_axis']['categories']['divergence']
+        ax_m = only_m['models']['gpt-6.1-sol']['five_axis']['categories']['creativity']
         self.assertEqual(ax_m['status'], 'maintainer')
         self.assertEqual(ax_m['value'], expected_m)
         # Multi-effort curve preserves relative effort deltas rather than flattening to a constant.
@@ -115,9 +115,44 @@ class ManualScoreLayerTests(unittest.TestCase):
             copy.deepcopy(self.accounts), data=self.five, public_scores=maintainer_doc, local_scores=local_doc,
             read_local_state=False,
         )
-        ax_u = both['models']['gpt-6.1-sol']['five_axis']['categories']['divergence']
+        ax_u = both['models']['gpt-6.1-sol']['five_axis']['categories']['creativity']
         self.assertEqual(ax_u['status'], 'user')
         self.assertEqual(ax_u['value'], expected_u)
+        # Underlying public data_reference stays anchored to the measured board across both layers without altering routing z.
+        ref_m = ax_m['manual']['data_reference']
+        ref_u = ax_u['manual']['data_reference']
+        self.assertEqual(ref_m['status'], 'measured')
+        self.assertEqual(ref_u['status'], 'measured')
+        self.assertEqual(ref_m['z'], ref_u['z'])
+        self.assertEqual(ref_m['level'], ref_u['level'])
+        self.assertIn('lmarena.creative_writing', ref_u['sources'])
+
+    def test_suggest_scores_is_read_only_and_flags_measured_drift_and_available(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pub_file = Path(tmp) / 'public-scores.json'
+            loc_file = Path(tmp) / 'local-scores.json'
+            pub_doc = {
+                'schema_version': 2,
+                'scores': {
+                    # gpt-6.1-sol creativity is measured near level ~2.00; manual 3.2 drifts by > 0.4
+                    'gpt-6.1-sol': {'creativity': {'level': 3.2, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
+                    # claude-opus-5-5 creativity is measured at 3.0; manual 2.9 with "maintainer impression" flags measured_available
+                    'claude-opus-5-5': {'creativity': {'level': 2.9, 'as_of': '2026-11-11', 'kind': 'maintainer', 'note': 'maintainer impression'}},
+                    # flint-40b-free is missing on public boards -> never flagged
+                    'flint-40b-free': {'creativity': {'level': 1.0, 'as_of': '2026-11-11', 'kind': 'maintainer', 'note': 'maintainer impression'}},
+                },
+            }
+            pub_bytes = (json.dumps(pub_doc, indent=2) + '\n').encode('utf-8')
+            pub_file.write_bytes(pub_bytes)
+            res = user_scores.suggest_scores(
+                scope='public', threshold=0.4, accounts=self.accounts, five_data=self.five, public_path=pub_file,
+            )
+            self.assertEqual(pub_file.read_bytes(), pub_bytes)
+            by_model = {r['model']: r for r in res['suggestions']}
+            self.assertEqual(set(by_model), {'gpt-6.1-sol', 'claude-opus-5-5'})
+            self.assertEqual(by_model['gpt-6.1-sol']['reason'], 'measured_drift')
+            self.assertEqual(by_model['claude-opus-5-5']['reason'], 'measured_available')
+            self.assertFalse(loc_file.exists())
 
     def test_manual_score_fills_missing_facet_lifts_mode_b_and_surfaces_actionable_hint_when_absent(self):
         accounts = copy.deepcopy(self.accounts)
@@ -132,14 +167,13 @@ class ManualScoreLayerTests(unittest.TestCase):
             'expected_hours': 1.0,
             'needs': {'local_only': False, 'outbound_ok': True},
             'profile': {
-                'work_kind': 'tool_execution', 'reasoning_depth': 2, 'code_complexity': 0,
-                'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
-                'read_only_review': False, 'access': 'read-only', 'expected_hours': 1.0, 'hours_confidence': 'medium',
-                'urgency': 'normal', 'interaction_style': 'exploration', 'multi_task': False, 'task_count': '1',
-                'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2},
+                'work_kind': 'live_loop', 'primary_level': 2, 'secondary_kind': 'none', 'secondary_level': 0,
+                'needs_visual': False, 'local_only': False, 'wants_fast': False,
+                'access': 'read-only', 'expected_hours': 1.0, 'task_count': '1',
+                'axis_demand': {'creativity': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2},
             },
         }
-        empty_pub = {'schema_version': 1, 'scores': {}}
+        empty_pub = {'schema_version': 2, 'scores': {}}
         with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
             before = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts))
         gb_before = next(c for c in before['ranking'] if c['id'] == 'grok_bot')
@@ -152,7 +186,7 @@ class ManualScoreLayerTests(unittest.TestCase):
 
         # Filling a maintainer score lifts Mode B; read_local_state=False honors maintainer scores while ignoring local user scores.
         pub_doc = {
-            'schema_version': 1,
+            'schema_version': 2,
             'scores': {
                 'grok-bot': {
                     'tool_operation.responsiveness': {'level': 2.5, 'as_of': '2026-11-11', 'kind': 'maintainer'},
@@ -197,7 +231,7 @@ class ManualScoreLayerTests(unittest.TestCase):
             for name in (*public_data.FILES, public_data.MANIFEST):
                 shutil.copy2(REFERENCES_DIR / name, refs / name)
             res = user_scores.set_score(
-                'gpt-6.1-sol', 'divergence', 2.6, note='maintainer impression', public=True,
+                'gpt-6.1-sol', 'creativity', 2.6, note='maintainer impression', public=True,
                 public_path=refs / 'user-scores.json', accounts=self.accounts,
             )
             self.assertEqual(res['entry']['kind'], 'maintainer')
@@ -206,7 +240,7 @@ class ManualScoreLayerTests(unittest.TestCase):
             self.assertEqual(public_data.check_set(refs, manifest), ('ok', ''))
 
             # Writing kind='user' into the public file is rejected by public_data.check_set.
-            bad = {'schema_version': 1, 'scores': {'gpt-6.1-sol': {'divergence': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'user'}}}}
+            bad = {'schema_version': 2, 'scores': {'gpt-6.1-sol': {'creativity': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'user'}}}}
             (refs / 'user-scores.json').write_text(json.dumps(bad), encoding='utf-8')
             bad_manifest = public_data.build_manifest(refs)
             status, detail = public_data.check_set(refs, bad_manifest)
@@ -256,15 +290,30 @@ class FixRoundRegressionTests(unittest.TestCase):
 
         # Named dispatch / direct fit monotonicity: missing responsiveness stands at zero (0.0) at both L2 and L3.
         targets = axis_scores.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json')['anchor']['targets']
-        vals = {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0,
+        vals = {'creativity': 0.0, 'coding': 0.0,
+                'aesthetics': {'design': 0.0, 'image_recognition': 0.5},
                 'tool_operation': {'responsiveness': None, 'image_recognition': 0.5}}
-        d2 = {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}
-        d3 = {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 3}
+        d2 = {'creativity': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}
+        d3 = {'creativity': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 3}
         fit_l2, _ = axis_scores.five_axis_fit(vals, d2, axis_scores.five_axis_targets(d2, targets))
         fit_l3, _ = axis_scores.five_axis_fit(vals, d3, axis_scores.five_axis_targets(d3, targets))
         self.assertEqual(fit_l2, 0.0)
         self.assertEqual(fit_l3, 0.0)
         self.assertIsNone(axis_scores.five_axis_shares(vals, targets)['tool_operation'])
+
+        # Shared image_recognition: a manual score on tool_operation.image_recognition moves aesthetics L2/L3 too.
+        over = axis_scores.five_axis_overlay(
+            copy.deepcopy(account_fleet.load_accounts(account_fleet.reference_fleet_path())),
+            read_local_state=False,
+            local_scores={'scores': {'claude-opus-5-5': {
+                'tool_operation.image_recognition': {'level': 1.2, 'as_of': '2026-11-17', 'kind': 'user'},
+            }}},
+        )
+        opus_vals = axis_scores.five_axis_values(over['models']['claude-opus-5-5']['five_axis'], 'high')
+        self.assertEqual(opus_vals['aesthetics']['design'], 0.0)
+        self.assertEqual(opus_vals['aesthetics']['image_recognition'],
+                         opus_vals['tool_operation']['image_recognition'])
+        self.assertLess(opus_vals['aesthetics']['image_recognition'], -1.5)
 
     def test_f2_select_variants_picks_own_high_row_and_correlates_aa_effort_curve(self):
         cal = _load_calibration_modules()
@@ -286,7 +335,7 @@ class FixRoundRegressionTests(unittest.TestCase):
         corrs = scores['effort_correlations']
         self.assertIn('lmarena.creative_writing', corrs)
         self.assertGreater(corrs['lmarena.creative_writing']['r'], 0.5)
-        opus_div = scores['models']['claude-opus-5-5']['axes']['divergence']['by_effort']
+        opus_div = scores['models']['claude-opus-5-5']['axes']['creativity']['by_effort']
         self.assertGreater(opus_div['high'], opus_div['low'])
         # F4: every full-panel board has sd_panel == 1.0 on High rows, and partial-panel secondary boards carry scale != 1.0
         for facet_key, link in scores['links'].items():
@@ -323,11 +372,10 @@ class FixRoundRegressionTests(unittest.TestCase):
             'expected_hours': 0.1,
             'needs': {'local_only': True},
             'profile': {
-                'work_kind': 'general_implementation', 'reasoning_depth': 3, 'code_complexity': 2,
-                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
-                'read_only_review': False, 'access': 'write', 'expected_hours': 0.1, 'hours_confidence': 'medium',
-                'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-                'axis_demand': {'divergence': 0, 'coding': 3, 'aesthetics': 0, 'tool_operation': 1},
+                'work_kind': 'code_implementation', 'primary_level': 3, 'secondary_kind': 'none', 'secondary_level': 0,
+                'needs_visual': False, 'local_only': True, 'wants_fast': False,
+                'access': 'write', 'expected_hours': 0.1, 'task_count': '1',
+                'axis_demand': {'creativity': 0, 'coding': 3, 'aesthetics': 0, 'tool_operation': 1},
             },
         }
         plan = allocator.plan(task, usage, now, accounts=copy.deepcopy(accounts),
@@ -365,11 +413,10 @@ class FixRoundRegressionTests(unittest.TestCase):
             'expected_hours': 0.5,
             'needs': {'local_only': False, 'outbound_ok': True},
             'profile': {
-                'work_kind': 'web_research', 'reasoning_depth': 3, 'code_complexity': 0,
-                'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
-                'read_only_review': False, 'access': 'read-only', 'expected_hours': 0.5, 'hours_confidence': 'medium',
-                'urgency': 'normal', 'interaction_style': 'exploration', 'multi_task': False, 'task_count': '1',
-                'axis_demand': {'divergence': 3, 'coding': 0, 'aesthetics': 0, 'tool_operation': 1},
+                'work_kind': 'web_research', 'primary_level': 3, 'secondary_kind': 'none', 'secondary_level': 0,
+                'needs_visual': False, 'local_only': False, 'wants_fast': False,
+                'access': 'read-only', 'expected_hours': 0.5, 'task_count': '1',
+                'axis_demand': {'creativity': 3, 'coding': 0, 'aesthetics': 0, 'tool_operation': 1},
             },
         }
         res_plan = allocator.plan(research_task, usage, now, accounts=copy.deepcopy(accounts),
@@ -385,7 +432,7 @@ class FixRoundRegressionTests(unittest.TestCase):
         scores = axis_scores.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json')
         targets = scores['anchor']['targets']
         cont = axis_scores.five_axis_continuity_value(
-            {'divergence': 0, 'coding': 2, 'aesthetics': 2, 'tool_operation': 3}, targets
+            {'creativity': 0, 'coding': 2, 'aesthetics': 2, 'tool_operation': 3}, targets
         )
         self.assertGreater(cont, 1.0)
 
@@ -393,11 +440,10 @@ class FixRoundRegressionTests(unittest.TestCase):
         usage = usage_windows(self.now, {'claude': [('five_hour', 10, 3), ('seven_day', 10, 84)],
                                          'codex': [('five_hour', 10, 3), ('usage', 10, 84)]})
         base_profile = {
-            'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
-            'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
-            'read_only_review': False, 'access': 'write', 'expected_hours': 1.0, 'hours_confidence': 'medium',
-            'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-            'axis_demand': {'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 2},
+            'work_kind': 'code_implementation', 'primary_level': 2, 'secondary_kind': 'none', 'secondary_level': 0,
+            'needs_visual': False, 'local_only': True, 'wants_fast': False,
+            'access': 'write', 'expected_hours': 1.0, 'task_count': '1',
+            'axis_demand': {'creativity': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 2},
         }
         auto_resume = allocator.plan(
             {'objective': 'Continue chain',
@@ -454,7 +500,17 @@ class FixRoundRegressionTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, 'as_of'):
             user_scores.validate_document(
-                {'schema_version': 1, 'scores': {'grok-bot': {'tool_operation.responsiveness': {'level': 2.5, 'date': '2026-11-10', 'kind': 'maintainer'}}}},
+                {'schema_version': 2, 'scores': {'grok-bot': {'tool_operation.responsiveness': {'level': 2.5, 'date': '2026-11-10', 'kind': 'maintainer'}}}},
+                expected_kind='maintainer',
+            )
+        with self.assertRaisesRegex(ValueError, 'schema_version'):
+            user_scores.validate_document(
+                {'schema_version': 1, 'scores': {'grok-bot': {'coding': {'level': 2.5, 'as_of': '2026-11-10', 'kind': 'maintainer'}}}},
+                expected_kind='maintainer',
+            )
+        with self.assertRaisesRegex(ValueError, 'Unknown score target'):
+            user_scores.validate_document(
+                {'schema_version': 2, 'scores': {'grok-bot': {'divergence': {'level': 2.5, 'as_of': '2026-11-10', 'kind': 'maintainer'}}}},
                 expected_kind='maintainer',
             )
 
@@ -470,7 +526,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
 
     def test_r2_f1_end_to_end_decision_snapshot_and_plan_stage_with_non_empty_user_scores(self):
         # Populate local user scores so both eligible (selected) and excluded rows carry manual_scores.
-        user_scores.set_score('claude-opus-5-5', 'divergence', 3.0, public=False, accounts=self.accounts)
+        user_scores.set_score('claude-opus-5-5', 'creativity', 3.0, public=False, accounts=self.accounts)
         user_scores.set_score('dot', 'tool_operation.responsiveness', 2.5, public=False, accounts=self.accounts)
         usage = usage_windows(self.now, {'claude': [('five_hour', 10, 3), ('seven_day', 10, 84), ('weekly_fable', 10, 84)],
                                          'codex': [('five_hour', 10, 3), ('usage', 10, 84)]})
@@ -484,11 +540,10 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             'expected_hours': 0.5,
             'needs': {'local_only': True},
             'profile': {
-                'work_kind': 'general_implementation', 'reasoning_depth': 3, 'code_complexity': 2,
-                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
-                'read_only_review': False, 'access': 'write', 'expected_hours': 0.5, 'hours_confidence': 'medium',
-                'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-                'axis_demand': {'divergence': 3, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1},
+                'work_kind': 'code_implementation', 'primary_level': 3, 'secondary_kind': 'none', 'secondary_level': 0,
+                'needs_visual': False, 'local_only': True, 'wants_fast': False,
+                'access': 'write', 'expected_hours': 0.5, 'task_count': '1',
+                'axis_demand': {'creativity': 3, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1},
             },
         }
         decision = allocator.plan(task, usage, self.now, accounts=accounts, read_local_state=True)
@@ -545,14 +600,13 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             'expected_hours': 0.5,
             'needs': {'local_only': True},
             'profile': {
-                'work_kind': 'general_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
-                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
-                'read_only_review': False, 'access': 'write', 'expected_hours': 0.5, 'hours_confidence': 'medium',
-                'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-                'axis_demand': {'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0},
+                'work_kind': 'code_implementation', 'primary_level': 2, 'secondary_kind': 'none', 'secondary_level': 0,
+                'needs_visual': False, 'local_only': True, 'wants_fast': False,
+                'access': 'write', 'expected_hours': 0.5, 'task_count': '1',
+                'axis_demand': {'creativity': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0},
             },
         }
-        empty_pub = {'schema_version': 1, 'scores': {}}
+        empty_pub = {'schema_version': 2, 'scores': {}}
 
         def excluded():
             with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
@@ -615,7 +669,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         cx['luna56_high'] = {**cx['sol_high'], 'model': 'gpt-5.6-luna', 'effort': 'high'}
         cx['unscored_high'] = {**cx['sol_high'], 'model': 'gpt-oss-120b', 'effort': 'high'}
         usage = usage_windows(self.now, {'codex': [('usage', 90, 84)]})
-        empty_pub = {'schema_version': 1, 'scores': {}}
+        empty_pub = {'schema_version': 2, 'scores': {}}
         # On aesthetics, gpt-5.6-luna has High = -3.0273 < t1 = -2.8934 (negative fit term) and no Medium score:
         # unscored Medium must be excluded rather than standing at 0.0 and beating scored High!
         task = {
@@ -624,11 +678,10 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             'constraints': {'model': 'gpt-5.6-luna'},
             'needs': {'local_only': True},
             'profile': {
-                'work_kind': 'frontend_implementation', 'reasoning_depth': 2, 'code_complexity': 2,
-                'needs_visual': False, 'needs_gui': False, 'local_only': True, 'wants_fast': False,
-                'read_only_review': False, 'access': 'write', 'expected_hours': 0.5, 'hours_confidence': 'medium',
-                'urgency': 'normal', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-                'axis_demand': {'divergence': 0, 'coding': 0, 'aesthetics': 2, 'tool_operation': 0},
+                'work_kind': 'frontend_ui', 'primary_level': 2, 'secondary_kind': 'none', 'secondary_level': 0,
+                'needs_visual': False, 'local_only': True, 'wants_fast': False,
+                'access': 'write', 'expected_hours': 0.5, 'task_count': '1',
+                'axis_demand': {'creativity': 0, 'coding': 0, 'aesthetics': 2, 'tool_operation': 0},
             },
         }
         with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
@@ -642,7 +695,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         # Naming a model whose efforts are ALL unscored dispatches with fit=None and unscored_named_dispatch=True.
         task_unscored = {
             **task, 'constraints': {'model': 'gpt-oss-120b'},
-            'profile': {**task['profile'], 'axis_demand': {'divergence': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}},
+            'profile': {**task['profile'], 'axis_demand': {'creativity': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}},
         }
         with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
             d_un = allocator.plan(task_unscored, usage, self.now, accounts=copy.deepcopy(accounts),
@@ -656,7 +709,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         targets = self.five['anchor']['targets']
         # 1) Manual tool_operation score never overwrites text_only / missing image_input modality to 'yes'.
         pub_doc = {
-            'schema_version': 1,
+            'schema_version': 2,
             'scores': {
                 'gpt-oss-120b': {
                     'tool_operation': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'},
@@ -674,7 +727,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
 
         # 2) Whole-category coding maps per facet through each facet's own triad.
         code_doc = {
-            'schema_version': 1,
+            'schema_version': 2,
             'scores': {
                 'gpt-oss-120b': {
                     'coding': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'maintainer'},
@@ -692,9 +745,9 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         self.assertAlmostEqual(facets['execution']['value'], z_exec, places=4)
 
         # 3) Top-level aliases resolve cleanly.
-        res_alias = user_scores.set_score('fable', 'divergence', 2.9, public=False, accounts=self.accounts)
+        res_alias = user_scores.set_score('fable', 'creativity', 2.9, public=False, accounts=self.accounts)
         self.assertEqual(res_alias['model'], 'claude-fable-5-2')
-        self.assertTrue(user_scores.clear_score('fable', 'divergence', public=False, accounts=self.accounts)['removed'])
+        self.assertTrue(user_scores.clear_score('fable', 'creativity', public=False, accounts=self.accounts)['removed'])
 
         # 4) Corrupt local JSON raises ValueError rather than silently returning empty.
         local_path = user_scores.local_scores_path()
@@ -705,7 +758,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         local_path.unlink()
 
         # 5) z_to_level round-trips [1, 3] and documents responsiveness >= 2.
-        t1, t2, t3 = user_scores.target_triad(targets, 'divergence')
+        t1, t2, t3 = user_scores.target_triad(targets, 'creativity')
         for lvl in (1.0, 1.4, 2.0, 2.6, 3.0, 3.4):
             z = user_scores.level_to_z(lvl, t1, t2, t3)
             self.assertAlmostEqual(user_scores.z_to_level(z, t1, t2, t3), lvl, places=6)
@@ -722,7 +775,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             refs.mkdir(parents=True)
             for name in (*public_data.FILES, public_data.MANIFEST):
                 shutil.copy2(REFERENCES_DIR / name, refs / name)
-            user_scores.set_score('grok-bot', 'divergence', 2.8, public=True,
+            user_scores.set_score('grok-bot', 'creativity', 2.8, public=True,
                                   public_path=refs / 'user-scores.json', accounts=self.accounts)
             locks = list(refs.glob('*.lock'))
             self.assertEqual(locks, [])
@@ -739,7 +792,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         }
         user_scores.apply_overlay(
             minimal_models, targets,
-            public_scores={'schema_version': 1, 'scores': {
+            public_scores={'schema_version': 2, 'scores': {
                 'm-whole': {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
                 'm-missing': {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
             }},
@@ -756,10 +809,11 @@ class IsolatedEntryTests(unittest.TestCase):
         # script directory is not on sys.path, so the file must reach its sibling modules by itself.
         import subprocess
         script = Path(__file__).resolve().parent / 'user_scores.py'
-        done = subprocess.run([sys.executable, '-I', '-X', 'utf8', str(script), 'list'], capture_output=True, text=True,
-                              encoding='utf-8', timeout=60)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        json.loads(done.stdout)
+        for subcmd in (['list'], ['suggest', '--public']):
+            done = subprocess.run([sys.executable, '-I', '-X', 'utf8', str(script), *subcmd], capture_output=True, text=True,
+                                  encoding='utf-8', timeout=60)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            json.loads(done.stdout)
 
 
 if __name__ == '__main__':

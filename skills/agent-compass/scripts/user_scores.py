@@ -30,6 +30,8 @@ Tray UI Python API contract:
     with each entry annotated with its current mapped `z` against `five-axis-scores.json` `anchor.targets`.
   - `user_scores.set_score(model, target, level, *, public=False, note=None, as_of=None)` -> saved entry + path.
   - `user_scores.clear_score(model=None, target=None, *, clear_all=False, public=False)` -> `{"removed": int, "path": str}`.
+  - `user_scores.suggest_scores(model=None, *, scope="all", threshold=0.4)` -> read-only comparison of manual scores
+    against underlying public board measurements (`measured_drift` / `measured_available`), never modifying any file.
 """
 from __future__ import annotations
 
@@ -50,21 +52,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import override_store  # noqa: E402
 import public_data  # noqa: E402
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 FILE_NAME = 'user-scores.json'
 ENV_VAR = 'ROUTER_USER_SCORES'
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
 PUBLIC_SCORES_FILE = REFERENCES / FILE_NAME
 
-CATEGORIES = ('divergence', 'coding', 'aesthetics', 'tool_operation')
+CATEGORIES = ('creativity', 'coding', 'aesthetics', 'tool_operation')
 CATEGORY_FACETS = {
-    'divergence': ('creative_writing',),
+    'creativity': ('creative_writing',),
     'coding': ('execution', 'faithfulness'),
     'aesthetics': ('design',),
     'tool_operation': ('responsiveness', 'image_recognition'),
 }
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+SUGGEST_DEFAULT_THRESHOLD = 0.4
+MEASURED_DATA_STATUSES = ('measured', 'measured_partial', 'interpolated')
 VALID_TARGETS = tuple(
     [cat for cat in CATEGORIES]
     + [f'{cat}.{facet}' for cat in CATEGORIES for facet in CATEGORY_FACETS[cat]]
@@ -158,10 +162,10 @@ def normalize_date(as_of: str | None = None) -> str:
 
 
 def validate_document(doc, *, expected_kind: str | None = None) -> dict:
-    """Validate and return a normalized `{schema_version: 1, scores: {model: {target: entry}}}` document."""
+    """Validate and return a normalized `{schema_version: 2, scores: {model: {target: entry}}}` document."""
     if not isinstance(doc, dict):
         raise ValueError('user-scores document must be a JSON object')
-    ver = doc.get('schema_version', SCHEMA_VERSION)
+    ver = doc.get('schema_version')
     if ver != SCHEMA_VERSION:
         raise ValueError(f'Unsupported user-scores schema_version {ver!r}; expected {SCHEMA_VERSION}')
     raw_scores = doc.get('scores')
@@ -247,19 +251,23 @@ def resolve_model_key(model: str, accounts: dict | None = None) -> str:
 def target_triad(targets_table: dict, category: str, facet: str | None = None) -> tuple[float, float, float]:
     """Return `(t1, t2, t3)` on the current panel z-scale for `category` or `category.facet`."""
     cat_block = (targets_table or {}).get(category) or {}
-    if facet is not None:
-        f_levels = (((cat_block.get('facets') or {}).get(facet) or {}).get('levels')) or {}
+    eff_facet = facet
+    if eff_facet is None and len(CATEGORY_FACETS.get(category) or ()) == 1:
+        levels_probe = cat_block.get('levels') or {}
+        if not all(isinstance((levels_probe.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
+            eff_facet = CATEGORY_FACETS[category][0]
+    if eff_facet is not None:
+        f_levels = (((cat_block.get('facets') or {}).get(eff_facet) or {}).get('levels')) or {}
         if all(isinstance((f_levels.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
             return (float(f_levels['1']['target']), float(f_levels['2']['target']), float(f_levels['3']['target']))
-        if category == 'tool_operation':
-            levels = cat_block.get('levels') or {}
-            r3 = ((levels.get('3') or {}).get('by_facet') or {}).get(facet) or {}
-            r2 = ((levels.get('2') or {}).get('by_facet') or {}).get(facet) or {}
-            if isinstance(r3.get('zero'), (int, float)) and isinstance(r3.get('target'), (int, float)):
-                t1 = float(r3['zero'])
-                t3 = float(r3['target'])
-                t2 = float(r2['target']) if isinstance(r2.get('target'), (int, float)) else 0.5 * (t1 + t3)
-                return t1, t2, t3
+        levels = cat_block.get('levels') or {}
+        r3 = ((levels.get('3') or {}).get('by_facet') or {}).get(eff_facet) or {}
+        r2 = ((levels.get('2') or {}).get('by_facet') or {}).get(eff_facet) or {}
+        if isinstance(r3.get('zero'), (int, float)) and isinstance(r3.get('target'), (int, float)):
+            t1 = float(r3['zero'])
+            t3 = float(r3['target'])
+            t2 = float(r2['target']) if isinstance(r2.get('target'), (int, float)) else 0.5 * (t1 + t3)
+            return t1, t2, t3
     levels = cat_block.get('levels') or {}
     if all(isinstance((levels.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
         return (float(levels['1']['target']), float(levels['2']['target']), float(levels['3']['target']))
@@ -578,6 +586,67 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, ability: bool,
     return out, [e for e in measured if out[e] == round(by[e], 4)]
 
 
+def _facet_data_reference(own_cell: dict | None, cat: str, facet: str, manual_level: float,
+                          targets_table: dict) -> dict:
+    """Read-only snapshot of the underlying public calibration cell before manual overlay (`user > maintainer` preserved)."""
+    prev_manual = (own_cell or {}).get('manual') if isinstance(own_cell, dict) else None
+    if isinstance(prev_manual, dict) and isinstance(prev_manual.get('data_reference'), dict):
+        base = dict(prev_manual['data_reference'])
+        base_lvl = base.get('level')
+        base['delta_level'] = round(float(base_lvl) - float(manual_level), 4) if isinstance(base_lvl, (int, float)) else None
+        return base
+    base_status = str((own_cell or {}).get('status') or 'missing') if isinstance(own_cell, dict) else 'missing'
+    base_z = (own_cell or {}).get('value') if isinstance(own_cell, dict) else None
+    if base_z is None and isinstance(own_cell, dict) and isinstance(own_cell.get('by_effort'), dict):
+        base_z = own_cell['by_effort'].get('high')
+    base_level = None
+    if isinstance(base_z, (int, float)) and not isinstance(base_z, bool):
+        base_z = round(float(base_z), 4)
+        if targets_table:
+            try:
+                base_level = z_to_level(base_z, *target_triad(targets_table, cat, facet))
+            except ValueError:
+                base_level = None
+    else:
+        base_z = None
+    raw_sources = (own_cell or {}).get('sources') if isinstance(own_cell, dict) else None
+    sources = sorted(str(k) for k in raw_sources.keys()) if isinstance(raw_sources, dict) else []
+    delta_level = round(base_level - float(manual_level), 4) if base_level is not None else None
+    return {
+        'z': base_z,
+        'level': base_level,
+        'status': base_status,
+        'sources': sources,
+        'delta_level': delta_level,
+    }
+
+
+def _category_data_reference(facet_refs: dict[str, dict], manual_level: float) -> dict:
+    present_levels = [r['level'] for r in facet_refs.values() if isinstance(r.get('level'), (int, float))]
+    present_zs = [r['z'] for r in facet_refs.values() if isinstance(r.get('z'), (int, float))]
+    sources = sorted({s for r in facet_refs.values() for s in (r.get('sources') or ())})
+    if not present_levels:
+        return {'z': None, 'level': None, 'status': 'missing', 'sources': sources, 'delta_level': None}
+    if len(present_levels) < len(facet_refs):
+        return {'z': None, 'level': None, 'status': 'partial', 'sources': sources, 'delta_level': None}
+    level = round(min(present_levels), 4)
+    z = round(min(present_zs), 4) if present_zs else None
+    statuses = [str(r.get('status') or 'missing') for r in facet_refs.values()]
+    if all(s in MEASURED_DATA_STATUSES for s in statuses):
+        status = 'measured' if all(s == 'measured' for s in statuses) else 'measured_partial'
+    elif any(s == 'estimated' for s in statuses):
+        status = 'estimated'
+    else:
+        status = statuses[0]
+    return {
+        'z': z,
+        'level': level,
+        'status': status,
+        'sources': sources,
+        'delta_level': round(level - float(manual_level), 4),
+    }
+
+
 def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed_effort: str | None = None) -> None:
     """Mutate `five_state` (`info['five_axis']`) in place with one layer (`maintainer` or `user`) of manual scores;
     `fixed_effort` is the model's declared only effort, if any."""
@@ -596,9 +665,12 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
         cat_cell['facets'] = facets
         if facet is None:
             z_map = {}
+            facet_refs = {}
             for f in CATEGORY_FACETS[cat]:
                 zf = round(level_to_z(rec['level'], *target_triad(targets_table, cat, f)), 4)
                 z_map[f] = zf
+                f_ref = _facet_data_reference(facets.get(f), cat, f, rec['level'], targets_table)
+                facet_refs[f] = f_ref
                 by_eff, measured = _manual_by_effort(zf, facets.get(f), (cat, f) != ('tool_operation', 'responsiveness'),
                                                      fixed_effort)
                 facets[f] = {
@@ -606,17 +678,18 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                     'by_effort': by_eff,
                     'measured_efforts': measured,
                     'status': status,
-                    'manual': {**rec, 'target': target, 'z': zf},
+                    'manual': {**rec, 'target': target, 'z': zf, 'data_reference': f_ref},
                 }
                 estimates.pop(f'{cat}.{f}', None)
             z_val = round(min(z_map.values()), 4)
+            cat_ref = _category_data_reference(facet_refs, rec['level'])
             cat_cell = _recompute_category_from_facets(cat, cat_cell, status)
-            cat_cell['manual'] = {**rec, 'target': target, 'z': z_val}
+            cat_cell['manual'] = {**rec, 'target': target, 'z': z_val, 'data_reference': cat_ref}
             # Remove any lower-layer facet manual tags under this category that whole-category just superseded
             for sub in list(manual):
                 if sub == cat or sub.startswith(cat + '.'):
                     manual.pop(sub, None)
-            manual[target] = {**rec, 'z': z_val}
+            manual[target] = {**rec, 'z': z_val, 'data_reference': cat_ref}
         else:
             if (cat != 'tool_operation' and not facets and not cat_cell.get('missing_facets')
                     and cat_cell.get('flag') not in ('missing', 'partial')
@@ -630,6 +703,7 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                             'status': cat_cell.get('status', 'measured'),
                         }
             z_val = round(level_to_z(rec['level'], *target_triad(targets_table, cat, facet)), 4)
+            f_ref = _facet_data_reference(facets.get(facet), cat, facet, rec['level'], targets_table)
             by_eff, measured = _manual_by_effort(z_val, facets.get(facet),
                                                  (cat, facet) != ('tool_operation', 'responsiveness'), fixed_effort)
             facets[facet] = {
@@ -637,11 +711,11 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                 'by_effort': by_eff,
                 'measured_efforts': measured,
                 'status': status,
-                'manual': {**rec, 'target': target, 'z': z_val},
+                'manual': {**rec, 'target': target, 'z': z_val, 'data_reference': f_ref},
             }
             estimates.pop(f'{cat}.{facet}', None)
             cat_cell = _recompute_category_from_facets(cat, cat_cell, status)
-            manual[target] = {**rec, 'z': z_val}
+            manual[target] = {**rec, 'z': z_val, 'data_reference': f_ref}
         cats[cat] = cat_cell
         five_state.setdefault('scores', {})[cat] = cat_cell.get('value')
         five_state.setdefault('axis_status', {})[cat] = cat_cell.get('status', status)
@@ -698,19 +772,115 @@ def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dic
             _apply_one_layer(five_state, entries, targets_table, info.get('fixed_effort'))
 
 
+def suggest_scores(model: str | None = None, *, scope: str = 'all',
+                   threshold: float = SUGGEST_DEFAULT_THRESHOLD, accounts: dict | None = None,
+                   five_data: dict | None = None, local_path=None, public_path=None) -> dict:
+    """Read-only review suggestions comparing manual scores against underlying public board measurements.
+
+    Manual scores (`user > maintainer > measured > estimated`) always remain authoritative in routing; this function
+    never modifies `user-scores.json` and only surfaces entries where direct public board measurements (`measured`,
+    `measured_partial`, `interpolated`) either diverge by `>= threshold` demand levels (`measured_drift`) or newly
+    cover an entry marked as an unmeasured impression (`measured_available`).
+    """
+    if scope not in ('all', 'local', 'public'):
+        raise ValueError(f'Unknown scope {scope!r}; expected all, local, or public.')
+    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not math.isfinite(threshold) or threshold < 0:
+        raise ValueError('Suggestion threshold must be a non-negative finite number.')
+    thresh = round(float(threshold), 6)
+    import account_fleet
+    import axis_scores
+    acc = copy.deepcopy(accounts) if isinstance(accounts, dict) else json.loads(
+        account_fleet.fleet_document_path().read_text(encoding='utf-8-sig')
+    )
+    five = five_data if isinstance(five_data, dict) else axis_scores.load_five_axis()
+    base = axis_scores.five_axis_overlay(
+        acc, data=five, read_local_state=False, public_scores={'scores': {}}, local_scores={'scores': {}},
+    )
+    targets_table = (five.get('anchor') or {}).get('targets') or {}
+    model_key = resolve_model_key(model, base) if model else None
+    pub_scores = load_public(public_path, effective=(public_path is None))['scores'] if scope in ('all', 'public') else {}
+    loc_scores = load_local(local_path)['scores'] if scope in ('all', 'local') else {}
+    merged: dict[str, dict[str, tuple[str, dict]]] = {}
+    if scope in ('all', 'public'):
+        for m, entries in pub_scores.items():
+            canon = resolve_model_key(m, base)
+            for t, rec in entries.items():
+                merged.setdefault(canon, {})[t] = ('public', rec)
+    if scope in ('all', 'local'):
+        for m, entries in loc_scores.items():
+            canon = resolve_model_key(m, base)
+            if t_all := [k for k in merged.get(canon, {}) if any(t == k or k.startswith(t + '.') for t in entries if '.' not in t)]:
+                for k in t_all:
+                    merged[canon].pop(k, None)
+            for t, rec in entries.items():
+                merged.setdefault(canon, {})[t] = ('local', rec)
+    if model_key:
+        match_names = {model_key, str(model).strip()}
+        merged = {m: v for m, v in merged.items() if m in match_names}
+    suggestions = []
+    models_map = base.get('models') or {}
+    for canon, t_map in sorted(merged.items()):
+        raw_cats = (((models_map.get(canon) or {}).get('five_axis') or {}).get('categories')) or {}
+        for target, (entry_scope, rec) in sorted(t_map.items()):
+            cat, facet = parse_target(target)
+            raw_cat = raw_cats.get(cat) if isinstance(raw_cats.get(cat), dict) else {}
+            raw_facets = raw_cat.get('facets') if isinstance(raw_cat.get('facets'), dict) else {}
+            if facet is None:
+                f_refs = {f: _facet_data_reference(raw_facets.get(f), cat, f, rec['level'], targets_table)
+                          for f in CATEGORY_FACETS[cat]}
+                ref = _category_data_reference(f_refs, rec['level'])
+            else:
+                ref = _facet_data_reference(raw_facets.get(facet), cat, facet, rec['level'], targets_table)
+            if ref['status'] not in MEASURED_DATA_STATUSES or ref['delta_level'] is None:
+                continue
+            note_text = str(rec.get('note') or '')
+            if abs(ref['delta_level']) >= thresh:
+                reason = 'measured_drift'
+            elif 'impression' in note_text.lower() or 'unmeasured' in note_text.lower():
+                reason = 'measured_available'
+            else:
+                continue
+            manual_z = mapped_z_for_target(target, rec['level'], targets_table) if targets_table else None
+            delta_z = round(float(ref['z']) - float(manual_z), 4) if (ref.get('z') is not None and manual_z is not None) else None
+            suggestions.append({
+                'model': canon,
+                'target': target,
+                'scope': entry_scope,
+                'kind': rec['kind'],
+                'manual_level': rec['level'],
+                'manual_z': manual_z,
+                'as_of': rec['as_of'],
+                **({'note': note_text} if note_text else {}),
+                'data_level': ref['level'],
+                'data_z': ref['z'],
+                'delta_level': ref['delta_level'],
+                'delta_z': delta_z,
+                'data_status': ref['status'],
+                'sources': ref['sources'],
+                'reason': reason,
+            })
+    suggestions.sort(key=lambda r: (-abs(float(r['delta_level'])), r['model'], r['target']))
+    return {
+        'scope': scope,
+        'threshold': thresh,
+        'count': len(suggestions),
+        'suggestions': suggestions,
+    }
+
+
 def cli_main(argv: list[str] | None = None) -> int:
-    """CLI handler for `agentcompass score set|list|clear ...`."""
+    """CLI handler for `agentcompass score set|list|clear|suggest ...`."""
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(
         prog='agentcompass score',
-        description='Set, list, or clear manual capability scores on the 1..3 demand-level scale '
+        description='Set, list, clear, or review manual capability scores on the 1..3 demand-level scale '
                     '(1 = panel weakest, 2 = panel median, 3 = anchor Opus 5.5).',
     )
     sub = parser.add_subparsers(dest='subcommand', required=True)
 
     p_set = sub.add_parser('set', help='Set a manual score for <model> on <category>[.<facet>] at <level>.')
     p_set.add_argument('model', help='Model id or alias (e.g. gpt-6-sol, grok-bot).')
-    p_set.add_argument('target', help='Category or category.facet (e.g. coding, coding.faithfulness, tool_operation.image_recognition).')
+    p_set.add_argument('target', help='Category or category.facet (e.g. creativity, coding.faithfulness, tool_operation.image_recognition).')
     p_set.add_argument('level', type=float, help='Demand-level score (1 = panel weakest, 2 = panel median, 3 = anchor Opus 5.5; decimals allowed).')
     p_set.add_argument('--note', help='Optional short note recorded with the manual score.')
     p_set.add_argument('--as-of', dest='as_of', help='Optional YYYY-MM-DD date (default: today UTC).')
@@ -730,6 +900,14 @@ def cli_main(argv: list[str] | None = None) -> int:
     p_clear.add_argument('--public', action='store_true',
                          help='Clear from references/user-scores.json and refresh public-data.json (git checkout only).')
 
+    p_sug = sub.add_parser('suggest', help='Read-only review suggestions where public board data diverges from manual scores.')
+    p_sug.add_argument('model', nargs='?', help='Optional model id to filter by.')
+    p_sug.add_argument('--threshold', type=float, default=SUGGEST_DEFAULT_THRESHOLD,
+                       help=f'Minimum |data_level - manual_level| to flag on measured boards (default: {SUGGEST_DEFAULT_THRESHOLD:g}).')
+    sgrp = p_sug.add_mutually_exclusive_group()
+    sgrp.add_argument('--public', action='store_true', help='Inspect only shipped/fetched maintainer scores.')
+    sgrp.add_argument('--local', action='store_true', help='Inspect only local user overrides.')
+
     args = parser.parse_args(argv)
     import account_fleet
     import axis_scores
@@ -738,7 +916,7 @@ def cli_main(argv: list[str] | None = None) -> int:
         five = axis_scores.load_five_axis()
         targets_table = (five.get('anchor') or {}).get('targets') or {}
     except Exception:
-        accounts, targets_table = None, {}
+        accounts, five, targets_table = None, None, {}
 
     try:
         if args.subcommand == 'set':
@@ -755,6 +933,11 @@ def cli_main(argv: list[str] | None = None) -> int:
             return 0
         if args.subcommand == 'clear':
             res = clear_score(args.model, args.target, clear_all=args.clear_all, public=args.public, accounts=accounts)
+            print(json.dumps(res, ensure_ascii=False, indent=2))
+            return 0
+        if args.subcommand == 'suggest':
+            scope = 'public' if args.public else ('local' if args.local else 'all')
+            res = suggest_scores(args.model, scope=scope, threshold=args.threshold, accounts=accounts, five_data=five)
             print(json.dumps(res, ensure_ascii=False, indent=2))
             return 0
     except ValueError as exc:

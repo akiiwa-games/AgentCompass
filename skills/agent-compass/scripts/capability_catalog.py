@@ -39,9 +39,10 @@ def markdown(accounts, five=None, references=None):
             'Generated from `accounts.json` and `five-axis-scores.json` by `scripts/capability_catalog.py`; do not edit this view.', '',
             'Each model is scored on four categories (creativity, coding, aesthetics, tool operation) that gather '
             'the public boards as panel standard scores (0 = the anchor at High, one unit = one panel standard deviation), '
-            'and on the quota economy; nothing else scores a model. Tool operation shows the weaker of responsiveness and '
-            'image recognition. Known catalogue IDs do not prove sign-in, plan capacity, current price, or live model '
-            'availability.', '',
+            'and on the quota economy; nothing else scores a model. Aesthetics evaluates design at level 1 and the weaker '
+            'of design and image recognition at levels 2 and 3 (the column shows design); tool operation shows the weaker '
+            'of responsiveness and image recognition. Known catalogue IDs do not prove sign-in, plan capacity, current '
+            'price, or live model availability.', '',
             'Route order and plan capacity ship as calibrated public defaults; plan capacity '
             'follows the discovered plan (`plan-templates.json`). Disabled models and bundles are personal '
             'settings in `accounts-override.json`. Unknown hourly cost remains unknown; it does not mean unlimited.', '',
@@ -54,7 +55,7 @@ def markdown(accounts, five=None, references=None):
         row = scored.get(name) or {}
         axes = row.get('axes') or {}
         cells = []
-        for axis in ('divergence', 'coding', 'aesthetics', 'tool_operation'):
+        for axis in ('creativity', 'coding', 'aesthetics', 'tool_operation'):
             cell = axes.get(axis) or {}
             status = cell.get('status')
             mark = ('u' if status in ('user', 'maintainer')

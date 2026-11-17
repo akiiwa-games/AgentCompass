@@ -422,6 +422,12 @@ def main(argv=None, prog=None):
         print()
     rows, worst = staleness(doc)
     text = markdown(rows, datetime.now(timezone.utc).isoformat(timespec='seconds'), doc.get('usd_checks') or ())
+    ref_dir = Path(args.references) if args.references is not None else (sources.REPO / 'references')
+    suggestions = user_scores.suggest_scores(scope='public', public_path=ref_dir / 'user-scores.json', five_data=doc,
+                                             accounts=json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig')))
+    if suggestions['suggestions']:
+        text += (f"\nManual score review suggestions ({suggestions['count']}; manual scores stay authoritative, "
+                 "run `agentcompass score suggest --public` for details)\n")
     print(text)
     if args.report:
         Path(args.report).write_text(text, encoding='utf-8', newline='\n')

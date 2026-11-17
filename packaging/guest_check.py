@@ -622,9 +622,10 @@ def prepare_router_state():
 def add_plan(objective):
     task = BASE / f"plan-{re.sub('[^A-Za-z0-9]+', '-', objective)}.json"
     task.write_text(json.dumps({"task": {
-        "objective": objective, "work_kind": "general_implementation", "expected_hours": 1, "needs": {"local_only": True},
-        "profile": {"reasoning_depth": 3, "code_complexity": 2, "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False, "local_only": True, "wants_fast": False, "read_only_review": False,
-                    "interaction_style": "engineering", "multi_task": False, "task_count": "1", "reason": "guest gui fixture"}}}), encoding="utf-8")
+        "objective": objective, "work_kind": "code_implementation", "expected_hours": 1, "needs": {"local_only": True},
+        "profile": {"work_kind": "code_implementation", "primary_level": 2, "secondary_kind": "none", "secondary_level": 0,
+                    "access": "write", "local_only": True, "needs_visual": False, "wants_fast": False,
+                    "expected_hours": 1.0, "task_count": "1", "reason": "guest gui fixture"}}}), encoding="utf-8")
     done = agentcompass("plan", "--input", task)
     ledger = HOME / ".agent-compass" / "router-ledger.jsonl"
     rows = 0

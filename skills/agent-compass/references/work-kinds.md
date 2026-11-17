@@ -1,44 +1,35 @@
-# Choosing work_kind
+# Choosing `work_kind` and the 4D Capability Envelope
 
-Classify by the deliverable and where the material is:
+The System-One classifier classifies observable task activity (`work_kind`, `primary_level` `1..3`, and optional composite `secondary_kind` / `secondary_level` `0..3`), and `task_intake.project_axis_demand` maps it deterministically onto `(creativity, coding, aesthetics, tool_operation)` via the tropical max envelope `d_a = max(Phi_a(k1, s1), Phi_a(k2, s2))`.
 
-- Advice on direction → `direction_reasoning`; a staged build plan → `complex_build_plan`.
-- The worker changes code → the implementation routes; finds and fixes a bug or reviews code → `debug_review`.
-- The worker returns findings or text, and the material fits the packet → `text_in_text_out`.
-- The worker returns findings, and must read this machine's files, repository, data or logs → `exploration_analysis`.
-- The worker runs a research or strategy packet on this machine's data (backtests, research scripts, a named variant
-  change, a report) → `research_packet`. It is research, not software engineering, even though it writes code.
-- The worker reads many files to extract one record per item into a table or inventory → `bounded_bulk_work`.
+## 1. The 11 Atomic `work_kind` Signatures
 
-Judging logic, consistency or correctness is `hard`. Wording, translation, summaries and mechanical changes are `routine`.
+Role codes for depth `s` in `{1, 2, 3}`:
+- `0` -> `0` (orthogonal)
+- `B` -> `I[s >= 2]` (caps at panel minimum `t1`, zero premium above baseline)
+- `S` -> `s - 1` (supporting axis: caps at panel median `t2` at `s = 3`, never opening the L3 `ceiling`)
+- `P` -> `s` (primary bottleneck axis: `1:1` with depth, unlocking the L3 `ceiling` at `s = 3`)
+- `F2` -> `2` (real-time `responsiveness` floor on `tool_operation`)
+- `F3` -> `3` (real-time `responsiveness + image_recognition` floor on `tool_operation`)
 
-| Case | work_kind | difficulty |
-|---|---|---|
-| Review the logic of a document given in full (contradictions, gaps, unsupported claims) | `text_in_text_out` | `hard` |
-| Check a document against the code, configuration or data it describes | `exploration_analysis` | `hard` |
-| Find contradictions across a folder of local documents | `exploration_analysis` | `hard` |
-| Proofread, translate or summarize a document | `text_in_text_out` | `routine` |
-| Decide whether a proposed approach is right | `direction_reasoning` | — |
-| Review a diff or pull request | `debug_review` | `hard` |
-| Find why a test fails and fix it | `debug_review` | `hard` |
-| Explain how a module works or map its call paths | `exploration_analysis` | `hard` |
-| Analyze local logs or a local dataset and report | `exploration_analysis` | `hard` |
-| Run a research or strategy packet (e.g. a quantitative research packet: backtest, decompose, one named fix, report) | `research_packet` | `hard` |
-| Change the project's backtest core or production code that research relies on | `general_implementation` | `hard` |
-| Read many local files and list one row per item (inventory, catalogue, CSV of results) | `bounded_bulk_work` | `hard` |
-| Implement an agreed feature or refactor | `general_implementation` | `hard` |
-| Write a standalone script or module with tests from a spec in the packet | `self_contained_code` | `hard` |
-| Apply one small change across many files | `bounded_bulk_work` | `routine` |
-| Run an agreed deployment or API sequence | `tool_execution` | `routine` |
-| Gather prices, versions or documentation from the web | `web_research` | `routine` |
-| Interpret a screenshot or chart | `visual_analysis` | `hard` |
-| Operate a live game, ticket/flash-sale page, order-book terminal, or App in a continuous observe-act loop | `computer_use` / `tool_execution` (`tool_operation: 2..3`) | `routine` / `hard` |
+| `work_kind` | Observable scope | `(creativity, coding, aesthetics, tool_operation)` | `s = 1` | `s = 2` | `s = 3` | Implied gates |
+| :--- | :--- | :---: | :---: | :---: | :---: | :--- |
+| `creative_ideation` | Cross-domain association, de-novo concept/mechanism invention, creative writing & dialogue | `(P, 0, B, 0)` | `(1,0,0,0)` | `(2,0,1,0)` | `(3,0,1,0)` | `advisor_for` when `access="read-only"` |
+| `architecture_reasoning` | First-principles system architecture, formal/math derivation, rigorous critique or migration plan without editing code | `(S, P, 0, 0)` | `(0,1,0,0)` | `(1,2,0,0)` | `(2,3,0,0)` | `advisor_for` when `access="read-only"` |
+| `code_implementation` | Write, fix, refactor, or test backend, CLI, library, algorithm, config, or analysis/experiment scripts | `(B, P, 0, B)` | `(0,1,0,0)` | `(1,2,0,1)` | `(1,3,0,1)` | local repo -> `access="write"` |
+| `frontend_ui` | Implement, refactor, or style user-facing web/desktop UI views, CSS, charts, animations, and interactions | `(B, P, P, B)` | `(0,1,1,0)` | `(1,2,2,1)` | `(1,3,3,1)` | local repo -> `access="write"` |
+| `code_audit` | Independent read-only code, PR, diff, branch, security, or release review/audit (including saving a report file) | `(B, P, 0, 0)` | `(0,1,0,0)` | `(1,2,0,0)` | `(1,3,0,0)` | `access="read-only"`, `read_only_review=true` |
+| `exploration_forensics` | Read-only codebase mapping, log/DB/metric forensics, and runtime root-cause diagnosis without editing code | `(S, P, 0, B)` | `(0,1,0,0)` | `(1,2,0,1)` | `(2,3,0,1)` | `implies.local_only=true` |
+| `web_research` | Gather, verify, and synthesize public web, literature, documentation, or vendor sources | `(S, B, 0, B)` | `(0,0,0,0)` | `(1,1,0,1)` | `(2,1,0,1)` | — |
+| `visual_analysis` | Static offline inspection of images, photos, screenshots, or mockups (OCR, layout diff, fine-grained styling/material judgment) | `(B, B, P, 0)` | `(0,0,1,0)` | `(1,1,2,0)` | `(1,1,3,0)` | `needs_visual=true`, `needs_gui=false` |
+| `text_processing` | Rule-defined structured text cleaning, translation, formatting, mechanical extraction, and summarization | `(B, 0, B, 0)` | `(0,0,0,0)` | `(1,0,1,0)` | `(1,0,1,0)` | — |
+| `live_loop` | Low-latency observe-act loop attached to a live external text/WebSocket/API stream | `(0, S, 0, F2)` | `(0,0,0,2)` | `(0,1,0,2)` | `(0,2,0,2)` | evaluates `responsiveness` (`aa.ttfa`) |
+| `gui_control` | Operate a live desktop, browser, or mobile GUI via screenshots, mouse clicks, and keyboard actions | `(0, B, S, F3)` | `(0,0,0,3)` | `(0,1,1,3)` | `(0,1,2,3)` | `needs_gui=true`, `needs_visual=true` |
 
-Work that changes kind midway is two tasks: an analysis followed by a fix is `exploration_analysis`, then
-`debug_review`.
+## 2. Composite Tasks (`secondary_kind`)
 
-## Live Observe-Act Loops (`tool_operation` Demand Levels 2–3)
-
-- **`tool_operation = 2`**: Heavy tool or API orchestration, or the worker itself stays inside a running external system's observe-act loop across turns (an API order book, a CLI queue, a live text/chat feed) where slow per-turn latency (`responsiveness`) directly hurts the outcome.
-- **`tool_operation = 3`**: Must read images or screenshots inside the loop, or operate a desktop or browser GUI through screenshots (`responsiveness` and `image_recognition`, plus image-input modality).
-- **Counterexamples (`tool_operation <= 1`)**: Writing, fixing, or debugging a ticket/game/automation script or bot (the script runs the fast loop, not the model — this is `coding`); analyzing game/AFK/trading logs; fixing game automation code.
+Use `secondary_kind: "none"` (`secondary_level: 0`) for single-domain tasks (including reading files before coding, writing paired unit tests, or running git/pytest). Specify a distinct `secondary_kind` (`secondary_level: 1..3`) when one worker must deliver across two atomic domains in a single assignment:
+- `code_implementation` (`L3`) + `creative_ideation` (`L3`) -> `(3, 3, 1, 1)` (inventing a novel cross-domain mechanism and implementing it in code).
+- `code_implementation` (`L3`) + `frontend_ui` (`L1`) -> `(1, 3, 1, 1)` (coupled backend refactor plus a minor UI spacing tweak, without over-inflating `aesthetics` to `L3`).
+- `frontend_ui` (`L2`) + `gui_control` (`L2`) -> `(1, 2, 2, 3)` with `needs_gui = true, needs_visual = true` (implementing UI and clicking through a live browser to verify).
+- `visual_analysis` (`L3`) + `code_implementation` (`L2`) -> `(1, 2, 3, 1)` with `needs_visual = true` (fine-grained photo/styling classification plus writing a clustering analysis script).
