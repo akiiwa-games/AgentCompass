@@ -64,6 +64,14 @@ class WorkspaceBusy(ValueError):
         self.workspace, self.holders = workspace, holders
 
 
+class ResumedWorkerBusy(ValueError):
+    """The explicitly resumed worker already has an active dispatch."""
+
+    def __init__(self, agent_id):
+        super().__init__(f'Worker {agent_id} already has an active dispatch')
+        self.agent_id = agent_id
+
+
 def utcnow():
     return datetime.now(timezone.utc)
 
@@ -988,8 +996,11 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
                                     if (r.get('request') or {}).get('title')))
         profiles = [r['profile'] for r in reversed(history) if isinstance(r.get('profile'), dict)]
         read_only_review = bool(history and all(bool(r.get('read_only_review')) for r in history))
+        doc_cwd = doc.get('cwd') if isinstance(doc, dict) else None
+        worker_cwd = doc_cwd or latest.get('cwd') or (latest.get('request') or {}).get('cwd')
         candidates.append({
             'agent_id': agent_id,
+            'dispatch_id': latest.get('dispatch_id'),
             'bundle': bundle,
             'bundle_id': bundle_id,
             'chain_id': chain_id,
@@ -997,6 +1008,8 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
             'task_ids': task_ids,
             'brief_path': latest.get('brief_path'),
             'brief_paths': brief_paths,
+            'workspace': latest.get('workspace'),
+            'cwd': worker_cwd,
             'title': titles[0] if titles else '',
             'titles': titles,
             'profiles': profiles,
@@ -1117,7 +1130,8 @@ def writers_at(directory, caller=None, now=None, path=None):
 
 
 def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None, resume_agent_id=None, fallback_prompt=None,
-            access='write', new_worker=False, workspace=None, cwd=None, attempt=None):
+            access='write', new_worker=False, workspace=None, cwd=None, attempt=None, resume_bundle=None,
+            explicit_resume=False):
     """`attempt` ({attempt_of, attempt, previous_attempt}) prepares an automatic relaunch of a brief whose earlier
     attempt failed (dispatch_fallback): that chain's own rows do not block it, its own live rows still do."""
     require_parent_id(task.get('parent_agent_id'))
@@ -1141,7 +1155,15 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         decision = get(connection, 'decisions', decision_id)
         if not decision['bound'] or decision['task_hash'] != digest(task):
             raise ValueError('Decision is unbound or belongs to another task/parent/input')
-        request = launch_request(decision['bundle'], launch)
+        if isinstance(resume_bundle, dict):
+            bundle = dict(resume_bundle)
+            resolved_resume = resolve_bundle(bundle, accounts, False)
+            if resolved_resume:
+                bundle = {**bundle, **resolved_resume}
+            bundle.setdefault('bundle_id', bundle.get('id'))
+        else:
+            bundle = decision['bundle']
+        request = launch_request(bundle, launch)
         if cwd is None and request.get('cwd'):
             cwd = request['cwd']
         request_hash = bound_hash(request)
@@ -1173,12 +1195,11 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                 raise ValueError('This parent/task already has an active dispatch; reconcile it first')
             if old.get('agent_id'):
                 busy_agents.add(old['agent_id'])
-        bundle = decision['bundle']
         try:
             check_launch_quota(bundle, accounts, usage, now)
         except ValueError as exc:
             raise CapacityChanged(str(exc)) from exc
-        if decision.get('effort_override'):
+        if resume_bundle is None and decision.get('effort_override'):
             resolved = resolve_bundle(bundle, accounts, decision.get('constraint') == 'user_override')
             if resolved is None or any(resolved.get(k) != bundle.get(k)
                     for k in ('id', 'provider', 'account', 'model', 'effort', 'modeId', 'launch_model')):
@@ -1215,25 +1236,26 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             cw = alloc_task['chain'].get('worker')
             if not resume_agent_id or (isinstance(cw, dict) and cw.get('read_only_review') is False):
                 alloc_task.pop('chain', None)
-        if bundle.get('fast') and decision.get('constraint') == 'user_override':
+        if bundle.get('fast') and (decision.get('constraint') == 'user_override' or resume_bundle is not None):
             alloc_task['force_fast'] = True
         elif not bundle.get('fast'):
             alloc_task['disable_fast'] = True
-        if decision.get('constraint') == 'user_override':
+        if decision.get('constraint') == 'user_override' and resume_bundle is None:
             alloc_task['pinned_bundle'] = bundle['bundle_id']
         plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts)
         candidate = candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):
             raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
-        if decision.get('constraint') == 'user_override':
+        if decision.get('constraint') == 'user_override' or resume_bundle is not None:
             import provider_retry
-            # A named model on a held account or model is the probe that can lift the hold (provider_retry).
+            # A named model on a held account or model is the probe that can lift the hold (provider_retry);
+            # an explicit --resume continues the worker's own bundle regardless of ability/model-latch exclusions.
             exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint',
                                                                      provider_retry.EXCLUSION_PREFIX))]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
-        if exclusions or candidate.get('available_in_hours'):
+        if exclusions or (resume_bundle is None and candidate.get('available_in_hours')):
             raise CapacityChanged('Capacity/availability changed; replan: ' + '; '.join(exclusions or ['reset not yet observed']))
         if resume_agent_id is None and candidate.get('action') == 'resume':
             chain_worker = ((alloc_task.get('chain') or {}).get('worker')
@@ -1241,6 +1263,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             if isinstance(chain_worker.get('agent_id'), str) and chain_worker['agent_id'].strip():
                 resume_agent_id = chain_worker['agent_id'].strip()
         if resume_agent_id in busy_agents:
+            if explicit_resume:
+                raise ResumedWorkerBusy(resume_agent_id)
             resume_agent_id = None
         dispatch_id = str(uuid.uuid4())
         labels = {'router.decision_id': decision_id, 'router.dispatch_id': dispatch_id,
