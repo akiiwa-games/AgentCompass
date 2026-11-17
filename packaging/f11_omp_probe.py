@@ -129,18 +129,17 @@ if omp:
     # hide the bundle (host_policy.account_allowed).
     names = sorted(accounts.get("accounts") or {})
     omp_policy = {"allowed_accounts": names, "known_accounts": names}
-    task = {"objective": "Fix a bug in parser.py", "work_kind": "general_implementation", "expected_hours": 1,
+    task = {"objective": "Fix a bug in parser.py", "work_kind": "code_implementation", "expected_hours": 1,
             "profile": {
-                "reasoning_depth": 2,
-                "code_complexity": 2,
-                "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0},
-                "needs_visual": False,
-                "needs_gui": False,
+                "work_kind": "code_implementation",
+                "primary_level": 2,
+                "secondary_kind": "none",
+                "secondary_level": 0,
+                "access": "write",
                 "local_only": True,
+                "needs_visual": False,
                 "wants_fast": False,
-                "read_only_review": False,
-                "interaction_style": "engineering",
-                "multi_task": False,
+                "expected_hours": 1.0,
                 "task_count": "1",
             },
             "constraints": {"model": bundles[omp_id]["model"]}}

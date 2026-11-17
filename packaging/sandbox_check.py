@@ -195,11 +195,10 @@ class Fixture:
                 path = "/" + rest.split("?", 1)[0]
                 fixture.requests.append({"method": "POST", "host": host, "path": path, "authorization": self.headers.get("Authorization")})
                 if self.path.endswith("/chat/completions"):
-                    profile = {"work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
-                               "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0},
-                               "needs_visual": False, "needs_gui": False, "local_only": True, "wants_fast": False, "read_only_review": False, "expected_hours": 0.5,
-                               "hours_confidence": "medium", "urgency": "normal", "interaction_style": "engineering",
-                               "multi_task": False, "task_count": "1",
+                    profile = {"work_kind": "code_implementation", "primary_level": 2,
+                               "secondary_kind": "none", "secondary_level": 0,
+                               "access": "write", "local_only": True, "needs_visual": False, "wants_fast": False,
+                               "expected_hours": 0.5, "task_count": "1",
                                "reason": "sandbox fixture classification of a local util.py edit"}
                     return self._reply(200, {"choices": [{"message": {"content": json.dumps(profile)}}]})
                 return self._reply(404, {"error": "unknown fixture path"})
@@ -452,9 +451,11 @@ def scenario_clean_install(ctx):
     op.check("providers inventory exits 0 and sees both accounts", result.returncode == 0 and "codex" in result.stdout and "claude" in result.stdout, result.stderr)
     task = box.root / "task.json"
     task.write_text(json.dumps({"task": {
-        "objective": "Fix the pagination bug", "work_kind": "general_implementation", "expected_hours": 1,
+        "objective": "Fix the pagination bug", "work_kind": "code_implementation", "expected_hours": 1,
         "needs": {"local_only": True},
-        "profile": {"reasoning_depth": 3, "code_complexity": 2, "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False, "local_only": True, "wants_fast": False, "read_only_review": False, "interaction_style": "engineering", "multi_task": False, "task_count": "1",
+        "profile": {"work_kind": "code_implementation", "primary_level": 2, "secondary_kind": "none", "secondary_level": 0,
+                    "access": "write", "local_only": True, "needs_visual": False, "wants_fast": False,
+                    "expected_hours": 1.0, "task_count": "1",
                     "reason": "sandbox fixture"}}}), encoding="utf-8")
     result = box.run_command(op, [box.agentcompass, "plan", "--input", task, "--dry-run"], ROUTER_LEDGER=str(box.state / "ledger.jsonl"))
     plan = parse_json(result.stdout) or {}

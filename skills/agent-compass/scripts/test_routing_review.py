@@ -66,7 +66,7 @@ class CallerProfileEntryTests(RecordCase):
 
     def cli(self, profile, *extra):
         path = Path(self.root) / 'in.json'
-        path.write_text(json.dumps({'task': {'objective': 'x', 'work_kind': 'general_implementation', 'expected_hours': 1,
+        path.write_text(json.dumps({'task': {'objective': 'x', 'work_kind': 'code_implementation', 'expected_hours': 1,
                                              'needs': {'local_only': True}, 'profile': profile}}), encoding='utf-8')
         script = Path(route_judge.__file__)
         done = subprocess.run([sys.executable, '-X', 'utf8', '-B', str(script), 'plan', '--input', str(path), '--dry-run', *extra],

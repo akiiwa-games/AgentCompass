@@ -455,7 +455,7 @@ def classify_task(task, needs, capabilities, policy, timeout, use_model=True):
         alerts.append({
             'code': 'difficulty_above_profile', 'severity': 'info', 'account': None,
             'message': f"The caller's difficulty {task['difficulty']!r} is above the classifier profile's {derived!r} "
-                       f"(reasoning_depth {profile['reasoning_depth']}); the classifier's {derived!r} was used. "
+                       f"(primary_level {profile['primary_level']}); the classifier's {derived!r} was used. "
                        'Do not hand-fill difficulty or work_kind in task.json.'})
     if scorer.get('source') == 'system_one':
         if task.get('work_kind') or task.get('difficulty'):
@@ -481,8 +481,7 @@ def classify_task(task, needs, capabilities, policy, timeout, use_model=True):
     if task.get('hours_source') == 'classifier_estimate' and task.get('expected_hours') is None:
         if scorer.get('source') == 'system_one' and profile.get('expected_hours'):
             task['expected_hours'] = profile['expected_hours']
-            hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate',
-                              'confidence': profile.get('hours_confidence', 'unknown')}
+            hours_estimate = {'hours': profile['expected_hours'], 'source': 'classifier_estimate'}
     return profile, task, needs, scorer, hours_estimate, alerts
 
 
@@ -513,8 +512,7 @@ def classify_pinned(task, args):
         estimate = None
         if hours is None and task.get('hours_source') == 'classifier_estimate':
             given = task['profile'].get('expected_hours')
-            estimate = {'hours': given, 'source': 'caller_profile',
-                        'confidence': task['profile'].get('hours_confidence', 'unknown')} if given else None
+            estimate = {'hours': given, 'source': 'caller_profile'} if given else None
         return {'task': task, 'scorer': None, 'hours_estimate': estimate, 'alerts': []}
     if getattr(args, 'dry_run', False) and not getattr(args, 'score', False):
         # A preview launches and reserves nothing, so it needs no price: the pin is checked, the classifier is not called.
@@ -659,8 +657,7 @@ def plan_stage(document, args):
     _add_plan_alerts(planned, task, capabilities, dot_down)
     if task.get('hours_source') == 'classifier_estimate':
         planned['hours_estimate'] = hours_estimate or {
-            'hours': (planned.get('decision', {}).get('task') or {}).get('hours'), 'source': 'caller_profile',
-            'confidence': task['profile'].get('hours_confidence', 'unknown')}
+            'hours': (planned.get('decision', {}).get('task') or {}).get('hours'), 'source': 'caller_profile'}
     if scorer is not None:
         planned['scorer'], planned['task_profile'] = scorer, task['profile']
     planned['_allocation_task'] = task     # carries the profile, so the launch-time re-plan scores alike
@@ -842,7 +839,7 @@ def build_parser():
 
 def main():
     import account_fleet
-    if sys.argv[1:2] == ['score'] and len(sys.argv) >= 3 and sys.argv[2] in ('set', 'list', 'clear'):
+    if sys.argv[1:2] == ['score'] and len(sys.argv) >= 3 and sys.argv[2] in ('set', 'list', 'clear', 'suggest'):
         import user_scores
         return user_scores.cli_main(sys.argv[2:])
     parser = build_parser()

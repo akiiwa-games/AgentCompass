@@ -1,8 +1,8 @@
 # Effort and the decision ledger
 
 The router picks an effort by scoring each effort bundle like any other candidate: the fit of the model's four category scores
-(`divergence`, `coding`, `aesthetics`, `tool_operation`) at that effort to the task's demand, minus the quota economy's price for
-the spend at that effort. Effort is not a function of reasoning depth, and no gate or floor decides it.
+(`creativity`, `coding`, `aesthetics`, `tool_operation`) at that effort to the task's demand, minus the quota economy's price for
+the spend at that effort. Effort is not a function of task level, and no gate or floor decides it.
 
 ## Model side: per-effort scores and Time/Task
 

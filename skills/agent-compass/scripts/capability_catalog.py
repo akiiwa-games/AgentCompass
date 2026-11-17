@@ -55,7 +55,7 @@ def markdown(accounts, five=None, references=None):
         row = scored.get(name) or {}
         axes = row.get('axes') or {}
         cells = []
-        for axis in ('divergence', 'coding', 'aesthetics', 'tool_operation'):
+        for axis in ('creativity', 'coding', 'aesthetics', 'tool_operation'):
             cell = axes.get(axis) or {}
             status = cell.get('status')
             mark = ('u' if status in ('user', 'maintainer')

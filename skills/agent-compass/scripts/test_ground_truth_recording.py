@@ -262,7 +262,7 @@ class GroundTruthRecordingTests(unittest.TestCase):
             'task_id': 'gt-task-1',
             'parent_agent_id': 'parent-gt',
             'objective': 'Implement ground truth test fixture',
-            'work_kind': 'general_implementation',
+            'work_kind': 'code_implementation',
             'difficulty': 'hard',
             'expected_hours': 0.5,
         }
@@ -969,7 +969,7 @@ class GroundTruthRecordingTests(unittest.TestCase):
             'task_id': 'alloc-invariance',
             'objective': 'Implement feature module',
             'expected_hours': 0.8,
-            'profile': profile_for({'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 0.8}),
+            'profile': profile_for({'work_kind': 'code_implementation', 'difficulty': 'hard', 'expected_hours': 0.8}),
             'chain': {
                 'id': 'chain-1',
                 'coupling': 'medium',
@@ -1181,8 +1181,8 @@ class GroundTruthRecordingTests(unittest.TestCase):
         self._issue_and_claim(bundle, cwd=str(repo), task=writer_task, access='write')
 
         # Read-only review dispatch in the same `repo` via roll.paseo
-        ro_profile = profile_for({'work_kind': 'debug_review', 'difficulty': 'hard', 'expected_hours': 0.3})
-        ro_profile.update(code_complexity=0, read_only_review=True, access='read-only')
+        ro_profile = profile_for({'work_kind': 'code_audit', 'difficulty': 'hard', 'expected_hours': 0.3})
+        ro_profile.update(read_only_review=True, access='read-only')
         ro_task = {
             'task_id': 'ro-review-1',
             'parent_agent_id': 'parent-gt',

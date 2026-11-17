@@ -25,12 +25,11 @@ TASK = {
     'objective': 'Reply with exactly OK',
     'hours': 0.1,
     'profile': {
-        'work_kind': 'text_in_text_out', 'reasoning_depth': 1, 'code_complexity': 0,
+        'work_kind': 'text_processing', 'primary_level': 1, 'secondary_kind': 'none', 'secondary_level': 0,
         'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
         'read_only_review': False, 'access': 'read-only', 'expected_hours': 0.1,
-        'hours_confidence': 'high', 'urgency': 'normal', 'interaction_style': 'exploration',
         'multi_task': False, 'task_count': '1',
-        'axis_demand': {'divergence': 1, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0},
+        'axis_demand': {'creativity': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0},
     },
 }
 NOW = datetime(2026, 11, 11, tzinfo=timezone.utc)

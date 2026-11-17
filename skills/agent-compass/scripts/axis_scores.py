@@ -14,13 +14,14 @@ import account_fleet
 
 # --- Scoring: the four category scores and the quota economy (the only scoring) -----------------------------------------
 # Model data comes from references/five-axis-scores.json (calibration/five_axis.py, cited public sources only). The four
-# categories (user, 2026-11-11): divergence, coding, aesthetics, tool_operation. Every board is read as a panel standard
-# score: z = (x - x_anchor) / sd_panel, the anchor (Opus 5.5) at High is 0 and one unit is one panel standard deviation;
-# parallel boards of one facet are linked and averaged, the facets of a category combine by `min`, and a facet a model
-# lacks is estimated (same-series sibling, else the fit on the arena.ai Overall tier) and marked estimated.
-# - A task demands levels 0..3 on the four categories (the classifier's `axis_demand`, always produced) and nothing
-#   else scores or gates on quality: no scalar tier, no route preference or restriction lists, no harness quality
-#   factors, no difficulty floors, no free-usage bonus.
+# categories (user, 2026-11-11; unified 2026-11-17): creativity, coding, aesthetics, tool_operation. Every board is read as
+# a panel standard score: z = (x - x_anchor) / sd_panel, the anchor (Opus 5.5) at High is 0 and one unit is one panel
+# standard deviation; parallel boards of one facet are linked and averaged, the facets of a category combine by `min`, and a
+# facet a model lacks is estimated (same-series sibling, else the fit on the arena.ai Overall tier) and marked estimated.
+# - A task demands levels 0..3 on the four categories (`axis_demand`, projected deterministically in `task_intake` from the
+#   classifier's `work_kind`, `primary_level`, `secondary_kind`, and `secondary_level`) and nothing else scores or gates on
+#   quality: no scalar tier, no route preference or restriction lists, no harness quality factors, no difficulty floors, no
+#   free-usage bonus.
 # - Targets come from the panel (five-axis-scores.json `anchor.targets`): level 1 the panel's weakest, level 2 its median,
 #   level 3 the anchor. `aesthetics` and `tool_operation` ask per facet (`LEVEL_FACETS`): `aesthetics` asks `design` at
 #   level 1 and `min(design, image_recognition)` at levels 2 and 3 (sharing `tool_operation.image_recognition`);
@@ -44,59 +45,11 @@ import account_fleet
 #   price (FiveAxisEconomy), counted in hours of the window's reference model.
 FIVE_AXIS_FILE = account_fleet.REFERENCES / 'five-axis-scores.json'
 USER_SCORES_FILE = account_fleet.REFERENCES / 'user-scores.json'
-FIVE_AXES = ('divergence', 'coding', 'aesthetics', 'tool_operation')
+FIVE_AXES = ('creativity', 'coding', 'aesthetics', 'tool_operation')
 FIVE_AXIS_DEFAULTS = {
     # fit and continuity are both in panel standard deviations: one unit each, not a hand-set trade-off
     'weights': {'fit': 1.0, 'continuity': 1.0},
     'demanded_level': 1,         # rule B: a category demanded at this level or above must have data
-}
-# What each demand level 0..3 means per category: the one text both the schema of the JSON classifiers and the questions of
-# the question-API classifiers (Jev, Gemini Decision) are built from (user, 2026-11-11; MECE-cleaned 2026-11-17).
-FIVE_AXIS_DEMAND_LEVELS = {
-    'divergence': ('Divergent thinking: creative writing, brainstorming, open research or data-analysis synthesis, and '
-                   'first-principles problem decomposition outside an existing spec.', (
-        'execute an explicit spec, runbook, or mechanical checklist',
-        'routine engineering or inspection with small local judgment calls or wording choices',
-        'generate and compare multiple options or hypotheses, or investigate and synthesize a research, log, or '
-        'data-analysis question',
-        'open-ended creative writing, broad synthesis across many sources, or first-principles architecture/system '
-        'design from scratch')),
-    'coding': ('Software engineering and code rigor: reading, writing, reviewing, and changing code accurately, following '
-               'constraints strictly, and reporting honestly.', (
-        'no source code read, reviewed, or written',
-        'a small helper script, config/constant tweak, log-analysis snippet, or running an existing test/CLI check',
-        'implement, fix, refactor, or review/audit a production module with its tests',
-        'coupled multi-module architecture, concurrency/lock/protocol invariants, whole-system code audit, or '
-        'high-blast-radius irreversible changes')),
-    'aesthetics': ('Visual perception and design judgment: creating user-facing visuals AND inspecting/judging visual '
-                   'details in images, screenshots, UI, layout, color, styling, 2D/3D assets, or photography. Static '
-                   'image/screenshot inspection belongs here (with needs_visual=true), not in tool_operation.', (
-        'no visual output and no image or screenshot inspection',
-        'plain text, tables, or structured reports where only clean formatting matters, or coarse OCR/text extraction '
-        'from a simple screenshot',
-        'implement or style a user-facing UI, page, or chart whose look matters, or compare/audit screenshots and '
-        'mockups for layout, spacing, typography, and component state',
-        'design-led visual creation (new interface/interaction system, visual identity, 2D/3D scene) OR fine-grained '
-        'visual perception and aesthetic classification (judging outfit/garment/makeup styling, material/texture, '
-        'lighting, color cast, or subtle visual artifacts across images)')),
-    'tool_operation': ('Interactive tool-loop speed and live GUI control: per-turn responsiveness when orchestrating '
-                       'heavy tool/API loops or operating a live external system or GUI. Static offline reading of local '
-                       'images/files is tool_operation 0..1 (use needs_visual=true and aesthetics for visual judgment); '
-                       'writing software about real-time systems is coding, not a live loop.', (
-        'self-contained reasoning/writing, or reading/editing local files and running a few shell/test commands',
-        'routine CLI, git, web-search, API, or batch local file/image inspection calls without real-time latency pressure',
-        'heavy multi-step tool/API orchestration, or the worker itself stays in a live text/API observe-act loop '
-        '(live order book, ticket API polling, live chat stream) where slow turns degrade the outcome',
-        'operate a desktop, browser, or mobile GUI via screenshots/clicks/keys, or continuously watch and react to a '
-        'live changing visual screen inside a real-time loop')),
-}
-FIVE_AXIS_DEMAND_SCHEMA = {
-    'type': 'object', 'additionalProperties': False, 'required': list(FIVE_AXES),
-    'description': ('How much the task needs each capability category of the model, 0..3. Economy is not a task demand: '
-                    'the router prices it from cost and live quota.'),
-    'properties': {axis: {'type': 'integer', 'minimum': 0, 'maximum': 3,
-                          'description': intro + ' ' + '; '.join(f'{i} = {text}' for i, text in enumerate(levels)) + '.'}
-                   for axis, (intro, levels) in FIVE_AXIS_DEMAND_LEVELS.items()},
 }
 # Per-level facets (`calibration/five_axis.LEVEL_FACETS`): aesthetics L1 asks design, L2/L3 ask min(design, image_recognition);
 # tool_operation L1 imposes no ability requirement, L2 asks responsiveness, L3 asks min(responsiveness, image_recognition).
@@ -124,7 +77,7 @@ def load_five_axis(path=None, *, use_effective=True):
 
 
 def require_level3_ceilings(data):
-    """Fail fast on a five-axis-scores.json written before schema agent-compass.five-axis-scores/4: the fit reads `ceiling`
+    """Fail fast on a five-axis-scores.json written before schema agent-compass.five-axis-scores/5: the fit reads `ceiling`
     on every level-3 row that has a target (per facet for `aesthetics` and `tool_operation`), so an older file is named
     with what to run instead of failing later with a KeyError."""
     targets = (data.get('anchor') or {}).get('targets') or {}
@@ -142,7 +95,7 @@ def require_level3_ceilings(data):
     if missing:
         raise ValueError(
             f"five-axis-scores.json (schema {data.get('schema')!r}) has no level-3 ceiling for {', '.join(missing)}; this "
-            'code reads agent-compass.five-axis-scores/4. In an install run `agentcompass data --refresh` (or update '
+            'code reads agent-compass.five-axis-scores/5. In an install run `agentcompass data --refresh` (or update '
             'AgentCompass); in a checkout run `python -X utf8 agentcompass data refresh --no-fetch`.')
 
 

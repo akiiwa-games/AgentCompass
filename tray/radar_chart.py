@@ -31,7 +31,7 @@ def clamp(value, low=0.0, high=1.0) -> float:
 
 # (key, label, formula shown on hover)
 SCORE_AXES = (
-    ("divergence", "创意", "创意：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
+    ("creativity", "创意", "创意：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
     ("coding", "编码能力", "编码能力：本档位的标准分在面板最弱（0）到 anchor（1）之间的位置"),
     ("aesthetics", "审美能力", "审美能力：设计与读图中较弱者，在面板最弱（0）到三级目标（1）之间的位置"),
     ("tool_operation", "工具操作", "工具操作：响应速度与读图中较弱者，在面板最弱（0）到三级目标（1）之间的位置"),
@@ -40,7 +40,7 @@ SCORE_AXES = (
 SCORE_AXES = LocalizedSequence(SCORE_AXES)
 
 DNA_AXES = (
-    ("divergence", "创意", "创意：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
+    ("creativity", "创意", "创意：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
     ("coding", "编码能力", "编码能力：High 档标准分在面板最弱（0）到 anchor（1）之间的位置；带 ~ 表示含估算值"),
     ("aesthetics", "审美能力", "审美能力：High 档设计与读图中较弱者的位置；带 ~ 表示含估算值"),
     ("tool_operation", "工具操作", "工具操作：High 档响应速度与读图中较弱者的位置；带 ~ 表示含估算值"),
@@ -53,7 +53,7 @@ def axis_title(mode: str = "score") -> str:
     return tr("能力与额度五维", "Capabilities & Quota")
 
 
-ABILITY_AXES = ("divergence", "coding", "aesthetics", "tool_operation")
+ABILITY_AXES = ("creativity", "coding", "aesthetics", "tool_operation")
 
 
 def score_dimensions(components: dict) -> dict:

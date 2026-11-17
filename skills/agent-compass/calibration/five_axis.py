@@ -8,7 +8,7 @@ scores on the four categories and the quota economy together. Nothing else score
 
 | category | facet <- boards | combination |
 |---|---|---|
-| divergence | creative_writing <- lmarena.creative_writing | the facet |
+| creativity | creative_writing <- lmarena.creative_writing | the facet |
 | coding | execution <- arena.agent_code, aa.terminalbench_4, aa.frontiercode_2; faithfulness <- arena.agent_alignment | min |
 | aesthetics | design <- lmarena.webdev, designarena.website, designarena.3d, designarena.svg; image_recognition (shared) | per level |
 | tool_operation | responsiveness <- aa.ttfa (-ln seconds); image_recognition <- aa.mmmu_pro, lmarena.vision | per level |
@@ -91,7 +91,8 @@ OUT = sources.REPO / 'references' / 'five-axis-scores.json'
 PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # /3 (2026-11-13): every level-3 row carries `ceiling`, the anchor block `sd_panel` and `panel_change`.
 # /4 (2026-11-17): `aesthetics` evaluates per-level facets (`design` at L1; `min(design, image_recognition)` at L2/L3).
-SCHEMA = 'agent-compass.five-axis-scores/4'
+# /5 (2026-11-17): renames the creative category from `divergence` to `creativity`.
+SCHEMA = 'agent-compass.five-axis-scores/5'
 AXES = measurements.AXES
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
@@ -903,9 +904,9 @@ class Scorer:
 
     def targets(self, rows, panel):
         """{category: {'levels': {level: ...}, 'continuity'}} from the panel's values at High (module docstring): level 1
-        the panel's weakest, level 2 its median, level 3 the anchor; the fit's zero is the panel weakest. divergence, coding
-        and aesthetics read the category value. tool_operation reads its facets one by one (`by_facet`): each level asks
-        for the facets TOOL_LEVEL_FACETS selects, its level 1 for nothing, and a level never asks less of a facet than the
+        the panel's weakest, level 2 its median, level 3 the anchor; the fit's zero is the panel weakest. creativity and coding
+        read the category value. aesthetics and tool_operation read their facets one by one (`by_facet`): each level asks
+        for the facets LEVEL_FACETS selects, tool_operation level 1 for nothing, and a level never asks less of a facet than the
         level below it (the anchor's responsiveness at High, 0, is below the panel median, so level 3 asks max(level 2,
         anchor) of it). `continuity` is t3 - t2 (tool_operation: the largest positive t3 - t2 across its level-3 facets).
         Only measured High values enter (user 2026-11-12, `TARGET_STATUSES`): an own-curve interpolation lies between two

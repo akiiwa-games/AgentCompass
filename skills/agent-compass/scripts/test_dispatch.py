@@ -136,7 +136,7 @@ class DispatchTests(unittest.TestCase):
         discovered.start()
         self.addCleanup(discovered.stop)
         self.task = {'task_id': 'test-task', 'parent_agent_id': 'parent-a', 'objective': 'fixture work',
-                     'work_kind': 'exploration_analysis', 'difficulty': 'hard', 'expected_hours': 0.7,
+                     'work_kind': 'code_implementation', 'difficulty': 'hard', 'expected_hours': 0.7,
                      'needs': {'local_only': True, 'local_only_reason': 'requires local daemon state'}}
         self.task['profile'] = profile_for(self.task)    # the CLI subprocesses of these tests plan this task too
         self.usage = {'accounts': {'claude-lab': {'status': 'fresh', 'fetched_at': self.now.isoformat(), 'windows': [
@@ -585,12 +585,12 @@ class DispatchTests(unittest.TestCase):
         import roll
         for banned in ('_REVIEW_RE', '_AUTHORING_RE', 'is_review_title'):
             self.assertFalse(hasattr(roll, banned), f'{banned} must be removed from roll')
-        review_prof = {'work_kind': 'debug_review', 'code_complexity': 0, 'read_only_review': True}
-        fix_prof = {'work_kind': 'debug_review', 'code_complexity': 2, 'read_only_review': False}
+        review_prof = {'work_kind': 'code_audit', 'read_only_review': True, 'access': 'read-only'}
+        fix_prof = {'work_kind': 'code_implementation', 'read_only_review': False, 'access': 'write'}
         self.assertTrue(roll.is_readonly_review_profile(review_prof))
-        self.assertTrue(roll.is_readonly_review_profile({'work_kind': 'debug_review', 'code_complexity': 0}))
+        self.assertTrue(roll.is_readonly_review_profile({'work_kind': 'code_audit'}))
         self.assertFalse(roll.is_readonly_review_profile(fix_prof))
-        self.assertFalse(roll.is_readonly_review_profile({'work_kind': 'general_implementation', 'code_complexity': 0}))
+        self.assertFalse(roll.is_readonly_review_profile({'work_kind': 'code_implementation'}))
         implementer = {
             'agent_id': 'agent-fixer',
             'titles': ['Independent review of the s01 telegram change'],
@@ -1479,7 +1479,7 @@ class RollTests(unittest.TestCase):
             return {'ok': True, 'agent': self.snapshot({'request': request['request']}) if request['operation'] == 'create' else None}
         decision = dict(stage='plan', choice='lab_sonnet55_high', selected_bundle=self.bundle,
                         decision={'action': 'start'},
-                        hours_estimate={'hours': 0.4, 'source': 'classifier_estimate', 'confidence': 'medium'})
+                        hours_estimate={'hours': 0.4, 'source': 'classifier_estimate'})
         with patch.object(flow, 'host_call', host), patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
             (result, code), seen = self.roll(decision, brief=None, task='Rename foo to bar in util.py', hours=None, task_id=None)
         self.assertEqual(code, 0)
@@ -1488,7 +1488,7 @@ class RollTests(unittest.TestCase):
         self.assertEqual(set(result) - {'worker', 'reason'},
                          {'status', 'next_action', 'next_argv', 'assumptions', 'continuation', 'details'})
         self.assertIn('No completion notification is confirmed', result['next_action'])
-        self.assertIn('budgeted 0.4h from the classifier estimate, confidence medium', result['assumptions'][0])
+        self.assertIn('budgeted 0.4h from the classifier estimate;', result['assumptions'][0])
         self.assertEqual(seen['task']['objective'], 'Rename foo to bar in util.py')
         self.assertNotIn('expected_hours', seen['task'])
         self.assertEqual(seen['task']['hours_source'], 'classifier_estimate')
@@ -2066,7 +2066,7 @@ class RollTests(unittest.TestCase):
     def test_fast_mode_bundle_emits_paseo_fast_feature_and_doubles_expected_usd(self):
         # Claude fast mode is cited ($16/$80 against $8/$40, 2x): Opus 5.5 on a Max 20x plan, the fixture's bundle switched on.
         self.accounts['accounts']['claude-lab']['bundles']['lab_opus55_high']['disabled'] = False
-        task = {**self.task, 'task_id': 'task-normal-1', 'work_kind': 'general_implementation'}
+        task = {**self.task, 'task_id': 'task-normal-1', 'work_kind': 'code_implementation'}
         task['profile'] = profile_for(task)
         normal_task = {**task, 'pinned_bundle': 'lab_opus55_high', 'disable_fast': True}
         normal_plan = allocator.plan(normal_task, self.usage, self.now, accounts=self.accounts)
@@ -2102,7 +2102,7 @@ class RollTests(unittest.TestCase):
 
         def real_plan_stage(document, _):
             task = dict(document['task'])
-            task.setdefault('work_kind', 'exploration_analysis')
+            task.setdefault('work_kind', 'code_implementation')
             task.setdefault('difficulty', 'hard')
             planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts)
             res = dict(planned, stage='plan', _allocation_task=task)
@@ -2183,7 +2183,7 @@ class RollTests(unittest.TestCase):
 
         def real_plan_stage(document, _):
             task = dict(document['task'])
-            task.setdefault('work_kind', 'exploration_analysis')
+            task.setdefault('work_kind', 'code_implementation')
             task.setdefault('difficulty', 'hard')
             planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts)
             res = dict(planned, stage='plan', _allocation_task=task)
@@ -2247,7 +2247,7 @@ class RollTests(unittest.TestCase):
 
         def real_plan_stage(document, _):
             task = dict(document['task'])
-            task.setdefault('work_kind', 'exploration_analysis')
+            task.setdefault('work_kind', 'code_implementation')
             task.setdefault('difficulty', 'hard')
             planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts)
             res = dict(planned, stage='plan', _allocation_task=task)
@@ -2317,11 +2317,11 @@ class RollTests(unittest.TestCase):
 
         # m7: prepare() does not copy implementer chain_id onto a fresh read-only review worker
         review_task = dict(self.task, task_id='t-review', chain={'id': 'chain-impl-1', 'worker': {'agent_id': 'agent-impl', 'bundle': 'lab_sonnet55_high', 'read_only_review': False}}, profile={
-            'work_kind': 'debug_review', 'reasoning_depth': 2, 'code_complexity': 0, 
+            'work_kind': 'code_audit', 'primary_level': 2, 'secondary_kind': 'none', 'secondary_level': 0,
             'needs_visual': False, 'needs_gui': False,
-            'local_only': True, 'wants_fast': False, 'read_only_review': True,
-            'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-            'axis_demand': {'divergence': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0},
+            'local_only': True, 'wants_fast': False, 'read_only_review': True, 'access': 'read-only',
+            'multi_task': False, 'task_count': '1',
+            'axis_demand': {'creativity': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0},
             'reason': 'review'})
         review_dec = registry.issue({'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': self.bundle,
                                      'decision': {'action': 'start'}}, review_task, self.now)
@@ -2334,7 +2334,7 @@ class RollTests(unittest.TestCase):
         # M1 & m6: named-model review rejects explicit --resume of an implementer worker
         impl_worker = {'agent_id': 'agent-impl', 'task_ids': ['t-impl'], 'brief_paths': [],
                        'chain_id': 'chain-impl-1', 'session_state': {'context_tokens': 1000, 'compacted_tokens': 0},
-                       'profiles': [{'work_kind': 'general_implementation', 'code_complexity': 2, 'read_only_review': False}],
+                       'profiles': [{'work_kind': 'code_implementation', 'primary_level': 2, 'read_only_review': False}],
                        'read_only_review': False, 'bundle_id': 'lab_sonnet55_high',
                        'bundle': self.bundle}
         review_prof = dict(review_task['profile'])
@@ -2403,20 +2403,20 @@ class PinnedRollTests(unittest.TestCase):
 
     def test_a_pinned_roll_gets_the_classifier_hours_and_a_nonzero_reservation(self):
         import roll
-        classified_profile = dict(profile_for(self.task), expected_hours=0.7, hours_confidence='medium')
+        classified_profile = dict(profile_for(self.task), expected_hours=0.7)
         judge, patches = self.judged((classified_profile, {'source': 'system_one', 'model': 'fixture-scorer'}))
         task, args = self.unhoured(), self.args()
         with patches[0], patches[1], patches[2] as scorer:
             classified = judge.classify_pinned(task, args)
             decision = judge.record_constraint(args, task, classified)
         scorer.assert_called_once()                       # the classifier ran although the model was named
-        self.assertEqual(decision['hours_estimate'], {'hours': 0.7, 'source': 'classifier_estimate', 'confidence': 'medium'})
+        self.assertEqual(decision['hours_estimate'], {'hours': 0.7, 'source': 'classifier_estimate'})
         self.assertEqual(decision['task_profile']['expected_hours'], 0.7)
         self.assertFalse(decision['classifier_skipped'])
         self.assertEqual(decision['selected_bundle']['bundle_id'], 'lab_sonnet55_high')
         self.assertGreater(decision['expected_usd'], 0)    # priced like any other launch
         self.assertEqual(roll.hours_assumption(args, decision),
-                         '--hours not given: budgeted 0.7h from the classifier estimate, confidence medium; an estimate, '
+                         '--hours not given: budgeted 0.7h from the classifier estimate; an estimate, '
                          'not a measurement. Pass --hours for a large or unusually small task.')
         self.assertEqual(registry.reservations(self.now), [])
         row = registry.prepare(decision['decision_id'], task, self.launch, self.usage, accounts=self.accounts, now=self.now)
@@ -3258,7 +3258,7 @@ class RollLifecycleTests(unittest.TestCase):
 
     def decision(self):
         return {'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': self.bundle,
-                'decision': {'action': 'start'}, 'task_profile': {'interaction_style': 'engineering'}}
+                'decision': {'action': 'start'}, 'task_profile': {'work_kind': 'code_implementation'}}
 
     def fresh_decision(self):
         decision = self.decision()
@@ -3280,20 +3280,20 @@ class RollLifecycleTests(unittest.TestCase):
             (result, _), _ = self.roll(self.fresh_decision(), reachable=True, **flags)
         return result
 
-    def test_no_interaction_style_exempts_a_brief_from_the_writer_rule(self):
-        # text_only on a real ledger entry was a brief that committed code and synced it.
+    def test_no_work_kind_without_read_only_access_exempts_a_brief_from_the_writer_rule(self):
+        # A brief without access='read-only' or read_only_review=True is treated as a writer regardless of work_kind.
         ws = self.ws_dir('W')
         first = self.go(workspace=ws)
-        for style in ('exploration', 'text_only', 'advisory'):
-            with self.subTest(style=style), patch.object(self, 'decision', lambda: {
-                    **RollLifecycleTests.decision(self), 'task_profile': {'interaction_style': style}}):
+        for kind in ('exploration_forensics', 'text_processing', 'architecture_reasoning'):
+            with self.subTest(kind=kind), patch.object(self, 'decision', lambda k=kind: {
+                    **RollLifecycleTests.decision(self), 'task_profile': {'work_kind': k}}):
                 result = self.go(workspace=ws, new_worker=True)
                 self.assertEqual(result['status'], 'blocked')
                 self.assertEqual(result['blocked_by'][0]['dispatch_id'], first['worker']['dispatch_id'])
         self.assertEqual(len(self.creates), 1)
         # Classifier access='read-only' or read_only_review=True exempts the brief as read_only unless --access write overrides it.
-        for ro_profile in ({'interaction_style': 'exploration', 'access': 'read-only'},
-                           {'interaction_style': 'engineering', 'read_only_review': True}):
+        for ro_profile in ({'work_kind': 'exploration_forensics', 'access': 'read-only'},
+                           {'work_kind': 'code_audit', 'read_only_review': True}):
             with self.subTest(profile=ro_profile), patch.object(self, 'decision', lambda: {
                     **RollLifecycleTests.decision(self), 'task_profile': ro_profile}):
                 ro_result = self.go(workspace=ws, new_worker=True)
@@ -4071,7 +4071,7 @@ class LiveModelCheckTests(unittest.TestCase):
         self.setUp_dispatch()
         self.accounts['accounts']['antigravity']['plan'] = 'pro'     # a plan with a cited community capacity
         for bid, bundle in self.accounts['accounts']['antigravity']['bundles'].items():
-            bundle['disabled'] = bundle.get('disabled', False) or bid.startswith('agy_opus')    # Argon is the divergence pick under test
+            bundle['disabled'] = bundle.get('disabled', False) or bid.startswith('agy_opus')    # Argon is the creativity pick under test
         self.live_store = self.root / live_models.FILE
         self.retry_store = self.root / provider_retry.FILE
         self.latch_store = self.root / 'model-unavailable.json'
@@ -4107,13 +4107,13 @@ class LiveModelCheckTests(unittest.TestCase):
         self.creative_task = {
             'id': 'creative-task',
             'task_id': 'creative-task',
-            'work_kind': 'exploration_analysis',
-            'difficulty': 'hard',
+            'work_kind': 'creative_ideation',
+            'difficulty': 'frontier',
             'expected_hours': 0.5,
             'needs': {'local_only': True},
-            'profile': profile(work_kind='exploration_analysis', interaction_style='exploration', code_complexity=0,
+            'profile': profile(work_kind='creative_ideation', primary_level=3,
                                access='read-only', local_only=True, expected_hours=0.5,
-                               axis_demand={'divergence': 3, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0}),
+                               axis_demand={'creativity': 3, 'coding': 0, 'aesthetics': 0, 'tool_operation': 0}),
         }
         self.live_providers = {
             'antigravity-resilient': {
@@ -4207,7 +4207,7 @@ class LiveModelCheckTests(unittest.TestCase):
 
     def test_a_bundle_missing_from_the_live_list_is_excluded_with_reason_and_the_next_one_launches_in_the_same_roll(self):
         import live_models
-        # Without live filtering (when gemini-4-argon-high IS offered), argon_high wins a divergence-heavy task.
+        # Without live filtering (when gemini-4-argon-high IS offered), argon_high wins a creativity-heavy task.
         full_providers = copy.deepcopy(self.live_providers)
         full_providers['antigravity-resilient']['models'].append({'id': 'gemini-4-argon-high'})
         with patch.object(live_models, 'fetch_from_paseo', side_effect=lambda provs, **kw: {
@@ -4429,7 +4429,7 @@ class ContinuationRollTests(unittest.TestCase):
 
         def real_plan_stage(document, _):
             task = dict(document['task'])
-            task.setdefault('work_kind', 'exploration_analysis')
+            task.setdefault('work_kind', 'code_implementation')
             task.setdefault('difficulty', 'hard')
             planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts)
             if force_bundle:

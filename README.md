@@ -55,7 +55,7 @@ agentcompass roll --task "<what the worker should do>"
 | Scenario (illustrative) | How `agentcompass roll` routes it |
 | :-- | :-- |
 | *"Design layout and motion for the showcase page"* | High **aesthetics** demand → selects a visually strong frontier route (e.g., `Opus 5.5 xhigh`). |
-| *"Propose improvements to the retry pipeline, read-only"* | High **creativity** (`divergence`) + read-only scope → dispatches an analytical advisor (e.g., `Argon high`) without modifying files. |
+| *"Propose novel cross-domain mechanisms for the retry pipeline, read-only"* | High **creativity** (`creative_ideation`) + read-only scope → dispatches an ideation worker or advisor (e.g., `Argon high`) without modifying files. |
 | *"Add `--timeout` to a Python CLI and run local `pytest`"* (`--demo`) | Routine **coding** + `local_only` → excludes remote `Dot` and `Astra xhigh` (~85% of a weekly window), selecting target-meeting `Sol medium` (~6% spend). |
 | *Claude is ahead of pace this week; Gemini resets in 2 hours* | Per-window **quota recovery line** → holds back the over-pace Claude window and spends Gemini's under-line surplus first at `0` quota cost (right-hand animation above). |
 

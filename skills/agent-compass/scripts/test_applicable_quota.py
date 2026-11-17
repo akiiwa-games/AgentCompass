@@ -31,7 +31,7 @@ class ApplicableQuotaTests(unittest.TestCase):
         self.bundle={**account_fleet.bundles(self.accounts)['sol_high'],'bundle_id':'sol_high'}
         self.task={'task_id':'quota-contract','parent_agent_id':'parent-a',
                    'objective':'Implement the independent scoped helper change',
-                   'work_kind':'general_implementation','difficulty':'hard','expected_hours':0.2,
+                   'work_kind':'code_implementation','difficulty':'hard','expected_hours':0.2,
                    'needs':{'local_only':True,'local_only_reason':'fixture code'}}
 
     def usage(self, remaining=0, **window):

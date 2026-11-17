@@ -16,7 +16,7 @@ class SeriesTests(unittest.TestCase):
     ACC = {'models': {m: {} for m in ('gpt-6-luna', 'gpt-5.6-luna', 'gpt-6-astra', 'dot', 'claude-opus-5-5')},
            'aliases': {}, 'families': {'rows': []},
            'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}},
-           'same_model': {'dot': {'model': 'gpt-6-astra', 'carries': ['divergence'], 'url': 'https://example.test/dot'}}}
+           'same_model': {'dot': {'model': 'gpt-6-astra', 'carries': ['creativity'], 'url': 'https://example.test/dot'}}}
 
     def test_same_model_returns_only_the_declarations_that_are_objects(self):
         self.assertEqual(set(series.same_model(self.ACC)), {'dot'})
@@ -36,8 +36,8 @@ class SeriesTests(unittest.TestCase):
         self.assertNotIn('not-a-row', series.groups(acc)['dot'])
 
     def test_boards_keep_the_first_numeric_reading_per_source_on_the_component_dimensions(self):
-        meas = {'axes': {'divergence': {}, 'coding': {}},
-                'models': {'m': {'divergence': [{'source': 'a.x', 'value': 0.5}, {'source': 'a.x', 'value': 0.9},
+        meas = {'axes': {'creativity': {}, 'coding': {}},
+                'models': {'m': {'creativity': [{'source': 'a.x', 'value': 0.5}, {'source': 'a.x', 'value': 0.9},
                                                 {'source': 'a.bad', 'value': True}, {'source': 'a.str', 'value': 'high'}],
                                  'coding': [{'source': 'b.y', 'value': 0.3}],
                                  'other_field': [{'source': 'c.z', 'value': 1.0}]},

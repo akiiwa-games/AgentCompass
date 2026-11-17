@@ -67,9 +67,10 @@ BANNED_CLASSIFICATION_SYMBOLS = frozenset({
     # Category 6.1: Fast mode keyword list & helper
     'FAST_REQUEST_WORDS',
     'infer_fast_preference',
-    # Category 6.2: Divergent keyword list & helper
+    # Category 6.2: Creative/divergent keyword list & helper
     'DIVERGENT_WORDS',
     'infer_divergence',
+    'infer_creativity',
     # Category 6.3: Multi-task heading regex & helper
     'MULTI_TASK_MARK_RE',
     'multi_task_marks',
@@ -327,18 +328,26 @@ TASK_TEXT_CORPUS = (
 
 
 def iter_production_python_files(root: Path = REPO_ROOT) -> list[Path]:
+    import subprocess
+    candidates: list[Path] = []
+    if (root / '.git').exists():
+        proc = subprocess.run(
+            ['git', 'ls-files', '--cached', '--others', '--exclude-standard', '--', *PRODUCTION_DIRS],
+            cwd=root, capture_output=True, text=True, check=True,
+        )
+        candidates = [root / line for line in proc.stdout.splitlines() if line.endswith('.py') and (root / line).is_file()]
+    else:
+        for rel_dir in PRODUCTION_DIRS:
+            folder = root / rel_dir
+            if folder.exists():
+                candidates.extend(sorted(folder.rglob('*.py')))
     files = []
-    for rel_dir in PRODUCTION_DIRS:
-        folder = root / rel_dir
-        if not folder.exists():
+    for path in sorted(candidates):
+        if path.name.startswith('test_') or path.name in NON_PRODUCTION_FILES:
             continue
-        for path in sorted(folder.rglob('*.py')):
-            if path.name.startswith('test_') or path.name in NON_PRODUCTION_FILES:
-                continue
-            # packaging/.staged is an ignored copy left by the last local build, not this tree's source.
-            if any(part.startswith('.') for part in path.relative_to(root).parts):
-                continue
-            files.append(path)
+        if any(part.startswith('.') for part in path.relative_to(root).parts):
+            continue
+        files.append(path)
     return files
 
 
@@ -868,7 +877,7 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
         r_src = (REPO_ROOT / r_rel).read_text(encoding='utf-8-sig').replace('\r\n', '\n')
         s_src = (REPO_ROOT / s_rel).read_text(encoding='utf-8-sig').replace('\r\n', '\n')
 
-        anchor_mod = "GENERIC_CALLER_KINDS = (None, 'general_implementation', 'tool_execution', 'debug_review', 'other_or_mixed')\n"
+        anchor_mod = "GENERIC_CALLER_KINDS = (None, 'code_implementation', 'other_or_mixed')\n"
         anchor_fast = "    if _flag_present(needs, 'read_only_review'):\n"
 
         def patch_src(base, old, new):
@@ -942,7 +951,7 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
             ),
             'M12_route_phrases_lookup': mut_a(
                 '',
-                "any(p in (task.get('objective') or '') for p in (capabilities['routes'].get('general_implementation') or {}).get('phrases', ('hurry up',)))",
+                "any(p in (task.get('objective') or '') for p in (capabilities['routes'].get('code_implementation') or {}).get('phrases', ('hurry up',)))",
             ),
             'M13_banned_symbol_in_setup': (
                 s_rel,
@@ -997,7 +1006,7 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
         a_src = (REPO_ROOT / a_rel).read_text(encoding='utf-8-sig').replace('\r\n', '\n')
         r_src = (REPO_ROOT / r_rel).read_text(encoding='utf-8-sig').replace('\r\n', '\n')
 
-        anchor_mod = "GENERIC_CALLER_KINDS = (None, 'general_implementation', 'tool_execution', 'debug_review', 'other_or_mixed')\n"
+        anchor_mod = "GENERIC_CALLER_KINDS = (None, 'code_implementation', 'other_or_mixed')\n"
         anchor_fast = "    if _flag_present(needs, 'read_only_review'):\n"
 
         def patch_src(base, old, new):
@@ -1177,21 +1186,19 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                                  for name, row in self.usage['accounts'].items()}}
 
     def make_profile(self, **overrides):
-        access = {'access': 'read-only'} if overrides.get('read_only_review') else {}
-        return task_intake.validate_profile(profile(**{'local_only': True, 'hours_confidence': 'high', 'urgency': 'unknown',
-                                                     **access, **overrides}))
+        access = {'access': 'read-only'} if overrides.get('read_only_review') or overrides.get('work_kind') in ('code_audit', 'architecture_reasoning', 'web_research') else {}
+        return task_intake.validate_profile(profile(**{'local_only': True, **access, **overrides}))
 
     def test_allocator_plan_is_invariant_across_task_text_corpus(self):
         profiles = [
-            self.make_profile(work_kind='general_implementation', reasoning_depth=2, code_complexity=2),
-            self.make_profile(work_kind='debug_review', reasoning_depth=2, code_complexity=0, read_only_review=True, interaction_style='exploration'),
-            self.make_profile(work_kind='debug_review', reasoning_depth=2, code_complexity=2, wants_fast=True),
-            self.make_profile(work_kind='web_research', reasoning_depth=2, code_complexity=0, local_only=False, interaction_style='exploration'),
-            self.make_profile(work_kind='computer_use', reasoning_depth=1, code_complexity=0,
+            self.make_profile(work_kind='code_implementation', primary_level=2),
+            self.make_profile(work_kind='code_audit', primary_level=2, read_only_review=True),
+            self.make_profile(work_kind='code_implementation', primary_level=2, wants_fast=True),
+            self.make_profile(work_kind='web_research', primary_level=2, local_only=False),
+            self.make_profile(work_kind='gui_control', primary_level=1,
                               needs_visual=True, needs_gui=True,
-                              axis_demand={'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3}),
-            self.make_profile(work_kind='direction_reasoning', reasoning_depth=4, code_complexity=0,
-                              local_only=False, interaction_style='advisory'),
+                              axis_demand={'creativity': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3}),
+            self.make_profile(work_kind='architecture_reasoning', primary_level=3, local_only=False),
         ]
         for prof in profiles:
             baseline_norm = None
@@ -1224,7 +1231,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                     self.assertEqual(scores, baseline_scores, f'candidate ranking changed for text={text!r}')
 
     def test_plan_stage_is_invariant_across_task_text_corpus(self):
-        prof = self.make_profile(work_kind='general_implementation', reasoning_depth=2, code_complexity=2, local_only=True)
+        prof = self.make_profile(work_kind='code_implementation', primary_level=2, local_only=True)
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory) / 'usage.json'
             cache.write_text(json.dumps(self.cache), encoding='utf-8')
@@ -1265,7 +1272,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                     self.assertEqual(sig, baseline, f'plan_stage output changed for text={text!r}')
 
     def test_roll_run_is_invariant_across_task_text_corpus(self):
-        prof = self.make_profile(work_kind='general_implementation', reasoning_depth=2, code_complexity=2, local_only=True)
+        prof = self.make_profile(work_kind='code_implementation', primary_level=2, local_only=True)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             cache = root / 'usage.json'
@@ -1317,7 +1324,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                     self.assertEqual(sig, baseline, f'roll.run decision changed for text={text!r}')
 
     def test_local_only_reason_text_never_overrides_explicit_local_only_flag(self):
-        prof = self.make_profile(work_kind='self_contained_code', local_only=False)
+        prof = self.make_profile(work_kind='code_implementation', local_only=False)
         for reason in ('', 'in-place edits of workspace files', 'modify local files', 'needs local pytest and sqlite'):
             with tempfile.TemporaryDirectory() as directory:
                 cache = Path(directory) / 'usage.json'
@@ -1341,8 +1348,8 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                 self.assertNotIn('local_only_ignored_without_reason', codes)
 
     def test_independent_reviewer_gate_depends_on_profile_not_title_keywords(self):
-        review_prof = self.make_profile(work_kind='debug_review', code_complexity=0, read_only_review=True, interaction_style='exploration')
-        author_prof = self.make_profile(work_kind='debug_review', code_complexity=2, read_only_review=False)
+        review_prof = self.make_profile(work_kind='code_audit', read_only_review=True)
+        author_prof = self.make_profile(work_kind='code_implementation', read_only_review=False)
         for title in TASK_TEXT_CORPUS:
             workers = [
                 {'agent_id': 'w-author', 'titles': [title], 'profiles': [author_prof], 'read_only_review': False},
@@ -1415,7 +1422,7 @@ class PhrasingInvarianceAndBlockedFallbackTests(unittest.TestCase):
                 if isinstance(node, ast.Constant) and isinstance(node.value, str) and 1 <= len(node.value) <= 120:
                     strings.add(node.value)
         corpus = ['neutral task text', ' '.join(sorted(strings)), *sorted(strings)]
-        prof = self.make_profile(work_kind='general_implementation', reasoning_depth=2, code_complexity=2)
+        prof = self.make_profile(work_kind='code_implementation', primary_level=2)
 
         def snap_norm(text):
             task = {

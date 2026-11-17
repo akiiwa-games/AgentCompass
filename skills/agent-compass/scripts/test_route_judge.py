@@ -96,7 +96,8 @@ class RoutingTests(unittest.TestCase):
         return json.loads(out.getvalue()), probe
 
     def test_a_multi_task_brief_returns_to_the_parent_unless_kept_whole(self):
-        profile = dict(GUI_PROFILE, needs_gui=False, needs_visual=False, local_only=False, multi_task=True, task_count='3')
+        profile = dict(GUI_PROFILE, work_kind='architecture_reasoning', needs_gui=False, needs_visual=False,
+                       local_only=False, multi_task=True, task_count='3')
         task = {'objective': 'Phase 1: collect references, compare engines, design the loop', 'auto_score': True,
                 'profile': profile}
         with tempfile.TemporaryDirectory() as directory:
@@ -114,18 +115,21 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual({k: v for k, v in task_intake.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count='>3')).items()
                           if k in ('multi_task', 'task_count')}, {'multi_task': True, 'task_count': '>3'})
         self.assertEqual(task_intake.validate_profile(dict(GUI_PROFILE, multi_task=True, task_count=5))['task_count'], '>3')
+        self.assertEqual(
+            task_intake.validate_profile({k: v for k, v in dict(GUI_PROFILE, task_count='2').items() if k != 'multi_task'})['multi_task'],
+            True,
+        )
         for bad in (
             dict(GUI_PROFILE, multi_task='yes', task_count='5'),
             dict(GUI_PROFILE, multi_task='yes', task_count='2'),
             dict(GUI_PROFILE, multi_task=True, task_count='5'),
             dict(GUI_PROFILE, multi_task=False, task_count='2'),
             dict(GUI_PROFILE, multi_task=True, task_count='1'),
-            {k: v for k, v in GUI_PROFILE.items() if k != 'multi_task'},
             {k: v for k, v in GUI_PROFILE.items() if k != 'task_count'},
         ):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 task_intake.validate_profile(bad)
-        for missing_flag in ('wants_fast', 'read_only_review'):
+        for missing_flag in ('wants_fast', 'local_only', 'needs_visual', 'access'):
             with self.subTest(missing_flag=missing_flag), self.assertRaises(task_intake.InvalidCallerProfile):
                 task_intake.validate_caller_profile({k: v for k, v in GUI_PROFILE.items() if k != missing_flag})
         self.assertFalse(hasattr(task_intake, 'multi_task_marks'))
@@ -235,7 +239,7 @@ class RoutingTests(unittest.TestCase):
             delegate = subscription_judge.build_request('delegate', {'task': {'objective': 'Review'}})
             select = subscription_judge.build_request('select', {'task': {'objective': 'Review'}, 'candidates': {'reviewer': candidate}})
         self.assertEqual(subscription_judge.validate_response(select, {'choice': 'reviewer', 'reason': 'Fits'}, subscription_judge.JUDGES['codex'])['selected_bundle'], candidate)
-        good = {'choice': 'self', 'specialty': 'debug_review', 'reason': 'Parent can review directly'}
+        good = {'choice': 'self', 'specialty': 'code_audit', 'reason': 'Parent can review directly'}
         self.assertEqual(subscription_judge.validate_response(delegate, good, subscription_judge.JUDGES['codex'])['choice'], 'self')
         for bad in ({**good, 'choice': 'invented'}, {**good, 'specialty': 'invented'},
                     {**good, 'reason': ''}, {**good, 'reason': True}, {'choice': 'self'}):
@@ -309,7 +313,7 @@ class RoutingTests(unittest.TestCase):
                 patch.object(decision_ledger, 'ledger_path', return_value=Path(directory) / 'ledger.jsonl'), \
                 patch.object(account_fleet, 'load_accounts', return_value=accounts):
             out = decision_ledger.finalize(res, {'stage': 'select'}, 'codex', time.monotonic(),
-                                  {'objective': 'Advise', 'work_kind': 'direction_reasoning'}, history)
+                                  {'objective': 'Advise', 'work_kind': 'architecture_reasoning'}, history)
             self.assertEqual({a['code'] for a in out['alerts']},
                              {'advisor_cadence', 'pinned_judge_account_low', 'telemetry_missing'})
             args = router.argparse.Namespace(basis='User: Sol xhigh', provider='codex', account='codex',
@@ -407,7 +411,7 @@ class RoutingTests(unittest.TestCase):
             for label, needs, down, dot, probed, alert in cases:
                 with self.subTest(case=label):
                     result, probe = self.run_plan(directory, {'objective': 'Fix single-file parser bug',
-                        'work_kind': 'debug_review', 'difficulty': 'hard', 'needs': needs}, down)
+                        'work_kind': 'code_implementation', 'difficulty': 'hard', 'needs': needs}, down)
                     self.assertEqual(dot_admitted(result), dot)
                     self.assertNotEqual(result['choice'], 'none')
                     self.assertEqual(probe.called, probed)
@@ -416,15 +420,14 @@ class RoutingTests(unittest.TestCase):
                         self.assertIn(alert, codes)
                     self.assertNotIn('local_only_ignored_without_reason', codes)
             ssh, _ = self.run_plan(directory, {'objective': 'Read-only checklist over SSH and the repository',
-                'work_kind': 'tool_execution', 'difficulty': 'hard', 'needs': {'local_only': True}})
+                'work_kind': 'live_loop', 'difficulty': 'hard', 'needs': {'local_only': True}})
             self.assertNotIn(ssh['choice'], ('dot_text', 'none'))
-            unknown, _ = self.run_plan(directory, {'objective': 'Compute', 'work_kind': 'research_compute', 'difficulty': 'hard',
-                                                   'profile': profile(work_kind='other_or_mixed')})
+            unknown, _ = self.run_plan(directory, {'objective': 'Compute', 'work_kind': 'research_compute', 'difficulty': 'hard'})
             self.assertIn('unknown_work_kind', {a['code'] for a in unknown['alerts']})
 
     def test_recent_dot_reroll_requires_local_evidence_or_failed_health(self):
         capabilities = reference_capabilities()
-        task = {'task_id': 't-dot-1', 'objective': 'Fix single-file parser bug', 'work_kind': 'debug_review', 'difficulty': 'hard'}
+        task = {'task_id': 't-dot-1', 'objective': 'Fix single-file parser bug', 'work_kind': 'code_implementation', 'difficulty': 'hard'}
         recent = {'at': datetime.now(timezone.utc).isoformat(), 'stage': 'plan',
                   'choice': 'dot_text', 'task_id': 't-dot-1', 'request_hash': decision_ledger.task_request_hash(task)}
         for local_only, down, enabled, dot, blocked in (
@@ -472,10 +475,21 @@ def as_agy_stream(stdout):
     return json.dumps({'event': 'init'}) + chr(10) + json.dumps({'event': 'result', 'result': envelope}) + chr(10)
 
 
-GUI_PROFILE = {'reasoning_depth': 1, 'code_complexity': 0, 'needs_visual': True, 'needs_gui': True, 'local_only': True,
-               'wants_fast': False, 'read_only_review': False, 'multi_task': False, 'task_count': '1',
-               'interaction_style': 'engineering',
-               'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3}}
+GUI_PROFILE = {
+    'work_kind': 'gui_control',
+    'primary_level': 1,
+    'secondary_kind': 'none',
+    'secondary_level': 0,
+    'local_only': True,
+    'needs_visual': True,
+    'wants_fast': False,
+    'needs_gui': True,
+    'read_only_review': False,
+    'access': 'write',
+    'task_count': '1',
+    'multi_task': False,
+    'axis_demand': {'creativity': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 3},
+}
 
 
 class ReadinessGapTests(unittest.TestCase):
@@ -518,7 +532,7 @@ class ReadinessGapTests(unittest.TestCase):
         inventory = {'accounts': {'antigravity': {'family': 'antigravity', 'status': 'ready'}}, 'launchers': {}}
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'in.json'
-            source.write_text(json.dumps({'task': {'objective': 'x', 'expected_hours': 0.5, 'work_kind': 'general_implementation',
+            source.write_text(json.dumps({'task': {'objective': 'x', 'expected_hours': 0.5, 'work_kind': 'code_implementation',
                                                    'difficulty': 'routine', 'profile': profile()}}), encoding='utf-8')
             out = io.StringIO()
             missing = str(Path(directory) / '.usage-float' / 'usage-cache.json')
@@ -745,7 +759,7 @@ class SystemOneScorerTests(unittest.TestCase):
         return code, json.loads(out.getvalue()), calls
 
     def test_scorer_invocation_response_parsing_and_fallback(self):
-        task = {'objective': 'Click Save and take a screenshot', 'work_kind': 'computer_use', 'chain': {'id': 'x'}}
+        task = {'objective': 'Click Save and take a screenshot', 'work_kind': 'gui_control', 'chain': {'id': 'x'}}
         profile, meta, calls = self.score(task)
         self.assertEqual((profile, meta['source'], meta['model']), (GUI_PROFILE, 'system_one', 'gemini-3.8-flash-low'))
         cmd = calls[0]['command']
@@ -759,14 +773,16 @@ class SystemOneScorerTests(unittest.TestCase):
         self.assertIn('calibration_cases', prompt)
         cases = scorer_client.load_classifier_cases()
         self.assertTrue(cases['calibration_cases'])
-        # The anti-inflation rubric (boilerplate paths, read-only review, runbooks, diagnosis) reaches the scorer
+        # The anti-inflation & boundary rubrics reach the scorer
         self.assertIn('dimension_rubric', prompt)
-        self.assertIn('read_only_review', cases['dimension_rubric'])
+        self.assertIn('access_and_local_only', cases['dimension_rubric'])
+        self.assertIn('creativity_vs_architecture', cases['dimension_rubric'])
         for c in cases['calibration_cases']:
-            self.assertEqual(task_intake.validate_profile(c['expected_profile']), c['expected_profile'])
+            validated = task_intake.validate_profile(c['expected_profile'])
+            self.assertEqual({k: validated[k] for k in c['expected_profile']}, c['expected_profile'])
             self.assertIn(c['expected_profile']['work_kind'], self.capabilities['routes'])
-        reviews = [c['expected_profile'] for c in cases['calibration_cases'] if c.get('id') == 'security_diff_review']
-        self.assertTrue(reviews and all(p['code_complexity'] == 0 and p['read_only_review'] for p in reviews))
+        reviews = [c['expected_profile'] for c in cases['calibration_cases'] if c['expected_profile']['work_kind'] == 'code_audit']
+        self.assertTrue(reviews and all(p['access'] == 'read-only' for p in reviews))
 
         # Fallback from response text when structured_output is omitted
         response = '```json\n{"task": "x"}\n```\n' + json.dumps(dict(GUI_PROFILE, toolAction='Finishing')) + '\n'
@@ -774,8 +790,8 @@ class SystemOneScorerTests(unittest.TestCase):
         self.assertEqual((p2, m2['source']), (GUI_PROFILE, 'system_one'))
 
         # No mechanical fallback on errors or skipped model call: returns scorer_unavailable so parent session chooses
-        bug_task = {'objective': 'Fix a parser bug', 'work_kind': 'debug_review'}
-        for reason, stdout in (('ValueError', self.envelope(dict(GUI_PROFILE, reasoning_depth=7))),
+        bug_task = {'objective': 'Fix a parser bug', 'work_kind': 'code_implementation'}
+        for reason, stdout in (('ValueError', self.envelope(dict(GUI_PROFILE, primary_level=7))),
                                ('RuntimeError', self.envelope(GUI_PROFILE, status='ERROR')),
                                ('ValueError', 'not json')):
             prof, meta, _ = self.score(bug_task, stdout)
@@ -784,8 +800,8 @@ class SystemOneScorerTests(unittest.TestCase):
         self.assertEqual((prof_skipped, meta['source'], meta['fallback_reason'], calls), (None, 'scorer_unavailable', 'model_call_skipped', []))
 
     def test_legacy_or_corrupted_score_cache_is_treated_as_cache_miss(self):
-        old_entry = {k: v for k, v in GUI_PROFILE.items() if k not in ('wants_fast', 'read_only_review')}
-        contradictory_entry = dict(GUI_PROFILE, code_complexity=2, read_only_review=True)
+        old_entry = {k: v for k, v in GUI_PROFILE.items() if k not in ('wants_fast', 'access')}
+        contradictory_entry = dict(GUI_PROFILE, work_kind='code_audit', access='write')
         config = {'scorer_type': 'agy_flash_low', 'fallback_to_agy': False}
         _, order = scorer_client.scorer_attempt_order(config)
         for bad_cached in (old_entry, contradictory_entry):
@@ -810,7 +826,7 @@ class SystemOneScorerTests(unittest.TestCase):
             self.assertEqual((code, len(calls), res['stage'], res['task_profile']), (0, 1, 'score', GUI_PROFILE))
             self.assertFalse((Path(directory) / 'ledger.jsonl').exists())
 
-            gui_task = {'objective': 'Click Save in local app', 'work_kind': 'computer_use',
+            gui_task = {'objective': 'Click Save in local app', 'work_kind': 'gui_control',
                         'needs': {'local_only': True, 'local_only_reason': 'operates local screen'}}
             code, planned, _ = self.run_cli(directory, 'plan', gui_task, '--score')
             self.assertEqual((code, planned['scorer']['source'], planned['decision']['task']['difficulty']), (0, 'system_one', 'routine'))
@@ -819,19 +835,19 @@ class SystemOneScorerTests(unittest.TestCase):
             bare_gui = {'objective': 'Click Save in local app',
                         'needs': {'local_only': True, 'local_only_reason': 'operates local screen'}}
             code, auto_planned, auto_calls = self.run_cli(
-                directory, 'plan', bare_gui, stdout=self.envelope(dict(GUI_PROFILE, work_kind='computer_use')))
+                directory, 'plan', bare_gui, stdout=self.envelope(dict(GUI_PROFILE, work_kind='gui_control')))
             self.assertEqual((code, len(auto_calls), auto_planned['scorer']['source'],
                               auto_planned['decision']['task']['kind'], auto_planned['decision']['task']['difficulty']),
-                             (0, 1, 'system_one', 'computer_use', 'routine'))
+                             (0, 1, 'system_one', 'gui_control', 'routine'))
 
             # Inflated caller difficulty / manual work_kind is overridden by the System-One classifier
             _, inflated, _ = self.run_cli(
-                directory, 'plan', {'objective': 'Click Save', 'work_kind': 'complex_build_plan', 'difficulty': 'coupled'})
+                directory, 'plan', {'objective': 'Click Save', 'work_kind': 'architecture_reasoning', 'difficulty': 'coupled'})
             alert_codes = [a['code'] for a in inflated['alerts']]
             self.assertIn('difficulty_above_profile', alert_codes)
             self.assertIn('caller_classification_ignored', alert_codes)
             self.assertEqual((inflated['decision']['task']['kind'], inflated['decision']['task']['difficulty']),
-                             ('computer_use', 'routine'))
+                             ('gui_control', 'routine'))
 
             # Missing or non-positive expected_hours is refused on plan unless --hours is passed
             for bad in ({'objective': 'Click Save'}, {'objective': 'Click Save', 'expected_hours': 0},
@@ -848,15 +864,16 @@ class SystemOneScorerTests(unittest.TestCase):
             self.assertEqual((code_flag, res_flag['decision']['task']['hours']), (0, 0.5))
 
     def test_hours_come_from_the_same_classification_and_explicit_hours_win(self):
-        base = dict(GUI_PROFILE, work_kind='general_implementation', needs_visual=False, needs_gui=False, local_only=False)
-        estimate = dict(base, expected_hours=3.0, hours_confidence='medium', urgency='unknown')
+        base = {k: v for k, v in dict(GUI_PROFILE, work_kind='code_implementation',
+                                      needs_visual=False, needs_gui=False, local_only=False).items()
+                if k != 'axis_demand'}
+        estimate = dict(base, expected_hours=3.0)
         task = {'objective': 'Implement the parser module with tests', 'hours_source': 'classifier_estimate', 'expected_hours': None}
         with tempfile.TemporaryDirectory() as directory:
             code, result, calls = self.run_cli(directory, 'plan', task, stdout=self.envelope(estimate))
-            self.assertEqual((code, len(calls)), (0, 1))  # one scorer call carries class, hours and urgency
-            self.assertEqual(result['hours_estimate'], {'hours': 3.0, 'source': 'classifier_estimate', 'confidence': 'medium'})
+            self.assertEqual((code, len(calls)), (0, 1))  # one scorer call carries class and hours
+            self.assertEqual(result['hours_estimate'], {'hours': 3.0, 'source': 'classifier_estimate'})
             self.assertEqual(result['decision']['task']['hours'], 3.0)
-            self.assertEqual(result['task_profile']['urgency'], 'unknown')
             code, unestimated, _ = self.run_cli(directory, 'plan', task, stdout=self.envelope(base))
             # No default stands in for an hours estimate the classifier did not give.
             self.assertEqual(code, 1)
@@ -865,16 +882,16 @@ class SystemOneScorerTests(unittest.TestCase):
                                           stdout=self.envelope(estimate))
             self.assertNotIn('hours_estimate', explicit)
             self.assertEqual(explicit['decision']['task']['hours'], 0.25)
-        for bad in ({'expected_hours': 'x'}, {'urgency': 'now'}, {'hours_confidence': 'sure'}, {'expected_hours': True}):
+        for bad in ({'expected_hours': 'x'}, {'expected_hours': True}):
             with self.assertRaises(ValueError):
                 task_intake.validate_profile(dict(base, **bad))
         self.assertEqual(task_intake.validate_profile(dict(base, expected_hours=999))['expected_hours'], 24.0)
         self.assertNotIn('expected_hours', task_intake.validate_profile(base))
 
     def test_profile_local_only_is_trusted_and_caller_values_win(self):
-        profile = dict(GUI_PROFILE, work_kind='general_implementation', needs_visual=False,
-                       needs_gui=False, code_complexity=2, reasoning_depth=2,
-                       axis_demand={'divergence': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0})
+        profile = dict(GUI_PROFILE, work_kind='code_implementation', needs_visual=False,
+                       needs_gui=False, primary_level=2,
+                       axis_demand={'creativity': 1, 'coding': 2, 'aesthetics': 0, 'tool_operation': 1})
         with tempfile.TemporaryDirectory() as directory:
             unavail_code, unavail_res, _ = self.run_cli(directory, 'plan', {'objective': 'Explore local logs'}, stdout='not json')
             self.assertEqual((unavail_code, unavail_res['choice'], unavail_res['error'], unavail_res['caller_action']),
@@ -919,30 +936,38 @@ class SystemOneScorerTests(unittest.TestCase):
 JEV_RESPONSE = {
     'model': 'jev-2026-10-01',
     'answers': {
-        'work_kind': {'type': 'choice', 'choice': 'computer_use', 'confidence': 0.8,
-                      'probabilities': {'computer_use': 0.85, 'tool_execution': 0.15}},
-        'interaction_style': {'type': 'choice', 'choice': 'engineering', 'confidence': 0.7,
-                              'probabilities': {'engineering': 0.8, 'exploration': 0.2}},
-        'reasoning_depth': {'type': 'score', 'score': 1.4, 'confidence': 0.5, 'probabilities': {'0': 0.2, '1': 0.3, '2': 0.4, '3': 0.1}},
-        'code_complexity': {'type': 'score', 'score': 0.2, 'confidence': 0.8, 'probabilities': {'0': 0.85, '1': 0.1, '2': 0.05, '3': 0.0}},
-        'demand_divergence': {'type': 'score', 'score': 0.1, 'confidence': 0.7, 'probabilities': {'0': 0.9, '1': 0.1, '2': 0.0, '3': 0.0}},
-        'demand_coding': {'type': 'score', 'score': 1.2, 'confidence': 0.6, 'probabilities': {'0': 0.1, '1': 0.7, '2': 0.2, '3': 0.0}},
-        'demand_aesthetics': {'type': 'score', 'score': 0.3, 'confidence': 0.8, 'probabilities': {'0': 0.8, '1': 0.2, '2': 0.0, '3': 0.0}},
-        'demand_tool_operation': {'type': 'score', 'score': 2.8, 'confidence': 0.8, 'probabilities': {'0': 0.0, '1': 0.0, '2': 0.2, '3': 0.8}},
-        'needs_visual': {'type': 'noul', 'noul': 0.1},
-        'needs_gui': {'type': 'noul', 'noul': 0.8},
+        'work_kind': {'type': 'choice', 'choice': 'gui_control', 'confidence': 0.8,
+                      'probabilities': {'gui_control': 0.85, 'live_loop': 0.15}},
+        'primary_level': {'type': 'score', 'score': 1.4, 'confidence': 0.5,
+                          'probabilities': {'0': 0.2, '1': 0.4, '2': 0.4}},
+        'secondary_kind': {'type': 'choice', 'choice': 'none', 'confidence': 0.9,
+                           'probabilities': {'none': 0.9, 'live_loop': 0.1}},
+        'secondary_level': {'type': 'score', 'score': 0.1, 'confidence': 0.9,
+                            'probabilities': {'0': 0.9, '1': 0.1, '2': 0.0, '3': 0.0}},
+        'access': {'type': 'choice', 'choice': 'write', 'confidence': 0.8,
+                   'probabilities': {'write': 0.8, 'read-only': 0.2}},
         'local_only': {'type': 'noul', 'noul': 0.7},
+        'needs_visual': {'type': 'noul', 'noul': 0.1},
         'wants_fast': {'type': 'noul', 'noul': 0.05},
-        'read_only_review': {'type': 'noul', 'noul': 0.05},
-        'multi_task': {'type': 'noul', 'noul': 0.1},
         'task_count': {'type': 'choice', 'choice': '1'},
     },
     'usage': {'input_tokens': 900, 'output_tokens': 40},
 }
-JEV_PROFILE = {'work_kind': 'computer_use', 'interaction_style': 'engineering', 'multi_task': False, 'task_count': '1',
-               'reasoning_depth': 2, 'code_complexity': 0,
-               'needs_visual': True, 'needs_gui': True, 'local_only': True, 'wants_fast': False, 'read_only_review': False,
-               'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 3}}
+JEV_PROFILE = {
+    'work_kind': 'gui_control',
+    'primary_level': 2,
+    'secondary_kind': 'none',
+    'secondary_level': 0,
+    'local_only': True,
+    'needs_visual': True,
+    'wants_fast': False,
+    'needs_gui': True,
+    'read_only_review': False,
+    'access': 'write',
+    'task_count': '1',
+    'multi_task': False,
+    'axis_demand': {'creativity': 0, 'coding': 1, 'aesthetics': 1, 'tool_operation': 3},
+}
 SECRET = 'test-key-0000000000000000'
 # The same answers in the Gemini Decisions API's documented shape (https://aistudio.google.com/docs/decisions-api):
 # a type and confidence per answer, a legend on score answers, input-token usage, and no model name.
@@ -967,7 +992,7 @@ class SelectableScorerTests(unittest.TestCase):
         no_user_env = patch.object(env_vars, 'user_env', return_value=None)
         no_user_env.start()
         self.addCleanup(no_user_env.stop)
-        self.task = {'objective': 'Click Save in the local app and take a screenshot', 'work_kind': 'tool_execution',
+        self.task = {'objective': 'Click Save in the local app and take a screenshot', 'work_kind': 'live_loop',
                      'chain': {'id': 'x'}}
 
     def score(self, config, post=None, run=None, prefix=('agy.exe',), cli=('cli.exe',)):
@@ -1035,9 +1060,10 @@ class SelectableScorerTests(unittest.TestCase):
         request = scorer_client.build_jev_request({'objective': objective}, self.capabilities)
         self.assertEqual(request['state']['task'], {'objective': objective})
         questions = request['questions']
-        self.assertEqual((questions['multi_task']['type'], questions['task_count']['type']), ('noul', 'choice'))
+        self.assertNotIn('multi_task', questions)
+        self.assertEqual(questions['task_count']['type'], 'choice')
         self.assertEqual(list(questions['task_count']['criteria']), ['1', '2', '3', '>3'])
-        answers = {**JEV_RESPONSE['answers'], 'multi_task': {'noul': 0.91}, 'task_count': {'choice': '2'}}
+        answers = {**JEV_RESPONSE['answers'], 'task_count': {'choice': '2'}}
         profile = scorer_client.parse_profile_answers({'answers': answers})
         self.assertEqual((profile['multi_task'], profile['task_count']), (True, '2'))
 
@@ -1045,22 +1071,22 @@ class SelectableScorerTests(unittest.TestCase):
         request = scorer_client.build_jev_request(self.task, self.capabilities)
         self.assertEqual((request['model'], set(request['state'])), ('jev-latest', {'task', 'rubric_notes'}))
         self.assertEqual(request['state']['task'], {'objective': self.task['objective']})
-        self.assertIn('read_only_review', request['state']['rubric_notes'])
+        self.assertIn('access_and_local_only', request['state']['rubric_notes'])
         questions = request['questions']
-        self.assertEqual(set(questions), {'work_kind', 'interaction_style', 'reasoning_depth', 'code_complexity', 'needs_visual',
-                                          'needs_gui', 'local_only', 'wants_fast', 'read_only_review', 'access',
-                                          'effort_band', 'urgency', 'multi_task', 'task_count',
-                                          'demand_divergence', 'demand_coding', 'demand_aesthetics', 'demand_tool_operation'})
+        self.assertEqual(set(questions), {'work_kind', 'primary_level', 'secondary_kind', 'secondary_level',
+                                          'access', 'local_only', 'needs_visual', 'wants_fast',
+                                          'effort_band', 'task_count'})
         routes = set(self.capabilities['routes']) - {'other_or_mixed'}
         self.assertEqual((questions['work_kind']['type'], set(questions['work_kind']['criteria'])), ('choice', routes))
         self.assertTrue(all(isinstance(v, str) and v for v in questions['work_kind']['criteria'].values()))
-        self.assertEqual(set(questions['interaction_style']['criteria']), set(task_intake.INTERACTION_STYLES))
+        self.assertEqual((questions['secondary_kind']['type'], set(questions['secondary_kind']['criteria'])),
+                         ('choice', {'none'} | routes))
         self.assertEqual((questions['access']['type'], set(questions['access']['criteria'])), ('choice', {'read-only', 'write'}))
         for name, (low, high) in task_intake.PROFILE_INTEGERS.items():
             q = questions[name]
             self.assertEqual((q['type'], len(q['criteria']), isinstance(q['criteria'], list)), ('score', high - low + 1, True), name)
             self.assertLessEqual(len(q['criteria']), 10)
-        for name in ('needs_visual', 'needs_gui', 'local_only', 'wants_fast', 'read_only_review'):
+        for name in ('needs_visual', 'local_only', 'wants_fast'):
             self.assertEqual(questions[name]['type'], 'noul')
             self.assertNotIn('criteria', questions[name])
 
@@ -1068,48 +1094,56 @@ class SelectableScorerTests(unittest.TestCase):
         profile = scorer_client.parse_profile_answers(JEV_RESPONSE)
         self.assertEqual(profile, JEV_PROFILE)
         self.assertEqual(task_intake.validate_profile(profile), profile)
-        # Scores clamp into range; a bare value answer is accepted; noul below 0.5 is false and needs_gui implies visual only when true
-        answers = {k: dict(v) for k, v in JEV_RESPONSE['answers'].items()}
-        answers['reasoning_depth']['score'] = 9
-        answers['code_complexity']['score'] = 2.6
-        answers['needs_gui'] = {'type': 'noul', 'noul': 0.49}
+        # Scores clamp into range; single-domain vs composite secondary_kind reconciles cleanly; gui_control implies needs_gui/visual
+        answers = {k: (dict(v) if isinstance(v, dict) else v) for k, v in JEV_RESPONSE['answers'].items()}
+        answers['primary_level']['score'] = 9
+        answers['secondary_kind'] = {'choice': 'live_loop'}
+        answers['secondary_level'] = {'score': 1.8}
+        answers['needs_visual'] = {'type': 'noul', 'noul': 0.49}
         answers['local_only'] = 0.5
-        answers['work_kind'] = 'debug_review'
+        answers['work_kind'] = 'code_implementation'
         answers['access'] = {'choice': 'write'}
         p2 = scorer_client.parse_profile_answers({'answers': answers})
-        self.assertEqual((p2['reasoning_depth'], p2['code_complexity'], p2['needs_gui'], p2['needs_visual'], p2['local_only'],
-                          p2['work_kind'], p2['access']),
-                         (4, 3, False, False, True, 'debug_review', 'write'))
+        self.assertEqual((p2['primary_level'], p2['secondary_kind'], p2['secondary_level'],
+                          p2['needs_gui'], p2['needs_visual'], p2['local_only'], p2['work_kind'], p2['access']),
+                         (3, 'live_loop', 2, False, False, True, 'code_implementation', 'write'))
+        self.assertEqual(p2['axis_demand'], {'creativity': 1, 'coding': 3, 'aesthetics': 0, 'tool_operation': 2})
         self.assertNotIn('reason', p2)
+        # Same secondary_kind as work_kind or secondary_level=0 on composite reconciles deterministically
+        same_sec = scorer_client.parse_profile_answers(
+            {'answers': {**answers, 'secondary_kind': {'choice': 'code_implementation'}, 'secondary_level': {'score': 2.0}}})
+        self.assertEqual((same_sec['secondary_kind'], same_sec['secondary_level']), ('none', 0))
+        zero_sec = scorer_client.parse_profile_answers(
+            {'answers': {**answers, 'secondary_kind': {'choice': 'live_loop'}, 'secondary_level': {'score': 0.0}}})
+        self.assertEqual((zero_sec['secondary_kind'], zero_sec['secondary_level']), ('live_loop', 1))
         for broken in ({'answers': {**answers, 'work_kind': {'choice': 'make_coffee'}}},
-                       {'answers': {**answers, 'interaction_style': {'choice': 'vibes'}}},
+                       {'answers': {**answers, 'secondary_kind': {'choice': 'vibes'}}},
                        {'answers': {**answers, 'access': {'choice': 'sudo'}}},
-                       {'answers': {**answers, 'access': {'choice': 'read-only'}, 'code_complexity': {'score': 2.0}}},
-                       {'answers': {k: v for k, v in answers.items() if k != 'demand_coding'}},
-                       {'answers': {k: v for k, v in answers.items() if k != 'demand_tool_operation'}},
+                       {'answers': {**answers, 'work_kind': 'code_implementation', 'local_only': 0.9, 'access': {'choice': 'read-only'}}},
+                       {'answers': {**answers, 'work_kind': 'code_audit', 'access': {'choice': 'write'}}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'primary_level'}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'secondary_kind'}},
                        {'answers': {k: v for k, v in answers.items() if k != 'wants_fast'}},
-                       {'answers': {k: v for k, v in answers.items() if k != 'read_only_review'}},
-                       {'answers': {**answers, 'read_only_review': {'noul': 0.9}, 'code_complexity': {'score': 2.0}}},
-                       {'answers': {**answers, 'demand_divergence': {'score': float('nan')}}},
+                       {'answers': {k: v for k, v in answers.items() if k != 'access'}},
+                       {'answers': {**answers, 'primary_level': {'score': float('nan')}}},
                        {'error': 'x'}):
             with self.assertRaises(ValueError):
                 scorer_client.parse_profile_answers(broken)
         for bad_prof in (
             {k: v for k, v in GUI_PROFILE.items() if k != 'wants_fast'},
-            {k: v for k, v in GUI_PROFILE.items() if k != 'read_only_review'},
-            {**GUI_PROFILE, 'read_only_review': True, 'code_complexity': 1},
+            {k: v for k, v in GUI_PROFILE.items() if k != 'access'},
+            {**GUI_PROFILE, 'work_kind': 'code_audit', 'read_only_review': True, 'access': 'write'},
         ):
             with self.assertRaises(ValueError):
                 task_intake.validate_profile(bad_prof)
 
-    def test_jev_answers_effort_band_and_urgency_in_the_same_request(self):
-        answers = {**JEV_RESPONSE['answers'], 'effort_band': {'choice': 'multi_file'}, 'urgency': {'choice': 'high'}}
+    def test_jev_answers_effort_band_in_the_same_request(self):
+        answers = {**JEV_RESPONSE['answers'], 'effort_band': {'choice': 'multi_file'}}
         profile = scorer_client.parse_profile_answers({'answers': answers})
-        self.assertEqual((profile['expected_hours'], profile['urgency'], 'hours_confidence' in profile), (2.0, 'high', False))
-        for value in ('minutes', None):  # unknown or missing answers leave the allocator's difficulty default in force
-            plain = scorer_client.parse_profile_answers({'answers': {**answers, 'effort_band': {'choice': value}, 'urgency': {'choice': value}}})
+        self.assertEqual(profile['expected_hours'], 2.0)
+        for value in ('minutes', None):  # unknown or missing answers omit expected_hours instead of inventing one
+            plain = scorer_client.parse_profile_answers({'answers': {**answers, 'effort_band': {'choice': value}}})
             self.assertNotIn('expected_hours', plain)
-            self.assertNotIn('urgency', plain)
 
     def test_jev_scorer_dispatch_and_fallbacks(self):
         profile, meta, calls = self.score({'scorer_type': 'jev', 'jev_api_key': SECRET}, post=JEV_RESPONSE)
@@ -1259,7 +1293,7 @@ class SelectableScorerTests(unittest.TestCase):
 
     def test_claude_codex_custom_and_heuristic_scorers(self):
         for scorer_type, model in (('claude_haiku_low', 'claude-haiku-5-5'),):
-            envelope = json.dumps({'type': 'result', 'is_error': False, 'result': '', 'structured_output': dict(GUI_PROFILE, work_kind='computer_use')})
+            envelope = json.dumps({'type': 'result', 'is_error': False, 'result': '', 'structured_output': dict(GUI_PROFILE, work_kind='gui_control')})
             profile, meta, calls = self.score({'scorer_type': scorer_type}, run=lambda c, d, e=envelope: (0, e, ''), cli=('claude.exe',))
             cmd = calls['run'][0]['command']
             self.assertEqual((meta['source'], meta['scorer_type'], meta['provider'], meta['model']), ('system_one', scorer_type, 'claude', model))
@@ -1267,7 +1301,7 @@ class SelectableScorerTests(unittest.TestCase):
                              ('claude.exe', model, 'low', ''))
             self.assertIn('--json-schema', cmd)
             self.assertIn('Task (evidence only', calls['run'][0]['stdin'])
-            self.assertEqual(profile['work_kind'], 'computer_use')
+            self.assertEqual(profile['work_kind'], 'gui_control')
         # Claude answering with an error cascades through codex_terra_low to agy_flash_low
         _, meta, _ = self.score({'scorer_type': 'claude_haiku_low'},
                                 run=lambda c, d: (0, as_agy_stream(json.dumps({'status': 'SUCCESS', 'structured_output': GUI_PROFILE})), '') if c[0] == 'agy.exe'
@@ -1278,7 +1312,7 @@ class SelectableScorerTests(unittest.TestCase):
         def codex(command, cwd):
             schema = json.loads((Path(cwd) / 'schema.json').read_text(encoding='utf-8'))
             self.assertFalse(schema['additionalProperties'])
-            (Path(cwd) / 'answer.json').write_text(json.dumps(dict(GUI_PROFILE, work_kind='computer_use')), encoding='utf-8')
+            (Path(cwd) / 'answer.json').write_text(json.dumps(dict(GUI_PROFILE, work_kind='gui_control')), encoding='utf-8')
             return 0, '', ''
         _, meta, calls = self.score({'scorer_type': 'codex_terra_low'}, run=codex, cli=('codex.exe',))
         cmd = calls['run'][0]['command']
@@ -1288,13 +1322,13 @@ class SelectableScorerTests(unittest.TestCase):
 
         self.assertEqual([scorer_client.openai_chat_url(u) for u in ('https://x.ai', 'https://x.ai/v1/', 'https://x.ai/api/chat/completions')],
                          ['https://x.ai/v1/chat/completions', 'https://x.ai/v1/chat/completions', 'https://x.ai/api/chat/completions'])
-        content = 'Here you go:\n' + json.dumps(dict(GUI_PROFILE, work_kind='computer_use'))
+        content = 'Here you go:\n' + json.dumps(dict(GUI_PROFILE, work_kind='gui_control'))
         reply = {'choices': [{'message': {'role': 'assistant', 'content': content}}]}
         custom = {'scorer_type': 'openai_compatible', 'api_key': 'sk-custom', 'base_url': 'https://llm.example.com/v1', 'model': 'qwen3-4b'}
         profile, meta, calls = self.score(custom, post=reply)
         body = calls['post'][0]['body']
         self.assertEqual((meta['scorer_type'], meta['provider'], meta['model'], profile['work_kind']),
-                         ('openai_compatible', 'openai_compatible', 'qwen3-4b', 'computer_use'))
+                         ('openai_compatible', 'openai_compatible', 'qwen3-4b', 'gui_control'))
         self.assertEqual((calls['post'][0]['url'], calls['post'][0]['key'], body['model'], body['response_format']),
                          ('https://llm.example.com/v1/chat/completions', 'sk-custom', 'qwen3-4b', {'type': 'json_object'}))
         self.assertTrue(body['messages'][0]['content'].startswith(scorer_client.SCORER_PROMPT))
@@ -1354,7 +1388,7 @@ class ScorerAccountTests(unittest.TestCase):
                                              'ROUTER_SCORE_CACHE': 'off'})
         env.start()
         self.addCleanup(env.stop)
-        self.task = {'objective': 'Click Save in the local app and take a screenshot', 'work_kind': 'tool_execution'}
+        self.task = {'objective': 'Click Save in the local app and take a screenshot', 'work_kind': 'live_loop'}
         real = patch.object(scorer_client, 'scorer_accounts', side_effect=_real_scorer_accounts)
         real.start()
         self.addCleanup(real.stop)
@@ -1423,14 +1457,14 @@ class ScorerAccountTests(unittest.TestCase):
 
         rubric_het = {
             'calibration_cases': [
-                {'id': 'a', 'objective': 'o1', 'expected_profile': {'work_kind': 'general_implementation', 'reasoning_depth': 2}},
-                {'id': 'b', 'objective': 'o2', 'expected_profile': {'work_kind': 'computer_use', 'reasoning_depth': 1, 'needs_gui': True}},
+                {'id': 'a', 'objective': 'o1', 'expected_profile': {'work_kind': 'code_implementation', 'primary_level': 2}},
+                {'id': 'b', 'objective': 'o2', 'expected_profile': {'work_kind': 'gui_control', 'primary_level': 1, 'needs_visual': True}},
             ]
         }
         compact = scorer_client._compact_rubric_for_prompt(rubric_het)
-        self.assertEqual(compact['calibration_columns'][2], ['work_kind', 'reasoning_depth', 'needs_gui'])
-        self.assertEqual(compact['calibration_cases'][0][2], ['general_implementation', 2, None])
-        self.assertEqual(compact['calibration_cases'][1][2], ['computer_use', 1, True])
+        self.assertEqual(compact['calibration_columns'][2], ['work_kind', 'primary_level', 'needs_visual'])
+        self.assertEqual(compact['calibration_cases'][0][2], ['code_implementation', 2, None])
+        self.assertEqual(compact['calibration_cases'][1][2], ['gui_control', 1, True])
 
         capabilities = reference_capabilities()
         schema = scorer_client.scorer_schema(capabilities)
@@ -1451,7 +1485,7 @@ class ScorerAccountTests(unittest.TestCase):
         # Nothing of the prompt rides the command line: it is the same size whether the rubric holds 1 or 1000 cases.
         small = scorer_client.scorer_stream_command(['agy.cmd'], schema)
         with patch.object(scorer_client, 'load_classifier_cases', return_value={'calibration_cases': [
-                {'id': f'c{i}', 'task': 'x' * 500, 'expected_profile': {'work_kind': 'debug_review'}} for i in range(1000)]}):
+                {'id': f'c{i}', 'task': 'x' * 500, 'expected_profile': {'work_kind': 'code_audit'}} for i in range(1000)]}):
             big_prompt = scorer_client.scorer_prompt({'objective': 'x'})
         self.assertGreater(len(big_prompt), 500_000)
         self.assertEqual(scorer_client.scorer_stream_command(['agy.cmd'], schema), small)
@@ -1466,15 +1500,15 @@ class LiveSystemOneSmokeTests(unittest.TestCase):
     LIVE_HOME = Path.home() if LIVE_ENV else None
     TASKS = {
         'gui_click': ({'objective': 'Click the Save button in the Settings dialog of the local desktop app and take a screenshot to confirm.',
-                       'work_kind': 'computer_use', 'needs': {'local_only': True, 'local_only_reason': 'local desktop app screen'}},
-                      lambda p: p['reasoning_depth'] <= 2 and p['needs_gui']),
+                       'work_kind': 'gui_control', 'needs': {'local_only': True, 'local_only_reason': 'local desktop app screen'}},
+                      lambda p: p['primary_level'] <= 2 and p['needs_gui']),
         'one_file_edit': ({'objective': 'In tray/deploy.py change the default retry count constant from 3 to 5 and update the one unit test that asserts it.',
-                           'work_kind': 'general_implementation', 'needs': {'local_only': True, 'local_only_reason': 'local pytest suite'}},
-                          lambda p: p['reasoning_depth'] <= 2 and not p['needs_gui']),
+                           'work_kind': 'code_implementation', 'needs': {'local_only': True, 'local_only_reason': 'local pytest suite'}},
+                          lambda p: p['primary_level'] <= 2 and not p['needs_gui']),
         'core_refactor': ({'objective': 'Refactor the order-matching engine across the core library, the risk module and the gateway so all three '
                                         'share one lock-free event queue, preserving latency and ordering invariants, and migrate every caller.',
                            'needs': {'local_only': True, 'local_only_reason': 'local repository and benchmarks'}},
-                          lambda p: p['reasoning_depth'] >= 3 and p['code_complexity'] >= 2),
+                          lambda p: p['primary_level'] >= 2 and p['axis_demand']['coding'] >= 2),
     }
     TIMEOUT = 60
 

@@ -139,8 +139,7 @@ def hours_assumption(args, decision):
     origin = {'classifier_estimate': 'the classifier estimate',
               'caller_profile': "the caller's task profile (its expected_hours)"}.get(est.get('source'))
     if origin and isinstance(est.get('hours'), (int, float)) and not isinstance(est.get('hours'), bool):
-        confidence = est.get('confidence') if est.get('confidence') not in (None, '') else 'not stated'
-        return (f"--hours not given: budgeted {est['hours']:g}h from {origin}, confidence {confidence}; "
+        return (f"--hours not given: budgeted {est['hours']:g}h from {origin}; "
                 'an estimate, not a measurement. Pass --hours for a large or unusually small task.')
     return ('--hours not given and no classifier estimate: no hours were budgeted, and none were invented. '
             'Pass --hours, or roll again when the classifier answers.')
@@ -152,7 +151,7 @@ def is_readonly_review_profile(profile):
         return False
     if 'read_only_review' in profile:
         return bool(profile.get('read_only_review'))
-    return bool(profile.get('work_kind') == 'debug_review' and profile.get('code_complexity') == 0)
+    return bool(profile.get('work_kind') == 'code_audit')
 
 
 def independent_reviewers(workers):
@@ -462,7 +461,7 @@ def grok_bot(args, out, prompt_file, task, bundle, *, decision=None):
 
 def task_access(args, read_only_review=None):
     """--access wins, then the classifier's access / read_only_review, and anything else writes: a wrong block is loud
-    and has a way out, a wrong exemption silently lets a second writer in. interaction_style says nothing about writing."""
+    and has a way out, a wrong exemption silently lets a second writer in."""
     explicit = getattr(args, 'access', None)
     if explicit:
         return 'read_only' if explicit == 'read-only' else 'write'

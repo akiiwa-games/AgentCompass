@@ -10,7 +10,7 @@ from __future__ import annotations
 from i18n import translate as _tr, LocalizedSequence
 
 # (identifier, label): the four categories in the router's order (axis_scores.FIVE_AXES).
-CATEGORIES = LocalizedSequence((("divergence", "创意"), ("coding", "编码能力"), ("aesthetics", "审美能力"),
+CATEGORIES = LocalizedSequence((("creativity", "创意"), ("coding", "编码能力"), ("aesthetics", "审美能力"),
                                 ("tool_operation", "工具操作")))
 FACET_LABELS = {"creative_writing": "创意写作", "execution": "执行", "faithfulness": "忠实度", "design": "设计",
                 "responsiveness": "响应速度", "image_recognition": "图像识别"}
@@ -243,6 +243,14 @@ def evidence_lines(cell: dict) -> list[str]:
         lines.append(_tr("手动 {0}：等级 {1} · {2}").format(source_label(manual.get("kind")), manual.get("level"),
                                                      manual.get("as_of") or "—")
                      + (f" · {manual['note']}" if manual.get("note") else ""))
+        ref = manual.get("data_reference")
+        if isinstance(ref, dict) and _number(ref.get("level")) and ref.get("status") not in ("missing", None):
+            srcs = ", ".join(ref.get("sources") or ())
+            delta = ref.get("delta_level")
+            delta_txt = f" ({delta:+.1f})" if _number(delta) else ""
+            lines.append(_tr("公开数据对照：{0}{1} · {2}").format(
+                level_text(ref["level"]), delta_txt, status_label(ref.get("status"))
+            ) + (f" ({srcs})" if srcs else ""))
     for board, src in (cell.get("sources") or {}).items():
         listed = (src or {}).get("listed_as") if isinstance(src, dict) else None
         lines.append(f"{board}" + (f" — {listed}" if listed else ""))

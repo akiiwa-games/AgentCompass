@@ -339,7 +339,7 @@ def five_axis_spend_cost(rec, ladder, spend_usd, task_hours, spend_max=None, tab
 # The demands a window's value ladder is read over: every mix of the three thinking categories (tool_operation 0, so a
 # window's price does not move with per-turn speed or image reading, which belong to the current task alone).
 FIVE_AXIS_DEMAND_GRID = tuple(
-    {'divergence': d1, 'coding': d2, 'aesthetics': d3, 'tool_operation': 0}
+    {'creativity': d1, 'coding': d2, 'aesthetics': d3, 'tool_operation': 0}
     for d1 in range(4) for d2 in range(4) for d3 in range(4) if (d1 or d2 or d3)
 )
 

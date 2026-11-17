@@ -28,7 +28,7 @@ class FastModesTests(unittest.TestCase):
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         usage = usage_windows(now, {'codex': [('five_hour', 95, 3), ('seven_day', 95, 100)],
                                     'claude': [('five_hour', 95, 3), ('seven_day', 95, 100)]})
-        task = dict(work_kind='debug_review', difficulty='routine', expected_hours=0.01,
+        task = dict(work_kind='code_audit', difficulty='routine', expected_hours=0.01,
                     needs={'local_only': True, 'fast': True})
         for provider, model, bid in [('codex', 'gpt-6.1-sol', 'sol_high'),
                                      ('claude', 'claude-opus-5-5', 'opus55_high')]:
@@ -127,7 +127,7 @@ class FastModesTests(unittest.TestCase):
         now = datetime.now(timezone.utc)
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         usage = usage_windows(now, {'claude': [('five_hour', 95, 3), ('seven_day', 95, 1)]})
-        task = dict(work_kind='debug_review', difficulty='routine', expected_hours=0.01,
+        task = dict(work_kind='code_audit', difficulty='routine', expected_hours=0.01,
                     needs={'local_only': True, 'fast': True})
         shipped = axis_scores.load_five_axis()['models']['claude-opus-5-5']['fast_mode']
         def rows(t, load=accounts):

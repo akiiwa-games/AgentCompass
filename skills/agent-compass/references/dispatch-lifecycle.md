@@ -61,7 +61,7 @@ Without `--workspace`, parallel dispatches only warn (`same_cwd_warning` in `ass
 
 A resume stays in its directory too: with `--workspace <dir>`, a compatible Paseo worker living in another directory is not resumed (`worker_workspace_mismatch`) and the dispatch creates a new worker in `<dir>` instead.
 
-Read-only work coexists with a writer. The System-One classifier decides `access` (`read-only` or `write`), and `--access read-only|write` overrides it if needed. `interaction_style` does not decide this: it does not separate reading from writing. Titles and task text are never matched in code.
+Read-only work coexists with a writer. The System-One classifier decides `access` (`read-only` or `write`; `code_audit` is always `read-only`), and `--access read-only|write` overrides it if needed. Titles and task text are never matched in code.
 
 `blocked_by` lists each holder (`dispatch_id`, `state`, `agent_id`, `task_id`, `title`). `next_action` gives the ways out: wait for the current writer to finish and roll again, create a separate worktree for parallel work, or pass `--access read-only` if the brief only reads.
 

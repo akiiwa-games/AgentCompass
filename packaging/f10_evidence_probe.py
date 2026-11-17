@@ -82,11 +82,9 @@ def row(result, bundle_id):
 
 
 # The classifier's answer for a small, convergent coding task: it asks little of the four categories.
-ROUTINE_PROFILE = {"work_kind": "general_implementation", "reasoning_depth": 1, "code_complexity": 1, "needs_visual": False,
-                   "needs_gui": False, "local_only": False, "wants_fast": False,
-                   "read_only_review": False, "access": "write", "expected_hours": 0.5, "hours_confidence": "medium",
-                   "urgency": "normal", "interaction_style": "engineering", "multi_task": False, "task_count": "1",
-                   "axis_demand": {"divergence": 0, "coding": 1, "aesthetics": 0, "tool_operation": 0}}
+ROUTINE_PROFILE = {"work_kind": "code_implementation", "primary_level": 1, "secondary_kind": "none", "secondary_level": 0,
+                   "access": "write", "local_only": False, "needs_visual": False, "wants_fast": False,
+                   "expected_hours": 0.5, "task_count": "1"}
 
 # --- 1. Default checkbox from public data; never-billed and metered accounts are a last resort -----------------------
 if BROKEN:

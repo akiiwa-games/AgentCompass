@@ -1230,7 +1230,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         read_only_review = (
             bool(profile.get('read_only_review'))
             if isinstance(profile, dict) and 'read_only_review' in profile
-            else bool(isinstance(profile, dict) and profile.get('work_kind') == 'debug_review' and profile.get('code_complexity') == 0)
+            else bool(isinstance(profile, dict) and profile.get('work_kind') == 'code_audit')
         )
         if read_only_review and isinstance(alloc_task.get('chain'), dict):
             cw = alloc_task['chain'].get('worker')

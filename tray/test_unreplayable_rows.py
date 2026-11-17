@@ -12,17 +12,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills/agent-compa
 import router_data
 from router_test_support import isolated_router_state
 
-OLD = {"reasoning_depth": 4, "code_complexity": 3, 
-          "needs_visual": False, "needs_gui": False, "local_only": True, "interaction_style": "engineering",
-          "work_kind": "debug_review"}
-CURRENT = dict(OLD, multi_task=False, task_count="1", wants_fast=False, read_only_review=False, access="write", expected_hours=1.0, hours_confidence="medium", urgency="normal",
-               axis_demand={"divergence": 1, "coding": 3, "aesthetics": 0, "tool_operation": 0})
-MISSING_FLAGS = {k: v for k, v in CURRENT.items() if k not in ("wants_fast", "read_only_review")}
-MISSING_DEMAND = {k: v for k, v in CURRENT.items() if k != "axis_demand"}
+OLD = {"reasoning_depth": 4, "code_complexity": 3,
+       "needs_visual": False, "needs_gui": False, "local_only": True, "interaction_style": "engineering",
+       "work_kind": "debug_review"}
+CURRENT = {
+    "work_kind": "code_implementation", "primary_level": 3, "secondary_kind": "none", "secondary_level": 0,
+    "access": "write", "local_only": True, "needs_visual": False, "wants_fast": False,
+    "expected_hours": 1.0, "task_count": "1",
+}
+MISSING_FLAGS = {k: v for k, v in CURRENT.items() if k != "wants_fast"}
+MISSING_DEMAND = dict(CURRENT, axis_demand={"divergence": 1, "coding": 3, "aesthetics": 0, "tool_operation": 0})
 
 
 def row_of(profile, objective="fix the flaky lock in worker pool"):
-    return {"stage": "plan", "at": "2026-10-01T00:00:00+00:00", "objective": objective, "hours": 1.0, "kind": "debug_review",
+    return {"stage": "plan", "at": "2026-10-01T00:00:00+00:00", "objective": objective, "hours": 1.0, "kind": "code_implementation",
             "difficulty": "frontier", "choice": "opus55_xhigh", "profile": profile}
 
 
@@ -79,7 +82,7 @@ class UnreplayableRowTests(unittest.TestCase):
         infer.assert_not_called()
         plan.assert_called_once()
         self.assertEqual(result["theatre_source"], "recomputed")
-        self.assertEqual(result["task"]["profile"]["reasoning_depth"], 4)
+        self.assertEqual(result["task"]["profile"]["primary_level"], 3)
 
     def test_a_row_with_a_saved_snapshot_is_shown_as_saved(self):
         with mock.patch("decision_theatre.snapshot_result", return_value={"choice": "saved", "theatre_source": "snapshot"}):

@@ -632,7 +632,7 @@
  "missing_sources": {},
  "conflicts": [],
  "axes": {
-  "divergence": [
+  "creativity": [
    "creative_writing"
   ],
   "coding": [
@@ -1135,7 +1135,7 @@
      "n": 20
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -1610,7 +1610,7 @@
      "n": 20
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -2208,7 +2208,7 @@
      "arena_value": 1505.7
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -2811,7 +2811,7 @@
      "n": 20
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -3360,7 +3360,7 @@
      "n": 20
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -3931,7 +3931,7 @@
      "arena_value": 1522.0
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -4266,7 +4266,7 @@
      "n": 20
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -4802,7 +4802,7 @@
      "n": 20
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -5257,7 +5257,7 @@
      "arena_value": 1497.5
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -5760,7 +5760,7 @@
      "arena_value": 1422.6
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -6752,7 +6752,7 @@
    ]
   },
   "gpt-6-sol": {
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -6991,7 +6991,7 @@
      "n": 20
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -7639,7 +7639,7 @@
    ]
   },
   "gpt-5.6-sol": {
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -7855,7 +7855,7 @@
    ]
   },
   "gpt-5.6-terra": {
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -8034,7 +8034,7 @@
    ]
   },
   "gpt-5.6-luna": {
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -8178,7 +8178,7 @@
      "arena_value": 1463.9
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -8465,7 +8465,7 @@
    ]
   },
   "glm-5.3": {
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -8821,7 +8821,7 @@
      "arena_value": 1474.6
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -9276,7 +9276,7 @@
      "arena_value": 1484.2
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -9948,7 +9948,7 @@
    ]
   },
   "kimi-k3": {
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -10141,7 +10141,7 @@
      "arena_value": 1436.1
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -10862,7 +10862,7 @@
      "arena_value": 1480.1
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -11206,7 +11206,7 @@
      "arena_value": 1448.0
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -12079,7 +12079,7 @@
      "arena_value": 1418.6
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -12439,7 +12439,7 @@
      "n": 20
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -12812,7 +12812,7 @@
      "arena_value": 1434.7
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -12911,7 +12911,7 @@
      "arena_value": 1414.0
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -13042,7 +13042,7 @@
      "arena_value": 1502.9
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -13202,7 +13202,7 @@
      "arena_value": 1472.0
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -13349,7 +13349,7 @@
    ]
   },
   "glm-5.2": {
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -13527,7 +13527,7 @@
      "arena_value": 1351.6
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -13770,7 +13770,7 @@
      "arena_value": 1433.1
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -14077,7 +14077,7 @@
      "arena_value": 1442.9
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -14207,7 +14207,7 @@
      "arena_value": 1501.0
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -14322,7 +14322,7 @@
      "arena_value": 1482.0
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -14497,7 +14497,7 @@
      "arena_value": 1465.8
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -14657,7 +14657,7 @@
      "arena_value": 1456.4
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -14879,7 +14879,7 @@
      "arena_value": 1486.8
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -15202,7 +15202,7 @@
      "arena_value": 1489.3
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -15426,7 +15426,7 @@
      "arena_value": 1460.9
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -15585,7 +15585,7 @@
      "arena_value": 1423.4
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",
@@ -15813,7 +15813,7 @@
      "arena_value": 1526.6
     }
    ],
-   "divergence": [
+   "creativity": [
     {
      "source": "lmarena.creative_writing",
      "kind": "benchmark",

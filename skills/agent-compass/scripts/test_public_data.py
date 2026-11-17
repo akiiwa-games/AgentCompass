@@ -310,7 +310,7 @@ class LoaderPrecedenceTests(ChannelCase):
         five['as_of'] = '2026-11-12'
         write_json(self.remote_dir / 'five-axis-scores.json', five)
         write_json(self.remote_dir / 'user-scores.json', {
-            'schema_version': 1,
+            'schema_version': 2,
             'scores': {'grok-bot': {'coding': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}}},
         })
         self.publish(safety_margin_pct=0.5, at=T0 + timedelta(days=2))

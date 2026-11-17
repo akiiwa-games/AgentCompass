@@ -52,27 +52,33 @@ SCORER_TYPES = {
 CLASSIFIER_CASES_PATH = Path(__file__).resolve().parents[1] / 'references' / 'classifier-cases.json'
 SCORER_PROMPT = (
     'You are a System-One task classifier. Do NOT call tools, run commands, or read files. Return ONLY structured JSON.\n'
-    'Score what the task itself demands (never name a model/provider) at the lowest honest level. Ignore Markdown length, '
+    'Classify what the task itself demands (never name a model/provider) at the lowest honest level. Ignore Markdown length, '
     'headers, and dispatch boilerplate (role/AGENTS/SKILL docs, prior reports, output paths, paired unit-test files).\n'
     'CRITICAL RULES:\n'
-    '1. `local_only`: `true` only when depending on un-inlined local files/repos/processes/GUI; `false` when inputs are '
-    'inlined or from the public web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, '
-    '`complex_build_plan`), even if a local output path is named.\n'
-    '2. `code_complexity` & `read_only_review` & `access`: `code_complexity: 0` and `access: "read-only"` when reading, '
-    'inspecting, diagnosing, or auditing without modifying workspace source/state (`read_only_review: true` ONLY for '
-    'read-only code/diff/branch/security/release audits, even if saving a report file; `false` for runtime diagnosis, '
-    'ops runbooks, or fixing review findings). Otherwise `access: "write"`.\n'
-    '3. Static vision vs live GUI/loops: static offline inspection of images/photos/screenshots sets `needs_visual: true`, '
-    '`needs_gui: false`, scores visual perception/design difficulty on `aesthetics` (`1` coarse OCR, `2` UI/layout diff, '
-    '`3` fine-grained styling/material/color/lighting judgment), and keeps `tool_operation` at `0..1`. Reserve '
-    '`tool_operation: 3` (`needs_gui: true`) for operating a live GUI or watching a changing real-time screen, and '
-    '`tool_operation: 2` (`needs_gui: false`) for heavy tool orchestration or live text/API observe-act loops. Writing or '
-    'fixing code about real-time domains is `coding`, not a live loop.\n'
+    '1. `work_kind` & `secondary_kind`: Pick the primary deliverable\'s atomic `work_kind`: `creative_ideation` (cross-domain '
+    'association, de-novo concept/mechanism invention, creative writing/dialogue), `architecture_reasoning` (deductive '
+    'first-principles architecture, formal/math reasoning, system critique/planning without editing code), '
+    '`code_implementation` (write/fix/refactor backend, CLI, library, algorithm, config, or analysis scripts), '
+    '`frontend_ui` (write/style UI pages, views, CSS, charts, interactive components), `code_audit` (read-only code/PR/'
+    'branch/security/release audit, even if saving a report file), `exploration_forensics` (read-only codebase mapping, '
+    'log/DB/metric forensics, runtime diagnosis without editing code), `web_research` (public web/literature/vendor lookup '
+    '& synthesis), `visual_analysis` (static offline inspection of images/photos/screenshots/mockups, OCR, layout diff, '
+    'fine-grained outfit/material/lighting classification), `text_processing` (mechanical text cleaning, translation, '
+    'formatting, summarization), `live_loop` (low-latency observe-act loop on a live external text/API stream; coding '
+    'software about real-time domains is `code_implementation`), `gui_control` (operate a live desktop/browser/mobile GUI '
+    'via screenshots, clicks, and keys). Set `secondary_kind: "none"` (`secondary_level: 0`) unless one worker must execute '
+    'a genuinely composite task spanning two distinct atomic domains.\n'
+    '2. `primary_level` (1..3) & `secondary_level` (0..3): `1` = routine/localized/coarse, `2` = standard module/page/'
+    'analysis, `3` = frontier/coupled/fine-grained (`0` ONLY when `secondary_kind` is `"none"`).\n'
+    '3. `access`, `local_only`, `needs_visual`: `code_audit` is ALWAYS `access: "read-only"`; local repo '
+    '`code_implementation` and `frontend_ui` are ALWAYS `access: "write"`. `local_only: true` ONLY when depending on '
+    'un-inlined local files/repos/processes/GUI (`false` when inputs are inlined or from the public web, even if an output '
+    'path is named). `needs_visual: true` whenever inspecting images/photos/screenshots/mockups or operating a GUI.\n'
     '4. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a '
     'pre-reset quota sprint (`pre-reset sprint`, `before quota resets`, `重置前冲刺`) without negation (`do not use fast '
     'mode` -> `false`; runtime step adverbs like `click immediately` or ordinary quota mentions -> `false`).\n'
-    '5. `multi_task`: `true` ONLY when bundling 2+ independent parallel deliverables; sequential steps of one workflow '
-    'are a single task (`multi_task: false, task_count: "1"`).\n'
+    '5. `task_count`: `"1"` for a single task (including sequential investigate-fix-test, implement+tests, review+report); '
+    '`"2"`, `"3"`, or `">3"` ONLY when bundling independent parallel deliverables.\n'
     'Follow `dimension_rubric` and match the closest calibration case.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 
@@ -131,18 +137,16 @@ def parse_scorer_stream(stdout, envelope=False):
     raise ValueError('System-One scorer stream ended without a result.')
 
 
-def scorer_schema(capabilities):
-    import axis_scores
+def scorer_schema(capabilities=None):
     import task_intake
-    routes = [k for k in (capabilities.get('routes') or {}) if k != 'other_or_mixed']
+    routes = [k for k in ((capabilities or {}).get('routes') or {}) if k in task_intake.WORK_KINDS] or list(task_intake.WORK_KINDS)
     base = task_intake.TASK_PROFILE_SCHEMA
-    props = {'work_kind': {'type': 'string', 'enum': routes, 'description': 'Canonical route classification for the task.'},
-             **base['properties']}
-    required = ['work_kind'] + list(base['required'])
-    # The task's category demand always comes from the classifier itself.
-    props['axis_demand'] = axis_scores.FIVE_AXIS_DEMAND_SCHEMA
-    required.append('axis_demand')
-    return {'type': 'object', 'properties': props, 'required': required}
+    props = {
+        **base['properties'],
+        'work_kind': {**base['properties']['work_kind'], 'enum': routes},
+        'secondary_kind': {**base['properties']['secondary_kind'], 'enum': ['none'] + routes},
+    }
+    return {'type': 'object', 'properties': props, 'required': list(base['required'])}
 
 
 def load_classifier_cases():
@@ -210,7 +214,7 @@ def scorer_prompt(task):
 
 
 def last_profile_object(text):
-    """The last JSON object in free text that carries a reasoning_depth (agy may echo other JSON first)."""
+    """The last JSON object in free text that carries work_kind and primary_level (agy may echo other JSON first)."""
     decoder, found = json.JSONDecoder(), None
     for index, char in enumerate(text or ''):
         if char != '{':
@@ -219,7 +223,7 @@ def last_profile_object(text):
             value, _ = decoder.raw_decode(text, index)
         except ValueError:
             continue
-        if isinstance(value, dict) and 'reasoning_depth' in value:
+        if isinstance(value, dict) and 'work_kind' in value and 'primary_level' in value:
             found = value
     return found
 
@@ -401,85 +405,94 @@ def post_json(url, body, api_key, timeout, key_header=None):
 # primitives.md) and the Gemini Decisions API (aistudio.google.com/docs/decisions-api) take the same three primitives:
 # choice criteria are an object, score criteria a list whose positions are levels 0..N-1, and noul answers the
 # probability of yes. Question keys are never shown to the model, so every instruction is a whole question.
-PROFILE_STYLE_CRITERIA = {
-    'engineering': 'Writing, modifying, debugging, reviewing code, or running operational CLI/GUI engineering steps.',
-    'exploration': 'Investigating a codebase, dataset, logs, or running quantitative research packets / creative hypothesis exploration.',
-    'text_only': 'Drafting, translating, summarizing, or rewriting self-contained text.',
-    'advisory': 'High-stakes strategic, mathematical, or architectural consultation.',
-}
 PROFILE_SCORE_QUESTIONS = {
-    'reasoning_depth': ('Rate the reasoning depth required by the core task (do not inflate for long Markdown formatting or section headers).', [
-        'Level 1 (Routine): Direct execution of an existing script/checklist/runbook, mechanical bulk edit, or trivial constant/config tweak with obvious steps.',
-        'Level 2 (Standard/Hard): Single- or multi-module feature implementation, bug diagnosis/fix, read-only code review of a module/PR, or standard quantitative research packet execution.',
-        'Level 3 (Coupled): Cross-module architectural refactor, multi-packet orchestrator handoff owning registry/worker dispatch, or deep concurrency/invariant audit across subsystems.',
-        'Level 4 (Frontier): Deep mathematical proof/formulation or strategic architectural critique.']),
-    'code_complexity': ('Rate the complexity of production code written or modified by the worker (read-only code reviews, audits, and diagnostics write NO production code and must be Level 0).', [
-        'Level 0 (None): No production code written or modified (includes read-only code reviews, independent audits, CLI runbooks, read-only diagnostics, and text drafting).',
-        'Level 1 (Light): Trivial constant/config tweak, small helper script, or research-only packet script.',
-        'Level 2 (Module): Standard production module or frontend component implementation/bugfix with unit tests.',
-        'Level 3 (Systems): Complex cross-module systems, lock-free concurrency, or protocol refactoring.']),
+    'primary_level': (
+        'Rate the depth required by the primary work_kind (1..3; do not inflate for long Markdown formatting or section headers).',
+        [
+            'Level 1 (Routine/Localized): Small helper script or config tweak, explicit checklist/runbook, coarse OCR, or simple lookup/formatting.',
+            'Level 2 (Standard Module/Analysis): Production module implementation/fix/audit with unit tests, standard UI page/chart or mockup diff, or structured multi-source synthesis.',
+            'Level 3 (Frontier/Coupled/Fine-Grained): Cross-module concurrency/protocol architecture, de-novo cross-domain concept invention, design-led UI system, or fine-grained styling/material/lighting visual classification.',
+        ],
+    ),
+    'secondary_level': (
+        'Rate the depth of the optional secondary_kind (Level 0 when single-domain / secondary_kind is none; 1..3 for the secondary domain\'s own depth).',
+        [
+            'Level 0 (None): Single-domain task; no separate secondary work_kind.',
+            'Level 1 (Minor): Small localized secondary step (e.g. minor UI spacing tweak or quick doc lookup alongside a primary task).',
+            'Level 2 (Standard): Substantial secondary module, UI view, audit, or research synthesis.',
+            'Level 3 (Frontier): Frontier secondary invention, architecture, fine-grained visual judgment, or complex live GUI flow.',
+        ],
+    ),
 }
 # Neither API has a number primitive, so expected_hours is a choice among bands, each with the hours the LLM scorers'
-# schema describes for the same band. Urgency is a choice too. hours_confidence stays unset: Jev reports no confidence,
-# and the Decisions API's probability of the chosen band is not converted into a level by a threshold of our own.
+# schema describes for the same band.
 PROFILE_EFFORT_BANDS = {
     'quick': (0.1, 'Quick check, CLI runbook, trivial config tweak, or focused single-diff/screenshot inspection (~0.1-0.25h).'),
     'module': (0.5, 'Standard investigation, bug fix, batch audit, or 1-5 file feature with unit tests (~0.3-0.7h).'),
     'multi_file': (2.0, 'Wide cross-module refactor (8+ files), open-web synthesis, or architecture blueprint (~1-3h).'),
     'long': (4.0, 'Long multi-stage build, migration, or sustained multi-hour live loop (4h+).'),
 }
-PROFILE_URGENCY_CRITERIA = {
-    'unknown': 'The task text states no deadline, incident or "asap" (the usual case; never infer urgency from topic or tone).',
-    'low': 'The text says there is no rush.',
-    'normal': 'The text states an ordinary deadline.',
-    'high': 'The text states an incident, an imminent deadline or "asap".',
-}
 PROFILE_NOUL_QUESTIONS = {
+    'local_only': (
+        'Does this task explicitly depend on existing un-inlined files, directories, repositories, processes, or GUI on this machine '
+        '(false when inputs are inlined or fetched from the public web, even if an output path is named)?'
+    ),
     'needs_visual': 'Does this task require inspecting images, photos, screenshots, visual design frames, or operating a GUI?',
-    'needs_gui': ('Does this task require operating a live desktop, browser, or mobile GUI via mouse/keyboard/computer-use '
-                  '(false for read-only static image/screenshot inspection or pure CLI/API work)?'),
-    'local_only': ("Does this task explicitly depend on existing files, directories, or repositories on this machine "
-                   '(reading, copying, editing, or testing un-inlined local files) or on local processes/GUI/environment?'),
 }
 
 
 def route_criteria(capabilities):
+    import task_intake
     defined = load_classifier_cases().get('route_definitions') or {}
-    routes = capabilities.get('routes') or {}
-    return {k: str(defined.get(k) or (routes[k] or {}).get('scope') or k)[:500] for k in routes if k != 'other_or_mixed'}
+    routes = (capabilities or {}).get('routes') or {}
+    keys = [k for k in routes if k in task_intake.WORK_KINDS] or list(task_intake.WORK_KINDS)
+    return {k: str(defined.get(k) or (routes.get(k) or {}).get('scope') or k)[:500] for k in keys}
 
 
 def profile_questions(capabilities):
-    """Every task-profile question, keyed by the answer it fills; the same set for each question API."""
+    """The 10 concrete task-profile questions, keyed by the answer each fills; identical for Jev and Gemini Decision."""
+    import task_intake
+    rc = route_criteria(capabilities)
     questions = {
-        'work_kind': {'type': 'choice', 'criteria': route_criteria(capabilities), 'instructions': (
-            'Which canonical route classification best describes what this task itself demands? '
-            'Ignore boilerplate role/receipt file references.')},
-        'interaction_style': {'type': 'choice', 'instructions': 'What is the primary interaction style of this work?',
-                              'criteria': dict(PROFILE_STYLE_CRITERIA)},
+        'work_kind': {
+            'type': 'choice',
+            'criteria': rc,
+            'instructions': task_intake.WORK_KIND_QUESTION,
+        },
+        'secondary_kind': {
+            'type': 'choice',
+            'criteria': {'none': 'Single-domain task: no second distinct atomic work_kind is needed.', **rc},
+            'instructions': task_intake.SECONDARY_KIND_QUESTION,
+        },
+        'effort_band': {
+            'type': 'choice',
+            'criteria': {k: v[1] for k, v in PROFILE_EFFORT_BANDS.items()},
+            'instructions': 'How much active worker effort does this task need at an ordinary agent pace? Estimate work, never money or quota.',
+        },
     }
-    questions['effort_band'] = {'type': 'choice', 'criteria': {k: v[1] for k, v in PROFILE_EFFORT_BANDS.items()}, 'instructions': (
-        'How much active worker effort does this task need at an ordinary agent pace? Estimate work, never money or quota.')}
-    questions['urgency'] = {'type': 'choice', 'criteria': dict(PROFILE_URGENCY_CRITERIA),
-                            'instructions': 'Does the task text itself state urgency?'}
     for name, (instructions, criteria) in PROFILE_SCORE_QUESTIONS.items():
         questions[name] = {'type': 'score', 'instructions': instructions, 'criteria': list(criteria)}
-    import axis_scores
-    import task_intake
-    for axis, (intro, levels) in axis_scores.FIVE_AXIS_DEMAND_LEVELS.items():
-        questions[f'demand_{axis}'] = {'type': 'score', 'instructions': 'How much does this task need: ' + intro,
-                                       'criteria': [f'Level {i}: {text}.' for i, text in enumerate(levels)]}
     for name, instructions in PROFILE_NOUL_QUESTIONS.items():
         questions[name] = {'type': 'noul', 'instructions': instructions}
     questions['wants_fast'] = {'type': 'noul', 'instructions': task_intake.WANTS_FAST_QUESTION}
-    questions['read_only_review'] = {'type': 'noul', 'instructions': task_intake.READ_ONLY_REVIEW_QUESTION}
-    questions['access'] = {'type': 'choice', 'instructions': task_intake.ACCESS_QUESTION,
-                           'criteria': {'read-only': 'Only reads, inspects, reviews, or analyzes without modifying workspace files or state.',
-                                        'write': 'Writes, edits, creates, or deletes workspace files, or runs mutating commands.'}}
-    questions['multi_task'] = {'type': 'noul', 'instructions': task_intake.MULTI_TASK_QUESTION}
-    questions['task_count'] = {'type': 'choice', 'instructions': task_intake.TASK_COUNT_QUESTION,
-                               'criteria': {'1': 'One task.', '2': 'Two separate tasks.', '3': 'Three separate tasks.',
-                                            '>3': 'More than three separate tasks.'}}
+    questions['access'] = {
+        'type': 'choice',
+        'instructions': task_intake.ACCESS_QUESTION,
+        'criteria': {
+            'read-only': 'Only reads, inspects, reviews, diagnoses, or returns output in its reply without modifying workspace files or state.',
+            'write': 'Creates, edits, or deletes workspace files, or runs mutating commands.',
+        },
+    }
+    questions['task_count'] = {
+        'type': 'choice',
+        'instructions': task_intake.TASK_COUNT_QUESTION,
+        'criteria': {
+            '1': 'One task (including multi-step sequential workflows).',
+            '2': 'Two independent parallel tasks.',
+            '3': 'Three independent parallel tasks.',
+            '>3': 'More than three independent parallel tasks.',
+        },
+    }
     return questions
 
 
@@ -501,7 +514,6 @@ def build_decisions_request(task, capabilities, model=GEMINI_DECISION_DEFAULT_MO
 def parse_profile_answers(response):
     """A validated task profile from a question API's `answers`: choice names, score = probability-weighted level
     index 0..N-1 (rounded, then offset to the profile's range), noul = probability of yes."""
-    import axis_scores
     import task_intake
     answers = response.get('answers') if isinstance(response, dict) else None
     if not isinstance(answers, dict):
@@ -520,31 +532,31 @@ def parse_profile_answers(response):
             raise ValueError(f'Classifier API answer {name} is not finite.')
         return max(low, min(high, int(round(score)) + low))
 
-    profile = {'work_kind': field('work_kind', 'choice'), 'interaction_style': field('interaction_style', 'choice')}
-    for name, (low, high) in task_intake.PROFILE_INTEGERS.items():
-        profile[name] = level(name, low, high)
-    profile['axis_demand'] = {axis: level(f'demand_{axis}', 0, 3) for axis in axis_scores.FIVE_AXES}
+    work_kind = field('work_kind', 'choice')
+    primary_level = level('primary_level', 1, 3)
+    secondary_kind = field('secondary_kind', 'choice')
+    secondary_level = level('secondary_level', 0, 3)
+    # Parallel question APIs answer secondary_kind and secondary_level independently; reconcile single-domain answers.
+    if secondary_kind in ('none', work_kind):
+        secondary_kind, secondary_level = 'none', 0
+    elif secondary_level == 0:
+        secondary_level = 1
+
+    profile = {
+        'work_kind': work_kind,
+        'primary_level': primary_level,
+        'secondary_kind': secondary_kind,
+        'secondary_level': secondary_level,
+    }
     for name in PROFILE_NOUL_QUESTIONS:
         profile[name] = float(field(name, 'noul')) >= 0.5
-    if profile['needs_gui']:
-        profile['needs_visual'] = True
-    # Optional: without an hours band the difficulty comes from the profile's reasoning depth; urgency stays unset.
-    for name, table in (('effort_band', PROFILE_EFFORT_BANDS), ('urgency', PROFILE_URGENCY_CRITERIA)):
-        answer = answers.get(name)
-        choice = answer.get('choice') if isinstance(answer, dict) else answer
-        if choice in table:
-            if name == 'effort_band':
-                profile['expected_hours'] = table[choice][0]
-            else:
-                profile['urgency'] = choice
-    for name in ('wants_fast', 'read_only_review', 'multi_task'):
-        profile[name] = float(field(name, 'noul')) >= 0.5
+    band_ans = answers.get('effort_band')
+    band_choice = band_ans.get('choice') if isinstance(band_ans, dict) else band_ans
+    if band_choice in PROFILE_EFFORT_BANDS:
+        profile['expected_hours'] = PROFILE_EFFORT_BANDS[band_choice][0]
+    profile['wants_fast'] = float(field('wants_fast', 'noul')) >= 0.5
     profile['task_count'] = field('task_count', 'choice')
-    access_ans = answers.get('access')
-    access_choice = access_ans.get('choice') if isinstance(access_ans, dict) else access_ans
-    if access_choice is not None:
-        profile['access'] = access_choice
-    # A missing or contradictory split answer fails here: the cascade moves on rather than guessing.
+    profile['access'] = field('access', 'choice')
     return task_intake.validate_profile(profile)
 
 
@@ -575,7 +587,7 @@ def parse_openai_response(response):
         answer = json.loads(content)
     except ValueError:
         answer = None
-    if not (isinstance(answer, dict) and 'reasoning_depth' in answer):
+    if not (isinstance(answer, dict) and 'work_kind' in answer and 'primary_level' in answer):
         answer = last_profile_object(content)
     if not isinstance(answer, dict):
         raise ValueError('OpenAI-compatible scorer returned no task profile.')
@@ -671,7 +683,7 @@ SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, K
 
 
 SCORE_CACHE_LOCK = threading.Lock()     # a batch roll classifies its briefs in threads
-SCORE_CACHE_VERSION = 12  # 12: aesthetics L2/L3 visual perception + MECE rubric cleanup
+SCORE_CACHE_VERSION = 13  # 13: 11 atomic work_kinds + tropical 4D capability envelope
 SCORE_CACHE_TTL_SECONDS = 24 * 3600
 SCORE_CACHE_MAX = 200
 

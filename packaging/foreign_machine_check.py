@@ -172,10 +172,10 @@ class ForeignFixtureServer:
                     })
                 if self.path.endswith("/chat/completions"):
                     profile = {
-                        "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
-                        "work_kind": "general_implementation", "reasoning_depth": 2, "code_complexity": 1,
-                        "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False, "local_only": True, "expected_hours": 0.5,
-                        "hours_confidence": "medium", "urgency": "normal", "interaction_style": "engineering",
+                        "work_kind": "code_implementation", "primary_level": 2,
+                        "secondary_kind": "none", "secondary_level": 0,
+                        "access": "write", "local_only": True, "needs_visual": False, "wants_fast": False,
+                        "expected_hours": 0.5, "task_count": "1",
                         "reason": "foreign machine fixture classification",
                     }
                     return self._reply(200, {"choices": [{"message": {"content": json.dumps(profile)}}]})
@@ -604,24 +604,24 @@ def verify_f02_fleet_parity(ctx: dict):
     tasks = [
         ("bounded_coding", {
             "objective": "Fix off-by-one slice in parser.py and add a unit test.",
-            "work_kind": "general_implementation", "expected_hours": 0.5,
-            "profile": {"reasoning_depth": 2, "code_complexity": 2, "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False,
-                        "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
-                        "reason": "bounded coding"},
+            "work_kind": "code_implementation", "expected_hours": 0.5,
+            "profile": {"work_kind": "code_implementation", "primary_level": 2, "secondary_kind": "none", "secondary_level": 0,
+                        "access": "write", "local_only": True, "needs_visual": False, "wants_fast": False,
+                        "expected_hours": 0.5, "task_count": "1", "reason": "bounded coding"},
         }),
         ("deep_debugging", {
             "objective": "Diagnose race condition across worker pool shutdown and lock handoff.",
-            "work_kind": "debug_review", "expected_hours": 1.5,
-            "profile": {"reasoning_depth": 4, "code_complexity": 3, "axis_demand": {"divergence": 2, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False,
-                        "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
-                        "reason": "deep debugging"},
+            "work_kind": "exploration_forensics", "expected_hours": 1.5,
+            "profile": {"work_kind": "exploration_forensics", "primary_level": 3, "secondary_kind": "none", "secondary_level": 0,
+                        "access": "read-only", "local_only": True, "needs_visual": False, "wants_fast": False,
+                        "expected_hours": 1.5, "task_count": "1", "reason": "deep debugging"},
         }),
         ("frontend_visual", {
             "objective": "Design and implement responsive quota cards with hover breakdown.",
-            "work_kind": "frontend_implementation", "expected_hours": 1.0,
-            "profile": {"reasoning_depth": 3, "code_complexity": 2, "axis_demand": {"divergence": 3, "coding": 2, "aesthetics": 0, "tool_operation": 3}, "needs_visual": True, "needs_gui": False,
-                        "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
-                        "reason": "frontend UI"},
+            "work_kind": "frontend_ui", "expected_hours": 1.0,
+            "profile": {"work_kind": "frontend_ui", "primary_level": 3, "secondary_kind": "none", "secondary_level": 0,
+                        "access": "write", "local_only": True, "needs_visual": True, "wants_fast": False,
+                        "expected_hours": 1.0, "task_count": "1", "reason": "frontend UI"},
         }),
     ]
     for label, payload in tasks:
@@ -810,9 +810,10 @@ def verify_f04_quota_gate_scope_and_twins(ctx: dict):
     task_file = box.root / "task-twins-agy.json"
     task_file.write_text(json.dumps({"task": {
         "objective": "Implement retry backoff in transport.py and verify edge cases.",
-        "work_kind": "general_implementation", "expected_hours": 1.0,
-        "profile": {"reasoning_depth": 3, "code_complexity": 3, "axis_demand": {"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}, "needs_visual": False, "needs_gui": False,
-                    "local_only": True, "interaction_style": "engineering", "multi_task": False, "task_count": "1", "wants_fast": False, "read_only_review": False,
+        "work_kind": "code_implementation", "expected_hours": 1.0,
+        "profile": {"work_kind": "code_implementation", "primary_level": 3, "secondary_kind": "none", "secondary_level": 0,
+                    "access": "write", "local_only": True, "needs_visual": False, "wants_fast": False,
+                    "expected_hours": 1.0, "task_count": "1",
                     "reason": "verify no twin pi bundles and agy 3p capacity"},
     }}), encoding="utf-8")
     res_plan = run_in_box(box, op, [box.agentcompass, "plan", "--input", task_file, "--dry-run"], env)
@@ -1264,21 +1265,20 @@ usage_fresh = provider_inventory.merge_usage(usage_fresh, accounts_metered, now)
 # Caller profile is required (task_intake.normalize_task). Host policy must name every in-memory
 # account, including litellm-test, which setup never enrolled (host_policy.account_allowed).
 caller_profile = {{
-    "reasoning_depth": 2,
-    "code_complexity": 2,
-    "axis_demand": {{"divergence": 1, "coding": 2, "aesthetics": 0, "tool_operation": 0}},
-    "needs_visual": False,
-    "needs_gui": False,
+    "work_kind": "code_implementation",
+    "primary_level": 2,
+    "secondary_kind": "none",
+    "secondary_level": 0,
+    "access": "write",
     "local_only": True,
+    "needs_visual": False,
     "wants_fast": False,
-    "read_only_review": False,
-    "interaction_style": "engineering",
-    "multi_task": False,
+    "expected_hours": 0.5,
     "task_count": "1",
 }}
 metered_task = {{
     "objective": "Fix a bug in parser.py",
-    "work_kind": "general_implementation",
+    "work_kind": "code_implementation",
     "expected_hours": 0.5,
     "profile": caller_profile,
 }}

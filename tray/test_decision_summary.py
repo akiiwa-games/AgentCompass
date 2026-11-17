@@ -25,11 +25,11 @@ def test_short_names_for_known_bundles_and_raw_id_fallbacks(tmp_path,monkeypatch
     try:
         i18n.set_language('en')
         assert names.candidate_label(bundle)=='Opus 5.5 · High'
-        assert names.kind_label('complex_build_plan')=='Build planning'
+        assert names.kind_label('architecture_reasoning')=='Architecture reasoning'
         assert names.choice_label(dict(choice='opus55_high',bundle=bundle))=='Opus 5.5 · High'
         i18n.set_language('zh')
         assert names.candidate_label(bundle)=='Opus 5.5 · 高'
-        assert names.kind_label('complex_build_plan')=='复杂构建规划'
+        assert names.kind_label('architecture_reasoning')=='架构推演'
         # The winner is found in the snapshot ranking when the row has no bundle.
         row=dict(choice='opus55_high',decision_snapshot=dict(ranking=[dict(id='opus55_high',bundle=bundle)]))
         assert names.choice_label(row)=='Opus 5.5 · 高'
@@ -62,6 +62,6 @@ def test_short_names_for_known_bundles_and_raw_id_fallbacks(tmp_path,monkeypatch
     high=names.effort_text('high')
     assert names.unique_labels(rows[:2],router_data.account_label)==[f'Opus 5.5 · {high} · Claude',f'Opus 5.5 · {high} · Claude Work']
     assert names.unique_labels(rows,router_data.account_label)==[f'Opus 5.5 · {high} · Claude','b','c']
-    summary_row=router_data.ledger_summary(dict(kind='complex_build_plan',choice='opus55_high',bundle=bundle))
-    assert (summary_row['kind'],summary_row['choice'])==('complex_build_plan','opus55_high')
-    assert (summary_row['kind_label'],summary_row['choice_label'])==(names.kind_label('complex_build_plan'),f'Opus 5.5 · {high}')
+    summary_row=router_data.ledger_summary(dict(kind='architecture_reasoning',choice='opus55_high',bundle=bundle))
+    assert (summary_row['kind'],summary_row['choice'])==('architecture_reasoning','opus55_high')
+    assert (summary_row['kind_label'],summary_row['choice_label'])==(names.kind_label('architecture_reasoning'),f'Opus 5.5 · {high}')

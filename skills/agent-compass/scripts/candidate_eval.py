@@ -193,7 +193,10 @@ def evaluate_bundle(bundle, task, ctx):
                     else f'{billing} billing: explicit selection only')
     if not spec.get('verified', True) and not task['include_unverified']:
         exclude('account not verified as launchable')
-    if info.get('advisor_only') and kind not in info.get('advisor_for', ()):
+    if info.get('advisor_only') and (
+        kind not in info.get('advisor_for', ())
+        or (task.get('profile') or {}).get('access') == 'write'
+    ):
         exclude('advisor only; cannot execute')
     account_out = bool(result['excluded'])      # out by the host, the checkbox, a hold or billing: not by this task
     if info.get('excluded_when') == 'local_only' and task['local_only']:

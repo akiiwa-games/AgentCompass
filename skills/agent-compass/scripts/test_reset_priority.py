@@ -15,7 +15,7 @@ class ResetPriorityTests(unittest.TestCase):
         isolated_router_state(self.addCleanup)
         self.now = datetime(2026, 10, 29, tzinfo=timezone.utc)
         self.accounts = account_fleet.load_accounts()
-        self.task = {'work_kind': 'general_implementation', 'difficulty': 'hard', 'expected_hours': 0.5,
+        self.task = {'work_kind': 'code_implementation', 'difficulty': 'hard', 'expected_hours': 0.5,
                      'needs': {'local_only': True}, 'disable_fast': True}
         self.usage = usage_windows(self.now, {
             'codex': [('usage', 90, 100)],

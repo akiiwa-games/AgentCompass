@@ -49,7 +49,7 @@ def build_request(stage, document, cache=None, now=None):
             'tightly coupled work with self. Delegation must already be permitted. Missing specialist '
             'capability can justify delegation without parallel work; a model name alone cannot. '
             'Quota never justifies inventing work. Classify specialty using capability_policy.routes, '
-            'distinguishing visual analysis from UI coding and direction reasoning from build planning.')
+            'distinguishing visual_analysis from frontend_ui and creative_ideation from architecture_reasoning.')
     elif stage == 'select':
         candidates = document.get('candidates')
         if not isinstance(candidates, dict) or not 1 <= len(candidates) <= 254:

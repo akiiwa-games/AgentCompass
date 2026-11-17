@@ -29,8 +29,12 @@ LEGACY_KEYS = {
 }
 # Keys a model row of the accounts catalogue may not carry: its scores, tier and price live in five-axis-scores.json.
 LEGACY_MODEL_KEYS = {'tier', 'visual', 'cost', 'usd_per_hour', 'score_estimated', 'capability', 'dna'}
-# Profile fields only the older rows read; the classifier answers `axis_demand` instead.
-LEGACY_PROFILE_FIELDS = {'context_scale', 'divergence', 'hallucination_risk', 'error_cost', 'needs_critical'}
+# Profile fields only the older rows read; the classifier answers the 10 concrete `TASK_PROFILE_SCHEMA` fields and
+# `task_intake` projects `axis_demand` deterministically from `work_kind`.
+LEGACY_PROFILE_FIELDS = {
+    'context_scale', 'divergence', 'hallucination_risk', 'error_cost', 'needs_critical',
+    'reasoning_depth', 'code_complexity', 'interaction_style', 'hours_confidence', 'urgency',
+}
 LEGACY_ALLOCATOR_NAMES = {
     'USD_PER_HOUR_DEFAULTS', 'exchange_rate', 'effort_ability', 'demand_forecast', 'task_demand', 'five_axis_enabled',
     'load_subjective', 'capability_fit', 'tier_gate', 'ability_floor', 'default_hours',
@@ -87,12 +91,16 @@ class NoLegacyScoringTests(unittest.TestCase):
         # The classifier: the answer's schema, the shipped calibration cases and a normalized task.
         schema = scorer_client.scorer_schema(account_fleet.load_capabilities())
         self.assertFalse(LEGACY_PROFILE_FIELDS & set(schema['properties']), 'classifier schema')
-        self.assertIn('axis_demand', schema['required'])
+        self.assertNotIn('axis_demand', schema['properties'])
         for case in load(REFERENCES / 'classifier-cases.json')['calibration_cases']:
             self.assertFalse(LEGACY_PROFILE_FIELDS & set(case['expected_profile']), case['id'])
-            self.assertEqual(set(case['expected_profile']['axis_demand']), set(axis_scores.FIVE_AXES), case['id'])
+            self.assertEqual(set(case['expected_profile']), set(schema['required']), case['id'])
+            validated = task_intake.validate_profile(case['expected_profile'])
+            self.assertEqual(set(validated['axis_demand']), set(axis_scores.FIVE_AXES), case['id'])
         self.assertFalse(LEGACY_PROFILE_FIELDS & set(task_intake.TASK_PROFILE_SCHEMA['properties']))
-        accepted = set(task_intake.TASK_PROFILE_SCHEMA['properties']) | {'work_kind', 'axis_demand', 'reason'}
+        accepted = set(task_intake.TASK_PROFILE_SCHEMA['properties']) | {
+            'axis_demand', 'needs_gui', 'read_only_review', 'multi_task', 'reason',
+        }
         self.assertFalse(LEGACY_PROFILE_FIELDS & accepted)
 
         # The router's own scoring policy has no switch, weights or gates of the older scoring.

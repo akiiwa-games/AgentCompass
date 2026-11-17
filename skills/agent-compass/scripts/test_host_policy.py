@@ -41,7 +41,7 @@ class HostPolicyTests(unittest.TestCase):
         self.path.write_text(json.dumps(data), encoding='utf-8')
 
     def plan(self, task=None, **kwargs):
-        return allocator.plan(task or {'work_kind': 'general_implementation', 'difficulty': 'hard'},
+        return allocator.plan(task or {'work_kind': 'code_implementation', 'difficulty': 'hard'},
                               {'accounts': {}}, now=self.now, accounts=self.accounts, **kwargs)
 
     def candidate(self, account):
@@ -89,7 +89,7 @@ class HostPolicyTests(unittest.TestCase):
 
     def test_whitelist_applies_to_all_plan_calls_and_cannot_be_overridden(self):
         for unavailable in ([], ['sol_xhigh']):
-            result = self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard',
+            result = self.plan({'work_kind': 'code_implementation', 'difficulty': 'hard',
                                 'allowed_accounts': ['claude'], 'host_policy': None}, unavailable=unavailable)
             for row in result['ranking']:
                 if row['bundle']['account'] not in LS['allowed_accounts']:
@@ -105,7 +105,7 @@ class HostPolicyTests(unittest.TestCase):
         self.assertEqual(subscription_judge.judge_order({}, 'auto'), [])
 
     def test_excluded_coupled_owner_is_blocked(self):
-        result = self.plan({'work_kind': 'general_implementation', 'difficulty': 'coupled',
+        result = self.plan({'work_kind': 'code_implementation', 'difficulty': 'coupled',
                             'chain': {'id': 'a', 'coupling': 'high', 'worker': {'bundle': 'opus55_high'}}})
         self.assertIn('excluded by host policy', result['decision']['resume_blocked_by'])
         self.assertTrue(result['decision']['needs_user_decision'])
@@ -145,7 +145,7 @@ class HostPolicyTests(unittest.TestCase):
 
     def test_record_keeps_constraint_and_flags_violation_in_ledger(self):
         task = self.directory/'task.json'
-        task.write_text(json.dumps({'task': {'work_kind': 'general_implementation', 'difficulty': 'hard', 'profile': profile()}}))
+        task.write_text(json.dumps({'task': {'work_kind': 'code_implementation', 'difficulty': 'hard', 'profile': profile()}}))
         args = router.argparse.Namespace(basis='User explicit retained owner', provider='claude', account='claude',
                 model='claude-opus-5-5', effort='high', input=task, usage_cache=None, accounts=None,
                 constraint='user_override', specialty=None)
@@ -179,7 +179,7 @@ class HostPolicyTests(unittest.TestCase):
         self.assertEqual(host_policy.usage_providers({'allowed_accounts': ['codex'], 'usage_providers': []}, defaults), [])
         # Dispatch exclusions still strictly govern routing/allocation even when usage is collected for all accounts.
         self.write({'allowed_accounts': ['codex']})
-        planned = self.plan({'work_kind': 'general_implementation', 'difficulty': 'hard', 'profile': profile()})
+        planned = self.plan({'work_kind': 'code_implementation', 'difficulty': 'hard', 'profile': profile()})
         # The fixture has no quota reading, so codex itself may be out (mode B); what matters is that nothing else is chosen.
         self.assertIn((planned.get('selected_bundle') or {}).get('account'), (None, 'codex'))
         for row in planned['ranking']:

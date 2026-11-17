@@ -27,9 +27,9 @@ import window_scope
 
 
 NOW = datetime(2026, 10, 29, 3, 0, tzinfo=timezone.utc)
-PROFILE = profile(code_complexity=1, local_only=True, reason='test profile')
-LIVE = profile(code_complexity=1, local_only=True,
-               axis_demand={'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2}, reason='test profile')
+PROFILE = profile(primary_level=2, local_only=True, reason='test profile')
+LIVE = profile(work_kind='live_loop', primary_level=1, local_only=True,
+               axis_demand={'creativity': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2}, reason='test profile')
 FULL_QUOTA = {
     'claude': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
     'claude-lab': [('five_hour', 90, 3), ('seven_day', 80, 100), ('weekly_fable', 100, 100)],
@@ -428,7 +428,7 @@ class ProfileValidationTests(RouterCase):
         with self.assertRaisesRegex(ValueError, 'task_count'):
             task_intake.validate_profile(missing)
         with self.assertRaisesRegex(ValueError, 'multi_task'):
-            task_intake.validate_profile({k: v for k, v in PROFILE.items() if k != 'multi_task'})
+            task_intake.validate_profile({**PROFILE, 'multi_task': 'yes'})
 
     def test_contradictions_are_invalid_not_repaired(self):
         """4.1: `multi_task true, task_count 1` passed through and printed "1 separate tasks"."""
@@ -489,13 +489,13 @@ class ProfileValidationTests(RouterCase):
         with patch.dict(os.environ, {'ROUTER_SCORE_CACHE': str(Path(self.root) / 'cache2.json')}):
             profile, scorer = dict(PROFILE), {'source': 'system_one', 'attempts': []}
             scorer_client.score_cache_put('k', profile, scorer)
-            profile['reasoning_depth'] = 4
+            profile['primary_level'] = 3
             scorer['attempts'].append('later')
             first = scorer_client.score_cache_get('k')
-            self.assertEqual(first['profile']['reasoning_depth'], 2)
+            self.assertEqual(first['profile']['primary_level'], 2)
             self.assertEqual(first['scorer']['attempts'], [])
-            first['profile']['reasoning_depth'] = 3
-            self.assertEqual(scorer_client.score_cache_get('k')['profile']['reasoning_depth'], 2)
+            first['profile']['primary_level'] = 1
+            self.assertEqual(scorer_client.score_cache_get('k')['profile']['primary_level'], 2)
 
 
 if __name__ == '__main__':

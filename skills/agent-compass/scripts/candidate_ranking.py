@@ -113,7 +113,7 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
         c['score'] = float((1.0 + raw_score) - 1.0)
     # Equal scores go to the candidate with no wait, then faster completion, then fewer USD,
     # then higher level; the harness order only separates siblings of one model, account and effort.
-    harness_places(eligible, kind, policy, capabilities, (task['profile'] or {}).get('interaction_style'))
+    harness_places(eligible, kind, policy, capabilities)
     eligible.sort(key=five_axis_order)
     for i, c in enumerate(eligible):
         c['components']['decided_by'] = (five_axis_deciding_key(c, eligible[i + 1]) if i + 1 < len(eligible)
@@ -134,11 +134,10 @@ def harness_group(candidate):
     return sibling_key(candidate) + (candidate['action'],)
 
 
-def harness_places(eligible, kind, policy, capabilities, style=None):
+def harness_places(eligible, kind, policy, capabilities):
     """Five-axis path: each candidate's place behind its best sibling (same account, model, effort and action) in the
     harness order `harness_places` computes, as `harness_place`; the score is not touched."""
-    by_style = ((policy.get('profile') or {}).get('harness_by_style') or {}).get(style) if style else None
-    order = (capabilities['routes'].get(kind) or {}).get('harness_order') or by_style or policy.get('harness_order') or []
+    order = (capabilities['routes'].get(kind) or {}).get('harness_order') or policy.get('harness_order') or []
 
     def place(candidate):
         b = candidate['bundle']

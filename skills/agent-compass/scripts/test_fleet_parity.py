@@ -85,12 +85,11 @@ class CleanInstallParityTests(unittest.TestCase):
         now = datetime(2026, 11, 11, tzinfo=timezone.utc)
         task_doc = {
             'objective': 'Draft module notes', 'hours': 0.5,
-            'profile': {'work_kind': 'general_implementation', 'reasoning_depth': 1, 'code_complexity': 1,
-                        'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
-                        'read_only_review': False, 'access': 'write', 'expected_hours': 0.5,
-                        'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'engineering',
-                        'multi_task': False, 'task_count': '1',
-                        'axis_demand': {'divergence': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 0}},
+            'profile': {'work_kind': 'code_implementation', 'primary_level': 1,
+                        'secondary_kind': 'none', 'secondary_level': 0,
+                        'needs_visual': False, 'local_only': False, 'wants_fast': False,
+                        'access': 'write', 'expected_hours': 0.5, 'task_count': '1',
+                        'axis_demand': {'creativity': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 0}},
         }
         decision = allocator.plan(task_doc, {'accounts': {}}, now, accounts=self.accounts, overrides=[],
                                   host_policy_config=None, read_local_state=False)
@@ -151,16 +150,15 @@ class CleanInstallParityTests(unittest.TestCase):
         now = datetime(2026, 11, 11, tzinfo=timezone.utc)
         task_doc = {
             'objective': 'Interactive multi-step tool loop', 'hours': 0.5,
-            'profile': {'work_kind': 'tool_execution', 'reasoning_depth': 1, 'code_complexity': 0,
-                        'needs_visual': False, 'needs_gui': False, 'local_only': False, 'wants_fast': False,
-                        'read_only_review': False, 'access': 'read-only', 'expected_hours': 0.5,
-                        'hours_confidence': 'medium', 'urgency': 'normal', 'interaction_style': 'exploration',
-                        'multi_task': False, 'task_count': '1',
-                        'axis_demand': {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}},
+            'profile': {'work_kind': 'live_loop', 'primary_level': 1,
+                        'secondary_kind': 'none', 'secondary_level': 0,
+                        'needs_visual': False, 'local_only': False, 'wants_fast': False,
+                        'access': 'read-only', 'expected_hours': 0.5, 'task_count': '1',
+                        'axis_demand': {'creativity': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}},
         }
         # Without manual scores, unmeasured tool_operation.responsiveness enters Mode B with actionable CLI hint:
         with unittest.mock.patch.object(axis_scores, 'load_public_user_scores',
-                                        return_value={'schema_version': 1, 'scores': {}}):
+                                        return_value={'schema_version': 2, 'scores': {}}):
             unscored = allocator.plan(task_doc, {'accounts': {}}, now, accounts=self.accounts, overrides=[],
                                       host_policy_config=None, read_local_state=False)
         for row in [r for r in unscored['ranking'] if r['bundle']['account'] == 'grok-bot']:
@@ -178,8 +176,10 @@ class CleanInstallParityTests(unittest.TestCase):
     def test_scoring_and_route_policy_are_the_public_defaults(self):
         scoring = self.accounts['scoring']
         self.assertEqual(scoring['harness_order'], ['codex', 'pi'])
-        self.assertEqual(scoring['profile']['harness_by_style'], {'engineering': ['codex', 'pi'], 'exploration': ['pi', 'codex']})
+        self.assertEqual(scoring['profile']['difficulty_by_level'], {'1': 'routine', '2': 'hard', '3': 'coupled'})
         policy = account_fleet.load_capabilities(accounts=self.accounts)
+        self.assertEqual(policy['routes']['code_implementation']['harness_order'], ['codex', 'pi'])
+        self.assertEqual(policy['routes']['exploration_forensics']['harness_order'], ['pi', 'codex'])
         self.assertEqual(policy['remote_reroute_guard'], {'enabled': True, 'bundle_id': 'dot_text', 'window_seconds': 600})
         self.assertEqual([t['label'] for t in self.accounts['priority_targets']], ['Astra', 'Argon', 'Opus 5.5'])
 

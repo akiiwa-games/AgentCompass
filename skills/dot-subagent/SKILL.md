@@ -70,7 +70,7 @@ delivery as a finished answer. Keep text packets bounded and return larger artif
 
 ## Code and tests on Dot's own computer
 
-The router calls this work `self_contained_code`. Dot runs code on its own remote machine. Check the current
+The router classifies self-contained code as `code_implementation` with `local_only: false`. Dot runs code on its own remote machine. Check the current
 environment and ask it to report the exact commands, outputs and artifact hashes.
 
 Ask for this reply shape, and give the spec, the interfaces and any existing source it must match, because it sees
