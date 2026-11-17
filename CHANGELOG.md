@@ -2,6 +2,11 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.6.4 - 2026-11-17
+
+- The spawn gate no longer blocks Claude Code's built-in tool agents (`web-fetch`, `statusline-setup`, `claude-code-guide`): calling one launches no worker. A project or user agent definition that takes one of those names is still a launch. The default rules name the same exception.
+- `orca orchestration worker-start -h` and `codex exec -h` ask for help and are no longer read as launches.
+
 ## v0.6.3 - 2026-11-16
 
 - Google Gemini Decision 1 (Decisions API) is a selectable task classifier (`scorer_type: gemini_decision`, key `gemini_api_key` or `GEMINI_API_KEY`). It bills input tokens, so it runs only when chosen.

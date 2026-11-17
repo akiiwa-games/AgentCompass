@@ -1,12 +1,13 @@
-AgentCompass v0.6.3 adds Google's Gemini Decision 1 as a task classifier you can choose. It builds on v0.6.2.
+AgentCompass v0.6.4 stops the spawn gate from blocking calls that launch no worker. It builds on v0.6.3.
 
-- **Gemini Decision 1 (Decisions API) as the task classifier.** The classifier (the System-One scorer) reads a task and returns the profile the router allocates on. You can now pick `gemini_decision`: the router sends the task text and its fixed question set to Google's [Gemini Decisions API](https://aistudio.google.com/docs/decisions-api) (`POST /v1beta/decisions`, model `gemini-decision-1`) and builds the profile from the answers.
-  - Choose it in the tray under Settings > System options, or with `agentcompass scorer --action set --type gemini_decision --api-key -` (the key is read from stdin). The key can also come from `GEMINI_API_KEY`. `agentcompass scorer --action test` classifies one sample task with it.
-  - The API bills input tokens, so it runs only when it is the chosen scorer type. A key alone, in the file or the environment, never adds it to the cascade.
-  - When it fails or has no key, the other scorers are tried in turn (`claude_haiku_low`, `codex_terra_low`, `agy_flash_low`), as with any chosen scorer. It answers task profiles only; other classifier questions go to the next scorer.
-  - Checked against the live API: with a key saved, the tray's scorer test classified its sample task through `gemini-decision-1`.
-- **For contributors.** The question set and the answer parser are shared by the two question APIs (TypeSafe Jev, Gemini Decision 1); the `JEV_*` question tables in `scorer_client.py` are now `PROFILE_*`, and `parse_jev_response` is `parse_profile_answers`.
+- **Claude Code's built-in tool agents are tool use, not a dispatch.** The gate treated every call of Claude Code's `Agent` tool as an unrouted sub-agent launch. Three built-in agents are a host tool or command in agent form and hand no work to a worker, so the gate now lets them through:
+  - `web-fetch`: stands in for the WebFetch tool in a session that has none of its own. With the gate installed, such a session could not read a web page at all.
+  - `statusline-setup`: what the `/statusline` command runs.
+  - `claude-code-guide`: answers questions about Claude Code itself.
+- **What stays a launch.** `Explore`, `Plan`, `general-purpose`, `claude`, `fork` and every custom agent still need a route. Codex `spawn_agent` roles and Antigravity `invoke_subagent` types are all delegated work, so those hosts get no exception. A project or user agent definition that takes one of the three names replaces the built-in and carries its own tools: the gate looks for one (every `.claude/agents` from the working directory upwards, and the user's Claude home) and keeps blocking that case.
+- **The rules say the same.** The default global rule, the Paseo daemon summary and the dispatch rules now name the exception, so a session that follows the rule text does not refuse a call the gate lets through. `agentcompass setup` (run by the update on a machine that was set up) rewrites the rule blocks. If you keep your own rule overlay, edit it yourself.
+- **Asking a launching CLI for help is not a launch.** `orca orchestration worker-start -h` and `codex exec -h` were blocked while `--help` was let through; both spellings now pass.
 
-The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.6.3/packaging/SIGNING.md).
+The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass/blob/v0.6.4/packaging/SIGNING.md).
 
 Status: alpha. Accounts come from discovery on your machine; choose which ones take part in the tray.
