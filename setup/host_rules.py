@@ -86,7 +86,7 @@ Cross-project rules for agents that can delegate work through the AgentCompass r
 
 ## 2. Delegation goes through AgentCompass
 
-1. Do serial work yourself. Delegate only independent work that gains from parallelism, an isolated large context, a specialist capability or quota offloading. A delegated worker (`AGENTCOMPASS_WORKER=1` or a `Parent session agent ID:` contract) does its assignment without delegating again.
+1. Do serial work yourself. Delegate only independent work that gains from parallelism, an isolated large context, a specialist capability or quota offloading. A delegated worker (`AGENTCOMPASS_WORKER=1` or a `Parent session agent ID:` contract) does its assignment without delegating again. Follow-up or related work goes back to the worker that already holds its context, not to a fresh worker (dispatch rules, section 3).
 2. Dispatch only with `@@AGENTCOMPASS@@ roll --task "<assignment>"` (or `--brief <file>`, one brief per independent task). Never call `create_agent`, `Agent`/`Task`, `spawn_agent` or `invoke_subagent` directly. A host's built-in tool agent is tool use, not a dispatch: in Claude Code `web-fetch` (reads a web page), `statusline-setup` (what `/statusline` runs) and `claude-code-guide` (answers questions about Claude Code). Codex and Antigravity have none; `Explore`, `Plan`, `general-purpose` and every other agent type are dispatches.
 3. Read the result's `status` and do exactly `next_action`.
 4. Never pick a model or effort yourself; the router does.

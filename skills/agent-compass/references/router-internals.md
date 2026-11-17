@@ -136,7 +136,7 @@ reroute policy; the public catalogue does not enable a remote-first loop.
 
 Historical uncompressed worker context is `compacted_tokens + context_tokens`, including
 all pre-compaction context replaced over the session. At the configured context rotation
-threshold (`rotate_after_carried_tokens`, default 2M, set in the tray), start a fresh
+threshold (`rotate_after_carried_tokens`, default 4M, set in the tray), start a fresh
 worker with a handoff. The parent can still steer its own running worker under the
 communication contract below. The continuation verdict in a worker notification (`turn_refusal.py`) says `roll` with the reason for the conditions the gate
 enforces on a new turn (account or bundle disabled, confirmed quota exhaustion, a refusing quota window) and advises `roll` for

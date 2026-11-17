@@ -105,7 +105,7 @@ def _shipped_tuning_defaults() -> dict[str, int]:
 TUNING_DEFAULTS = _shipped_tuning_defaults()
 STRATEGY_PRESETS = {
     "均衡": dict(TUNING_DEFAULTS),
-    "省额度": {"safety_margin_pct": 12, "short_window_floor_pct": 20, "rotate_after_carried_tokens": 1500000},
+    "省额度": {"safety_margin_pct": 12, "short_window_floor_pct": 20, "rotate_after_carried_tokens": 3000000},
     "重置前蹬完": {
         "safety_margin_pct": 3,
         "short_window_floor_pct": 8,

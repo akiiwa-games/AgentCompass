@@ -501,7 +501,8 @@ class SettingsTests(unittest.TestCase):
 
     def test_tuning_is_changed_in_place_backed_up_and_restored_byte_for_byte(self):
         target = self.dir / "accounts.json"
-        shutil.copy(self.accounts, target)
+        # Restore writes the shipped defaults, so start from the shipped file for a byte-for-byte round trip.
+        shutil.copy(worker_sessions.SHIPPED_ACCOUNTS, target)
         original = target.read_bytes()
         message = router_data.save_tuning({"safety_margin_pct": 7, "short_window_floor_pct": 12}, target)
         self.assertIn("2", message)
