@@ -68,6 +68,23 @@ class RollNotificationTests(unittest.TestCase):
                 self.assertIn(expected, result['next'])
                 self.assertEqual(result['worker'].get('completion_notification'), receipt.get('completion_notification'))
 
+    def test_watched_launched_next_action_forbids_shell_polling_and_tells_parent_to_end_turn(self):
+        watching_result = {
+            'dispatch_mode': 'paseo',
+            'worker': {'agent_id': 'worker', 'completion_notification': {'status': 'watching'}},
+        }
+        watching_compact = roll.compact(watching_result, 'launched', None)
+        self.assertIn('end your turn', watching_compact['next_action'])
+        self.assertIn('do not sleep or poll', watching_compact['next_action'])
+
+        delivered_result = {
+            'dispatch_mode': 'paseo',
+            'worker': {'agent_id': 'worker', 'completion_notification': {'status': 'delivered'}},
+        }
+        delivered_compact = roll.compact(delivered_result, 'launched', None)
+        self.assertIn('has been delivered', delivered_compact['next_action'])
+        self.assertNotIn('end your turn', delivered_compact['next_action'])
+
     def test_claim_or_notifier_without_observed_worker_is_pending_with_public_continuation(self):
         args=SimpleNamespace(title='test',workspace=None,wait=0)
         decision={'decision_id':'decision','selected_bundle':{'provider':'codex'}}

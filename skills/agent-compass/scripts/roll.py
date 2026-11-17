@@ -707,8 +707,10 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                     worker=dict(receipt, provider=decision['selected_bundle']['provider'])), 1
     notification = receipt.get('completion_notification') or {}
     notice = ('A completion notification will be sent to the parent on finish/error/permission, and that notice '
-              'contains the worker\'s final reply. The bounded watcher PID, deadline and durable receipt are in '
-              'worker.completion_notification. Use worker.continuation_argv to recover observation if that watcher stops.') \
+              'contains the worker\'s final reply. Finish any independent work and end your turn to wait for it; '
+              'do not sleep or poll (paseo ls, get_agent_status, or result files) in a shell command. '
+              'The bounded watcher PID, deadline and durable receipt are in worker.completion_notification. '
+              'Use worker.continuation_argv to recover observation if that watcher stops.') \
         if notification.get('status') == 'watching' else \
         ('The completion notification has been delivered to the parent.' if notification.get('status') == 'delivered' else
          'No active completion notification is confirmed. The caller must collect the result using '
@@ -748,7 +750,9 @@ def fallback_result(out, outcome, decision, parent, args):
                     next=('The routed model failed to start, so AgentCompass relaunched the brief on the next candidate '
                           f'({bundle.get("model")} on {bundle.get("account")}). Do NOT call create_agent, Agent, '
                           'spawn_agent, or invoke_subagent again. ' +
-                          ('A completion notification will be sent to the parent.' if notification.get('status') == 'watching'
+                          ('A completion notification will be sent to the parent; finish any independent work and '
+                           'end your turn to wait for it instead of sleeping or polling in a shell command.'
+                           if notification.get('status') == 'watching'
                            else 'No completion notification is confirmed: run worker.continuation_argv to collect the result.')),
                     worker=worker), 0
     if outcome.get('action') == 'final' and outcome.get('result') in ('blocked', 'owner_named'):
@@ -977,8 +981,13 @@ def launched_next(result, worker, argv):
             return (f"Worker is running as PID {worker.get('pid')} and nothing calls back: watch worker_output until it exits, "
                     'or stop it before you finish.')
         return 'Worker finished; read worker_output.' if exit_code == 0 else f'Worker exited with code {exit_code}; read worker_output and worker_stderr.'
-    if (worker.get('completion_notification') or {}).get('status') in ('watching', 'delivered'):
-        return 'Worker launched; do not launch another. Its completion arrives as a notification.'
+    notif_status = (worker.get('completion_notification') or {}).get('status')
+    if notif_status == 'watching':
+        return ('Worker launched; do not launch another. Its completion arrives as a notification: '
+                'finish any independent work and end your turn to wait for it; do not sleep or poll '
+                '(paseo ls, get_agent_status, or result files) in a shell command.')
+    if notif_status == 'delivered':
+        return 'Worker launched; do not launch another. Its completion notification has been delivered.'
     if argv:
         return 'Worker launched; do not launch another. No completion notification is confirmed: run next_argv to collect the result.'
     return result.get('next') or 'Worker launched; do not launch another.'
