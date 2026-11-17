@@ -59,12 +59,19 @@ DIRECT_SUBAGENT_TOOLS = frozenset({
     "create_schedule",  # Paseo: "Create a recurring schedule that starts a new agent on a cron cadence."
 })
 
-# Claude Code's built-in `web-fetch` agent stands in for the WebFetch tool in a session that has no WebFetch of its
-# own: WebFetch is its only tool, and the host presents calling it as ordinary tool use. Reading a page hands no work
-# to a worker, so that call is not a launch. A project or user definition of the same name replaces the built-in and
-# carries tools of its own (code.claude.com/docs/en/sub-agents, "Choose the subagent scope"); that one is a launch.
+# Claude Code built-in agents that are a host tool or command in agent form. Calling one hands no work to a worker,
+# so that call is not a launch:
+#   web-fetch          stands in for the WebFetch tool in a session that has none of its own; WebFetch is its only
+#                      tool, and the host presents calling it as ordinary tool use (the session's own agent list)
+#   statusline-setup   what the `/statusline` command runs to write the status line setting
+#   claude-code-guide  answers questions about Claude Code itself
+# (code.claude.com/docs/en/sub-agents, "Built-in subagents"). Explore, Plan, general-purpose, claude and fork do the
+# session's own work in another context: they stay launches. Codex `spawn_agent` roles (default, explorer, worker)
+# and Antigravity `invoke_subagent` types (self, DeepCoder, DeepInvestigator, teamwork_*) are all delegated work, so
+# those hosts have no entry here. A project or user definition of one of these names replaces the built-in and
+# carries tools of its own (same page, "Choose the subagent scope"); that one is a launch.
 CLAUDE_AGENT_TOOLS = frozenset({"Agent", "Task"})
-HOST_TOOL_AGENTS = frozenset({"web-fetch"})
+HOST_TOOL_AGENTS = frozenset({"web-fetch", "statusline-setup", "claude-code-guide"})
 
 # Paseo update_schedule re-targets an existing schedule's new-agent launch when it names a provider or model.
 SCHEDULE_RETARGET_TOOLS = frozenset({"update_schedule"})

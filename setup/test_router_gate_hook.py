@@ -200,8 +200,8 @@ class RouterGateHookTests(unittest.TestCase):
                 self.assertNotIn("block", [ k for k, v in res.items() if v is True or v == "block"])
 
     def test_a_built_in_tool_stand_in_agent_is_not_a_launch_unless_redefined(self):
-        # Rule: Claude Code's built-in web-fetch agent only stands in for the WebFetch tool, so calling it launches no
-        # worker; a project or user definition of that name replaces the built-in and is a launch like any other.
+        # Rule: a Claude Code built-in agent that is a host tool or command in agent form (HOST_TOOL_AGENTS) launches
+        # no worker; a project or user definition of that name replaces the built-in and is a launch like any other.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             missing = root / "missing.jsonl"
@@ -213,11 +213,18 @@ class RouterGateHookTests(unittest.TestCase):
                 with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(home)}):
                     return gate.evaluate_payload(payload, ledger_path=missing, now=T0).get("decision")
 
-            self.assertEqual([decide("web-fetch"), decide("web-fetch", tool="Task")], [None, None])
-            # Every other agent type, and the same name on a tool that is not Claude Code's Agent, stays a launch.
-            for agent in ("Explore", "general-purpose", "claude", "web-fetch-2", ""):
+            for agent in gate.HOST_TOOL_AGENTS:
+                self.assertEqual([decide(agent), decide(agent, tool="Task")], [None, None], agent)
+                # The same name on another host's sub-agent tool is that host's own agent: a launch.
+                self.assertEqual(decide(agent, tool="spawn_agent"), "block", agent)
+                file = project / ".claude" / "agents" / "own.md"
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text(f"---\nname: {agent}\ntools: Bash\n---\n", encoding="utf-8", newline="\n")
                 self.assertEqual(decide(agent), "block", agent)
-            self.assertEqual(decide("web-fetch", tool="spawn_agent"), "block")
+                file.unlink()
+            # Every agent type that does the session's own work in another context stays a launch.
+            for agent in ("Explore", "Plan", "general-purpose", "claude", "fork", "web-fetch-2", ""):
+                self.assertEqual(decide(agent), "block", agent)
             # A definition of that name is found by its frontmatter name, in a subfolder, in a parent project
             # directory or in the user's Claude home; a file without a name is known by its file name.
             cases = (
