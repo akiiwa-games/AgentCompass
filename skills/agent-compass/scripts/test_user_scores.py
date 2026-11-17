@@ -256,7 +256,8 @@ class FixRoundRegressionTests(unittest.TestCase):
 
         # Named dispatch / direct fit monotonicity: missing responsiveness stands at zero (0.0) at both L2 and L3.
         targets = axis_scores.load_five_axis(REFERENCES_DIR / 'five-axis-scores.json')['anchor']['targets']
-        vals = {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0,
+        vals = {'divergence': 0.0, 'coding': 0.0,
+                'aesthetics': {'design': 0.0, 'image_recognition': 0.5},
                 'tool_operation': {'responsiveness': None, 'image_recognition': 0.5}}
         d2 = {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}
         d3 = {'divergence': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 3}
@@ -265,6 +266,20 @@ class FixRoundRegressionTests(unittest.TestCase):
         self.assertEqual(fit_l2, 0.0)
         self.assertEqual(fit_l3, 0.0)
         self.assertIsNone(axis_scores.five_axis_shares(vals, targets)['tool_operation'])
+
+        # Shared image_recognition: a manual score on tool_operation.image_recognition moves aesthetics L2/L3 too.
+        over = axis_scores.five_axis_overlay(
+            copy.deepcopy(account_fleet.load_accounts(account_fleet.reference_fleet_path())),
+            read_local_state=False,
+            local_scores={'scores': {'claude-opus-5-5': {
+                'tool_operation.image_recognition': {'level': 1.2, 'as_of': '2026-11-17', 'kind': 'user'},
+            }}},
+        )
+        opus_vals = axis_scores.five_axis_values(over['models']['claude-opus-5-5']['five_axis'], 'high')
+        self.assertEqual(opus_vals['aesthetics']['design'], 0.0)
+        self.assertEqual(opus_vals['aesthetics']['image_recognition'],
+                         opus_vals['tool_operation']['image_recognition'])
+        self.assertLess(opus_vals['aesthetics']['image_recognition'], -1.5)
 
     def test_f2_select_variants_picks_own_high_row_and_correlates_aa_effort_curve(self):
         cal = _load_calibration_modules()

@@ -168,17 +168,17 @@ def _validate_catalog_tables(doc):
         raise ValueError(f'calibration_panel anchor and models must be model rows, the anchor among the models'
                          + (f' (no row: {", ".join(map(str, unknown))})' if unknown else ''))
 
-SCHEMA_VERSION = 4              # the newest data schema this code reads; bump with any breaking data change
+SCHEMA_VERSION = 5              # the newest data schema this code reads; bump with any breaking data change
 # Schema 3 (2026-11-11) switches to the four-category taxonomy (`divergence`, `coding`, `aesthetics`, `tool_operation`),
 # ships `five-axis-scores.json` and maintainer `user-scores.json` in the public channel, and rejects schema-2 sets
 # whose `classifier-cases.json` used the retired four-axis `axis_demand` keys.
 # Schema 4 (2026-11-13) moves per-model facts into accounts.json: `families`, `fast_capable` with `vendor_fast_mode`,
-# `list_price`, `listed_as` and `calibration_panel`. A schema-3 install keeps those facts in code tables and would apply
-# a later model addition only in part (no fast mode, no price, no family fold), so it stays on its last accepted set
-# until it is updated; this code needs the new fields and does not read schema-3 sets. five-axis-scores/3 (level-3
-# ceilings, `anchor.sd_panel`, `anchor.panel_change`) ships with schema 4; axis_scores.require_level3_ceilings names a
-# file without ceilings instead of failing with a KeyError.
-MIN_SCHEMA_VERSION = 4
+# `list_price`, `listed_as` and `calibration_panel`, with `agent-compass.five-axis-scores/3` level-3 ceilings.
+# Schema 5 (2026-11-17) evaluates `aesthetics` per level (`design` at level 1; `min(design, image_recognition)` at levels
+# 2 and 3, sharing `tool_operation.image_recognition`) in `agent-compass.five-axis-scores/4`, and aligns
+# `classifier-cases.json` so static visual inspection routes through `aesthetics` 2..3 + `needs_visual` rather than
+# `tool_operation` 3. Schema-4 installs keep their last accepted set until updated.
+MIN_SCHEMA_VERSION = 5
 UPDATE_APP = 'update AgentCompass to the latest release to receive new reference data'
 FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'five-axis-scores.json', 'user-scores.json')
 MANIFEST = 'public-data.json'

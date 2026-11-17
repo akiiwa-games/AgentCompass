@@ -58,16 +58,21 @@ SCORER_PROMPT = (
     '1. `local_only`: `true` only when depending on un-inlined local files/repos/processes/GUI; `false` when inputs are '
     'inlined or from the public web (`web_research`, `self_contained_code`, `text_in_text_out`, `direction_reasoning`, '
     '`complex_build_plan`), even if a local output path is named.\n'
-    '2. `code_complexity`: 0 for ANY read-only code/diff/release review, audit, or diagnosis '
-    '(even if saving a review report file to a specified path).\n'
-    '3. `needs_gui`: `true` when the worker operates a GUI, `false` for pure CLI/API/WebSocket work.\n'
+    '2. `code_complexity` & `read_only_review` & `access`: `code_complexity: 0` and `access: "read-only"` when reading, '
+    'inspecting, diagnosing, or auditing without modifying workspace source/state (`read_only_review: true` ONLY for '
+    'read-only code/diff/branch/security/release audits, even if saving a report file; `false` for runtime diagnosis, '
+    'ops runbooks, or fixing review findings). Otherwise `access: "write"`.\n'
+    '3. Static vision vs live GUI/loops: static offline inspection of images/photos/screenshots sets `needs_visual: true`, '
+    '`needs_gui: false`, scores visual perception/design difficulty on `aesthetics` (`1` coarse OCR, `2` UI/layout diff, '
+    '`3` fine-grained styling/material/color/lighting judgment), and keeps `tool_operation` at `0..1`. Reserve '
+    '`tool_operation: 3` (`needs_gui: true`) for operating a live GUI or watching a changing real-time screen, and '
+    '`tool_operation: 2` (`needs_gui: false`) for heavy tool orchestration or live text/API observe-act loops. Writing or '
+    'fixing code about real-time domains is `coding`, not a live loop.\n'
     '4. `wants_fast`: `true` ONLY when affirmatively requesting fast mode, priority tier, urgent/ASAP turnaround, or a '
     'pre-reset quota sprint (`pre-reset sprint`, `before quota resets`, `重置前冲刺`) without negation (`do not use fast '
     'mode` -> `false`; runtime step adverbs like `click immediately` or ordinary quota mentions -> `false`).\n'
-    '5. `read_only_review` & `access`: `read_only_review: true` ONLY for read-only code/diff/branch/security/release '
-    'reviews or audits (`code_complexity` 0, `access`=`read-only`, even if saving a report file); `false` when writing/'
-    'fixing code, running ops commands, or doing general exploration. Set `access` to `read-only` when the brief only '
-    'reads/inspects/analyzes without modifying workspace files/state (`code_complexity` 0), else `write`.\n'
+    '5. `multi_task`: `true` ONLY when bundling 2+ independent parallel deliverables; sequential steps of one workflow '
+    'are a single task (`multi_task: false, task_count: "1"`).\n'
     'Follow `dimension_rubric` and match the closest calibration case.\n')
 SCORER_TASK_FIELDS = ('objective', 'context', 'environment', 'expected_hours', 'needs')
 
@@ -418,10 +423,10 @@ PROFILE_SCORE_QUESTIONS = {
 # schema describes for the same band. Urgency is a choice too. hours_confidence stays unset: Jev reports no confidence,
 # and the Decisions API's probability of the chosen band is not converted into a level by a threshold of our own.
 PROFILE_EFFORT_BANDS = {
-    'quick': (0.1, 'A few tool calls: read a file, run one known command, a one-line change.'),
-    'module': (0.5, 'One module fix or feature with its test.'),
-    'multi_file': (2.0, 'A multi-file feature or an investigation across several files.'),
-    'long': (4.0, 'A long multi-stage build, migration or research effort.'),
+    'quick': (0.1, 'Quick check, CLI runbook, trivial config tweak, or focused single-diff/screenshot inspection (~0.1-0.25h).'),
+    'module': (0.5, 'Standard investigation, bug fix, batch audit, or 1-5 file feature with unit tests (~0.3-0.7h).'),
+    'multi_file': (2.0, 'Wide cross-module refactor (8+ files), open-web synthesis, or architecture blueprint (~1-3h).'),
+    'long': (4.0, 'Long multi-stage build, migration, or sustained multi-hour live loop (4h+).'),
 }
 PROFILE_URGENCY_CRITERIA = {
     'unknown': 'The task text states no deadline, incident or "asap" (the usual case; never infer urgency from topic or tone).',
@@ -430,8 +435,9 @@ PROFILE_URGENCY_CRITERIA = {
     'high': 'The text states an incident, an imminent deadline or "asap".',
 }
 PROFILE_NOUL_QUESTIONS = {
-    'needs_visual': 'Does this task require inspecting images, screenshots, visual design frames, or operating a GUI?',
-    'needs_gui': 'Does this task require operating a live desktop or browser GUI via mouse/keyboard/computer-use?',
+    'needs_visual': 'Does this task require inspecting images, photos, screenshots, visual design frames, or operating a GUI?',
+    'needs_gui': ('Does this task require operating a live desktop, browser, or mobile GUI via mouse/keyboard/computer-use '
+                  '(false for read-only static image/screenshot inspection or pure CLI/API work)?'),
     'local_only': ("Does this task explicitly depend on existing files, directories, or repositories on this machine "
                    '(reading, copying, editing, or testing un-inlined local files) or on local processes/GUI/environment?'),
 }
@@ -665,7 +671,7 @@ SCORER_ERRORS = (OSError, ValueError, RuntimeError, TypeError, AttributeError, K
 
 
 SCORE_CACHE_LOCK = threading.Lock()     # a batch roll classifies its briefs in threads
-SCORE_CACHE_VERSION = 11  # 11: semantic access ('read-only' | 'write') classifier field
+SCORE_CACHE_VERSION = 12  # 12: aesthetics L2/L3 visual perception + MECE rubric cleanup
 SCORE_CACHE_TTL_SECONDS = 24 * 3600
 SCORE_CACHE_MAX = 200
 

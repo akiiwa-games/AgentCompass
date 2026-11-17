@@ -62,8 +62,11 @@ TASK_PROFILE_SCHEMA = {
             'exploration, text drafting; 1 = a small script, config/constant tweak, localized helper, or analysis scripts '
             'inside a research packet; 2 = a production module implemented, fixed or refactored with its unit tests; '
             '3 = complex multi-module, concurrency, protocol or core-library changes.')},
-        'needs_visual': {'type': 'boolean', 'description': 'True when the work must look at images, screenshots or other visual input.'},
-        'needs_gui': {'type': 'boolean', 'description': 'True when the work must operate a desktop or browser GUI through screenshots, mouse and keyboard.'},
+        'needs_visual': {'type': 'boolean', 'description': (
+            'True when the worker must inspect images, photos, screenshots, mockups, or operate a GUI; false for text/code-only work.')},
+        'needs_gui': {'type': 'boolean', 'description': (
+            'True ONLY when the worker operates a live desktop, browser, or mobile GUI via screenshots, clicks, and keys; '
+            'false for read-only static image/screenshot inspection or pure CLI/API/WebSocket work.')},
         'local_only': {'type': 'boolean', 'description': (
             'True when the task explicitly depends on existing files, directories, or repositories on this machine '
             '(reading, copying, searching, editing, building, or testing un-inlined local files) or on local processes/GUI/'
@@ -78,9 +81,10 @@ TASK_PROFILE_SCHEMA = {
             'analyze logs or data; text_only = pure text in and out or public web lookup; advisory = direction '
             'reasoning or complex build planning.')},
         'expected_hours': {'type': 'number', 'minimum': HOURS_RANGE[0], 'maximum': HOURS_RANGE[1], 'description': (
-            'Active worker-hours this task needs at an ordinary agent pace (a few tool calls = 0.1; one module fix with a '
-            'test = 0.5; a multi-file feature or investigation = 1-3; a long multi-stage build = 4 or more). Estimate '
-            'work, never money, quota or balances. Use 0.5 when the text gives no basis and set hours_confidence low.')},
+            'Active worker-hours this task needs at an ordinary agent pace (quick check, runbook, or small review = 0.1-0.25; '
+            'standard investigation, bug fix, or 1-5 file feature with tests = 0.3-0.6; wide 8+ file refactor or broad survey = '
+            '1-3; multi-stage build or sustained live loop = 4 or more). Estimate work, never money, quota or balances; '
+            'brief length and boilerplate add nothing. Use 0.5 when the text gives no basis and set hours_confidence low.')},
         'hours_confidence': {'type': 'string', 'enum': list(CONFIDENCE_LEVELS), 'description': (
             'How well the text supports expected_hours: high = scope and steps are explicit; medium = scope is clear but steps '
             'are not; low = guess.')},

@@ -39,6 +39,14 @@ for _cat in TARGETS.values():
     _cat['levels'] = first
 TARGETS['coding']['levels'] = {**TARGETS['coding']['levels'],
                                '3': {'target': 0.0, 'ceiling': {'value': 0.0, 'model': 'category-best', 'status': 'measured'}}}
+TARGETS['aesthetics']['levels'] = {
+    '1': {'by_facet': {'design': {'target': -2.0, 'zero': -2.0}}},
+    '2': {'by_facet': {'design': {'target': -1.0, 'zero': -2.0}, 'image_recognition': {'target': -0.7, 'zero': -2.8}}},
+    '3': {'by_facet': {
+        'design': {'target': 0.0, 'zero': -2.0, 'ceiling': {'value': 0.15, 'model': 'design-best', 'status': 'measured'}},
+        'image_recognition': {'target': 0.0, 'zero': -2.8, 'ceiling': {'value': 0.0, 'model': 'vision-best', 'status': 'measured'}},
+    }},
+}
 
 
 def cell(value, status='measured', **extra):
@@ -90,7 +98,9 @@ def test_model_rows_read_levels_through_z_to_level():
     by = {r['model']: r for r in rows}
     assert by['m']['cells']['divergence']['level'] == pytest.approx(2.0)
     assert so.cell_text(by['top']['cells']['divergence']) == '3.0+'
-    # tool_operation: the weakest of its existing facets; responsiveness above t3 is at least the median
+    # aesthetics and tool_operation: the weakest of their existing facets; responsiveness above t3 is at least the median
+    assert by['m']['cells']['aesthetics']['level'] == pytest.approx(
+        min(user_scores.z_to_level(-2.0, -2.0, -1.0, 0.0), user_scores.z_to_level(-2.0, -2.8, -0.7, 0.0)))
     assert by['m']['cells']['tool_operation']['level'] == pytest.approx(
         min(user_scores.z_to_level(-2.0, -2.8, -0.7, 0.0), user_scores.z_to_level(0.5, -1.6, 0.1, 0.1)))
     tip = so.cell_tip('M', 'divergence', by['m']['cells']['divergence'], model_key='m-raw')

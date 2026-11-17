@@ -247,19 +247,23 @@ def resolve_model_key(model: str, accounts: dict | None = None) -> str:
 def target_triad(targets_table: dict, category: str, facet: str | None = None) -> tuple[float, float, float]:
     """Return `(t1, t2, t3)` on the current panel z-scale for `category` or `category.facet`."""
     cat_block = (targets_table or {}).get(category) or {}
-    if facet is not None:
-        f_levels = (((cat_block.get('facets') or {}).get(facet) or {}).get('levels')) or {}
+    eff_facet = facet
+    if eff_facet is None and len(CATEGORY_FACETS.get(category) or ()) == 1:
+        levels_probe = cat_block.get('levels') or {}
+        if not all(isinstance((levels_probe.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
+            eff_facet = CATEGORY_FACETS[category][0]
+    if eff_facet is not None:
+        f_levels = (((cat_block.get('facets') or {}).get(eff_facet) or {}).get('levels')) or {}
         if all(isinstance((f_levels.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
             return (float(f_levels['1']['target']), float(f_levels['2']['target']), float(f_levels['3']['target']))
-        if category == 'tool_operation':
-            levels = cat_block.get('levels') or {}
-            r3 = ((levels.get('3') or {}).get('by_facet') or {}).get(facet) or {}
-            r2 = ((levels.get('2') or {}).get('by_facet') or {}).get(facet) or {}
-            if isinstance(r3.get('zero'), (int, float)) and isinstance(r3.get('target'), (int, float)):
-                t1 = float(r3['zero'])
-                t3 = float(r3['target'])
-                t2 = float(r2['target']) if isinstance(r2.get('target'), (int, float)) else 0.5 * (t1 + t3)
-                return t1, t2, t3
+        levels = cat_block.get('levels') or {}
+        r3 = ((levels.get('3') or {}).get('by_facet') or {}).get(eff_facet) or {}
+        r2 = ((levels.get('2') or {}).get('by_facet') or {}).get(eff_facet) or {}
+        if isinstance(r3.get('zero'), (int, float)) and isinstance(r3.get('target'), (int, float)):
+            t1 = float(r3['zero'])
+            t3 = float(r3['target'])
+            t2 = float(r2['target']) if isinstance(r2.get('target'), (int, float)) else 0.5 * (t1 + t3)
+            return t1, t2, t3
     levels = cat_block.get('levels') or {}
     if all(isinstance((levels.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
         return (float(levels['1']['target']), float(levels['2']['target']), float(levels['3']['target']))

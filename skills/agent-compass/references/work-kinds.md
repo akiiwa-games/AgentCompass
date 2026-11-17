@@ -31,14 +31,18 @@ Judging logic, consistency or correctness is `hard`. Wording, translation, summa
 | Apply one small change across many files | `bounded_bulk_work` | `routine` |
 | Run an agreed deployment or API sequence | `tool_execution` | `routine` |
 | Gather prices, versions or documentation from the web | `web_research` | `routine` |
-| Interpret a screenshot or chart | `visual_analysis` | `hard` |
+| Inspect, compare, or classify static images, photos, screenshots, or mockups (`needs_visual: true, needs_gui: false, aesthetics: 1..3, tool_operation: 0..1`) | `visual_analysis` | `routine` / `hard` |
 | Operate a live game, ticket/flash-sale page, order-book terminal, or App in a continuous observe-act loop | `computer_use` / `tool_execution` (`tool_operation: 2..3`) | `routine` / `hard` |
 
 Work that changes kind midway is two tasks: an analysis followed by a fix is `exploration_analysis`, then
 `debug_review`.
 
-## Live Observe-Act Loops (`tool_operation` Demand Levels 2–3)
+## Static Visual Inspection vs Live Observe-Act Loops
 
-- **`tool_operation = 2`**: Heavy tool or API orchestration, or the worker itself stays inside a running external system's observe-act loop across turns (an API order book, a CLI queue, a live text/chat feed) where slow per-turn latency (`responsiveness`) directly hurts the outcome.
-- **`tool_operation = 3`**: Must read images or screenshots inside the loop, or operate a desktop or browser GUI through screenshots (`responsiveness` and `image_recognition`, plus image-input modality).
-- **Counterexamples (`tool_operation <= 1`)**: Writing, fixing, or debugging a ticket/game/automation script or bot (the script runs the fast loop, not the model — this is `coding`); analyzing game/AFK/trading logs; fixing game automation code.
+- **Static image/screenshot inspection (`visual_analysis`, `needs_visual: true`, `needs_gui: false`, `tool_operation: 0..1`)**:
+  - `aesthetics = 1`: coarse OCR or plain text transcription from a simple screenshot.
+  - `aesthetics = 2`: comparing screenshots against mockups or auditing layout, spacing, typography, and UI state.
+  - `aesthetics = 3`: fine-grained visual perception and aesthetic classification across images (garment/outfit silhouette, material/texture, makeup/hair styling, lighting, color cast, subtle visual artifacts).
+- **`tool_operation = 2` (`needs_gui: false`)**: Heavy tool or API orchestration, or the worker itself stays inside a running external system's observe-act loop across turns (an API order book, a CLI queue, a live text/chat feed) where slow per-turn latency (`responsiveness`) directly hurts the outcome.
+- **`tool_operation = 3` (`needs_gui: true`)**: Operate a desktop, browser, or mobile GUI via screenshots/clicks/keys, or continuously watch and react to a live changing visual screen inside a real-time loop (`responsiveness` and `image_recognition`, plus image-input modality).
+- **Counterexamples (`tool_operation <= 1`)**: Offline static image review (`visual_analysis`); writing, fixing, or debugging a ticket/game/automation script or bot (the script runs the fast loop, not the model — this is `coding`); analyzing game/AFK/trading logs.

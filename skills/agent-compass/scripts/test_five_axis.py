@@ -56,6 +56,15 @@ def level_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
             'continuity': round(t3 - t2, 4)}
 
 
+def aesthetics_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
+    facet = lambda t: {'target': t, 'zero': t1, 'n': 12}
+    top = lambda t: {**facet(t), 'ceiling': ceiling_row(t if ceiling is None else max(t, ceiling))}
+    return {'levels': {'1': {'by_facet': {'design': facet(t1)}},
+                       '2': {'by_facet': {'design': facet(t2), 'image_recognition': facet(t2)}},
+                       '3': {'by_facet': {'design': top(t3), 'image_recognition': top(t3)}}},
+            'continuity': round(t3 - t2, 4)}
+
+
 def tool_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
     facet = lambda t: {'target': t, 'zero': t1, 'n': 12}
     top = lambda t: {**facet(t), 'ceiling': ceiling_row(t if ceiling is None else max(t, ceiling))}
@@ -65,7 +74,7 @@ def tool_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
             'continuity': round(max(t2, t3) - t2, 4)}
 
 
-TARGETS = {'divergence': level_targets(), 'coding': level_targets(), 'aesthetics': level_targets(),
+TARGETS = {'divergence': level_targets(), 'coding': level_targets(), 'aesthetics': aesthetics_targets(),
            'tool_operation': tool_targets()}
 ANCHOR = {'model': 'claude-opus-5-5', 'value': 0.0, 'scale': 'panel standard score', 'panel_n': 12, 'targets': TARGETS}
 
@@ -189,7 +198,8 @@ class FiveAxisTests(unittest.TestCase):
                                    'coding': {'target': -1.0, 'zero': -1.0, 'cap': -1.0},
                                    'tool_operation': {'by_facet': {'responsiveness': {'target': -0.5, 'zero': -1.0,
                                                                                       'cap': -0.5}}}})
-        values = {'divergence': -0.3, 'coding': 0.4, 'aesthetics': -3.0,
+        values = {'divergence': -0.3, 'coding': 0.4,
+                  'aesthetics': {'design': -3.0, 'image_recognition': -3.0},
                   'tool_operation': {'responsiveness': -0.8, 'image_recognition': -5.0}}
         fit, rows = axis_scores.five_axis_fit(values, d, targets)
         self.assertAlmostEqual(fit, (3 * 0.7 + 1 * 0.0 + 2 * 0.2) / 6, places=4)
@@ -213,21 +223,28 @@ class FiveAxisTests(unittest.TestCase):
         ceiling (the best measured model): its fit is non-decreasing in z, strictly increasing between t3 and the
         ceiling, and the same min cuts anything above the ceiling."""
         targets = {'divergence': level_targets(-1.0, -0.5, 0.0, ceiling=0.6), 'coding': level_targets(),
-                   'aesthetics': level_targets(), 'tool_operation': tool_targets(-1.0, -0.5, 0.0, ceiling=0.6)}
+                   'aesthetics': aesthetics_targets(-1.0, -0.5, 0.0, ceiling=0.6),
+                   'tool_operation': tool_targets(-1.0, -0.5, 0.0, ceiling=0.6)}
         zs = [x / 10 for x in range(-15, 16)]
 
         def fit_at(d, t, z):
             return axis_scores.five_axis_fit(
-                {'divergence': z, 'tool_operation': {'responsiveness': z, 'image_recognition': z}}, d, t)[0]
+                {'divergence': z,
+                 'aesthetics': {'design': z, 'image_recognition': z},
+                 'tool_operation': {'responsiveness': z, 'image_recognition': z}}, d, t)[0]
         for level in (1, 2):
-            for d, key in ((demand(level, 0, 0, 0), 'divergence'), (demand(0, 0, 0, level), 'tool_operation')):
+            for d, key in ((demand(level, 0, 0, 0), 'divergence'),
+                           (demand(0, 0, level, 0), 'aesthetics'),
+                           (demand(0, 0, 0, level), 'tool_operation')):
                 t = axis_scores.five_axis_targets(d, targets)
                 rows = [t[key]] if key == 'divergence' else list((t.get(key) or {}).get('by_facet', {}).values())
                 if not rows:
                     continue                                     # tool_operation level 1 asks for nothing
                 target = max(r['target'] for r in rows)
                 self.assertEqual({fit_at(d, t, z) for z in zs if z >= target}, {fit_at(d, t, target)})
-        for d, key in ((demand(3, 0, 0, 0), 'divergence'), (demand(0, 0, 0, 3), 'tool_operation')):
+        for d, key in ((demand(3, 0, 0, 0), 'divergence'),
+                       (demand(0, 0, 3, 0), 'aesthetics'),
+                       (demand(0, 0, 0, 3), 'tool_operation')):
             t = axis_scores.five_axis_targets(d, targets)
             fits = [fit_at(d, t, z) for z in zs]
             self.assertTrue(all(b >= a for a, b in zip(fits, fits[1:])))
@@ -243,15 +260,67 @@ class FiveAxisTests(unittest.TestCase):
         """Owner 2026-11-13: the ceiling changes only what lies above t3; any candidate with every demanded z <= t3 has
         the fit it had when the level-3 cap was t3 (a ceiling equal to t3)."""
         import random
-        raised = {a: tool_targets(ceiling=0.8) if a == 'tool_operation' else level_targets(ceiling=0.8) for a in TARGETS}
+        raised = {
+            a: (tool_targets(ceiling=0.8) if a == 'tool_operation'
+                else aesthetics_targets(ceiling=0.8) if a == 'aesthetics'
+                else level_targets(ceiling=0.8))
+            for a in TARGETS
+        }
         rng = random.Random(7)
         for _ in range(200):
             d = demand(*(rng.randint(0, 3) for _ in range(4)))
-            values = {a: rng.uniform(-3.0, 0.0) for a in ('divergence', 'coding', 'aesthetics')}
-            values['tool_operation'] = {f: rng.uniform(-3.0, 0.0) for f in ('responsiveness', 'image_recognition')}
+            values = {a: rng.uniform(-3.0, 0.0) for a in ('divergence', 'coding')}
+            img_z = rng.uniform(-3.0, 0.0)
+            values['aesthetics'] = {'design': rng.uniform(-3.0, 0.0), 'image_recognition': img_z}
+            values['tool_operation'] = {'responsiveness': rng.uniform(-3.0, 0.0), 'image_recognition': img_z}
             before = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, TARGETS))[0]
             after = axis_scores.five_axis_fit(values, d, axis_scores.five_axis_targets(d, raised))[0]
             self.assertEqual(before, after)
+
+    def test_aesthetics_shares_image_recognition_at_levels_two_and_three_and_keeps_level_one_design_only(self):
+        """Rule (2026-11-17): aesthetics level 1 reads design only (never excluding a model that lacks image_recognition);
+        aesthetics levels 2 and 3 read min(term_design, term_image_recognition) sharing tool_operation.image_recognition,
+        and exclude missing image_recognition under Mode B naming tool_operation.image_recognition."""
+        shipped = axis_scores.load_five_axis()['anchor']['targets']
+        t_l1 = axis_scores.five_axis_targets(demand(0, 0, 1, 0), shipped)['aesthetics']['by_facet']
+        t_l2 = axis_scores.five_axis_targets(demand(0, 0, 2, 0), shipped)['aesthetics']['by_facet']
+        t_l3 = axis_scores.five_axis_targets(demand(0, 0, 3, 0), shipped)['aesthetics']['by_facet']
+        self.assertEqual(set(t_l1), {'design'})
+        self.assertEqual(set(t_l2), {'design', 'image_recognition'})
+        self.assertEqual(set(t_l3), {'design', 'image_recognition'})
+
+        # Weak image_recognition bottlenecks aesthetics at L2 and L3, while L1 depends only on design.
+        strong_design_weak_vision = {
+            'divergence': 0.0, 'coding': 0.0,
+            'aesthetics': {'design': 0.0, 'image_recognition': -2.0},
+            'tool_operation': {'responsiveness': 0.5, 'image_recognition': -2.0},
+        }
+        strong_both = {
+            'divergence': 0.0, 'coding': 0.0,
+            'aesthetics': {'design': 0.0, 'image_recognition': 0.0},
+            'tool_operation': {'responsiveness': 0.5, 'image_recognition': 0.0},
+        }
+        for lvl, expected_equal in ((1, True), (2, False), (3, False)):
+            d = demand(0, 0, lvl, 0)
+            tgts = axis_scores.five_axis_targets(d, shipped)
+            f_weak = axis_scores.five_axis_fit(strong_design_weak_vision, d, tgts)[0]
+            f_strong = axis_scores.five_axis_fit(strong_both, d, tgts)[0]
+            if expected_equal:
+                self.assertEqual(f_weak, f_strong)
+            else:
+                self.assertLess(f_weak, f_strong)
+
+        # Mode B: missing image_recognition passes at aesthetics=1 and leaves automatic routing at aesthetics>=2.
+        target = 'claude-sonnet-5-5'
+        no_vision = row(demand(0.95, 0.95, 0.95, 0.9))
+        no_vision['axes']['tool_operation']['facets'].pop('image_recognition', None)
+        no_vision['axes']['tool_operation']['missing_facets'] = ['image_recognition']
+        doc = document(self.accounts['models'], **{target: no_vision})
+        at_l1 = self.plan(self.accounts, doc, profile={'axis_demand': demand(0, 1, 1, 0)})
+        at_l2 = self.plan(self.accounts, doc, profile={'axis_demand': demand(0, 1, 2, 0)})
+        self.assertFalse(any('no trusted data' in e for c in self.rows_for(at_l1, target) for e in c['excluded']))
+        self.assertTrue(all(any('missing tool_operation.image_recognition' in e for e in c['excluded'])
+                            for c in self.rows_for(at_l2, target)))
 
     def test_the_radar_stops_at_the_anchor_and_the_hover_names_the_level_three_headroom(self):
         """The radar spoke is (min(z, t3) - t1) / (t3 - t1) whatever the ceiling; a level-3 demand's credit above the
@@ -259,7 +328,8 @@ class FiveAxisTests(unittest.TestCase):
         fit rows, and only for categories demanded at level 3."""
         targets = {**TARGETS, 'divergence': level_targets(-1.0, -0.5, 0.0, ceiling=1.0),
                    'tool_operation': tool_targets(-1.0, -0.5, 0.0, ceiling=0.6)}
-        values = {'divergence': 0.5, 'coding': -0.2, 'aesthetics': None,
+        values = {'divergence': 0.5, 'coding': -0.2,
+                  'aesthetics': {'design': None, 'image_recognition': 0.1},
                   'tool_operation': {'responsiveness': 0.3, 'image_recognition': 0.1}}
         shares = axis_scores.five_axis_shares(values, targets)
         self.assertEqual((shares['divergence'], shares['tool_operation']), (1.0, 1.0))
@@ -1015,6 +1085,7 @@ class HighFillTests(unittest.TestCase):
         best = max((r['axes']['divergence']['value'], m) for m, r in rows.items()
                    if r['axes']['divergence']['status'] in five_axis.TARGET_STATUSES)
         for lv in (targets['divergence']['levels']['3'], targets['divergence']['facets']['creative_writing']['levels']['3'],
+                   *targets['aesthetics']['levels']['3']['by_facet'].values(),
                    *targets['tool_operation']['levels']['3']['by_facet'].values()):
             self.assertEqual((lv['ceiling']['value'], lv['ceiling']['model']), (round(best[0], 4), best[1]))
             self.assertEqual(lv['ceiling']['status'], 'interpolated')
@@ -1270,11 +1341,16 @@ class AnchorRelativeTests(unittest.TestCase):
                     self.assertEqual(facet['value'], 0.0, f'{axis}.{name}')
         # targets are non-decreasing from L1 -> L2 -> L3, including tool_operation.responsiveness (raised_to_level_below)
         targets = scores['anchor']['targets']
-        for axis in ('divergence', 'coding', 'aesthetics'):
+        for axis in ('divergence', 'coding'):
             lv = targets[axis]['levels']
             self.assertLessEqual(lv['1']['target'], lv['2']['target'], axis)
             self.assertLessEqual(lv['2']['target'], lv['3']['target'], axis)
             self.assertEqual(lv['1']['zero'], lv['1']['target'], axis)
+        des = targets['aesthetics']['levels']
+        self.assertLessEqual(des['1']['by_facet']['design']['target'], des['2']['by_facet']['design']['target'])
+        self.assertLessEqual(des['2']['by_facet']['design']['target'], des['3']['by_facet']['design']['target'])
+        self.assertLessEqual(des['2']['by_facet']['image_recognition']['target'],
+                             des['3']['by_facet']['image_recognition']['target'])
         resp2 = targets['tool_operation']['levels']['2']['by_facet']['responsiveness']['target']
         resp3 = targets['tool_operation']['levels']['3']['by_facet']['responsiveness']['target']
         self.assertGreaterEqual(resp3, resp2)

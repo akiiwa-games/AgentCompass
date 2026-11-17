@@ -48,9 +48,15 @@ def rec_of(capacity=1000.0, used_frac=0.5, elapsed=0.5, reset_hours=None, period
 def ladder_for(spend_scale=1.0, with_outside=0.0):
     """A realistic ladder: three models (cheap weak, middle, dear strong) over the real demand grid and panel z-score targets."""
     anchor_targets = axis_scores.load_five_axis()['anchor']['targets']
-    models = [(0.29 * spend_scale, {'divergence': -2.2, 'coding': -1.8, 'aesthetics': -1.9, 'tool_operation': {'responsiveness': 1.0, 'image_recognition': -1.5}}),
-              (12.59 * spend_scale, {'divergence': -0.8, 'coding': -0.6, 'aesthetics': -0.6, 'tool_operation': {'responsiveness': 0.2, 'image_recognition': -0.5}}),
-              (22.86 * spend_scale, {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0, 'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}})]
+    models = [(0.29 * spend_scale, {'divergence': -2.2, 'coding': -1.8,
+                                    'aesthetics': {'design': -1.9, 'image_recognition': -1.5},
+                                    'tool_operation': {'responsiveness': 1.0, 'image_recognition': -1.5}}),
+              (12.59 * spend_scale, {'divergence': -0.8, 'coding': -0.6,
+                                     'aesthetics': {'design': -0.6, 'image_recognition': -0.5},
+                                     'tool_operation': {'responsiveness': 0.2, 'image_recognition': -0.5}}),
+              (22.86 * spend_scale, {'divergence': 0.0, 'coding': 0.0,
+                                     'aesthetics': {'design': 0.0, 'image_recognition': 0.0},
+                                     'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}})]
     hulls = []
     for d in quota_economy.FIVE_AXIS_DEMAND_GRID:
         targets = axis_scores.five_axis_targets(d, anchor_targets)
@@ -1242,7 +1248,8 @@ class WeeklyWindowTests(unittest.TestCase):
         overlaid = axis_scores.five_axis_overlay(copy.deepcopy(self.fleet.accounts))
         stateless = {'bundle': {'account': 'claude', 'id': 'x'}, 'components': {'fit': 0.9}, 'expected_usd': 5.0,
                      '_five_window_states': {},
-                     '_five_values': {'divergence': 0.0, 'coding': 0.0, 'aesthetics': 0.0,
+                     '_five_values': {'divergence': 0.0, 'coding': 0.0,
+                                      'aesthetics': {'design': 0.0, 'image_recognition': 0.0},
                                       'tool_operation': {'responsiveness': 0.0, 'image_recognition': 0.0}}}
         econ = quota_economy.FiveAxisEconomy([stateless], overlaid, {}, {'hours': 2.0})
         self.assertEqual(econ.entries, [])

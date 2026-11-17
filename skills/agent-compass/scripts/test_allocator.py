@@ -996,6 +996,7 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         self.assertFalse((Path(__file__).resolve().parent / 'refresh_speed_data.py').exists())
 
     def test_all_calibrated_classifier_cases_validate_and_plan(self):
+        from collections import Counter
         base_accounts = copy.deepcopy(account_fleet.load_accounts())
         capabilities = account_fleet.load_capabilities(accounts=base_accounts)
         usage = self.healthy_usage()
@@ -1004,7 +1005,12 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         rubric_axis = (doc.get('dimension_rubric') or {}).get('axis_demand', '')
         for cat in axis_scores.FIVE_AXES:
             self.assertIn(cat, rubric_axis)
-        for case in doc['calibration_cases']:
+        cases = doc['calibration_cases']
+        ids = [c['id'] for c in cases]
+        self.assertEqual(len(ids), len(set(ids)), 'duplicate calibration case ids')
+        required_keys = set(task_intake.TASK_PROFILE_SCHEMA['required']) | {'work_kind', 'axis_demand'}
+        for case in cases:
+            self.assertEqual(set(case['expected_profile']), required_keys, case['id'])
             prof = task_intake.validate_profile(dict(case['expected_profile']))
             self.assertEqual(set(prof['axis_demand']), set(axis_scores.FIVE_AXES), case['id'])
             self.assertNotIn('realtime_loop', prof, case['id'])
@@ -1019,6 +1025,18 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
                 usage, now=self.now, accounts=base_accounts, capabilities=capabilities, overrides=[],
             )
             self.assertIn('choice', res, case['id'])
+        # MECE (不重不漏) invariants: every defined route and every demand/profile level covered without per-route pileup.
+        route_counts = Counter(c['expected_profile']['work_kind'] for c in cases)
+        self.assertEqual(set(route_counts), set(doc['route_definitions']))
+        self.assertLessEqual(max(route_counts.values()), 5, route_counts)
+        for cat in axis_scores.FIVE_AXES:
+            self.assertEqual({c['expected_profile']['axis_demand'][cat] for c in cases}, {0, 1, 2, 3}, cat)
+        self.assertEqual({c['expected_profile']['reasoning_depth'] for c in cases}, {1, 2, 3, 4})
+        self.assertEqual({c['expected_profile']['code_complexity'] for c in cases}, {0, 1, 2, 3})
+        self.assertEqual({c['expected_profile']['interaction_style'] for c in cases}, set(task_intake.INTERACTION_STYLES))
+        self.assertEqual({c['expected_profile']['access'] for c in cases}, set(task_intake.ACCESS_LEVELS))
+        for flag in (*task_intake.PROFILE_FLAGS, 'multi_task'):
+            self.assertEqual({c['expected_profile'][flag] for c in cases}, {False, True}, flag)
 
     def test_tool_operation_levels_0_and_1_ask_for_no_ability_target(self):
         base_accounts = axis_scores.five_axis_overlay(copy.deepcopy(account_fleet.load_accounts()))
