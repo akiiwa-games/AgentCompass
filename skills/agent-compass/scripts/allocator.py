@@ -173,7 +173,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                                          'score_gain': round(better['score'] - top['score'], 4)}
     forced = pinned_cand is not None
     decision.update({'action': top['action'], 'needs_user_decision': False,
-                     'continuity': ('high-coupling chain stays with its owner'
+                     'continuity': (f"{task['coupling']}-coupling chain stays with its owner"
                                     if (top is resume and top['action'] == 'resume' and not forced) else None)})
     if (top['available_in_hours'] or 0) > can_wait:
         # can_wait_hours is a limit, not a preference: say so instead of quietly starting later than allowed

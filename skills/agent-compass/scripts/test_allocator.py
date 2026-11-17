@@ -1184,6 +1184,13 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         kept = allocator.plan({**div_task, 'chain': close_chain}, usage, now=self.now,
                               accounts=accounts, capabilities=capabilities, overrides=[])
         self.assertEqual((kept['choice'], kept['decision']['action']), ('fable52_high', 'resume'))
+        self.assertEqual(kept['decision']['continuity'], 'high-coupling chain stays with its owner')
+
+        medium_chain = {**close_chain, 'coupling': 'medium'}
+        kept_med = allocator.plan({**div_task, 'chain': medium_chain}, usage, now=self.now,
+                                  accounts=accounts, capabilities=capabilities, overrides=[])
+        if kept_med['decision']['action'] == 'resume':
+            self.assertEqual(kept_med['decision']['continuity'], 'medium-coupling chain stays with its owner')
 
         # 2. A worker whose deficit exceeds continuity + rival cost (e.g. `sol_medium` with divergence ~ -2.1 vs `argon_high` +0.25)
         # switches to the stronger candidate instead of forcing a bad continuation.

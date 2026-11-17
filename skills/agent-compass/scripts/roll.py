@@ -171,11 +171,37 @@ def independent_reviewers(workers):
     return out
 
 
-def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
-    """Gate-enforced refusal for continuing `worker`, or None when permitted or unlabelled."""
-    bundle = worker.get('bundle') if isinstance(worker, dict) else None
-    if not isinstance(bundle, dict) or not bundle.get('account'):
+def _resolve_worker_bundle(worker, accounts=None):
+    """Return a copy of `worker['bundle']` with `bundle_id` resolved, or None if unresolvable."""
+    if not isinstance(worker, dict):
         return None
+    raw = worker.get('bundle')
+    bundle = dict(raw) if isinstance(raw, dict) else {}
+    bid = bundle.get('bundle_id') or bundle.get('id') or worker.get('bundle_id')
+    if bid:
+        bundle['bundle_id'] = bid
+        bundle.setdefault('id', bid)
+    if not bundle.get('account'):
+        return None
+    if not (bundle.get('bundle_id') or bundle.get('id')):
+        if accounts is None:
+            import account_fleet
+            accounts = account_fleet.load_accounts()
+        resolved = registry.resolve_bundle(bundle, accounts, False)
+        if not resolved:
+            return None
+        bundle = {**bundle, **resolved}
+    return bundle
+
+
+def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
+    """Gate-enforced refusal for continuing `worker`, or None when permitted. Fails closed if unresolvable."""
+    if accounts is None:
+        import account_fleet
+        accounts = account_fleet.load_accounts()
+    bundle = _resolve_worker_bundle(worker, accounts)
+    if bundle is None or not (bundle.get('bundle_id') or bundle.get('id')):
+        return 'worker bundle could not be resolved'
     try:
         return turn_refusal.gate_refusal(
             worker['agent_id'],
@@ -184,8 +210,8 @@ def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
             dispatch_id=worker.get('dispatch_id'),
             accounts=accounts,
         )
-    except ValueError:
-        return None
+    except ValueError as exc:
+        return str(exc) or 'worker_not_resolvable'
 
 
 def _resume_refusal(out, explicit_id, error, next_text, code=2):
@@ -514,6 +540,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             if probe and probe.get('placeable') is False:
                 return placement_refused(out, 'paseo', host_placement.place('paseo', workspace, paseo_probe=probe))
     resume_agent_id = None
+    resume_bundle = None
     explicit_id = (getattr(args, 'resume', None) or '').strip()
     if explicit_id and getattr(args, 'new_worker', False):
         return _resume_refusal(out, explicit_id, 'conflicting_flags',
@@ -556,10 +583,9 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             worker_bid = explicit_worker.get('bundle_id')
             warn = (f'Resuming worker {explicit_id!r} on its existing bundle {worker_bid!r} as requested (--resume); '
                     f'the router would otherwise have chosen {routed_id!r}.')
-            route = dict(out.get('route') or {})
-            route['warnings'] = [*route.get('warnings', ()), warn]
-            out = dict(out, route=route, warnings=[*out.get('warnings', ()), warn])
+            out = dict(out, warnings=[*out.get('warnings', ()), warn])
         resume_agent_id = explicit_id
+        resume_bundle = _resolve_worker_bundle(explicit_worker, fleet)
     elif not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
         compatible = [w for w in all_reusable
@@ -599,10 +625,24 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                                resume_agent_id=resume_agent_id, fallback_prompt=text if resume_agent_id else None,
                                access=access,
                                new_worker=bool(getattr(args, 'new_worker', False)),
-                               workspace=workspace, cwd=landing)
+                               workspace=workspace, cwd=landing,
+                               resume_bundle=resume_bundle,
+                               explicit_resume=bool(explicit_id))
     except registry.WorkspaceBusy as busy:
         return workspace_blocked(out, busy.workspace, busy.holders, dispatch_mode='paseo')
+    except registry.ResumedWorkerBusy as busy:
+        return _resume_refusal(
+            out, busy.agent_id, 'resume_worker_unavailable',
+            f'Nothing was launched: worker {busy.agent_id!r} already has an active dispatch and is not idle. '
+            'Omit --resume to start a fresh worker.',
+        )
     except registry.CapacityChanged as refused:
+        if explicit_id:
+            return _resume_refusal(
+                out, explicit_id, 'resume_worker_gated',
+                f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({refused}). '
+                'Omit --resume to start a fresh worker.',
+            )
         if not dispatch_fallback.enabled() or judge is None:
             raise
         # The routed bundle could no longer start (e.g. its live model list dropped it): the next candidate does.

@@ -3325,6 +3325,7 @@ class RollLifecycleTests(unittest.TestCase):
     def resuming(self, cwd):
         import roll
         worker = {'agent_id': 'worker-x'}
+        self.enterContext(patch.object(roll, '_worker_gate_refusal', return_value=None))
         return (patch.object(registry, 'reusable_workers', return_value=[worker]),
                 patch.object(roll, '_bundle_matches_worker', return_value=True),
                 patch.object(roll, 'match_reusable_worker', return_value=worker),
@@ -4401,10 +4402,11 @@ class ContinuationRollTests(unittest.TestCase):
         import roll
         operations = []
         active_labels = {}
+        active_model = self.bundle['model']
         created_seq = 0
 
         def host(request):
-            nonlocal created_seq
+            nonlocal created_seq, active_model
             op = request['operation']
             if op == 'workspace_agents':
                 return {'ok': True, 'placeable': True, 'agents': []}
@@ -4412,15 +4414,18 @@ class ContinuationRollTests(unittest.TestCase):
             if op in ('create', 'resume'):
                 active_labels.clear()
                 active_labels.update(request['request']['labels'])
+                _, _, req_model = str(request['request'].get('provider', '')).partition('/')
+                if req_model:
+                    active_model = req_model
                 if op == 'create':
                     created_seq += 1
                 aid = request.get('agent_id') or f'agent-ws{created_seq}'
-                return {'ok': True, 'agent': self.snapshot(
-                    {'request': request['request']}, status='running', id=aid)}
+                return {'ok': True, 'agent': dict(self.snapshot(
+                    {'request': request['request']}, status='running', id=aid), model=active_model)}
             aid = request.get('agent_id') or f'agent-ws{created_seq}'
-            return {'ok': True, 'agent': self.snapshot(
+            return {'ok': True, 'agent': dict(self.snapshot(
                 {'request': {'labels': dict(active_labels)}},
-                status='idle', attentionReason='finished', id=aid)}
+                status='idle', attentionReason='finished', id=aid), model=active_model)}
 
         def real_plan_stage(document, _):
             task = dict(document['task'])
@@ -4523,14 +4528,16 @@ class ContinuationRollTests(unittest.TestCase):
     def test_explicit_resume_on_bundle_mismatch_resumes_with_warning(self):
         import argparse
         import roll
+        self.accounts['accounts']['claude-lab']['bundles']['lab_opus55_high']['disabled'] = False
         b1 = self.root / 'm1.md'
         b1.write_text('# Follow-up on old worker\n', encoding='utf-8')
-        operations, host, judge, _ = self._setup_paseo_env()
+        operations, host, judge, _ = self._setup_paseo_env(force_bundle=('lab_sonnet55_high', self.bundle))
         old_worker = {
             'agent_id': 'agent-old-opus',
             'dispatch_id': 'd-old',
             'bundle_id': 'lab_opus55_high',
-            'bundle': {'provider': 'claude', 'account': 'claude-lab', 'model': 'claude-opus-5-5', 'effort': 'high'},
+            'bundle': {'bundle_id': 'lab_opus55_high', 'provider': 'claude-lab', 'account': 'claude-lab',
+                       'model': 'claude-opus-5-5', 'effort': 'high'},
             'chain_id': 'chain-old',
             'task_ids': ['t-old'],
             'brief_paths': [],
@@ -4545,15 +4552,107 @@ class ContinuationRollTests(unittest.TestCase):
                          effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
                          resume='agent-old-opus', new_worker=False)
         with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
                 patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
                 patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
                 patch.object(registry, 'reusable_workers', return_value=[old_worker]), \
                 patch.object(flow, 'host_call', host):
             res, code = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
-        self.assertEqual((code, res['status']), (0, 'launched'))
+        self.assertEqual((code, res['status']), (0, 'launched'), res)
         self.assertEqual(operations[0], ('resume', 'agent-old-opus'))
         self.assertTrue(res['worker'].get('resumed'))
-        self.assertTrue(any('agent-old-opus' in w and 'lab_opus55_high' in w for w in res.get('warnings', ())))
+        matching_warnings = [w for w in res.get('warnings', ()) if 'agent-old-opus' in w and 'lab_opus55_high' in w]
+        self.assertEqual(len(matching_warnings), 1)
+        recorded = registry.read_dispatches()[-1]
+        self.assertEqual(recorded['bundle']['bundle_id'], 'lab_opus55_high')
+        self.assertEqual(recorded['bundle']['model'], 'claude-opus-5-5')
+        self.assertEqual(recorded['request']['labels']['router.bundle_id'], 'lab_opus55_high')
+
+    def test_worker_gate_refusal_resolves_bundle_id_and_fails_closed(self):
+        import argparse
+        import roll
+        b1 = self.root / 'g1.md'
+        b1.write_text('# Gate check on disabled worker\n', encoding='utf-8')
+        _, host, judge, _ = self._setup_paseo_env(force_bundle=('lab_sonnet55_high', self.bundle))
+        # `lab_opus55_high` is disabled in `self.accounts`, and `bundle` omits `bundle_id`.
+        disabled_worker = {
+            'agent_id': 'agent-disabled-opus',
+            'dispatch_id': 'd-disabled',
+            'bundle_id': 'lab_opus55_high',
+            'bundle': {'provider': 'claude-lab', 'account': 'claude-lab', 'model': 'claude-opus-5-5', 'effort': 'high'},
+            'chain_id': 'chain-old',
+            'task_ids': ['t-old'],
+            'brief_paths': [],
+            'read_only_review': False,
+            'session_state': {'context_tokens': 1000, 'compacted_tokens': 0},
+            'worn': False,
+        }
+        self.assertIsNotNone(roll._worker_gate_refusal(disabled_worker, accounts=self.accounts))
+        self.assertIsNotNone(roll._worker_gate_refusal({'agent_id': 'agent-x', 'bundle': {}}, accounts=self.accounts))
+        self.enterContext(fake_owners(self))
+        base_args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None,
+                         hours=0.5, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
+                         parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                         effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
+                         resume='agent-disabled-opus', new_worker=False)
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                patch.object(registry, 'reusable_workers', return_value=[disabled_worker]), \
+                patch.object(flow, 'host_call', host):
+            res, code = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
+        self.assertEqual((code, res['status'], res['cause']), (2, 'blocked', 'resume_worker_gated'))
+
+    def test_explicit_resume_of_busy_worker_refuses_while_auto_match_falls_back(self):
+        import argparse
+        import roll
+        b1 = self.root / 'c1.md'
+        b2 = self.root / 'c2.md'
+        b1.write_text('# First\n', encoding='utf-8')
+        b2.write_text('# Concurrent resume\n', encoding='utf-8')
+        operations, host, judge, _ = self._setup_paseo_env()
+        # First create an active (prepared) dispatch holding `agent-busy`.
+        busy_task = dict(self.task, task_id='t-busy-1')
+        dec1 = self.issue(busy_task)
+        registry.prepare(dec1['decision_id'], busy_task, self.launch, self.usage,
+                         accounts=self.accounts, now=self.now, resume_agent_id='agent-busy')
+
+        busy_worker = {
+            'agent_id': 'agent-busy',
+            'dispatch_id': 'd-old',
+            'bundle_id': 'lab_sonnet55_high',
+            'bundle': dict(self.bundle, bundle_id='lab_sonnet55_high'),
+            'chain_id': 'chain-busy',
+            'task_ids': ['t-old'],
+            'brief_paths': [],
+            'read_only_review': False,
+            'session_state': {'context_tokens': 1000, 'compacted_tokens': 0},
+            'worn': False,
+        }
+        self.enterContext(fake_owners(self))
+        base_args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None,
+                         hours=0.5, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
+                         parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                         effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
+                         resume='agent-busy', new_worker=False)
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                patch.object(registry, 'reusable_workers', return_value=[busy_worker]), \
+                patch.object(flow, 'host_call', host):
+            res, code = roll.run(argparse.Namespace(brief=b2, **base_args), judge)
+        self.assertEqual((code, res['status'], res['cause']), (2, 'blocked', 'resume_worker_unavailable'))
+        self.assertEqual(operations, [])
+
+        # Automatic match (`explicit_resume=False`) still falls back to a fresh create when busy.
+        auto_task = dict(self.task, task_id='t-auto-2')
+        dec2 = self.issue(auto_task)
+        auto_row = registry.prepare(dec2['decision_id'], auto_task, self.launch, self.usage,
+                                    accounts=self.accounts, now=self.now, resume_agent_id='agent-busy',
+                                    explicit_resume=False)
+        self.assertEqual((auto_row['operation'], auto_row['agent_id']), ('create', None))
 
     def test_workspace_blocked_by_idle_same_parent_worker_names_resume_flag(self):
         import argparse
