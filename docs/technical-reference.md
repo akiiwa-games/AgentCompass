@@ -32,7 +32,7 @@ fit        = sum_a w_a * (min(z_a, c_a) - t1_a) / sum_a w_a   (in panel standard
 targets    = t1: panel minimum, t2: panel median, t3: anchor (claude-opus-5-5 at High = 0.0)
 cap c_a    = t_a at demand levels 1 and 2; ceiling_a at level 3 (the highest measured or interpolated High value of any
              catalogued model, never an estimate, converted or manual value)
-continuity = max positive (t3 - t2) among highest-demand categories when coupling == "high", else 0
+continuity = max positive (t3 - t2) among highest-demand categories when coupling in ("medium", "high") and resuming its worker, else 0
 score N    = fit + continuity + boost - quota_cost
 ```
 

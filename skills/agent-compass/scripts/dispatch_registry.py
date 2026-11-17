@@ -988,8 +988,11 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
                                     if (r.get('request') or {}).get('title')))
         profiles = [r['profile'] for r in reversed(history) if isinstance(r.get('profile'), dict)]
         read_only_review = bool(history and all(bool(r.get('read_only_review')) for r in history))
+        doc_cwd = doc.get('cwd') if isinstance(doc, dict) else None
+        worker_cwd = doc_cwd or latest.get('cwd') or (latest.get('request') or {}).get('cwd')
         candidates.append({
             'agent_id': agent_id,
+            'dispatch_id': latest.get('dispatch_id'),
             'bundle': bundle,
             'bundle_id': bundle_id,
             'chain_id': chain_id,
@@ -997,6 +1000,8 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
             'task_ids': task_ids,
             'brief_path': latest.get('brief_path'),
             'brief_paths': brief_paths,
+            'workspace': latest.get('workspace'),
+            'cwd': worker_cwd,
             'title': titles[0] if titles else '',
             'titles': titles,
             'profiles': profiles,

@@ -103,6 +103,51 @@ def own_failure(row):
     return message if isinstance(message, str) and message else True
 
 
+def _disabled_refusal(account, bundle, accounts):
+    candidates = [r for r in account_fleet.bundle_rows(accounts, bundle.get('bundle_id') or bundle.get('id'))
+                  if r['account'] == account]
+    off = host_policy.disabled_cause(account, candidates, accounts, host_policy.load_policy())
+    if off:
+        return (host_policy.disabled_text(account, off, 'en')
+                + "; re-enabling is the user's choice in AgentCompass settings, so roll the follow-up instead")
+    return None
+
+
+def _quota_gate_refusal(agent_id, account, bundle, dispatch_id, stored, accounts, now, home, usage_cache_path=None):
+    windows = sorted(quota_pools.bundle_pools(dict(bundle, id=bundle.get('bundle_id') or bundle.get('id')), accounts))
+    if latched(account, windows, usage_cache_path, home, read_only=True):
+        return f'quota of account {account} was confirmed exhausted'
+    records = without_own(registry.held_records(stored, now), dispatch_id, agent_id)
+    found = window_refusal(account, accounts, now, usage_cache_path, records, bundles=[bundle])
+    if found:
+        what, wid, why = found
+        return f'quota window {wid} of {account} ({what}) is unavailable ({why})'
+    return None
+
+
+def gate_refusal(agent_id, now=None, home=None, usage_cache_path=None, *, bundle=None, dispatch_id=None, accounts=None):
+    """Why the spawn gate refuses a new turn to this worker now, else None.
+
+    Checks only the three gate-enforced conditions: disabled account/bundle, confirmed quota exhaustion latch,
+    and refusing quota window (excluding the worker's own reservation).
+    """
+    now = now or datetime.now(timezone.utc)
+    home = Path(home) if home else Path.home()
+    stored = registry.read_dispatches()
+    if not isinstance(bundle, dict) or not bundle.get('account') or dispatch_id is None:
+        row = worker_row(agent_id, stored)
+        if not isinstance(bundle, dict) or not bundle.get('account'):
+            bundle = row.get('bundle') if row else None
+        if dispatch_id is None and row:
+            dispatch_id = row.get('dispatch_id')
+    if not isinstance(bundle, dict) or not bundle.get('account'):
+        raise ValueError('worker_not_resolvable')
+    account = bundle['account']
+    accounts = accounts if accounts is not None else account_fleet.load_accounts()
+    return (_disabled_refusal(account, bundle, accounts)
+            or _quota_gate_refusal(agent_id, account, bundle, dispatch_id, stored, accounts, now, home, usage_cache_path))
+
+
 def worker_refusal(agent_id, now=None, home=None):
     """Why a new turn to this worker is not advised now, in words for its parent; None when nothing refuses it.
 
@@ -123,12 +168,9 @@ def worker_refusal(agent_id, now=None, home=None):
         return ('its last turn ended in a provider failure' + (f' ({failure})' if failure is not True else '')
                 + '; whether the provider holds the account is classified separately')
     accounts = account_fleet.load_accounts()
-    candidates = [r for r in account_fleet.bundle_rows(accounts, bundle.get('bundle_id') or bundle.get('id'))
-                  if r['account'] == account]
-    off = host_policy.disabled_cause(account, candidates, accounts, host_policy.load_policy())
-    if off:
-        return (host_policy.disabled_text(account, off, 'en')
-                + "; re-enabling is the user's choice in AgentCompass settings, so roll the follow-up instead")
+    disabled = _disabled_refusal(account, bundle, accounts)
+    if disabled:
+        return disabled
     unavailable = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, account, bundle.get('provider'))
     if unavailable:
         return f'account {account} is not ready ({unavailable})'
@@ -138,12 +180,4 @@ def worker_refusal(agent_id, now=None, home=None):
     latch = model_latch.reason(bundle, model_latch.active(now=now))
     if latch:
         return f'model {model_latch.launch_model(bundle)} on {account} is held ({latch})'
-    windows = sorted(quota_pools.bundle_pools(dict(bundle, id=bundle.get('bundle_id') or bundle.get('id')), accounts))
-    if latched(account, windows, None, home, read_only=True):
-        return f'quota of account {account} was confirmed exhausted'
-    records = without_own(registry.held_records(stored, now), dispatch_id, agent_id)
-    found = window_refusal(account, accounts, now, None, records, bundles=[bundle])
-    if found:
-        what, wid, why = found
-        return f'quota window {wid} of {account} ({what}) is unavailable ({why})'
-    return None
+    return _quota_gate_refusal(agent_id, account, bundle, dispatch_id, stored, accounts, now, home)

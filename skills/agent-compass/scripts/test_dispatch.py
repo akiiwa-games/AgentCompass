@@ -2210,9 +2210,11 @@ class RollTests(unittest.TestCase):
             roll.run(argparse.Namespace(brief=b1, **base_args), judge)
             operations.clear()
             with patch.object(worker_sessions, 'session_state', return_value=worn_state):
-                # Explicit --resume on a worn worker must raise ValueError rather than silently creating a new worker
-                with self.assertRaisesRegex(ValueError, '--resume'):
-                    roll.run(argparse.Namespace(brief=b1, **{**base_args, 'resume': 'agent-worn'}), judge)
+                # Explicit --resume on a worn worker returns a structured refusal rather than raising or creating a new worker
+                res_worn, code_worn = roll.run(argparse.Namespace(brief=b1, **{**base_args, 'resume': 'agent-worn'}), judge)
+                self.assertEqual((code_worn, res_worn['launched'], res_worn['status']), (2, False, 'blocked'))
+                self.assertEqual(res_worn['error'], 'resume_worker_worn')
+                self.assertTrue(res_worn.get('next_action'))
                 # Automatic reuse via exact brief_path rotates to a fresh worker
                 res2, code2 = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
             self.assertEqual((code2, res2['launched']), (0, True))
@@ -2361,8 +2363,10 @@ class RollTests(unittest.TestCase):
                 patch.object(roll.dispatch_flow, 'paseo_reachable', return_value=True), \
                 patch.object(roll.dispatch_flow, 'reconcile'), \
                 patch.object(roll.dispatch_flow, 'launch', return_value={'state': 'running', 'agent_id': 'fresh-rev', 'observed_at': self.now.isoformat()}):
-            with self.assertRaisesRegex(ValueError, 'previously wrote or modified code and cannot be resumed'):
-                roll.run(ns_named_resume, judge_named)
+            res_refused, code_refused = roll.run(ns_named_resume, judge_named)
+            self.assertEqual((code_refused, res_refused['launched'], res_refused['status']), (2, False, 'blocked'))
+            self.assertEqual(res_refused['error'], 'resume_writer_for_review')
+            self.assertIn('wrote or modified code', res_refused['next_action'])
             # Without explicit --resume, even with matching task_id='t-impl', named-model review does not reuse implementer
             ns_named_auto = argparse.Namespace(**{**vars(ns_named_resume), 'resume': None})
             res_auto, code_auto = roll.run(ns_named_auto, judge_named)
@@ -4385,6 +4389,204 @@ class LiveModelCheckTests(unittest.TestCase):
         self.assertFalse(live_models.offers_model('antigravity-resilient', 'gemini-4-argon-high', agy_entry))
         self.assertFalse(live_models.offers_model('claude', 'claude-fable-5-1', claude_entry))
 
+
+
+class ContinuationRollTests(unittest.TestCase):
+    setUp = DispatchTests.setUp
+    issue = DispatchTests.issue
+    snapshot = DispatchTests.snapshot
+
+    def _setup_paseo_env(self, force_bundle=None):
+        import allocator
+        import roll
+        operations = []
+        active_labels = {}
+        created_seq = 0
+
+        def host(request):
+            nonlocal created_seq
+            op = request['operation']
+            if op == 'workspace_agents':
+                return {'ok': True, 'placeable': True, 'agents': []}
+            operations.append((op, request.get('agent_id')))
+            if op in ('create', 'resume'):
+                active_labels.clear()
+                active_labels.update(request['request']['labels'])
+                if op == 'create':
+                    created_seq += 1
+                aid = request.get('agent_id') or f'agent-ws{created_seq}'
+                return {'ok': True, 'agent': self.snapshot(
+                    {'request': request['request']}, status='running', id=aid)}
+            aid = request.get('agent_id') or f'agent-ws{created_seq}'
+            return {'ok': True, 'agent': self.snapshot(
+                {'request': {'labels': dict(active_labels)}},
+                status='idle', attentionReason='finished', id=aid)}
+
+        def real_plan_stage(document, _):
+            task = dict(document['task'])
+            task.setdefault('work_kind', 'exploration_analysis')
+            task.setdefault('difficulty', 'hard')
+            planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts)
+            if force_bundle:
+                bid, b = force_bundle
+                planned = dict(planned, choice=bid, selected_bundle=dict(b, bundle_id=bid))
+            res = dict(planned, stage='plan', _allocation_task=task)
+            res.update(registry.issue(res, document['task'], self.now, allocation_task=task))
+            return res, 0
+
+        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage)})
+        return operations, host, judge, roll
+
+    def test_same_workspace_idle_worker_resumes_and_other_workspace_does_not(self):
+        import argparse
+        import roll
+        ws1 = self.root / 'ws1'
+        ws2 = self.root / 'ws2'
+        ws1.mkdir()
+        ws2.mkdir()
+        b1 = self.root / 'b1.md'
+        b2 = self.root / 'b2.md'
+        b3 = self.root / 'b3.md'
+        b1.write_text('# Initial task in ws1\n', encoding='utf-8')
+        b2.write_text('# Unrelated task in ws2\n', encoding='utf-8')
+        b3.write_text('# Follow-up task in ws1\n', encoding='utf-8')
+        operations, host, judge, _ = self._setup_paseo_env()
+        self.enterContext(fake_owners(self))
+        base_args = dict(task=None, file=[], apply_to=None, local_only=None, keep_whole=None,
+                         hours=0.5, title=None, task_id=None, wait=0, parent_id=None,
+                         parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                         effort=None, basis=None, usage_cache=None, dry_run=False, verbose=True, fast=False,
+                         resume=None, new_worker=False)
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                patch.object(flow, 'host_call', host):
+            res1, code1 = roll.run(argparse.Namespace(brief=b1, workspace=str(ws1), **base_args), judge)
+            self.assertEqual((code1, res1['launched'], res1['worker']['agent_id']), (0, True, 'agent-ws1'))
+
+            # Unrelated idle worker in ws1 is NOT auto-resumed when rolling in ws2
+            operations.clear()
+            res2, code2 = roll.run(argparse.Namespace(brief=b2, workspace=str(ws2), **base_args), judge)
+            self.assertEqual((code2, res2['launched']), (0, True))
+            self.assertEqual(operations[0][0], 'create')
+            self.assertFalse(res2['worker'].get('resumed', False))
+
+            # New brief in ws1 auto-resumes agent-ws1
+            operations.clear()
+            res3, code3 = roll.run(argparse.Namespace(brief=b3, workspace=str(ws1), **base_args), judge)
+            self.assertEqual((code3, res3['launched']), (0, True))
+            self.assertEqual(operations[0], ('resume', 'agent-ws1'))
+            self.assertTrue(res3['worker'].get('resumed'))
+
+    def test_gated_worker_is_never_resumed_and_explicit_resume_refuses_structured(self):
+        import argparse
+        import roll
+        import turn_refusal
+        ws1 = self.root / 'ws-gated'
+        ws1.mkdir()
+        b1 = self.root / 'g1.md'
+        b2 = self.root / 'g2.md'
+        b1.write_text('# First task\n', encoding='utf-8')
+        b2.write_text('# Second task\n', encoding='utf-8')
+        operations, host, judge, _ = self._setup_paseo_env()
+        self.enterContext(fake_owners(self))
+        base_args = dict(task=None, file=[], apply_to=None, local_only=None, keep_whole=None,
+                         hours=0.5, title=None, task_id=None, wait=0, parent_id=None,
+                         parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                         effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
+                         resume=None, new_worker=False)
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                patch.object(flow, 'host_call', host):
+            roll.run(argparse.Namespace(brief=b1, workspace=str(ws1), **base_args), judge)
+            operations.clear()
+            with patch.object(turn_refusal, 'gate_refusal', return_value='account claude-lab is disabled'):
+                # Explicit --resume on a gated worker returns structured blocked result (not ValueError)
+                res_gated, code_gated = roll.run(
+                    argparse.Namespace(brief=b2, workspace=str(ws1), **{**base_args, 'resume': 'agent-ws1'}), judge)
+                self.assertEqual((code_gated, res_gated['status'], res_gated['cause']), (2, 'blocked', 'resume_worker_gated'))
+                self.assertIn('cannot take a new turn', res_gated['next_action'])
+                # Auto-match also skips gated workers
+                self.assertIsNone(roll.match_reusable_worker(
+                    argparse.Namespace(new_worker=False, resume=None, task_id=None, workspace=str(ws1)),
+                    {'task_id': 't-other', 'brief_path': str(b2)}, '# Second', 'parent-a',
+                    workers=[w for w in registry.reusable_workers('parent-a') if not roll._worker_gate_refusal(w)]))
+
+            # Unknown --resume id returns structured blocked result (not ValueError)
+            res_missing, code_missing = roll.run(
+                argparse.Namespace(brief=b2, workspace=None, **{**base_args, 'resume': 'no-such-agent'}), judge)
+            self.assertEqual((code_missing, res_missing['status'], res_missing['cause']),
+                             (2, 'blocked', 'resume_worker_unavailable'))
+            self.assertTrue(res_missing.get('next_action'))
+
+    def test_explicit_resume_on_bundle_mismatch_resumes_with_warning(self):
+        import argparse
+        import roll
+        b1 = self.root / 'm1.md'
+        b1.write_text('# Follow-up on old worker\n', encoding='utf-8')
+        operations, host, judge, _ = self._setup_paseo_env()
+        old_worker = {
+            'agent_id': 'agent-old-opus',
+            'dispatch_id': 'd-old',
+            'bundle_id': 'lab_opus55_high',
+            'bundle': {'provider': 'claude', 'account': 'claude-lab', 'model': 'claude-opus-5-5', 'effort': 'high'},
+            'chain_id': 'chain-old',
+            'task_ids': ['t-old'],
+            'brief_paths': [],
+            'read_only_review': False,
+            'session_state': {'context_tokens': 1000, 'compacted_tokens': 0},
+            'worn': False,
+        }
+        self.enterContext(fake_owners(self))
+        base_args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None,
+                         hours=0.5, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
+                         parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                         effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
+                         resume='agent-old-opus', new_worker=False)
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                patch.object(registry, 'reusable_workers', return_value=[old_worker]), \
+                patch.object(flow, 'host_call', host):
+            res, code = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
+        self.assertEqual((code, res['status']), (0, 'launched'))
+        self.assertEqual(operations[0], ('resume', 'agent-old-opus'))
+        self.assertTrue(res['worker'].get('resumed'))
+        self.assertTrue(any('agent-old-opus' in w and 'lab_opus55_high' in w for w in res.get('warnings', ())))
+
+    def test_workspace_blocked_by_idle_same_parent_worker_names_resume_flag(self):
+        import argparse
+        import roll
+        ws1 = self.root / 'ws-held'
+        ws1.mkdir()
+        b1 = self.root / 'w1.md'
+        b2 = self.root / 'w2.md'
+        b1.write_text('# First\n', encoding='utf-8')
+        b2.write_text('# Second\n', encoding='utf-8')
+        operations, base_host, judge, _ = self._setup_paseo_env()
+
+        def host_with_ws(request):
+            if request['operation'] == 'workspace_agents':
+                agents = [{'id': 'agent-ws1', 'status': 'idle', 'dispatch_id': 'd-1'}] if operations else []
+                return {'ok': True, 'placeable': True, 'agents': agents}
+            return base_host(request)
+
+        self.enterContext(fake_owners(self))
+        base_args = dict(task=None, file=[], apply_to=None, local_only=None, keep_whole=None,
+                         hours=0.5, title=None, task_id=None, wait=0, parent_id=None,
+                         parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                         effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
+                         resume=None, new_worker=False)
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                patch.object(flow, 'host_call', host_with_ws):
+            res1, code1 = roll.run(argparse.Namespace(brief=b1, workspace=str(ws1), **base_args), judge)
+            self.assertEqual((code1, res1['status']), (0, 'launched'))
+            res2, code2 = roll.run(argparse.Namespace(brief=b2, workspace=str(ws1), **{**base_args, 'new_worker': True}), judge)
+            self.assertEqual((code2, res2['status'], res2['cause']), (2, 'blocked', 'workspace_has_active_writer'))
+            self.assertIn('--resume agent-ws1', res2['next_action'])
 
 
 if __name__ == '__main__':

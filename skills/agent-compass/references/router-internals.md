@@ -103,7 +103,7 @@ The allocator first checks discovered availability, explicit disablement, host p
 expiry, required modalities (`needs_visual`, `needs_gui`, or `tool_operation >= 3`), configured route restrictions and whether the model has data for every
 category the task demands (`>= 1`). It then scores eligible candidates: the fit of the model's four category scores
 (`divergence`, `coding`, `aesthetics`, `tool_operation`, in panel standard deviations at that effort, with each demanded
-category's level-1 panel-weakest target as zero point) to the task's demand, continuity (`t3 - t2` on `coupling == "high"`),
+category's level-1 panel-weakest target as zero point) to the task's demand, continuity (`t3 - t2` on `coupling` `medium`/`high` when resuming),
 and the quota economy's price for the spend. A category's term is `min(z, c) - t1`: at demand levels 1 and 2 the cap `c` is
 the level's target, at level 3 it is the category's `ceiling` in `anchor.targets.<category>.levels.3` (per facet for
 `tool_operation`), the highest measured or interpolated High value of any catalogued model, so a level-3 task can prefer a

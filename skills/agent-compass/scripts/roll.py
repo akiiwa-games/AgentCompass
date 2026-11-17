@@ -23,6 +23,7 @@ import host_placement
 import provider_inventory
 import scorer_client
 import subscription_cli
+import turn_refusal
 import usage_reading
 import worker_context
 import worker_sessions
@@ -170,23 +171,43 @@ def independent_reviewers(workers):
     return out
 
 
+def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
+    """Gate-enforced refusal for continuing `worker`, or None when permitted or unlabelled."""
+    bundle = worker.get('bundle') if isinstance(worker, dict) else None
+    if not isinstance(bundle, dict) or not bundle.get('account'):
+        return None
+    try:
+        return turn_refusal.gate_refusal(
+            worker['agent_id'],
+            usage_cache_path=usage_cache_path,
+            bundle=bundle,
+            dispatch_id=worker.get('dispatch_id'),
+            accounts=accounts,
+        )
+    except ValueError:
+        return None
+
+
+def _resume_refusal(out, explicit_id, error, next_text, code=2):
+    return dict(out, launched=False, dispatch_mode='paseo', caller_action='roll_fresh_worker',
+                error=error, agent_id=explicit_id, next=next_text), code
+
+
 def match_reusable_worker(args, task, text=None, parent=None, workers=None):
-    """Select an idle Paseo worker of `parent` only for structured continuation:
-    (1) explicit `--resume <agent_id>`, (2) exact `task_id` or `brief_path` equality, or (3) explicit `task['chain']`."""
+    """Select an idle Paseo worker of `parent` for structured continuation:
+    (1) explicit `--resume <agent_id>`, (2) explicit `task['chain']`, (3) exact `task_id` or `brief_path` equality,
+    or (4) same canonical `--workspace`."""
     del text
     explicit_id = (getattr(args, 'resume', None) or '').strip()
     if explicit_id and getattr(args, 'new_worker', False):
-        raise ValueError('Cannot combine --resume and --new-worker.')
+        return None
     if not parent or getattr(args, 'new_worker', False):
         return None
     excluded = set(getattr(args, '_exclude_agents', None) or ())
     workers = [w for w in (registry.reusable_workers(parent) if workers is None else workers)
                if w.get('agent_id') not in excluded]
     if explicit_id:
-        matched = next((w for w in workers if w.get('agent_id') == explicit_id), None)
-        if matched is None:
-            raise ValueError(f'Worker {explicit_id!r} is not an idle, reusable worker of parent {parent!r}.')
-        return matched
+        return next((w for w in workers if w.get('agent_id') == explicit_id), None)
     if not workers or not isinstance(task, dict):
         return None
     raw_chain = task.get('chain')
@@ -209,15 +230,24 @@ def match_reusable_worker(args, task, text=None, parent=None, workers=None):
             return max(eligible, key=lambda item: item[0])[1]
     task_id = task.get('task_id')
     brief_path = task.get('brief_path')
-    if not brief_path and not getattr(args, 'task_id', None) and not task_id:
-        return None
-    eligible = []
-    for w in workers:
-        if (task_id and task_id in (w.get('task_ids') or ())) or (brief_path and brief_path in (w.get('brief_paths') or ())):
-            eligible.append(((not w.get('worn', False), w.get('updated_at') or ''), w))
-    if not eligible:
-        return None
-    return max(eligible, key=lambda item: item[0])[1]
+    if brief_path or getattr(args, 'task_id', None) or task_id:
+        eligible = []
+        for w in workers:
+            if (task_id and task_id in (w.get('task_ids') or ())) or (brief_path and brief_path in (w.get('brief_paths') or ())):
+                eligible.append(((not w.get('worn', False), w.get('updated_at') or ''), w))
+        if eligible:
+            return max(eligible, key=lambda item: item[0])[1]
+    workspace = host_placement.canonical_dir(getattr(args, 'workspace', None) or task.get('workspace'))
+    if workspace:
+        eligible = []
+        for w in workers:
+            w_ws = host_placement.canonical_dir(w.get('workspace'))
+            w_cwd = host_placement.canonical_dir(w.get('cwd'))
+            if workspace in (w_ws, w_cwd):
+                eligible.append(((not w.get('worn', False), w.get('updated_at') or ''), w))
+        if eligible:
+            return max(eligible, key=lambda item: item[0])[1]
+    return None
 
 
 def _bundle_matches_worker(bundle, worker, same_model=None):
@@ -440,12 +470,18 @@ def same_cwd_warning(out, cwd, parent):
     return dict(out, assumptions=[*out.get('assumptions', []), note], warnings=[*out.get('warnings', []), note])
 
 
-def workspace_blocked(out, workspace, holders, dispatch_mode='paseo'):
+def workspace_blocked(out, workspace, holders, dispatch_mode='paseo', resumable_ids=None):
     named = '; '.join(f"{h.get('state')} dispatch {h.get('dispatch_id')} (agent {h.get('agent_id') or 'not created yet'})" for h in holders)
+    idle_resume = [h['agent_id'] for h in holders if h.get('agent_id') and h.get('agent_id') in (resumable_ids or ())]
+    if idle_resume:
+        resume_hint = ' or '.join(f'--resume {aid}' for aid in idle_resume)
+        action_hint = f'Resume the idle worker with {resume_hint}, or create a separate worktree for parallel work.'
+    else:
+        action_hint = 'Wait for it to finish, then roll this brief again, or create a separate worktree for parallel work.'
     return dict(out, launched=False, dispatch_mode=dispatch_mode, caller_action='resolve_workspace_writer',
                 error='workspace_has_active_writer', blocked_by=holders,
-                next=f'Nothing was launched: workspace {workspace} already has a writer: {named}. Wait for it to finish, then roll '
-                     'this brief again, or create a separate worktree for parallel work. If this brief only reads, roll it with --access read-only.'), 2
+                next=f'Nothing was launched: workspace {workspace} already has a writer: {named}. {action_hint} '
+                     'If this brief only reads, roll it with --access read-only.'), 2
 
 
 def placement_refused(out, dispatch_mode, placed):
@@ -464,6 +500,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     access = task_access(args, decision_profile if isinstance(decision_profile, dict) else None)
     workspace = host_placement.canonical_dir(getattr(args, 'workspace', None))
     probe = None
+    holders = []
     if workspace:
         if access == 'write':
             holders, unavailable, probe = dispatch_flow.workspace_holders(workspace, parent)
@@ -472,8 +509,6 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             if unavailable:
                 out = dict(out, assumptions=[*out.get('assumptions', []),
                                              f'Running agents in workspace {workspace} could not be read ({unavailable}); only recorded dispatches were checked.'])
-            if holders:
-                return workspace_blocked(out, workspace, holders, dispatch_mode='paseo')
         else:
             probe = dispatch_flow.paseo_placement_probe(workspace, parent)
             if probe and probe.get('placeable') is False:
@@ -481,35 +516,55 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     resume_agent_id = None
     explicit_id = (getattr(args, 'resume', None) or '').strip()
     if explicit_id and getattr(args, 'new_worker', False):
-        raise ValueError('Cannot combine --resume and --new-worker.')
+        return _resume_refusal(out, explicit_id, 'conflicting_flags',
+                               'Cannot combine --resume and --new-worker; pass one or the other.', code=1)
     excluded = set(getattr(args, '_exclude_agents', None) or ())
     all_reusable = [w for w in registry.reusable_workers(parent) if w.get('agent_id') not in excluded]
     import account_fleet
-    same_model = model_comparison(account_fleet.load_accounts())
+    fleet = account_fleet.load_accounts()
+    same_model = model_comparison(fleet)
+    usage_cache_path = getattr(args, 'usage_cache', None)
     if explicit_id:
         explicit_worker = next((w for w in all_reusable if w.get('agent_id') == explicit_id), None)
         if explicit_worker is None:
-            raise ValueError(f'Worker {explicit_id!r} is not an idle, reusable worker of parent {parent!r}.')
+            return _resume_refusal(
+                out, explicit_id, 'resume_worker_unavailable',
+                f'Nothing was launched: worker {explicit_id!r} is not an idle, reusable worker of parent {parent!r}. '
+                'Omit --resume to start a fresh worker.',
+            )
         if is_ro_review and not independent_reviewers([explicit_worker]):
-            raise ValueError(
-                f'Worker {explicit_id!r} previously wrote or modified code and cannot be resumed for an independent '
-                'read-only review; omit --resume to start a fresh reviewer.'
+            return _resume_refusal(
+                out, explicit_id, 'resume_writer_for_review',
+                f'Nothing was launched: worker {explicit_id!r} previously wrote or modified code and cannot be resumed '
+                'for an independent read-only review. Omit --resume to start a fresh reviewer.',
             )
         if explicit_worker.get('worn') or (decision.get('decision') or {}).get('action') == 'rotate':
-            raise ValueError(
-                f'Worker {explicit_id!r} reached the context rotation limit and cannot be resumed; '
-                'omit --resume to start a fresh worker.'
+            return _resume_refusal(
+                out, explicit_id, 'resume_worker_worn',
+                f'Nothing was launched: worker {explicit_id!r} reached the context rotation limit and cannot be resumed. '
+                'Write a handoff brief and omit --resume to start a fresh worker.',
+            )
+        if gate_reason := _worker_gate_refusal(explicit_worker, usage_cache_path=usage_cache_path, accounts=fleet):
+            return _resume_refusal(
+                out, explicit_id, 'resume_worker_gated',
+                f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({gate_reason}). '
+                'Omit --resume to start a fresh worker.',
             )
         selected_bundle = decision.get('selected_bundle') or {}
         if not _bundle_matches_worker(selected_bundle, explicit_worker, same_model):
-            raise ValueError(
-                f'Worker {explicit_id!r} uses bundle {explicit_worker.get("bundle_id")!r}, which does not match '
-                f'routed bundle {(selected_bundle.get("bundle_id") or selected_bundle.get("id"))!r}; cannot resume it.'
-            )
+            routed_id = selected_bundle.get('bundle_id') or selected_bundle.get('id')
+            worker_bid = explicit_worker.get('bundle_id')
+            warn = (f'Resuming worker {explicit_id!r} on its existing bundle {worker_bid!r} as requested (--resume); '
+                    f'the router would otherwise have chosen {routed_id!r}.')
+            route = dict(out.get('route') or {})
+            route['warnings'] = [*route.get('warnings', ()), warn]
+            out = dict(out, route=route, warnings=[*out.get('warnings', ()), warn])
         resume_agent_id = explicit_id
     elif not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
-        compatible = [w for w in all_reusable if _bundle_matches_worker(selected_bundle, w, same_model)]
+        compatible = [w for w in all_reusable
+                      if _bundle_matches_worker(selected_bundle, w, same_model)
+                      and not _worker_gate_refusal(w, usage_cache_path=usage_cache_path, accounts=fleet)]
         if is_ro_review:
             compatible = independent_reviewers(compatible)
         chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')
@@ -520,6 +575,14 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             matched = match_reusable_worker(args, task, text, parent, workers=compatible)
             if matched:
                 resume_agent_id = matched['agent_id']
+    if workspace and access == 'write':
+        remaining_holders = [h for h in holders if not (resume_agent_id and h.get('agent_id') == resume_agent_id)]
+        if remaining_holders:
+            resumable_ids = {
+                w['agent_id'] for w in all_reusable
+                if not w.get('worn') and not _worker_gate_refusal(w, usage_cache_path=usage_cache_path, accounts=fleet)
+            }
+            return workspace_blocked(out, workspace, remaining_holders, dispatch_mode='paseo', resumable_ids=resumable_ids)
     # A resumed worker without --workspace stays where it lives, whatever the parent's directory.
     default_cwd = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or parent_cwd()
     placed = host_placement.place('paseo', workspace, default_cwd=default_cwd, paseo_probe=probe)
@@ -1029,6 +1092,10 @@ def _run(args, judge):
             'workspace': getattr(args, 'workspace', None),
             'next': f'Nothing was launched: {exc}',
         }, 1)
+    explicit_id = (getattr(args, 'resume', None) or '').strip()
+    if explicit_id and getattr(args, 'new_worker', False):
+        return _resume_refusal({'stage': 'roll'}, explicit_id, 'conflicting_flags',
+                               'Cannot combine --resume and --new-worker; pass one or the other.', code=1)
     # Resolve before classification/ledger writes: never launch an orphan as a fallback.
     if args.dry_run and not (os.environ.get('PASEO_AGENT_ID', '').strip() or args.parent_id):
         parent, parent_host, parent_address = None, None, None
@@ -1060,11 +1127,42 @@ def _run(args, judge):
                             caller_action='run_next_argv', worker=dict(dispatch_flow.public_chain(row), continuation_argv=argv),
                             next='This task already has a dispatch (state ' + row['state'] + '): run next_argv to observe it; '
                                  'it will not create a second worker.'), 0
-        matched_worker = match_reusable_worker(args, task, text, parent)
+        excluded = set(getattr(args, '_exclude_agents', None) or ())
+        usage_cache_path = getattr(args, 'usage_cache', None)
+        all_reusable = [w for w in registry.reusable_workers(parent) if w.get('agent_id') not in excluded]
+        base_out = {'stage': 'roll', 'parent_id': parent, 'parent_host': parent_host, 'parent_address': parent_address,
+                    **({'workspace': canonical_ws} if canonical_ws else {})}
+        if explicit_id:
+            explicit_worker = next((w for w in all_reusable if w.get('agent_id') == explicit_id), None)
+            if explicit_worker is None:
+                return _resume_refusal(
+                    base_out, explicit_id, 'resume_worker_unavailable',
+                    f'Nothing was launched: worker {explicit_id!r} is not an idle, reusable worker of parent {parent!r}. '
+                    'Omit --resume to start a fresh worker.',
+                )
+            if explicit_worker.get('worn'):
+                return _resume_refusal(
+                    base_out, explicit_id, 'resume_worker_worn',
+                    f'Nothing was launched: worker {explicit_id!r} reached the context rotation limit and cannot be resumed. '
+                    'Write a handoff brief and omit --resume to start a fresh worker.',
+                )
+            if gate_reason := _worker_gate_refusal(explicit_worker, usage_cache_path=usage_cache_path):
+                return _resume_refusal(
+                    base_out, explicit_id, 'resume_worker_gated',
+                    f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({gate_reason}). '
+                    'Omit --resume to start a fresh worker.',
+                )
+            matched_worker = explicit_worker
+        elif not getattr(args, 'new_worker', False):
+            eligible = [w for w in all_reusable
+                        if not w.get('worn') and not _worker_gate_refusal(w, usage_cache_path=usage_cache_path)]
+            matched_worker = match_reusable_worker(args, task, text, parent, workers=eligible)
+        else:
+            matched_worker = None
         if matched_worker and matched_worker.get('bundle_id'):
             task['chain'] = {
                 'id': matched_worker['chain_id'],
-                'coupling': 'high' if getattr(args, 'resume', None) else 'medium',
+                'coupling': 'medium',
                 'worker': {
                     'agent_id': matched_worker['agent_id'],
                     'bundle': matched_worker['bundle_id'],
@@ -1134,7 +1232,7 @@ def _run(args, judge):
                     next=f"Host policy excludes account {violation.get('account')!r}. Inspect "
                          f"{violation.get('policy_path') or 'the configured host policy'}; discovery and an explicit "
                          'task request do not change allowed_accounts.'), 2
-    if (decision.get('decision') or {}).get('needs_user_decision'):
+    if (decision.get('decision') or {}).get('needs_user_decision') and not (explicit_id and bundle):
         return dict(out, launched=False, dispatch_mode='none', caller_action='ask_user',
                     next='The router needs a user decision; show route.reason to the user.'), 2
     if (decision.get('decision') or {}).get('action') == 'defer':

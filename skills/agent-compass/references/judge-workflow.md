@@ -60,7 +60,7 @@ Allocation has three layers. They do not mix.
 score = fit + continuity + boost - quota_cost
 ```
 
-`continuity` is the largest positive `t3 - t2` among the categories at the task's highest demand level when resuming a coupled (`coupling == "high"`, `--resume`) worker within its context rotation limit, else `0`. A temporary `boost` comes only from a user override. The order after the score is: wait before the start, earliest-expiring
+`continuity` is the largest positive `t3 - t2` among the categories at the task's highest demand level when resuming a coupled (`coupling` `medium` or `high`: auto-matched continuation or `--resume`) worker within its context rotation limit, else `0`. A temporary `boost` comes only from a user override. The order after the score is: wait before the start, earliest-expiring
 quota, completion time, fewer USD, demand-weighted category level, then the harness place among siblings (same account, model,
 effort and action; the best sibling keeps its score, a harness with no sibling is not penalized).
 
