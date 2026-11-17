@@ -2,6 +2,11 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.6.5 - 2026-11-17
+
+- The one-click update no longer fails when the anonymous GitHub API quota is used up: it reads the latest release from the release page instead, with the same SHA-256 check. Periodic checks send conditional requests and wait after a refusal.
+- `codex exec` from a shell is a quick call like `claude -p`, and the spawn gate no longer reads it as a worker launch.
+
 ## v0.6.4 - 2026-11-17
 
 - The spawn gate no longer blocks Claude Code's built-in tool agents (`web-fetch`, `statusline-setup`, `claude-code-guide`): calling one launches no worker. A project or user agent definition that takes one of those names is still a launch. The default rules name the same exception.
