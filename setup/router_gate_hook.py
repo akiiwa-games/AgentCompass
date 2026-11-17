@@ -695,7 +695,8 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
     A shell line is parsed, in the dialect of the call (shell_dialect), into simple commands, and each is judged by the
     program it runs, seen through interpreters, shells and wrappers (`python <script>`, `bash -c`, `bash <<EOF`,
     `cmd /c`, `eval`, `iex`, `Start-Process`, `npx`, PASS_THROUGH_WRAPPERS). A launcher name that
-    is an argument, a path, a search pattern or quoted text given to another program is not a launch. A line that
+    is an argument, a path, a search pattern or quoted text given to another program is not a launch. A model CLI
+    asked for one answer (`claude -p`, `codex exec`) is a quick call that starts no worker and is not read. A line that
     does not parse, and a program or argument that is not a literal, is undecidable and is not a launch: the gate's
     fail-open degrade, since it guards against accidental launches and is not a security boundary.
     """
@@ -722,9 +723,6 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
         elif stem == "orca":
             if tuple(args[:2]) in ORCA_LAUNCH_COMMANDS and not HELP_FLAGS.intersection(literal_args):
                 launch("orca worker launch")
-        elif stem == "codex":
-            if args[:1] == ["exec"] and not HELP_FLAGS.intersection(literal_args):
-                launch("codex exec")
         elif stem in SHELL_PROGRAMS:
             dialect = CMD if stem == "cmd" else POWERSHELL if stem in ("pwsh", "powershell") else POSIX
             flags = [i for i, w in enumerate(words) if isinstance(w, str) and (
