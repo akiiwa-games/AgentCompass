@@ -1985,8 +1985,8 @@ class BoundDispatchGateTests(unittest.TestCase):
         dot = 'python ~/.codex/skills/dot-subagent/scripts/run_dot_task.py'
         for command in (f'{dot} --help', f'{dot} -h', f'{dot} run --check-only --prompt hi', f'{dot} doctor',
                         f'{dot} status', f'{dot} run --task-id t1', f'{dot} run --task-id=t1', 'dot-subagent status',
-                        'cd x && codex exec --help', 'paseo run --help', 'paseo agent create -h',
-                        'orca orchestration worker-start --help'):
+                        'cd x && codex exec --help', 'codex exec -h', 'paseo run --help', 'paseo agent create -h',
+                        'orca orchestration worker-start --help', 'orca orchestration worker-start -h'):
             with self.subTest(command=command):
                 self.assertIsNone(gate.detect_subagent_launch('Bash', {'command': command}))
 

@@ -312,7 +312,9 @@ PASEO_SCHEDULE_COMMANDS = {("schedule", "create"): "create_schedule", ("schedule
 # itself is judged on the shell call.
 SHELL_LAUNCH = "shell_launch"
 # Words of the Dot runner that only inspect: help, a dry check, diagnostics, or an existing task's status or result.
-DOT_INSPECT_WORDS = frozenset({"--help", "-h", "--check-only", "doctor", "status", "--task-id"})
+# A CLI asked for its help prints it and starts nothing, whichever spelling asks.
+HELP_FLAGS = frozenset({"--help", "-h"})
+DOT_INSPECT_WORDS = HELP_FLAGS | {"--check-only", "doctor", "status", "--task-id"}
 ORCA_LAUNCH_COMMANDS = frozenset({("orchestration", "worker-start"), ("agent", "launch")})
 # Programs that run another command line: shells take it after -c / -Command / /c, package runners as their argv.
 SHELL_PROGRAMS = frozenset({"bash", "sh", "zsh", "dash", "pwsh", "powershell", "cmd"})
@@ -718,10 +720,10 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
             if not any(isinstance(w, str) and (w in DOT_INSPECT_WORDS or w.startswith("--task-id=")) for w in args):
                 launch("run_dot_task.py")
         elif stem == "orca":
-            if tuple(args[:2]) in ORCA_LAUNCH_COMMANDS and "--help" not in args:
+            if tuple(args[:2]) in ORCA_LAUNCH_COMMANDS and not HELP_FLAGS.intersection(literal_args):
                 launch("orca worker launch")
         elif stem == "codex":
-            if args[:1] == ["exec"] and "--help" not in args:
+            if args[:1] == ["exec"] and not HELP_FLAGS.intersection(literal_args):
                 launch("codex exec")
         elif stem in SHELL_PROGRAMS:
             dialect = CMD if stem == "cmd" else POWERSHELL if stem in ("pwsh", "powershell") else POSIX
@@ -787,7 +789,7 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
             return
 
     def paseo(args: list):
-        if '--help' in args or '-h' in args:
+        if HELP_FLAGS.intersection(w for w in args if isinstance(w, str)):
             return
         parsed = paseo_command(args)
         if parsed is None:
