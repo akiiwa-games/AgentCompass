@@ -712,7 +712,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
               'The bounded watcher PID, deadline and durable receipt are in worker.completion_notification. '
               'Use worker.continuation_argv to recover observation if that watcher stops.') \
         if notification.get('status') == 'watching' else \
-        ('The completion notification has been delivered to the parent.' if notification.get('status') == 'delivered' else
+        ('The completion notification has been delivered to the parent; read that notification instead of waiting or polling.'
+         if notification.get('status') == 'delivered' else
          'No active completion notification is confirmed. The caller must collect the result using '
          'worker.continuation_argv or get_agent_activity; do not wait for an unsolicited callback.')
     return dict(out, launched=not failed, dispatch_mode='paseo',
@@ -746,14 +747,19 @@ def fallback_result(out, outcome, decision, parent, args):
                         next=receipt.get('next_action') or 'Paseo delivery of the relaunch is unconfirmed. Run '
                              'worker.continuation_argv to observe it; do not roll again.', worker=worker), 0
         notification = receipt.get('completion_notification') or {}
+        notif_status = notification.get('status')
+        if notif_status == 'watching':
+            notif_text = ('A completion notification will be sent to the parent; finish any independent work and '
+                          'end your turn to wait for it instead of sleeping or polling in a shell command.')
+        elif notif_status == 'delivered':
+            notif_text = ('The completion notification has been delivered to the parent; read that notification '
+                          'instead of waiting or polling.')
+        else:
+            notif_text = 'No completion notification is confirmed: run worker.continuation_argv to collect the result.'
         return dict(out, launched=True, dispatch_mode='paseo', caller_action='already_launched_do_not_respawn',
                     next=('The routed model failed to start, so AgentCompass relaunched the brief on the next candidate '
                           f'({bundle.get("model")} on {bundle.get("account")}). Do NOT call create_agent, Agent, '
-                          'spawn_agent, or invoke_subagent again. ' +
-                          ('A completion notification will be sent to the parent; finish any independent work and '
-                           'end your turn to wait for it instead of sleeping or polling in a shell command.'
-                           if notification.get('status') == 'watching'
-                           else 'No completion notification is confirmed: run worker.continuation_argv to collect the result.')),
+                          'spawn_agent, or invoke_subagent again. ' + notif_text),
                     worker=worker), 0
     if outcome.get('action') == 'final' and outcome.get('result') in ('blocked', 'owner_named'):
         return dict(out, launched=False, dispatch_mode='paseo', caller_action='tell_user', error='no_candidate_left'
@@ -987,7 +993,8 @@ def launched_next(result, worker, argv):
                 'finish any independent work and end your turn to wait for it; do not sleep or poll '
                 '(paseo ls, get_agent_status, or result files) in a shell command.')
     if notif_status == 'delivered':
-        return 'Worker launched; do not launch another. Its completion notification has been delivered.'
+        return ('Worker launched; do not launch another. Its completion notification has been delivered; '
+                'read that notification instead of waiting or polling.')
     if argv:
         return 'Worker launched; do not launch another. No completion notification is confirmed: run next_argv to collect the result.'
     return result.get('next') or 'Worker launched; do not launch another.'
