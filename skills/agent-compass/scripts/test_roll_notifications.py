@@ -68,6 +68,73 @@ class RollNotificationTests(unittest.TestCase):
                 self.assertIn(expected, result['next'])
                 self.assertEqual(result['worker'].get('completion_notification'), receipt.get('completion_notification'))
 
+    def test_watched_launched_next_action_forbids_shell_polling_and_tells_parent_to_end_turn(self):
+        watching_result = {
+            'dispatch_mode': 'paseo',
+            'worker': {'agent_id': 'worker', 'completion_notification': {'status': 'watching'}},
+        }
+        watching_compact = roll.compact(watching_result, 'launched', None)
+        self.assertIn('end your turn', watching_compact['next_action'])
+        self.assertIn('do not sleep or poll', watching_compact['next_action'])
+
+        delivered_result = {
+            'dispatch_mode': 'paseo',
+            'worker': {'agent_id': 'worker', 'completion_notification': {'status': 'delivered'}},
+        }
+        delivered_compact = roll.compact(delivered_result, 'launched', None)
+        self.assertIn('has been delivered', delivered_compact['next_action'])
+        self.assertIn('read that notification instead of waiting or polling', delivered_compact['next_action'])
+        self.assertNotIn('end your turn', delivered_compact['next_action'])
+
+    def test_fallback_result_relaunched_covers_watching_delivered_and_unconfirmed(self):
+        decision = {'decision_id': 'decision', 'selected_bundle': {'provider': 'codex'}}
+        bundle = {'provider': 'claude', 'account': 'claude-a', 'model': 'claude-opus-4-6', 'effort': 'medium'}
+        for status, expected in (
+            ('watching', 'end your turn to wait for it'),
+            ('delivered', 'has been delivered'),
+            ('stopped', 'No completion notification is confirmed'),
+            (None, 'No completion notification is confirmed'),
+        ):
+            with self.subTest(status=status):
+                receipt = {'dispatch_id': 'd2', 'state': 'started', 'agent_id': 'w2',
+                           'observed_at': '2026-11-01T00:00:00Z'}
+                if status is not None:
+                    receipt['completion_notification'] = {'status': status}
+                outcome = {'action': 'relaunched', 'dispatch_id': 'd2', 'lines': ['attempt 1'], 'receipt': receipt}
+                with patch.object(roll.registry, 'inspect', return_value={**receipt, 'bundle': bundle}), \
+                        patch.object(roll.dispatch_flow, 'public_chain', return_value=dict(receipt)):
+                    result, code = roll.fallback_result({}, outcome, decision, 'parent', SimpleNamespace())
+                self.assertEqual(code, 0)
+                self.assertIn(expected, result['next'])
+                if status == 'delivered':
+                    self.assertIn('read that notification instead of waiting or polling', result['next'])
+                    self.assertNotIn('end your turn', result['next'])
+
+    def test_unwatched_compact_launched_branches_do_not_tell_parent_to_end_turn(self):
+        cases = (
+            ('paseo-stopped', {'dispatch_mode': 'paseo', 'worker': {'agent_id': 'w1',
+                               'completion_notification': {'status': 'stopped'},
+                               'continuation_argv': ['agentcompass', 'launch', '--dispatch-id', 'd1']}}),
+            ('paseo-delivery-failed', {'dispatch_mode': 'paseo', 'worker': {'agent_id': 'w1',
+                                       'completion_notification': {'status': 'delivery_failed'},
+                                       'continuation_argv': ['agentcompass', 'launch', '--dispatch-id', 'd1']}}),
+            ('paseo-none', {'dispatch_mode': 'paseo', 'worker': {'agent_id': 'w1',
+                            'continuation_argv': ['agentcompass', 'launch', '--dispatch-id', 'd1']}}),
+            ('dot', {'dispatch_mode': 'dot', 'continuation_argv': ['agentcompass', 'dot', 'status', 'job-1'],
+                     'worker': {}}),
+            ('grok-bot', {'dispatch_mode': 'grok-bot',
+                          'continuation_argv': ['agentcompass', 'grok-bot', 'status', 'job-1'], 'worker': {}}),
+            ('herdr', {'dispatch_mode': 'herdr',
+                       'next': 'Herdr started child c1; run next_argv to read its output.',
+                       'next_argv': ['agentcompass', 'herdr', 'status', 'c1'], 'worker': {}}),
+        )
+        for label, result in cases:
+            with self.subTest(label=label):
+                compact = roll.compact(result, 'launched', None)
+                self.assertNotIn('end your turn', compact['next_action'])
+                self.assertNotIn('arrives as a notification', compact['next_action'])
+                self.assertNotIn('wait for it', compact['next_action'])
+
     def test_claim_or_notifier_without_observed_worker_is_pending_with_public_continuation(self):
         args=SimpleNamespace(title='test',workspace=None,wait=0)
         decision={'decision_id':'decision','selected_bundle':{'provider':'codex'}}
