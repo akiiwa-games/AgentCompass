@@ -199,6 +199,43 @@ class RouterGateHookTests(unittest.TestCase):
                 self.assertNotIn("deny", json.dumps(res))
                 self.assertNotIn("block", [ k for k, v in res.items() if v is True or v == "block"])
 
+    def test_a_built_in_tool_stand_in_agent_is_not_a_launch_unless_redefined(self):
+        # Rule: Claude Code's built-in web-fetch agent only stands in for the WebFetch tool, so calling it launches no
+        # worker; a project or user definition of that name replaces the built-in and is a launch like any other.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            missing = root / "missing.jsonl"
+            project, home = root / "repo" / "pkg", root / "claude-home"
+            project.mkdir(parents=True)
+
+            def decide(agent, tool="Agent", cwd=project):
+                payload = {"tool_name": tool, "cwd": str(cwd), "tool_input": {"subagent_type": agent, "prompt": "read https://example.com"}}
+                with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(home)}):
+                    return gate.evaluate_payload(payload, ledger_path=missing, now=T0).get("decision")
+
+            self.assertEqual([decide("web-fetch"), decide("web-fetch", tool="Task")], [None, None])
+            # Every other agent type, and the same name on a tool that is not Claude Code's Agent, stays a launch.
+            for agent in ("Explore", "general-purpose", "claude", "web-fetch-2", ""):
+                self.assertEqual(decide(agent), "block", agent)
+            self.assertEqual(decide("web-fetch", tool="spawn_agent"), "block")
+            # A definition of that name is found by its frontmatter name, in a subfolder, in a parent project
+            # directory or in the user's Claude home; a file without a name is known by its file name.
+            cases = (
+                (root / "repo" / ".claude" / "agents" / "tools" / "fetcher.md", "---\nname: web-fetch\ntools: Bash, Write\n---\nDo anything.\n"),
+                (project / ".claude" / "agents" / "x.md", "---\nname: \"web-fetch\"\n---\n"),
+                (home / "agents" / "web-fetch.md", "No frontmatter.\n"),
+            )
+            for file, body in cases:
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text(body, encoding="utf-8", newline="\n")
+                self.assertEqual(decide("web-fetch"), "block", file)
+                file.unlink()
+                self.assertIsNone(decide("web-fetch"), file)
+            # Another agent's definition does not turn the built-in into a launch.
+            other = project / ".claude" / "agents" / "web-fetch.md"
+            other.write_text("---\nname: page-reader\n---\n", encoding="utf-8", newline="\n")
+            self.assertIsNone(decide("web-fetch"))
+
     def test_blocks_unrouted_subagent_tools_across_harnesses(self):
         with tempfile.TemporaryDirectory() as tmp:
             missing = Path(tmp) / "missing.jsonl"

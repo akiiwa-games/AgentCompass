@@ -4,7 +4,7 @@ The global rule block AgentCompass installs is a short pointer to this skill. Re
 
 ## 1. One entry, then do exactly `next_action`
 
-1. Launch through `agentcompass roll` only, one brief per independent task ([SKILL.md](../SKILL.md#dispatch)). Never call Paseo `create_agent`, a host's `Agent`/`Task` (including a built-in Explore), `spawn_agent`, `invoke_subagent`, `run_dot_task.py` or a worker CLI yourself.
+1. Launch through `agentcompass roll` only, one brief per independent task ([SKILL.md](../SKILL.md#dispatch)). Never call Paseo `create_agent`, a host's `Agent`/`Task` (including a built-in Explore), `spawn_agent`, `invoke_subagent`, `run_dot_task.py` or a worker CLI yourself. Reading a web page through Claude Code's built-in `web-fetch` agent is tool use, not a dispatch: it stands in for the WebFetch tool, and the gate lets it through.
 2. Read `status` and do exactly `next_action`; `launched` means the worker runs, so start nothing else for that task. Result variants: [roll reference](roll-reference.md).
 3. A delegated worker (`AGENTCOMPASS_WORKER=1`, or a `Parent session agent ID:` contract at the end of its brief) does its assignment itself and does not delegate again unless the brief appoints it coordinator.
 

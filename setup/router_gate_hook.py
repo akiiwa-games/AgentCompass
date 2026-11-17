@@ -59,6 +59,13 @@ DIRECT_SUBAGENT_TOOLS = frozenset({
     "create_schedule",  # Paseo: "Create a recurring schedule that starts a new agent on a cron cadence."
 })
 
+# Claude Code's built-in `web-fetch` agent stands in for the WebFetch tool in a session that has no WebFetch of its
+# own: WebFetch is its only tool, and the host presents calling it as ordinary tool use. Reading a page hands no work
+# to a worker, so that call is not a launch. A project or user definition of the same name replaces the built-in and
+# carries tools of its own (code.claude.com/docs/en/sub-agents, "Choose the subagent scope"); that one is a launch.
+CLAUDE_AGENT_TOOLS = frozenset({"Agent", "Task"})
+HOST_TOOL_AGENTS = frozenset({"web-fetch"})
+
 # Paseo update_schedule re-targets an existing schedule's new-agent launch when it names a provider or model.
 SCHEDULE_RETARGET_TOOLS = frozenset({"update_schedule"})
 SCHEDULE_TARGET_FIELDS = ("provider", "model")
@@ -887,13 +894,56 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
     return targets
 
 
-def detect_subagent_launch(tool_name: str, tool_input: dict) -> str | None:
+def defined_agent_names(directory: Path) -> set[str]:
+    """Names the agent files under one `agents` directory define: the frontmatter `name`, else the file's own name.
+    An unreadable file or directory defines nothing here: refusing to read a page costs more than the rare miss."""
+    names = set()
+    try:
+        files = sorted(directory.rglob("*.md"))
+    except OSError:
+        return names
+    for file in files:
+        name = file.stem
+        try:
+            lines = file.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+        except OSError:
+            continue
+        if lines and lines[0].strip() == "---":
+            for line in lines[1:]:
+                if line.strip() == "---":
+                    break
+                key, _, value = line.partition(":")
+                if key.strip() == "name" and value.strip():
+                    name = value.strip().strip("'\"")
+                    break
+        names.add(name.casefold())
+    return names
+
+
+def custom_agent_names(cwd: object) -> set[str]:
+    """Agent names defined where Claude Code reads project and user definitions: every `.claude/agents` from the
+    working directory upwards, and the user's Claude home. Definitions passed on the command line, by managed
+    settings or by a plugin are not visible to a hook."""
+    start = Path(str(cwd)) if cwd else Path.cwd()
+    directories = [folder / ".claude" / "agents" for folder in (start, *start.parents)]
+    directories.append(Path(os.environ.get("CLAUDE_CONFIG_DIR") or HOME / ".claude") / "agents")
+    return set().union(*(defined_agent_names(directory) for directory in directories))
+
+
+def host_tool_agent(tool_name: str, tool_input: dict, cwd: object = None) -> bool:
+    """Whether this Agent call runs a built-in agent that only stands in for a host tool (see HOST_TOOL_AGENTS)."""
+    agent = str(tool_input.get("subagent_type") or "")
+    return (tool_name in CLAUDE_AGENT_TOOLS and agent in HOST_TOOL_AGENTS
+            and agent.casefold() not in custom_agent_names(cwd))
+
+
+def detect_subagent_launch(tool_name: str, tool_input: dict, cwd: object = None) -> str | None:
     """Return a short description of the subagent launch if this tool call spawns one, else None."""
     tool_name = base_tool_name(tool_name)
     if not tool_name:
         return None
     if tool_name in DIRECT_SUBAGENT_TOOLS:
-        return f"tool:{tool_name}"
+        return None if host_tool_agent(tool_name, tool_input, cwd) else f"tool:{tool_name}"
     if tool_name in SCHEDULE_RETARGET_TOOLS:
         return f"tool:{tool_name}" if any(tool_input.get(k) for k in SCHEDULE_TARGET_FIELDS) else None
     if tool_name in CODEMODE_TOOLS:
@@ -1504,7 +1554,7 @@ def evaluate_payload(
                         'notifications enabled. Set notifyOnFinish: true or omit it; completion '
                         'notifications and the final reply are the result channel for workers '
                         'without messaging tools (e.g. agy). Worker-to-parent questions and final reports may use false.')
-        trigger = detect_subagent_launch(name, args)
+        trigger = detect_subagent_launch(name, args, payload.get("cwd"))
         if trigger or name in PASEO_TURN_TOOLS or (
             name in CODEMODE_TOOLS | SHELL_TOOLS and CODEMODE_TURN_AGENT_RE.search(json.dumps(args, ensure_ascii=False))
         ):
