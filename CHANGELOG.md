@@ -2,6 +2,11 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.6.6 - 2026-11-17
+
+- The default context rotation threshold rises from 2M to 4M carried tokens (the quota-saving preset from 1.5M to 3M), so workers are replaced less often.
+- `roll` resumes an idle worker of the parent under the threshold that passes the gate checks for an explicit chain, the same brief or the same `--workspace`; an explicit `--resume` works across a different routed bundle with a warning and refuses a busy, worn or gated worker with a `blocked` result. The rules tell sessions to send follow-up work back to the worker holding its context.
+
 ## v0.6.5 - 2026-11-17
 
 - The one-click update no longer fails when the anonymous GitHub API quota is used up: it reads the latest release from the release page instead, with the same SHA-256 check. Periodic checks send conditional requests and wait after a refusal.
