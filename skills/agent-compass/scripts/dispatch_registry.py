@@ -1251,7 +1251,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             # an explicit --resume continues the worker's own bundle regardless of ability/model-latch exclusions.
             # Neither is the router's choice, so an account out of automatic routing does not stop them, and an
             # explicit resume continues a worker whose model was unchecked after its launch.
-            lifted = {candidate_eval.OUT_OF_AUTOMATIC_ROUTING, *((candidate_eval.UNCHECKED,) if resume_bundle is not None else ())}
+            lifted = {candidate_eval.OUT_OF_AUTOMATIC_ROUTING, candidate_eval.UNCHECKED}
             exclusions = [e for e in exclusions if e not in lifted and not e.startswith((
                 'ability ', 'explicit model constraint', 'explicit effort constraint', provider_retry.EXCLUSION_PREFIX))]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
@@ -1300,8 +1300,24 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         return row
 
 
+def dispatch_constraint(dispatch_id, path=None):
+    """The constraint of the decision a dispatch launches (`user_override`, `explicit_resume`, ...), else None. The spawn
+    gate reads it to admit a bound launch on an unchecked model only when the user named that route."""
+    try:
+        return decision_record(inspect(dispatch_id, path)['decision_id'], path).get('constraint')
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def named_resume(row, path=None):
+    """The dispatch continues a worker the caller named (`roll --resume`, decision constraint `explicit_resume`): it
+    never becomes a create, and a failure of it is never relaunched on another worker."""
+    return (decision_record(row['decision_id'], path) or {}).get('constraint') == 'explicit_resume'
+
+
 def fallback_to_create(dispatch_id, now=None, path=None):
-    """Switch a claimed resume dispatch to a fresh create when the previous worker cannot be resumed."""
+    """Switch a claimed resume dispatch to a fresh create when the previous worker cannot be resumed (an automatic
+    resume only: `named_resume` dispatches are released instead)."""
     now = now or utcnow()
     with transaction(path) as connection:
         row = get(connection, 'dispatches', dispatch_id)

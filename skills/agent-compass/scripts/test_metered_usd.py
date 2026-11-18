@@ -516,7 +516,8 @@ class LegacyMeterFleet(unittest.TestCase):
         self.assertEqual(path.read_bytes(), before)
         # Leftover meter fields are a fact: they refuse a launch and the parent's new turn to its own worker alike.
         cause = router_gate_hook.check_target_disabled({'agent_id': 'worker-1'}, 'llmproxy', [], accounts)
-        self.assertIn('旧的额度字段残留', cause)
+        self.assertEqual(cause[0], 'legacy')
+        self.assertIn('旧的额度字段残留', cause[1])
         self.assertIn('旧的额度字段残留', router_gate_hook.check_own_worker_legacy({'agent_id': 'worker-1'}, 'llmproxy', accounts))
         self.assertIsNone(router_gate_hook.check_own_worker_legacy({'agent_id': 'worker-1'}, 'claude', accounts))
 

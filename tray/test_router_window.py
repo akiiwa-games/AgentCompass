@@ -624,7 +624,7 @@ class SettingsTests(unittest.TestCase):
     def test_toggle_bundle_writes_to_override(self):
         override = self.dir / "accounts-override.json"
         b_msg = router_data.toggle_bundle("claude", "opus55_xhigh")
-        self.assertIn("已停用", b_msg)
+        self.assertIn("不参与自动派发", b_msg)
         doc2 = json.loads(override.read_text(encoding="utf-8"))
         self.assertTrue(doc2["accounts"]["claude"]["bundles"]["opus55_xhigh"].get("disabled"))
         fake_alloc = mock.Mock()
@@ -641,7 +641,7 @@ class SettingsTests(unittest.TestCase):
                 mock.patch.object(account_fleet, "load_accounts", fake_alloc.load_accounts):
             dyn_msg = router_data.toggle_bundle("claude-magpie", "claude-magpie__sonnet55_high")
             self.assertIn("Claude Magpie", dyn_msg)
-            self.assertIn("已停用", dyn_msg)
+            self.assertIn("不参与自动派发", dyn_msg)
         doc3 = json.loads(override.read_text(encoding="utf-8"))
         self.assertTrue(doc3["accounts"]["claude-magpie"]["bundles"]["claude-magpie__sonnet55_high"].get("disabled"))
 

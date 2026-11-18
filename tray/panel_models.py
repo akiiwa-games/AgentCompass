@@ -333,7 +333,7 @@ class ModelsTab:
                 check.pack(anchor="w", fill="x", padx=(12, 10), pady=4)
                 if routed and row["enabled"]:
                     check.bind("<Button-1>", lambda _e, m=model["model"]: self.toggle_model(row["account"], row["harness"], m, True), add="+")
-                check._tooltip_text = _tr("已启用：{0}；未启用：{1}").format(
+                check._tooltip_text = _tr("参与自动派发：{0}；不参与：{1}").format(
                     ", ".join(model.get("efforts_on", [])) or "-", ", ".join(model.get("efforts_off", [])) or "-")
                 self.attach_tooltip(check)
                 self.model_menu_items.append((model, var, check))
@@ -342,6 +342,8 @@ class ModelsTab:
                                     command=lambda m=model["model"], v=var: self.toggle_model(row["account"], row["harness"], m, v.get()))
             check.pack(anchor="w", fill="x", padx=10, pady=4)
             check.state(["!disabled"] if routed and row["enabled"] else ["disabled"])
+            check._tooltip_text = _tr("勾选：参与自动派发。未勾选的模型不会被自动选中，用户点名时仍可启动")
+            self.attach_tooltip(check)
             self.model_menu_items.append((model, var, check))
 
     def bulk_model_selection(self, account, harness, action):
@@ -367,7 +369,7 @@ class ModelsTab:
     def toggle_model(self, account, harness, model, enabled=None):
         def work():
             selected = self.data_module().toggle_harness_model(account, harness, model, enabled)
-            return _tr("已启用") if selected else _tr("已停用")
+            return _tr("参与自动派发") if selected else _tr("不参与自动派发")
         self.run(work, self.say(self.after_model_change))
 
     # temporary priority

@@ -147,20 +147,19 @@ def record_constraint(args, task=None, classified=None):
                          f"{args.account}/{args.provider}. Tell the user; do not substitute another model.")
     chosen = match_bundle(accounts, pin)
     disabled_match = match_bundle(accounts, pin, include_disabled=True) if chosen is None else None
+    # The model-management checkbox says which models the router chooses by itself, like host policy for accounts. The
+    # user's own naming reaches an unchecked model (with a warning below); a project rule does not override the
+    # user's checkbox. Off by default (superseded in public data) is not the user's checkbox: any naming reaches it.
     if disabled_match is not None:
-        if account_fleet.bundles(accounts)[disabled_match].get('disabled_by_default'):
-            chosen = disabled_match     # off by default, not by the user: naming the model reaches it
+        if (args.constraint == 'user_override'
+                or account_fleet.bundles(accounts)[disabled_match].get('disabled_by_default')):
+            chosen = disabled_match
         else:
-            raise ValueError(
-                f"Bundle {disabled_match!r} ({args.account}/{pin.model}) is disabled. "
-                f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
-            )
-    if own_rows and all(b.get('disabled') and not b.get('disabled_by_default') for b in own_rows):
+            raise ValueError(_unchecked_refusal(args, pin.model))
+    if (args.constraint != 'user_override' and own_rows
+            and all(b.get('disabled') and not b.get('disabled_by_default') for b in own_rows)):
         # Every level unchecked is the model unchecked, also at a level with no row of its own.
-        raise ValueError(
-            f"Bundle {own_rows[0]['id']!r} ({args.account}/{pin.model}) is disabled. "
-            f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
-        )
+        raise ValueError(_unchecked_refusal(args, pin.model))
     discovered = account_fleet.bundles(accounts).get(chosen) or {}
     if discovered.get('discovery_unavailable'):
         raise ValueError(discovered['discovery_unavailable'])
@@ -220,19 +219,20 @@ def record_constraint(args, task=None, classified=None):
     if retrying:
         warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a turn "
                     "that ends on the model's reply lifts the hold (a cancel or stop does not)", *warnings]
-    # Host policy says which accounts the router chooses by itself. Only the user's own naming reaches an account
-    # outside it; a project rule (hard_constraint) is shared between machines and does not override one machine's switch.
-    # Account loading may enroll a newly discovered account; check the resulting policy.
-    if not host_policy.account_allowed(host_policy.load_policy(), args.account):
+    # Host policy says which accounts the router chooses by itself, the model-management checkbox which models. Only
+    # the user's own naming reaches past them; a project rule (hard_constraint) is shared between machines and does
+    # not override one machine's switch. Account loading may enroll a newly discovered account; check the resulting
+    # policy. The ledger marks the row (decision_ledger.automatic_routing_marker).
+    policy = host_policy.load_policy()
+    if args.constraint == 'user_override':
+        warnings = [*(f'{text}; launched because the user named it in this request'
+                      for text in host_policy.exclusion_texts(bundle, accounts, policy)), *warnings]
+    elif not host_policy.account_allowed(policy, args.account):
         outside = host_policy.outside_routing(args.account)
-        if args.constraint == 'user_override':
-            warnings = [f'{outside}; launched because the user named it in this request', *warnings]
-            result['outside_automatic_routing'] = args.account
-        else:
-            result['host_policy_violation'] = {
-                'account': args.account, 'dispatch_allowed': False, 'policy_path': str(host_policy.policy_path()[0]),
-                'reason': (f'{outside}; a {args.constraint} record does not override that, only a route the user named '
-                           "in this request (--constraint user_override with the user's words in --basis)")}
+        result['host_policy_violation'] = {
+            'account': args.account, 'dispatch_allowed': False, 'policy_path': str(host_policy.policy_path()[0]),
+            'reason': (f'{outside}; a {args.constraint} record does not override that, only a route the user named '
+                       "in this request (--constraint user_override with the user's words in --basis)")}
     if warnings:
         result['warnings'] = warnings
     if classified:
@@ -273,18 +273,20 @@ def record_resume(args, task, classified, bundle, agent_id):
         result['hours_estimate'] = classified['hours_estimate']
     if classified.get('alerts'):
         result['alerts'] = list(classified['alerts'])
-    warnings = []
-    if not host_policy.account_allowed(host_policy.load_policy(), bundle['account']):
-        warnings.append(f"{host_policy.outside_routing(bundle['account'])}; worker {agent_id!r} resumed because "
-                        '--resume named it')
-        result['outside_automatic_routing'] = bundle['account']
+    warnings = [f'{text}; the turn goes to worker {agent_id!r} because --resume named it'
+                for text in host_policy.exclusion_texts(bundle, accounts, host_policy.load_policy())]
     _compare_with_router(result, plan_task, usage, now, chosen, bool(bundle.get('fast')), classified)
     if result.get('agrees') is False and result.get('router_choice') not in (None, 'none'):
-        warnings.append(f"Resuming worker {agent_id!r} on its existing bundle {chosen!r} as requested (--resume); "
-                        f"the router would otherwise have chosen {result['router_choice']!r}.")
+        warnings.append(f"The turn goes to worker {agent_id!r} on its existing bundle {chosen!r} as requested "
+                        f"(--resume); the router would otherwise have chosen {result['router_choice']!r}.")
     if warnings:
         result['warnings'] = warnings
     return decision_ledger.finalize(result, None, 'auto', started, task)
+
+
+def _unchecked_refusal(args, model):
+    return (f'{host_policy.unchecked_routing(args.account, model)}; a {args.constraint} record does not override that, '
+            "only a route the user named in this request (--constraint user_override with the user's words in --basis)")
 
 
 def _record_task(args, task):
@@ -818,7 +820,7 @@ def build_parser():
     parser.add_argument('--title', help='roll: worker title (default: first line of the brief).')
     parser.add_argument('--workspace', help='roll: existing directory this worker writes in and claims exclusively (default: parent cwd, warning only).')
     parser.add_argument('--task-id', help='roll: stable id for this task (default: derived from the brief).')
-    parser.add_argument('--resume', metavar='AGENT_ID', help='roll: resume this specific idle worker owned by the parent session.')
+    parser.add_argument('--resume', metavar='AGENT_ID', help='roll: resume this specific idle worker owned by the parent session, on its own route and in its own directory; when it cannot take the turn, nothing else is started.')
     parser.add_argument('--new-worker', action='store_true', help='roll: always create a new dispatch and worker: no resume, and no handing back an open dispatch of the same brief.')
     parser.add_argument('--access', choices=('read-only', 'write'), help='roll: explicit override for whether this brief only reads or writes its workspace (default: classified by System-One, else write). Only a writer is held to one per --workspace.')
     parser.add_argument('--score', action='store_true',

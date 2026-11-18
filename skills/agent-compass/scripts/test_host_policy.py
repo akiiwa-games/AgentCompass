@@ -185,7 +185,7 @@ class HostPolicyTests(unittest.TestCase):
         self.assertNotIn('host_policy_violation', result)
         self.assertNotIn('host_policy_violation', ledger[-1])
         # The one field the audit filters on, written by the ledger owner.
-        self.assertEqual(ledger[-1]['outside_automatic_routing'], 'claude')
+        self.assertEqual(ledger[-1]['outside_automatic_routing'], ['account'])
         self.assertTrue(any(w.startswith('account claude is out of automatic routing on this host')
                             and w.endswith('launched because the user named it in this request')
                             for w in result['warnings']), result.get('warnings'))
@@ -215,14 +215,87 @@ class HostPolicyTests(unittest.TestCase):
         self.assertNotIn('host_policy_violation', result)
         self.assertFalse(any('out of automatic routing' in w for w in result.get('warnings', ())))
 
+    def test_a_named_model_unchecked_in_model_management_launches_and_a_project_rule_does_not(self):
+        # Amendment 2 (router-internals.md, Pins): the checkbox says which models take part in automatic routing, like
+        # allowed_accounts for accounts. The user's naming reaches an unchecked model with a warning and the ledger
+        # marker; a project rule does not override the user's checkbox.
+        self.write({**LS, 'allowed_accounts': [*LS['allowed_accounts'], 'claude']})
+        override = Path(router.os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
+        unchecked = {'claude': {'bundles': {b: {'disabled': True} for b in (
+            'opus55_high', 'opus55_medium', 'opus55_low', 'opus55_xhigh', 'opus55_max')}}}
+        with override_file(override, unchecked):
+            result, ledger = self.record()
+            self.assertTrue(any(w.startswith('claude/claude-opus-5-5 is out of automatic routing on this host '
+                                             '(unchecked in model management)')
+                                and w.endswith('launched because the user named it in this request')
+                                for w in result['warnings']), result.get('warnings'))
+            self.assertEqual(ledger[-1]['outside_automatic_routing'], ['model'])
+            self.assertTrue(dispatch_registry.decision_record(result['decision_id'])['dispatchable'])
+            for constraint in ('hard_constraint', 'dot_closed_loop'):
+                with self.subTest(constraint=constraint), \
+                        self.assertRaisesRegex(ValueError, 'unchecked in model management.*--constraint user_override'):
+                    self.record(constraint)
+        result, ledger = self.record()
+        self.assertNotIn('outside_automatic_routing', ledger[-1])
+        self.assertFalse(any('out of automatic routing' in w for w in result.get('warnings', ())))
+
+    def test_every_launch_row_is_marked_by_the_ledger_owner_and_nothing_else_is(self):
+        # Rule (router-internals.md, Pins; review N3): the ledger owner derives `outside_automatic_routing` for every row
+        # that carries a launch on a bundle, from the switches in effect when the row is written; rows that launch nothing
+        # carry none, and a marker a writer hands in is never kept. Stated over the row shape of every writer.
+        bundle = {'provider': 'claude', 'account': 'claude', 'model': 'claude-opus-5-5', 'effort': 'high',
+                  'bundle_id': 'opus55_high'}
+        launch_rows = {                                          # writer -> row it hands append_ledger
+            **{f'finalize:{stage}': {'stage': stage, 'choice': 'opus55_high', 'bundle': bundle,
+                                     'constraint': constraint}
+               for stage, constraint in (('plan', None), ('select', None), ('record', 'user_override'),
+                                         ('record', 'explicit_resume'))},
+            **{f'fallback_retry:{stage}': {'stage': stage, 'source': 'fallback_retry', 'choice': 'opus55_high',
+                                           'bundle': bundle, 'action': 'start'} for stage in ('plan', 'record')},
+        }
+        quiet_rows = {
+            'fallback': {'stage': 'fallback', 'action': 'relaunch', 'failed': bundle},
+            'split': {'stage': 'split', 'choice': 'split'},
+            'scorer_unavailable': {'stage': 'plan', 'choice': 'none', 'error': 'scorer_unavailable'},
+            'self': {'stage': 'plan', 'choice': 'self', 'bundle': bundle},
+            'override': {'stage': 'override', 'action': 'upsert', 'account': 'claude', 'model': 'claude-opus-5-5'},
+            'refused': {'stage': 'record', 'choice': 'opus55_high', 'bundle': bundle,
+                        'host_policy_violation': {'dispatch_allowed': False}},
+        }
+        override = Path(router.os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
+        model_off = {'claude': {'bundles': {b: {'disabled': True} for b in (
+            'opus55_high', 'opus55_medium', 'opus55_low', 'opus55_xhigh', 'opus55_max')}}}
+        ledger = self.directory/'marker-ledger.jsonl'
+        for account_on in (False, True):
+            for model_checked in (True, False):
+                self.write({**LS, 'allowed_accounts': [*LS['allowed_accounts'], *(['claude'] if account_on else [])]})
+                expected = [*([] if account_on else ['account']), *([] if model_checked else ['model'])] or None
+                with override_file(override, {} if model_checked else model_off), \
+                        patch.object(decision_ledger, 'ledger_path', return_value=ledger):
+                    for writer, row in {**launch_rows, **quiet_rows}.items():
+                        with self.subTest(account_on=account_on, model_checked=model_checked, writer=writer):
+                            ledger.unlink(missing_ok=True)
+                            # A writer's own marker is dropped, whatever it says.
+                            self.assertTrue(decision_ledger.append_ledger(dict(row, outside_automatic_routing=['x'])))
+                            written = decision_ledger.read_ledger()[-1]
+                            want = expected if writer in launch_rows else None
+                            self.assertEqual(written.get('outside_automatic_routing'), want)
+        # Every ledger write goes through `append_ledger`: no other module appends to the ledger file.
+        scripts = Path(decision_ledger.__file__).parent
+        root = scripts.parents[2]
+        appending = [p for p in [*scripts.glob('*.py'), *(root/'setup').glob('*.py')]
+                     if not p.name.startswith('test_') and p.name != 'decision_ledger.py'
+                     and 'ledger_path' in (text := p.read_text(encoding='utf-8'))
+                     and ("open('a'" in text or 'open("a"' in text)]
+        self.assertEqual(appending, [])
+
     def test_facts_still_refuse_a_named_route_outside_automatic_routing(self):
-        # Rule 3: naming lifts the preference switch only; no sign-in, a model the account does not offer, a model
-        # unchecked in model management, an exhausted window and a launch cooldown still refuse.
+        # Rule 3: naming lifts the preference switches only; no sign-in, a model the account does not offer, an
+        # exhausted window and a launch cooldown still refuse.
         now = datetime.now(timezone.utc)
         exhausted = {'accounts': {'claude': {'status': 'fresh', 'fetched_at': now.isoformat(), 'available': True,
                                              'windows': [{'id': 'five_hour', 'used_pct': 100,
                                                           'resets_at': (now + timedelta(hours=2)).isoformat()}]}}}
-        override = Path(router.os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
         import launch_failures
         import provider_inventory
         cases = (
@@ -231,12 +304,6 @@ class HostPolicyTests(unittest.TestCase):
                 'launchers': {}}),
              {}, 'credentials_rejected'),
             ('model not offered', None, {'model': 'gpt-6-astra'}, 'named_model_unavailable|no known provider/account/model'),
-            ('unchecked', lambda: override_file(override, {'claude': {'bundles': {'opus55_high': {'disabled': True},
-                                                                                 'opus55_medium': {'disabled': True},
-                                                                                 'opus55_low': {'disabled': True},
-                                                                                 'opus55_xhigh': {'disabled': True},
-                                                                                 'opus55_max': {'disabled': True}}}}),
-             {}, 'disabled'),
             ('exhausted window', None, {'usage': exhausted}, 'five_hour'),
             ('cooldown', lambda: cooling(launch_failures, now), {}, 'cooling down'),
         )

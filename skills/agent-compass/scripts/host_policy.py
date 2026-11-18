@@ -112,13 +112,48 @@ def account_allowed(policy, account):
     An account outside `allowed_accounts` is never chosen by the router: not by a plan, a fallback, an automatic resume
     of an idle worker, nor as a judge or scorer. It is not banned: a route the user names in the request still
     dispatches on it (`route_judge.record_constraint`, constraint `user_override`), and a turn to an existing session on
-    it is not a routing choice."""
+    it is not a routing choice. The model-management checkbox is the same kind of switch for a model
+    (`model_unchecked`)."""
     return policy is None or account in policy['allowed_accounts']
 
 
 def outside_routing(account):
     """The one wording of an account outside `allowed_accounts`; callers add why it is or is not launched."""
     return f'account {account} is out of automatic routing on this host (not in allowed_accounts of host-policy.json)'
+
+
+def unchecked_routing(account, model):
+    """The one wording of a model unchecked in model management; callers add why it is or is not launched."""
+    return f'{account}/{model} is out of automatic routing on this host (unchecked in model management)'
+
+
+def model_unchecked(bundle, accounts):
+    """Whether the bundle is unchecked in model management (`disabled`, the user's checkbox or off by default): its own
+    row when it has one, else every row of its model on its account (a level with no row of its own)."""
+    import account_fleet
+    catalog = account_fleet.bundles(accounts)
+    bundle_id = bundle.get('bundle_id') or bundle.get('id')
+    if bundle_id in catalog:
+        return bool(catalog[bundle_id].get('disabled'))
+    key = account_fleet.row_key(bundle.get('model') or '', accounts)
+    rows = [b for b in catalog.values()
+            if b['account'] == bundle.get('account') and account_fleet.row_key(b['model'], accounts) == key]
+    return bool(rows) and all(b.get('disabled') for b in rows)
+
+
+def automatic_routing_exclusions(bundle, accounts, policy):
+    """The automatic-routing switches a launch on `bundle` reaches past, in a fixed order: `account` (outside
+    `allowed_accounts`), `model` (unchecked in model management). Both are preferences: the router never chooses past
+    them, and a route the user names does (`route_judge.record_constraint`)."""
+    return [name for name, out in (('account', not account_allowed(policy, bundle.get('account'))),
+                                   ('model', model_unchecked(bundle, accounts))) if out]
+
+
+def exclusion_texts(bundle, accounts, policy):
+    """The wording of each switch `automatic_routing_exclusions` names, in its order."""
+    texts = {'account': lambda: outside_routing(bundle.get('account')),
+             'model': lambda: unchecked_routing(bundle.get('account'), bundle.get('model'))}
+    return [texts[name]() for name in automatic_routing_exclusions(bundle, accounts, policy)]
 
 
 def legacy_cause(account, accounts):
@@ -129,10 +164,11 @@ def legacy_cause(account, accounts):
 
 
 def disabled_cause(account, candidates, accounts):
-    """(kind, detail) when a launch of the target is refused whatever the route, else None. Kinds: `legacy`
-    (`legacy_cause`), `bundles` (ids all unchecked in model management; `candidates` are the account's matching bundle
-    rows). A new turn to an existing worker reads only `legacy_cause`: continuing a worker is not choosing its model.
-    Host policy is not a cause: it governs automatic routing only (`account_allowed`)."""
+    """(kind, detail) when a launch of the target needs more than a routing decision, else None. Kinds: `legacy`
+    (`legacy_cause`, a fact: refused whatever the route), `bundles` (ids all unchecked in model management;
+    `candidates` are the account's matching bundle rows: out of automatic routing, so only a route the user named
+    launches it). A new turn to an existing worker reads only `legacy_cause`: continuing a worker is not choosing its
+    model. Host policy is not a cause: it governs automatic routing only (`account_allowed`)."""
     found = legacy_cause(account, accounts)
     if found:
         return found
@@ -144,7 +180,7 @@ def disabled_cause(account, candidates, accounts):
 def disabled_text(cause):
     """The spawn gate's wording of a `disabled_cause`: the leftover meter text itself, or the unchecked bundles."""
     kind, detail = cause
-    return detail if kind == 'legacy' else "档位 " + ", ".join(detail) + " 已在模型管理中停用"
+    return detail if kind == 'legacy' else "档位 " + ", ".join(detail) + " 在模型管理中未勾选（不参与自动派发）"
 
 
 def judge_allowed(policy, name, account):

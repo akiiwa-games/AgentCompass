@@ -96,8 +96,10 @@ def is_unknown_provider(entry: dict | None) -> bool:
     return isinstance(entry, dict) and entry.get('status') == UNKNOWN_PROVIDER
 
 
-def candidate_providers(accounts: dict | None, allowed=None) -> list[str]:
-    """Sorted Paseo provider ids referenced by active candidate accounts."""
+def candidate_providers(accounts: dict | None, allowed=None, named=()) -> list[str]:
+    """Sorted Paseo provider ids referenced by active candidate accounts. An account in `named` (a named route or an
+    explicit resume names it) counts its unchecked bundles too: whether the provider still offers a model is a fact
+    the checkbox does not change."""
     if not isinstance(accounts, dict):
         return []
     acc_map = accounts.get('accounts')
@@ -117,7 +119,7 @@ def candidate_providers(accounts: dict | None, allowed=None) -> list[str]:
         if not isinstance(bundles, dict):
             continue
         for bundle in bundles.values():
-            if not isinstance(bundle, dict) or not _bundle_enabled(bundle):
+            if not isinstance(bundle, dict) or not (_bundle_enabled(bundle) or acct in named):
                 continue
             if bundle.get('discovery_unavailable'):
                 continue
@@ -298,6 +300,7 @@ def load_or_refresh(
     *,
     accounts: dict | None = None,
     allowed=None,
+    named=(),
     base_dir: Path | None = None,
     now: datetime | None = None,
     force: bool = False,
@@ -312,7 +315,7 @@ def load_or_refresh(
     doc = _read_store(path)
     stored_providers = doc.get('providers') if isinstance(doc.get('providers'), dict) else {}
     target_providers = list(dict.fromkeys(
-        providers if providers is not None else candidate_providers(accounts, allowed=allowed)
+        providers if providers is not None else candidate_providers(accounts, allowed=allowed, named=named)
     ))
     if not target_providers:
         return {'updated_at': doc.get('updated_at'), 'ttl_seconds': ttl, 'providers': dict(stored_providers)}

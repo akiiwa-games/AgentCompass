@@ -1156,24 +1156,29 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
 
 
 DISABLED_RECOVERY = (
-    f"禁止启动该档位的 worker。请把任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 改派仍勾选的模型"
-    "（重新勾选是用户在 AgentCompass 调度设置 -> 模型管理 中的选择；"
-    f"账号残留旧计量字段时运行 {ROUTER_CMD} setup 清除）。"
+    f"请把任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 由路由在参与自动派发的模型中选择；"
+    "用户在本次请求中点名了该模型时，用 --provider/--account/--model --basis \"<用户原话>\" 记录后启动"
+    f"（账号残留旧计量字段时运行 {ROUTER_CMD} setup 清除）。"
 )
 
 
 def check_target_disabled(
     target: dict, account: str | None, candidates: list[dict], accounts: dict | None,
-) -> str | None:
-    """Block a launch on an account with leftover meter fields or with every matching bundle unchecked. Host policy is
-    not read here: it governs automatic routing, and a launch carries the authority of the route it matches."""
+) -> tuple[str, str] | None:
+    """(kind, refusal) for a launch on an account with leftover meter fields (`legacy`, a fact: refused whatever the
+    route) or with every matching bundle unchecked in model management (`bundles`: out of automatic routing, so the
+    launch passes only on a route the user named, which the caller decides from the launch's authority). Host policy
+    is not read here: it governs automatic routing, and a launch carries the authority of the route it matches."""
     if not account:
         return None
     disabled_cause, disabled_text = router_owner("host_policy", "disabled_cause", "disabled_text")
     found = disabled_cause(account, candidates, accounts)
     if not found:
         return None
-    return f"[Router Gate] 拦截启动已停用的档位或残留旧计量字段的账号：{disabled_text(found)}。" + DISABLED_RECOVERY
+    if found[0] == "legacy":
+        return "legacy", f"[Router Gate] 拦截启动残留旧计量字段的账号：{disabled_text(found)}。" + DISABLED_RECOVERY
+    return "bundles", (f"[Router Gate] 拦截：{disabled_text(found)}，只有用户在本次请求中点名的路由"
+                       "（user_override 记录）可以启动它。" + DISABLED_RECOVERY)
 
 
 def check_own_worker_legacy(target: dict, account: str | None, accounts: dict | None) -> str | None:
@@ -1621,11 +1626,15 @@ def evaluate_payload(
             targets = [dict(target_spec(docs[agent_id], agent_labels(docs[agent_id])), agent_id=agent_id,
                             dispatch_id=agent_labels(docs[agent_id]).get("router.dispatch_id")) for agent_id in agent_ids]
         dispatch_id = args.get("labels", {}).get("router.dispatch_id") if isinstance(args.get("labels"), dict) else None
+        unchecked = None    # an unchecked model: refused below unless the launch's authority is the user's naming
         for target in targets:
             try:
                 account, candidates = resolve_target(target, accounts)
+                disabled = check_target_disabled(target, account, candidates, accounts) if trigger else None
+                if disabled and disabled[0] == "bundles":
+                    unchecked, disabled = disabled[1], None
                 reason = (
-                    (check_target_disabled(target, account, candidates, accounts) if trigger
+                    (disabled[1] if disabled else None if trigger
                      else check_own_worker_legacy(target, account, accounts))
                     or check_account_quota_exhausted(
                         account or target.get("provider"),
@@ -1657,11 +1666,16 @@ def evaluate_payload(
         if isinstance(labels, dict) and any(k.startswith('router.') for k in labels):
             try:
                 dispatch_registry = router_module('dispatch_registry')
+                if unchecked and dispatch_registry.dispatch_constraint(labels.get('router.dispatch_id')) != 'user_override':
+                    return format_response(False, harness_kind, unchecked)
                 call_id = payload.get('tool_use_id') or payload.get('tool_call_id') or payload.get('call_id')
                 dispatch_registry.claim(args, parent_id=caller_id, call_id=call_id, now=now)
             except (ValueError, OSError, ImportError, sqlite3.Error) as exc:
                 return format_response(False, harness_kind, '[Router Gate] Bound dispatch rejected: ' + str(exc))
             continue
+        if unchecked and (trigger == WORKFLOW_TRIGGER or trigger in SCHEDULE_TRIGGERS
+                          or name == 'create_agent' or trigger == 'shell:paseo agent create'):
+            return format_response(False, harness_kind, unchecked)
         # Workflow and schedules are not worker launches roll can make: each has its own authorization.
         if trigger == WORKFLOW_TRIGGER or trigger in SCHEDULE_TRIGGERS:
             if rows is None:
@@ -1692,6 +1706,8 @@ def evaluate_payload(
         row, diagnostic = match_route(rows, requested, context, trigger, accounts=accounts)
         if row is not None and (reason := check_route_authority(row, trigger)):
             return format_response(False, harness_kind, reason)
+        if row is not None and unchecked and row.get("constraint") != "user_override":
+            return format_response(False, harness_kind, unchecked)
         if row is None:
             reason = (f"[Router Gate] 启动参数与有效期内路由不匹配 ({trigger})：{diagnostic}。"
                       "请按本次任务的 router provider/model/effort 启动，或重新运行 roll。"

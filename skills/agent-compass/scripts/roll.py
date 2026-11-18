@@ -194,6 +194,27 @@ def _resolve_worker_bundle(worker, accounts=None):
     return bundle
 
 
+def named_route_conflict(args, bundle, accounts=None):
+    """`roll --resume <id>` with model flags: None when every flag given names the worker's own route (they add nothing:
+    the turn is the explicit resume), else the error text. --resume names the worker, and its route is the worker's
+    own; a different named route contradicts it, so neither is chosen for the caller."""
+    import account_fleet
+    import model_resolution
+    if accounts is None:
+        accounts = account_fleet.load_accounts()
+    model, named_effort = model_resolution.split_model_effort(args.model) if args.model else (None, None)
+    effort = args.effort or named_effort
+    same = ((not args.provider or args.provider == bundle.get('provider'))
+            and (not args.account or args.account == bundle.get('account'))
+            and (not model or account_fleet.row_key(model, accounts) == account_fleet.row_key(bundle.get('model') or '', accounts))
+            and (not effort or effort == bundle.get('effort')))
+    if same:
+        return None
+    own = f"{bundle.get('account')}/{bundle.get('model')}:{bundle.get('effort')}"
+    return (f'--resume names the worker and its route is the worker\'s own ({own}); drop the model flags, or roll '
+            'without --resume to launch the named route.')
+
+
 def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
     """Gate-enforced refusal for continuing `worker`, or None when permitted. Fails closed if unresolvable."""
     if accounts is None:
@@ -230,6 +251,12 @@ def _auto_resumable(worker, policy, usage_cache_path=None, accounts=None):
     if host_policy.disabled_cause(bundle['account'], rows, accounts):
         return False
     return not _worker_gate_refusal(worker, usage_cache_path=usage_cache_path, accounts=accounts)
+
+
+def workspace_mismatch_text(agent_id, own_dir, requested):
+    return (f'Nothing was launched: worker {agent_id!r} works in {own_dir}, and --workspace names {requested}; a '
+            'worker is resumed only in its own directory, and no other worker was started in its place. Drop '
+            f'--workspace to resume it where it works, or roll without --resume to start a worker in {requested}.')
 
 
 def _resume_refusal(out, explicit_id, error, next_text, code=2):
@@ -679,6 +706,21 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             'Omit --resume to start a fresh worker.',
         )
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=0)
+    if explicit_id and receipt.get('state') in ('failed', 'create_failed'):
+        # The named worker did not take the turn (the host refused the resume) or failed on it: nothing was started in
+        # its place, and nothing will be (dispatch_flow, dispatch_fallback `worker_named`).
+        cause = receipt.get('cause') or receipt.get('error') or receipt.get('state')
+        detail = receipt.get('refusal_detail') or {}
+        worker_out = dict(out, worker=dict(receipt, provider=decision['selected_bundle']['provider']))
+        if receipt.get('error') == 'worker_workspace_mismatch':
+            return _resume_refusal(worker_out, explicit_id, 'resume_workspace_mismatch', workspace_mismatch_text(
+                explicit_id, detail.get('worker') or 'an unknown directory', detail.get('requested') or landing))
+        differs = (f": the worker has {detail.get('worker')}, this turn asked for {detail.get('requested')}"
+                   if detail else '')
+        return _resume_refusal(
+            worker_out, explicit_id, 'resume_worker_unavailable',
+            f'Worker {explicit_id!r} did not take this turn ({cause}{differs}); no other worker was started in its '
+            'place. Roll the brief without --resume to let the router choose, or name a route.')
     if (receipt.get('state') == 'create_failed' or (receipt.get('state') == 'failed' and receipt.get('agent_id'))) \
             and dispatch_fallback.enabled() and judge is not None:
         # Paseo confirms no worker runs this brief any more (none was created, or it ended in error while roll watched):
@@ -1237,6 +1279,16 @@ def _run(args, judge):
                     f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({gate_reason}). '
                     'Omit --resume to start a fresh worker.',
                 )
+            own_dir = host_placement.canonical_dir(explicit_worker.get('cwd') or explicit_worker.get('workspace'))
+            if canonical_ws and own_dir and own_dir != canonical_ws:
+                # A worker does not move: the host resumes it only in its own directory (the bridge's
+                # `worker_workspace_mismatch`), and a new worker in --workspace would not hold its context.
+                return _resume_refusal(base_out, explicit_id, 'resume_workspace_mismatch', workspace_mismatch_text(
+                    explicit_id, own_dir, canonical_ws))
+            if args.provider or args.model or args.effort:
+                conflict = named_route_conflict(args, _resolve_worker_bundle(explicit_worker) or {})
+                if conflict:
+                    raise ValueError(conflict)
             matched_worker = explicit_worker
         elif not getattr(args, 'new_worker', False):
             policy = host_policy.load_policy()
@@ -1257,9 +1309,10 @@ def _run(args, judge):
                 },
             }
     with provider_inventory.snapshot():
-        if explicit_id and not (args.provider or args.model or args.effort):
+        if explicit_id:
             # The caller named the worker: its route is the worker's own bundle, not what an automatic plan of this
-            # task would choose (which excludes, for one, an account out of automatic routing).
+            # task would choose (which excludes, for one, an account out of automatic routing). Model flags that name
+            # that same route add nothing (named_route_conflict refused any other).
             classified = judge.classify_pinned(task, args)
             decision = (classified['result'] if 'result' in classified else
                         judge.record_resume(args, task, classified, _resolve_worker_bundle(matched_worker), explicit_id))

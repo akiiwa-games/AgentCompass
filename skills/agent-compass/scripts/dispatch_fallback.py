@@ -23,7 +23,8 @@ Contract:
   follow-up that resumes a failed attempt's worker retires any pending retry or switch (`resumed`) and restores that
   attempt as `current`. A model the owner named (`roll --model`, a
   `user_override` decision) follows the same can_wait_hours rule and is never switched: when its backoff does not fit,
-  the parent is told (`owner_named`).
+  the parent is told (`owner_named`). A worker the caller named (`roll --resume`, constraint `explicit_resume`) is
+  never retried on a new worker nor replaced: its failure is reported as it is (`worker_named`).
 - Otherwise: allocation runs again on the original decision's allocation task (its classifier profile, needs such as
   local_only, fast) with every bundle that failed in this dispatch marked unavailable; the classifier is not asked
   again. The winner is launched with the first dispatch's title, workspace, cwd, access, parent and the original prompt,
@@ -173,6 +174,8 @@ class Chain:
         self.judge, self.host = judge, host
         self.decision = decision
         self.owner_named = decision.get('constraint') == 'user_override'
+        # `roll --resume <id>` named a worker, not a route: no other worker, and no retry on a new one, replaces it.
+        self.worker_named = decision.get('constraint') == 'explicit_resume'
         task = dict(decision.get('allocation_task') or decision['task'])
         task.pop('chain', None)   # a relaunch is a new worker, never a resume
         self.task = task
@@ -353,6 +356,10 @@ class Chain:
                     self.failed(attempt, failure, row)
                 self.ledger('older_profile', attempt)
                 return self.finish('older_profile', failure, failed_id)
+            if self.worker_named and not resume:
+                self.failed(attempt, failure, row)
+                self.ledger('worker_named', attempt)
+                return self.finish('worker_named', failure, failed_id)
             if resume:
                 resume = False
                 resumed_id = self.resumed_attempt(row)
@@ -596,6 +603,10 @@ def final_text(kind, attempts, task):
         return ('This brief was routed by an older version of AgentCompass under a task profile this version does not '
                 f'read, so it was not relaunched after its failure:\n{listed}\nNothing is running it. Tell the user; '
                 'roll the brief again to route it afresh.')
+    if kind == 'worker_named':
+        return ('The caller named this worker with --resume, so AgentCompass does not start another worker in its place '
+                f'(a new one would not have its context):\n{listed}\nNothing is running this brief. Roll it without '
+                '--resume to let the router choose, or name a route.')
     if kind == 'owner_named':
         return ('The model was named by the owner, so AgentCompass retried only a transient failure and does not '
                 f'switch to another model:\n{listed}\nNothing is running this brief. Tell the user; to let the router '

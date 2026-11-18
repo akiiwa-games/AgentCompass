@@ -714,6 +714,10 @@ test('a resume never lands in a directory other than the one asked for', async (
   const input = {operation: 'resume', dispatch_id: 'resume-workspace', parent_id: 'parent', agent_id: 'old', request: {provider: 'claude/x', labels: {}, initialPrompt: 'p', title: 't'}};
   const elsewhere = await execute(fake, {...input, request: {...input.request, cwd: 'E:/repo/W'}}, notify);
   assert.deepEqual([elsewhere.ok, elsewhere.sent, elsewhere.error, notified, updated], [false, false, 'worker_workspace_mismatch', 0, 0]);
+  // The refusal names both directories, so a caller that named the worker learns exactly why.
+  assert.deepEqual(elsewhere.detail, {worker: 'E:\\repo\\Y', requested: 'E:/repo/W'});
+  const otherModel = await execute(fake, {...input, request: {...input.request, provider: 'claude/z'}}, notify);
+  assert.deepEqual([otherModel.error, otherModel.detail], ['worker_model_mismatch', {worker: 'claude/x', requested: 'claude/z'}]);
   assert.equal((await execute(fake, {...input, request: {...input.request, cwd: 'e:/repo/y/'}}, notify)).ok, true);
   assert.equal((await execute(fake, input, notify)).ok, true);
 });

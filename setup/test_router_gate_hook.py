@@ -769,6 +769,56 @@ class RouterGateHookTests(unittest.TestCase):
                         with self.subTest(case=case, passed=payload):
                             self.assertNotIn("reason", gate.evaluate_payload(payload, ledger_path=ledger, now=T0))
 
+    def test_a_launch_on_an_unchecked_model_passes_only_on_the_users_naming(self):
+        # Gate contract (parent-address-gate.md; amendment 2): the checkbox is a preference, so a launch whose authority
+        # is a `user_override` decision (the user named the route) passes on an unchecked model; a launch on any other
+        # authority (a plan, a project rule, an explicit resume record) is refused as before.
+        def bound(model):
+            return {"tool_name": "create_agent", "tool_input": {
+                "provider": f"claude-lab/claude-{model}-5-5", "settings": {"thinkingOptionId": "high"},
+                "labels": {"router.account": "claude-lab", "router.bundle_id": f"lab_{model}55_high",
+                           "router.dispatch_id": f"d-{model}"}}}
+
+        self.write_settings(accounts={"claude-lab": {"bundles": {f"lab_sonnet55_{e}": {"disabled": True}
+                                                                 for e in ("high", "medium")}}})
+        ledger = self.write_ledger(str(self.state), [self.route("claude-lab", "claude-sonnet-5-5", "high")])
+        registry = gate.router_module("dispatch_registry")
+        with mock.patch.object(registry, "claim", return_value=None):
+            for constraint, refused in (("user_override", False), ("explicit_resume", True),
+                                        ("hard_constraint", True), (None, True)):
+                with self.subTest(launch="bound", constraint=constraint), \
+                        mock.patch.object(registry, "dispatch_constraint", return_value=constraint):
+                    result = gate.evaluate_payload(bound("sonnet"), ledger_path=ledger, now=T0)
+                    self.assertEqual("reason" in result, refused, result)
+                    if refused:
+                        self.assertIn("档位 lab_sonnet55_high", result["reason"])
+                        self.assertIn("user_override", result["reason"])
+
+        # A native launch names a model only; it resolves to an account when one account offers it.
+        native = {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "work",
+                                                         "model": "claude-sonnet-5-5"}}
+        real_accounts = gate.load_dispatch_accounts
+
+        def claude_only():
+            accounts = real_accounts()
+            accounts["accounts"] = {k: v for k, v in accounts["accounts"].items()
+                                    if k == "claude" or not any("sonnet" in str(b.get("model"))
+                                                                for b in (v.get("bundles") or {}).values())}
+            return accounts
+
+        self.write_settings(accounts={"claude": {"bundles": {
+            f"sonnet55_{e}": {"disabled": True} for e in ("low", "medium", "high", "xhigh", "max")}}})
+        with mock.patch.object(gate, "load_dispatch_accounts", side_effect=claude_only):
+            for constraint, refused in (("user_override", False), ("hard_constraint", True), (None, True)):
+                row = dict(self.route("claude", "claude-sonnet-5-5", "high"),
+                           **({"stage": "record", "constraint": constraint} if constraint else {}))
+                ledger = self.write_ledger(str(self.state), [row])
+                with self.subTest(launch="native", constraint=constraint):
+                    result = gate.evaluate_payload(native, ledger_path=ledger, now=T0)
+                    self.assertEqual("reason" in result, refused, result)
+                    if refused:
+                        self.assertIn("在模型管理中未勾选", result["reason"])
+
     def test_a_caller_known_only_by_its_host_session_owns_the_worker_whose_parent_record_runs_that_session(self):
         # Gate contract (parent-address-gate.md): ownership is proven when every parent label names the caller, by its
         # Paseo agent ID, by the host session ID its hook payload carries, or as a Paseo agent whose record runs that

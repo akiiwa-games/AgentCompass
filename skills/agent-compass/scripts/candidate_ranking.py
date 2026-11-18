@@ -62,6 +62,7 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
            'live_models': live_models.load_or_refresh(
                accounts=accounts,
                allowed=lambda name: host_policy.account_allowed(state_policy, name) or name in named_accounts,
+               named=named_accounts,
                now=now,
            ) if read_local_state else {'accounts': {}}}
     pool_bundles = dict(ctx['bundles'])         # the catalog, before a task-named effort adds bundles to it

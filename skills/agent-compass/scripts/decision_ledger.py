@@ -31,10 +31,34 @@ def ledger_path():
 LEDGER_WRITES = True    # `plan --dry-run` turns this off so a trial run leaves no decision on record
 
 
+LAUNCH_STAGES = ('plan', 'select', 'record')
+
+
+def automatic_routing_marker(entry):
+    """`outside_automatic_routing` of a ledger row: the switches (`host_policy.automatic_routing_exclusions`, the switches
+    in effect now) its launch reaches past. Only a row that carries a launch has one: a plan/select/record row with a
+    chosen bundle that its writer did not refuse (`host_policy_violation`)."""
+    bundle = entry.get('bundle')
+    if (entry.get('stage') not in LAUNCH_STAGES or entry.get('choice') in (None, 'none', 'self', 'split')
+            or entry.get('host_policy_violation') or not isinstance(bundle, dict) or not bundle.get('account')):
+        return None
+    import account_fleet
+    import host_policy
+    return host_policy.automatic_routing_exclusions(bundle, account_fleet.load_accounts(), host_policy.load_policy()) or None
+
+
 def append_ledger(entry):
-    """Append one decision record. Auditing must never break routing, so failures are swallowed."""
+    """Append one decision record. Auditing must never break routing, so failures are swallowed. Every row is marked
+    here (`automatic_routing_marker`), so no writer can leave the marker out or set it by hand."""
     if not LEDGER_WRITES:
         return False
+    entry = {k: v for k, v in entry.items() if k != 'outside_automatic_routing'}
+    try:
+        marker = automatic_routing_marker(entry)
+    except Exception:   # noqa: BLE001 - an unreadable fleet or policy leaves the row unmarked, never unwritten
+        marker = None
+    if marker:
+        entry['outside_automatic_routing'] = marker
     try:
         path = ledger_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -256,10 +280,6 @@ def finalize(result, payload, requested, started, task=None, records=None):
         **({'trigger': result['trigger']} if result.get('trigger') else {}),
         **({'reason_category': result['reason_category']} if result.get('reason_category') else {}),
         **({'host_policy_violation': result['host_policy_violation']} if 'host_policy_violation' in result else {}),
-        # The account a launch reached past this host's automatic-routing switch (a named route or an explicit
-        # resume): the one field the daily audit filters on.
-        **({'outside_automatic_routing': result['outside_automatic_routing']}
-           if result.get('outside_automatic_routing') else {}),
         'judge': (judge or {}).get('model'), 'judge_pinned': requested != 'auto' if judge else None,
         'bundle': {k: bundle.get(k) for k in ('provider', 'account', 'model', 'effort', 'bundle_id', 'expected_usd', 'fast')
                    if bundle.get(k) is not None} if bundle else None,
