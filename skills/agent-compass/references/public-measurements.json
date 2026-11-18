@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-18T04:29:26+00:00",
+ "generated_at": "2026-11-18T04:43:17+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [
@@ -186,110 +186,110 @@
    "models_listed": 62,
    "kind": "benchmark",
    "release_pages": {
-    "aa-release-grok-4-5.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-5",
-     "fetched_at": "2026-11-18T04:06:10+00:00",
-     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
-    },
-    "aa-release-gpt-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
-     "fetched_at": "2026-11-18T04:06:05+00:00",
-     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
-    },
     "aa-release-claude-fable-5-1.html": {
      "url": "https://artificialanalysis.ai/models/claude-fable-5-1",
      "fetched_at": "2026-11-18T04:06:14+00:00",
      "sha256": "860608dbd063e4d405d70392fc601fa042d74a92e15d28f47985ff8e48d4741a"
-    },
-    "aa-release-gpt-5-6-terra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
-     "fetched_at": "2026-11-18T04:06:03+00:00",
-     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
-    },
-    "aa-release-gemini-3-1-flash-lite.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
-     "fetched_at": "2026-11-18T04:06:19+00:00",
-     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
-    },
-    "aa-release-claude-opus-4-7.html": {
-     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
-     "fetched_at": "2026-11-18T04:06:12+00:00",
-     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
-    },
-    "aa-release-gemini-3-7-flash.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
-     "fetched_at": "2026-11-18T04:06:04+00:00",
-     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
-    },
-    "aa-release-qwen3-6-plus.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
-     "fetched_at": "2026-11-18T04:05:58+00:00",
-     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
-    },
-    "aa-release-gpt-6-1-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
-     "fetched_at": "2026-11-18T04:06:06+00:00",
-     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
-    },
-    "aa-release-qwen3-7-max.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
-     "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
-    },
-    "aa-release-gpt-6-astra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
-     "fetched_at": "2026-11-18T04:06:07+00:00",
-     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
-    },
-    "aa-release-claude-sonnet-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
-     "fetched_at": "2026-11-18T04:06:15+00:00",
-     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
     "aa-release-claude-opus-4-6.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-6",
      "fetched_at": "2026-11-18T04:05:57+00:00",
      "sha256": "dc70ab1233ddde062bcffe2c3e8a47228cf60ebe763ae153d9471b15d7754f1e"
     },
-    "aa-release-gpt-5-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
-     "fetched_at": "2026-11-18T04:06:02+00:00",
-     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
-    },
-    "aa-release-grok-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-6",
-     "fetched_at": "2026-11-18T04:06:08+00:00",
-     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    "aa-release-claude-opus-4-7.html": {
+     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
+     "fetched_at": "2026-11-18T04:06:12+00:00",
+     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
     },
     "aa-release-claude-opus-4-8.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-8",
      "fetched_at": "2026-11-18T04:06:08+00:00",
      "sha256": "0663b68496491b15e5aa1392ac454c59b44486edbb1fba483de2be77a47b3704"
     },
-    "aa-release-kimi-k3.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k3",
-     "fetched_at": "2026-11-18T04:06:18+00:00",
-     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    "aa-release-claude-sonnet-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+     "fetched_at": "2026-11-18T04:06:15+00:00",
+     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
-    "aa-release-kimi-k2-6.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
-     "fetched_at": "2026-11-18T04:06:13+00:00",
-     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    "aa-release-gemini-3-1-flash-lite.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
+     "fetched_at": "2026-11-18T04:06:19+00:00",
+     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
+    },
+    "aa-release-gemini-3-7-flash.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
+     "fetched_at": "2026-11-18T04:06:04+00:00",
+     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
     },
     "aa-release-gemini-3-8-flash.html": {
      "url": "https://artificialanalysis.ai/models/gemini-3-8-flash",
      "fetched_at": "2026-11-18T04:06:01+00:00",
      "sha256": "a27425c1c5dfe8f194e2d5f5ef2e2c0917cf65f4ed1c5ffd19c0256a02d3d270"
     },
+    "aa-release-glm-5-2.html": {
+     "url": "https://artificialanalysis.ai/models/glm-5-2",
+     "fetched_at": "2026-11-18T04:06:16+00:00",
+     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+    },
     "aa-release-gpt-5-6-luna.html": {
      "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
      "fetched_at": "2026-11-18T04:05:56+00:00",
      "sha256": "6d52178cced509f01d770b244455a33075843e36123b95e98e19deb8468272e9"
     },
-    "aa-release-glm-5-2.html": {
-     "url": "https://artificialanalysis.ai/models/glm-5-2",
+    "aa-release-gpt-5-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+     "fetched_at": "2026-11-18T04:06:02+00:00",
+     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
+    },
+    "aa-release-gpt-5-6-terra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
+     "fetched_at": "2026-11-18T04:06:03+00:00",
+     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
+    },
+    "aa-release-gpt-6-1-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
+     "fetched_at": "2026-11-18T04:06:06+00:00",
+     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
+    },
+    "aa-release-gpt-6-astra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
+     "fetched_at": "2026-11-18T04:06:07+00:00",
+     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
+    },
+    "aa-release-gpt-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+     "fetched_at": "2026-11-18T04:06:05+00:00",
+     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
+    },
+    "aa-release-grok-4-5.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-5",
+     "fetched_at": "2026-11-18T04:06:10+00:00",
+     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
+    },
+    "aa-release-grok-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-6",
+     "fetched_at": "2026-11-18T04:06:08+00:00",
+     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    },
+    "aa-release-kimi-k2-6.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
+     "fetched_at": "2026-11-18T04:06:13+00:00",
+     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    },
+    "aa-release-kimi-k3.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k3",
+     "fetched_at": "2026-11-18T04:06:18+00:00",
+     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    },
+    "aa-release-qwen3-6-plus.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
+     "fetched_at": "2026-11-18T04:05:58+00:00",
+     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
+    },
+    "aa-release-qwen3-7-max.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
      "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
     },
     "aa-release-qwen3-8-max.html": {
      "url": "https://artificialanalysis.ai/models/qwen3-8-max",
@@ -374,7 +374,7 @@
    "file": "arena-agent-alignment.json",
    "url": "https://arena.ai/leaderboard/agent/alignment",
    "fetched_at": "2026-11-18T04:26:14+00:00",
-   "sha256": "4d6b26fb0aebeda0ae12392e5be8742933d17e905df9affe42e543310fc4f14a",
+   "sha256": "8ab9578ef01f819c283adfaa7c3643662707b2c2818725a06d345288bbe32a5a",
    "as_of": "2026-11-15",
    "as_of_kind": "data date",
    "method": "arena.ai Agent Alignment Index (Best Aligned Agents), 0-100; transcribed 2026-11-18 by user (browser capture)",
@@ -453,110 +453,110 @@
    "models_listed": 103,
    "kind": "benchmark",
    "release_pages": {
-    "aa-release-grok-4-5.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-5",
-     "fetched_at": "2026-11-18T04:06:10+00:00",
-     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
-    },
-    "aa-release-gpt-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
-     "fetched_at": "2026-11-18T04:06:05+00:00",
-     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
-    },
     "aa-release-claude-fable-5-1.html": {
      "url": "https://artificialanalysis.ai/models/claude-fable-5-1",
      "fetched_at": "2026-11-18T04:06:14+00:00",
      "sha256": "860608dbd063e4d405d70392fc601fa042d74a92e15d28f47985ff8e48d4741a"
-    },
-    "aa-release-gpt-5-6-terra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
-     "fetched_at": "2026-11-18T04:06:03+00:00",
-     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
-    },
-    "aa-release-gemini-3-1-flash-lite.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
-     "fetched_at": "2026-11-18T04:06:19+00:00",
-     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
-    },
-    "aa-release-claude-opus-4-7.html": {
-     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
-     "fetched_at": "2026-11-18T04:06:12+00:00",
-     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
-    },
-    "aa-release-gemini-3-7-flash.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
-     "fetched_at": "2026-11-18T04:06:04+00:00",
-     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
-    },
-    "aa-release-qwen3-6-plus.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
-     "fetched_at": "2026-11-18T04:05:58+00:00",
-     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
-    },
-    "aa-release-gpt-6-1-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
-     "fetched_at": "2026-11-18T04:06:06+00:00",
-     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
-    },
-    "aa-release-qwen3-7-max.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
-     "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
-    },
-    "aa-release-gpt-6-astra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
-     "fetched_at": "2026-11-18T04:06:07+00:00",
-     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
-    },
-    "aa-release-claude-sonnet-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
-     "fetched_at": "2026-11-18T04:06:15+00:00",
-     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
     "aa-release-claude-opus-4-6.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-6",
      "fetched_at": "2026-11-18T04:05:57+00:00",
      "sha256": "dc70ab1233ddde062bcffe2c3e8a47228cf60ebe763ae153d9471b15d7754f1e"
     },
-    "aa-release-gpt-5-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
-     "fetched_at": "2026-11-18T04:06:02+00:00",
-     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
-    },
-    "aa-release-grok-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-6",
-     "fetched_at": "2026-11-18T04:06:08+00:00",
-     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    "aa-release-claude-opus-4-7.html": {
+     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
+     "fetched_at": "2026-11-18T04:06:12+00:00",
+     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
     },
     "aa-release-claude-opus-4-8.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-8",
      "fetched_at": "2026-11-18T04:06:08+00:00",
      "sha256": "0663b68496491b15e5aa1392ac454c59b44486edbb1fba483de2be77a47b3704"
     },
-    "aa-release-kimi-k3.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k3",
-     "fetched_at": "2026-11-18T04:06:18+00:00",
-     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    "aa-release-claude-sonnet-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+     "fetched_at": "2026-11-18T04:06:15+00:00",
+     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
-    "aa-release-kimi-k2-6.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
-     "fetched_at": "2026-11-18T04:06:13+00:00",
-     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    "aa-release-gemini-3-1-flash-lite.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
+     "fetched_at": "2026-11-18T04:06:19+00:00",
+     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
+    },
+    "aa-release-gemini-3-7-flash.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
+     "fetched_at": "2026-11-18T04:06:04+00:00",
+     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
     },
     "aa-release-gemini-3-8-flash.html": {
      "url": "https://artificialanalysis.ai/models/gemini-3-8-flash",
      "fetched_at": "2026-11-18T04:06:01+00:00",
      "sha256": "a27425c1c5dfe8f194e2d5f5ef2e2c0917cf65f4ed1c5ffd19c0256a02d3d270"
     },
+    "aa-release-glm-5-2.html": {
+     "url": "https://artificialanalysis.ai/models/glm-5-2",
+     "fetched_at": "2026-11-18T04:06:16+00:00",
+     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+    },
     "aa-release-gpt-5-6-luna.html": {
      "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
      "fetched_at": "2026-11-18T04:05:56+00:00",
      "sha256": "6d52178cced509f01d770b244455a33075843e36123b95e98e19deb8468272e9"
     },
-    "aa-release-glm-5-2.html": {
-     "url": "https://artificialanalysis.ai/models/glm-5-2",
+    "aa-release-gpt-5-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+     "fetched_at": "2026-11-18T04:06:02+00:00",
+     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
+    },
+    "aa-release-gpt-5-6-terra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
+     "fetched_at": "2026-11-18T04:06:03+00:00",
+     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
+    },
+    "aa-release-gpt-6-1-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
+     "fetched_at": "2026-11-18T04:06:06+00:00",
+     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
+    },
+    "aa-release-gpt-6-astra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
+     "fetched_at": "2026-11-18T04:06:07+00:00",
+     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
+    },
+    "aa-release-gpt-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+     "fetched_at": "2026-11-18T04:06:05+00:00",
+     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
+    },
+    "aa-release-grok-4-5.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-5",
+     "fetched_at": "2026-11-18T04:06:10+00:00",
+     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
+    },
+    "aa-release-grok-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-6",
+     "fetched_at": "2026-11-18T04:06:08+00:00",
+     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    },
+    "aa-release-kimi-k2-6.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
+     "fetched_at": "2026-11-18T04:06:13+00:00",
+     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    },
+    "aa-release-kimi-k3.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k3",
+     "fetched_at": "2026-11-18T04:06:18+00:00",
+     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    },
+    "aa-release-qwen3-6-plus.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
+     "fetched_at": "2026-11-18T04:05:58+00:00",
+     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
+    },
+    "aa-release-qwen3-7-max.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
      "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
     },
     "aa-release-qwen3-8-max.html": {
      "url": "https://artificialanalysis.ai/models/qwen3-8-max",
@@ -583,110 +583,110 @@
    "models_listed": 71,
    "kind": "benchmark",
    "release_pages": {
-    "aa-release-grok-4-5.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-5",
-     "fetched_at": "2026-11-18T04:06:10+00:00",
-     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
-    },
-    "aa-release-gpt-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
-     "fetched_at": "2026-11-18T04:06:05+00:00",
-     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
-    },
     "aa-release-claude-fable-5-1.html": {
      "url": "https://artificialanalysis.ai/models/claude-fable-5-1",
      "fetched_at": "2026-11-18T04:06:14+00:00",
      "sha256": "860608dbd063e4d405d70392fc601fa042d74a92e15d28f47985ff8e48d4741a"
-    },
-    "aa-release-gpt-5-6-terra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
-     "fetched_at": "2026-11-18T04:06:03+00:00",
-     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
-    },
-    "aa-release-gemini-3-1-flash-lite.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
-     "fetched_at": "2026-11-18T04:06:19+00:00",
-     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
-    },
-    "aa-release-claude-opus-4-7.html": {
-     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
-     "fetched_at": "2026-11-18T04:06:12+00:00",
-     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
-    },
-    "aa-release-gemini-3-7-flash.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
-     "fetched_at": "2026-11-18T04:06:04+00:00",
-     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
-    },
-    "aa-release-qwen3-6-plus.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
-     "fetched_at": "2026-11-18T04:05:58+00:00",
-     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
-    },
-    "aa-release-gpt-6-1-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
-     "fetched_at": "2026-11-18T04:06:06+00:00",
-     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
-    },
-    "aa-release-qwen3-7-max.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
-     "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
-    },
-    "aa-release-gpt-6-astra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
-     "fetched_at": "2026-11-18T04:06:07+00:00",
-     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
-    },
-    "aa-release-claude-sonnet-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
-     "fetched_at": "2026-11-18T04:06:15+00:00",
-     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
     "aa-release-claude-opus-4-6.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-6",
      "fetched_at": "2026-11-18T04:05:57+00:00",
      "sha256": "dc70ab1233ddde062bcffe2c3e8a47228cf60ebe763ae153d9471b15d7754f1e"
     },
-    "aa-release-gpt-5-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
-     "fetched_at": "2026-11-18T04:06:02+00:00",
-     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
-    },
-    "aa-release-grok-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-6",
-     "fetched_at": "2026-11-18T04:06:08+00:00",
-     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    "aa-release-claude-opus-4-7.html": {
+     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
+     "fetched_at": "2026-11-18T04:06:12+00:00",
+     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
     },
     "aa-release-claude-opus-4-8.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-8",
      "fetched_at": "2026-11-18T04:06:08+00:00",
      "sha256": "0663b68496491b15e5aa1392ac454c59b44486edbb1fba483de2be77a47b3704"
     },
-    "aa-release-kimi-k3.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k3",
-     "fetched_at": "2026-11-18T04:06:18+00:00",
-     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    "aa-release-claude-sonnet-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+     "fetched_at": "2026-11-18T04:06:15+00:00",
+     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
-    "aa-release-kimi-k2-6.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
-     "fetched_at": "2026-11-18T04:06:13+00:00",
-     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    "aa-release-gemini-3-1-flash-lite.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
+     "fetched_at": "2026-11-18T04:06:19+00:00",
+     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
+    },
+    "aa-release-gemini-3-7-flash.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
+     "fetched_at": "2026-11-18T04:06:04+00:00",
+     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
     },
     "aa-release-gemini-3-8-flash.html": {
      "url": "https://artificialanalysis.ai/models/gemini-3-8-flash",
      "fetched_at": "2026-11-18T04:06:01+00:00",
      "sha256": "a27425c1c5dfe8f194e2d5f5ef2e2c0917cf65f4ed1c5ffd19c0256a02d3d270"
     },
+    "aa-release-glm-5-2.html": {
+     "url": "https://artificialanalysis.ai/models/glm-5-2",
+     "fetched_at": "2026-11-18T04:06:16+00:00",
+     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+    },
     "aa-release-gpt-5-6-luna.html": {
      "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
      "fetched_at": "2026-11-18T04:05:56+00:00",
      "sha256": "6d52178cced509f01d770b244455a33075843e36123b95e98e19deb8468272e9"
     },
-    "aa-release-glm-5-2.html": {
-     "url": "https://artificialanalysis.ai/models/glm-5-2",
+    "aa-release-gpt-5-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+     "fetched_at": "2026-11-18T04:06:02+00:00",
+     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
+    },
+    "aa-release-gpt-5-6-terra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
+     "fetched_at": "2026-11-18T04:06:03+00:00",
+     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
+    },
+    "aa-release-gpt-6-1-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
+     "fetched_at": "2026-11-18T04:06:06+00:00",
+     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
+    },
+    "aa-release-gpt-6-astra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
+     "fetched_at": "2026-11-18T04:06:07+00:00",
+     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
+    },
+    "aa-release-gpt-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+     "fetched_at": "2026-11-18T04:06:05+00:00",
+     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
+    },
+    "aa-release-grok-4-5.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-5",
+     "fetched_at": "2026-11-18T04:06:10+00:00",
+     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
+    },
+    "aa-release-grok-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-6",
+     "fetched_at": "2026-11-18T04:06:08+00:00",
+     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    },
+    "aa-release-kimi-k2-6.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
+     "fetched_at": "2026-11-18T04:06:13+00:00",
+     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    },
+    "aa-release-kimi-k3.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k3",
+     "fetched_at": "2026-11-18T04:06:18+00:00",
+     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    },
+    "aa-release-qwen3-6-plus.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
+     "fetched_at": "2026-11-18T04:05:58+00:00",
+     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
+    },
+    "aa-release-qwen3-7-max.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
      "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
     },
     "aa-release-qwen3-8-max.html": {
      "url": "https://artificialanalysis.ai/models/qwen3-8-max",
@@ -713,110 +713,110 @@
    "models_listed": 86,
    "kind": "benchmark",
    "release_pages": {
-    "aa-release-grok-4-5.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-5",
-     "fetched_at": "2026-11-18T04:06:10+00:00",
-     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
-    },
-    "aa-release-gpt-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
-     "fetched_at": "2026-11-18T04:06:05+00:00",
-     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
-    },
     "aa-release-claude-fable-5-1.html": {
      "url": "https://artificialanalysis.ai/models/claude-fable-5-1",
      "fetched_at": "2026-11-18T04:06:14+00:00",
      "sha256": "860608dbd063e4d405d70392fc601fa042d74a92e15d28f47985ff8e48d4741a"
-    },
-    "aa-release-gpt-5-6-terra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
-     "fetched_at": "2026-11-18T04:06:03+00:00",
-     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
-    },
-    "aa-release-gemini-3-1-flash-lite.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
-     "fetched_at": "2026-11-18T04:06:19+00:00",
-     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
-    },
-    "aa-release-claude-opus-4-7.html": {
-     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
-     "fetched_at": "2026-11-18T04:06:12+00:00",
-     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
-    },
-    "aa-release-gemini-3-7-flash.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
-     "fetched_at": "2026-11-18T04:06:04+00:00",
-     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
-    },
-    "aa-release-qwen3-6-plus.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
-     "fetched_at": "2026-11-18T04:05:58+00:00",
-     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
-    },
-    "aa-release-gpt-6-1-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
-     "fetched_at": "2026-11-18T04:06:06+00:00",
-     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
-    },
-    "aa-release-qwen3-7-max.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
-     "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
-    },
-    "aa-release-gpt-6-astra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
-     "fetched_at": "2026-11-18T04:06:07+00:00",
-     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
-    },
-    "aa-release-claude-sonnet-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
-     "fetched_at": "2026-11-18T04:06:15+00:00",
-     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
     "aa-release-claude-opus-4-6.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-6",
      "fetched_at": "2026-11-18T04:05:57+00:00",
      "sha256": "dc70ab1233ddde062bcffe2c3e8a47228cf60ebe763ae153d9471b15d7754f1e"
     },
-    "aa-release-gpt-5-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
-     "fetched_at": "2026-11-18T04:06:02+00:00",
-     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
-    },
-    "aa-release-grok-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-6",
-     "fetched_at": "2026-11-18T04:06:08+00:00",
-     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    "aa-release-claude-opus-4-7.html": {
+     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
+     "fetched_at": "2026-11-18T04:06:12+00:00",
+     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
     },
     "aa-release-claude-opus-4-8.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-8",
      "fetched_at": "2026-11-18T04:06:08+00:00",
      "sha256": "0663b68496491b15e5aa1392ac454c59b44486edbb1fba483de2be77a47b3704"
     },
-    "aa-release-kimi-k3.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k3",
-     "fetched_at": "2026-11-18T04:06:18+00:00",
-     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    "aa-release-claude-sonnet-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+     "fetched_at": "2026-11-18T04:06:15+00:00",
+     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
-    "aa-release-kimi-k2-6.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
-     "fetched_at": "2026-11-18T04:06:13+00:00",
-     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    "aa-release-gemini-3-1-flash-lite.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
+     "fetched_at": "2026-11-18T04:06:19+00:00",
+     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
+    },
+    "aa-release-gemini-3-7-flash.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
+     "fetched_at": "2026-11-18T04:06:04+00:00",
+     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
     },
     "aa-release-gemini-3-8-flash.html": {
      "url": "https://artificialanalysis.ai/models/gemini-3-8-flash",
      "fetched_at": "2026-11-18T04:06:01+00:00",
      "sha256": "a27425c1c5dfe8f194e2d5f5ef2e2c0917cf65f4ed1c5ffd19c0256a02d3d270"
     },
+    "aa-release-glm-5-2.html": {
+     "url": "https://artificialanalysis.ai/models/glm-5-2",
+     "fetched_at": "2026-11-18T04:06:16+00:00",
+     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+    },
     "aa-release-gpt-5-6-luna.html": {
      "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
      "fetched_at": "2026-11-18T04:05:56+00:00",
      "sha256": "6d52178cced509f01d770b244455a33075843e36123b95e98e19deb8468272e9"
     },
-    "aa-release-glm-5-2.html": {
-     "url": "https://artificialanalysis.ai/models/glm-5-2",
+    "aa-release-gpt-5-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+     "fetched_at": "2026-11-18T04:06:02+00:00",
+     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
+    },
+    "aa-release-gpt-5-6-terra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
+     "fetched_at": "2026-11-18T04:06:03+00:00",
+     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
+    },
+    "aa-release-gpt-6-1-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
+     "fetched_at": "2026-11-18T04:06:06+00:00",
+     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
+    },
+    "aa-release-gpt-6-astra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
+     "fetched_at": "2026-11-18T04:06:07+00:00",
+     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
+    },
+    "aa-release-gpt-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+     "fetched_at": "2026-11-18T04:06:05+00:00",
+     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
+    },
+    "aa-release-grok-4-5.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-5",
+     "fetched_at": "2026-11-18T04:06:10+00:00",
+     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
+    },
+    "aa-release-grok-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-6",
+     "fetched_at": "2026-11-18T04:06:08+00:00",
+     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    },
+    "aa-release-kimi-k2-6.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
+     "fetched_at": "2026-11-18T04:06:13+00:00",
+     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    },
+    "aa-release-kimi-k3.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k3",
+     "fetched_at": "2026-11-18T04:06:18+00:00",
+     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    },
+    "aa-release-qwen3-6-plus.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
+     "fetched_at": "2026-11-18T04:05:58+00:00",
+     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
+    },
+    "aa-release-qwen3-7-max.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
      "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
     },
     "aa-release-qwen3-8-max.html": {
      "url": "https://artificialanalysis.ai/models/qwen3-8-max",
@@ -843,110 +843,110 @@
    "models_listed": 115,
    "kind": "benchmark",
    "release_pages": {
-    "aa-release-grok-4-5.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-5",
-     "fetched_at": "2026-11-18T04:06:10+00:00",
-     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
-    },
-    "aa-release-gpt-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
-     "fetched_at": "2026-11-18T04:06:05+00:00",
-     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
-    },
     "aa-release-claude-fable-5-1.html": {
      "url": "https://artificialanalysis.ai/models/claude-fable-5-1",
      "fetched_at": "2026-11-18T04:06:14+00:00",
      "sha256": "860608dbd063e4d405d70392fc601fa042d74a92e15d28f47985ff8e48d4741a"
-    },
-    "aa-release-gpt-5-6-terra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
-     "fetched_at": "2026-11-18T04:06:03+00:00",
-     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
-    },
-    "aa-release-gemini-3-1-flash-lite.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
-     "fetched_at": "2026-11-18T04:06:19+00:00",
-     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
-    },
-    "aa-release-claude-opus-4-7.html": {
-     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
-     "fetched_at": "2026-11-18T04:06:12+00:00",
-     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
-    },
-    "aa-release-gemini-3-7-flash.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
-     "fetched_at": "2026-11-18T04:06:04+00:00",
-     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
-    },
-    "aa-release-qwen3-6-plus.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
-     "fetched_at": "2026-11-18T04:05:58+00:00",
-     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
-    },
-    "aa-release-gpt-6-1-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
-     "fetched_at": "2026-11-18T04:06:06+00:00",
-     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
-    },
-    "aa-release-qwen3-7-max.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
-     "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
-    },
-    "aa-release-gpt-6-astra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
-     "fetched_at": "2026-11-18T04:06:07+00:00",
-     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
-    },
-    "aa-release-claude-sonnet-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
-     "fetched_at": "2026-11-18T04:06:15+00:00",
-     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
     "aa-release-claude-opus-4-6.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-6",
      "fetched_at": "2026-11-18T04:05:57+00:00",
      "sha256": "dc70ab1233ddde062bcffe2c3e8a47228cf60ebe763ae153d9471b15d7754f1e"
     },
-    "aa-release-gpt-5-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
-     "fetched_at": "2026-11-18T04:06:02+00:00",
-     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
-    },
-    "aa-release-grok-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-6",
-     "fetched_at": "2026-11-18T04:06:08+00:00",
-     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    "aa-release-claude-opus-4-7.html": {
+     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
+     "fetched_at": "2026-11-18T04:06:12+00:00",
+     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
     },
     "aa-release-claude-opus-4-8.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-8",
      "fetched_at": "2026-11-18T04:06:08+00:00",
      "sha256": "0663b68496491b15e5aa1392ac454c59b44486edbb1fba483de2be77a47b3704"
     },
-    "aa-release-kimi-k3.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k3",
-     "fetched_at": "2026-11-18T04:06:18+00:00",
-     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    "aa-release-claude-sonnet-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+     "fetched_at": "2026-11-18T04:06:15+00:00",
+     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
-    "aa-release-kimi-k2-6.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
-     "fetched_at": "2026-11-18T04:06:13+00:00",
-     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    "aa-release-gemini-3-1-flash-lite.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
+     "fetched_at": "2026-11-18T04:06:19+00:00",
+     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
+    },
+    "aa-release-gemini-3-7-flash.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
+     "fetched_at": "2026-11-18T04:06:04+00:00",
+     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
     },
     "aa-release-gemini-3-8-flash.html": {
      "url": "https://artificialanalysis.ai/models/gemini-3-8-flash",
      "fetched_at": "2026-11-18T04:06:01+00:00",
      "sha256": "a27425c1c5dfe8f194e2d5f5ef2e2c0917cf65f4ed1c5ffd19c0256a02d3d270"
     },
+    "aa-release-glm-5-2.html": {
+     "url": "https://artificialanalysis.ai/models/glm-5-2",
+     "fetched_at": "2026-11-18T04:06:16+00:00",
+     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+    },
     "aa-release-gpt-5-6-luna.html": {
      "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
      "fetched_at": "2026-11-18T04:05:56+00:00",
      "sha256": "6d52178cced509f01d770b244455a33075843e36123b95e98e19deb8468272e9"
     },
-    "aa-release-glm-5-2.html": {
-     "url": "https://artificialanalysis.ai/models/glm-5-2",
+    "aa-release-gpt-5-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+     "fetched_at": "2026-11-18T04:06:02+00:00",
+     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
+    },
+    "aa-release-gpt-5-6-terra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
+     "fetched_at": "2026-11-18T04:06:03+00:00",
+     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
+    },
+    "aa-release-gpt-6-1-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
+     "fetched_at": "2026-11-18T04:06:06+00:00",
+     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
+    },
+    "aa-release-gpt-6-astra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
+     "fetched_at": "2026-11-18T04:06:07+00:00",
+     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
+    },
+    "aa-release-gpt-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+     "fetched_at": "2026-11-18T04:06:05+00:00",
+     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
+    },
+    "aa-release-grok-4-5.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-5",
+     "fetched_at": "2026-11-18T04:06:10+00:00",
+     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
+    },
+    "aa-release-grok-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-6",
+     "fetched_at": "2026-11-18T04:06:08+00:00",
+     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    },
+    "aa-release-kimi-k2-6.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
+     "fetched_at": "2026-11-18T04:06:13+00:00",
+     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    },
+    "aa-release-kimi-k3.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k3",
+     "fetched_at": "2026-11-18T04:06:18+00:00",
+     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    },
+    "aa-release-qwen3-6-plus.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
+     "fetched_at": "2026-11-18T04:05:58+00:00",
+     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
+    },
+    "aa-release-qwen3-7-max.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
      "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
     },
     "aa-release-qwen3-8-max.html": {
      "url": "https://artificialanalysis.ai/models/qwen3-8-max",
@@ -984,110 +984,110 @@
    "models_listed": 204,
    "kind": "benchmark",
    "release_pages": {
-    "aa-release-grok-4-5.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-5",
-     "fetched_at": "2026-11-18T04:06:10+00:00",
-     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
-    },
-    "aa-release-gpt-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
-     "fetched_at": "2026-11-18T04:06:05+00:00",
-     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
-    },
     "aa-release-claude-fable-5-1.html": {
      "url": "https://artificialanalysis.ai/models/claude-fable-5-1",
      "fetched_at": "2026-11-18T04:06:14+00:00",
      "sha256": "860608dbd063e4d405d70392fc601fa042d74a92e15d28f47985ff8e48d4741a"
-    },
-    "aa-release-gpt-5-6-terra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
-     "fetched_at": "2026-11-18T04:06:03+00:00",
-     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
-    },
-    "aa-release-gemini-3-1-flash-lite.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
-     "fetched_at": "2026-11-18T04:06:19+00:00",
-     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
-    },
-    "aa-release-claude-opus-4-7.html": {
-     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
-     "fetched_at": "2026-11-18T04:06:12+00:00",
-     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
-    },
-    "aa-release-gemini-3-7-flash.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
-     "fetched_at": "2026-11-18T04:06:04+00:00",
-     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
-    },
-    "aa-release-qwen3-6-plus.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
-     "fetched_at": "2026-11-18T04:05:58+00:00",
-     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
-    },
-    "aa-release-gpt-6-1-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
-     "fetched_at": "2026-11-18T04:06:06+00:00",
-     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
-    },
-    "aa-release-qwen3-7-max.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
-     "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
-    },
-    "aa-release-gpt-6-astra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
-     "fetched_at": "2026-11-18T04:06:07+00:00",
-     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
-    },
-    "aa-release-claude-sonnet-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
-     "fetched_at": "2026-11-18T04:06:15+00:00",
-     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
     "aa-release-claude-opus-4-6.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-6",
      "fetched_at": "2026-11-18T04:05:57+00:00",
      "sha256": "dc70ab1233ddde062bcffe2c3e8a47228cf60ebe763ae153d9471b15d7754f1e"
     },
-    "aa-release-gpt-5-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
-     "fetched_at": "2026-11-18T04:06:02+00:00",
-     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
-    },
-    "aa-release-grok-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-6",
-     "fetched_at": "2026-11-18T04:06:08+00:00",
-     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    "aa-release-claude-opus-4-7.html": {
+     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
+     "fetched_at": "2026-11-18T04:06:12+00:00",
+     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
     },
     "aa-release-claude-opus-4-8.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-8",
      "fetched_at": "2026-11-18T04:06:08+00:00",
      "sha256": "0663b68496491b15e5aa1392ac454c59b44486edbb1fba483de2be77a47b3704"
     },
-    "aa-release-kimi-k3.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k3",
-     "fetched_at": "2026-11-18T04:06:18+00:00",
-     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    "aa-release-claude-sonnet-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+     "fetched_at": "2026-11-18T04:06:15+00:00",
+     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
-    "aa-release-kimi-k2-6.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
-     "fetched_at": "2026-11-18T04:06:13+00:00",
-     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    "aa-release-gemini-3-1-flash-lite.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
+     "fetched_at": "2026-11-18T04:06:19+00:00",
+     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
+    },
+    "aa-release-gemini-3-7-flash.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
+     "fetched_at": "2026-11-18T04:06:04+00:00",
+     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
     },
     "aa-release-gemini-3-8-flash.html": {
      "url": "https://artificialanalysis.ai/models/gemini-3-8-flash",
      "fetched_at": "2026-11-18T04:06:01+00:00",
      "sha256": "a27425c1c5dfe8f194e2d5f5ef2e2c0917cf65f4ed1c5ffd19c0256a02d3d270"
     },
+    "aa-release-glm-5-2.html": {
+     "url": "https://artificialanalysis.ai/models/glm-5-2",
+     "fetched_at": "2026-11-18T04:06:16+00:00",
+     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+    },
     "aa-release-gpt-5-6-luna.html": {
      "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
      "fetched_at": "2026-11-18T04:05:56+00:00",
      "sha256": "6d52178cced509f01d770b244455a33075843e36123b95e98e19deb8468272e9"
     },
-    "aa-release-glm-5-2.html": {
-     "url": "https://artificialanalysis.ai/models/glm-5-2",
+    "aa-release-gpt-5-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+     "fetched_at": "2026-11-18T04:06:02+00:00",
+     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
+    },
+    "aa-release-gpt-5-6-terra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
+     "fetched_at": "2026-11-18T04:06:03+00:00",
+     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
+    },
+    "aa-release-gpt-6-1-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
+     "fetched_at": "2026-11-18T04:06:06+00:00",
+     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
+    },
+    "aa-release-gpt-6-astra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
+     "fetched_at": "2026-11-18T04:06:07+00:00",
+     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
+    },
+    "aa-release-gpt-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+     "fetched_at": "2026-11-18T04:06:05+00:00",
+     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
+    },
+    "aa-release-grok-4-5.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-5",
+     "fetched_at": "2026-11-18T04:06:10+00:00",
+     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
+    },
+    "aa-release-grok-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-6",
+     "fetched_at": "2026-11-18T04:06:08+00:00",
+     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    },
+    "aa-release-kimi-k2-6.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
+     "fetched_at": "2026-11-18T04:06:13+00:00",
+     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    },
+    "aa-release-kimi-k3.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k3",
+     "fetched_at": "2026-11-18T04:06:18+00:00",
+     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    },
+    "aa-release-qwen3-6-plus.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
+     "fetched_at": "2026-11-18T04:05:58+00:00",
+     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
+    },
+    "aa-release-qwen3-7-max.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
      "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
     },
     "aa-release-qwen3-8-max.html": {
      "url": "https://artificialanalysis.ai/models/qwen3-8-max",
@@ -1107,110 +1107,110 @@
    "models_listed": 204,
    "kind": "vendor",
    "release_pages": {
-    "aa-release-grok-4-5.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-5",
-     "fetched_at": "2026-11-18T04:06:10+00:00",
-     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
-    },
-    "aa-release-gpt-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
-     "fetched_at": "2026-11-18T04:06:05+00:00",
-     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
-    },
     "aa-release-claude-fable-5-1.html": {
      "url": "https://artificialanalysis.ai/models/claude-fable-5-1",
      "fetched_at": "2026-11-18T04:06:14+00:00",
      "sha256": "860608dbd063e4d405d70392fc601fa042d74a92e15d28f47985ff8e48d4741a"
-    },
-    "aa-release-gpt-5-6-terra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
-     "fetched_at": "2026-11-18T04:06:03+00:00",
-     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
-    },
-    "aa-release-gemini-3-1-flash-lite.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
-     "fetched_at": "2026-11-18T04:06:19+00:00",
-     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
-    },
-    "aa-release-claude-opus-4-7.html": {
-     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
-     "fetched_at": "2026-11-18T04:06:12+00:00",
-     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
-    },
-    "aa-release-gemini-3-7-flash.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
-     "fetched_at": "2026-11-18T04:06:04+00:00",
-     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
-    },
-    "aa-release-qwen3-6-plus.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
-     "fetched_at": "2026-11-18T04:05:58+00:00",
-     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
-    },
-    "aa-release-gpt-6-1-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
-     "fetched_at": "2026-11-18T04:06:06+00:00",
-     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
-    },
-    "aa-release-qwen3-7-max.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
-     "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
-    },
-    "aa-release-gpt-6-astra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
-     "fetched_at": "2026-11-18T04:06:07+00:00",
-     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
-    },
-    "aa-release-claude-sonnet-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
-     "fetched_at": "2026-11-18T04:06:15+00:00",
-     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
     "aa-release-claude-opus-4-6.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-6",
      "fetched_at": "2026-11-18T04:05:57+00:00",
      "sha256": "dc70ab1233ddde062bcffe2c3e8a47228cf60ebe763ae153d9471b15d7754f1e"
     },
-    "aa-release-gpt-5-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
-     "fetched_at": "2026-11-18T04:06:02+00:00",
-     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
-    },
-    "aa-release-grok-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-6",
-     "fetched_at": "2026-11-18T04:06:08+00:00",
-     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    "aa-release-claude-opus-4-7.html": {
+     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
+     "fetched_at": "2026-11-18T04:06:12+00:00",
+     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
     },
     "aa-release-claude-opus-4-8.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-8",
      "fetched_at": "2026-11-18T04:06:08+00:00",
      "sha256": "0663b68496491b15e5aa1392ac454c59b44486edbb1fba483de2be77a47b3704"
     },
-    "aa-release-kimi-k3.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k3",
-     "fetched_at": "2026-11-18T04:06:18+00:00",
-     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    "aa-release-claude-sonnet-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+     "fetched_at": "2026-11-18T04:06:15+00:00",
+     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
-    "aa-release-kimi-k2-6.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
-     "fetched_at": "2026-11-18T04:06:13+00:00",
-     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    "aa-release-gemini-3-1-flash-lite.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
+     "fetched_at": "2026-11-18T04:06:19+00:00",
+     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
+    },
+    "aa-release-gemini-3-7-flash.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
+     "fetched_at": "2026-11-18T04:06:04+00:00",
+     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
     },
     "aa-release-gemini-3-8-flash.html": {
      "url": "https://artificialanalysis.ai/models/gemini-3-8-flash",
      "fetched_at": "2026-11-18T04:06:01+00:00",
      "sha256": "a27425c1c5dfe8f194e2d5f5ef2e2c0917cf65f4ed1c5ffd19c0256a02d3d270"
     },
+    "aa-release-glm-5-2.html": {
+     "url": "https://artificialanalysis.ai/models/glm-5-2",
+     "fetched_at": "2026-11-18T04:06:16+00:00",
+     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+    },
     "aa-release-gpt-5-6-luna.html": {
      "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
      "fetched_at": "2026-11-18T04:05:56+00:00",
      "sha256": "6d52178cced509f01d770b244455a33075843e36123b95e98e19deb8468272e9"
     },
-    "aa-release-glm-5-2.html": {
-     "url": "https://artificialanalysis.ai/models/glm-5-2",
+    "aa-release-gpt-5-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+     "fetched_at": "2026-11-18T04:06:02+00:00",
+     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
+    },
+    "aa-release-gpt-5-6-terra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
+     "fetched_at": "2026-11-18T04:06:03+00:00",
+     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
+    },
+    "aa-release-gpt-6-1-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
+     "fetched_at": "2026-11-18T04:06:06+00:00",
+     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
+    },
+    "aa-release-gpt-6-astra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
+     "fetched_at": "2026-11-18T04:06:07+00:00",
+     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
+    },
+    "aa-release-gpt-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+     "fetched_at": "2026-11-18T04:06:05+00:00",
+     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
+    },
+    "aa-release-grok-4-5.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-5",
+     "fetched_at": "2026-11-18T04:06:10+00:00",
+     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
+    },
+    "aa-release-grok-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-6",
+     "fetched_at": "2026-11-18T04:06:08+00:00",
+     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    },
+    "aa-release-kimi-k2-6.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
+     "fetched_at": "2026-11-18T04:06:13+00:00",
+     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    },
+    "aa-release-kimi-k3.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k3",
+     "fetched_at": "2026-11-18T04:06:18+00:00",
+     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    },
+    "aa-release-qwen3-6-plus.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
+     "fetched_at": "2026-11-18T04:05:58+00:00",
+     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
+    },
+    "aa-release-qwen3-7-max.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
      "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
     },
     "aa-release-qwen3-8-max.html": {
      "url": "https://artificialanalysis.ai/models/qwen3-8-max",
@@ -1230,110 +1230,110 @@
    "models_listed": 204,
    "kind": "benchmark",
    "release_pages": {
-    "aa-release-grok-4-5.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-5",
-     "fetched_at": "2026-11-18T04:06:10+00:00",
-     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
-    },
-    "aa-release-gpt-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
-     "fetched_at": "2026-11-18T04:06:05+00:00",
-     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
-    },
     "aa-release-claude-fable-5-1.html": {
      "url": "https://artificialanalysis.ai/models/claude-fable-5-1",
      "fetched_at": "2026-11-18T04:06:14+00:00",
      "sha256": "860608dbd063e4d405d70392fc601fa042d74a92e15d28f47985ff8e48d4741a"
-    },
-    "aa-release-gpt-5-6-terra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
-     "fetched_at": "2026-11-18T04:06:03+00:00",
-     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
-    },
-    "aa-release-gemini-3-1-flash-lite.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
-     "fetched_at": "2026-11-18T04:06:19+00:00",
-     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
-    },
-    "aa-release-claude-opus-4-7.html": {
-     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
-     "fetched_at": "2026-11-18T04:06:12+00:00",
-     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
-    },
-    "aa-release-gemini-3-7-flash.html": {
-     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
-     "fetched_at": "2026-11-18T04:06:04+00:00",
-     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
-    },
-    "aa-release-qwen3-6-plus.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
-     "fetched_at": "2026-11-18T04:05:58+00:00",
-     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
-    },
-    "aa-release-gpt-6-1-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
-     "fetched_at": "2026-11-18T04:06:06+00:00",
-     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
-    },
-    "aa-release-qwen3-7-max.html": {
-     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
-     "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
-    },
-    "aa-release-gpt-6-astra.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
-     "fetched_at": "2026-11-18T04:06:07+00:00",
-     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
-    },
-    "aa-release-claude-sonnet-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
-     "fetched_at": "2026-11-18T04:06:15+00:00",
-     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
     "aa-release-claude-opus-4-6.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-6",
      "fetched_at": "2026-11-18T04:05:57+00:00",
      "sha256": "dc70ab1233ddde062bcffe2c3e8a47228cf60ebe763ae153d9471b15d7754f1e"
     },
-    "aa-release-gpt-5-6-sol.html": {
-     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
-     "fetched_at": "2026-11-18T04:06:02+00:00",
-     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
-    },
-    "aa-release-grok-4-6.html": {
-     "url": "https://artificialanalysis.ai/models/grok-4-6",
-     "fetched_at": "2026-11-18T04:06:08+00:00",
-     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    "aa-release-claude-opus-4-7.html": {
+     "url": "https://artificialanalysis.ai/models/claude-opus-4-7",
+     "fetched_at": "2026-11-18T04:06:12+00:00",
+     "sha256": "af240ad31d04336ef5603c460134e18bcf98d0a7a717eb95246634335ccdc68b"
     },
     "aa-release-claude-opus-4-8.html": {
      "url": "https://artificialanalysis.ai/models/claude-opus-4-8",
      "fetched_at": "2026-11-18T04:06:08+00:00",
      "sha256": "0663b68496491b15e5aa1392ac454c59b44486edbb1fba483de2be77a47b3704"
     },
-    "aa-release-kimi-k3.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k3",
-     "fetched_at": "2026-11-18T04:06:18+00:00",
-     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    "aa-release-claude-sonnet-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/claude-sonnet-4-6",
+     "fetched_at": "2026-11-18T04:06:15+00:00",
+     "sha256": "e20200af5692026d8ecf03df3bb10faf0c84ab356664ed5595d1702598df3329"
     },
-    "aa-release-kimi-k2-6.html": {
-     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
-     "fetched_at": "2026-11-18T04:06:13+00:00",
-     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    "aa-release-gemini-3-1-flash-lite.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
+     "fetched_at": "2026-11-18T04:06:19+00:00",
+     "sha256": "d955be63799a13417802474d5361be33632943d1c054eba21b59f52dd3c55c61"
+    },
+    "aa-release-gemini-3-7-flash.html": {
+     "url": "https://artificialanalysis.ai/models/gemini-3-7-flash",
+     "fetched_at": "2026-11-18T04:06:04+00:00",
+     "sha256": "4f5c8dcdfbccea0f40f8f6e11ac72b2d8a1bee632f8bedb1d2f7f6859f31405d"
     },
     "aa-release-gemini-3-8-flash.html": {
      "url": "https://artificialanalysis.ai/models/gemini-3-8-flash",
      "fetched_at": "2026-11-18T04:06:01+00:00",
      "sha256": "a27425c1c5dfe8f194e2d5f5ef2e2c0917cf65f4ed1c5ffd19c0256a02d3d270"
     },
+    "aa-release-glm-5-2.html": {
+     "url": "https://artificialanalysis.ai/models/glm-5-2",
+     "fetched_at": "2026-11-18T04:06:16+00:00",
+     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+    },
     "aa-release-gpt-5-6-luna.html": {
      "url": "https://artificialanalysis.ai/models/gpt-5-6-luna",
      "fetched_at": "2026-11-18T04:05:56+00:00",
      "sha256": "6d52178cced509f01d770b244455a33075843e36123b95e98e19deb8468272e9"
     },
-    "aa-release-glm-5-2.html": {
-     "url": "https://artificialanalysis.ai/models/glm-5-2",
+    "aa-release-gpt-5-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-sol",
+     "fetched_at": "2026-11-18T04:06:02+00:00",
+     "sha256": "7d746889294c596ac90a9ec80a02944beee5ff6af704bc6bf583931f006fe949"
+    },
+    "aa-release-gpt-5-6-terra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-5-6-terra",
+     "fetched_at": "2026-11-18T04:06:03+00:00",
+     "sha256": "dbb5fb232872441a7cb4c0fe708652f604ded5e0afd6d47b0204d988dc182236"
+    },
+    "aa-release-gpt-6-1-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-1-sol",
+     "fetched_at": "2026-11-18T04:06:06+00:00",
+     "sha256": "31333e7c60dde14b162ddd29c546afb90d40e5981b417029727d91b911aac0d0"
+    },
+    "aa-release-gpt-6-astra.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-astra",
+     "fetched_at": "2026-11-18T04:06:07+00:00",
+     "sha256": "d525413df8788c298098619089bf2af552d6e784a1951e8206f4546332cfc8f8"
+    },
+    "aa-release-gpt-6-sol.html": {
+     "url": "https://artificialanalysis.ai/models/gpt-6-sol",
+     "fetched_at": "2026-11-18T04:06:05+00:00",
+     "sha256": "c3fa15c7626fb01281d6220cfb58ae802c63c9291ee8dd49fc0c1f1113a083bc"
+    },
+    "aa-release-grok-4-5.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-5",
+     "fetched_at": "2026-11-18T04:06:10+00:00",
+     "sha256": "25e07943c0441fee347b31926fa65bf8019fba8a5c523110863f27d8bbb2899c"
+    },
+    "aa-release-grok-4-6.html": {
+     "url": "https://artificialanalysis.ai/models/grok-4-6",
+     "fetched_at": "2026-11-18T04:06:08+00:00",
+     "sha256": "d76b012e428d8d9da8ef012f2f18bc6b3ae07ada8cace25f7b3a7626204ca1a8"
+    },
+    "aa-release-kimi-k2-6.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k2-6",
+     "fetched_at": "2026-11-18T04:06:13+00:00",
+     "sha256": "981f845bb0092c6744cb0942a22a9eb5a5fcf61cdf0fe918f7168e0e821669aa"
+    },
+    "aa-release-kimi-k3.html": {
+     "url": "https://artificialanalysis.ai/models/kimi-k3",
+     "fetched_at": "2026-11-18T04:06:18+00:00",
+     "sha256": "c536b3450df3aa6512bac35d99fb9e08735da3bbf57e020c038f7a9e16eb1761"
+    },
+    "aa-release-qwen3-6-plus.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-6-plus",
+     "fetched_at": "2026-11-18T04:05:58+00:00",
+     "sha256": "c05aef03266855cfdd670980a13879a1d0426d0d54b8d2f95f9b76e70d4d27bf"
+    },
+    "aa-release-qwen3-7-max.html": {
+     "url": "https://artificialanalysis.ai/models/qwen3-7-max",
      "fetched_at": "2026-11-18T04:06:16+00:00",
-     "sha256": "8daa6293501439f2d02c173dc62bca15aa9a5a708ec02f980ec5fefb5b17d4ec"
+     "sha256": "c5be6cd43872a204646bea171db9928f76ce040ae7045f48560a1bc634a6468e"
     },
     "aa-release-qwen3-8-max.html": {
      "url": "https://artificialanalysis.ai/models/qwen3-8-max",
