@@ -303,12 +303,12 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
         'community-wokey-claude.html': (
             f'<html><body><p>Data updated {iso_date}</p>'
             '<p>Claude Pro ($20/mo) : ≈ $155 of API use a week · 24.2M uncached tokens · ≈ 13 full 5-hour windows</p>'
-            '<p>Claude Max 20x ($200/mo) : ≈ $1,549 of API use a week · 1M tokens · ≈ 5.7 full 5-hour windows</p>'
+            '<p>Claude Ultra (Max 20x) ($200/mo) : ≈ $1,549 of API use a week · 1M tokens · ≈ 5.7 full 5-hour windows</p>'
             '<p>Fable 5.1 can use only half the weekly limit.</p>'
             f'<p>value every plan at one fixed traffic split: Claude Code traffic on Wokey in the week to {iso_date}, '
             'about 92% of tokens cache reads.</p>'
-            '<p>Claude Max 20x $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M $272</p>'
-            '<p>Claude Max 20x: 92% cache reads, 1.98B tokens a week</p></body></html>'
+            '<p>Claude Ultra (Max 20x) $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M $272</p>'
+            '<p>Claude Ultra (Max 20x): 92% cache reads, 1.98B tokens a week</p></body></html>'
         ),
         'community-wokey-codex.html': (
             f'<html><body><p>Data updated {iso_date}</p>'

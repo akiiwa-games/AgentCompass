@@ -1120,13 +1120,26 @@ class HighFillTests(unittest.TestCase):
         grok = shipped['models']['grok-4.7']['axes']['tool_operation']['facets']['image_recognition']
         self.assertEqual(grok['estimate']['method'], 'panel_effort_step')
         level2 = shipped['anchor']['targets']['tool_operation']['facets']['image_recognition']['levels']['2']
-        self.assertEqual((level2['target'], level2['n']), (-0.7322, 11))
+        # Rule (five_axis.Scorer.targets): the level-2 target is the median of the panel's measured High values, and an
+        # estimated panel member (grok-4.7 here) is not counted, so n is the panel's size less its estimated rows.
+        import statistics
+        import five_axis
+        cells = {m: shipped['models'][m]['axes']['tool_operation']['facets']['image_recognition']
+                 for m in shipped['anchor']['panel']}
+        counted = [c['value'] for c in cells.values() if c['status'] in five_axis.TARGET_STATUSES]
+        self.assertLess(len(counted), len(cells))
+        self.assertEqual((level2['target'], level2['n']), (round(statistics.median(counted), 4), len(counted)))
 
     def test_shipped_glm_5_3_and_deepseek_v4_pro_have_high(self):
         models = axis_scores.load_five_axis()['models']
         glm = models['glm-5.3']['axes']
         self.assertEqual(glm['creativity']['facets']['creative_writing']['status'], 'interpolated')
-        self.assertEqual(glm['creativity']['by_effort']['high'], round((-1.9724 + -1.5955) / 2, 4))
+        # Rule (fill_high): High interpolated between the model's bracketing efforts is their weighted mean.
+        fill = glm['creativity']['facets']['creative_writing']['interpolation']
+        (low_effort, low), = fill['from'].items()
+        (high_effort, high), = fill['to'].items()
+        self.assertEqual(glm['creativity']['by_effort']['high'],
+                         round(low + fill['weight'] * (high - low), 4))
         ds = models['deepseek-v4-pro']['axes']['tool_operation']['facets']['responsiveness']
         self.assertEqual((ds['status'], ds['estimate']['method']), ('estimated', 'panel_effort_step'))
         self.assertGreater(ds['by_effort']['high'], ds['by_effort']['max'])
@@ -2393,13 +2406,14 @@ class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
         refs = account_fleet.REFERENCES
         raw = (refs / 'public-measurements.json').read_bytes()
         shipped = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))
-        # The run's own options, as the document records them: its time (source ages are counted to it) and the sources
-        # it was told to leave out.
+        # The run's own options, as the document records them: its time (source ages are counted to it), the sources
+        # it was told to leave out, and the document it replaces (`refresh` passes it; with the same panel members it
+        # carries `anchor.panel_change`, the record of an accepted change, forward).
         built = five_axis.build(json.loads(raw.decode('utf-8-sig')),
                                 json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig')),
                                 json.loads((refs / 'plan-templates.json').read_text(encoding='utf-8-sig')),
                                 distrust=shipped['distrusted_sources'], meas_bytes=raw,
-                                now=datetime.fromisoformat(shipped['generated_at']))
+                                now=datetime.fromisoformat(shipped['generated_at']), previous=shipped)
         built = json.loads(json.dumps(built, ensure_ascii=False))
 
         def differences(a, b, at=''):
