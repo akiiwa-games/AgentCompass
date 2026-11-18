@@ -6,8 +6,10 @@ Runs the full pre-release verification suite:
   0. Privacy check of tracked files against generic patterns and the local denylist (privacy_check.py)
   1. Foreign-machine packaged wheel & cloned usage-float behavioral verification (F01..F13)
   2. Zero-credential 13-surface dispatch & scorer verification (zero_dispatch_check.py)
-  3. Unit/regression suites across setup/, skills/agent-compass/scripts/, tray/, and usage-float/
-  4. Optional real Windows Sandbox installer + tray verification (W01, --with-windows-sandbox), including the installer
+  3. Gateway coverage: every offered pair of the saved gateway catalogs is scored or on the declared known-gap list
+     (audit/gateway_coverage.py)
+  4. Unit/regression suites across setup/, skills/agent-compass/scripts/, tray/, and usage-float/
+  5. Optional real Windows Sandbox installer + tray verification (W01, --with-windows-sandbox), including the installer
      alone as the product (guest step `product`: no Python on PATH, new-shell CLI, setup, gate hook, upgrade, uninstall)
 """
 from __future__ import annotations
@@ -83,6 +85,8 @@ def main(argv=None) -> int:
         zd_cmd.extend(["--wheel", str(args.wheel.resolve())])
     steps.append(_run_step("zero_dispatch_check (13 surfaces)", zd_cmd))
 
+    steps.append(_run_step("gateway_coverage (saved gateway catalogs)",
+                           [py, "-X", "utf8", str(ROOT / "audit" / "gateway_coverage.py")]))
     steps.append(_run_step("pytest setup/", [py, "-X", "utf8", "-m", "pytest", "setup", "-q"]))
     steps.append(_run_step("pytest skills/agent-compass/scripts/", [py, "-X", "utf8", "-m", "pytest", "skills/agent-compass/scripts", "-q"]))
     steps.append(_run_step("pytest tray/", [py, "-X", "utf8", "-m", "pytest", "tray", "-q"]))

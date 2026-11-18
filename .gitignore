@@ -32,6 +32,9 @@
 !/audit/
 /audit/*
 !/audit/*.py
+!/audit/gateway-coverage-known-gaps.json
+!/audit/gateway-catalogs/
+!/audit/gateway-catalogs/*.json
 !/audit/calibrate/
 !/audit/calibrate/**
 !/setup/

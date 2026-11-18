@@ -1,0 +1,70 @@
+{
+ "schema": "agent-compass.gateway-coverage-known-gaps/1",
+ "as_of": "2026-11-18",
+ "statement": "offered gateway pairs the shipped data does not cover, each with its reason; an entry that becomes covered, or that no saved catalog offers, fails the check (audit/gateway_coverage.py)",
+ "entries": [
+  {
+   "catalog": "cindy-0.1.140",
+   "model": "meta/muse-ember",
+   "efforts": [
+    "minimal"
+   ],
+   "row": "muse-ember",
+   "reason": "No board measures the `minimal` effort (Artificial Analysis lists no minimal variant of any model), so there is no reading at it and no panel step to it."
+  },
+  {
+   "catalog": "cindy-0.1.140",
+   "model": "meta/muse-spark-1.3",
+   "efforts": [
+    "minimal"
+   ],
+   "row": "muse-spark-1.3",
+   "reason": "No board measures the `minimal` effort (Artificial Analysis lists no minimal variant of any model), so there is no reading at it and no panel step to it."
+  },
+  {
+   "catalog": "cindy-0.1.140",
+   "model": "qwen/qwen3.8-flash",
+   "efforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ],
+   "row": "qwen3.8-flash",
+   "reason": "No scoring board lists Qwen3.8 Flash (the boards list a \"Qwen3.8-Flash-Next\" whose identity is not established) and its same-size series (the qwen flash rows) has no measured member: no capability value and no Time/Task source."
+  },
+  {
+   "catalog": "cindy-0.1.140",
+   "model": "qwen/qwen3.8-omni-flash",
+   "efforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "row": "qwen3.8-omni-flash",
+   "reason": "No scoring board lists Qwen3.8 Omni Flash and its same-size series (the qwen flash rows) has no measured member: no capability value and no Time/Task source."
+  },
+  {
+   "catalog": "cindy-0.1.140",
+   "model": "qwen/qwen3.8-omni-flash",
+   "efforts": [
+    "minimal"
+   ],
+   "row": "qwen3.8-omni-flash",
+   "reason": "No board measures the `minimal` effort (Artificial Analysis lists no minimal variant of any model), so there is no reading at it and no panel step to it."
+  },
+  {
+   "catalog": "cindy-0.1.140",
+   "model": "tencent/hy4-flash",
+   "efforts": [
+    "low",
+    "medium",
+    "high"
+   ],
+   "row": "hy4-flash",
+   "reason": "Hy4 Flash is listed on Design Arena only: no Time/Task and no responsiveness reading, no same-size sibling, and responsiveness is not derived from the larger model (a smaller model answers faster)."
+  }
+ ]
+}
