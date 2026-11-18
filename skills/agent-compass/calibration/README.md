@@ -40,6 +40,8 @@ agentcompass data refresh --no-fetch          # rebuild and validate from cached
 agentcompass data refresh --no-fetch --accept-panel-change   # write a rebuild whose panel members changed (refused otherwise)
 ```
 
+The fetching refresh runs once per release, as a step of preparing it; the data it writes is fixed until the next release.
+
 Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`.
 
 One command runs the full chain in topological order: `sources.py fetch` plus the Artificial Analysis release pages (both skipped with `--no-fetch`, which reads the release pages already in the data directory that the fetched leaderboard page and the catalogue ask for) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> `public_data.py manifest --write` -> validation (`public-data` checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
