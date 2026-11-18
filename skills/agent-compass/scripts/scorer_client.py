@@ -17,6 +17,7 @@ import uuid
 import account_state
 import env_vars
 import host_policy
+import launch_values
 import provider_inventory
 import public_data
 import subscription_cli
@@ -89,7 +90,10 @@ def scorer_prefix():
     command = shutil.which(SCORER['provider'])
     if not command:
         raise ScorerUnavailable('Antigravity CLI (agy) is not installed.')
-    return [command]
+    try:
+        return subscription_cli.direct_prefix(command)
+    except launch_values.UnreadableLauncher as exc:
+        raise ScorerUnavailable(str(exc)) from None
 
 
 def _compact_schema_for_argv(schema):
@@ -659,6 +663,8 @@ def run_scorer(scorer_type, task, capabilities, timeout, config, account=None):
         prefix = subscription_cli.cli_prefix(spec['provider'])
     except RuntimeError:
         raise ScorerUnavailable(f"{spec['provider']} CLI is not installed.") from None
+    except launch_values.UnreadableLauncher as exc:
+        raise ScorerUnavailable(str(exc)) from None
     schema = scorer_schema(capabilities)
     with tempfile.TemporaryDirectory(prefix='route-score-', ignore_cleanup_errors=True) as temporary:
         directory = Path(temporary)
@@ -899,6 +905,8 @@ def run_structured(scorer_type, instructions, text, schema, timeout, config, acc
         prefix = subscription_cli.cli_prefix(spec['provider'])
     except RuntimeError:
         raise ScorerUnavailable(f"{spec['provider']} CLI is not installed.") from None
+    except launch_values.UnreadableLauncher as exc:
+        raise ScorerUnavailable(str(exc)) from None
     with tempfile.TemporaryDirectory(prefix='route-score-', ignore_cleanup_errors=True) as temporary:
         directory = Path(temporary)
         if spec['provider'] == 'claude':

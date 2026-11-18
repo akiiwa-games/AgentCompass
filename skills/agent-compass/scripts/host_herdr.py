@@ -49,7 +49,8 @@ def hc(*args, timeout=25):
     executable = shutil.which('hc')
     if not executable:
         raise RuntimeError('Herdr core hc is not on PATH. Install current herdr-core; the old herdr TUI is incompatible.')
-    proc = subprocess.run([executable, *args], capture_output=True, text=True,
+    import subscription_cli
+    proc = subprocess.run([*subscription_cli.direct_prefix(executable), *args], capture_output=True, text=True,
                           encoding='utf-8', errors='replace', timeout=timeout,
                           **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     try:
@@ -171,7 +172,9 @@ def inspect_request(path, cleanup=False):
 
 def rpc_read(target):
     """CLI read is text; the official RPC retains completeness/retention metadata."""
-    proc = subprocess.Popen([shutil.which('hc'), 'connect'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    import subscription_cli
+    proc = subprocess.Popen([*subscription_cli.direct_prefix(shutil.which('hc')), 'connect'], stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace',
                             **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     timer = threading.Timer(40, proc.kill)

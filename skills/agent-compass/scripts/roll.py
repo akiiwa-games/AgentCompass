@@ -984,7 +984,7 @@ def cli_command(family, provider):
                                              if c.is_file()), None)
                 if found is None:
                     raise RuntimeError(f'The Grok executable configured for {provider!r} is missing: {name}')
-                return [str(found)]
+                return subscription_cli.direct_prefix(found)
             if not spec.get('extends'):
                 break
             provider = spec['extends']
@@ -1033,7 +1033,7 @@ def cli(args, out, bundle, text):
             process = subprocess.Popen(argv + [text] if prompt_argument else argv, cwd=cwd, env=env,
                                        stdin=subprocess.DEVNULL if prompt_argument or family in PROMPT_FILE else brief,
                                        stdout=stdout, stderr=stderr, **options)
-    except (RuntimeError, OSError) as exc:
+    except (RuntimeError, OSError, launch_values.UnreadableLauncher) as exc:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     next=f'The {executable} CLI could not start ({exc})' + native), 1
     worker = {'provider': bundle['provider'], 'cli': executable, 'pid': process.pid,

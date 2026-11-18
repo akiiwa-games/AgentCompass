@@ -37,6 +37,7 @@ import component_launch
 import gateways
 import plugins
 import runtime_paths
+import owned_process
 import services
 
 LOCK = threading.Lock()
@@ -59,6 +60,10 @@ def report(kind: str, message: str, component: str | None = None, **extra) -> No
 def run(args: list[str], cwd: Path, env: dict[str, str] | None = None, timeout: float = 600) -> str:
     report("progress", _tr('执行 {0} {1}').format(f'{Path(args[0]).name}', f"{' '.join(args[1:3])}"))
     safe_work_dir = services.safe_cwd(cwd)
+    try:
+        args, env = owned_process.direct(args, env)     # a batch launcher runs as its program, never through cmd.exe
+    except owned_process.OwnedProcessError as error:
+        raise RuntimeError(str(error)) from None
     process = subprocess.Popen(args, cwd=str(safe_work_dir), env=env, text=True, encoding="utf-8", errors="replace",
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                creationflags=services.CREATE_NO_WINDOW)

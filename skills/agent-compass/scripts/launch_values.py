@@ -9,9 +9,16 @@ dropped by a pattern. They are made safe where they are used: passed as their ow
 syntax they land in (toml_string, shell_word), or reduced to a safe file-name part (path_part). Where a value cannot be
 expressed safely in one syntax, that one launch is refused there with a named error; nothing else about the account or
 the model disappears.
+
+No value is passed through cmd.exe: a Windows batch launcher (an npm `.cmd` shim, a desktop app's `.cmd`) is started as
+the program its launch line runs (program), never as itself, since cmd.exe reads every argument of a batch file as
+command text and no quoting of the argument list makes that safe.
 """
 import json
+import os
 import re
+import shutil
+from pathlib import Path
 
 # A model id: `claude-opus-5-5`, `claude-opus-5-5[1m]`, `gpt-6.2-sol`, `openai-codex/gpt-6-sol`, `model:high`,
 # `name@version`.
@@ -88,3 +95,165 @@ def shell_word(value):
     if "'" in value or any(c in value for c in '\0\r\n'):
         raise LaunchValueError(f'{value!r} cannot be quoted as one shell word; this launch is refused')
     return f"'{value}'"
+
+
+BATCH_SUFFIXES = ('.cmd', '.bat')
+_SET = re.compile(r'^@?set\s+(?!/)(?:"(?P<quoted>[^"=]+)=(?P<qvalue>[^"]*)"|(?P<name>[^\s="]+)=(?P<value>.*?))\s*$',
+                  re.IGNORECASE)
+_REFERENCE = re.compile(r'%~f0|%~dp0|%([^%\s]*)%', re.IGNORECASE)
+
+
+class UnreadableLauncher(LaunchValueError):
+    """A batch launcher whose launch line cannot be read as a program and its arguments: the launch is refused."""
+
+
+def program(path, environ=None):
+    """``(argv, env)`` that start the program at ``path`` with no command interpreter in between.
+
+    For anything but a Windows batch launcher this is ``[path]`` and no variables. A batch launcher (`.cmd`, `.bat`: an
+    npm shim, a desktop app's command-line launcher) is read, not run: its launch line is the last line that passes the
+    arguments on (`%*`), after the last `&` or `|` outside quotes. Its words are expanded with what the file itself
+    sets (`set "NAME=value"`, `%~dp0`, `%~f0`) and then the process environment; the first word, the program, must name
+    an existing file that is not itself a batch file (a bare name is looked up on PATH), and a word with several
+    possible values (an `if exist` choice) takes the first one that exists. ``env`` holds the variables the file sets
+    for the program (those its launch line does not consume, with one value). Anything else (no such line, a word that
+    cannot be expanded, more after `%*`, a program that cannot be found) is a stated refusal (UnreadableLauncher),
+    never a start through cmd.exe."""
+    path = Path(path)
+    if path.suffix.lower() not in BATCH_SUFFIXES:
+        return [str(path)], {}
+    environ = os.environ if environ is None else environ
+
+    def refuse(why):
+        raise UnreadableLauncher(f'{path} is a batch launcher that cannot be started without cmd.exe ({why}); cmd.exe '
+                                 'would read its arguments as commands, so this launch is refused: point the command '
+                                 'at the executable it runs')
+    try:
+        text = path.read_text(encoding='utf-8', errors='replace')[:65536]
+    except OSError as exc:
+        refuse(f'it cannot be read: {exc.strerror or exc}')
+    lines = [line.strip() for line in text.splitlines()]
+    assigned = {}
+    for line in lines:
+        found = _SET.match(line)
+        if found:
+            name = found.group('quoted') or found.group('name')
+            value = found.group('qvalue') if found.group('quoted') else found.group('value')
+            assigned.setdefault(name.lower(), (name, []))[1].append(value)
+    launch = [line for line in lines if '%*' in line and not line.lower().startswith(('rem ', '::', 'set '))]
+    if not launch:
+        refuse('no line passes its arguments on with %*')
+    words = _words(_last_command(launch[-1]))
+    if '%*' not in words:
+        refuse('its launch line passes %* inside another word')
+    at = words.index('%*')
+    if words[at + 1:]:
+        refuse(f'its launch line goes on after %*: {" ".join(words[at + 1:])}')
+    words = words[:at]
+    if words and words[0].lower() == 'call':
+        words = words[1:]
+    if not words:
+        refuse('its launch line names no program')
+    consumed, argv = set(), []
+    for index, word in enumerate(words):
+        values = _expand(word, path, assigned, environ, consumed, 0)
+        if not values:
+            refuse(f'{word} cannot be expanded without running cmd.exe')
+        if index == 0:
+            chosen = next((found for found in map(lambda v: _program_file(v, environ), values) if found), None)
+            if chosen is None:
+                refuse(f'its program {word} ({values[0]}) is not an existing executable')
+        else:
+            existing = [v for v in values if _looks_like_path(v) and Path(v).exists()]
+            if not existing and len(values) > 1:
+                refuse(f'{word} has more than one possible value and none exists')
+            chosen = os.path.normpath(existing[0]) if existing else (
+                os.path.normpath(values[0]) if _looks_like_path(values[0]) else values[0])
+        argv.append(chosen)
+    env = {}
+    for key, (name, values) in assigned.items():
+        if key in consumed or len(set(values)) != 1:
+            continue
+        expanded = _expand(values[0], path, assigned, environ, set(), 0)
+        if len(expanded) == 1:
+            env[name] = expanded[0]
+    return argv, env
+
+
+def _last_command(line):
+    """What runs last on ``line``: the part after the last `&` or `|` outside double quotes, without a leading `@`."""
+    quoted, start = False, 0
+    for index, char in enumerate(line):
+        if char == '"':
+            quoted = not quoted
+        elif char in '&|' and not quoted:
+            start = index + 1
+    return line[start:].strip().lstrip('@').strip().rstrip(')').strip()
+
+
+def _words(text):
+    """The words of ``text`` split at spaces outside double quotes, quotes removed."""
+    words, current, quoted, started = [], [], False, False
+    for char in text:
+        if char == '"':
+            quoted, started = not quoted, True
+        elif char.isspace() and not quoted:
+            if started:
+                words.append(''.join(current))
+            current, started = [], False
+        else:
+            current.append(char)
+            started = True
+    if started:
+        words.append(''.join(current))
+    return words
+
+
+def _expand(text, path, assigned, environ, consumed, depth):
+    """Every value ``text`` can take, its `%NAME%` references expanded from what the file sets, then the environment; []
+    when a reference cannot be expanded (substring syntax, `%%F`, an unset name) or the nesting is too deep."""
+    if depth > 8:
+        return []
+    results = ['']
+    position = 0
+    for found in _REFERENCE.finditer(text):
+        literal = text[position:found.start()]
+        token = found.group(0)
+        if token.lower() == '%~dp0':
+            options = [str(path.parent) + os.sep]
+        elif token.lower() == '%~f0':
+            options = [str(path)]
+        else:
+            name = found.group(1)
+            if not name or ':' in name or name.startswith('~'):
+                return []
+            if name.lower() in assigned:
+                consumed.add(name.lower())
+                options = [v for raw in assigned[name.lower()][1]
+                           for v in _expand(raw, path, assigned, environ, consumed, depth + 1)]
+            else:
+                value = next((v for k, v in environ.items() if k.lower() == name.lower()), None)
+                options = [value] if value is not None else []
+            if not options:
+                return []
+        results = [r + literal + o for r in results for o in options][:32]
+        position = found.end()
+    if '%' in text[position:]:
+        return []
+    return [r + text[position:] for r in results]
+
+
+def _looks_like_path(value):
+    return os.path.isabs(value) or '\\' in value or '/' in value
+
+
+def _program_file(value, environ):
+    """The existing executable file ``value`` names (a bare name looked up on PATH), else None; never a batch file."""
+    if _looks_like_path(value):
+        candidate = Path(os.path.normpath(value))
+        found = str(candidate) if candidate.is_file() else None
+    else:
+        found = shutil.which(value, path=environ.get('PATH'))
+    if not found or Path(found).suffix.lower() in BATCH_SUFFIXES:
+        return None
+    return found

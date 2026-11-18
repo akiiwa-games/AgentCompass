@@ -67,9 +67,28 @@ def _text(stream, limit=OUTPUT_LIMIT) -> str:
         return data.decode("mbcs" if os.name == "nt" else "utf-8", errors="replace").strip()
 
 
+def direct(argv: list[str], env: dict[str, str] | None = None) -> tuple[list[str], dict[str, str] | None]:
+    """``argv`` and ``env`` that start the same program with no cmd.exe in between: a Windows batch launcher (an npm
+    `.cmd` shim, Paseo's `paseo.cmd`) becomes the program its launch line runs, with the variables it sets
+    (launch_values.program). One that cannot be read that way is refused (OwnedProcessError), never run through cmd.exe,
+    which would read the arguments as commands."""
+    if not argv or Path(str(argv[0])).suffix.lower() not in (".cmd", ".bat"):
+        return argv, env
+    scripts = Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import launch_values
+    try:
+        prefix, variables = launch_values.program(argv[0], env if env is not None else os.environ)
+    except launch_values.UnreadableLauncher as exc:
+        raise OwnedProcessError(str(exc)) from None
+    return [*prefix, *argv[1:]], ({**(env if env is not None else os.environ), **variables} if variables else env)
+
+
 def run(argv: list[str], *, timeout: float, env: dict[str, str] | None = None, cwd: str | None = None,
         output_limit: int = OUTPUT_LIMIT) -> Result:
     if os.name == "nt":
+        argv, env = direct(argv, env)
         return _run_job(argv, timeout, env, cwd, output_limit)
     return _run_group(argv, timeout, env, cwd, output_limit)
 
