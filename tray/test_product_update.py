@@ -366,7 +366,7 @@ class OneClickUpdateTests(unittest.TestCase):
                 )
             self.assertEqual(ran_commands, [])
 
-            # 3. Valid digest -> runs installer silently, then restarts tray (reference data ships with the installer)
+            # 3. Valid digest -> runs installer silently, then data --refresh, then restarts tray
             events = []
             summary = updates.update_agentcompass(
                 progress=events.append,
@@ -389,9 +389,10 @@ class OneClickUpdateTests(unittest.TestCase):
                 runner=runner,
                 restart_fn=lambda: "托盘已重启",
             )
-            self.assertEqual(len(ran_commands), 1)
+            self.assertEqual(len(ran_commands), 2)
             self.assertEqual(ran_commands[0][1:], ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
             self.assertTrue(ran_commands[0][0].endswith("AgentCompass-tray-setup.exe"))
+            self.assertEqual(ran_commands[1][-2:], ["data", "--refresh"])
             self.assertFalse(any("setup" in cmd for cmd in ran_commands))      # the installer applies the setup itself
             self.assertIn("托盘已重启", summary)
             self.assertTrue(any(e.get("kind") == "finish" for e in events))
@@ -427,7 +428,8 @@ class OneClickUpdateTests(unittest.TestCase):
             self.assertEqual(uv_cmds[0], ["uv", "tool", "install", "--force", wheel_url])
             # uv removes the tool venv; a cwd inside it locks the directory on Windows (os error 32)
             self.assertNotIn(sp_uv.parents[1].resolve(), [Path(uv_cwds[0]).resolve(), *Path(uv_cwds[0]).resolve().parents])
-            self.assertEqual(len(uv_cmds), 1)
+            self.assertEqual(uv_cmds[1], [str(cli_uv), "data", "--refresh"])
+            self.assertFalse(any("setup" in cmd for cmd in uv_cmds))
 
             # Case B: pip installer
             sp_pip, py_pip, cli_pip = _make_wheel_install(base, version="0.3.5", installer="pip")
@@ -445,7 +447,8 @@ class OneClickUpdateTests(unittest.TestCase):
             )
             self.assertEqual(pip_cmds[0], [str(py_pip), "-m", "pip", "install", "--upgrade", wheel_url])
             self.assertNotIn(sp_pip.parents[1].resolve(), [Path(pip_cwds[0]).resolve(), *Path(pip_cwds[0]).resolve().parents])
-            self.assertEqual(len(pip_cmds), 1)
+            self.assertEqual(pip_cmds[1], [str(cli_pip), "data", "--refresh"])
+            self.assertFalse(any("setup" in cmd for cmd in pip_cmds))
 
             # Case C: this machine ran `agentcompass setup` before, so the update applies it again with the same hook choice
             (state_dir / updates.SETUP_MANIFEST_NAME).write_text("{}", encoding="utf-8")
@@ -460,7 +463,7 @@ class OneClickUpdateTests(unittest.TestCase):
                 runner=lambda args, cwd=None, env=None: set_up_cmds.append(list(args)) or "",
                 restart_fn=lambda: "restarted",
             )
-            self.assertEqual(set_up_cmds[1:], [[str(cli_pip), "setup", "--yes", "--no-usage"]])
+            self.assertEqual(set_up_cmds[1:], [[str(cli_pip), "data", "--refresh"], [str(cli_pip), "setup", "--yes", "--no-usage"]])
 
             # A setup that fails is reported and the tray still restarts
             def failing_setup(args, cwd=None, env=None):
@@ -492,7 +495,7 @@ class OneClickUpdateTests(unittest.TestCase):
             (repo / "agentcompass").mkdir()
             (repo / "agentcompass" / "__init__.py").write_text('__version__ = "0.3.8"\n', encoding="utf-8")
 
-            # 1. Dirty git checkout with no separate wheel -> refused, no pull, no restart
+            # 1. Dirty git checkout with no separate wheel -> refused, no pull, no data --refresh, no restart
             dirty_cmds = []
 
             def dirty_runner(args, cwd=None, env=None):
@@ -546,6 +549,7 @@ class OneClickUpdateTests(unittest.TestCase):
             self.assertIn(["git", "fetch", "origin"], clean_cmds)
             self.assertIn(["git", "pull", "--ff-only"], clean_cmds)
             self.assertIn([str(py_pip), "-m", "pip", "install", "--upgrade", wheel_url], clean_cmds)
+            self.assertIn([str(cli_pip), "data", "--refresh"], clean_cmds)
             self.assertEqual(len(restarted), 1)
             self.assertIn("git pull --ff-only", summary2)
             self.assertIn("pip", summary2)
@@ -758,7 +762,8 @@ class IncrementalCodePackageUpdateTests(unittest.TestCase):
                 ["https://example.com/manifest.json", "https://example.com/app-0.4.0.zip"],
             )
             self.assertFalse(any("AgentCompass-tray-setup.exe" in cmd[0] for cmd in ran_commands))
-            self.assertEqual(ran_commands, [])
+            self.assertEqual(len(ran_commands), 1)
+            self.assertEqual(ran_commands[0][-2:], ["data", "--refresh"])
             self.assertEqual(updates.local_version(inst_root), "0.4.0")
             self.assertEqual(updates.local_version(inst_root / "app" / "previous"), "0.3.18")
             self.assertTrue((inst_root / "app" / "packages" / "app-0.4.0.zip").is_file())

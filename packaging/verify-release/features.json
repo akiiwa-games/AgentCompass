@@ -15,7 +15,8 @@
       "behaviors": [
         "Installed wheel runs from site-packages, never the repo checkout",
         "providers, plan --demo --dry-run and doctor make no request for reference data (no run-time read of a newer copy)",
-        "Leftovers of the removed between-release channel (<state dir>/public-data/, public-data-config.json) are named by doctor's upgrade checks with the delete fix and left in place",
+        "Leftovers of the removed between-release channel (<state dir>/public-data/, public-data-config.json) are named by doctor's upgrade checks with the re-run setup fix; doctor deletes nothing",
+        "agentcompass data --refresh (the post-update step) removes exactly those two paths; a sibling file survives and doctor no longer names them",
         "agentcompass data without refresh exits 2 and points an install at updating; data refresh refuses outside a git checkout"
       ]
     },
@@ -137,7 +138,7 @@
         "Tray and settings page display AgentCompass X.Y.Z and flag version mismatch when tray and router (skills, gate hooks, or PATH) differ",
         "Release check caches GitHub Releases latest for 6h under STATE_DIR and shows '可更新到 vX.Y.Z' when a newer release exists",
         "One-click Update AgentCompass detects install shape (installer, wheel, git), refuses missing or mismatched sha256 digests, and upgrades using the owning tool (uv, pip, git)",
-        "An installed older wheel (0.3.7) in a foreign profile upgrades to the locally built newer wheel (0.3.8) through update_agentcompass, fetches no reference data, and clears the version mismatch",
+        "An installed older wheel (0.3.7) in a foreign profile upgrades to the locally built newer wheel (0.3.8) through update_agentcompass, fetches no reference data, clears the version mismatch, and runs the post-update step (agentcompass data --refresh) that removes the removed channel's leftovers and nothing else",
         "Clicking Restart tray is single-flight and emits immediate and post-restart tray notifications"
       ]
     }

@@ -94,7 +94,7 @@ agentcompass doctor
 
 `doctor` inspects local state read-only (`accounts-override.json`, `host-policy.json`, `host-rules/*.md`, `user-scores.json`, `router-ledger.jsonl`, `dispatch.sqlite3`, `router-overrides.json`, caches, installed hooks, skill links, and global rule blocks) without modifying user files and prints one of three fixes per flagged path:
 
-1. **Re-run `agentcompass setup`** (`agentcompass setup --yes --hooks`) — refreshes global rule blocks, skill links, and `PreToolUse` / `tool_call` hooks.
+1. **Re-run `agentcompass setup`** (`agentcompass setup --yes --hooks`) — refreshes global rule blocks, skill links, and `PreToolUse` / `tool_call` hooks, and removes what the removed between-release reference data channel left (`~/.agent-compass/public-data/` and `public-data-config.json`, by those exact paths). The tray updater already removes these after every update (`agentcompass data --refresh`), so doctor names them only after an update that ran neither, such as a hand-run `pip` upgrade.
 2. **Re-toggle in the tray** — rewrites user preference files (`accounts-override.json`, `host-policy.json`, `user-scores.json`, `router-overrides.json`, plugin autostart) in the current schema.
 3. **Delete a named cache or state file** — clears stale derived caches (`provider-inventory.json`, `usage-activity.json`, `dispatch.sqlite3`, `~/.usage-float/usage-cache.json`, `~/.cache/agentcompass-calibration` without `fetch-manifest.json`, or old custom `host-rules/*.md` overlays) so the next run recreates them cleanly. Old-shape rows in `router-ledger.jsonl` are skipped during replay, audit, and tray display with a count note; delete `router-ledger.jsonl` when you want a clean ledger.
 

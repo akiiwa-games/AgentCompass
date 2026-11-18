@@ -9,7 +9,7 @@ Designed the pstack way (behavior over implementation, prove it works from packa
   - Never touches the real user profile, real credentials, or external network (all HTTP goes through sandbox_check's
     sitecustomize netguard to local fixture servers; all CLIs are fixture executables in a throwaway PATH).
   - Covers every failure hit when syncing to a second host (LITTLESPRING / LS) and every 0.3.6 behavior:
-      F01  Stale install & reference data shipped with the version (no run-time request for it; leftovers of the removed channel reported by doctor)
+      F01  Stale install & reference data shipped with the version (no run-time request for it; doctor names the removed channel's leftovers, the post-update step removes them)
       F02  Fleet parity on a clean install with no accounts.local.json
       F03  Classifier cascade across families and multi-home accounts (jev absent, ~/.claude signed out, ~/.claude-2 signed in)
       F04  Quota, window scope, gate parity, control-message exemption, discovered model management, no twin bundles, and agy 3p pool-prior capacity
@@ -397,8 +397,8 @@ def verify_f01_shipped_reference_data(ctx: dict):
     op = run.operation(
         "F01 stale-install & reference data shipped with the version",
         "Installed wheel runs from site-packages (not checkout) and routes on the reference files it ships: providers, "
-        "plan and doctor make no request for reference data, and the leftovers of the removed between-release channel "
-        "are reported by doctor's upgrade checks with the delete fix and left in place",
+        "plan and doctor make no request for reference data; doctor names the leftovers of the removed between-release "
+        "channel with the re-run setup fix and leaves them, and the post-update step removes exactly those two paths",
     )
     env = base_cli_env(box, ctx)
 
@@ -416,6 +416,8 @@ def verify_f01_shipped_reference_data(ctx: dict):
     (leftover_dir / "sets" / "0123456789ab").mkdir(parents=True, exist_ok=True)
     (leftover_dir / "state.json").write_text(json.dumps({"version": "0123456789ab"}), encoding="utf-8")
     leftover_config.write_text(json.dumps({"enabled": True}), encoding="utf-8")
+    sibling = box.state / "public-data-notes.txt"
+    sibling.write_text("not the channel's", encoding="utf-8")
 
     # 3. Routing commands read the shipped files; no request for reference data is made or attempted.
     box.netlog.unlink(missing_ok=True)
@@ -429,13 +431,24 @@ def verify_f01_shipped_reference_data(ctx: dict):
     reference_requests += [r for r in box.fixture.requests[before:] if "githubusercontent" in r.get("host", "")]
     op.check("no request for reference data is made or attempted at run time", not reference_requests, reference_requests)
 
-    # 4. Doctor names each leftover with the delete fix; nothing deletes them.
+    # 4. Doctor is read-only: it names each leftover with the re-run setup fix and deletes nothing.
     doctor_out = results[-1].stdout
-    op.check("doctor's upgrade checks name the leftover cache and setting with the delete fix",
-             all(f'delete "{path}"' in doctor_out for path in (leftover_dir, leftover_config)), doctor_out[-1500:])
-    op.check("the leftovers stay where they were", leftover_dir.is_dir() and leftover_config.is_file())
+    named = [line for line in doctor_out.splitlines() if any(str(path) in line for path in (leftover_dir, leftover_config))]
+    op.check("doctor's upgrade checks name the leftover cache and setting with the re-run setup fix",
+             len(named) == 2 and all(line.rstrip().endswith('Fix: re-run "agentcompass setup".') for line in named),
+             doctor_out[-1500:])
+    op.check("doctor leaves the leftovers where they were", leftover_dir.is_dir() and leftover_config.is_file())
 
-    # 5. `agentcompass data` without `refresh` points an install at updating; `data refresh` refuses outside a checkout.
+    # 5. The post-update step (`agentcompass data --refresh`, run by the tray updater) removes exactly those two paths.
+    res_post = run_in_box(box, op, [box.agentcompass, "data", "--refresh"], env)
+    op.check("agentcompass data --refresh exits 0 and removes the leftover cache and setting, and only those",
+             res_post.returncode == 0 and not leftover_dir.exists() and not leftover_config.exists() and sibling.is_file()
+             and res_post.stdout.count("removed ") == 2, res_post.stdout + res_post.stderr)
+    res_doctor = run_in_box(box, op, [box.agentcompass, "doctor"], env)
+    op.check("doctor no longer names them", "public-data" not in res_doctor.stdout.replace(str(sibling), ""),
+             res_doctor.stdout[-1500:])
+
+    # 6. `agentcompass data` without `refresh` points an install at updating; `data refresh` refuses outside a checkout.
     res_data = run_in_box(box, op, [box.agentcompass, "data"], env)
     res_refresh = run_in_box(box, op, [box.agentcompass, "data", "refresh", "--no-fetch"], env)
     op.check("agentcompass data exits 2 with the usage, and data refresh refuses outside a checkout",
@@ -1950,7 +1963,7 @@ def verify_f12_self_update_and_version_display(ctx: dict):
         "flags the version mismatch across PATH, CODEX_HOME/skills, and gate hooks; update_agentcompass refuses a "
         "mismatched sha256 digest and refuses git pull on a dirty checkout while upgrading the installed 0.3.7 wheel "
         "to the locally built wheel via its owning Python interpreter, "
-        "and recording every step; single-flight restart mutex and restart marker work end-to-end.",
+        "and recording every step; the post-update step removes the removed reference data channel's leftovers; single-flight restart mutex and restart marker work end-to-end.",
     )
     old_ver = "0.3.7"
     old_repo = box.root / "repo-0.3.7"
@@ -1991,6 +2004,13 @@ def verify_f12_self_update_and_version_display(ctx: dict):
 
     ver_before = run_in_box(box, op, [old_cli, "--version"], env)
     op.check("installed router CLI starts at version 0.3.7", ver_before.returncode == 0 and ver_before.stdout.strip() == "0.3.7", ver_before.stdout)
+
+    # What an earlier version's reference data channel left; the post-update step must remove exactly these.
+    leftovers = (box.state / "public-data", box.state / "public-data-config.json")
+    (leftovers[0] / "sets" / "0123456789ab").mkdir(parents=True, exist_ok=True)
+    leftovers[1].write_text(json.dumps({"enabled": True}), encoding="utf-8")
+    sibling = box.state / "public-data-notes.txt"
+    sibling.write_text("not the channel's", encoding="utf-8")
 
     dirty_repo = box.root / "dirty-repo"
     shutil.copytree(ctx["repo"], dirty_repo)
@@ -2158,9 +2178,11 @@ out_path.write_text(json.dumps({
         data,
     )
     op.check(
-        "update_agentcompass fetches no reference data: the update ships it and no public-data cache appears",
-        not (box.state / "public-data").exists(),
-        str(box.state / "public-data"),
+        "update_agentcompass runs the post-update step (agentcompass data --refresh), which removes the removed "
+        "channel's cache and setting and nothing else; no reference data is fetched",
+        "data --refresh" in str(data.get("summary"))
+        and not any(path.exists() for path in leftovers) and sibling.is_file(),
+        {"summary": data.get("summary"), "left": [str(p) for p in leftovers if p.exists()]},
     )
     op.check("single-flight restart mutex and one-shot restart marker work", bool(data.get("mutex_ok")) and bool(data.get("marker_ok")), data)
 

@@ -41,7 +41,7 @@ install and health:
   setup       first-run onboarding (--dry-run previews)
   uninstall   undo what setup changed
   doctor      read-only report of Python, CLIs, accounts, cache, plugins, ports, hooks and upgrade checks
-  data        `data refresh [--no-fetch] [--accept-panel-change] [--model ID]` rebuilds the shipped reference data in a checkout, once per release
+  data        `data refresh [--no-fetch] [--accept-panel-change] [--model ID]` rebuilds the shipped reference data in a checkout, once per release; `data --refresh` runs after an update and removes what an earlier version left
 
 other stages: score, scorer, delegate, select, dispatch, launch
 follow-up of a roll result (its next_argv already spells these): dot status, grok-bot status, chatgpt-web, herdr status
@@ -125,14 +125,37 @@ def usage_command(args: list[str]) -> int:
 
 DATA_HELP = """usage: agentcompass data refresh [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE]
                                [--accept-panel-change] [--model ID ...]
+       agentcompass data --refresh
 
-Rebuilds the shipped reference data inside a git checkout, once per release (`agentcompass data refresh -h`).
+data refresh   rebuilds the shipped reference data inside a git checkout, once per release (`agentcompass data refresh -h`).
+data --refresh brings local state in line with the installed version after an update: it removes the reference data an
+               earlier version left in the state directory. The tray updater runs it after every update.
 An install reads the reference data shipped with its version and nothing newer; update AgentCompass for newer data.
 """
 
 
+def post_update() -> int:
+    """`agentcompass data --refresh`: the step that runs after a product update (this version's tray updater and the
+    updaters of earlier releases run it). Removes what an earlier version left (state_upgrade.remove_retired_reference_data)."""
+    scripts = locations.skill_root() / "agent-compass" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import state_upgrade
+    sdir = state_upgrade.state_dir()
+    try:
+        removed = state_upgrade.remove_retired_reference_data(sdir)
+    except OSError as error:
+        sys.stderr.write(f"could not remove an earlier version's reference data under {sdir}: {error}\n")
+        return 1
+    print(f"AgentCompass {__version__}: local state is in line with this version"
+          + "".join(f"\n  removed {path}" for path in removed))
+    return 0
+
+
 def data_command(args: list[str]) -> int:
-    """Rebuild the shipped reference data in a checkout (`calibration/refresh.py`)."""
+    """Rebuild the shipped reference data in a checkout (`calibration/refresh.py`), or run the post-update step."""
+    if args == ["--refresh"]:
+        return post_update()
     if args[:1] != ["refresh"]:
         asked = _has_option(args, "-h") or _has_option(args, "--help")
         (sys.stdout if asked else sys.stderr).write(DATA_HELP)
