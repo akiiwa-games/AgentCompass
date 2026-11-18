@@ -2398,11 +2398,17 @@ class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
                                 now=datetime.fromisoformat(shipped['generated_at']))
         built = json.loads(json.dumps(built, ensure_ascii=False))
 
-        def comparable(doc):
-            return {k: v for k, v in doc.items() if k != 'generated_at'}
+        def differences(a, b, at=''):
+            if isinstance(a, dict) and isinstance(b, dict):
+                return [d for k in sorted(set(a) | set(b), key=str) if (at or k != 'generated_at')
+                        for d in differences(a.get(k), b.get(k), f'{at}.{k}')]
+            if isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+                return [d for i, (x, y) in enumerate(zip(a, b)) for d in differences(x, y, f'{at}[{i}]')]
+            return [] if a == b else [f'{at}: built {str(a)[:80]} != shipped {str(b)[:80]}']
 
-        self.assertEqual(comparable(built), comparable(shipped),
-                         'five-axis-scores.json does not match its inputs: run `agentcompass data refresh --no-fetch`')
+        found = differences(built, shipped)
+        self.assertEqual(found[:10], [], f'five-axis-scores.json does not match its inputs ({len(found)} difference(s)): '
+                                         'run `agentcompass data refresh --no-fetch`')
 
 
 if __name__ == '__main__':
