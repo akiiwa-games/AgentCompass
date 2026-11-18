@@ -14,8 +14,8 @@ Scale (demand-level scale, mapped dynamically to panel z-scores from `anchor.tar
   - `3` is not a top: a value above `t3` is a level above 3, extrapolated with the step from level 2 to 3 (`t3 - t2`), and a
     value below `t1` a level below 1 (step `t2 - t1`). No clamp: shown as the number it is.
   - A scale needs `t1 < t2 < t3`; the builder refuses a panel that does not give it, and the maps here refuse it too.
-  - Levels written before schema 3 (3 = the anchor) are carried onto this scale value for value (`LOCAL_UPGRADES`,
-    `convert_scores`, `references/legacy-level-scales.json`).
+  - Levels written before schema 3 (3 = the anchor) keep their position: at or below 2 unchanged, above 2 stretched by the
+    anchor's level on the facet (`convert_level`, `LOCAL_UPGRADES`, `references/level-3-conversion.json`).
   - Manual capability scores never alter `image_input` modality; modality requires a cited benchmark, vendor source, or
     dated `kind: "maintainer"` declaration in `accounts.json`.
 
@@ -214,28 +214,27 @@ def _local_schema_1_to_2(doc: dict) -> dict:
     return {**doc, 'schema_version': 2, 'scores': renamed}
 
 
-LEGACY_SCALES_FILE = REFERENCES / 'legacy-level-scales.json'
-FIVE_AXIS_FILE = REFERENCES / 'five-axis-scores.json'
-ROUND_LEVELS = 2        # decimals of a converted level: the value moves by at most 0.005 level
+LEVEL3_CONVERSION_FILE = REFERENCES / 'level-3-conversion.json'
+ROUND_LEVELS = 2        # decimals of a converted level
 
 
-def legacy_triads(schema: int) -> dict:
-    """{'<category>.<facet>': (t1, t2, t3)} of the level scale user-scores schema `schema` was written on
-    (`references/legacy-level-scales.json`, declared with its provenance)."""
-    doc = json.loads(LEGACY_SCALES_FILE.read_text(encoding='utf-8'))
-    return {target: tuple(float(x) for x in triad) for target, triad in doc['scales'][str(schema)]['triads'].items()}
+def anchor_levels(schema: int) -> dict:
+    """{'<category>.<facet>': A} for user-scores schema `schema`: the level the old level 3 (the anchor) has on the facet
+    scale of v0.7.0 (`references/level-3-conversion.json`, declared with its provenance and frozen, so the conversion gives the
+    same levels on every later version)."""
+    doc = json.loads(LEVEL3_CONVERSION_FILE.read_text(encoding='utf-8'))
+    return {target: float(level) for target, level in doc['conversions'][str(schema)]['anchor_levels'].items()}
 
 
-def _legacy_level_to_z(level: float, t1: float, t2: float, t3: float) -> float:
-    """The schema 1 and 2 reading of a level: 3 = the anchor, and where the anchor sat at or below the panel median
-    (`tool_operation.responsiveness`, t3 == t2) every level in [2, 3] was the median and a level above 3 extrapolated by
-    `t2 - t1`. Kept only to carry old levels onto the current scale."""
+def convert_level(level: float, anchor_level: float, *, ndigits: int = ROUND_LEVELS) -> float:
+    """A level written with level 3 = the anchor, carried onto the scale whose level 3 is the panel maximum. Levels 1 and 2 are
+    the panel minimum and median on both scales, so a level at or below 2 stays; above 2 the position between the median and
+    the old level 3 is kept: `2 + (L - 2) * (A - 2)`, A = the anchor's level on the facet (the segment above 3 continues with the
+    same slope). Against the panel the old scale was read with, the value is the same."""
     lv = normalize_level(level)
     if lv <= 2.0:
-        return t1 + (lv - 1.0) * (t2 - t1)
-    if lv <= 3.0:
-        return t2 + (lv - 2.0) * (t3 - t2)
-    return t3 + (lv - 3.0) * ((t3 - t2) if t3 > t2 else (t2 - t1))
+        return lv
+    return round(2.0 + (lv - 2.0) * (anchor_level - 2.0), ndigits)
 
 
 def _facet_of(target: str) -> tuple[str, str | None]:
@@ -246,12 +245,11 @@ def _facet_of(target: str) -> tuple[str, str | None]:
     return cat, facet
 
 
-def convert_scores(scores: dict, old_triads: dict, new_triad, *, ndigits: int = ROUND_LEVELS) -> dict:
-    """`scores` ({model: {target: entry}}, levels on the scale `old_triads` ({'<category>.<facet>': triad}) describes) carried
-    onto the scale `new_triad(category, facet)` gives, so that each level maps to the value it stood for: old level -> its
-    value on the old scale -> the level that value has on the new scale, rounded to `ndigits` decimals. An entry for a
-    category of several facets (`coding`, `tool_operation`) is written per facet, because the facets' scales moved by different
-    amounts; a facet entry the model already has is converted on its own and wins. Everything but `level` is kept."""
+def convert_scores(scores: dict, anchor_level: dict, *, ndigits: int = ROUND_LEVELS) -> dict:
+    """`scores` ({model: {target: entry}}, levels with level 3 = the anchor) converted by `convert_level` with the facet's
+    `anchor_level` ({'<category>.<facet>': A}). An entry for a category of several facets (`coding`, `tool_operation`) above
+    level 2 is written per facet (their anchor levels differ), except for a facet the model has an entry of its own for, which
+    stands; at or below 2 it stays one entry. Everything but `level` is kept."""
     out = {}
     for model, entries in scores.items():
         converted = {}
@@ -259,30 +257,27 @@ def convert_scores(scores: dict, old_triads: dict, new_triad, *, ndigits: int = 
         for target, entry in entries.items():
             cat, facet = parse_target(target)
             if facet is None and len(CATEGORY_FACETS[cat]) > 1:
-                facets = [f for f in CATEGORY_FACETS[cat] if f'{cat}.{f}' not in explicit]
-                names = [f'{cat}.{f}' for f in facets]
-            else:
-                cat, facet = _facet_of(target)
-                facets, names = [facet], [target]
-            for f, name in zip(facets, names):
-                old = old_triads[f'{cat}.{f}']
-                z = _legacy_level_to_z(entry['level'], *old)
-                converted[name] = {**entry, 'level': round(z_to_level(z, *new_triad(cat, f)), ndigits)}
+                if normalize_level(entry['level']) <= 2.0:
+                    converted[target] = dict(entry)
+                    continue
+                for f in CATEGORY_FACETS[cat]:
+                    if f'{cat}.{f}' not in explicit:
+                        converted[f'{cat}.{f}'] = {**entry, 'level': convert_level(entry['level'], anchor_level[f'{cat}.{f}'], ndigits=ndigits)}
+                continue
+            cat, facet = _facet_of(target)
+            converted[target] = {**entry, 'level': convert_level(entry['level'], anchor_level[f'{cat}.{facet}'], ndigits=ndigits)}
         out[model] = dict(sorted(converted.items()))
     return out
 
 
 def _local_schema_2_to_3(doc: dict) -> dict:
-    """Schema 2 (v0.6.7 and v0.6.8) levels were written on the scale whose level 3 is the anchor (the triads of
-    `references/legacy-level-scales.json`); schema 3 levels are on the shipped scale, whose level 3 is the panel maximum.
-    Each entry keeps the value it stood for (`convert_scores`)."""
+    """Schema 2 (v0.6.7 and v0.6.8) levels were written with level 3 = the anchor; schema 3 levels have level 3 = the panel
+    maximum. Each entry is converted by `convert_scores` with the declared anchor levels of `references/level-3-conversion.json`,
+    the same data and function that converted the maintainer file."""
     scores = doc.get('scores')
     if not isinstance(scores, dict):
         return {**doc, 'schema_version': 3}
-    targets = json.loads(FIVE_AXIS_FILE.read_text(encoding='utf-8'))['anchor']['targets']
-    converted = convert_scores(
-        {m: t for m, t in scores.items() if isinstance(t, dict)}, legacy_triads(2),
-        lambda cat, facet: target_triad(targets, cat, facet))
+    converted = convert_scores({m: t for m, t in scores.items() if isinstance(t, dict)}, anchor_levels(2))
     return {**doc, 'schema_version': 3, 'scores': {**scores, **converted}}
 
 

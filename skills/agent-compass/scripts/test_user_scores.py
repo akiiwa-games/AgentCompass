@@ -3,6 +3,7 @@ import copy
 from datetime import datetime, timezone
 import importlib.util
 import json
+import random
 import os
 from pathlib import Path
 import shutil
@@ -48,9 +49,9 @@ def drop_facet(five, model, category, facet):
     """`five` (a five-axis-scores document) with `model` having no reading at all on `category.facet`: the category cell is the
     partial one the builder writes for a missing facet."""
     cell = five['models'][model]['axes'][category]
-    del cell['facets'][facet]
+    cell['facets'].pop(facet, None)             # the shipped data may have no reading of it already
     five['models'][model]['axes'][category] = {
-        'facets': cell['facets'], 'missing_facets': [*cell.get('missing_facets', []), facet], 'value': None, 'by_effort': {},
+        'facets': cell['facets'], 'missing_facets': sorted({*cell.get('missing_facets', []), facet}), 'value': None, 'by_effort': {},
         'status': 'partial', 'flag': 'partial'}
     return five
 
@@ -553,51 +554,101 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
             json.dump(doc, handle)
 
     @staticmethod
-    def stood_for(level, target):
-        """The value (z) a schema-2 `level` on `target` stood for: read from the declared legacy scale, independently of
-        `convert_scores` (level 3 = the anchor; where the anchor sat at the median every level in [2, 3] was the median)."""
-        t1, t2, t3 = user_scores.legacy_triads(2)[target]
-        if level <= 2.0:
-            return t1 + (level - 1.0) * (t2 - t1)
-        if level <= 3.0:
-            return t2 + (level - 2.0) * (t3 - t2)
-        return t3 + (level - 3.0) * ((t3 - t2) if t3 > t2 else (t2 - t1))
+    def conversion():
+        return json.loads(user_scores.LEVEL3_CONVERSION_FILE.read_text(encoding='utf-8'))['conversions']['2']
 
-    def assert_values_kept(self, old_scores, new_scores):
-        """Every old entry maps to the value it stood for on the shipped scale, to the rounding of the written level; an entry
-        of a category of several facets is written per facet."""
+    def assert_position_kept(self, old_level, new_level, triad, msg=None):
+        """Owner 2026-11-18: the definition change by itself moves no hand-written value. The value the old level had under the
+        old definition on this panel (t3 = the anchor, z = 0: levels 1 and 2 as before, above 2 the same slope towards 0 and
+        beyond) equals the value the new level has under the new definition, to the rounding of the written level."""
+        t1, t2, t3 = triad
+        old_value = t1 + (old_level - 1.0) * (t2 - t1) if old_level <= 2.0 else t2 + (old_level - 2.0) * (0.0 - t2)
+        self.assertAlmostEqual(user_scores.level_to_z(new_level, t1, t2, t3), old_value, delta=0.0051 * (t3 - t2), msg=msg)
+
+    def test_levels_1_and_2_stay_and_the_position_above_2_is_kept_on_any_panel(self):
+        """Property of `convert_level`: on the shipped panels (anchor level read from the shipped data) and on made-up ones
+        (any t1 < t2 < 0 <= t3), for levels below 1, inside the scale and above 3."""
         targets = json.loads((REFERENCES_DIR / 'five-axis-scores.json').read_text(encoding='utf-8'))['anchor']['targets']
+        triads = {f'{c}.{f}': user_scores.target_triad(targets, c, f) for c, fs in user_scores.CATEGORY_FACETS.items() for f in fs
+                  if f != 'responsiveness'}
+        rng = random.Random(7)
+        for i in range(40):
+            t1 = -rng.uniform(1.0, 3.5)
+            t2 = rng.uniform(t1 + 0.2, -0.05)
+            triads[f'made-up-{i}'] = (t1, t2, rng.choice([0.0, rng.uniform(0.02, 1.8)]))
+        for name, triad in triads.items():
+            anchor_level = user_scores.z_to_level(0.0, *triad)
+            for level in (0.4, 1.0, 1.4, 2.0, 2.3, 2.6, 3.0, 3.5, 4.2, 6.0):
+                new = user_scores.convert_level(level, anchor_level)
+                if level <= 2.0:
+                    self.assertEqual(new, level, (name, level))
+                self.assert_position_kept(level, new, triad, (name, level))
+                self.assertEqual(new, round(new, 2))
+
+    def test_the_declared_anchor_levels_follow_from_their_declared_scale(self):
+        conversion = self.conversion()
+        self.assertEqual(set(conversion['anchor_levels']), set(conversion['scale']))
+        for target, level in conversion['anchor_levels'].items():
+            if target.endswith('.responsiveness'):
+                # the old scale had t2 = t3: every level above 2 meant the panel median, which is level 2 on any scale
+                self.assertEqual(level, 2.0)
+                for written in (2.5, 3.0, 4.0):
+                    self.assertEqual(user_scores.convert_level(written, level), 2.0)
+                continue
+            self.assertAlmostEqual(level, user_scores.z_to_level(0.0, *conversion['scale'][target]), places=4, msg=target)
+            self.assertTrue(2.0 <= level <= 3.0, target)       # the anchor lies between the panel median and its best
+
+    def test_convert_scores_splits_a_category_entry_only_above_2_and_a_facet_entry_wins(self):
+        anchor = {'coding.execution': 3.0, 'coding.faithfulness': 2.25, 'creativity.creative_writing': 3.0,
+                  'aesthetics.design': 2.9, 'tool_operation.responsiveness': 2.0, 'tool_operation.image_recognition': 2.9}
+        entry = lambda level, note=None: {'level': level, 'as_of': '2026-11-11', 'kind': 'maintainer', **({'note': note} if note else {})}
+        out = user_scores.convert_scores({
+            'a': {'coding': entry(2.0), 'tool_operation': entry(1.5), 'aesthetics': entry(2.6)},
+            'b': {'coding': entry(3.0, 'n'), 'coding.faithfulness': entry(2.5)},
+            'c': {'tool_operation': entry(3.0)},
+        }, anchor)
+        self.assertEqual(out['a'], {'aesthetics': entry(2.54), 'coding': entry(2.0), 'tool_operation': entry(1.5)})
+        self.assertEqual(out['b'], {'coding.execution': entry(3.0, 'n'), 'coding.faithfulness': entry(2.12)})
+        self.assertEqual(out['c'], {'tool_operation.image_recognition': entry(2.9), 'tool_operation.responsiveness': entry(2.0)})
+
+    def assert_converted(self, old_scores, new_scores):
+        """Each old entry is in `new_scores` at its position on the declared v0.7.0 scale (an entry of a category of several
+        facets above level 2 per facet); everything but the level is kept."""
+        conversion = self.conversion()
         for model, entries in old_scores.items():
             for target, entry in entries.items():
                 cat, facet = user_scores.parse_target(target)
-                facets = [facet] if facet else list(user_scores.CATEGORY_FACETS[cat])
-                for f in facets:
-                    key = target if facet or len(user_scores.CATEGORY_FACETS[cat]) == 1 else f'{cat}.{f}'
+                multi = facet is None and len(user_scores.CATEGORY_FACETS[cat]) > 1
+                if multi and entry['level'] > 2.0:
+                    keys = [(f'{cat}.{f}', f) for f in user_scores.CATEGORY_FACETS[cat] if f'{cat}.{f}' not in entries]
+                    self.assertNotIn(target, new_scores[model])
+                else:
+                    keys = [(target, facet or user_scores.CATEGORY_FACETS[cat][0])]
+                for key, f in keys:
                     new = new_scores[model][key]
-                    triad = user_scores.target_triad(targets, cat, f)
-                    step = max(triad[1] - triad[0], triad[2] - triad[1])
-                    self.assertAlmostEqual(user_scores.level_to_z(new['level'], *triad),
-                                           self.stood_for(entry['level'], f'{cat}.{f}'), delta=0.005 * step + 1e-9, msg=(model, key))
                     self.assertEqual({k: v for k, v in new.items() if k != 'level'}, {k: v for k, v in entry.items() if k != 'level'})
-                if not facet and len(user_scores.CATEGORY_FACETS[cat]) > 1:
-                    self.assertNotIn(target, new_scores[model])       # written per facet, not as the category
+                    if f == 'responsiveness':
+                        self.assertEqual(new['level'], min(entry['level'], 2.0))
+                    else:
+                        self.assert_position_kept(entry['level'], new['level'], conversion['scale'][f'{cat}.{f}'], (model, key))
 
     def test_a_schema_1_file_is_read_with_its_entries_under_the_renamed_category_on_the_current_scale(self):
         entry = {'level': 2.6, 'as_of': '2026-11-12', 'kind': 'user', 'note': 'mine'}
         facet = {'level': 1.5, 'as_of': '2026-11-13', 'kind': 'user'}
         coding = {'level': 3.0, 'as_of': '2026-11-14', 'kind': 'user'}
+        aesthetics = {'level': 2.6, 'as_of': '2026-11-14', 'kind': 'user'}
         self.write({'schema_version': 1, 'scores': {
-            'model-a': {'divergence': entry, 'coding': coding}, 'model-b': {'divergence.creative_writing': facet}}})
+            'model-a': {'divergence': entry, 'coding': coding, 'aesthetics': aesthetics}, 'model-b': {'divergence.creative_writing': facet}}})
         before = self.local.read_bytes()
         loaded = user_scores.load_local(self.local)
         self.assertEqual(loaded['schema_version'], user_scores.SCHEMA_VERSION)
-        self.assert_values_kept({'model-a': {'creativity': entry, 'coding': coding},
-                                 'model-b': {'creativity.creative_writing': facet}}, loaded['scores'])
+        self.assert_converted({'model-a': {'creativity': entry, 'coding': coding, 'aesthetics': aesthetics},
+                               'model-b': {'creativity.creative_writing': facet}}, loaded['scores'])
         self.assertEqual(self.local.read_bytes(), before)  # a read never writes
 
-    def test_a_schema_2_file_keeps_the_value_of_every_entry_and_the_next_save_writes_schema_3(self):
-        """Owner 2026-11-18: level 3 moved from the anchor to the panel maximum; an entry keeps the value it stood for
-        (`LOCAL_UPGRADES[2]`, `legacy-level-scales.json`), a facet entry beats a category entry, and nothing is written by a read."""
+    def test_a_schema_2_file_keeps_the_position_of_every_entry_and_the_next_save_writes_schema_3(self):
+        """Owner 2026-11-18: level 3 moved from the anchor to the panel maximum; levels at or below 2 stay, levels above 2 keep
+        their position (`LOCAL_UPGRADES[2]`, `level-3-conversion.json`), a facet entry beats a category entry, and a read writes nothing."""
         old = {
             'model-a': {'creativity': {'level': 3.1, 'as_of': '2026-11-12', 'kind': 'user', 'note': 'mine'},
                         'coding': {'level': 2.4, 'as_of': '2026-11-12', 'kind': 'user'},
@@ -605,21 +656,16 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
             'model-b': {'aesthetics': {'level': 0.5, 'as_of': '2026-11-12', 'kind': 'user'},
                         'coding': {'level': 3.0, 'as_of': '2026-11-12', 'kind': 'user'},
                         'coding.faithfulness': {'level': 1.7, 'as_of': '2026-11-13', 'kind': 'user'}},
+            'model-c': {'coding': {'level': 1.8, 'as_of': '2026-11-12', 'kind': 'user'}},
         }
         self.write({'schema_version': 2, 'scores': old})
         before = self.local.read_bytes()
         loaded = user_scores.load_local(self.local)
         self.assertEqual(loaded['schema_version'], 3)
-        self.assert_values_kept({'model-a': {k: v for k, v in old['model-a'].items()},
-                                 'model-b': {'aesthetics': old['model-b']['aesthetics'],
-                                             'coding.faithfulness': old['model-b']['coding.faithfulness']}},
-                                loaded['scores'])
-        # model-b's category entry fills only the facet without an entry of its own
-        self.assert_values_kept({'model-b': {'coding.execution': old['model-b']['coding']}},
-                                {'model-b': {'coding.execution': loaded['scores']['model-b']['coding.execution']}})
-        self.assertNotIn('coding', loaded['scores']['model-b'])
+        self.assert_converted(old, loaded['scores'])
+        self.assertIn('coding', loaded['scores']['model-c'])                 # at or below 2 a category entry stays one entry
         self.assertEqual(self.local.read_bytes(), before)
-        user_scores.set_score('model-c', 'coding', 2.0, local_path=self.local, as_of='2026-11-18')
+        user_scores.set_score('model-d', 'coding', 2.0, local_path=self.local, as_of='2026-11-18')
         saved = json.loads(self.local.read_text(encoding='utf-8'))
         self.assertEqual(saved['schema_version'], 3)
         self.assertEqual(saved['scores']['model-a'], loaded['scores']['model-a'])          # converted once, kept as written
@@ -631,25 +677,8 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         user_scores.set_score('model-b', 'coding', 2.0, local_path=self.local, as_of='2026-11-18')
         saved = json.loads(self.local.read_text(encoding='utf-8'))
         self.assertEqual(saved['schema_version'], user_scores.SCHEMA_VERSION)
-        self.assert_values_kept({'model-a': {'creativity': entry}}, saved['scores'])
+        self.assert_converted({'model-a': {'creativity': entry}}, saved['scores'])
         self.assertEqual(saved['scores']['model-b']['coding']['level'], 2.0)
-
-    def test_convert_scores_keeps_values_for_any_old_and_new_scale(self):
-        """The conversion's own rule, on scales the test makes up: value before = value after (to the rounding), for levels
-        below 1, inside the scale and above 3, and on a facet whose old levels 2 and 3 were one value."""
-        old = {'creativity.creative_writing': (-3.0, -2.0, 0.0), 'tool_operation.responsiveness': (-1.7, 0.1, 0.1)}
-        new = {'creativity.creative_writing': (-3.2, -2.2, 1.3), 'tool_operation.responsiveness': (-1.9, 0.0, 1.6)}
-        scores = {'m': {'creativity': {'level': 0.4, 'as_of': '2026-11-11', 'kind': 'maintainer'},
-                        'tool_operation.responsiveness': {'level': 2.5, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
-                  'n': {'creativity': {'level': 3.6, 'as_of': '2026-11-11', 'kind': 'maintainer'}}}
-        out = user_scores.convert_scores(scores, old, lambda cat, facet: new[f'{cat}.{facet}'])
-        for model, entries in scores.items():
-            for target, entry in entries.items():
-                key = 'creativity.creative_writing' if target == 'creativity' else target
-                z = user_scores._legacy_level_to_z(entry['level'], *old[key])
-                step = max(new[key][1] - new[key][0], new[key][2] - new[key][1])
-                self.assertAlmostEqual(user_scores.level_to_z(out[model][target]['level'], *new[key]), z, delta=0.005 * step)
-                self.assertEqual(out[model][target]['kind'], 'maintainer')
 
     def test_every_schema_below_the_current_one_has_an_upgrade_step(self):
         self.assertEqual(sorted(user_scores.LOCAL_UPGRADES), list(range(1, user_scores.SCHEMA_VERSION)))
