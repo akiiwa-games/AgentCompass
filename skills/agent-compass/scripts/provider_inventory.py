@@ -2059,6 +2059,59 @@ def _apply_auto_bundles(accounts, inventory, live):
                                  'seen': derived['seen'] if live else {}}
 
 
+def listed_rows(accounts, account, provider, model, effort, live_doc):
+    """({bundle id: row}, None) for a model the user named on `account` that has no row there, when the account's
+    provider lists it in `live_doc` (live_models.load_or_refresh); else (None, the fact that refuses it). The rows are
+    what discovery derives for an advertised model (auto_bundles), with the provider's list as the authority over a
+    family guessed from the name. A row carries the effort the user named where its harness takes one. Read-only."""
+    import time
+    import auto_bundles
+    import live_models
+    entry = ((live_doc or {}).get('providers') or {}).get(provider)
+    if not isinstance(entry, dict):
+        off = '' if live_models.enabled() else ' (live model lists are off: AGENTCOMPASS_LIVE_MODELS)'
+        return None, f'the model list of provider {provider} could not be read{off}'
+    if entry.get('ok') is not True:
+        return None, (f'the model list of provider {provider} could not be read '
+                      f"({live_models.unavailable_detail(entry) or entry.get('error') or 'model_list_unavailable'})")
+    if not live_models.offers_model(provider, model, entry):
+        return None, f'provider {provider} does not list {model}'
+    families = {name: row.get('family') for name, row in (((accounts.get('_discovery') or {}).get('accounts')) or {}).items()}
+    derived = auto_bundles.derive(accounts, {'providers': {provider: {'ok': True, 'checked_at': time.time(),
+                                                                      'models': [model]}}},
+                                  time.time(), account_families=families, named={(account, model)})
+    rows = dict(derived['bundles'].get(account) or {})
+    if not rows:
+        excluded = [e['reason'] for e in derived['excluded'] if e.get('account') == account]
+        return None, (f"{account} cannot launch it ({'; '.join(excluded)})" if excluded
+                      else f'account {account} does not launch through provider {provider}')
+    if effort:
+        named_rows = {}
+        for row in rows.values():
+            if auto_bundles.HARNESS_DEFAULT_EFFORT.get(row.get('harness')) is not None or row.get('effort'):
+                row = dict(row, effort=effort)
+            named_rows[auto_bundles.auto_bundle_id(account, row.get('harness'), row['model'], row.get('effort'))] = row
+        rows = named_rows
+    return rows, None
+
+
+def with_listed_rows(accounts, listed):
+    """A copy of `accounts` with the rows `listed_rows` derived (`{'account', 'rows'}`) for one calculation, and their
+    efforts in the launch contract: never written to defaults or settings."""
+    if not isinstance(listed, dict) or not listed.get('rows'):
+        return accounts
+    out = copy.deepcopy(accounts)
+    account = listed['account']
+    target = out['accounts'][account].setdefault('bundles', {})
+    for bid, row in listed['rows'].items():
+        target.setdefault(bid, dict(row))
+        if row.get('effort'):
+            efforts = out.setdefault('dispatch_efforts', {}).setdefault(account, {}).setdefault(row['model'], [])
+            if row['effort'] not in efforts:
+                efforts.append(row['effort'])
+    return out
+
+
 UNVERIFIABLE_SIGN_IN = ('antigravity', 'opencode', 'grok')
 UNVERIFIED_SIGN_IN_LABEL = 'installed, sign-in unverified'
 # Plans whose models run without any account: there is no sign-in to prove (OpenCode's free models).

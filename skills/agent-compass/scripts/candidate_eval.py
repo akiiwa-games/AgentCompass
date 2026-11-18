@@ -165,10 +165,15 @@ def evaluate_bundle(bundle, task, ctx):
     if not account_fleet.account_cwd_allowed(cwd_spec, task.get('cwd')):
         exclude(f"outside account cwd restriction ({cwd_spec['cwd_regex']})")
 
-    if not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
+    # The bundle a recorded user_override launches (dispatch_registry.prepare pins it) is the user's naming, which the two
+    # routing preferences do not govern: left in, they kept it out of the economy, so a named fast route had no fast
+    # variant to launch (record accepted it, prepare refused it).
+    user_named = task.get('pinned_bundle') == bundle['id']
+    if not user_named and not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
         exclude(OUT_OF_AUTOMATIC_ROUTING)
     # Off by default (superseded in public data) is not the user's checkbox: naming the model still reaches it.
-    if bundle.get('disabled') and not (bundle.get('disabled_by_default') and bundle_named(task, bundle, own_model)):
+    if (not user_named and bundle.get('disabled')
+            and not (bundle.get('disabled_by_default') and bundle_named(task, bundle, own_model))):
         exclude(UNCHECKED)
     if bundle.get('discovery_unavailable'):
         exclude(bundle['discovery_unavailable'] if isinstance(bundle['discovery_unavailable'], str)
@@ -611,10 +616,25 @@ def evaluate_bundle(bundle, task, ctx):
                     'econ_hours': f_econ_h, 'chain_hours': f_chain_h, 'hours': f_hours,
                     'step_usd': f_step_usd, 'chain_usd': f_chain_usd, 'source': fast_info.get('source'),
                 }
+        elif task.get('force_fast') and not fast_modes.supported(harness, model, info):
+            # Whether the harness can launch this model fast is a fact (fast_modes), the same answer `record` gives.
+            exclude(fast_modes.refusal(harness, model, info))
         elif task.get('force_fast'):
-            err = f"fast_mode has no cited public pricing/speed for {model} ({fast_info.get('reason') or fast_info.get('status') or 'missing'})"
-            result['notes'].append(f'data error: {err}; fast mode not enabled')
-            result.setdefault('data_errors', []).append(err)
+            err = fast_modes.price_gap(model, info)
+            if named and five_window_states:
+                # The contract exists and only a price datum is missing: a named fast route launches, like any other
+                # unpriced named route, reserved at the plain mode's spend (the fast burn is not published).
+                result['notes'].append(f'data error: {err}; dispatched because it was named, its fast-mode cost is not '
+                                       "priced (reserved at the plain mode's spend)")
+                result.setdefault('data_errors', []).append(err)
+                result['_five_fast_candidate'] = {
+                    'price_multiplier': None, 'speed_multiplier': None, 'unpriced': True,
+                    'econ_hours': econ_hours, 'chain_hours': econ_chain_hours, 'hours': hours,
+                    'step_usd': step_usd, 'chain_usd': chain_usd, 'source': None,
+                }
+            else:
+                result['notes'].append(f'data error: {err}; fast mode not enabled')
+                result.setdefault('data_errors', []).append(err)
     result['capacity'] = None           # the economy sets the priced window (apply_five_axis_economy)
     result['expected_hours'] = round(hours, 2)
     result['duration_hours'] = round(hours, 4)

@@ -528,8 +528,11 @@ def five_axis_make_fast(c, fast_cand, reason):
     c['duration_hours'] = round(fast_cand['hours'], 4)
     c['expected_usd'] = round(fast_cand['step_usd'], 2)
     c['chain_usd'] = round(fast_cand['chain_usd'], 2)
-    c['notes'].append(f"fast mode ({fast_cand['price_multiplier']:g}x burn, up to {fast_cand['speed_multiplier']:g}x "
-                      f"output speed: the vendor's upper bound, applied to the whole duration)")
+    if fast_cand.get('unpriced'):
+        c['notes'].append("fast mode (its burn and speed are not published: reserved at the plain mode's spend and duration)")
+    else:
+        c['notes'].append(f"fast mode ({fast_cand['price_multiplier']:g}x burn, up to {fast_cand['speed_multiplier']:g}x "
+                          f"output speed: the vendor's upper bound, applied to the whole duration)")
 
 
 def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=None):

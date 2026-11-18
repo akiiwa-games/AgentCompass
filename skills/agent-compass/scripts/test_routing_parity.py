@@ -387,7 +387,7 @@ class RecordConstraintTests(RouterCase):
         self.assertIn('router_choice', result)
         self.assertIsNotNone(result['router_choice'])
 
-    def test_off_by_default_is_reachable_and_unchecked_is_not(self):
+    def test_off_by_default_is_reachable_and_unchecked_only_on_the_users_naming(self):
         accounts = copy.deepcopy(self.accounts)
         rows = accounts['accounts']['codex']['bundles']
         rows['old'] = {'model': 'gpt-5.6-terra', 'effort': 'high', 'disabled': True, 'disabled_by_default': True}
@@ -395,8 +395,13 @@ class RecordConstraintTests(RouterCase):
         with patch.object(account_fleet, 'load_accounts', return_value=accounts):
             named = self.record(model='gpt-5.6-terra', account='codex', provider='codex', effort='high')
             self.assertEqual(named['selected_bundle']['bundle_id'], 'old')
-            with self.assertRaisesRegex(ValueError, 'is disabled'):
-                self.record(model='gpt-5.6-luna', account='codex', provider='codex', effort='high')
+            # Unchecked is out of automatic routing: the user's naming launches it with a warning, a project rule
+            # does not (router-internals.md, Pins).
+            off = self.record(model='gpt-5.6-luna', account='codex', provider='codex', effort='high')
+            self.assertTrue(any('unchecked in model management' in w for w in off.get('warnings') or []), off.get('warnings'))
+            with self.assertRaisesRegex(ValueError, 'unchecked in model management'):
+                self.record(model='gpt-5.6-luna', account='codex', provider='codex', effort='high',
+                            constraint='hard_constraint')
 
     def test_a_family_name_keeps_its_own_launch_id(self):
         accounts = self.only('claude', own={'model': 'claude-opus-4-20250514', 'effort': 'high', 'provider': 'claude'})

@@ -6,7 +6,8 @@ The verified models are data: a model row in `accounts.json` declares
 `fast_capable: true`, and fast runs only on the harness of the row's `api_family`
 (`codex` or `claude`). An absent flag or `fast_capable: false` (also in the
 effective local policy) means no fast. Automatic selection, explicit records and
-launch revalidation read this same declaration.
+launch revalidation read this same declaration (`fast_modes.refusal`: `<model> has no
+verified fast mode on <harness>; run it without --fast`).
 
 | Harness | Verified models | Paseo creation | CLI creation |
 |---|---|---|---|
@@ -21,8 +22,9 @@ Inspect response usage.speed for Claude, where available. Fallback/cooldown/acco
 restrictions can return standard speed even with the requested feature enabled.
 
 A fast variant is its own candidate (`<bundle>+fast`), priced and timed from the model's cited fast-mode price and speed
-multipliers (public data; only models with both are offered). It competes on the same fit and quota economy as the normal
-variant. API billing follows API pricing rather than the ChatGPT credit multiplier; the router's API-equivalent estimates are
+multipliers (public data; only models with both are offered automatically). It competes on the same fit and quota economy as the normal
+variant. A model the user names with `--fast` whose contract is verified but whose multipliers are not cited still launches
+fast, with that data error, reserved at the plain mode's spend. API billing follows API pricing rather than the ChatGPT credit multiplier; the router's API-equivalent estimates are
 not an invoice.
 
 Claude fast requires an explicit provider/model override with `--fast`. It uses

@@ -186,8 +186,13 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
              or next((b for b in siblings if b.get('effort') == bundle.get('effort')), None))
     if exact:
         return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
-    if not siblings or bundle.get('effort') not in contract:
-        raise ValueError('Explicit override has no known provider/account/model/effort contract; refresh discovery and the local contract')
+    if not siblings:
+        raise ValueError(f"named_model_unavailable: {bundle.get('model')} has no row on "
+                         f"{bundle.get('account')}/{bundle.get('provider')}. Tell the user; do not substitute another model.")
+    if bundle.get('effort') not in contract:
+        raise ValueError(account_fleet.unaccepted_effort(
+            account_fleet.bundle_harness(siblings[0], bundle.get('account')), bundle.get('model'), bundle.get('effort'),
+            contract | {s.get('effort') for s in siblings}))
     base = next((b for b in siblings if not b.get('disabled')), siblings[0])
     identity = {k: bundle.get(k) for k in ('provider', 'account', 'effort')}
     identity['model'] = own_model
@@ -225,16 +230,19 @@ def check_launch_quota(bundle, accounts, usage, now):
             raise ValueError(f"Account {bundle['account']} {wid} is below its existing launch protection ({floor}% remaining floor); refresh quota or replan")
 
 
-def issue(result, task, now=None, path=None, allocation_task=None):
-    """Register a decision, without committing capacity. Legacy unbound decisions cannot dispatch."""
+def issue(result, task, now=None, path=None, allocation_task=None, listed_rows=None):
+    """Register a decision, without committing capacity. Legacy unbound decisions cannot dispatch. `listed_rows`
+    (provider_inventory.listed_rows) are the rows of a model the user named that the shipped data has no row for and the
+    account's provider lists: the decision keeps them, and `prepare` plans with them."""
     now = now or utcnow()
     bundle = dict(result.get('selected_bundle') or {})
     if not bundle or result.get('choice') in (None, 'none', 'self'):
         return {}
     bundle.setdefault('bundle_id', result.get('choice'))
     import account_fleet
-    accounts = account_fleet.load_accounts()
     explicit = result.get('stage') == 'record' and result.get('constraint') == 'user_override' and bool(result.get('basis'))
+    listed_rows = listed_rows if explicit else None
+    accounts = provider_inventory.with_listed_rows(account_fleet.load_accounts(), listed_rows)
     resolved = resolve_bundle(bundle, accounts, explicit)
     if resolved:
         bundle = {**bundle, **resolved}
@@ -245,6 +253,7 @@ def issue(result, task, now=None, path=None, allocation_task=None):
            'bound': bool(isinstance(parent, str) and parent and isinstance(task_id, str) and task_id),
            'created_at': stamp(now), 'valid_until': stamp(now + timedelta(seconds=DECISION_TTL)),
            'constraint': result.get('constraint'),
+           **({'listed_rows': listed_rows} if listed_rows else {}),
            'effort_override': bool(explicit and resolved and resolved['id'].startswith('user_override_')),
            'dispatchable': not (result.get('decision') or {}).get('needs_user_decision', False)
                            and not result.get('host_policy_violation')
@@ -1207,6 +1216,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             check_launch_quota(bundle, accounts, usage, now)
         except ValueError as exc:
             raise CapacityChanged(str(exc)) from exc
+        if resume_bundle is None and decision.get('listed_rows'):
+            accounts = provider_inventory.with_listed_rows(accounts, decision['listed_rows'])
         if resume_bundle is None and decision.get('effort_override'):
             resolved = resolve_bundle(bundle, accounts, decision.get('constraint') == 'user_override')
             if resolved is None or any(resolved.get(k) != bundle.get(k)
@@ -1240,7 +1251,11 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         named = decision.get('constraint') == 'user_override' or resume_bundle is not None
         plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts,
                               named_accounts={bundle['account']} if named else ())
-        candidate = candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))
+        # A fast route with no fast variant in the ranking is answered by its plain row: its exclusions (the fast-mode
+        # refusal among them) say why, not "no longer matches".
+        candidate = (candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))
+                     or (bundle.get('fast') and candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id']))
+                     or None)
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):
             raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])

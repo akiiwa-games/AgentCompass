@@ -590,7 +590,8 @@ class GrokBotTests(unittest.TestCase):
                    DOT2API_BASE_URL='http://127.0.0.1:1',
                    # The fixture fleet declares the Grok pool; discovery reads Grok's meter from this cache.
                    ROUTER_ACCOUNTS_FILE=str(account_fleet.reference_fleet_path()), ROUTER_USAGE_CACHE=str(usage),
-                   HOME=str(self.root), ROUTER_DISABLE_LIVE_SCORER='1', PASEO_AGENT_ID='fixture-parent')
+                   HOME=str(self.root), ROUTER_DISABLE_LIVE_SCORER='1', PASEO_AGENT_ID='fixture-parent',
+                   AGENTCOMPASS_LIVE_MODELS='off')
         script = '''
 import json, sys
 from pathlib import Path
@@ -685,8 +686,12 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
                 else:
                     self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                     self.assertTrue(json.loads(proc.stdout)['worker']['mocked_send'])
-        # The same production resolver must still reject unsupported identities/efforts.
-        for flag, value in [('--model', 'grok-4.7'), ('--provider', 'unknown-bot'), ('--effort', 'high')]:
+        # A named route is refused only by a fact, and the refusal states it (router-internals.md, record): a model or
+        # provider the account has no row for, with no readable provider list to decide it; an effort the launch
+        # contract does not list.
+        for flag, value, fact in [('--model', 'grok-4.7', 'named_model_unavailable: grok-4.7 has no row on grok-bot/grok-bot'),
+                                  ('--provider', 'unknown-bot', 'named_model_unavailable: grok-bot has no row on grok-bot/unknown-bot'),
+                                  ('--effort', 'high', 'high is not an effort grok-bot/grok-bot accepts (it takes none)')]:
             args = list(command)
             if flag in args:
                 args[args.index(flag) + 1] = value
@@ -695,7 +700,7 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
             with self.subTest(flag=flag):
                 proc = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
                 self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
-                self.assertIn('no known provider/account/model/effort contract', proc.stdout)
+                self.assertIn(fact, proc.stdout)
                 self.assertNotIn('mocked_send', proc.stdout)
         # Out of automatic routing is not a ban: the route the user named still launches, and says why it did
         # (router-internals.md, Pins). The automatic roll above never reaches the account.

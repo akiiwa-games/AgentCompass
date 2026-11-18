@@ -490,7 +490,10 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
 
 def five_axis_demand(task):
     """{category: level 0..3}: the classifier's `axis_demand` as it stands (validated with the profile). An all-zero answer
-    is a task that asks nothing of the categories: every model fits it alike and the economy decides."""
+    is a task that asks nothing of the categories: every model fits it alike and the economy decides. An unclassified
+    named launch (task_intake `unclassified`) has no demand on record, so it asks nothing of the categories either."""
+    if task.get('profile') is None and task.get('unclassified'):
+        return {axis: 0 for axis in FIVE_AXES}
     return dict(task['profile']['axis_demand'])
 
 

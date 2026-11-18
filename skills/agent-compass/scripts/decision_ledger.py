@@ -264,8 +264,9 @@ def finalize(result, payload, requested, started, task=None, records=None):
     if expected_usd is not None and isinstance(bundle, dict) and bundle:
         bundle.setdefault('expected_usd', expected_usd)
         result.setdefault('expected_usd', expected_usd)
+    listed_rows = result.pop('_listed_rows', None)
     if LEDGER_WRITES and result.get('stage') in ('plan', 'select', 'record'):
-        result.update(dispatch_registry.issue(result, task, now, allocation_task=allocation_task))
+        result.update(dispatch_registry.issue(result, task, now, allocation_task=allocation_task, listed_rows=listed_rows))
     append_ledger({
         'v': 1, 'at': now.isoformat(), 'stage': result.get('stage'), 'source': result.get('source'),
         'choice': result.get('choice'), 'specialty': result.get('specialty'),
@@ -302,6 +303,7 @@ def finalize(result, payload, requested, started, task=None, records=None):
         'needs_user_decision': decision.get('needs_user_decision') or None,
         'router_choice': result.get('router_choice'), 'agrees': result.get('agrees'),
         **({'classifier_skipped': result['classifier_skipped']} if 'classifier_skipped' in result else {}),
+        **({'data_errors': list(result['data_errors'])} if result.get('data_errors') else {}),
         **({'keep_whole': kept['reason'], 'task_count': kept.get('task_count')}
            if (kept := next((a for a in alerts if a.get('code') == 'kept_whole'), None)) else {}),
         'objective': objective[:200] if isinstance(objective, str) else None,

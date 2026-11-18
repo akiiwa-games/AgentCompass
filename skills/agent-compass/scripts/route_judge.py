@@ -137,14 +137,31 @@ def record_constraint(args, task=None, classified=None):
     pin.effort = args.effort or named_effort or resolved['effort']
     direct = resolved['source'] in model_resolution.DIRECT_SOURCES
     own_model = account_fleet.row_key(pin.model, accounts)
-    own_rows = [b for b in account_fleet.bundles(accounts).values() if b['account'] == args.account and b['provider'] == args.provider
-                and account_fleet.row_key(b['model'], accounts) == own_model]
-    if not direct and (not own_rows or (pin.effort and pin.effort not in {b.get('effort') for b in own_rows}
-                                        and not any(pin.effort in (account_fleet.dispatch_allowed_efforts(b, accounts) or ())
-                                                    for b in own_rows))):
-        # What it resembles is another model. The same answer the plan gives: blocked, never a substitute.
-        raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no configured route on "
-                         f"{args.account}/{args.provider}. Tell the user; do not substitute another model.")
+
+    def rows_of_model():
+        return [b for b in account_fleet.bundles(accounts).values() if b['account'] == args.account
+                and b['provider'] == args.provider and account_fleet.row_key(b['model'], accounts) == own_model]
+    own_rows = rows_of_model()
+    listed = None
+    if not own_rows:
+        # No row of this model on the account: the account's provider decides, from its live model list (read once, as
+        # every named route reads it). What a name resembles is another model, never a substitute.
+        import live_models
+        rows, why = provider_inventory.listed_rows(
+            accounts, args.account, args.provider, pin.model, pin.effort,
+            live_models.load_or_refresh([args.provider], named=(args.account,)))
+        if rows is None:
+            raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no row on "
+                             f"{args.account}/{args.provider}, and {why}. Tell the user; do not substitute another model.")
+        listed = {'account': args.account, 'rows': rows}
+        accounts = provider_inventory.with_listed_rows(accounts, listed)
+        own_rows = rows_of_model()
+    accepted = {b.get('effort') for b in own_rows} | {
+        e for b in own_rows for e in (account_fleet.dispatch_allowed_efforts(b, accounts) or ())}
+    if pin.effort and pin.effort not in accepted:
+        # The launch contract is the fact of what the harness accepts.
+        raise ValueError(account_fleet.unaccepted_effort(account_fleet.bundle_harness(own_rows[0], args.account),
+                                                         pin.model, pin.effort, accepted))
     chosen = match_bundle(accounts, pin)
     disabled_match = match_bundle(accounts, pin, include_disabled=True) if chosen is None else None
     # The model-management checkbox says which models the router chooses by itself, like host policy for accounts. The
@@ -238,13 +255,28 @@ def record_constraint(args, task=None, classified=None):
     if classified:
         result['_allocation_task'] = task
         if classified.get('scorer') is not None:
-            result.update(scorer=classified['scorer'], task_profile=task['profile'])
+            result.update(scorer=classified['scorer'], task_profile=task.get('profile'))
+        if task.get('unclassified'):
+            unclassified_data_error(result, task)
         if classified.get('hours_estimate'):
             result['hours_estimate'] = classified['hours_estimate']
         if classified.get('alerts'):
             result['alerts'] = list(classified['alerts'])
     if fast_requested:
         result['_allocation_task'] = {**(task or {}), 'force_fast': True}
+        # A verified fast contract with no cited price launches (candidate_eval), carrying that data error.
+        fast_gap = fast_modes.price_gap(c_model, account_fleet.model_spec(overlaid_accounts, pin.model))
+        if fast_gap:
+            result['data_errors'] = [*result.get('data_errors', []), fast_gap]
+            result['warnings'] = [*result.get('warnings', []), f"data error: {fast_gap}; launched fast because the user "
+                                  "named it, reserved at the plain mode's spend"]
+    if listed:
+        result['_listed_rows'] = listed     # issue and prepare plan with them (provider_inventory.with_listed_rows)
+        listed_gap = (f'{args.account}/{pin.model} has no row in the shipped data: unscored and unpriced until the public '
+                      'data has it')
+        result['data_errors'] = [*result.get('data_errors', []), listed_gap]
+        result.setdefault('warnings', []).append(
+            f'data error: {listed_gap}; launched because the user named it and provider {args.provider} lists it')
     _compare_with_router(result, task, usage, now, chosen, fast_requested, classified)
     return decision_ledger.finalize(result, None, 'auto', started, reviewed_task if classified else task)
 
@@ -268,7 +300,9 @@ def record_resume(args, task, classified, bundle, agent_id):
               'basis': f'roll --resume {agent_id}', 'selected_bundle': dict(bundle), 'judge': None,
               'observed_at': now.isoformat(), 'usage': usage, '_allocation_task': plan_task}
     if classified.get('scorer') is not None:
-        result.update(scorer=classified['scorer'], task_profile=plan_task['profile'])
+        result.update(scorer=classified['scorer'], task_profile=plan_task.get('profile'))
+    if plan_task.get('unclassified'):
+        unclassified_data_error(result, plan_task)
     if classified.get('hours_estimate'):
         result['hours_estimate'] = classified['hours_estimate']
     if classified.get('alerts'):
@@ -282,6 +316,14 @@ def record_resume(args, task, classified, bundle, agent_id):
     if warnings:
         result['warnings'] = warnings
     return decision_ledger.finalize(result, None, 'auto', started, task)
+
+
+def unclassified_data_error(result, task):
+    """The data error of a named launch without a classifier profile, in the result and its ledger row."""
+    error = (f"unclassified ({task['unclassified']}): no task profile; priced and reserved from --hours "
+             f"{float(task['expected_hours']):g} at the named effort")
+    result['data_errors'] = [*result.get('data_errors', []), error]
+    result['warnings'] = [*result.get('warnings', []), f'data error: {error}']
 
 
 def _unchecked_refusal(args, model):
@@ -532,19 +574,32 @@ def classify_task(task, needs, capabilities, policy, timeout, use_model=True):
     return profile, task, needs, scorer, hours_estimate, alerts
 
 
-def pinned_unclassified_result(task, scorer, hours, started):
-    """A pinned roll with no task profile. The allocator prices and reserves a launch only from a profile, so
-    nothing launches; the message says what is missing and never names an hours figure it does not have."""
-    why = (scorer or {}).get('fallback_detail') or (scorer or {}).get('fallback_reason') or 'scorer_unavailable'
-    given = (f'--hours {hours:g} was given, but' if hours is not None
-             else '--hours was not given, so there is no hours estimate, and AgentCompass does not invent one;')
-    reason = (f'Pinned roll: the System-One classifier is unavailable ({why}). {given} without the classifier\'s task '
-              'profile the pinned bundle cannot be priced or reserved, so nothing was launched.')
+def unclassified_reason(scorer):
+    return (scorer or {}).get('fallback_detail') or (scorer or {}).get('fallback_reason') or 'scorer_unavailable'
+
+
+def pinned_unclassified_result(task, scorer, started):
+    """A pinned roll with no task profile and no --hours: there is nothing to price or reserve the launch from, and
+    AgentCompass does not invent an hours figure. With --hours the named route launches unclassified (classify_pinned)."""
+    reason = (f'Pinned roll: the System-One classifier is unavailable ({unclassified_reason(scorer)}) and --hours was not '
+              'given, so there is nothing to price or reserve the launch from, and AgentCompass does not invent an '
+              'estimate; nothing was launched.')
     result = scorer_unavailable_result(task, scorer, started)
     result.update(reason=reason, decision=dict(result['decision'], reason=reason), pinned=True,
-                  next='Run the same roll again when the classifier answers (`agentcompass scorer --action test` checks '
-                       'it), or do the task in this session.')
+                  next='Roll it again with --hours <n> (your estimate of the work) to launch the named route priced '
+                       'from those hours, unclassified; or roll again when the classifier answers '
+                       '(`agentcompass scorer --action test` checks it).')
     return result
+
+
+def _unclassified(task, scorer, hours, started):
+    """classify_pinned's answer when no classifier profile exists: with --hours the named route launches, planned
+    without a profile (task_intake `unclassified`: no category demand, hours from --hours at the named effort); without
+    --hours it stops (pinned_unclassified_result)."""
+    if hours is None:
+        return {'result': pinned_unclassified_result(task, scorer, started)}
+    return {'task': {**task, 'unclassified': unclassified_reason(scorer)}, 'scorer': scorer, 'hours_estimate': None,
+            'alerts': []}
 
 
 def classify_pinned(task, args):
@@ -567,7 +622,7 @@ def classify_pinned(task, args):
     if getattr(args, 'no_score', False):
         scorer = {'source': 'scorer_unavailable', 'model': None, 'fallback_reason': 'no_score_without_profile',
                   'fallback_detail': '--no-score was given and the task carries no profile'}
-        return {'result': pinned_unclassified_result(task, scorer, hours, started)}
+        return _unclassified(task, scorer, hours, started)
     import account_fleet
     import task_intake
     capabilities = account_fleet.load_capabilities()
@@ -577,7 +632,7 @@ def classify_pinned(task, args):
         task, needs, capabilities, policy, getattr(args, 'score_timeout', scorer_client.SCORER_TIMEOUT_SECONDS),
         use_model=not getattr(args, 'dry_run', False))
     if profile is None:
-        return {'result': pinned_unclassified_result(task, scorer, hours, started)}
+        return _unclassified(task, scorer, hours, started)
     checked = task_intake.validate_caller_profile(classified['profile'])
     classified = {**classified, 'profile': checked}
     if checked.get('multi_task') is True:

@@ -93,7 +93,7 @@ class DispatchTests(unittest.TestCase):
             decision = self.issue(stage='record', choice='constraint', constraint='user_override',
                                   basis='Diagnostic fixture')
         self.accounts['models']['claude-opus-5-5']['fast_capable'] = False
-        with self.assertRaisesRegex(ValueError, 'fast_capable'):
+        with self.assertRaisesRegex(ValueError, 'has no verified fast mode on claude; run it without --fast'):
             self.prepare(decision)
         self.accounts['models']['claude-opus-5-5']['fast_capable'] = True
         row = self.prepare(decision)
@@ -104,7 +104,7 @@ class DispatchTests(unittest.TestCase):
         import usage_reading
         with patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
                 patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
-            with self.assertRaisesRegex(ValueError, 'fast_capable'):
+            with self.assertRaisesRegex(ValueError, 'has no verified fast mode on claude; run it without --fast'):
                 registry.claim(row['request'], parent_id='parent-a', call_id='fixture', now=self.now)
             self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'prepared')
             self.accounts['models']['claude-opus-5-5']['fast_capable'] = True
@@ -283,7 +283,7 @@ class DispatchTests(unittest.TestCase):
             '--provider', 'pi', '--account', 'codex', '--model', 'gpt-6-astra', '--effort', 'high', '--fast']
         result = subprocess.run(command, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("Provider 'pi' does not support fast mode", json.loads(result.stdout)['detail'])
+        self.assertIn('gpt-6-astra has no verified fast mode on pi; run it without --fast', json.loads(result.stdout)['detail'])
         self.assertEqual(registry.reservations(), [])
 
     def override_decision(self, effort='low', **changes):
@@ -297,12 +297,14 @@ class DispatchTests(unittest.TestCase):
         for changes in ({'stage': 'plan'}, {'constraint': 'hard_constraint'}, {'basis': ''}):
             with self.assertRaisesRegex(ValueError, 'requires a new route'):
                 self.prepare(self.override_decision(**changes))
-        with self.assertRaisesRegex(ValueError, 'no known'):
+        # A refusal states its fact (router-internals.md, record): an effort the launch contract does not list, a
+        # model with no row on the named account and provider.
+        with self.assertRaisesRegex(ValueError, r'^turbo is not an effort codex/gpt-6-astra accepts \('):
             self.override_decision(effort='turbo')
         for changes in ({'account': 'claude-lab'}, {'provider': 'grok'}, {'model': 'unknown-model'}):
             bundle = dict(provider='codex', account='codex', model='gpt-6-astra', effort='low')
             bundle.update(changes)
-            with self.assertRaisesRegex(ValueError, 'no known'):
+            with self.assertRaisesRegex(ValueError, '^named_model_unavailable: .* has no row on '):
                 self.override_decision(selected_bundle=bundle)
 
     def test_explicit_low_override_keeps_capacity_checks_and_reaches_an_account_out_of_automatic_routing(self):
@@ -2497,8 +2499,9 @@ class PinnedRollTests(unittest.TestCase):
                 patch.object(registry, 'reusable_workers', return_value=[]):
             result, code = roll.run(ns, judge)
         self.assertEqual((code, result['status'], result['launched']), (2, 'blocked', False))
-        self.assertIn('--hours was not given, so there is no hours estimate', result['cause'])
-        self.assertIn('cannot be priced or reserved, so nothing was launched', result['cause'])
+        self.assertIn('--hours was not given, so there is nothing to price or reserve the launch from', result['cause'])
+        self.assertIn('nothing was launched', result['cause'])
+        self.assertIn('--hours', result['next'])
         self.assertEqual(result['assumptions'], [
             '--hours not given and no classifier estimate: no hours were budgeted, and none were invented. '
             'Pass --hours, or roll again when the classifier answers.'])

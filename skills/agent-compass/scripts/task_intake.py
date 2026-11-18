@@ -440,24 +440,31 @@ def normalize_task(raw, policy, capabilities, accounts):
             'wants_fast': wants_fast,
             'read_only_review': read_only_review,
         }
-    if profile is None:
+    # A named route launched without a classifier answer (route_judge.classify_pinned, only with --hours) carries the
+    # reason instead of a profile: no work kind, no difficulty and no category demand are known, and none is made up.
+    unclassified = task.get('unclassified') if profile is None and isinstance(task.get('unclassified'), str) else None
+    if profile is None and not unclassified:
         raise ValueError('task.profile is required: the classifier always produces it, with its axis_demand')
-    kind = task_kind({**task, 'profile': profile}, capabilities)
-    derived = profile_difficulty(profile, policy)
-    difficulty = task.get('difficulty') or derived
-    source = 'caller' if task.get('difficulty') else 'profile'
-    if difficulty not in DIFFICULTY_ORDER:
-        raise ValueError('difficulty must be one of ' + ', '.join(DIFFICULTY_ORDER))
+    if unclassified:
+        kind = derived = difficulty = None
+        source = 'unclassified'
+    else:
+        kind = task_kind({**task, 'profile': profile}, capabilities)
+        derived = profile_difficulty(profile, policy)
+        difficulty = task.get('difficulty') or derived
+        source = 'caller' if task.get('difficulty') else 'profile'
+        if difficulty not in DIFFICULTY_ORDER:
+            raise ValueError('difficulty must be one of ' + ', '.join(DIFFICULTY_ORDER))
     chain = task.get('chain') if isinstance(task.get('chain'), dict) else {}
     coupling = chain.get('coupling') or 'low'
     if coupling not in COUPLINGS:
         raise ValueError('chain.coupling must be low, medium or high')
-    if not (task.get('expected_hours') or profile.get('expected_hours')):
+    if not (task.get('expected_hours') or (profile or {}).get('expected_hours')):
         raise ValueError('expected_hours is required: the caller gives it (--hours) or the classifier estimates it in task.profile')
     hours = float(task.get('expected_hours') or profile['expected_hours'])
     constraints = task.get('constraints') if isinstance(task.get('constraints'), dict) else {}
     constraint_model, constraint_effort = named_pin(constraints, task, accounts)
-    implies = capabilities['routes'][kind].get('implies') or {}
+    implies = (capabilities['routes'][kind].get('implies') or {}) if kind else {}
     # Caller false stands. The profile fills an unset flag. Route implies fill only what both left unset.
     needs.update(resolve_modality_needs(needs, profile, implies))
     worker = dict(chain['worker']) if isinstance(chain.get('worker'), dict) else None
@@ -477,7 +484,7 @@ def normalize_task(raw, policy, capabilities, accounts):
     else:
         needs_gui = bool(kind == 'gui_control')
     return {'kind': kind, 'difficulty': difficulty, 'difficulty_source': source, 'hours': hours,
-            'profile': profile, 'profile_difficulty': derived,
+            'profile': profile, 'profile_difficulty': derived, 'unclassified': unclassified,
             'needs_gui': needs_gui,
             'wants_fast': wants_fast,
             'read_only_review': read_only_review,
