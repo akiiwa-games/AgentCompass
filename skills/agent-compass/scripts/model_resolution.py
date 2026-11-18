@@ -15,8 +15,12 @@ _VENDOR_TAG = re.compile(r'(?:@\d{8}|-\d{8}|-\d{4}-\d{2}-\d{2}|:\w+|\[\w+\]|-(?:
 DIRECT_SOURCES = ('exact', 'alias')
 
 
+FAMILY_SIZES = ('small', 'full')     # a families row's declared size class (series.py: small never joins a full series)
+
+
 def family_patterns(accounts):
-    """The catalog's ordered family patterns ([{'pattern', 'models'}]) from its `families` maintainer declaration."""
+    """The catalog's ordered family patterns ([{'pattern', 'models', 'size', 'tier_up'?}]) from its `families` maintainer
+    declaration."""
     table = accounts.get('families') if isinstance(accounts, dict) else None
     if not isinstance(table, dict) or not isinstance(table.get('rows'), list):
         raise ValueError('accounts has no families table: the catalog needs `families` {kind, as_of, statement, '
@@ -29,6 +33,21 @@ def split_model_effort(raw):
     name = str(raw or '').strip()
     match = _COLON_EFFORT.match(name)
     return (match['name'], match['effort'].lower()) if match else (name, None)
+
+
+def bare_name(raw_model_name):
+    """The undecorated lowercase name a family pattern is matched against: no provider prefix, no `:effort`, no vendor
+    tag (date, -latest, -preview, ...)."""
+    name = split_model_effort(raw_model_name)[0].rsplit('/', 1)[-1].lower()
+    while (stripped := _VENDOR_TAG.sub('', name)) != name:
+        name = stripped
+    return name
+
+
+def family_row(raw_model_name, families):
+    """The first `families` row whose pattern matches the bare name (the row that decides the name's family), or None."""
+    name = bare_name(raw_model_name)
+    return next((f for f in families if re.search(f['pattern'], name)), None)
 
 
 def resolve_model(raw_model_name, known_models, aliases, families):
@@ -72,9 +91,9 @@ def resolve_model(raw_model_name, known_models, aliases, families):
     if dashed := _DASH_EFFORT.match(name):
         if match := exact(dashed['name']):
             return found(match, 'alias', dashed['effort'])
-    family_candidates = next((f['models'] for f in families if re.search(f['pattern'], name)), None)
-    if family_candidates is not None:
-        target = next((t for t in family_candidates if t in known), None)
+    row = next((f for f in families if re.search(f['pattern'], name)), None)
+    if row is not None:
+        target = next((t for t in row['models'] if t in known), None)
         return found(target, 'family' if target else 'unknown')
     for prefix in sorted(known, key=lambda x: (-len(x), x)):
         # A delimiter prevents e.g. gpt-6.10 from accidentally matching gpt-6.1.

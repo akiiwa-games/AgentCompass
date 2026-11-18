@@ -838,15 +838,26 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         user_scores.set_score('deepseek-v4-pro', 'coding.execution', 2.2, public=False, accounts=accounts)
         after = excluded()
         self.assertEqual((after['gpt6_sol_high'], after['ds_v4_high']), ([], []))
-        # A manual score sets High only: faithfulness has no Max of its own, so Max stays missing (no borrowed curve).
+        # Rule (owner 2026-11-18, `_manual_by_effort`): an effort the facet has no value at takes the manual High plus the
+        # panel's median own step from High to it (`effort_steps`), so Max routes; never another model's curve.
+        step = five['effort_steps']['coding.faithfulness']['high']['max']['step']
         for bid in ('gpt6_sol_max', 'ds_v4_max'):
-            self.assertTrue(any('no trusted data' in e for e in after[bid]), after[bid])
+            self.assertFalse(any('no trusted data' in e for e in after[bid]), after[bid])
+        with patch.object(axis_scores, 'load_five_axis', return_value=copy.deepcopy(five)):
+            ov = axis_scores.five_axis_overlay(copy.deepcopy(accounts), read_local_state=True, public_scores=empty_pub)
+        for model in ('gpt-6-sol', 'deepseek-v4-pro'):
+            faith = ov['models'][model]['five_axis']['categories']['coding']['facets']['faithfulness']
+            # bounded by the effort below it (`bound_along_effort`): never under Xhigh
+            self.assertAlmostEqual(faith['by_effort']['max'],
+                                   max(faith['value'] + step, faith['by_effort'].get('xhigh', faith['value'])), places=4)
 
         overlay = axis_scores.five_axis_overlay(copy.deepcopy(accounts), read_local_state=True, public_scores=empty_pub)
         shipped = axis_scores.load_five_axis()['models']['gpt-6-sol']['axes']['coding']['facets']['execution']
         execution = overlay['models']['gpt-6-sol']['five_axis']['categories']['coding']['facets']['execution']
-        self.assertEqual(execution['by_effort']['max'], shipped['by_effort']['max'])    # the measured Max stands
-        self.assertEqual(execution['measured_efforts'], ['max'])
+        # The measured Max stands unless it is below the manual High, which floors it (and it is no longer measured).
+        self.assertIn('max', shipped['measured_efforts'])
+        self.assertEqual(execution['by_effort']['max'], max(shipped['by_effort']['max'], execution['value']))
+        self.assertEqual('max' in execution['measured_efforts'], shipped['by_effort']['max'] >= execution['value'])
         self.assertEqual(execution['by_effort']['high'], execution['value'])
 
     def test_manual_by_effort_keeps_measured_efforts_follows_own_curve_and_never_borrows(self):
@@ -1074,6 +1085,63 @@ class IsolatedEntryTests(unittest.TestCase):
                                   encoding='utf-8', timeout=60)
             self.assertEqual(done.returncode, 0, done.stderr)
             json.loads(done.stdout)
+
+
+class EffortBoundAndManualFillTests(unittest.TestCase):
+    """Owner 2026-11-18: one rule against inversion along effort (`bound_along_effort`) for every value, and every effort
+    filled after a hand-written score; a hand-written score wins over any estimate, the downward one included."""
+
+    def test_bound_never_inverts_keeps_the_pinned_efforts_and_leaves_an_ordered_curve_alone(self):
+        curves = [{'low': 0.2, 'medium': 1.4, 'high': 0.5, 'xhigh': 0.9, 'max': -0.3},
+                  {'low': -1.0, 'medium': 0.0, 'high': 0.5, 'xhigh': 1.0, 'max': 2.0},
+                  {'medium': 3.0, 'high': 0.5, 'max': 1.0}, {'low': 1.0, 'max': 0.0}]
+        efforts = list(user_scores.EFFORTS)
+        for by in curves:
+            for rises in (True, False):
+                sign = 1.0 if rises else -1.0
+                out = user_scores.bound_along_effort(by, rises)
+                anchor = user_scores.anchor_effort(by)
+                self.assertEqual(out[anchor], by[anchor])                       # High (else nearest) never moves
+                vals = [sign * out[e] for e in efforts if e in out]
+                self.assertEqual(vals, sorted(vals), (by, rises))
+                self.assertEqual(user_scores.bound_along_effort(out, rises), out)     # an ordered curve stays as it is
+                at = efforts.index(anchor)
+                for e in out:          # a moved effort takes its neighbour's value toward the anchor
+                    if out[e] != by[e]:
+                        i = efforts.index(e)
+                        toward = [k for k in out if (efforts.index(k) > i if i < at else efforts.index(k) < i)]
+                        near = min(toward, key=lambda k: abs(efforts.index(k) - i))
+                        self.assertEqual(out[e], out[near], (by, rises, e))
+        with self.assertRaises(ValueError):
+            user_scores.bound_along_effort({'low': 1.0, 'high': 0.0}, True, ('low', 'high'))
+
+    def test_a_manual_score_without_a_curve_fills_every_effort_from_the_panel_steps(self):
+        steps = {'high': {'low': {'step': -1.0, 'n': 3}, 'medium': {'step': -0.4, 'n': 3}, 'xhigh': {'step': 0.3, 'n': 2},
+                          'max': {'step': 0.2, 'n': 2}}}
+        out, measured = user_scores._manual_by_effort(0.5, None, True, None, steps)
+        self.assertEqual(out, {'low': -0.5, 'medium': 0.1, 'high': 0.5, 'xhigh': 0.8, 'max': 0.8})    # max held at xhigh
+        self.assertEqual(measured, [])
+        # an effort the panel gives no step for stays empty; nothing is borrowed
+        out, _ = user_scores._manual_by_effort(0.5, None, True, None, {'high': {'low': {'step': -1.0, 'n': 2}}})
+        self.assertEqual(out, {'low': -0.5, 'high': 0.5})
+
+    def test_a_hand_written_score_wins_over_a_derived_value(self):
+        five = axis_scores.load_five_axis()
+        derived = [(m, a, f) for m, r in five['models'].items() for a, ax in r['axes'].items()
+                   for f, c in (ax.get('facets') or {}).items() if (c.get('estimate') or {}).get('method') == 'tier_down']
+        self.assertTrue(derived)
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        tested = [(m, a, f) for m, a, f in derived if m in accounts['models']]
+        self.assertTrue(tested)
+        for m, a, f in tested:
+            pub = {'schema_version': user_scores.SCHEMA_VERSION,
+                   'scores': {m: {f'{a}.{f}': {'level': 1.5, 'as_of': '2026-11-18', 'kind': 'maintainer'}}}}
+            ov = axis_scores.five_axis_overlay(copy.deepcopy(accounts), data=copy.deepcopy(five), read_local_state=False,
+                                               public_scores=pub)
+            cell = ov['models'][m]['five_axis']['categories'][a]['facets'][f]
+            z = round(user_scores.level_to_z(1.5, *user_scores.target_triad(five['anchor']['targets'], a, f)), 4)
+            self.assertEqual((cell['status'], cell['value'], cell['by_effort']['high']), ('maintainer', z, z), (m, a, f))
+            self.assertNotIn(f'{a}.{f}', ov['models'][m]['five_axis']['estimates'])
 
 
 if __name__ == '__main__':

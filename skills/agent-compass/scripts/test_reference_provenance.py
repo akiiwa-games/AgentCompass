@@ -80,6 +80,30 @@ class ProvenanceTests(unittest.TestCase):
             with self.subTest(broken=str(broken)[:60]), self.assertRaisesRegex(ValueError, 'families'):
                 reference_provenance.validate_accounts_provenance({**accounts, 'families': broken})
 
+    def test_families_rows_declare_their_size_and_tier_up_names_a_full_row(self):
+        """Rule (calibration/series.py): every families row declares `size`; `tier_up` sits on a small row and names the
+        pattern of a full row."""
+        accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        rows = accounts['families']['rows']
+        small = next(i for i, r in enumerate(rows) if r.get('tier_up'))
+        full = next(i for i, r in enumerate(rows) if r['size'] == 'full')
+        for i, change in ((full, {'size': None}), (full, {'size': 'medium'}), (full, {'tier_up': rows[full]['pattern']}),
+                          (small, {'tier_up': rows[small]['pattern']}), (small, {'tier_up': '^no-such-row'})):
+            broken = [dict(r) for r in rows]
+            broken[i].update(change)
+            with self.subTest(row=i, change=change), self.assertRaisesRegex(ValueError, 'families.rows'):
+                reference_provenance.validate_accounts_provenance({**accounts, 'families': {**accounts['families'], 'rows': broken}})
+
+    def test_cited_alias_and_launch_rows_must_exist_and_be_cited(self):
+        accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        alias = next(iter(accounts['alias_sources']['rows']))
+        harness = next(iter(accounts['dispatch_efforts_sources']['rows']))
+        for table, rows in (('alias_sources', {'no-such-alias': accounts['alias_sources']['rows'][alias]}),
+                            ('alias_sources', {alias: {'kind': 'vendor', 'statement': 'no url'}}),
+                            ('dispatch_efforts_sources', {harness: {'no-such-model': {'kind': 'maintainer', 'as_of': '2026-11-18'}}})):
+            with self.subTest(table=table, rows=str(rows)[:60]), self.assertRaisesRegex(ValueError, table):
+                reference_provenance.validate_accounts_provenance({**accounts, table: {**accounts[table], 'rows': rows}})
+
     def test_accounts_provenance_accepts_dated_maintainer_and_rejects_uncited_or_hard_coded_declarations(self):
         reference_provenance.validate_references(self.folder)
         accounts = json.loads((self.folder / 'accounts.json').read_text(encoding='utf-8'))

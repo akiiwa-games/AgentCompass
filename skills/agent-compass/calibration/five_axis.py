@@ -23,15 +23,27 @@ scores on the four categories and the quota economy together. Nothing else score
   panel core), and then expands other efforts using the model's own linked AA deltas without scale distortion.
 - No cross-board effort stitching (`facet_value`): multi-board facets combine common efforts shared by every board of
   the facet; when no effort is common to all boards, at most one effort (High if present) is kept and marked
-  `measured_partial`. Ability facets are pooled isotonically (PAV) so ability never decreases with effort;
-  `tool_operation.responsiveness` decreases naturally with thinking effort and is left unpooled.
-- High from one-sided effort data (`fill_high`, user 2026-11-12), after linking and before the facet's PAV pooling, never
-  over a measured value: measured on both sides of High, High is the linear interpolation in effort rank (the model's own
+  `measured_partial`.
+- No inversion along effort (`bound_curve`, owner 2026-11-18): every curve of one model, board reading, facet, estimate,
+  derived or filled value and Time/Task, is bounded by `user_scores.bound_along_effort` in its direction
+  (`user_scores.rises_with_effort`: an ability facet never decreases as effort rises, `tool_operation.responsiveness` never
+  rises, Time/Task never shortens). High is the anchor and never moves (a curve without High is anchored at its effort
+  nearest High); a lower effort is capped by the next higher one, a higher effort floored by the next lower one. A board
+  reading the bound moves is no longer a measurement: the facet lists the efforts that still hold one in
+  `measured_efforts`.
+- High from one-sided effort data (`fill_high`, user 2026-11-12), after linking and before the facet's bound, never over
+  a measured value: measured on both sides of High, High is the linear interpolation in effort rank (the model's own
   ladder from accounts.json, else low < medium < high < xhigh < max) between the nearest measured efforts, status
   `interpolated`; measured on one side only, High is the nearest measured effort plus the panel's median own step between
-  the two efforts on that facet (n >= 2), status `estimated`, method `panel_effort_step`. A step that does not lower ability
-  or speed up responsiveness relative to the effort above High is listed in `high_fill_refused` and not used. Targets
-  read measured and `interpolated` High rows only; no estimate enters them.
+  the two efforts on that facet (`effort_steps`, n >= 2), status `estimated`, method `panel_effort_step`. Targets read
+  measured and `interpolated` High rows only; no estimate enters them.
+- Every other effort (`fill_efforts`, owner 2026-11-18: no missing value), last, on every facet that has a value at some
+  effort (measured, estimated, derived): the same two methods, own-curve interpolation between the facet's own efforts
+  (`own_effort_interpolation`) and, outside them, its nearest own effort plus the panel's median own step
+  (`panel_effort_step`), then the bound with the facet's own efforts pinned, so a filled value never moves one that was
+  there. Each filled effort is listed in the facet's `filled_efforts` with its method; an effort the panel gives no step
+  for (fewer than two panel models measured at both efforts) stays empty and is listed in `effort_fill_refused`.
+  `effort_steps` is published so a hand-written score fills the same way (user_scores._manual_by_effort).
 - Per-level facet categories (`LEVEL_FACETS`): `aesthetics` asks `design` at level 1 and `min(design, image_recognition)`
   at levels 2 and 3 (sharing `tool_operation.image_recognition`); `tool_operation` asks no ability at level 1 (its
   image-input modality check sits at level 3), `responsiveness` at level 2, and `min(responsiveness, image_recognition)`
@@ -40,6 +52,13 @@ scores on the four categories and the quota economy together. Nothing else score
   the tier difference (calibration/series.py), else the fit at the model's tier. An estimate fit is accepted only when
   its slope is positive (`b > 0`) and its leave-one-out skill beats the panel mean (`skill > 0`); failing fits go to
   `rejected_fits`, leaving models without a measured sibling `missing` (mode B) and setting sibling shift to `0`.
+- Downward from the larger model (`tier_down`, owner 2026-11-18): an ability facet a small row still lacks after that
+  (no measurement, no same-size sibling, no fit) is its larger model's (series.tier_up: the same version one size up,
+  declared in `families`) moved by the gap the two show on the facets both have, gap = mean over those facets of
+  (small - large) at High over the facets both measured or interpolated (else, `gap_basis: estimated`, over the facets
+  both have any value for, never a `tier_down` one), and never above the larger model's value at any effort:
+  value(e) = large(e) + min(gap, 0). No shared facet: no value. Status `estimated`, method `tier_down`. Responsiveness is
+  not derived this way: a smaller model answers faster, so the larger model's speed bounds nothing.
 - Level scale and targets (`anchor.targets`, `targets`; owner 2026-11-18): a facet's three reference points all come from
   the panel's measured and interpolated High values: level 1 `t1` the panel's weakest, level 2 `t2` its median, level 3
   `t3` its maximum (the row names the panel member that holds it). The anchor is the origin of `z` (0) and is level 3 only
@@ -91,7 +110,9 @@ import numpy as np
 import measurements
 import series
 import sources
-import tiers
+
+sys.path.insert(0, str(sources.REPO / 'scripts'))
+import user_scores  # noqa: E402
 
 OUT = sources.REPO / 'references' / 'five-axis-scores.json'
 PLANS = sources.REPO / 'references' / 'plan-templates.json'
@@ -100,7 +121,10 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # /5 (2026-11-17): renames the creative category from `divergence` to `creativity`.
 # /6 (2026-11-18): level 3 of every scale is the panel maximum, no longer the anchor (`statistic`, `model` of a level-3
 # row; no `raised_to_level_below`), so a hand-written level means another value than under /5.
-SCHEMA = 'agent-compass.five-axis-scores/6'
+# /7 (2026-11-18): every facet has a value at every effort the panel steps reach (`filled_efforts`, `measured_efforts`,
+# top-level `effort_steps` and `effort_fill_refused`, replacing `high_fill_refused`), curves bounded with High as the
+# anchor instead of pooled, the `tier_down` estimate. Levels mean what they meant under /6.
+SCHEMA = 'agent-compass.five-axis-scores/7'
 AXES = measurements.AXES
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
@@ -137,15 +161,18 @@ def mean(xs):
     return round(float(np.mean(xs)), 4) if xs else None
 
 
-def pool_effort_curve(by_effort):
-    """Return `by_effort` made non-decreasing across EFFORTS by adjacent-violators pooling (PAV)."""
-    ordered = [e for e in EFFORTS if e in by_effort]
-    if len(ordered) < 2:
-        return dict(by_effort)
-    xs = [EFFORTS.index(e) for e in ordered]
-    ys = [float(by_effort[e]) for e in ordered]
-    _, pooled_ys = tiers.pooled(xs, ys)
-    return {e: round(float(v), 4) for e, v in zip(ordered, pooled_ys)}
+def rises(key):
+    """True when facet `key` ((category, facet)) never decreases as effort rises (user_scores.rises_with_effort)."""
+    return user_scores.rises_with_effort(*key)
+
+
+def bound_curve(by_effort, up=True, moved=None):
+    """`by_effort` bounded along effort (user_scores.bound_along_effort, High the anchor), rounded to 4 decimals; `up` is
+    the curve's direction. The efforts whose value the bound changed are added to the set `moved` when one is given."""
+    out = {e: round(float(v), 4) for e, v in user_scores.bound_along_effort(by_effort, up).items()}
+    if moved is not None:
+        moved.update(e for e in out if out[e] != round(float(by_effort[e]), 4))
+    return out
 
 
 def valid_public_declaration(entry):
@@ -408,10 +435,10 @@ class Scorer:
             aa_linked[src] = {}
             for m, curve in per_m.items():
                 scaled = {e: round(v * sc, 4) for e, v in curve.items()}
-                pooled_curve = pool_effort_curve(scaled)
-                aa_linked[src][m] = pooled_curve
-                if 'high' in pooled_curve:
-                    aa_high.setdefault(src, {})[m] = pooled_curve['high']
+                bounded = bound_curve(scaled)
+                aa_linked[src][m] = bounded
+                if 'high' in bounded:
+                    aa_high.setdefault(src, {})[m] = bounded['high']
         return aa_linked, aa_high
 
     def compute_effort_correlations(self, rows, aa_high, panel):
@@ -514,7 +541,7 @@ class Scorer:
                             'listed_effort': listed,
                         }
                         out.setdefault((a, f), {})[src] = rec
-                        pending_shifts.append((rec, dict(native), own_ref, shared_anchors))
+                        pending_shifts.append((rec, dict(native), own_ref, shared_anchors, (a, f)))
                     else:
                         if not ref_info:
                             why = f'no correlated Artificial Analysis board with >= {MIN_FIT_POINTS} shared models'
@@ -532,9 +559,9 @@ class Scorer:
 
         links = self.link(curves, panel)
 
-        # Expand non-AA efforts from the linked anchor effort using uncompressed linked AA deltas, and enforce isotonicity
-        # on ability boards.
-        for rec, native, own_ref, shared_anchors in pending_shifts:
+        # Expand non-AA efforts from the linked anchor effort using uncompressed linked AA deltas, then bound every board's
+        # curve in its facet's direction; a reading the bound moves is no longer a measurement (`bound_moved`).
+        for rec, native, own_ref, shared_anchors, key in pending_shifts:
             by = dict(rec['by_effort'])
             base_effs = [k for k in ('high', *shared_anchors) if k in by and k in own_ref]
             if base_effs:
@@ -544,15 +571,14 @@ class Scorer:
                             base_effs, key=lambda k: (abs(EFFORTS.index(k) - EFFORTS.index(x)), EFFORTS.index(k))
                         )
                         by[x] = round(by[e0] + (own_ref[x] - own_ref[e0]), 4)
-            rec['by_effort'] = pool_effort_curve(by)
+            rec['by_effort'] = by
 
         for c in curves.values():
             for key, srcs in c.items():
-                if key == ('tool_operation', 'responsiveness'):
-                    continue
                 for rec in srcs.values():
-                    if len(rec['by_effort']) >= 2:
-                        rec['by_effort'] = pool_effort_curve(rec['by_effort'])
+                    moved = set()
+                    rec['by_effort'] = bound_curve(rec['by_effort'], rises(key), moved)
+                    rec['bound_moved'] = sorted(moved, key=EFFORTS.index)
         return curves, links
 
     def _fixed_reference_board(self, a, f, src):
@@ -659,6 +685,7 @@ class Scorer:
                 key=lambda e: (sum(1 for r in recs.values() if e in r['by_effort']), -abs(EFFORTS.index(e) - EFFORTS.index('high'))),
             )] if present_effs else []
         by = {e: round(float(np.mean([r['by_effort'][e] for r in recs.values() if e in r['by_effort']])), 4) for e in effs}
+        moved = sorted({e for r in recs.values() for e in r.get('bound_moved') or () if e in by}, key=EFFORTS.index)
         partial_shift = [src for src, r in recs.items() if r.get('effort_shift') in ('none', 'single_aa')]
         disjoint = [src for src, r in recs.items() if not common and effs and effs[0] not in r['by_effort']]
         is_partial = bool(partial_shift or disjoint or by.get('high') is None)
@@ -670,9 +697,13 @@ class Scorer:
                               'effort_shift': r.get('effort_shift'),
                               'link_scale': r.get('link_scale', 1.0), 'link_offset': r.get('link_offset'),
                               **({'effort_shift_basis': r['effort_shift_basis']} if r.get('effort_shift_basis') else {}),
-                              **({'effort_basis': r['effort_basis']} if r.get('effort_basis') else {})}
+                              **({'effort_basis': r['effort_basis']} if r.get('effort_basis') else {}),
+                              **({'bound_moved': r['bound_moved']} if r.get('bound_moved') else {})}
                         for src, r in recs.items()},
+            'measured_efforts': [e for e in effs if e not in moved],
         }
+        if moved:
+            out['bound_moved'] = moved
         if is_partial:
             detail = {}
             if partial_shift:
@@ -694,57 +725,95 @@ class Scorer:
         ladder = tuple(e for e in EFFORTS if e in named)
         return ladder or EFFORTS
 
-    def fill_high(self, facets, panel):
-        """Fill High on a measured facet whose own curve lacks it (user 2026-11-12), never overwriting a measured value.
-        Bracketed: linear in effort rank (the model's `effort_ladder`, else EFFORTS when the ladder lacks either
-        endpoint) between the nearest measured efforts below and above High, status `interpolated`. One-sided: the
-        nearest measured effort plus the panel's median own step from it to High on the same facet over panel models
-        measured at both (n >= 2), status `estimated`, method `panel_effort_step`; the step must lower an ability facet
-        and speed up responsiveness when stepping down from above High (the reverse from below), else it is reported in
-        the returned list and not used."""
-        hi = EFFORTS.index('high')
-        snapshot = {m: {key: dict(rec['by_effort']) for key, rec in fs.items()} for m, fs in facets.items()}
+    def effort_steps(self, facets, panel):
+        """{facet id: {from effort: {to effort: {'step', 'n'}}}}: the panel's median own step between two efforts of a facet
+        (value at `to` minus value at `from`), over the panel models measured at both (n >= 2), read from the facets as
+        measured, before any fill."""
+        out = {}
+        for key in sorted({k for p in panel for k in facets.get(p, {})}):
+            for a in EFFORTS:
+                for b in EFFORTS:
+                    pts = [facets[p][key]['by_effort'] for p in panel if key in facets.get(p, {})]
+                    xs = [by[b] - by[a] for by in pts if a != b and a in by and b in by]
+                    if len(xs) >= 2:
+                        out.setdefault('.'.join(key), {}).setdefault(a, {})[b] = {'step': round(float(np.median(xs)), 4),
+                                                                                   'n': len(xs)}
+        return out
+
+    def fill_one(self, m, key, by, effort, known):
+        """(value, how) for `effort` of model `m`'s facet `key` from its own efforts `known` ({effort: value}): bracketed,
+        linear in effort rank on the model's `effort_ladder` (else EFFORTS when the ladder lacks either endpoint) between
+        the nearest own efforts below and above; one-sided, the nearest own effort plus the panel's median own step from
+        it (`effort_steps`, n >= 2). (None, refusal) when the panel gives no step."""
+        at = EFFORTS.index(effort)
+        below = [e for e in EFFORTS[:at] if e in known]
+        above = [e for e in EFFORTS[at + 1:] if e in known]
+        if below and above:
+            lo, up = below[-1], above[0]
+            ladder = self.effort_ladder(m)
+            if not all(e in ladder for e in (lo, effort, up)):
+                ladder = EFFORTS
+            w = (ladder.index(effort) - ladder.index(lo)) / (ladder.index(up) - ladder.index(lo))
+            return round(known[lo] + w * (known[up] - known[lo]), 4), {
+                'method': 'own_effort_interpolation', 'ladder': list(ladder), 'from': {lo: known[lo]}, 'to': {up: known[up]},
+                'weight': round(w, 4)}
+        near = below[-1] if below else above[0]
+        step = ((self.steps.get('.'.join(key)) or {}).get(near) or {}).get(effort)
+        if step is None:
+            return None, {'model': m, 'facet': '.'.join(key), 'effort': effort, 'from': near,
+                          'reason': 'fewer than 2 panel models measured at both efforts'}
+        return round(known[near] + step['step'], 4), {'method': 'panel_effort_step', 'from_effort': near,
+                                                      'from_value': known[near], 'step': step['step'], 'n': step['n']}
+
+    def fill_high(self, facets):
+        """Fill High on a measured facet whose own curve lacks it (user 2026-11-12, `fill_one`), bounded with the measured
+        efforts pinned so it never moves one (`bounded_from` when the bound held it): bracketed, status `interpolated`;
+        one-sided, status `estimated` (method `panel_effort_step`). Returns the refusals."""
         refused = []
         for m, fs in facets.items():
             for key, rec in fs.items():
-                by = snapshot[m][key]
+                by = dict(rec['by_effort'])
                 if 'high' in by or not by or not rec.get('status', '').startswith('measured'):
                     continue
-                below = [e for e in EFFORTS[:hi] if e in by]
-                above = [e for e in EFFORTS[hi + 1:] if e in by]
-                facet_id = '.'.join(key)
-                if below and above:
-                    lo, up = below[-1], above[0]
-                    ladder = self.effort_ladder(m)
-                    if not all(e in ladder for e in (lo, 'high', up)):
-                        ladder = EFFORTS
-                    w = (ladder.index('high') - ladder.index(lo)) / (ladder.index(up) - ladder.index(lo))
-                    value = round(by[lo] + w * (by[up] - by[lo]), 4)
-                    rec['status'] = 'interpolated'
-                    rec['interpolation'] = {'method': 'own_effort_interpolation', 'ladder': list(ladder),
-                                            'from': {lo: by[lo]}, 'to': {up: by[up]}, 'weight': round(w, 4)}
+                value, how = self.fill_one(m, key, by, 'high', by)
+                if value is None:
+                    refused.append(how)
+                    continue
+                held = round(float(user_scores.bound_along_effort({**by, 'high': value}, rises(key), by)['high']), 4)
+                if held != value:
+                    how['bounded_from'] = value
+                if how['method'] == 'own_effort_interpolation':
+                    rec['status'], rec['interpolation'] = 'interpolated', how
                 else:
-                    near = below[-1] if below else above[0]
-                    steps = [snapshot[p][key]['high'] - snapshot[p][key][near] for p in panel
-                             if key in snapshot.get(p, {}) and 'high' in snapshot[p][key] and near in snapshot[p][key]]
-                    if len(steps) < 2:
-                        refused.append({'model': m, 'facet': facet_id, 'from': near, 'n': len(steps),
-                                        'reason': 'fewer than 2 panel models measured at both efforts'})
-                        continue
-                    step = round(float(np.median(steps)), 4)
-                    rises = key == ('tool_operation', 'responsiveness')     # responsiveness falls as effort rises
-                    want_up = rises if not below else not rises     # stepping down from above High, or up from below
-                    if (step > 0) != want_up or step == 0:
-                        refused.append({'model': m, 'facet': facet_id, 'from': near, 'n': len(steps), 'step': step,
-                                        'reason': 'median panel step has the wrong sign'})
-                        continue
-                    value = round(by[near] + step, 4)
-                    rec['status'] = 'estimated'
-                    rec['estimate'] = {'method': 'panel_effort_step', 'from_effort': near, 'from_value': by[near],
-                                       'step': step, 'n': len(steps)}
-                rec['by_effort'] = {e: (value if e == 'high' else by[e]) for e in EFFORTS if e in by or e == 'high'}
-                rec['measured_efforts'] = [e for e in EFFORTS if e in by]
+                    rec['status'], rec['estimate'] = 'estimated', how
+                rec['by_effort'] = {e: (held if e == 'high' else by[e]) for e in EFFORTS if e in by or e == 'high'}
                 rec.pop('flag', None)
+        return refused
+
+    def fill_efforts(self, m, key, rec):
+        """Every effort of EFFORTS facet record `rec` of model `m` lacks (owner 2026-11-18), from its own efforts
+        (`fill_one`), then the bound with its own efforts pinned: a filled value never moves one that was there. Lists each
+        filled effort in `filled_efforts`; returns the refusals."""
+        known = dict(rec['by_effort'])
+        if not known:
+            return []
+        got, how, refused = dict(known), {}, []
+        for e in EFFORTS:
+            if e not in known:
+                value, why = self.fill_one(m, key, known, e, known)
+                if value is None:
+                    refused.append(why)
+                else:
+                    got[e], how[e] = value, why
+        if how:
+            bounded = user_scores.bound_along_effort({e: got[e] for e in EFFORTS if e in got}, rises(key), known)
+            for e in how:
+                if round(float(bounded[e]), 4) != got[e]:
+                    how[e]['bounded_from'] = got[e]
+            rec['by_effort'] = {e: round(float(bounded[e]), 4) for e in EFFORTS if e in bounded}
+            rec['filled_efforts'] = {**(rec.get('filled_efforts') or {}), **how}
+            rec['value'] = rec['by_effort'].get('high')
+            rec.pop('flag', None)
         return refused
 
     def _model_aa_curve_for_tier_fit(self, m):
@@ -763,7 +832,7 @@ class Scorer:
         fid = f'{key[0]}.{key[1]}~tier'
         f = fits.get(key)
         t = tier[m]['value']
-        is_resp = key == ('tool_operation', 'responsiveness')
+        is_resp = not rises(key)
         if base is not None:
             vb = facets[base][key]
             shift = f['b'] * (t - tier[base]['value']) if f and tier[base]['value'] is not None else 0.0
@@ -792,9 +861,9 @@ class Scorer:
                    'effort': effort_note}
             if not f['x_min'] <= t <= f['x_max']:
                 est['tier_clamped_to'] = f['x_min'] if t < f['x_min'] else f['x_max']
-        if not is_resp and len(by) >= 2:
-            by = pool_effort_curve(by)
-        return {'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {}, 'estimate': est}
+        by = bound_curve(by, rises(key))
+        return {'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {}, 'estimate': est,
+                'measured_efforts': []}
 
     @staticmethod
     def category(a, facets):
@@ -826,9 +895,7 @@ class Scorer:
             out['by_level'] = levels
             by = levels['3']['by_effort']
         else:
-            by, _, _ = combine(names)
-            if len(by) >= 2:
-                by = pool_effort_curve(by)
+            by, _, _ = combine(names)       # a min of curves that never decrease never decreases
         statuses = {facets[f]['status'] for f in present}
         val_high = by.get('high')
         if missing:
@@ -865,11 +932,15 @@ class Scorer:
         self._aa_cap_linked = {}
         curves, links = self.board_curves_and_link(rows, panel)
         facets = {m: {key: self.facet_value(key, recs) for key, recs in c.items()} for m, c in curves.items()}
-        self.high_refused = self.fill_high(facets, panel)
+        self.steps = self.effort_steps(facets, panel)
+        self.fill_refused = self.fill_high(facets)
         for fs in facets.values():
             for key, rec in fs.items():
-                if key != ('tool_operation', 'responsiveness') and len(rec['by_effort']) >= 2:
-                    rec['by_effort'] = pool_effort_curve(rec['by_effort'])
+                moved = set()
+                rec['by_effort'] = bound_curve(rec['by_effort'], rises(key), moved)
+                if moved:
+                    rec['bound_moved'] = sorted(set(rec.get('bound_moved') or ()) | moved, key=EFFORTS.index)
+                rec['measured_efforts'] = [e for e in rec['measured_efforts'] if e not in moved]
                 rec['value'] = rec['by_effort'].get('high')
         keys = [(a, f) for a, fs in AXES.items() for f in fs]
         fits, rejected = {}, {}
@@ -902,7 +973,18 @@ class Scorer:
                     continue
                 facets[m][key] = {'value': rec['value'], 'by_effort': dict(rec['by_effort']), 'sources': {}, 'status': 'estimated',
                                   'estimate': {'method': 'same_model', 'base_model': entry['model'], 'base_status': rec['status'],
-                                               **{k: entry[k] for k in ('kind', 'statement', 'url', 'as_of') if entry.get(k)}}}
+                                               **{k: entry[k] for k in ('kind', 'statement', 'url', 'as_of') if entry.get(k)}},
+                                  'measured_efforts': []}
+        self.tier_down(rows, facets, keys, declared)
+        for m in rows:
+            for key, rec in facets[m].items():
+                self.fill_refused += self.fill_efforts(m, key, rec)
+        for m, larger in self.tier_down_of.items():
+            for key, rec in facets[m].items():
+                if (rec.get('estimate') or {}).get('method') == 'tier_down':
+                    theirs = facets[larger][key]['by_effort']
+                    rec['by_effort'] = {e: (min(v, theirs[e]) if e in theirs else v) for e, v in rec['by_effort'].items()}
+                    rec['value'] = rec['by_effort'].get('high')
         for m, r in rows.items():
             carries = (self.same.get(m) or {}).get('carries')
             r['axes'] = {}
@@ -913,6 +995,40 @@ class Scorer:
                 r['axes'][a] = self.category(a, own)
         fit_doc = {f'{a}.{c}~tier': {k: round(v, 4) for k, v in f.items()} for (a, c), f in fits.items() if f}
         return rows, tier, fit_doc, rejected, links, self.targets(rows, panel)
+
+    def tier_down(self, rows, facets, keys, declared):
+        """An ability facet a small row lacks after measurement and estimation, from its larger model (module docstring):
+        large(e) + min(gap, 0), gap the mean of (small - large) at High over the facets both measured (`gap_basis`
+        `measured`), else over the facets both have any value for, never a `tier_down` one (`estimated`)."""
+        self.tier_down_of = {m: big for m, big in series.tier_up(self.acc).items()
+                             if m in rows and big in rows and m not in declared}
+        for m, big in sorted(self.tier_down_of.items()):
+            own, theirs = facets[m], facets[big]
+
+            def direct(rec):
+                return (rec or {}).get('status') in TARGET_STATUSES and (rec or {}).get('value') is not None
+
+            def held(rec):
+                return (rec or {}).get('value') is not None and ((rec or {}).get('estimate') or {}).get('method') != 'tier_down'
+            basis = 'measured'
+            shared = [k for k in keys if rises(k) and direct(own.get(k)) and direct(theirs.get(k))]
+            if not shared:
+                basis = 'estimated'
+                shared = [k for k in keys if rises(k) and held(own.get(k)) and held(theirs.get(k))]
+            if not shared:
+                continue
+            gap = float(np.mean([own[k]['value'] - theirs[k]['value'] for k in shared]))
+            drop = min(gap, 0.0)
+            for key in keys:
+                base = theirs.get(key)
+                if key in own or not rises(key) or not (base or {}).get('by_effort'):
+                    continue
+                by = {e: round(v + drop, 4) for e, v in base['by_effort'].items()}
+                own[key] = {'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {},
+                            'measured_efforts': [],
+                            'estimate': {'method': 'tier_down', 'base_model': big, 'base_status': base['status'],
+                                         'gap': round(gap, 4), 'drop': round(drop, 4), 'gap_facets': ['.'.join(k) for k in shared], 'gap_basis': basis,
+                                         'n': len(shared)}}
 
     def targets(self, rows, panel):
         """{category: {'levels': {level: ...}, 'continuity'}} from the panel's values at High (module docstring): level 1
@@ -1187,6 +1303,18 @@ def durations(scorer, rows, acc, index, board, tier):
                         'iqr': [round(q1, 4), round(q3, 4)], 'source': AA_TIME,
                         'note': f'fleet effort ratio {e}/{e0}, n={n}, IQR {q1:.2f}-{q3:.2f}'}, e, anchors)
             minutes[m].update({e: t for e, t in known.items() if e not in direct})
+        if minutes[m]:
+            # Time/Task never shortens as effort rises (owner 2026-11-18): bounded with High as the anchor; a listed time the
+            # bound moves is no longer a listing (method `effort_bound`, the listing kept under `was`).
+            bounded = user_scores.bound_along_effort(minutes[m], True)
+            for e, t in bounded.items():
+                if round(float(t), 3) != round(float(minutes[m][e]), 3):
+                    ladder = [k for k in EFFORTS if k in minutes[m]]
+                    anchor_e = user_scores.anchor_effort(minutes[m])
+                    toward = ladder[ladder.index(e) + (1 if EFFORTS.index(e) < EFFORTS.index(anchor_e) else -1)]
+                    basis[m][e] = {'method': 'effort_bound', 'bound_by': toward, 'minutes_before': minutes[m][e],
+                                   'was': basis[m][e]}
+                    minutes[m][e] = round(float(t), 3)
         out[m] = {'status': 'ok' if minutes[m] else 'missing', 'anchor_minutes': anchor,
                   'by_effort': {e: round(t / anchor, 4) for e, t in minutes[m].items()},
                   'minutes_by_effort': dict(minutes[m]), 'basis_by_effort': basis[m],
@@ -1661,7 +1789,8 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
                                                     if (usd.get(h['model']) or {}).get('value') else None)}
                           for h in (meas.get('capacity') or {}).get('hourly_checks') or ()],
            'anchor': anchor,
-           'links': links, 'effort_correlations': scorer.effort_correlations, 'high_fill_refused': scorer.high_refused,
+           'links': links, 'effort_correlations': scorer.effort_correlations,
+           'effort_steps': scorer.steps, 'effort_fill_refused': scorer.fill_refused,
            'checks': meas.get('checks') or [],
            'models': models, 'data_errors': errors}
     return doc

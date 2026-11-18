@@ -1,10 +1,18 @@
 """Same-series siblings and the base a converted model takes (round 058, user 2026-11-10: "后续同系列新出，缺少实测数据的情况下，
 先按照同系列的全分数进行折算，不要留下任何一个默认值或者fallback"; five_axis.py estimates through the tier on top of it).
 
-Series membership is the router's own family resolution (scripts/auto_bundles.series_target over
-model_resolution.resolve_model, with the row itself left out so it can resolve to another row) plus the public data's
-`superseded` pairs and `same_model` rows, joined transitively. A small-size name is never in the series of a non-small
-one. No name list here.
+Series membership is the router's own resolution of each row's name with the row itself left out
+(model_resolution.resolve_model): a `family` match joins the row to that family's row (auto_bundles.series_target), and
+an `alias` match joins it to the row it is a release of (a row `x-preview` joins row `x`: the resolver drops `-preview`
+and other vendor tags); plus the public data's `superseded` pairs and `same_model` rows, joined transitively. A
+small-size row is never in the series of a non-small one (`size`): the size of a row is the declared `size` of the
+`families` row that decides its name (model_resolution.family_row); a join between a `small` row and any other row is
+refused, whatever relation proposed it, except a `same_model` declaration (the very model). No name list here.
+
+The downward relation (`tier_up`, owner 2026-11-18) is a second relation, not series membership: a small row listed in
+its `families` row's `models` (a current member of that family) whose `families` row declares `tier_up` (the pattern of
+the same line's next larger family row) has, as its larger model, the first model of that larger row the catalog has.
+five_axis.py uses it only for a facet the small row's own same-size series and the tier fit leave without any value.
 
 A `same_model` row (accounts.json) declares that one row is the very model another row names (a vendor statement with its
 url): the declared model is that row's base before any other sibling, and the row carries the type scores of the
@@ -22,7 +30,14 @@ import sys
 import sources
 
 sys.path.insert(0, str(sources.REPO / 'scripts'))
-import auto_bundles  # noqa: E402
+import model_resolution  # noqa: E402
+
+
+def small_rows(acc):
+    """The rows of `acc` whose deciding `families` row declares `size: small`."""
+    fams = model_resolution.family_patterns(acc)
+    return {k for k, v in (acc.get('models') or {}).items()
+            if isinstance(v, dict) and (model_resolution.family_row(k, fams) or {}).get('size') == 'small'}
 
 
 def groups(acc):
@@ -30,6 +45,8 @@ def groups(acc):
     models = acc.get('models') or {}
     rows = {k for k, v in models.items() if isinstance(v, dict)}
     aliases = acc.get('aliases') or {}
+    fams = model_resolution.family_patterns(acc)
+    small = small_rows(acc)
     parent = {k: k for k in rows}
 
     def find(k):
@@ -39,13 +56,14 @@ def groups(acc):
         return k
 
     def join(a, b):
-        if a in rows and b in rows:
+        if a in rows and b in rows and (a in small) == (b in small):
             parent[find(a)] = find(b)
 
     for k in sorted(rows):
-        rest = dict(acc, models={j: v for j, v in models.items() if j != k},
-                    aliases={a: t for a, t in aliases.items() if t != k})
-        join(k, auto_bundles.series_target(k, rest))
+        rest = {j: v for j, v in models.items() if j != k and isinstance(v, dict)}
+        found = model_resolution.resolve_model(k, rest, {a: t for a, t in aliases.items() if t != k}, fams)
+        if found['source'] in ('family', 'alias') and found['key']:
+            join(k, found['key'])
     for old, entry in sorted((acc.get('superseded') or {}).items()):
         if isinstance(entry, dict):
             join(old, entry.get('by'))
@@ -53,6 +71,22 @@ def groups(acc):
         if row in rows and entry.get('model') in rows:
             parent[find(row)] = find(entry['model'])
     return {k: sorted(j for j in rows if j != k and find(j) == find(k)) for k in rows}
+
+
+def tier_up(acc):
+    """{small row: its larger model} (module docstring, the downward relation)."""
+    models = {k: v for k, v in (acc.get('models') or {}).items() if isinstance(v, dict)}
+    fams = model_resolution.family_patterns(acc)
+    by_pattern = {f['pattern']: f for f in fams}
+    out = {}
+    for k in sorted(models):
+        row = model_resolution.family_row(k, fams) or {}
+        if row.get('size') != 'small' or not row.get('tier_up') or k not in row['models']:
+            continue
+        larger = next((t for t in by_pattern[row['tier_up']]['models'] if t in models), None)
+        if larger:
+            out[k] = larger
+    return out
 
 
 def same_model(acc):

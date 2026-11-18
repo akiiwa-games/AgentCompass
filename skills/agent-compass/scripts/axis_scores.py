@@ -75,13 +75,14 @@ def load_five_axis(path=None):
     return json.loads(target.read_text(encoding='utf-8'))
 
 
-FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/6'
+FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/7'
 
 
 def require_current_schema(data):
     """Fail fast on a five-axis-scores.json of another schema than the one this code reads. Schema /6 changed what level 3
-    means (the panel maximum, no longer the anchor), so an older file would be read with the wrong scale; a shipped file
-    always matches its code, so there is no reader for the older one."""
+    means (the panel maximum, no longer the anchor), so an older file would be read with the wrong scale; schema /7 adds a
+    value at every effort and the `effort_steps` table manual scores fill from. A shipped file always matches its code, so
+    there is no reader for the older one."""
     schema = data.get('schema')
     if schema != FIVE_AXIS_SCHEMA:
         raise ValueError(
@@ -481,6 +482,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     user_scores.apply_overlay(
         out.setdefault('models', {}), targets,
         public_scores=pub_manual, local_scores=loc_manual, aliases=out.get('aliases'),
+        effort_steps=data.get('effort_steps'),
     )
     for info in (out.get('models') or {}).values():
         if isinstance(info, dict) and isinstance(info.get('five_axis'), dict):

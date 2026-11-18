@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import re
 
+import model_resolution
 import user_scores
 
 _ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
@@ -79,11 +80,35 @@ def validate_accounts_provenance(doc):
             raise ValueError(f'models[{model!r}].text_only requires a cited or dated maintainer text_only_source (with as_of)')
         if 'image_input' in spec and not valid_public_declaration(spec.get('image_input_source')):
             raise ValueError(f'models[{model!r}].image_input requires a cited or dated maintainer image_input_source (with as_of)')
-        for field in ('text_only_source', 'image_input_source'):
+        for field in ('text_only_source', 'image_input_source', 'model_source'):
             if field in spec and not valid_public_declaration(spec.get(field)):
                 raise ValueError(f'models[{model!r}].{field} requires an https url or dated kind="maintainer" (with as_of)')
         _validate_model_data(model, spec)
     _validate_catalog_tables(doc)
+    _validate_cited_tables(doc)
+
+
+def _validate_cited_tables(doc):
+    """`alias_sources` and `dispatch_efforts_sources`: each cited row is a public declaration of an alias or a launch row
+    the catalog has."""
+    def rows(name):
+        table = doc.get(name, {'rows': {}})
+        if not isinstance(table, dict) or not isinstance(table.get('rows'), dict):
+            raise ValueError(f'accounts.json {name} needs {{statement, rows}}')
+        return table['rows']
+    launch = doc.get('dispatch_efforts') or {}
+    checks = {
+        'alias_sources': {k: (e, k in (doc.get('aliases') or {})) for k, e in rows('alias_sources').items()},
+        'dispatch_efforts_sources': {f'{h}/{m}': (e, m in (launch.get(h) or {}))
+                                     for h, per in rows('dispatch_efforts_sources').items() for m, e in per.items()},
+    }
+    for name, cited in checks.items():
+        missing = [k for k, (_, known) in cited.items() if not known]
+        if missing:
+            raise ValueError(f'accounts.json {name} cites rows the catalog does not have: {", ".join(missing)}')
+        bad = [k for k, (e, _) in cited.items() if not valid_public_declaration(e)]
+        if bad:
+            raise ValueError(f'accounts.json {name} rows need an https url or a dated maintainer declaration: {", ".join(bad)}')
 
 
 LISTING_BOARDS = ('arena', 'aa')        # calibration/tiers.py LISTING_BOARDS: `listed_as` keys
@@ -139,6 +164,14 @@ def _validate_catalog_tables(doc):
         unknown = [m for m in entry['models'] if m not in models]
         if unknown:
             raise ValueError(f'families.rows[{i}] ({entry["pattern"]}) names models without a row: {", ".join(map(str, unknown))}')
+        if entry.get('size') not in model_resolution.FAMILY_SIZES:
+            raise ValueError(f'families.rows[{i}] ({entry["pattern"]}) needs a size, one of '
+                             f'{", ".join(model_resolution.FAMILY_SIZES)} (calibration/series.py)')
+    by_pattern = {e['pattern']: e for e in families['rows']}
+    for i, entry in enumerate(families['rows']):
+        if 'tier_up' in entry and (entry['size'] != 'small' or (by_pattern.get(entry['tier_up']) or {}).get('size') != 'full'):
+            raise ValueError(f'families.rows[{i}] ({entry["pattern"]}) tier_up must be on a small row and name the pattern '
+                             f'of a full row: {entry["tier_up"]!r}')
     panel = doc.get('calibration_panel')
     if not valid_public_declaration(panel) or not isinstance(panel.get('anchor'), str) or not isinstance(panel.get('models'), list):
         raise ValueError('accounts.json needs calibration_panel {anchor, models} as a dated maintainer declaration')

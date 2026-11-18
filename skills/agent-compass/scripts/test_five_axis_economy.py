@@ -1409,9 +1409,12 @@ class DurationUnknownTests(unittest.TestCase):
         # fleet's. Which of the two applies depends on the shipped data, so the test accepts either estimate.
         self.assertIsNotNone(ranking['flash_low']['score'])
         self.assertIn(ranking['flash_low']['components']['duration_source'], ('series_effort', 'fleet_effort_ratio'))
-        # Grok 4.7 also gets its Max duration from fleet_effort_ratio, while Mode B excludes Max for missing Max capability data (R2-F5).
+        # Grok 4.7 also gets its Max duration from fleet_effort_ratio. Rule (R2-F5): Mode B excludes Max exactly when a demanded
+        # value is missing at Max; since every facet is filled at every effort (owner 2026-11-18), that follows the data.
         self.assertEqual(ranking['grok_max']['components']['duration_source'], 'fleet_effort_ratio')
-        self.assertIsNone(ranking['grok_max']['score'])
+        facets = axis_scores.load_five_axis()['models']['grok-4.7']['axes']
+        complete = all('max' in c['by_effort'] for ax in facets.values() for c in (ax.get('facets') or {}).values())
+        self.assertEqual(ranking['grok_max']['score'] is None, not complete)
 
     def test_a_named_dispatch_keeps_the_bundle_with_the_tasks_own_hours_and_the_data_error(self):
         with self.without_time('gpt-oss-120b'):

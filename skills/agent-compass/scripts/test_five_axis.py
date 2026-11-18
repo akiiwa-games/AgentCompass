@@ -1029,49 +1029,55 @@ class HighFillTests(unittest.TestCase):
     def facet(by, status='measured'):
         return {'value': by.get('high'), 'by_effort': dict(by), 'status': status, 'sources': {}}
 
+    @staticmethod
+    def fill(scorer, facets, panel):
+        scorer.steps = scorer.effort_steps(facets, panel)
+        return scorer.fill_high(facets)
+
     def test_bracketed_high_interpolates_in_the_models_own_effort_rank(self):
         key = ('creativity', 'creative_writing')
         facets = {'m': {key: self.facet({'low': -2.0, 'max': -1.0}, 'measured_partial')}}
-        self.assertEqual(self.scorer().fill_high(facets, []), [])
+        self.assertEqual(self.fill(self.scorer(), facets, []), [])
         rec = facets['m'][key]
-        self.assertEqual((rec['status'], rec['by_effort']['high'], rec['measured_efforts']), ('interpolated', -1.5, ['low', 'max']))
+        self.assertEqual((rec['status'], rec['by_effort']['high']), ('interpolated', -1.5))
         self.assertEqual((rec['interpolation']['from'], rec['interpolation']['to']), ({'low': -2.0}, {'max': -1.0}))
         # On a ladder low < high < xhigh < max, High sits one third of the way from Low to Max.
         facets = {'m': {key: self.facet({'low': 0.0, 'max': 3.0})}}
-        self.scorer(('low', 'high', 'xhigh', 'max')).fill_high(facets, [])
+        self.fill(self.scorer(('low', 'high', 'xhigh', 'max')), facets, [])
         self.assertEqual(facets['m'][key]['by_effort']['high'], 1.0)
         # A ladder lacking an endpoint falls back to low < medium < high < xhigh < max.
         facets = {'m': {key: self.facet({'low': 0.0, 'max': 4.0})}}
-        self.scorer(('high', 'max')).fill_high(facets, [])
+        self.fill(self.scorer(('high', 'max')), facets, [])
         self.assertEqual(facets['m'][key]['by_effort']['high'], 2.0)
 
-    def test_one_sided_high_takes_the_panel_median_own_step_and_checks_its_sign(self):
+    def test_one_sided_high_takes_the_panel_median_own_step(self):
         ability, resp = ('coding', 'execution'), ('tool_operation', 'responsiveness')
         facets = {'p1': {ability: self.facet({'high': 0.0, 'max': 0.2}), resp: self.facet({'high': 1.0, 'max': -1.0})},
                   'p2': {ability: self.facet({'high': 0.0, 'max': 0.4}), resp: self.facet({'high': 2.0, 'max': -1.0})},
                   'p3': {ability: self.facet({'high': 0.0, 'max': 0.3}), resp: self.facet({'high': 0.5, 'max': 0.0})},
                   'm': {ability: self.facet({'max': -1.0}), resp: self.facet({'max': -2.0})}}
-        self.assertEqual(self.scorer().fill_high(facets, ['p1', 'p2', 'p3']), [])
+        self.assertEqual(self.fill(self.scorer(), facets, ['p1', 'p2', 'p3']), [])
         rec = facets['m'][ability]
-        self.assertEqual((rec['status'], rec['by_effort'], rec['measured_efforts']), ('estimated', {'high': -1.3, 'max': -1.0}, ['max']))
-        self.assertEqual(rec['estimate'], {'method': 'panel_effort_step', 'from_effort': 'max', 'from_value': -1.0, 'step': -0.3, 'n': 3})
+        self.assertEqual((rec['status'], rec['by_effort']), ('estimated', {'high': -1.3, 'max': -1.0}))
+        self.assertEqual(rec['estimate'], {'method': 'panel_effort_step', 'from_effort': 'max', 'from_value': -1.0,
+                                           'step': -0.3, 'n': 3})
         self.assertEqual(facets['m'][resp]['by_effort']['high'], 0.0)        # responsiveness: faster than Max (step 2.0)
         for p in ('p1', 'p2', 'p3'):                                          # measured High is never overwritten
             self.assertEqual(facets[p][ability]['status'], 'measured')
 
-    def test_one_sided_high_is_refused_with_a_wrong_sign_or_under_two_panel_models(self):
+    def test_one_sided_high_is_bounded_by_the_measured_effort_and_refused_under_two_panel_models(self):
+        """Rule (owner 2026-11-18, `user_scores.bound_along_effort`): a filled High never inverts the facet's measured
+        efforts and never moves one; a panel step with the wrong sign leaves High at the measured neighbour's value."""
         key = ('coding', 'execution')
         facets = {'p1': {key: self.facet({'high': 0.5, 'max': 0.2})}, 'p2': {key: self.facet({'high': 0.4, 'max': 0.3})},
                   'm': {key: self.facet({'max': -1.0}, 'measured_partial')}}
-        facets['m'][key]['flag'] = 'partial'
-        refused = self.scorer().fill_high(facets, ['p1', 'p2'])
-        self.assertEqual([(r['model'], r['reason'], r['n']) for r in refused],
-                         [('m', 'median panel step has the wrong sign', 2)])
-        self.assertNotIn('high', facets['m'][key]['by_effort'])
-        self.assertEqual(facets['m'][key]['flag'], 'partial')
-        refused = self.scorer().fill_high({'p1': {key: self.facet({'high': 0.0, 'max': 0.2})},
-                                           'm': {key: self.facet({'max': -1.0})}}, ['p1'])
-        self.assertEqual([(r['model'], r['n']) for r in refused], [('m', 1)])
+        self.assertEqual(self.fill(self.scorer(), facets, ['p1', 'p2']), [])
+        rec = facets['m'][key]
+        self.assertEqual(rec['by_effort'], {'high': -1.0, 'max': -1.0})
+        self.assertEqual(rec['estimate']['bounded_from'], -0.8)
+        refused = self.fill(self.scorer(), {'p1': {key: self.facet({'high': 0.0, 'max': 0.2})},
+                                            'm': {key: self.facet({'max': -1.0})}}, ['p1'])
+        self.assertEqual([(r['model'], r['effort'], r['from']) for r in refused], [('m', 'high', 'max')])
 
     def test_targets_read_measured_and_interpolated_high_only(self):
         """User 2026-11-12: panel targets read measured High rows; own-curve interpolation counts, an estimate never does."""
@@ -1952,7 +1958,8 @@ class DurationTests(unittest.TestCase):
             dur = r['duration_multiplier']
             self.assertEqual(set(dur['by_effort']), set(dur['basis_by_effort']), name)
             self.assertEqual(set(dur['efforts_without_time']) | set(dur['by_effort']), {'low', 'medium', 'high', 'xhigh', 'max'}, name)
-            self.assertTrue(all(b['method'] in ('aa', 'arena_fit', 'series', 'series_effort', 'fleet_effort_ratio', 'fleet_effort_position', 'same_model')
+            self.assertTrue(all(b['method'] in ('aa', 'arena_fit', 'series', 'series_effort', 'fleet_effort_ratio', 'fleet_effort_position', 'same_model',
+                                                'effort_bound')
                                 for b in dur['basis_by_effort'].values()), name)
             self.assertNotIn('value', dur)
 
@@ -2556,6 +2563,111 @@ class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
         found = differences(built, shipped)
         self.assertEqual(found[:10], [], f'five-axis-scores.json does not match its inputs ({len(found)} difference(s)): '
                                          'run `agentcompass data refresh --no-fetch`')
+
+
+class EffortCoverageRuleTests(unittest.TestCase):
+    """Owner 2026-11-18: every facet has a value at every effort; no inversion along effort; the downward relation from a
+    small row's larger model; size in `families`. Properties of the shipped data and of the rules, never a winner."""
+
+    @classmethod
+    def setUpClass(cls):
+        import five_axis
+        import series
+        cls.fa, cls.series = five_axis, series
+        cls.doc = axis_scores.load_five_axis()
+        cls.acc = json.loads((Path(__file__).resolve().parents[1] / 'references' / 'accounts.json').read_text(encoding='utf-8'))
+
+    def facets(self):
+        for m, r in self.doc['models'].items():
+            for a, ax in r['axes'].items():
+                for f, c in (ax.get('facets') or {}).items():
+                    yield m, (a, f), c
+
+    def test_no_inversion_along_effort_for_every_model_facet_and_time(self):
+        """Rule (`user_scores.bound_along_effort`, direction `rises_with_effort`): an ability facet never decreases as effort
+        rises, responsiveness never rises, Time/Task never shortens."""
+        efforts = self.fa.EFFORTS
+        for m, key, c in self.facets():
+            sign = 1.0 if self.fa.rises(key) else -1.0
+            vals = [sign * c['by_effort'][e] for e in efforts if e in c['by_effort']]
+            self.assertEqual(vals, sorted(vals), (m, key))
+        for m, r in self.doc['models'].items():
+            t = r['duration_multiplier'].get('by_effort') or {}
+            vals = [t[e] for e in efforts if e in t]
+            self.assertEqual(vals, sorted(vals), (m, 'time'))
+
+    def test_every_facet_with_a_value_has_every_effort_or_a_declared_refusal(self):
+        """Rule (`fill_efforts`): a facet that has a value at some effort has one at every effort of EFFORTS, unless the panel
+        gives no step to it, which `effort_fill_refused` lists."""
+        refused = {(r['model'], r['facet'], r['effort']) for r in self.doc['effort_fill_refused']}
+        for m, key, c in self.facets():
+            for e in self.fa.EFFORTS:
+                if c['by_effort'] and e not in c['by_effort']:
+                    self.assertIn((m, '.'.join(key), e), refused)
+
+    def test_measured_efforts_hold_board_values_and_filled_ones_are_declared(self):
+        """A cell the bound moved is not listed as measured; every effort is either measured or listed with its method."""
+        for m, key, c in self.facets():
+            measured = set(c.get('measured_efforts', ()))
+            self.assertTrue(measured.isdisjoint(c.get('bound_moved') or ()), (m, key))
+            if c['status'] in self.fa.TARGET_STATUSES:
+                filled = set(c.get('filled_efforts') or ())
+                own = measured | filled | ({'high'} if c['status'] == 'interpolated' else set())
+                self.assertEqual(own | set(c.get('bound_moved') or ()), set(c['by_effort']), (m, key))
+
+    def test_filled_values_follow_the_declared_methods(self):
+        """Rule (`fill_one`): one-sided, own value plus the published panel step (then the bound); bracketed, linear in rank."""
+        for m, key, c in self.facets():
+            for e, how in (c.get('filled_efforts') or {}).items():
+                if how['method'] == 'panel_effort_step':
+                    step = self.doc['effort_steps']['.'.join(key)][how['from_effort']][e]
+                    self.assertEqual((how['step'], how['n']), (step['step'], step['n']), (m, key, e))
+                    expected = round(how['from_value'] + how['step'], 4)
+                else:
+                    (lo, vlo), (up, vup) = next(iter(how['from'].items())), next(iter(how['to'].items()))
+                    expected = round(vlo + how['weight'] * (vup - vlo), 4)
+                self.assertEqual(how.get('bounded_from', c['by_effort'][e]), expected, (m, key, e))
+
+    def test_a_derived_value_follows_its_formula_and_never_exceeds_its_larger_model(self):
+        """Rule (`tier_down`): value(e) = large(e) + min(gap, 0), held by the bound and never above large(e); gap the mean of
+        (small - large) at High over the facets the estimate names. Only ability facets, only small rows with `tier_up`."""
+        ups = self.series.tier_up(self.acc)
+        seen = 0
+        for m, key, c in self.facets():
+            est = c.get('estimate') or {}
+            if est.get('method') != 'tier_down':
+                continue
+            seen += 1
+            big = est['base_model']
+            self.assertEqual(ups.get(m), big)
+            self.assertTrue(self.fa.rises(key))
+            gap_keys = [tuple(k.split('.')) for k in est['gap_facets']]
+            own = self.doc['models'][m]['axes']
+            theirs = self.doc['models'][big]['axes']
+            gap = np.mean([own[a]['facets'][f]['value'] - theirs[a]['facets'][f]['value'] for a, f in gap_keys])
+            self.assertAlmostEqual(est['gap'], round(float(gap), 4), places=3)
+            self.assertEqual(est['drop'], round(min(est['gap'], 0.0), 4))
+            large = theirs[key[0]]['facets'][key[1]]['by_effort']
+            for e, v in c['by_effort'].items():
+                self.assertLessEqual(v, large[e] + 1e-9, (m, key, e))
+        self.assertGreater(seen, 0)
+
+    def test_small_rows_never_join_a_full_series_and_previews_join_their_row(self):
+        """Rule (series.groups): a `small` row (by its deciding `families` row) never shares a series with a non-small one; a
+        row `x-preview` joins row `x`."""
+        groups, small = self.series.groups(self.acc), self.series.small_rows(self.acc)
+        for k, sibs in groups.items():
+            for j in sibs:
+                self.assertEqual(k in small, j in small, (k, j))
+        fams = [{'pattern': '^fam', 'models': ['fam-1'], 'size': 'full'}]
+        synthetic = {'models': {'fam-1': {}, 'fam-1-preview': {}, 'fam-1-mini': {}, 'other': {}}, 'aliases': {},
+                     'families': {'rows': [{'pattern': '^fam.*mini', 'models': ['fam-1'], 'size': 'small'}, *fams]}}
+        got = self.series.groups(synthetic)
+        self.assertEqual(got['fam-1-preview'], ['fam-1'])
+        self.assertEqual(got['fam-1-mini'], [])
+        # the same family resolution with the mini's row declared full joins it
+        synthetic['families']['rows'][0]['size'] = 'full'
+        self.assertIn('fam-1-mini', self.series.groups(synthetic)['fam-1'])
 
 
 if __name__ == '__main__':
