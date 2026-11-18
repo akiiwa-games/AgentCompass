@@ -48,14 +48,18 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   addition never above the larger model's at the same effort (`min(step, 0)`, and `bound_across_size` after the fill, the
   efforts it held listed as `held_at_larger`). Status `estimated`, method `size_step` with the base model, version, step,
   `n`, `agree` and the pairs; the table is published as `size_steps`.
-- **Edge efforts (owner, 2026-11-18).** No board measures `minimal` or `ultra`, the efforts below Low and above Max
-  (`five_axis.EDGES`). Every curve with the neighbouring effort gets the edge as that neighbour plus the fleet's step next to
-  it, the median over the models measured at both of `value(low) - value(medium)` for `minimal` and
-  `value(max) - value(xhigh)` for `ultra` (`five_axis.edge_step_table`, `n >= 2`, published as
-  `effort_steps.<facet>.low.minimal` and `effort_steps.<facet>.max.ultra`, methods `fleet_lowest_step` and
-  `fleet_highest_step`), bounded by no inversion; Time/Task the neighbour times the fleet's median ratio over the
+- **Edge efforts (owner, 2026-11-18).** No board measures `none`, `minimal` or `ultra`, the efforts below Low and above Max
+  (`user_scores.EDGES`, nearest first). Every curve with the neighbouring effort gets the edge as that neighbour plus the
+  fleet's step at that end of the measured efforts, the median over the models measured at both of
+  `value(low) - value(medium)` for `minimal`, the same step again for `none` below `minimal`, and `value(max) - value(xhigh)`
+  for `ultra` (`five_axis.edge_step_table`, `n >= 2`, published as `effort_steps.<facet>.low.minimal`,
+  `effort_steps.<facet>.minimal.none` and `effort_steps.<facet>.max.ultra`, methods `fleet_lowest_step` and
+  `fleet_highest_step`), bounded by no inversion; Time/Task the neighbour times the fleet's median ratio at that end over the
   Artificial Analysis listings with both (`effort_steps.time_per_task`, `n >= 3` as every fleet time ratio). A hand-written
-  score fills both the same way.
+  score fills them the same way. `none` is reasoning switched off, one step below `minimal`, not the same point (round 4,
+  from the vendors' documents): OpenAI's reasoning guide gives `none` for "tasks that do not benefit from any reasoning",
+  MiniMax pairs `effort: "none"` with `thinking: disabled`, Magpie offers `none` as the off level of a model with a thinking
+  switch, and Google's thinking guide calls `minimal` "a near-off setting", a reasoning level above off.
 - **Own ability median (owner, 2026-11-18), the last and coarsest method.** An ability facet still without a value (no
   source and no larger model: `glm-5.2` faithfulness and image recognition) is, at each effort, the median of the model's
   own ability facets there (at least `MIN_OWN_FACETS = 2`, all on the panel-z scale); status `estimated`, method
@@ -70,7 +74,7 @@ The router scores a model on **four capability categories** (`creativity`, `codi
 - **Order of methods.** For each cell, the first that applies: a measurement; a hand-written score (run time, it wins over
   every estimate below); own-curve interpolation; the panel effort step; the same-size series conversion; the tier fit;
   the downward derivation with the row's own gap (same version only); the size step (same, then nearest version); for
-  `minimal` and `ultra`, the fleet's edge step; the own ability median. Every estimate is then bounded along effort and,
+  `none`, `minimal` and `ultra`, the fleet's edge step; the own ability median. Every estimate is then bounded along effort and,
   for an ability facet derived from a larger model, across size; at run time a derived facet follows its larger model's
   value after the hand-written scores, shipped and local (`user_scores._follow_effective_sources`: moved by the source's
   change at each effort, never above it; a hand-written score on the derived model itself wins).
@@ -82,7 +86,7 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   that hold a board reading in `measured_efforts`. An effort the panel gives no step for stays empty and is listed in
   `effort_fill_refused`. High of a measured facet is filled the same way before the fits (`fill_high`); targets read only
   measured and `interpolated` High values. A hand-written score fills the same way from its High
-  (`user_scores._manual_by_effort` with `effort_steps`). `minimal` and `ultra`: the edge efforts above.
+  (`user_scores._manual_by_effort` with `effort_steps`). `none`, `minimal` and `ultra`: the edge efforts above.
 - **No inversion along effort (owner, 2026-11-18).** Along the efforts of one model an ability facet never decreases as effort
   rises, `tool_operation.responsiveness` never rises, and Time/Task never shortens. One rule, `user_scores.bound_along_effort`
   (direction `user_scores.rises_with_effort`), bounds every curve, board readings, facets, estimates, filled values, manual
@@ -142,8 +146,12 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    entry in `families.rows` (ordered `{pattern, models, size, tier_up?, tier_up_version?, tier_up_older?}`; the first
    matching pattern decides; `size` is `small` or `full`; `tier_up_version` `same` or `nearest` goes with `tier_up`;
    `tier_up_older` maps an older row of the line to `{model, version}`; move the declaration's `as_of` to the day of the edit) and the family's short `aliases` at it, and
-   list the older model under `superseded`. A name the vendor states is served by another row is an alias with its
-   statement in `alias_sources`, not a row.
+   list the older model under `superseded`. A name the vendor states is served by another row is an alias, not a row:
+   every alias carries its dated statement in `alias_sources`, name by name (the maker's word; models.dev's
+   `canonical_model_id` with the snapshot's date; or a dated maintainer declaration), and an alias without one is refused
+   (`scripts/reference_provenance.py`). A name with `-pro`, a speed variant (`-highspeed`, `-ultraspeed`) or another marker
+   of a different model is a row of its own, never an alias. A board that lists the row under another name gets it in
+   `models.<id>.listed_as` (`arena`, `aa`).
 5. **Rebuild its row.** Run `agentcompass data refresh --model <id>` (repeatable for several new models). It fetches the
    boards into the data directory, builds the measurements, and writes to `public-measurements.json` only the named
    models' entries, conflicts and checks, every entry the full refresh writes for them: with the panel scale unchanged,
