@@ -71,13 +71,13 @@
         "kind": "vendor",
         "url": "https://api-docs.deepseek.com/quick_start/pricing",
         "as_of": "2026-11-18",
-        "statement": "DeepSeek pricing page: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp are still accepted, but the corresponding models have been retired; their requests are served by the DeepSeek-V4.1-Flash-1017 model and billed at the Flash price (changelog 2026-09-10)"
+        "statement": "DeepSeek pricing page, footnote 1 of the deepseek-flash column: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp \"are still accepted\", \"the corresponding models have been retired\", \"their requests are served by the DeepSeek-V4.1-Flash-1017 model\" and are \"billed at the Flash price\"; the page gives no date for the change"
       },
       "deepseek-v4-flash-vision-exp": {
         "kind": "vendor",
         "url": "https://api-docs.deepseek.com/quick_start/pricing",
         "as_of": "2026-11-18",
-        "statement": "DeepSeek pricing page: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp are still accepted, but the corresponding models have been retired; their requests are served by the DeepSeek-V4.1-Flash-1017 model and billed at the Flash price (changelog 2026-09-10)"
+        "statement": "DeepSeek pricing page, footnote 1 of the deepseek-flash column: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp \"are still accepted\", \"the corresponding models have been retired\", \"their requests are served by the DeepSeek-V4.1-Flash-1017 model\" and are \"billed at the Flash price\"; the page gives no date for the change"
       }
     }
   },
@@ -222,10 +222,18 @@
     "as_of": "2026-11-18",
     "statement": "maintainer: the anchor (0 on every board), the sentinel models whose shared listing defines the core boards, and the panel members, declared (owner 2026-11-18: the members of v0.7.0, the panel the owner's hand-written levels were set against). A row listed on every core board does not join the panel; only the owner changes `members`; a member a core board does not list is an error (calibration/measurements.py)"
   },
+  "effort_readings": {
+    "kind": "maintainer",
+    "as_of": "2026-11-18",
+    "statement": "maintainer: an effort name off the effort scale and the measured effort it reads. The boards list some models without an effort label; that listing is the model's one configuration, which the measurements store under `default` (calibration/measurements.py) and the calibration keys at the effort named here (calibration/five_axis.py aa_rows, time_rows), so a launch at `default` reads the values stored there (five-axis-scores.json `effort_readings`, axis_scores.reading_effort).",
+    "reads": {
+      "default": "high"
+    }
+  },
   "families": {
     "kind": "maintainer",
     "as_of": "2026-11-18",
-    "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). `size` is the size class of the names a row decides: `small` names are never in the series of a `full` one (calibration/series.py). `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down); tier_up_version says whether the larger row's first model is the same version as the small row's current members (`same`) or the nearest version of the same line (`nearest`), calibration/series.py.",
+    "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). `size` is the size class of the names a row decides: `small` names are never in the series of a `full` one (calibration/series.py). `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down); tier_up_version says whether the larger row's first model is the same version as the small row's current members (`same`) or the nearest version of the same line (`nearest`), calibration/series.py. `tier_up_older` on such a row names, for an older member of the row's line that is not a current member, its larger model and whether it is the same version (`same`) or the nearest (`nearest`).",
     "rows": [
       {
         "pattern": "^grok-bot$",
@@ -260,7 +268,13 @@
         ],
         "size": "small",
         "tier_up": "^claude-sonnet",
-        "tier_up_version": "same"
+        "tier_up_version": "same",
+        "tier_up_older": {
+          "claude-haiku-4-5": {
+            "model": "claude-sonnet-4-6",
+            "version": "nearest"
+          }
+        }
       },
       {
         "pattern": "^gpt-6.*luna",
