@@ -28,8 +28,8 @@
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 2.0,
-        "as_of": "2026-11-11",
+        "level": 2.4,
+        "as_of": "2026-11-18",
         "kind": "maintainer"
       }
     },
@@ -161,8 +161,8 @@
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 2.0,
-        "as_of": "2026-11-11",
+        "level": 2.8,
+        "as_of": "2026-11-18",
         "kind": "maintainer"
       }
     },
@@ -220,8 +220,8 @@
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 2.0,
-        "as_of": "2026-11-11",
+        "level": 1.5,
+        "as_of": "2026-11-18",
         "kind": "maintainer"
       }
     },
