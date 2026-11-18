@@ -225,7 +225,7 @@
   "families": {
     "kind": "maintainer",
     "as_of": "2026-11-18",
-    "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). `size` is the size class of the names a row decides: `small` names are never in the series of a `full` one (calibration/series.py). `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down)",
+    "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). `size` is the size class of the names a row decides: `small` names are never in the series of a `full` one (calibration/series.py). `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down); tier_up_version says whether the larger row's first model is the same version as the small row's current members (`same`) or the nearest version of the same line (`nearest`), calibration/series.py.",
     "rows": [
       {
         "pattern": "^grok-bot$",
@@ -259,7 +259,8 @@
           "claude-haiku-5-5"
         ],
         "size": "small",
-        "tier_up": "^claude-sonnet"
+        "tier_up": "^claude-sonnet",
+        "tier_up_version": "same"
       },
       {
         "pattern": "^gpt-6.*luna",
@@ -355,9 +356,12 @@
       {
         "pattern": "^qwen.*flash",
         "models": [
-          "qwen3-flash-2025-07-28"
+          "qwen3.8-flash",
+          "qwen3.8-omni-flash"
         ],
-        "size": "small"
+        "size": "small",
+        "tier_up": "^qwen",
+        "tier_up_version": "same"
       },
       {
         "pattern": "^qwen.*coder",
@@ -395,7 +399,8 @@
           "glm-5.3-flashx"
         ],
         "size": "small",
-        "tier_up": "^glm"
+        "tier_up": "^glm",
+        "tier_up_version": "same"
       },
       {
         "pattern": "^glm",
@@ -410,7 +415,8 @@
           "minimax-m3.1-flash"
         ],
         "size": "small",
-        "tier_up": "^minimax|^abab"
+        "tier_up": "^minimax|^abab",
+        "tier_up_version": "nearest"
       },
       {
         "pattern": "^minimax|^abab",
@@ -432,7 +438,8 @@
           "mimo-v2.6-flash-free"
         ],
         "size": "small",
-        "tier_up": "^mimo"
+        "tier_up": "^mimo",
+        "tier_up_version": "same"
       },
       {
         "pattern": "^mimo",
@@ -470,7 +477,8 @@
           "hy4-flash"
         ],
         "size": "small",
-        "tier_up": "^hy\\d"
+        "tier_up": "^hy\\d",
+        "tier_up_version": "same"
       },
       {
         "pattern": "^hy\\d",

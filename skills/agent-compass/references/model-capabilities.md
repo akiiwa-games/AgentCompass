@@ -57,7 +57,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `grok-bot` | 0.00 | 0.00~ | 0.00~ | -0.00~ | -1.19u | 28.0 | yes |
 | `hy3` | -0.42 | -2.39 | -2.94~ | -2.61 | -1.59~ | 1.2 | no |
 | `hy4` | -0.13 | -1.16~ | -0.89~ | -2.46 | -2.35~ | 2.26 | yes |
-| `hy4-flash` | - | -1.56~ | -1.29~ | -2.86 | missing! | - | yes |
+| `hy4-flash` | - | -1.56~ | -1.29~ | -2.86 | -2.35~ | - | yes |
 | `hy4-preview` | -0.13 | -1.16~ | -1.75 | -2.11 | -2.35~ | 1.872 | no |
 | `kimi-k2.6` | -0.37 | -2.16 | -2.95~ | -2.53 | missing | 2.38 | yes |
 | `kimi-k2.7-code` | -0.37 | -2.16~ | -2.95~ | -2.74 | -0.76~ | 2.651 | yes |
@@ -67,7 +67,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `mimo-v2.6-flash-free` | -0.47 | -3.20 | -2.32~ | -1.34 | -2.75 | 0.281 | yes |
 | `mimo-v2.6-pro` | -0.22 | -1.76 | -1.51 | -1.29 | -1.15 | 0.667 | yes |
 | `minimax-m3` | -0.57 | -3.08 | -2.68 | -2.96 | -2.01 | 7.448 | yes |
-| `minimax-m3.1-flash` | -0.48 | -2.69~ | -2.33~ | -1.61 | -2.30 | 1.556 | yes |
+| `minimax-m3.1-flash` | -0.48 | -2.69~ | -3.13~ | -1.61 | -2.30 | 1.556 | yes |
 | `mistral-large-4` | -0.69 | -4.04 | missing! | -2.12 | -1.68 | 3.0 | yes |
 | `muse-ember` | -0.08 | -1.30~ | -2.00~ | -0.29 | -0.85~ | 2.769 | yes |
 | `muse-spark-1.3` | -0.08 | -2.28~ | -2.08~ | -0.84~ | -1.04~ | 7.297 | yes |
@@ -81,9 +81,9 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `qwen3.6-plus` | -0.52 | -2.82 | -2.98~ | -3.11 | -2.66 | 1.405 | yes |
 | `qwen3.7-max` | -0.52 | -2.82~ | -2.98~ | -2.38 | -2.66~ | 9.529 | no |
 | `qwen3.8-27b` | -0.59 | -4.03 | -2.55 | -1.86 | -1.43 | 3.478 | yes |
-| `qwen3.8-flash` | - | missing! | missing! | missing! | missing! | - | yes |
+| `qwen3.8-flash` | - | -2.87~ | -2.35~ | -1.58~ | -2.07~ | - | yes |
 | `qwen3.8-max` | -0.18 | -1.16 | -1.58 | -1.36 | -2.07 | 5.299 | yes |
-| `qwen3.8-omni-flash` | - | missing! | missing! | missing! | missing! | - | yes |
+| `qwen3.8-omni-flash` | - | -2.87~ | -2.35~ | -1.58~ | -2.07~ | - | yes |
 | `qwen4-max` | -0.06 | -0.67~ | -1.55~ | -0.31~ | -2.69~ | 5.478 | yes |
 | `step-5-preview` | -0.47 | -2.67 | -2.25 | -2.06 | -2.19 | 3.894 | yes |
 

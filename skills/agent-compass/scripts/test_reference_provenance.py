@@ -81,14 +81,15 @@ class ProvenanceTests(unittest.TestCase):
                 reference_provenance.validate_accounts_provenance({**accounts, 'families': broken})
 
     def test_families_rows_declare_their_size_and_tier_up_names_a_full_row(self):
-        """Rule (calibration/series.py): every families row declares `size`; `tier_up` sits on a small row and names the
-        pattern of a full row."""
+        """Rule (calibration/series.py): every families row declares `size`; `tier_up` sits on a small row, names the
+        pattern of a full row and comes with `tier_up_version` `same` or `nearest`."""
         accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
         rows = accounts['families']['rows']
         small = next(i for i, r in enumerate(rows) if r.get('tier_up'))
         full = next(i for i, r in enumerate(rows) if r['size'] == 'full')
         for i, change in ((full, {'size': None}), (full, {'size': 'medium'}), (full, {'tier_up': rows[full]['pattern']}),
-                          (small, {'tier_up': rows[small]['pattern']}), (small, {'tier_up': '^no-such-row'})):
+                          (small, {'tier_up': rows[small]['pattern']}), (small, {'tier_up': '^no-such-row'}),
+                          (small, {'tier_up_version': 'older'}), (full, {'tier_up_version': 'same'})):
             broken = [dict(r) for r in rows]
             broken[i].update(change)
             with self.subTest(row=i, change=change), self.assertRaisesRegex(ValueError, 'families.rows'):

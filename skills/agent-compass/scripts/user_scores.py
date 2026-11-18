@@ -63,7 +63,7 @@ CATEGORY_FACETS = {
     'tool_operation': ('responsiveness', 'image_recognition'),
 }
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
-EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')   # the effort ladder every curve is ordered on
 SUGGEST_DEFAULT_THRESHOLD = 0.4
 MEASURED_DATA_STATUSES = ('measured', 'measured_partial', 'interpolated')
 VALID_TARGETS = tuple(
@@ -673,7 +673,8 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
     the facet measured keep their values; its other efforts follow the facet's own curve moved to `z_val` at High; an effort
     the facet has no value at takes `z_val` plus the panel's median own step from High to it (`steps`: the facet's entry of
     five-axis-scores.json `effort_steps`; owner 2026-11-18, every effort gets a value, also after a hand-written score) and
-    stays missing only where the panel gives no step. The curve is then bounded in the facet's direction
+    stays missing only where the panel gives no step; `minimal` is Low plus the fleet's step below Low
+    (`effort_steps.<facet>.low.minimal`). The curve is then bounded in the facet's direction
     (`rises_with_effort`, `bound_along_effort`): first the measured efforts with the set efforts pinned at `z_val` (a measured
     effort that bound moves is no longer listed as measured), then the other efforts with those pinned, so a followed or
     filled value never moves a measured one."""
@@ -687,6 +688,9 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
     for e, step in ((steps or {}).get('high') or {}).items():
         if e in EFFORTS and e not in out and isinstance(step, dict) and step.get('step') is not None:
             out[e] = z_val + float(step['step'])
+    below = ((steps or {}).get('low') or {}).get('minimal')
+    if 'minimal' not in out and 'low' in out and isinstance(below, dict) and below.get('step') is not None:
+        out['minimal'] = out['low'] + float(below['step'])
     held = bound_along_effort({e: out[e] for e in EFFORTS if e in out and (e in pinned or e in measured)}, rises, pinned)
     out = bound_along_effort({e: held.get(e, out[e]) for e in EFFORTS if e in out}, rises, held)
     out = {e: round(float(v), 4) for e, v in out.items()}

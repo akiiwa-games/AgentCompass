@@ -1124,12 +1124,22 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
         # an effort the panel gives no step for stays empty; nothing is borrowed
         out, _ = user_scores._manual_by_effort(0.5, None, True, None, {'high': {'low': {'step': -1.0, 'n': 2}}})
         self.assertEqual(out, {'low': -0.5, 'high': 0.5})
+        # `minimal` is Low plus the fleet's step below Low (effort_steps.<facet>.low.minimal), bounded in the facet's direction
+        below = {**steps, 'low': {'minimal': {'step': -0.7, 'n': 12}}}
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, below)[0]['minimal'], -1.2)
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, False, None,
+                                                       {'low': {'minimal': {'step': -0.7, 'n': 12}},
+                                                        'high': {'low': {'step': 0.9, 'n': 3}}})[0]['minimal'], 1.4)
 
     def test_a_hand_written_score_wins_over_a_derived_value(self):
+        """Rule (calibration/README.md, order of methods): a hand-written score wins over every estimate, the downward
+        derivation (`tier_down`) and the size step (`size_step`) included, and fills `minimal` from Low."""
         five = axis_scores.load_five_axis()
         derived = [(m, a, f) for m, r in five['models'].items() for a, ax in r['axes'].items()
-                   for f, c in (ax.get('facets') or {}).items() if (c.get('estimate') or {}).get('method') == 'tier_down']
-        self.assertTrue(derived)
+                   for f, c in (ax.get('facets') or {}).items()
+                   if (c.get('estimate') or {}).get('method') in ('tier_down', 'size_step')]
+        self.assertEqual({five['models'][m]['axes'][a]['facets'][f]['estimate']['method'] for m, a, f in derived},
+                         {'tier_down', 'size_step'})
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         tested = [(m, a, f) for m, a, f in derived if m in accounts['models']]
         self.assertTrue(tested)
@@ -1142,6 +1152,10 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
             z = round(user_scores.level_to_z(1.5, *user_scores.target_triad(five['anchor']['targets'], a, f)), 4)
             self.assertEqual((cell['status'], cell['value'], cell['by_effort']['high']), ('maintainer', z, z), (m, a, f))
             self.assertNotIn(f'{a}.{f}', ov['models'][m]['five_axis']['estimates'])
+            below = five['effort_steps'][f'{a}.{f}']['low']['minimal']['step']
+            low, minimal = cell['by_effort']['low'], cell['by_effort']['minimal']
+            self.assertEqual(minimal, round(min(low + below, low) if user_scores.rises_with_effort(a, f)
+                                            else max(low + below, low), 4), (m, a, f))
 
 
 if __name__ == '__main__':

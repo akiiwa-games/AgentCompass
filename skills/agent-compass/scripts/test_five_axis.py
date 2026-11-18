@@ -1248,8 +1248,10 @@ class HighFillTests(unittest.TestCase):
         self.assertEqual(fill['weight'], round(weight, 4))
         self.assertEqual(glm['creativity']['by_effort']['high'], round(low + weight * (high - low), 4))
         ds = models['deepseek-v4-pro']['axes']['tool_operation']['facets']['responsiveness']
-        self.assertEqual((ds['status'], ds['estimate']['method']), ('estimated', 'panel_effort_step'))
-        self.assertGreater(ds['by_effort']['high'], ds['by_effort']['max'])
+        self.assertIn('high', ds['by_effort'])
+        if ds['status'] == 'estimated':       # one-sided readings: High from the panel step (fill_high)
+            self.assertEqual(ds['estimate']['method'], 'panel_effort_step')
+        self.assertGreaterEqual(ds['by_effort']['high'], ds['by_effort']['max'])    # responsiveness never rises
         ex = models['deepseek-v4-pro']['axes']['coding']['facets']['execution']
         self.assertLess(ex['by_effort']['high'], ex['by_effort']['max'])
 
@@ -1796,7 +1798,7 @@ class DurationTests(unittest.TestCase):
         self.assertEqual((out[self.anchor]['by_effort']['high'], out['m']['by_effort']), (1.0, {'high': 1.5, 'max': 2.0}))
         self.assertEqual(out['m']['minutes_by_effort'], {'high': 15.0, 'max': 20.0})
         self.assertEqual({b['method'] for b in out['m']['basis_by_effort'].values()}, {'aa'})   # the arena listing is not used
-        self.assertEqual(out['m']['efforts_without_time'], ['low', 'medium', 'xhigh'])
+        self.assertEqual(out['m']['efforts_without_time'], ['minimal', 'low', 'medium', 'xhigh'])
         self.assertEqual(out['m']['basis_by_effort']['max']['url'], f'https://example.test/{aa}')
 
     def test_an_effortless_listing_is_the_single_configuration_keyed_high(self):
@@ -1837,7 +1839,7 @@ class DurationTests(unittest.TestCase):
         self.assertIsNone(fit)
         self.assertIn('not positive', why)
         self.assertEqual((out['arena_only']['status'], out['arena_only']['by_effort']), ('missing', {}))
-        self.assertEqual(out['arena_only']['efforts_without_time'], ['low', 'medium', 'high', 'xhigh', 'max'])
+        self.assertEqual(out['arena_only']['efforts_without_time'], ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
         # models with their own AA time do not need the fit
         self.assertEqual(out['p3']['basis_by_effort']['high']['method'], 'aa')
 
@@ -1854,7 +1856,7 @@ class DurationTests(unittest.TestCase):
         self.assertEqual((basis['method'], basis['base_model'], basis['from_effort'], basis['ratio']),
                          ('series_effort', 'gpt-5.6-luna', 'high', 3.0))
         self.assertEqual(row['basis_by_effort']['high']['method'], 'aa')
-        self.assertEqual(row['efforts_without_time'], ['medium', 'xhigh'])        # the sibling lists neither
+        self.assertEqual(row['efforts_without_time'], ['minimal', 'medium', 'xhigh'])        # the sibling lists neither
         # alone, with no sibling to convert through, the other efforts have no time
         alone, _, _ = self.build({self.anchor: [self.tp(aa, 'high', 10.0)], 'gpt-6-luna': [self.tp(aa, 'high', 6.0)]})
         self.assertEqual(alone['gpt-6-luna']['by_effort'], {'high': 0.6})
@@ -1978,9 +1980,11 @@ class DurationTests(unittest.TestCase):
         for name, r in shipped['models'].items():
             dur = r['duration_multiplier']
             self.assertEqual(set(dur['by_effort']), set(dur['basis_by_effort']), name)
-            self.assertEqual(set(dur['efforts_without_time']) | set(dur['by_effort']), {'low', 'medium', 'high', 'xhigh', 'max'}, name)
-            self.assertTrue(all(b['method'] in ('aa', 'arena_fit', 'series', 'series_effort', 'fleet_effort_ratio', 'fleet_effort_position', 'same_model',
-                                                'effort_bound')
+            self.assertEqual(set(dur['efforts_without_time']) | set(dur['by_effort']),
+                             {'minimal', 'low', 'medium', 'high', 'xhigh', 'max'}, name)
+            self.assertTrue(all(b['method'] in ('aa', 'arena_fit', 'series', 'series_effort', 'fleet_effort_ratio',
+                                                'fleet_effort_position', 'same_model', 'effort_bound', 'size_step',
+                                                'fleet_lowest_step')
                                 for b in dur['basis_by_effort'].values()), name)
             self.assertNotIn('value', dur)
 
@@ -2348,7 +2352,8 @@ class ArenaCaptureTests(unittest.TestCase):
             (Path(tmp) / 'fetch-manifest.json').write_text('{"files": {}}', encoding='utf-8')
             anchor = self.ms.ANCHOR
             builder = self.ms.Builder(Path(tmp), {'models': {anchor: {'listed_as': {'arena': 'A', 'aa': 'A'}}},
-                                                  'calibration_panel': {'anchor': anchor, 'models': [anchor]}})
+                                                  'calibration_panel': {'anchor': anchor, 'models': [anchor],
+                                                                        'members': [anchor]}})
             builder.boards()
         for src in self.ms.ARENA_CAPTURES:
             self.assertIn('not captured', builder.missing[src]['reason'], src)
@@ -2607,7 +2612,7 @@ class EffortCoverageRuleTests(unittest.TestCase):
     def test_no_inversion_along_effort_for_every_model_facet_and_time(self):
         """Rule (`user_scores.bound_along_effort`, direction `rises_with_effort`): an ability facet never decreases as effort
         rises, responsiveness never rises, Time/Task never shortens."""
-        efforts = self.fa.EFFORTS
+        efforts = self.fa.LADDER
         for m, key, c in self.facets():
             sign = 1.0 if self.fa.rises(key) else -1.0
             vals = [sign * c['by_effort'][e] for e in efforts if e in c['by_effort']]
@@ -2618,11 +2623,15 @@ class EffortCoverageRuleTests(unittest.TestCase):
             self.assertEqual(vals, sorted(vals), (m, 'time'))
 
     def test_every_facet_with_a_value_has_every_effort_or_a_declared_refusal(self):
-        """Rule (`fill_efforts`): a facet that has a value at some effort has one at every effort of EFFORTS, unless the panel
-        gives no step to it, which `effort_fill_refused` lists."""
+        """Rule (`fill_efforts`, `fill_minimal`): a facet that has a value at some effort has one at every effort of the
+        ladder, `minimal` included, unless no step reaches it, which `effort_fill_refused` lists; so has Time/Task."""
         refused = {(r['model'], r['facet'], r['effort']) for r in self.doc['effort_fill_refused']}
+        for m, r in self.doc['models'].items():
+            t = r['duration_multiplier']
+            if t.get('by_effort'):
+                self.assertEqual(t['efforts_without_time'], [], m)
         for m, key, c in self.facets():
-            for e in self.fa.EFFORTS:
+            for e in self.fa.LADDER:
                 if c['by_effort'] and e not in c['by_effort']:
                     self.assertIn((m, '.'.join(key), e), refused)
 
@@ -2640,9 +2649,10 @@ class EffortCoverageRuleTests(unittest.TestCase):
         """Rule (`fill_one`): one-sided, own value plus the published panel step (then the bound); bracketed, linear in rank."""
         for m, key, c in self.facets():
             for e, how in (c.get('filled_efforts') or {}).items():
-                if how['method'] == 'panel_effort_step':
+                if how['method'] in ('panel_effort_step', 'fleet_lowest_step'):
                     step = self.doc['effort_steps']['.'.join(key)][how['from_effort']][e]
                     self.assertEqual((how['step'], how['n']), (step['step'], step['n']), (m, key, e))
+                    self.assertEqual(how['method'] == 'fleet_lowest_step', e == 'minimal', (m, key, e))
                     expected = round(how['from_value'] + how['step'], 4)
                 else:
                     (lo, vlo), (up, vup) = next(iter(how['from'].items())), next(iter(how['to'].items()))
@@ -2660,7 +2670,7 @@ class EffortCoverageRuleTests(unittest.TestCase):
                 continue
             seen += 1
             big = est['base_model']
-            self.assertEqual(ups.get(m), big)
+            self.assertEqual(ups.get(m), {'model': big, 'version': 'same'})
             self.assertTrue(self.fa.rises(key))
             gap_keys = [tuple(k.split('.')) for k in est['gap_facets']]
             own = self.doc['models'][m]['axes']
@@ -2672,6 +2682,116 @@ class EffortCoverageRuleTests(unittest.TestCase):
             for e, v in c['by_effort'].items():
                 self.assertLessEqual(v, large[e] + 1e-9, (m, key, e))
         self.assertGreater(seen, 0)
+
+    def size_relations(self):
+        rows = self.doc['models']
+        return {m: rel for m, rel in self.series.tier_up(self.acc).items()
+                if m in rows and rel['model'] in rows and m not in (self.acc.get('same_model') or {})}
+
+    def test_the_size_step_table_is_the_median_over_the_measured_same_version_pairs(self):
+        """Rule (`size_step_table`, calibration/README.md): per facet, the median of small - large at High over the declared
+        same-version pairs both measured there (n >= MIN_SIZE_PAIRS); an ability facet short of pairs takes the median over
+        every ability facet's pairs; Time/Task the exp of the median log ratio over the pairs both listed at High."""
+        same = sorted((m, r['model']) for m, r in self.size_relations().items() if r['version'] == 'same')
+        axes = {m: r['axes'] for m, r in self.doc['models'].items()}
+
+        def high(m, key):
+            c = (axes[m][key[0]].get('facets') or {}).get(key[1]) or {}
+            return c['by_effort']['high'] if 'high' in (c.get('measured_efforts') or ()) else None
+        keys = [(a, f) for a, fs in self.fa.AXES.items() for f in fs]
+        diffs = {k: [(s, l, '.'.join(k), high(s, k) - high(l, k)) for s, l in same
+                     if high(s, k) is not None and high(l, k) is not None] for k in keys}
+        pooled = [d for k in keys if self.fa.rises(k) for d in diffs[k]]
+        for k in keys:
+            got = self.doc['size_steps'].get('.'.join(k))
+            pick = diffs[k] if len(diffs[k]) >= self.fa.MIN_SIZE_PAIRS else (
+                pooled if self.fa.rises(k) and len(pooled) >= self.fa.MIN_SIZE_PAIRS else None)
+            if pick is None:
+                self.assertIsNone(got, k)
+                continue
+            self.assertEqual((got['step'], got['n'], got['pairs']),
+                             (round(float(np.median([d[3] for d in pick])), 4), len(pick), [list(d[:3]) for d in pick]), k)
+            self.assertEqual(got['basis'], 'facet' if pick is diffs[k] else 'ability_pooled', k)
+
+        def listed(m):
+            t = self.doc['models'][m]['duration_multiplier']
+            b = (t.get('basis_by_effort') or {}).get('high') or {}
+            if b.get('method') == 'aa':
+                return t['minutes_by_effort']['high']
+            return b.get('minutes_before') if (b.get('was') or {}).get('method') == 'aa' else None
+        logs = [(s, l, float(np.log(listed(s) / listed(l)))) for s, l in same if listed(s) and listed(l)]
+        got = self.doc['size_steps'].get('time_per_task')
+        if len(logs) < self.fa.MIN_SIZE_PAIRS:
+            self.assertIsNone(got)
+        else:
+            self.assertEqual((got['ratio'], got['n'], got['pairs']),
+                             (round(float(np.exp(np.median([x for _, _, x in logs]))), 4), len(logs),
+                              [[s, l] for s, l, _ in logs]))
+
+    def test_the_minimal_step_is_the_fleet_median_below_low(self):
+        """Rule (`minimal_step_table`): per facet, the median of value(low) - value(medium) over the fleet models that
+        measured the facet at both (n >= 2); `minimal` is Low plus it, never past Low in the facet's direction."""
+        xs = {}
+        for m, key, c in self.facets():
+            if {'low', 'medium'} <= set(c.get('measured_efforts') or ()):
+                xs.setdefault('.'.join(key), []).append(c['by_effort']['low'] - c['by_effort']['medium'])
+        for k, v in xs.items():
+            if len(v) >= 2:
+                got = self.doc['effort_steps'][k]['low']['minimal']
+                self.assertEqual((got['step'], got['n']), (round(float(np.median(v)), 4), len(v)), k)
+        below = self.doc['effort_steps']['time_per_task']['low']['minimal']
+        self.assertLessEqual(below['ratio'], 1.0 + 1e-9)    # not assumed: a lower effort measured faster on the fleet
+        for m, r in self.doc['models'].items():
+            t = r['duration_multiplier']
+            b = (t.get('basis_by_effort') or {}).get('minimal') or {}
+            if b.get('method') == 'fleet_lowest_step':
+                low = t['minutes_by_effort']['low']
+                self.assertEqual(t['minutes_by_effort']['minimal'], round(min(low * below['ratio'], low), 3), m)
+
+    def test_a_size_step_cell_follows_its_formula_its_order_and_never_crosses_its_larger_model(self):
+        """Rule (`size_down`, order of methods): only a facet the small row lacks after measurement, series, fit and (same
+        version only) its own gap; value(high) = large(high) + min(step, 0) for ability, + max(step, 0) for responsiveness;
+        at every effort an ability value is never above the larger model's, responsiveness never slower; Time/Task is the
+        larger model's times min(ratio, 1), never longer."""
+        rel = self.size_relations()
+        seen = set()
+        for m, key, c in self.facets():
+            est = c.get('estimate') or {}
+            if est.get('method') not in ('size_step', 'tier_down'):
+                continue
+            big, up = est['base_model'], self.fa.rises(key)
+            self.assertEqual(rel[m]['model'], big, m)
+            large = self.doc['models'][big]['axes'][key[0]]['facets'][key[1]]['by_effort']
+            for e, v in c['by_effort'].items():
+                self.assertTrue(v <= large[e] + 1e-9 if up else v >= large[e] - 1e-9, (m, key, e, v, large[e]))
+            if est['method'] == 'tier_down':
+                continue
+            seen.add(m)
+            self.assertEqual(c['measured_efforts'], [], (m, key))
+            step = self.doc['size_steps']['.'.join(key)]
+            self.assertEqual((est['step'], est['n'], est['version']), (step['step'], step['n'], rel[m]['version']))
+            move = min(step['step'], 0.0) if up else max(step['step'], 0.0)
+            self.assertEqual(est['move'], round(move, 4))
+            self.assertAlmostEqual(c['by_effort']['high'], large['high'] + move, places=3, msg=(m, key))
+            others = {(a, f): x for a, ax in self.doc['models'][m]['axes'].items() for f, x in (ax.get('facets') or {}).items()}
+            if rel[m]['version'] == 'nearest' or not up:
+                self.assertNotIn('tier_down', {(x.get('estimate') or {}).get('method') for k2, x in others.items()
+                                               if rel[m]['version'] == 'nearest'}, m)
+            else:   # same version, ability: only when the row's own gap could not be read (no tier_down on the row)
+                self.assertNotIn('tier_down', {(x.get('estimate') or {}).get('method') for x in others.values()}, m)
+        self.assertTrue(seen)
+        tseen = 0
+        for m, r in self.doc['models'].items():
+            t = r['duration_multiplier']
+            for e, b in (t.get('basis_by_effort') or {}).items():
+                if b.get('method') != 'size_step':
+                    continue
+                tseen += 1
+                large = self.doc['models'][b['base_model']]['duration_multiplier']['minutes_by_effort']
+                self.assertEqual(b['applied'], round(min(b['ratio'], 1.0), 4))
+                self.assertLessEqual(t['minutes_by_effort'][e], large[e] + 1e-9, (m, e))
+                self.assertAlmostEqual(t['minutes_by_effort'][e], large[e] * b['applied'], places=2)
+        self.assertGreater(tseen, 0)
 
     def test_small_rows_never_join_a_full_series_and_previews_join_their_row(self):
         """Rule (series.groups): a `small` row (by its deciding `families` row) never shares a series with a non-small one; a

@@ -11,8 +11,10 @@ refused, whatever relation proposed it, except a `same_model` declaration (the v
 
 The downward relation (`tier_up`, owner 2026-11-18) is a second relation, not series membership: a small row listed in
 its `families` row's `models` (a current member of that family) whose `families` row declares `tier_up` (the pattern of
-the same line's next larger family row) has, as its larger model, the first model of that larger row the catalog has.
-five_axis.py uses it only for a facet the small row's own same-size series and the tier fit leave without any value.
+the same line's next larger family row) has, as its larger model, the first model of that larger row the catalog has;
+`tier_up_version` declares whether that model is the same version as the row's current members (`same`) or the nearest
+version of the line (`nearest`). five_axis.py uses it only for a facet the small row's own same-size series and the tier
+fit leave without any value: the small row's own gap only for `same`, the fleet's size step for both.
 
 A `same_model` row (accounts.json) declares that one row is the very model another row names (a vendor statement with its
 url): the declared model is that row's base before any other sibling, and the row carries the type scores of the
@@ -74,7 +76,7 @@ def groups(acc):
 
 
 def tier_up(acc):
-    """{small row: its larger model} (module docstring, the downward relation)."""
+    """{small row: {'model': its larger model, 'version': 'same' | 'nearest'}} (module docstring, the downward relation)."""
     models = {k: v for k, v in (acc.get('models') or {}).items() if isinstance(v, dict)}
     fams = model_resolution.family_patterns(acc)
     by_pattern = {f['pattern']: f for f in fams}
@@ -85,7 +87,7 @@ def tier_up(acc):
             continue
         larger = next((t for t in by_pattern[row['tier_up']]['models'] if t in models), None)
         if larger:
-            out[k] = larger
+            out[k] = {'model': larger, 'version': row['tier_up_version']}
     return out
 
 

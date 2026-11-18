@@ -172,6 +172,9 @@ def _validate_catalog_tables(doc):
         if 'tier_up' in entry and (entry['size'] != 'small' or (by_pattern.get(entry['tier_up']) or {}).get('size') != 'full'):
             raise ValueError(f'families.rows[{i}] ({entry["pattern"]}) tier_up must be on a small row and name the pattern '
                              f'of a full row: {entry["tier_up"]!r}')
+        if ('tier_up' in entry) != ('tier_up_version' in entry) or entry.get('tier_up_version', 'same') not in ('same', 'nearest'):
+            raise ValueError(f'families.rows[{i}] ({entry["pattern"]}) tier_up needs tier_up_version `same` or `nearest` '
+                             'and tier_up_version needs tier_up')
     panel = doc.get('calibration_panel')
     if not valid_public_declaration(panel) or not isinstance(panel.get('anchor'), str) or not isinstance(panel.get('models'), list):
         raise ValueError('accounts.json needs calibration_panel {anchor, models} as a dated maintainer declaration')
