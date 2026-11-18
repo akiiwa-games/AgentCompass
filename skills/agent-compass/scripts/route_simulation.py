@@ -434,7 +434,7 @@ def replay(last=None, path=None, accounts=None, warnings=None):
 
 
 STATE_COPY_MAX_BYTES = 1 << 20
-STATE_COPY_DIRS = ('grok-bot',)    # discovery reads the Grok Bot config
+STATE_COPY_DIRS = ('public-data', 'grok-bot')    # routing reads the published reference set and the Grok Bot config
 
 
 def sandbox_state(folder, *, include_local=True):

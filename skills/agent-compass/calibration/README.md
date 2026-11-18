@@ -40,7 +40,7 @@ agentcompass data refresh --no-fetch          # rebuild and validate from cached
 agentcompass data refresh --no-fetch --accept-panel-change   # write a rebuild whose panel members changed (refused otherwise)
 ```
 
-The fetching refresh runs once per release, as a step of preparing it; the data it writes is fixed until the next release.
+The fetching refresh runs once per release, as a step of preparing it; nothing reads the boards between releases. What moves between releases is only what the maintainer publishes on purpose (below).
 
 Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`.
 
@@ -83,12 +83,28 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    `model-capabilities.{json,md}`. Values fitted over all measured models (the tier fits, the fleet effort ratios) still
    move for other models; the run prints how many moved, by field. A model in `calibration_panel` (or the anchor) is
    refused: it changes the scale, so it needs the full refresh (`agentcompass data refresh`, or `--no-fetch` from cached
-   downloads), which rebuilds every row. Commit the changed files under `references/`.
+   downloads), which rebuilds every row. Then publish and push (Publishing a model between releases).
 
 A **maintainer manual score** is `agentcompass score set <model> ... --public`, which writes `references/user-scores.json`;
-then run the refresh. A **measured score** comes from the boards on the next refresh. The calibration
+then run `agentcompass data refresh --no-fetch` and `agentcompass data publish`. A **measured score** comes from the boards on the next refresh. The calibration
 scale itself (the anchor and the panel's sentinel models) is `calibration_panel` in `accounts.json`, a dated maintainer
 declaration; changing it rescales every score. Every written value names its sources and dates.
+
+## Publishing a model between releases
+
+Installs read a set the maintainer published on `main` without a product update
+([router-internals.md](../references/router-internals.md#5-reference-data-shipped-and-published)). For a new model:
+
+1. Edit `references/accounts.json` (steps 1 to 4 above).
+2. `agentcompass data refresh --model <id>` (step 5).
+3. `agentcompass data publish`: checks the set and writes `references/public-data.json`.
+4. The checks: `agentcompass data publish --check`, `pytest skills/agent-compass/scripts/test_public_data.py
+   skills/agent-compass/scripts/test_reference_provenance.py`.
+5. Commit the changed files under `references/` and push to `main`.
+
+Nothing else: installs pick the set up at their next check (at most 6 hours). A corrected hand-written score or launch
+row is the same procedure with its own edit in place of steps 1 and 2. A model whose launch needs code (a new harness, a
+new launch field, a new schema) cannot be published this way and ships with a release.
 
 ## Rules the data follows
 

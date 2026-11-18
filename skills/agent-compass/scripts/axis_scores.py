@@ -7,6 +7,7 @@ from pathlib import Path
 
 import account_state
 import provider_inventory
+import public_data
 import reference_provenance
 import user_scores
 import account_fleet
@@ -43,8 +44,6 @@ import account_fleet
 #   percentage and reset time.
 # - Economy: every long window charges the candidate's burn (usd over the window's capacity) times the window's quota
 #   price (FiveAxisEconomy), counted in hours of the window's reference model.
-FIVE_AXIS_FILE = account_fleet.REFERENCES / 'five-axis-scores.json'
-USER_SCORES_FILE = account_fleet.REFERENCES / 'user-scores.json'
 FIVE_AXES = ('creativity', 'coding', 'aesthetics', 'tool_operation')
 FIVE_AXIS_DEFAULTS = {
     # fit and continuity are both in panel standard deviations: one unit each, not a hand-set trade-off
@@ -71,7 +70,7 @@ def five_axis_config(policy):
 
 
 def load_five_axis(path=None):
-    target = Path(path) if path is not None else account_fleet.REFERENCES / 'five-axis-scores.json'
+    target = Path(path) if path is not None else public_data.effective(account_fleet.REFERENCES / 'five-axis-scores.json')
     return json.loads(target.read_text(encoding='utf-8'))
 
 

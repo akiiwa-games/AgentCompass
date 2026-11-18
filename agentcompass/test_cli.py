@@ -23,7 +23,7 @@ class CliTests(unittest.TestCase):
         self.home = Path(self.temp.name)
         self.env = {k: v for k, v in os.environ.items()
                     if k.upper() in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP")}
-        self.env.update(HOME=str(self.home), USERPROFILE=str(self.home), PATH="")
+        self.env.update(HOME=str(self.home), USERPROFILE=str(self.home), PATH="", AGENTCOMPASS_PUBLIC_DATA="off")
 
     def run_cli(self, *args):
         return subprocess.run([sys.executable, "-X", "utf8", str(ENTRY), *args],
@@ -101,41 +101,33 @@ class CliTests(unittest.TestCase):
         self.assertEqual(done_again.returncode, 0, done_again.stderr + done_again.stdout)
         self.assertEqual((refs_dir / "five-axis-scores.json").read_bytes(), before_scores)
 
-        # Outside a git checkout, `agentcompass data refresh` without `--references` refuses and points at updating.
+        # Outside a git checkout, the commands that write shipped files refuse and point an install at `data --refresh`;
+        # `data publish --check` only reads, so it runs anywhere.
         import io
-        err = io.StringIO()
-        with patch.object(cli.locations, "checkout_root", return_value=None), patch("sys.stderr", err):
-            rc = cli.data_command(["refresh", "--no-fetch"])
-        self.assertEqual(rc, 2)
-        self.assertIn("update AgentCompass", err.getvalue())
+        for argv in (["refresh", "--no-fetch"], ["publish"]):
+            err = io.StringIO()
+            with patch.object(cli.locations, "checkout_root", return_value=None), patch("sys.stderr", err):
+                self.assertEqual(cli.data_command(argv), 2, argv)
+            self.assertIn("agentcompass data --refresh", err.getvalue())
 
-        # Besides `data refresh` (checkout only) and `data --refresh` (the post-update step), `agentcompass data` has no
-        # subcommand: an install reads only the data shipped with its version.
-        for argv, code, stream in ((["--fetch"], 2, "stderr"), ([], 2, "stderr"), (["-h"], 0, "stdout")):
-            out, err = io.StringIO(), io.StringIO()
-            with patch("sys.stdout", out), patch("sys.stderr", err):
-                self.assertEqual(cli.data_command(argv), code, argv)
-            self.assertIn("agentcompass data refresh", (out if stream == "stdout" else err).getvalue())
-
-    def test_the_post_update_step_removes_an_earlier_versions_reference_data_and_nothing_else(self):
-        """Rule (router-internals, Older local state): released updaters run `agentcompass data --refresh` after an
-        update; it removes the removed channel's cache and setting by their exact paths and exits 0."""
-        import io
-        from unittest.mock import patch
-        from agentcompass import cli
-        with TemporaryDirectory() as tmp:
-            state = Path(tmp) / "state"
-            (state / "public-data" / "sets").mkdir(parents=True)
-            (state / "public-data-config.json").write_text("{}", encoding="utf-8")
-            (state / "user-scores.json").write_text("{}", encoding="utf-8")
-            for expected in ([str(state / "public-data"), str(state / "public-data-config.json")], []):
-                out = io.StringIO()
-                with patch.dict(os.environ, {"ROUTER_STATE_DIR": str(state)}), patch("sys.stdout", out):
-                    self.assertEqual(cli.data_command(["--refresh"]), 0)
-                for path in expected:
-                    self.assertIn(f"removed {path}", out.getvalue())
-                self.assertEqual(out.getvalue().count("removed "), len(expected))
-            self.assertEqual(sorted(p.name for p in state.iterdir()), ["user-scores.json"])
+    def test_data_status_and_refresh_report_the_set_in_effect_and_keep_the_channel_state(self):
+        """Rule (router-internals, Reference data): `agentcompass data` prints which set routing reads; `data --refresh`,
+        the step updaters run after an update, exits 0 with the channel off or offline and deletes no state."""
+        state = self.home / ".agent-compass"
+        old_set = state / "public-data" / "sets" / "0123456789ab"
+        old_set.mkdir(parents=True)
+        (old_set / "public-data.json").write_text('{"schema_version": 6}', encoding="utf-8")
+        (state / "public-data-config.json").write_text('{"enabled": true}', encoding="utf-8")
+        shown = self.run_cli("data")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        report = json.loads(shown.stdout)
+        self.assertEqual((report["source"], report["enabled"]), ("bundled", False))
+        refreshed = self.run_cli("data", "--refresh")
+        self.assertEqual(refreshed.returncode, 0, refreshed.stderr)
+        self.assertEqual(json.loads(refreshed.stdout)["refresh"]["status"], "disabled")
+        self.assertTrue(old_set.is_dir() and (state / "public-data-config.json").is_file())
+        checked = self.run_cli("data", "publish", "--check")
+        self.assertEqual(checked.returncode, 0, checked.stderr)
 
 
 if __name__ == "__main__":

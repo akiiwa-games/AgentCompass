@@ -97,6 +97,9 @@ for name, path in {'HOME': TEST_HOME, 'USERPROFILE': TEST_HOME, 'LOCALAPPDATA': 
     os.environ[name] = str(path)
 for name in (*STATE_VARIABLES, *WORKER_VARIABLES):
     os.environ.pop(name, None)
+# No test, and no process a test starts, reaches GitHub for the published reference data; public_data tests pass their
+# own environment and a local fixture.
+os.environ['AGENTCOMPASS_PUBLIC_DATA'] = 'off'
 
 if 'ROUTER_PASEO_SDK_ROOT' not in os.environ and not (REPO_ROOT / 'setup' / 'paseo-bridge' / 'node_modules').is_dir():
     _main_root = main_checkout_root()

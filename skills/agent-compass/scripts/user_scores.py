@@ -2,7 +2,8 @@
 
 Precedence (highest to lowest):
   1. Local user override (`<ROUTER_STATE_DIR>/user-scores.json`, `kind: "user"`, local only)
-  2. Shipped maintainer score (`references/user-scores.json`, `kind: "maintainer"`, public data, no source citation needed)
+  2. Maintainer score (`references/user-scores.json` shipped or published between releases, `kind: "maintainer"`, public
+     data, no source citation needed)
   3. Public board measurement (`measured` / `measured_partial`)
   4. Sibling or tier-fit estimate / series conversion (`estimated` / `converted`)
 
@@ -47,6 +48,7 @@ import sys
 # route_judge.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import override_store  # noqa: E402
+import public_data  # noqa: E402
 import state_upgrade  # noqa: E402
 
 SCHEMA_VERSION = 3
@@ -88,7 +90,13 @@ def local_scores_path(path=None, environ=None) -> Path:
 
 
 def public_scores_path(path=None) -> Path:
+    """The maintainer file `--public` writes: always the shipped references/user-scores.json of this checkout."""
     return Path(path) if path is not None else PUBLIC_SCORES_FILE
+
+
+def public_scores_read_path(path=None) -> Path:
+    """The maintainer file routing reads: the published set in effect (public_data.effective) unless a path is given."""
+    return Path(path) if path is not None else public_data.effective(PUBLIC_SCORES_FILE)
 
 
 def _public_lock_path(public_path: Path) -> Path:
@@ -335,7 +343,7 @@ def load_local(path=None, environ=None) -> dict:
 
 
 def load_public(path=None) -> dict:
-    target = public_scores_path(path)
+    target = public_scores_read_path(path)
     if not target.is_file():
         return empty_document()
     raw = json.loads(target.read_text(encoding='utf-8-sig'))
@@ -537,7 +545,7 @@ def list_scores(model: str | None = None, *, scope: str = 'all', accounts: dict 
     out = {'scope': scope}
     if scope in ('all', 'public'):
         out['public'] = _annotate_scores(pub_scores, targets_table)
-        out['public_path'] = str(public_scores_path(public_path))
+        out['public_path'] = str(public_scores_read_path(public_path))
     if scope in ('all', 'local'):
         out['local'] = _annotate_scores(loc_scores, targets_table)
         out['local_path'] = str(local_scores_path(local_path))
@@ -966,7 +974,7 @@ def cli_main(argv: list[str] | None = None) -> int:
     p_list = sub.add_parser('list', help='List manual scores (both maintainer public and local user by default).')
     p_list.add_argument('model', nargs='?', help='Optional model id to filter by.')
     grp = p_list.add_mutually_exclusive_group()
-    grp.add_argument('--public', action='store_true', help='List only shipped maintainer scores.')
+    grp.add_argument('--public', action='store_true', help='List only maintainer scores (shipped or published).')
     grp.add_argument('--local', action='store_true', help='List only local user overrides.')
 
     p_clear = sub.add_parser('clear', help='Clear manual score(s) for <model> [target], or --all.')
@@ -981,7 +989,7 @@ def cli_main(argv: list[str] | None = None) -> int:
     p_sug.add_argument('--threshold', type=float, default=SUGGEST_DEFAULT_THRESHOLD,
                        help=f'Minimum |data_level - manual_level| to flag on measured boards (default: {SUGGEST_DEFAULT_THRESHOLD:g}).')
     sgrp = p_sug.add_mutually_exclusive_group()
-    sgrp.add_argument('--public', action='store_true', help='Inspect only shipped maintainer scores.')
+    sgrp.add_argument('--public', action='store_true', help='Inspect only maintainer scores (shipped or published).')
     sgrp.add_argument('--local', action='store_true', help='Inspect only local user overrides.')
 
     args = parser.parse_args(argv)

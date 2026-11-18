@@ -9,9 +9,11 @@ def disabled_score_cache(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def offline_antigravity_plan(monkeypatch):
-    """Tests never look up the Antigravity tier over the network; antigravity_plan tests pass their own environment."""
+def offline_lookups(monkeypatch):
+    """Tests never look up the Antigravity tier or the published reference data over the network, and read the shipped
+    references; antigravity_plan and public_data tests pass their own environment."""
     monkeypatch.setenv('AGENTCOMPASS_ANTIGRAVITY_PLAN', 'off')
+    monkeypatch.setenv('AGENTCOMPASS_PUBLIC_DATA', 'off')
 
 
 @pytest.fixture(autouse=True)

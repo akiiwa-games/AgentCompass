@@ -281,6 +281,7 @@ class HostedSingleReaderTests(unittest.TestCase):
             "LOCALAPPDATA": str(self.home / "AppData" / "Local"),
             "ROUTER_PROVIDER_HOME": str(self.home),
             "ROUTER_STATE_DIR": str(self.home / ".agent-compass"),
+            "AGENTCOMPASS_PUBLIC_DATA": "off",
             "AGENTCOMPASS_ANTIGRAVITY_PLAN": "off",
             "AGENTCOMPASS_LIVE_MODELS": "off",
         }

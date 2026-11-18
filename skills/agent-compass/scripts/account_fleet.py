@@ -11,6 +11,7 @@ import tempfile
 import host_policy
 import provider_retry
 import provider_inventory
+import public_data
 import accounts_override
 import cwd_policy
 from model_resolution import DIRECT_SOURCES, family_patterns, resolve_model as _resolve_model, resolve_canonical_model, split_model_effort
@@ -31,14 +32,14 @@ def accounts_override_path(environ=None):
 
 
 def fleet_document_path(environ=None):
-    """The shipped public accounts.json. Accounts, plans and capacities
+    """The public accounts.json in effect (public_data.effective: the published set when newer than the shipped one). Accounts, plans and capacities
     come from discovery and public data; personal choices live in accounts-override.json. No machine-local fleet
     document exists. ROUTER_ACCOUNTS_FILE pins an explicit document for tests and fixtures only."""
     env = os.environ if environ is None else environ
     configured = (env.get('ROUTER_ACCOUNTS_FILE') or '').strip()
     if configured and Path(configured).expanduser().is_file():
         return Path(configured).expanduser()
-    return REFERENCES / 'accounts.json'
+    return public_data.effective(REFERENCES / 'accounts.json', environ)
 
 
 def configured_quota_sources(environ=None):
