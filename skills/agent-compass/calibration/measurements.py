@@ -301,7 +301,8 @@ class Builder:
         """Surface each release the leaderboard page and the catalogue ask for that cannot be read: the choice between
         releases is ambiguous, the page was never fetched, a record of it has a shape the reader does not know, or it
         gives a model no reading of its release (no record the matcher finds, or only records without a figure), or the
-        matcher resolves the model to another base name than the one the plan chose it for. A page whose fetch failed is a missing manifest row, surfaced with its error by `build`."""
+        matcher resolves the model to another base name than the one the plan chose it for. A page whose fetch failed
+        is a missing manifest row, surfaced with its error by `build`."""
         for model, why in self.release_ambiguous.items():
             self.miss(f'aa.release/{model}', 'aa-models.html', why)
         variants = aa_variants(self.aa_records)
@@ -321,7 +322,7 @@ class Builder:
                                                              'the plan chose it for on this page')
                 elif not base or not any(sources.aa_has_figure(r) for r in variants[base].values()):
                     empty.setdefault((name, url), []).append(model)
-        for key_ in {*empty, *wrong}:
+        for key_ in sorted({*empty, *wrong}, key=lambda page: page[0]):   # a set's order differs between runs
             reasons = [*wrong.get(key_, ())]
             if key_ in empty:
                 reasons.append(f'the page carries no reading of its release for {", ".join(empty[key_])} (no record of the '
