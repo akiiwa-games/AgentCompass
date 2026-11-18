@@ -56,8 +56,14 @@ class HostRulesTests(unittest.TestCase):
             # The dispatch procedure is not copied into every session any more.
             for detail in ('bypassPermissions', 'notifyOnFinish', '2M', 'rotate_after_carried_tokens', 'gate-hook', 'record --'):
                 self.assertNotIn(detail, text, kind)
-        self.assertLess(len(host_rules.load('shared', self.home)[0]), 2600)
-        self.assertLess(len(host_rules.load('daemon-append', self.home)[0]), 1000)
+        # The default stays a short pointer. Its length is the text's, not the length of the path the checkout lives in.
+        def text_length(kind):
+            text = host_rules.load(kind, self.home)[0]
+            for machine_path in (host_rules.DISPATCH_RULES, host_rules.SKILL_DIR, host_rules.agentcompass_command()):
+                text = text.replace(machine_path, '@')
+            return len(text)
+        self.assertLess(text_length('shared'), 2600)
+        self.assertLess(text_length('daemon-append'), 1000)
 
     def test_a_personal_dispatch_file_is_named_not_copied(self):
         personal = host_rules.personal_dispatch_path(self.home)

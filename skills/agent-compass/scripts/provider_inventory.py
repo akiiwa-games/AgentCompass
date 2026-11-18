@@ -1050,7 +1050,9 @@ def _discover(home=None, environ=None, now=None):
     _merge(result, bindings, **_discover_grok_bot(state_dir, environ))
     read_cc_switch(home, environ, definitions, result, bindings)
     read_magpie(home, environ, result, bindings)
-    previous = _previous_inventory(state_dir)
+    # The last published inventory. One of another schema or shape is not read: `apply_removals` ignores it and the
+    # next publish (`current`) replaces it.
+    previous, _ = read_json(state_dir / 'provider-inventory.json')
     apply_removals(result, previous)
     _pause_disabled_plugins(result, state_dir)
     _sync_launcher_status(result)
@@ -1588,18 +1590,6 @@ def read_cc_switch(home, environ, definitions, result, bindings):
                 result['accounts'][name].update(status='paused', reason='unhealthy_in_cc_switch')
         result['saved'].append({**entry, 'bound_to': matched, 'models': models,
                                 'plan': facts.get('plan'), 'status': 'paused' if entry.get('healthy') is False else 'bound' if matched else 'saved'})
-
-
-def _previous_inventory(state_dir):
-    """The last published inventory; a file of an older shape stops discovery with its upgrade message."""
-    inv_path = state_dir / 'provider-inventory.json'
-    if inv_path.exists():
-        import state_upgrade
-        inv_issue = state_upgrade.check_provider_inventory(inv_path)
-        if inv_issue:
-            raise ValueError(inv_issue)
-    previous, _ = read_json(inv_path)
-    return previous
 
 
 def _pause_disabled_plugins(result, state_dir):

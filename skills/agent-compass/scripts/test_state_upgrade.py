@@ -203,15 +203,13 @@ class StateUpgradeContractTests(unittest.TestCase):
         self.assertEqual(before, after, 'doctor must never rewrite user files')
 
         issues = report['upgrade_issues']
-        self.assertGreaterEqual(len(issues), 16, issues)
+        # Derived state the product rebuilds or skips itself is not the user's chore: doctor does not list it.
+        for healed in (db_file, self.state / 'usage-activity.json', self.state / 'provider-inventory.json'):
+            self.assertFalse(any(str(healed) in issue for issue in issues), healed)
         self.assertIn('Upgrade checks:', rendered)
-        allowed_fixes = (
-            'Fix: re-run "agentcompass setup".',
-            'Fix: re-toggle in the tray.',
-        )
         for issue in issues:
-            self.assertTrue(
-                issue.endswith(allowed_fixes) or ('Fix: delete "' in issue and issue.endswith('".')),
+            self.assertRegex(
+                issue, r'Fix: (re-run "agentcompass setup"\.|(edit the .*or )?delete "[^"]+"( \([^)]+\))?\.)$',
                 f'Unexpected fix wording in {issue!r}',
             )
         for expected_file in (
@@ -220,10 +218,6 @@ class StateUpgradeContractTests(unittest.TestCase):
             self.state / 'user-scores.json',
             rules_dir / 'shared.md',
             self.state / 'router-ledger.jsonl',
-            db_file,
-            self.state / 'usage-activity.json',
-            self.state / 'provider-inventory.json',
-            self.state / 'router-overrides.json',
             uf_cache,
             cal_cache,
             claude_dir / 'settings.json',
@@ -244,7 +238,6 @@ class StateUpgradeContractTests(unittest.TestCase):
         override_path = self.state / 'accounts-override.json'
         for bad_doc in (
             {'schema_version': 1, 'accounts': {}},
-            {'schema_version': 2, 'migration_ambiguous_enabled': [{'account': 'codex', 'bundle': 'sol_high'}]},
             {'schema_version': 2, 'accounts': {'codex': {'allowed_cwd': ['D:/work'], 'cwd_regex': 'game'}}},
         ):
             override_path.write_text(json.dumps(bad_doc), encoding='utf-8')
@@ -291,55 +284,6 @@ class StateUpgradeContractTests(unittest.TestCase):
             host_rules.load('shared', self.home)
         self.assertEqual(str(ctx.exception), expected_rule)
         overlay.unlink()
-
-        # 5. router-overrides.json
-        overrides_file = self.state / 'router-overrides.json'
-        overrides_file.write_text(
-            json.dumps({'overrides': [{'id': 'o1', 'account': 'codex', 'until': (self.now + timedelta(hours=2)).isoformat(),
-                                       'stop_on_reset': True, 'baseline_windows': {'usage': {'used_pct': 20}}}]}),
-            encoding='utf-8',
-        )
-        expected_ov = state_upgrade.check_router_overrides(overrides_file)
-        self.assertIsNotNone(expected_ov)
-        with self.assertRaises(ValueError) as ctx:
-            quota_overrides.load_overrides(self.now, path=overrides_file)
-        self.assertEqual(str(ctx.exception), expected_ov)
-        overrides_file.unlink()
-
-        # 6. dispatch.sqlite3 with an older-format profile in decisions
-        db_file = self.state / 'dispatch.sqlite3'
-        with patch.dict(os.environ, {**env, 'ROUTER_DISPATCH_DB': str(db_file)}, clear=True), \
-                patch.object(dispatch_registry.provider_inventory, 'launcher_family', return_value='codex'):
-            accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
-            accounts['accounts']['codex']['verified'] = True
-            bundle = dict(accounts['accounts']['codex']['bundles']['sol_high'], bundle_id='sol_high',
-                          account='codex', provider='codex')
-            task = {'objective': 'Implement feature', 'task_id': 't1', 'parent_agent_id': 'p1', 'expected_hours': 0.5}
-            old_alloc = {
-                **task,
-                'profile': {
-                    **profile(),
-                    'realtime_loop': False,
-                    'axis_demand': {'divergence': 1, 'global_rigor': 2, 'module_precision': 2, 'vision_tools': 0},
-                },
-            }
-            with patch.object(account_fleet, 'load_accounts', return_value=accounts):
-                rec = dispatch_registry.issue(
-                    {'stage': 'plan', 'choice': 'sol_high', 'selected_bundle': bundle, 'decision': {'action': 'start'}},
-                    task,
-                    now=self.now,
-                    path=db_file,
-                    allocation_task=old_alloc,
-                )
-            expected_db = state_upgrade.check_dispatch_db(db_file)
-            self.assertIsNotNone(expected_db)
-            launch = {'title': 'worker', 'initialPrompt': 'do work'}
-            with self.assertRaises(ValueError) as ctx:
-                dispatch_registry.prepare(
-                    rec['decision_id'], task, launch, {'read_ok': True, 'accounts': {}}, accounts=accounts,
-                    now=self.now, path=db_file,
-                )
-            self.assertEqual(str(ctx.exception), expected_db)
 
     def test_tray_skips_old_shape_ledger_rows_and_returns_skipped_count(self):
         ledger_file = self.state / 'router-ledger.jsonl'

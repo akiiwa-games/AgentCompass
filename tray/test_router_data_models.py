@@ -121,7 +121,7 @@ def test_an_override_of_an_old_shape_without_an_upgrade_step_is_refused(tmp_path
     target = settings(tmp_path, monkeypatch)
     for bad in (
         {'schema_version': 1, 'accounts': {'codex': {'bundles': {'sol_high': {'disabled': True}}}}},
-        {'schema_version': 2, 'migration_ambiguous_enabled': [{'account': 'codex', 'bundle': 'sol_high'}]},
+        {'schema_version': 2, 'accounts': {'codex': {'allowed_cwd': ['D:/work'], 'cwd_regex': 'game'}}},
     ):
         target.write_text(json.dumps(bad), encoding='utf-8')
         with pytest.raises(ValueError, match=r'accounts-override\.json'):

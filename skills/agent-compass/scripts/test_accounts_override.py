@@ -56,6 +56,16 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
         self.assertEqual(accounts['acct-d'], {})
         re.compile(regex_a)
 
+    def test_the_migration_record_of_the_v0_2_to_v0_5_tray_is_dropped_and_nothing_else_changes(self):
+        # Those releases applied none of its entries, so the file without it is the file they ran with.
+        doc = {'schema_version': 2, 'scoring': {'k': 1}, 'accounts': {'acct-a': {'verified': True, 'bundles': {
+            'b1': {'disabled': True}}}}}
+        self.write({**doc, 'migration_ambiguous_enabled': [{'account': 'acct-a', 'bundle': 'b2'}]})
+        before = self.path.read_bytes()
+        self.assertEqual(accounts_override.load_override(self.path), doc)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertIsNone(state_upgrade.check_accounts_override(self.path))
+
     def test_a_read_never_writes_and_the_next_save_writes_the_current_shape_keeping_the_choices(self):
         self.write({'schema_version': 2, 'scoring': {'k': 1}, 'accounts': {'acct-a': {
             'verified': True, 'allowed_cwd': ['D:/work'], 'bundles': {'b1': {'disabled': 'off'}}}}})
@@ -95,7 +105,6 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
         for doc in ({'accounts': {'acct-a': {'verified': True}}},                          # v0.1.0: no schema_version
                     {'schema_version': 1, 'accounts': {}},
                     {'schema_version': 3, 'accounts': {}},
-                    {'schema_version': 2, 'migration_ambiguous_enabled': [{'account': 'acct-a', 'bundle': 'b1'}]},
                     {'schema_version': 2, 'accounts': {'acct-a': {'allowed_cwd': ['D:/work'], 'cwd_regex': 'game'}}},
                     {'schema_version': 2, 'accounts': {'acct-a': {'allowed_cwd': {'path': 'D:/work'}}}},
                     ['not', 'an', 'object']):

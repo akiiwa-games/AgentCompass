@@ -77,13 +77,21 @@ def _allowed_cwd_to_regex(document):
     return result
 
 
+def _without_migration_record(document):
+    """The v0.2.0 to v0.5.0 tray, when it converted a v1 file, listed the bundles whose `disabled` the old file did not
+    state. It applied none of them, so the file without the list is the file those versions ran with."""
+    return {key: value for key, value in document.items() if key != 'migration_ambiguous_enabled'}
+
+
 # The user's own choices are kept across updates: {the shape an earlier release wrote: (does the document have it, the
 # step that carries it into the current shape)}. A shape that cannot be carried without guessing has no step and is
 # refused by `validate_document`: a file without `schema_version` (the full copy of the shipped file that v0.1.0
-# wrote), `migration_ambiguous_enabled`, and an account whose `allowed_cwd` restricts and sits next to a `cwd_regex`.
+# wrote) and an account whose `allowed_cwd` restricts and sits next to a `cwd_regex`.
 LOCAL_UPGRADES = {
     'non-boolean disabled (v0.1.0 to v0.5.0)': (_has_non_boolean_disabled, _disabled_to_boolean),
     'allowed_cwd (v0.1.0 to v0.5.0)': (lambda doc: bool(_allowed_cwd_accounts(doc)), _allowed_cwd_to_regex),
+    'migration_ambiguous_enabled (v0.2.0 to v0.5.0)': (lambda doc: 'migration_ambiguous_enabled' in doc,
+                                                        _without_migration_record),
 }
 
 
@@ -97,37 +105,38 @@ def upgrade_document(doc):
     return doc
 
 
+def _delete_fix(path):
+    return state_upgrade.fix_delete(path, 'this discards every account choice in it; set them again in the tray')
+
+
 def validate_document(doc, path):
-    """Raise `ValueError` for a document that is not in the current shape (after `upgrade_document`)."""
+    """Raise `ValueError` for a document that is not in the current shape (after `upgrade_document`). Each message
+    names a fix that works when followed: delete the file (the tray then writes a new one), or, for an `allowed_cwd`
+    next to a `cwd_regex`, edit the one account."""
     if not isinstance(doc, dict):
         raise ValueError(state_upgrade.format_issue(
-            path, 'older or invalid accounts-override format (expected JSON object)', state_upgrade.FIX_TRAY,
+            path, 'invalid accounts-override format (expected JSON object)', _delete_fix(path),
         ))
     version = doc.get('schema_version')
     if version != 2:
         raise ValueError(state_upgrade.format_issue(
-            path, f'older accounts-override schema_version {version!r} (expected 2)', state_upgrade.FIX_TRAY,
-        ))
-    if 'migration_ambiguous_enabled' in doc:
-        raise ValueError(state_upgrade.format_issue(
-            path, 'older accounts-override field migration_ambiguous_enabled is no longer supported',
-            state_upgrade.FIX_TRAY,
+            path, f'accounts-override schema_version {version!r} has no upgrade step (expected 2)', _delete_fix(path),
         ))
     accounts = doc.get('accounts')
     if accounts is not None:
         if not isinstance(accounts, dict):
             raise ValueError(state_upgrade.format_issue(
-                path, 'invalid accounts-override.accounts (expected JSON object)', state_upgrade.FIX_TRAY,
+                path, 'invalid accounts-override.accounts (expected JSON object)', _delete_fix(path),
             ))
         for name, spec in accounts.items():
             if not isinstance(spec, dict):
                 raise ValueError(state_upgrade.format_issue(
-                    path, f'invalid accounts-override entry for {name!r} (expected JSON object)', state_upgrade.FIX_TRAY,
+                    path, f'invalid accounts-override entry for {name!r} (expected JSON object)', _delete_fix(path),
                 ))
             if 'allowed_cwd' in spec:
                 raise ValueError(state_upgrade.format_issue(
-                    path, f'older field accounts.{name}.allowed_cwd cannot be carried over (replaced by cwd_regex)',
-                    state_upgrade.FIX_TRAY,
+                    path, f'accounts.{name}.allowed_cwd (replaced by cwd_regex) cannot be carried over next to its cwd_regex',
+                    f'edit the file: remove accounts.{name}.allowed_cwd and keep or change cwd_regex (nothing else is lost)',
                 ))
 
 
@@ -141,13 +150,13 @@ def load_override(path):
         raw = target.read_text(encoding='utf-8-sig')
     except (OSError, UnicodeError) as exc:
         raise ValueError(state_upgrade.format_issue(
-            target, f'accounts-override unreadable ({exc})', state_upgrade.FIX_TRAY,
+            target, f'accounts-override unreadable ({exc})', _delete_fix(target),
         )) from exc
     try:
         doc = json.loads(raw)
     except ValueError as exc:
         raise ValueError(state_upgrade.format_issue(
-            target, f'accounts-override invalid JSON ({exc})', state_upgrade.FIX_TRAY,
+            target, f'accounts-override invalid JSON ({exc})', _delete_fix(target),
         )) from exc
     doc = upgrade_document(doc)
     validate_document(doc, target)
