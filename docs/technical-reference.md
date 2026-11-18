@@ -86,7 +86,7 @@ and plan window structure in [`skills/agent-compass/references/plan-templates.js
 
 ### After an update
 
-AgentCompass does not carry compatibility readers or silent migrations for older local state shapes. If a schema, setting, hook, rule block, or cache under `~/.agent-compass` predates an update, routing fails fast naming the file and its fix. Run:
+Your own scores are kept across updates: a `user-scores.json` written by an earlier release is carried into the current schema when it is read (`user_scores.LOCAL_UPGRADES`, one tested step per earlier schema), and the file is rewritten in the current schema the next time a score is saved. Other local state under `~/.agent-compass` that predates an update (a setting, hook, rule block, or cache of an older shape) is not read: routing fails fast naming the file and its fix. Run:
 
 ```powershell
 agentcompass doctor

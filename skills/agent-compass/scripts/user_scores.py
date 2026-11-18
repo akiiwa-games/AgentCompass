@@ -201,8 +201,38 @@ def validate_document(doc, *, expected_kind: str | None = None) -> dict:
     return {'schema_version': SCHEMA_VERSION, 'scores': out_scores}
 
 
+def _local_schema_1_to_2(doc: dict) -> dict:
+    """Schema 1 (through v0.6.6) named the first category `divergence`; schema 2 names it `creativity`."""
+    scores = doc.get('scores')
+    if not isinstance(scores, dict):
+        return {**doc, 'schema_version': 2}
+    renamed = {}
+    for model, targets in scores.items():
+        if not isinstance(targets, dict):
+            renamed[model] = targets
+            continue
+        renamed[model] = {
+            ('creativity' + target[len('divergence'):] if str(target).split('.')[0] == 'divergence' else target): entry
+            for target, entry in targets.items()
+        }
+    return {**doc, 'schema_version': 2, 'scores': renamed}
+
+
+# The user's own scores are kept across updates: {schema a released version wrote: the step to the next schema}.
+LOCAL_UPGRADES = {1: _local_schema_1_to_2}
+
+
+def upgrade_local_document(doc):
+    """`doc` carried into `SCHEMA_VERSION` through `LOCAL_UPGRADES`; a document of another shape is returned as it is
+    and fails validation. Nothing is written here: the file takes the current schema the next time a score is saved."""
+    while isinstance(doc, dict) and doc.get('schema_version') in LOCAL_UPGRADES:
+        doc = LOCAL_UPGRADES[doc['schema_version']](doc)
+    return doc
+
+
 def load_local(path=None, environ=None) -> dict:
-    """Load and validate `<ROUTER_STATE_DIR>/user-scores.json`; raises `ValueError` if an existing file is corrupt or old-shape."""
+    """Load and validate `<ROUTER_STATE_DIR>/user-scores.json`, carrying a file an earlier release wrote into the current
+    schema (`upgrade_local_document`); raises `ValueError` if an existing file is corrupt or of an unknown shape."""
     target = local_scores_path(path, environ)
     if not target.is_file():
         return empty_document()
@@ -214,10 +244,10 @@ def load_local(path=None, environ=None) -> dict:
             target, f'corrupt local user-scores file ({exc})', state_upgrade.FIX_TRAY,
         )) from exc
     try:
-        return validate_document(raw, expected_kind='user')
+        return validate_document(upgrade_local_document(raw), expected_kind='user')
     except ValueError as exc:
         raise ValueError(state_upgrade.format_issue(
-            target, f'older or invalid local user-scores file ({exc})', state_upgrade.FIX_TRAY,
+            target, f'invalid local user-scores file ({exc})', state_upgrade.FIX_TRAY,
         )) from exc
 
 
