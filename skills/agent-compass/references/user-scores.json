@@ -1,19 +1,19 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "scores": {
     "claude-fable-5-2": {
       "aesthetics": {
-        "level": 3.2,
+        "level": 3.08,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "coding.execution": {
-        "level": 3.2,
+        "level": 3.21,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.2,
+        "level": 2.08,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -23,19 +23,19 @@
         "kind": "maintainer"
       },
       "tool_operation.image_recognition": {
-        "level": 3.0,
+        "level": 2.91,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 2.5,
+        "level": 2.09,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "deepseek-v4-pro": {
       "coding.faithfulness": {
-        "level": 2.0,
+        "level": 1.61,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
@@ -43,49 +43,55 @@
     },
     "dot": {
       "aesthetics": {
-        "level": 2.8,
+        "level": 2.76,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.3,
+        "level": 2.13,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "tool_operation.image_recognition": {
-        "level": 2.0,
+        "level": 2.21,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer: image reading is fine"
       },
       "tool_operation.responsiveness": {
-        "level": 1.0,
+        "level": 1.04,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer: extremely slow"
       }
     },
     "doubao-seed-2-1-pro-260628": {
-      "coding": {
-        "level": 1.0,
+      "coding.execution": {
+        "level": 0.92,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "coding.faithfulness": {
+        "level": 0.41,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "creativity": {
-        "level": 1.0,
+        "level": 0.97,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "tool_operation.image_recognition": {
-        "level": 1.0,
+        "level": 0.98,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "tool_operation.responsiveness": {
-        "level": 1.0,
+        "level": 1.04,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
@@ -93,31 +99,37 @@
     },
     "flint-40b-free": {
       "aesthetics": {
-        "level": 1.0,
+        "level": 1.09,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
-      "coding": {
-        "level": 1.0,
+      "coding.execution": {
+        "level": 0.92,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "coding.faithfulness": {
+        "level": 0.41,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "creativity": {
-        "level": 1.0,
+        "level": 0.97,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "tool_operation.image_recognition": {
-        "level": 1.0,
+        "level": 0.98,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "tool_operation.responsiveness": {
-        "level": 1.0,
+        "level": 1.04,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
@@ -125,50 +137,50 @@
     },
     "gemini-4-argon-high": {
       "tool_operation.image_recognition": {
-        "level": 3.0,
+        "level": 2.91,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gemini-4-carbon": {
       "coding.faithfulness": {
-        "level": 3.0,
+        "level": 2.0,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "tool_operation.image_recognition": {
-        "level": 3.1,
+        "level": 2.98,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gpt-6-astra": {
       "aesthetics": {
-        "level": 2.8,
+        "level": 2.76,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.3,
+        "level": 2.13,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gpt-6-luna": {
       "coding.faithfulness": {
-        "level": 2.5,
+        "level": 1.81,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 3.0,
+        "level": 2.09,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gpt-6-pro": {
       "aesthetics": {
-        "level": 3.0,
+        "level": 2.92,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -178,7 +190,7 @@
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.1,
+        "level": 2.04,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -188,66 +200,66 @@
         "kind": "maintainer"
       },
       "tool_operation.image_recognition": {
-        "level": 3.0,
+        "level": 2.91,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 0.5,
+        "level": 0.51,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gpt-6-sol": {
       "coding.execution": {
-        "level": 2.4,
+        "level": 2.38,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.0,
-        "as_of": "2026-11-11",
-        "kind": "maintainer"
-      },
-      "creativity": {
-        "level": 1.6,
-        "as_of": "2026-11-11",
-        "kind": "maintainer"
-      },
-      "tool_operation.image_recognition": {
         "level": 2.0,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
+      "creativity": {
+        "level": 1.61,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 2.21,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
       "tool_operation.responsiveness": {
-        "level": 2.5,
+        "level": 2.09,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gpt-6.1-sol": {
       "coding.faithfulness": {
-        "level": 3.5,
+        "level": 2.21,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gpt-6.1-terra": {
       "coding.faithfulness": {
-        "level": 3.2,
+        "level": 2.08,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "grok-bot": {
       "tool_operation.image_recognition": {
-        "level": 2.0,
+        "level": 2.21,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "tool_operation.responsiveness": {
-        "level": 2.0,
+        "level": 2.09,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
@@ -255,31 +267,37 @@
     },
     "qwen3-flash-2025-07-28": {
       "aesthetics": {
-        "level": 1.0,
+        "level": 1.09,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
-      "coding": {
-        "level": 1.0,
+      "coding.execution": {
+        "level": 0.92,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "coding.faithfulness": {
+        "level": 0.41,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "creativity": {
-        "level": 1.0,
+        "level": 0.97,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "tool_operation.image_recognition": {
-        "level": 1.0,
+        "level": 0.98,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
       },
       "tool_operation.responsiveness": {
-        "level": 2.0,
+        "level": 2.09,
         "as_of": "2026-11-11",
         "kind": "maintainer",
         "note": "maintainer impression"
