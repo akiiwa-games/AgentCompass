@@ -52,12 +52,14 @@ is the panel's best. A value above `t3` is a level above 3, extrapolated by `t3 
 asks, the panel median: a level-3 task adds image recognition, not more responsiveness. `continuity` is `t3 - t2`. A model's category scores are panel standard scores (`z`)
 from public cited boards; a facet a model lacks is estimated from its same-series sibling (same declared size) or its
 `arena.ai` Overall tier fit, and a small row's facet that has neither from its larger model (its own gap for the same
-version, else the fleet's size step; never above it, never slower, never longer). Every facet then has a value at every
-effort (own-curve interpolation, else the panel's median effort step; `minimal` from the fleet's step below Low), and no curve
+version, else the fleet's size step, used only where the measured pairs agree in direction; an ability value never above the
+larger model's), and, last, an ability facet with no source from the model's own other ability facets. Every facet then has a
+value at every effort (own-curve interpolation, else the panel's median effort step; `minimal` and `ultra` from the fleet's step
+next to them; `default` reads the declared effort, High), and no curve
 inverts along effort: High is the anchor, ability never falls and responsiveness never rises as effort rises, Time/Task never
 shortens (rules and formulas in [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). Release
 verification checks the result against saved gateway catalogs (`audit/gateway_coverage.py`): every offered (model, effort) is
-scored at that effort or is on `audit/gateway-coverage-known-gaps.json` with its reason, and a listed entry that is covered
+scored at that effort or is on `audit/gateway-coverage-known-gaps.json` with its reason (the shipped launch table and bundles too), and a listed entry that is covered
 fails too. `quota_cost` is the quota economy: the part of the
 task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. The window's
 price comes from a value ladder built over the demand grid `quota_economy.FIVE_AXIS_DEMAND_GRID` (levels 0–3 on the thinking

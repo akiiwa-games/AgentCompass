@@ -110,17 +110,20 @@ the level's target, at level 3 it is the category's `ceiling` in `anchor.targets
 model above the panel's best. Level 3 of a facet's scale (`t3`) is the panel maximum of the measured or interpolated High values, level 1 the minimum and
 level 2 the median; the anchor is only the origin of `z` (definition: `docs/technical-reference.md` section 1). `five-axis-scores.json` carries
 that meaning from schema `agent-compass.five-axis-scores/6` on (schema /7 adds a value at every effort and the `effort_steps`
-table, /8, which this code reads, adds `minimal` and `size_steps`; neither changes a level), and `axis_scores.require_current_schema` refuses a file of another schema; the
+table, /8 adds `minimal` and `size_steps`, /9, which this code reads, adds `ultra`, `effort_readings` and size steps per pair; none
+changes a level), and `axis_scores.require_current_schema` refuses a file of another schema; the
 levels of `user-scores.json` (schema 3) are on this scale. Levels written on the earlier scale (3 = the anchor) keep their position: at or
 below 2 unchanged, above 2 `2 + (L - 2) * (A - 2)` with `A` the anchor's level on the facet as of v0.7.0, declared in
 `references/level-3-conversion.json` (`user_scores.convert_level`, applied once to the maintainer file and by `user_scores.LOCAL_UPGRADES`
 to a local file); on `tool_operation.responsiveness`, whose earlier scale had `t2 = t3`, a level in (2, 3] becomes 2 and a level above 3 becomes
 `2 + (L - 3) * s` with the declared slope `s = (t2 - t1) / (t3 - t2)` (`above_3_slopes`).
 A hand-written level sets the facet at High (or at its declared effort); efforts the model has no reading at follow from it by
-the published panel step `effort_steps.<facet>.high.<effort>` (`minimal`: Low plus `effort_steps.<facet>.low.minimal`), and the
-curve is bounded so it never inverts along effort (ability
+the published panel step `effort_steps.<facet>.high.<effort>` (`minimal`: Low plus `effort_steps.<facet>.low.minimal`; `ultra`:
+Max plus `effort_steps.<facet>.max.ultra`), and the curve is bounded so it never inverts along effort (ability
 never falls, responsiveness never rises as effort rises; `user_scores.bound_along_effort`, the rule the calibration applies,
-`calibration/README.md`).
+`calibration/README.md`). A facet the calibration derived from a larger model follows that model's value after the hand-written
+scores (`user_scores._follow_effective_sources`), never above it. A launch at `default`, and a bundle without an effort, read the
+effort `effort_readings` declares (`axis_scores.reading_effort`).
 For `aesthetics`, level 1 evaluates `design` (`lmarena.webdev`, `designarena.website`, `designarena.3d`, `designarena.svg`), and
 levels 2 and 3 evaluate `min(design, image_recognition)` (sharing `tool_operation.image_recognition` so both visual creation and
 fine-grained visual perception depend on visual grounding). For `tool_operation`, level 1 imposes no ability requirement; level 2

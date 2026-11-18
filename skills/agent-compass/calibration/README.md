@@ -27,26 +27,53 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   the tier fit and its own boards leave a facet without any value: a small `families` row may declare `tier_up`, the
   pattern of the same line's next larger row, with `tier_up_version` `same` (that row's first model is the same version
   as this row's current members) or `nearest` (the nearest version of the line); a small row listed in its row's `models`
-  (a current member) takes, as its larger model, the first catalogued model of that row (`series.tier_up`). With `same`,
+  (a current member) takes, as its larger model, the first catalogued model of that row (`series.tier_up`); an older row
+  of the line that is no current member takes the larger model and version the row's `tier_up_older` declares for it
+  (`claude-haiku-4-5` -> `claude-sonnet-4-6`, `nearest`). With `same`,
   an ability facet is the larger model's curve moved by the gap the two show, `value(e) = large(e) + min(gap, 0)`, gap =
   mean over the facets both measured (else both have any value for, never a derived one: `gap_basis`) of `small - large`
   at High; status `estimated`, method `tier_down` with the base model, gap and the facets it was read on. A row's own gap
   is never carried across versions.
-- **Size step (owner, 2026-11-18: "都补上估算值").** A facet still without a value on a small row with `tier_up` (same or
-  nearest version; responsiveness included) is the larger model's curve moved by the fleet's size step for the facet:
-  the median of `small - large` at High over the declared same-version pairs that both measured the facet
-  (`five_axis.size_step_table`, `n >= MIN_SIZE_PAIRS = 2`); an ability facet with fewer pairs takes the median over every
-  ability facet's pairs (`basis: ability_pooled`, the ability facets share the panel-z scale). Time/Task takes the larger
-  model's times the exp of the median log ratio `time(small) / time(large)` at High over the same-version pairs both
-  listed there. The direction is measured, not assumed, and then bounded across size: a derived ability value is never
-  above the larger model's at the same effort (`min(step, 0)`), responsiveness never slower (`max(step, 0)`), Time/Task
-  never longer (`min(ratio, 1)`). Status `estimated`, method `size_step` with the base model, version, step, `n` and the
-  pairs; the table is published as `size_steps`. A facet without a step gets no value.
+- **Size step (owner, 2026-11-18: "都补上估算值"; round 3: agreement of the pairs).** A facet still without a value on a
+  small row with `tier_up` (same or nearest version; responsiveness included) is the larger model's curve moved by the
+  fleet's size step for the facet (`five_axis.size_step_table`). Each declared same-version pair that measured the facet at
+  High on both sides gives one value, `small - large`; an ability facet with fewer than `MIN_SIZE_PAIRS = 2` such pairs
+  takes, per pair, the mean of `small - large` over the ability facets that pair measured (`basis: ability_pooled`, the
+  ability facets share the panel-z scale; `differences` counts the readings, `n` the pairs). The step is the median of the
+  pair values only when there are at least two pairs and all of them point one way (`five_axis.pair_agreement`);
+  otherwise it is zero and the cell and the table say why (`agree: false`, `reason: directions disagree` or `fewer than 2
+  pairs`): the derived value is the larger model's. Time/Task follows the same rule on the log ratio
+  `time(small) / time(large)` at High (`time_size_step`; ratio 1 where the pairs disagree). The boards do not show a
+  smaller model as uniformly faster or slower, so no direction is assumed for the speed facets. An ability value is in
+  addition never above the larger model's at the same effort (`min(step, 0)`, and `bound_across_size` after the fill, the
+  efforts it held listed as `held_at_larger`). Status `estimated`, method `size_step` with the base model, version, step,
+  `n`, `agree` and the pairs; the table is published as `size_steps`.
+- **Edge efforts (owner, 2026-11-18).** No board measures `minimal` or `ultra`, the efforts below Low and above Max
+  (`five_axis.EDGES`). Every curve with the neighbouring effort gets the edge as that neighbour plus the fleet's step next to
+  it, the median over the models measured at both of `value(low) - value(medium)` for `minimal` and
+  `value(max) - value(xhigh)` for `ultra` (`five_axis.edge_step_table`, `n >= 2`, published as
+  `effort_steps.<facet>.low.minimal` and `effort_steps.<facet>.max.ultra`, methods `fleet_lowest_step` and
+  `fleet_highest_step`), bounded by no inversion; Time/Task the neighbour times the fleet's median ratio over the
+  Artificial Analysis listings with both (`effort_steps.time_per_task`, `n >= 3` as every fleet time ratio). A hand-written
+  score fills both the same way.
+- **Own ability median (owner, 2026-11-18), the last and coarsest method.** An ability facet still without a value (no
+  source and no larger model: `glm-5.2` faithfulness and image recognition) is, at each effort, the median of the model's
+  own ability facets there (at least `MIN_OWN_FACETS = 2`, all on the panel-z scale); status `estimated`, method
+  `own_ability_median` with the facets used. The tier fit would be better founded, but where it applies it has already run:
+  this method serves the models it cannot (no tier, or a fit that failed its checks). A `same_model` row copies what its
+  model gains this way, for the categories it carries.
+- **`default` (owner, 2026-11-18).** The boards list some models without an effort label. The measurements store such a
+  listing under `default` (`calibration/measurements.py`); it is the model's one configuration, and the calibration keys it
+  at the effort the dated declaration `accounts.json` `effort_readings.reads` names, High (`five_axis.aa_rows`,
+  `five_axis.time_rows`). A launch at `default`, and a bundle that names no effort, read the values stored there
+  (`five-axis-scores.json` `effort_readings`, `axis_scores.reading_effort`); `default` is not a point on the effort scale.
 - **Order of methods.** For each cell, the first that applies: a measurement; a hand-written score (run time, it wins over
   every estimate below); own-curve interpolation; the panel effort step; the same-size series conversion; the tier fit;
   the downward derivation with the row's own gap (same version only); the size step (same, then nearest version); for
-  `minimal`, the fleet step below Low. Every estimate is then bounded along effort and, when derived from a larger model,
-  across size.
+  `minimal` and `ultra`, the fleet's edge step; the own ability median. Every estimate is then bounded along effort and,
+  for an ability facet derived from a larger model, across size; at run time a derived facet follows its larger model's
+  value after the hand-written scores, shipped and local (`user_scores._follow_effective_sources`: moved by the source's
+  change at each effort, never above it; a hand-written score on the derived model itself wins).
 - **Every effort has a value (owner, 2026-11-18).** After measurement and estimation, every facet that has a value at some
   effort gets one at every effort of `low..max` (`five_axis.fill_efforts`): between two of its own efforts, linear in effort
   rank (`own_effort_interpolation`, the model's effort ladder); outside them, its nearest own effort plus the panel's median
@@ -55,11 +82,7 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   that hold a board reading in `measured_efforts`. An effort the panel gives no step for stays empty and is listed in
   `effort_fill_refused`. High of a measured facet is filled the same way before the fits (`fill_high`); targets read only
   measured and `interpolated` High values. A hand-written score fills the same way from its High
-  (`user_scores._manual_by_effort` with `effort_steps`). No board measures `minimal`: every curve with Low gets it as Low
-  plus the fleet's step below Low, the median of `value(low) - value(medium)` over the models measured at both
-  (`five_axis.minimal_step_table`, `n >= 2`, published as `effort_steps.<facet>.low.minimal`, method `fleet_lowest_step`);
-  Time/Task takes Low times the fleet's median `time(low) / time(medium)` over the Artificial Analysis listings with both
-  (`effort_steps.time_per_task`, `n >= 3` as every fleet time ratio). A hand-written score fills `minimal` the same way.
+  (`user_scores._manual_by_effort` with `effort_steps`). `minimal` and `ultra`: the edge efforts above.
 - **No inversion along effort (owner, 2026-11-18).** Along the efforts of one model an ability facet never decreases as effort
   rises, `tool_operation.responsiveness` never rises, and Time/Task never shortens. One rule, `user_scores.bound_along_effort`
   (direction `user_scores.rises_with_effort`), bounds every curve, board readings, facets, estimates, filled values, manual
@@ -116,8 +139,9 @@ Every per-model fact is reference data under `references/`; adding a model or a 
 4. **Launch and family.** A bundle under `accounts[<account>].bundles` and its efforts under `dispatch_efforts[<harness>]`
    make it launchable (discovery adds auto bundles for what a CLI advertises); an effort list there cites the vendor's
    statement in `dispatch_efforts_sources` where one exists. When it is the newest model of a family, point that family's
-   entry in `families.rows` (ordered `{pattern, models, size, tier_up?, tier_up_version?}`; the first matching pattern
-   decides; `size` is `small` or `full`; `tier_up_version` `same` or `nearest` goes with `tier_up`; move the declaration's `as_of` to the day of the edit) and the family's short `aliases` at it, and
+   entry in `families.rows` (ordered `{pattern, models, size, tier_up?, tier_up_version?, tier_up_older?}`; the first
+   matching pattern decides; `size` is `small` or `full`; `tier_up_version` `same` or `nearest` goes with `tier_up`;
+   `tier_up_older` maps an older row of the line to `{model, version}`; move the declaration's `as_of` to the day of the edit) and the family's short `aliases` at it, and
    list the older model under `superseded`. A name the vendor states is served by another row is an alias with its
    statement in `alias_sources`, not a row.
 5. **Rebuild its row.** Run `agentcompass data refresh --model <id>` (repeatable for several new models). It fetches the
