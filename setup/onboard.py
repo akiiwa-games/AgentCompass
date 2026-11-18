@@ -362,15 +362,6 @@ def clear_obsolete_usage_configs(home: Path, dry_run: bool = False) -> dict:
     return cleared
 
 
-def remove_retired_reference_data(home: Path, dry_run: bool = False) -> list[str]:
-    """The removed reference data channel's cache and setting under the state directory (state_upgrade owns the list)."""
-    import state_upgrade
-    sdir = state_upgrade.state_dir(home)
-    if dry_run:
-        return [str(path) for path in state_upgrade.retired_reference_data(sdir)]
-    return state_upgrade.remove_retired_reference_data(sdir)
-
-
 def setup_main(argv: list[str] | None = None) -> int:
     args = setup_parser().parse_args(argv)
     home = Path(args.home).expanduser().resolve() if args.home else Path.home()
@@ -418,7 +409,6 @@ def setup_main(argv: list[str] | None = None) -> int:
     summary["override"] = override
     summary["host_policy"] = str(policy_path)
     summary["usage_config_cleanup"] = clear_obsolete_usage_configs(home, dry)
-    summary["retired_reference_data"] = remove_retired_reference_data(home, dry)
     _line(f"\nAccounts in automatic routing: {', '.join(r['name'] for r in usable if r['name'] not in disabled) or 'none'}")
     if disabled:
         _line(f"Kept out of automatic routing (a route you name still dispatches): {', '.join(sorted(disabled))}")

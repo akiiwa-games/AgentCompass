@@ -1,6 +1,7 @@
 """Hermetic test runs: see hermetic_run.py. Imported before any test module, so every state constant a module captures at
 import points into the run's temporary home."""
 from pathlib import Path
+import sys
 import unittest
 
 import pytest
@@ -20,6 +21,21 @@ def hermetic_home():
 def unittest_module_cleanups():
     yield
     unittest.doModuleCleanups()
+
+
+def _release_reference_set():
+    release = getattr(sys.modules.get('public_data'), 'release', None)  # a test may stand a fake module in
+    if release is not None:
+        release()
+
+
+@pytest.fixture(autouse=True)
+def fresh_reference_set():
+    """A process holds the reference set it first reads (public_data.held); each test starts and ends without one, so a
+    test that writes reference files reads what it wrote."""
+    _release_reference_set()
+    yield
+    _release_reference_set()
 
 
 @pytest.fixture(autouse=True)

@@ -1,0 +1,39 @@
+name: public-data
+
+# Installs fetch the reference set of their data schema from published/<schema>/ on main and accept it with their own
+# readers. Only `agentcompass data publish` writes published/; editing references/ publishes nothing. This checks, at every
+# commit that can change either side, that the published set of this code's schema is consistent, accepted by this code,
+# published later than the set it replaces (installs ignore an older publication time), and accepted by every released
+# version of the same schema (what those installs will run). It fetches nothing.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "published/**"
+      - "skills/agent-compass/**"
+      - "agentcompass/origin.py"
+  pull_request:
+    paths:
+      - "published/**"
+      - "skills/agent-compass/**"
+      - "agentcompass/origin.py"
+
+permissions:
+  contents: read
+
+jobs:
+  published-set:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check the published set against this code and the publication it replaces
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: python -X utf8 skills/agent-compass/scripts/public_data.py publish --check --since "$BASE"
+      - name: Check that every released reader of this schema accepts it
+        run: python -X utf8 skills/agent-compass/scripts/public_data.py publish --check-released

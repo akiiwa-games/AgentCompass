@@ -1,11 +1,11 @@
 """Locate a provider's subscription CLI and run it on a routed account, with no inherited API key or proxy."""
 import os
 from pathlib import Path
-import platform
 import shutil
 import signal
 import subprocess
 
+import launch_values
 import provider_inventory
 
 
@@ -17,24 +17,19 @@ def cli_prefix(provider):
         command = str(installed) if installed.is_file() else None
     if not command:
         raise RuntimeError('Subscription CLI is not installed.')
-    path = Path(command)
-    if os.name != 'nt' or path.suffix.lower() == '.exe' or provider not in ('claude', 'codex'):
-        return [str(path)]
-    # Resolve npm shims to native executables; never interpolate a shell command.
-    npm = path.parent / 'node_modules'
-    if provider == 'claude':
-        native = npm / '@anthropic-ai' / 'claude-code' / 'bin' / 'claude.exe'
-    else:
-        arm = platform.machine().lower() in ('arm64', 'aarch64')
-        package = 'codex-win32-arm64' if arm else 'codex-win32-x64'
-        target = 'aarch64-pc-windows-msvc' if arm else 'x86_64-pc-windows-msvc'
-        root = npm / '@openai' / 'codex'
-        native = root / 'node_modules' / '@openai' / package / 'vendor' / target / 'bin' / 'codex.exe'
-        if not native.is_file():
-            native = root / 'vendor' / target / 'bin' / 'codex.exe'
-    if not native.is_file():
-        raise RuntimeError('Resolve the installed subscription CLI executable.')
-    return [str(native)]
+    return direct_prefix(command)
+
+
+def direct_prefix(command):
+    """The argv prefix that starts `command` with no cmd.exe in between (launch_values.program: an npm shim becomes the
+    program and script it runs). A launcher that would need variables of its own set for the program is refused, as
+    one that cannot be read is (launch_values.UnreadableLauncher)."""
+    argv, env = launch_values.program(command)
+    if env:
+        raise launch_values.UnreadableLauncher(
+            f'{command} sets {", ".join(sorted(env))} for the program it runs, which this launch does not carry; point '
+            'the command at the executable it runs')
+    return argv
 
 
 def subscription_env(account=None):

@@ -15,6 +15,7 @@ import sqlite3
 import uuid
 from host_placement import canonical_dir
 import provider_inventory
+import public_data
 
 
 def bundle_windows(bundle):
@@ -94,7 +95,11 @@ def db_path():
 
 
 @contextmanager
-def transaction(path=None):
+def transaction(path=None, upkeep=False):
+    """One immediate transaction. A committed change is an effect of this call (public_data.effect: a reservation, a
+    decision or dispatch row, a launch record), after which a fall-back never re-runs; ``upkeep`` marks a write that only
+    brings recorded state in step with what happened on its own (a lease that ran out, a worker that ended, a side effect,
+    ground truth or end notice an earlier dispatch owes), which is not."""
     path = Path(path or db_path())
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path, timeout=10, isolation_level=None)
@@ -104,7 +109,10 @@ def transaction(path=None):
         connection.execute('CREATE TABLE IF NOT EXISTS decisions (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
         connection.execute('CREATE TABLE IF NOT EXISTS dispatches (id TEXT PRIMARY KEY, decision_id TEXT UNIQUE NOT NULL, data TEXT NOT NULL)')
         yield connection
+        changed = connection.total_changes
         connection.commit()
+        if changed and not upkeep:
+            public_data.effect('dispatch registry write')   # a reservation or dispatch row: never re-run
     except BaseException:
         connection.rollback()
         raise
@@ -408,7 +416,7 @@ def reservations(now=None, path=None, read_only=False):
                 return active_records(connection, now)
             finally:
                 connection.close()
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         if read_only:
             settle_ended_workers(connection, now)
             refresh_live_rounds(connection, now)
@@ -762,7 +770,7 @@ def due_end_notices(path=None):
     target = Path(path or db_path())
     if not target.exists():
         return []
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         found = []
         for row in rows(connection, 'dispatches'):
             notice = row.get('end_notice')
@@ -777,7 +785,7 @@ def mark_end_notice_sent(dispatch_id, source, path=None):
     """Record that this dispatch's one end notice was sent. A second call, or a row that is no longer due, changes nothing."""
     if not _safe_dispatch_id(dispatch_id) or not Path(path or db_path()).exists():
         return False
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         try:
             row = get(connection, 'dispatches', dispatch_id)
         except ValueError:
@@ -926,7 +934,7 @@ def _finish_pending_side_effects(path, now):
         if not done:
             continue
         try:
-            with transaction(path) as writing:
+            with transaction(path, upkeep=True) as writing:
                 latest = get(writing, 'dispatches', row['dispatch_id'])
                 still = [item for item in (latest.get('side_effects_due') or []) if item not in done]
                 if still:
@@ -962,7 +970,7 @@ def _record_pending_ground_truth(path, now):
         except Exception:
             continue
         try:
-            with transaction(path) as writing:
+            with transaction(path, upkeep=True) as writing:
                 latest = get(writing, 'dispatches', row['dispatch_id'])
                 if not latest.get('ground_truth_pending'):
                     continue
@@ -981,7 +989,7 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
     import account_fleet
     import worker_sessions
     now = now or utcnow()
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         expire(connection, now)
         all_rows = rows(connection, 'dispatches')
     by_agent = {}
@@ -1162,7 +1170,7 @@ def writers_at(directory, caller=None, now=None, path=None):
     now = now or utcnow()
     if not directory or not Path(path or db_path()).exists():
         return []
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         expire(connection, now)
         return writers_in(connection, directory, now, caller)
 
@@ -1376,12 +1384,12 @@ def fallback_to_create(dispatch_id, now=None, path=None):
 
 
 def inspect(dispatch_id, path=None):
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         return get(connection, 'dispatches', dispatch_id)
 
 
 def decision_record(decision_id, path=None):
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         return get(connection, 'decisions', decision_id)
 
 
@@ -1454,7 +1462,7 @@ def resolve_creation(dispatch_id, creation, now=None, path=None):
 def missing_agent(dispatch_id, agent_id, now=None, path=None):
     """A successful host lookup found a previously acknowledged agent removed."""
     now = now or utcnow()
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         row = get(connection, 'dispatches', dispatch_id)
         if not agent_id or row.get('agent_id') != agent_id:
             raise ValueError('Missing-agent observation does not match an acknowledged agent')
@@ -1604,7 +1612,7 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
     now = now or utcnow()
     import provider_retry
     scope = classify_provider_failure(dispatch_id, terminal, path)
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         row = get(connection, 'dispatches', dispatch_id)
         agent_id = snapshot.get('id')
         if row['state'] in TERMINAL and row['state'] != 'expired' and agent_resumed(snapshot, row, terminal):
@@ -1758,7 +1766,7 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             and isinstance(row.get('cwd'), str) and row['cwd'].strip():
         import dispatch_ground_truth
         launch_git = dispatch_ground_truth.capture_launch_git(row['cwd'])
-        with transaction(path) as connection:
+        with transaction(path, upkeep=True) as connection:
             latest = get(connection, 'dispatches', dispatch_id)
             if latest.get('launch_commit') is None and not latest.get('started_at'):
                 latest.update(launch_git)
@@ -1773,7 +1781,7 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             agent_doc=paseo_agent_record(agent_id),
             other_dispatch_ids=later_dispatch_ids,
         )
-        with transaction(path) as connection:
+        with transaction(path, upkeep=True) as connection:
             latest = get(connection, 'dispatches', dispatch_id)
             latest.update(gt)
             save(connection, latest)
@@ -1856,7 +1864,7 @@ def finalize_dispatch(dispatch_id, now=None, path=None, receipt_only=False):
 def pending(path=None):
     if not Path(path or db_path()).exists():
         return []
-    with transaction(path) as connection:
+    with transaction(path, upkeep=True) as connection:
         # Include expired started/uncertain Paseo launches so a later observation can repair them.
         return [r for r in rows(connection, 'dispatches')
                 if r.get('dispatch_mode', 'paseo') == 'paseo' and unresolved(r, utcnow())]

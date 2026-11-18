@@ -292,3 +292,19 @@ def test_family_shaped_discovered_model_keeps_its_own_checkbox(tmp_path, monkeyp
     live = account_fleet.bundles(account_fleet.load_accounts())
     assert not live['sol_high'].get('disabled')
     assert groups()['gpt-6.1-sol']['enabled'] is True
+
+
+def test_the_tray_moves_to_a_newer_reference_set_only_when_it_rebuilds_its_accounts_view(monkeypatch):
+    """Rule (router-internals §5, one set per process): the tray retakes the reference set as a whole at one defined
+    point, the rebuild of its accounts view, and at every such rebuild; a cached view keeps the set it was built on."""
+    import public_data
+    calls = []
+    prints = iter([('a',), ('a',), ('a',), ('b',), ('b',)])
+    monkeypatch.setattr(router_data, '_ACCOUNTS_CACHE', None)
+    monkeypatch.setattr(router_data, '_accounts_fingerprint', lambda: next(prints))
+    monkeypatch.setattr(public_data, 'retake', lambda *a, **k: calls.append('retake'))
+    monkeypatch.setattr(account_fleet, 'load_accounts', lambda *a, **k: calls.append('load') or {'accounts': {}})
+    router_data._cached_accounts()      # build: fingerprint before and after
+    router_data._cached_accounts()      # same fingerprint within the cache time: no retake
+    router_data._cached_accounts()      # the state changed: rebuild
+    assert calls == ['retake', 'load', 'retake', 'load']

@@ -11,7 +11,7 @@ description: >
 Runs on the maintainer's machine only. It lives in `audit/calibrate/`, next to the report it drives, and like
 `packaging/verify-release/SKILL.md` it is not one of the skills `agentcompass setup` links into hosts
 (`sync_host_globals.py` links only `skills/`). Open it by path when calibrating. What it changes reaches users through
-releases: reference data ships with the version and is fixed until the next one.
+the published reference data: a change merged to `main` and published (`agentcompass data publish`) reaches installs at their next check, and every release ships it.
 
 ## Boundaries (decided, do not relax)
 
@@ -66,13 +66,15 @@ releases: reference data ships with the version and is fixed until the next one.
 
    ```powershell
    python -X utf8 agentcompass data refresh --no-fetch
+   python -X utf8 agentcompass data publish
    ```
 
-5. Run only the tests of what you touched (for example `pytest skills/agent-compass/scripts/test_reference_provenance.py`), never the
+5. Run only the tests of what you touched (for example `pytest skills/agent-compass/scripts/test_public_data.py`), never the
    full suite for a calibration change. If you edited Markdown or documented commands, also run
    `python -X utf8 skills/agent-compass/scripts/check_router_contract.py` and `pytest agentcompass/test_docs.py`.
-6. Ship through a release: commit the data to a `work/<name>` branch and merge it to `main`; installs receive it with
-   the next release, never before.
+6. Ship it: commit the data, its manifest and `published/<schema>/` (written by `data publish`) to a `work/<name>`
+   branch and merge it to `main`; installs pick up the published set at their next check, and the next release ships
+   it. Data edited under `references/` without `data publish` reaches no install.
 
 ## What the report cannot show
 

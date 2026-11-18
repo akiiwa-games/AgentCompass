@@ -1093,7 +1093,7 @@ def check_worker_compaction_limit(
         worker_sessions = router_module("worker_sessions")
     except ImportError:
         return None
-    max_tokens = worker_sessions.rotation_threshold(account_fleet.load_accounts())
+    max_tokens = read_reference(lambda: worker_sessions.rotation_threshold(account_fleet.load_accounts()))
     state = worker_sessions.session_state(agent_id, home=home_dir)
     compactions = state.get("compactions") or 0
     compacted_tok = state.get("compacted_tokens") or 0
@@ -1205,6 +1205,17 @@ def check_target_disabled(
                        "（user_override 记录）可以启动它。" + DISABLED_RECOVERY)
 
 
+def read_reference(read):
+    """``read()``, a read of the reference set in effect with no effect of its own. When it fails on a fetched set, it
+    reads again from the shipped set as a whole (public_data.with_fallback), and the fetched set is set aside; only when
+    the shipped set fails too does the error reach the caller, whose degrade then applies. No network, no thread."""
+    try:
+        public_data = router_module("public_data")
+    except ImportError:
+        return read()
+    return public_data.with_fallback(read)
+
+
 def check_own_worker_legacy(target: dict, account: str | None, accounts: dict | None) -> str | None:
     """Block a parent's new turn to its own idle worker on an account with leftover meter fields: a fact, like an
     exhausted window. The preference switches (host policy, an unchecked model) do not refuse continuing a worker."""
@@ -1231,9 +1242,10 @@ def check_route_authority(row: dict, trigger: str) -> str | None:
 
 
 def load_dispatch_accounts() -> dict | None:
-    """The fleet; unreadable configuration degrades to None (no account or bundle resolves, nothing is refused)."""
+    """The fleet, read from the reference set in effect (read_reference); configuration unreadable also from the
+    shipped set degrades to None (no account or bundle resolves, nothing is refused)."""
     try:
-        return router_module("account_fleet").load_accounts()
+        return read_reference(router_module("account_fleet").load_accounts)
     except Exception:
         return None
 
@@ -1284,7 +1296,6 @@ def check_account_quota_exhausted(
             f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
         )
     try:
-        accounts = accounts if accounts is not None else router_module("account_fleet").load_accounts()
         if records is None:
             try:
                 registry = router_module("dispatch_registry")
@@ -1298,7 +1309,11 @@ def check_account_quota_exhausted(
             except Exception:
                 pass
         records = without_own(records, exclude_dispatch_id, exclude_agent_id)
-        found = window_refusal(account, accounts, now, usage_cache_path, records, bundles, model)
+        # The reference read (accounts, the window verdict on them) falls back to the shipped set as a whole; the
+        # end notices above are an effect and stay outside it.
+        found = read_reference(lambda: window_refusal(
+            account, accounts if accounts is not None else router_module("account_fleet").load_accounts(), now,
+            usage_cache_path, records, bundles, model))
     except Exception:
         return None
     if not found:

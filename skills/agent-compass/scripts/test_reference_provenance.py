@@ -1,19 +1,12 @@
-"""Shipped reference data: the provenance checks, and readers that read only the shipped files. No network."""
+"""Shipped reference data: the provenance checks. Which set the readers read is test_public_data.py. No network."""
 import json
-import os
 from pathlib import Path
 import shutil
 import tempfile
 import unittest
-from unittest.mock import patch
 
-import account_fleet
-import axis_scores
-import provider_inventory
 import reference_provenance
-import scorer_client
 import user_scores
-from router_test_support import isolated_router_state
 
 REFERENCES = reference_provenance.REFERENCES
 CHECKED = ('accounts.json', 'plan-templates.json', 'user-scores.json')
@@ -26,32 +19,6 @@ def write_json(path, document):
 class ShippedReferencesTests(unittest.TestCase):
     def test_the_shipped_references_pass_the_provenance_checks(self):
         reference_provenance.validate_references(REFERENCES)
-
-    def test_a_leftover_between_release_cache_is_never_read(self):
-        """Rule (router-internals, Reference data): every reader reads the reference file shipped with the version."""
-        isolated_router_state(self.addCleanup)
-        os.environ.pop('ROUTER_ACCOUNTS_FILE', None)
-        state = Path(os.environ['ROUTER_STATE_DIR'])
-        leftover = state / 'public-data' / 'sets' / '0123456789ab'
-        leftover.mkdir(parents=True)
-        for name in ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'five-axis-scores.json',
-                     'user-scores.json'):
-            write_json(leftover / name, {'leftover': True})
-        write_json(state / 'public-data' / 'state.json', {'version': '0123456789ab'})
-        write_json(state / 'public-data-config.json', {'enabled': True})
-
-        def shipped(name):
-            return json.loads((REFERENCES / name).read_text(encoding='utf-8-sig'))
-
-        self.assertEqual(account_fleet.fleet_document_path(), REFERENCES / 'accounts.json')
-        self.assertEqual(axis_scores.load_five_axis(), shipped('five-axis-scores.json'))
-        self.assertEqual(user_scores.load_public(),
-                         user_scores.validate_document(shipped('user-scores.json'), expected_kind='maintainer'))
-        cases = shipped('classifier-cases.json')
-        self.assertEqual(scorer_client.load_classifier_cases(),
-                         {k: cases[k] for k in ('route_definitions', 'dimension_rubric', 'calibration_cases') if k in cases})
-        with patch.object(provider_inventory, '_SHIPPED_PLAN_TEMPLATES', None):
-            self.assertEqual(provider_inventory._shipped_plan_templates(), shipped('plan-templates.json'))
 
 
 class ProvenanceTests(unittest.TestCase):

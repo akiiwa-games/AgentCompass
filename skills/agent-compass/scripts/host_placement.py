@@ -9,6 +9,8 @@ native placement (`cwd`, `--cwd`, or native orchestrator instructions) through
 import os
 from pathlib import Path
 
+import launch_values
+
 REMOTE_SURFACES = ('dot', 'chatgpt-web', 'grok-bot')
 
 
@@ -60,10 +62,10 @@ def validate_workspace(raw_dir):
 def native_next(host, bundle, address, workspace=None):
     """What the calling session does to start the routed worker with its own host's orchestrator."""
     provider, model, effort = bundle.get('provider'), bundle.get('model'), bundle.get('effort')
-    if host == 'orca':
-        flags = (f'--agent {provider} --worktree current'
-                 + (f' --model {model}' if model else '')
-                 + (f' --effort {effort}' if effort else ''))
+    if host == 'orca':      # every value quoted for the shell the parent runs it in (launch_values.shell_word)
+        flags = (f'--agent {launch_values.shell_word(provider)} --worktree current'
+                 + (f' --model {launch_values.shell_word(model)}' if model else '')
+                 + (f' --effort {launch_values.shell_word(effort)}' if effort else ''))
         where = (f' Run the command from directory `{workspace}` so `--worktree current` places the worker there.'
                  if workspace else '')
         return ('Start the worker with Orca orchestration, once, using the executable you ran `skills get` with: '

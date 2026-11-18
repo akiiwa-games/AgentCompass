@@ -59,7 +59,7 @@ def check(name, condition, detail=""):
 
 def base_env(**extra):
     env = dict(os.environ)
-    env.update({"PYTHONUTF8": "1", "ROUTER_SCORE_CACHE": "off", "FIXTURE_SCORER": "1", "FIXTURE_STATE": str(STATE), "FIXTURE_BIN": str(BIN)})
+    env.update({"PYTHONUTF8": "1", "ROUTER_SCORE_CACHE": "off", "AGENTCOMPASS_PUBLIC_DATA": "off", "FIXTURE_SCORER": "1", "FIXTURE_STATE": str(STATE), "FIXTURE_BIN": str(BIN)})
     env.update({k: v for k, v in extra.items() if v is not None})
     for key in [k for k, v in extra.items() if v is None]:
         env.pop(key, None)
@@ -902,6 +902,7 @@ def g_installer():
             label="frozen-update-bad-digest",
         )
         check("frozen AgentCompass.exe update_agentcompass refuses an asset with a mismatched sha256 digest", bad_upd.returncode != 0, bad_upd.stdout + bad_upd.stderr)
+        os.environ["AGENTCOMPASS_PUBLIC_DATA"] = "off"
 
         # Build version B (0.4.0) code package (app-0.4.0.zip) with the SAME runtime_fingerprint
         rt_info = json.loads((INSTALL_DIR / "runtime-info.json").read_text(encoding="utf-8"))

@@ -4,13 +4,10 @@ Visible text uses these labels; raw ids stay in tooltips, plain-text mirrors and
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import i18n
 import router_priority
 
-_CATALOG_LABELS_CACHE: tuple[tuple, dict[str, str]] | None = None
+_CATALOG_LABELS_CACHE: tuple[str, dict[str, str]] | None = None
 
 WORK_KINDS = {
     "creative_ideation": "创意构想",
@@ -34,29 +31,20 @@ def _tr(text):
     return i18n.translate(text)
 
 
-def _catalog_path() -> Path:
+def catalog_labels() -> dict[str, str]:
+    """{model_key: label} from the catalog (`accounts.json` `models[key].label` and `same_model` aliases) of the reference
+    set the tray holds (public_data.document), derived once per set."""
+    global _CATALOG_LABELS_CACHE
     try:
         router_priority.modules()
         import account_fleet
-        return account_fleet.REFERENCES / "accounts.json"
-    except Exception:
-        return Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "references" / "accounts.json"
-
-
-def catalog_labels() -> dict[str, str]:
-    """{model_key: label} from the catalog (`accounts.json` `models[key].label` and `same_model` aliases)."""
-    global _CATALOG_LABELS_CACHE
-    path = _catalog_path()
-    try:
-        st = path.stat()
-        stamp = (str(path), st.st_mtime_ns, st.st_size)
-    except OSError:
-        return {}
-    if _CATALOG_LABELS_CACHE is not None and _CATALOG_LABELS_CACHE[0] == stamp:
-        return _CATALOG_LABELS_CACHE[1]
-    try:
-        doc = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
+        import public_data
+        reference = account_fleet.REFERENCES / "accounts.json"
+        stamp = public_data.set_id(reference.parent)
+        if _CATALOG_LABELS_CACHE is not None and _CATALOG_LABELS_CACHE[0] == stamp:
+            return _CATALOG_LABELS_CACHE[1]
+        doc = public_data.document(reference)
+    except (OSError, ValueError, ImportError):
         return {}
     labels = {name: str(spec["label"]) for name, spec in (doc.get("models") or {}).items()
               if isinstance(spec, dict) and isinstance(spec.get("label"), str) and spec["label"].strip()}

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import account_state
 import provider_inventory
+import public_data
 import reference_provenance
 import user_scores
 import account_fleet
@@ -43,8 +44,6 @@ import account_fleet
 #   percentage and reset time.
 # - Economy: every long window charges the candidate's burn (usd over the window's capacity) times the window's quota
 #   price (FiveAxisEconomy), counted in hours of the window's reference model.
-FIVE_AXIS_FILE = account_fleet.REFERENCES / 'five-axis-scores.json'
-USER_SCORES_FILE = account_fleet.REFERENCES / 'user-scores.json'
 FIVE_AXES = ('creativity', 'coding', 'aesthetics', 'tool_operation')
 FIVE_AXIS_DEFAULTS = {
     # fit and continuity are both in panel standard deviations: one unit each, not a hand-set trade-off
@@ -71,8 +70,10 @@ def five_axis_config(policy):
 
 
 def load_five_axis(path=None):
-    target = Path(path) if path is not None else account_fleet.REFERENCES / 'five-axis-scores.json'
-    return json.loads(target.read_text(encoding='utf-8'))
+    """five-axis-scores.json: the file at ``path``, else that of the reference set this process holds."""
+    if path is not None:
+        return json.loads(Path(path).read_text(encoding='utf-8'))
+    return public_data.document(account_fleet.REFERENCES / 'five-axis-scores.json')
 
 
 FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/6'
@@ -339,7 +340,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     community = data.get('capacity') or {}
     cap_rules = _capacity_rules(out)
     rule_families = {fam for fam, _ in cap_rules}
-    shipped_templates = provider_inventory._shipped_plan_templates()
+    shipped_templates = provider_inventory.shipped_plan_templates()
     families_by_account = {}
     for name, spec in (out.get('accounts') or {}).items():
         if not isinstance(spec, dict):
@@ -469,9 +470,12 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     anchor = data.get('anchor') or {}
     targets = anchor.get('targets') or {}
     if not anchor.get('model') or set(targets) != set(FIVE_AXES):
-        raise ValueError('five-axis-scores.json names no anchor model or no panel targets for the four categories: the fit '
-                         'has nothing to stand on')
-    require_current_schema(data)
+        raise public_data.ReferenceDataError('five-axis-scores.json names no anchor model or no panel targets for the four '
+                                             'categories: the fit has nothing to stand on')
+    try:
+        require_current_schema(data)
+    except ValueError as exc:
+        raise public_data.ReferenceDataError(str(exc)) from None
     out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor['model'], 'targets': targets,
                          'panel_n': anchor.get('panel_n')}
     pub_manual = public_scores if public_scores is not None else (

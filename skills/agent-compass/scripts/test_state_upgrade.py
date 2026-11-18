@@ -38,65 +38,6 @@ def _snapshot_tree(root: Path) -> dict[str, bytes]:
     }
 
 
-class RetiredReferenceDataTests(unittest.TestCase):
-    """Rule (router-internals, Older local state): the product removes the removed reference data channel's cache and
-    setting itself, by their exact paths under the state directory, and nothing else."""
-
-    def setUp(self):
-        self.root = isolated_router_state(self.addCleanup, policy=False)
-        self.state = Path(os.environ['ROUTER_STATE_DIR'])
-        self.state.mkdir(parents=True, exist_ok=True)
-
-    def plant(self):
-        (self.state / 'public-data' / 'sets' / '0123456789ab').mkdir(parents=True)
-        (self.state / 'public-data' / 'state.json').write_text('{"version": "0123456789ab"}', encoding='utf-8')
-        (self.state / 'public-data-config.json').write_text('{"enabled": true}', encoding='utf-8')
-        (self.state / 'user-scores.json').write_text('{"schema_version": 2, "scores": {}}', encoding='utf-8')
-        (self.state / 'public-data-notes.txt').write_text('a sibling with a similar name', encoding='utf-8')
-        (self.state / 'grok-bot').mkdir()
-        (self.state / 'grok-bot' / 'config.json').write_text('{}', encoding='utf-8')
-
-    def test_the_cleanup_removes_exactly_the_two_leftovers(self):
-        self.plant()
-        survivors = _snapshot_tree(self.state)
-        survivors = {k: v for k, v in survivors.items() if not k.startswith(('public-data' + os.sep, 'public-data-config'))}
-        removed = state_upgrade.remove_retired_reference_data(self.state)
-        self.assertEqual(sorted(removed), sorted(str(self.state / n) for n in ('public-data', 'public-data-config.json')))
-        self.assertFalse(os.path.lexists(self.state / 'public-data'))
-        self.assertFalse(os.path.lexists(self.state / 'public-data-config.json'))
-        self.assertEqual(_snapshot_tree(self.state), survivors)      # user-scores.json and every sibling survive
-
-    def test_the_cleanup_is_a_no_op_when_nothing_is_left(self):
-        (self.state / 'user-scores.json').write_text('{"schema_version": 2, "scores": {}}', encoding='utf-8')
-        before = _snapshot_tree(self.state)
-        self.assertEqual(state_upgrade.remove_retired_reference_data(self.state), [])
-        self.assertEqual(state_upgrade.remove_retired_reference_data(self.state / 'absent'), [])
-        self.assertEqual(_snapshot_tree(self.state), before)
-
-    @unittest.skipUnless(os.name == 'nt', 'directory junctions are a Windows feature')
-    def test_a_linked_leftover_is_removed_as_a_link_and_its_target_survives(self):
-        import _winapi
-        target = self.root / 'elsewhere'
-        target.mkdir()
-        (target / 'keep.json').write_text('{}', encoding='utf-8')
-        _winapi.CreateJunction(str(target), str(self.state / 'public-data'))
-        self.assertEqual(state_upgrade.remove_retired_reference_data(self.state), [str(self.state / 'public-data')])
-        self.assertFalse(os.path.lexists(self.state / 'public-data'))
-        self.assertTrue((target / 'keep.json').is_file())
-
-    def test_setup_removes_them_and_its_dry_run_only_lists_them(self):
-        import onboard
-        self.plant()
-        home = self.root / 'setup-home'
-        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(self.state)}):
-            listed = onboard.remove_retired_reference_data(home, dry_run=True)
-            self.assertEqual(len(listed), 2)
-            self.assertTrue((self.state / 'public-data').is_dir())
-            self.assertEqual(sorted(onboard.remove_retired_reference_data(home)), sorted(listed))
-        self.assertFalse((self.state / 'public-data').exists())
-        self.assertTrue((self.state / 'user-scores.json').is_file())
-
-
 class StateUpgradeContractTests(unittest.TestCase):
     def setUp(self):
         self.root = isolated_router_state(self.addCleanup, policy=False)
@@ -113,6 +54,7 @@ class StateUpgradeContractTests(unittest.TestCase):
             'ROUTER_PROVIDER_HOME': str(self.home),
             'ROUTER_STATE_DIR': str(self.state),
             'PASEO_HOME': str(self.home / '.paseo'),
+            'AGENTCOMPASS_PUBLIC_DATA': 'off',
             'AGENTCOMPASS_ANTIGRAVITY_PLAN': 'off',
             'AGENTCOMPASS_LIVE_MODELS': 'off',
         }
@@ -192,7 +134,7 @@ class StateUpgradeContractTests(unittest.TestCase):
         )
         old_skill = claude_dir / 'skills' / 'route-agent-work'
         old_skill.mkdir(parents=True, exist_ok=True)
-        # 12. cache and setting of the removed between-release reference data channel
+        # 12. the published reference data channel's cache and setting: valid state, never an upgrade item
         channel_cache = self.state / 'public-data'
         (channel_cache / 'sets' / '0123456789ab').mkdir(parents=True, exist_ok=True)
         (channel_cache / 'state.json').write_text('{"version": "0123456789ab"}', encoding='utf-8')
@@ -229,10 +171,11 @@ class StateUpgradeContractTests(unittest.TestCase):
             self.assertTrue(any(str(expected_file) in issue for issue in issues), f'Missing issue for {expected_file}')
         # Setup does not retire a link it never recorded, so the fix for the old skill link is to delete it.
         self.assertTrue(any(issue.endswith(f'Fix: {state_upgrade.fix_delete(old_skill)}.') for issue in issues))
-        # Nothing reads the removed channel's files; setup (and the post-update step) removes them, doctor only names them.
-        for leftover in (channel_cache, channel_config):
-            self.assertTrue(any(issue.startswith(str(leftover)) and issue.endswith(f'Fix: {state_upgrade.FIX_SETUP}.')
-                                for issue in issues), leftover)
+        # The channel's cache (also a set an older release fetched, which public_data ignores by its schema) and its
+        # setting are the channel's own state: doctor names neither and nothing deletes them.
+        for channel_file in (channel_cache, channel_config):
+            self.assertFalse(any(str(channel_file) in issue for issue in issues), channel_file)
+            self.assertTrue(channel_file.exists(), channel_file)
 
     def test_runtime_loaders_fail_fast_with_the_exact_same_message_as_doctor(self):
         env = self._env()

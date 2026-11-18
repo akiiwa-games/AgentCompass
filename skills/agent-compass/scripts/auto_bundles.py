@@ -20,6 +20,7 @@ import os
 import re
 from pathlib import Path
 
+import public_data
 from model_resolution import DIRECT_SOURCES, family_patterns, resolve_canonical_model, resolve_model
 
 AUTO_PREFIX = 'auto:'
@@ -36,18 +37,19 @@ _PUBLIC_CATALOG_CACHE = None
 
 def _public_catalog():
     global _PUBLIC_CATALOG_CACHE
-    if _PUBLIC_CATALOG_CACHE is None:
-        ref = Path(__file__).resolve().parents[1] / 'references' / 'accounts.json'
+    ref = Path(__file__).resolve().parents[1] / 'references' / 'accounts.json'
+    held = public_data.set_id(ref.parent)
+    if _PUBLIC_CATALOG_CACHE is None or _PUBLIC_CATALOG_CACHE[0] != held:
         try:
-            doc = json.loads(ref.read_text(encoding='utf-8-sig'))
+            doc = public_data.document(ref)
         except (OSError, ValueError):
             doc = {}
-        _PUBLIC_CATALOG_CACHE = {
+        _PUBLIC_CATALOG_CACHE = (held, {
             'models': doc.get('models') if isinstance(doc.get('models'), dict) else {},
             'aliases': doc.get('aliases') if isinstance(doc.get('aliases'), dict) else {},
             'families': doc.get('families'),
-        }
-    return _PUBLIC_CATALOG_CACHE
+        })
+    return _PUBLIC_CATALOG_CACHE[1]
 
 
 def _model_api_family(model, accounts=None):

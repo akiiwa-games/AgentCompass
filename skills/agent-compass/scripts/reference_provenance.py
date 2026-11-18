@@ -1,10 +1,11 @@
-"""Provenance checks for the shipped reference data under references/.
+"""Provenance checks for the reference data under references/ and for every set published from it.
 
-Reference data ships with the installed version and is fixed until the next release; no code path reads a newer copy
-at run time (../references/router-internals.md, Reference data). These checks hold the shipped files to the data
-provenance rule: every declaration in accounts.json and plan-templates.json is a dated public citation or a dated
-maintainer declaration, and references/user-scores.json holds maintainer scores only. `agentcompass data refresh`
-runs them before it writes and after it rebuilds; axis_scores.py applies the declaration checks to the entries it reads.
+No code path reads the boards at run time; between releases only what the maintainer publishes moves
+(../references/router-internals.md, Reference data). These checks hold the reference files to the data provenance
+rule: every declaration in accounts.json and plan-templates.json is a dated public citation or a dated maintainer
+declaration, and references/user-scores.json holds maintainer scores only. `agentcompass data refresh` runs them
+before it writes and after it rebuilds, `data publish` and every install run them before accepting a set
+(public_data.accept); axis_scores.py applies the declaration checks to the entries it reads.
 """
 import json
 from pathlib import Path

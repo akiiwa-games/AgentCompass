@@ -18,6 +18,8 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import entry
+import launch_values
+import public_data
 
 
 def runs_dir():
@@ -47,7 +49,8 @@ def hc(*args, timeout=25):
     executable = shutil.which('hc')
     if not executable:
         raise RuntimeError('Herdr core hc is not on PATH. Install current herdr-core; the old herdr TUI is incompatible.')
-    proc = subprocess.run([executable, *args], capture_output=True, text=True,
+    import subscription_cli
+    proc = subprocess.run([*subscription_cli.direct_prefix(executable), *args], capture_output=True, text=True,
                           encoding='utf-8', errors='replace', timeout=timeout,
                           **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     try:
@@ -73,7 +76,8 @@ def interactive(bundle):
         accounts = account_fleet.load_accounts()
         canonical = account_fleet.canonical(bundle['model'], accounts)
         validate(family, canonical, account_fleet.model_spec(accounts, canonical))
-    model, effort = bundle.get('launch_model') or bundle['model'], bundle.get('effort')
+    model = launch_values.argument('model', bundle.get('launch_model') or bundle['model'])
+    effort = bundle.get('effort') and launch_values.argument('effort', bundle['effort'])
     command = roll.cli_command(family, bundle['provider'])
     if family == 'claude':
         flags = ['--model', model, '--permission-mode', 'bypassPermissions',
@@ -81,7 +85,7 @@ def interactive(bundle):
                  '--settings', json.dumps({'fastMode': bool(bundle.get('fast'))})]
     elif family == 'codex':
         flags = ['--no-daemon', '-m', model, '--dangerously-bypass-approvals-and-sandbox',
-                 *(['-c', f'model_reasoning_effort="{effort}"'] if effort else []),
+                 *(['-c', 'model_reasoning_effort=' + launch_values.toml_string(effort)] if effort else []),
                  '-c', 'features.fast_mode=' + str(bool(bundle.get('fast'))).lower(),
                  '-c', 'service_tier="priority"' if bundle.get('fast') else 'service_tier="default"']
     else:
@@ -123,6 +127,7 @@ def _launch(out, bundle, prompt_file, task_id, *, cwd=None, dispatch_id=None):
     except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
         return dict(out, launched=False, dispatch_mode='herdr', error=str(exc),
                     next='Resolve the Herdr availability or routed bundle error, then roll again.'), 2
+    public_data.effect('herdr worker launch')   # validated; marked before any receipt or terminal: never repeated
     identity = '\0'.join([os.environ.get('HC_SESSION', 'default'), out['parent_id'], task_id])
     key = hashlib.sha256(identity.encode()).hexdigest()[:24]
     root = runs_dir()
@@ -167,7 +172,9 @@ def inspect_request(path, cleanup=False):
 
 def rpc_read(target):
     """CLI read is text; the official RPC retains completeness/retention metadata."""
-    proc = subprocess.Popen([shutil.which('hc'), 'connect'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+    import subscription_cli
+    proc = subprocess.Popen([*subscription_cli.direct_prefix(shutil.which('hc')), 'connect'], stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace',
                             **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
     timer = threading.Timer(40, proc.kill)

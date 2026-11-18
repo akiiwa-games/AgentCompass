@@ -2,7 +2,8 @@
 
 Precedence (highest to lowest):
   1. Local user override (`<ROUTER_STATE_DIR>/user-scores.json`, `kind: "user"`, local only)
-  2. Shipped maintainer score (`references/user-scores.json`, `kind: "maintainer"`, public data, no source citation needed)
+  2. Maintainer score (`references/user-scores.json` shipped or published between releases, `kind: "maintainer"`, public
+     data, no source citation needed)
   3. Public board measurement (`measured` / `measured_partial`)
   4. Sibling or tier-fit estimate / series conversion (`estimated` / `converted`)
 
@@ -47,6 +48,7 @@ import sys
 # route_judge.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import override_store  # noqa: E402
+import public_data  # noqa: E402
 import state_upgrade  # noqa: E402
 
 SCHEMA_VERSION = 3
@@ -88,7 +90,10 @@ def local_scores_path(path=None, environ=None) -> Path:
 
 
 def public_scores_path(path=None) -> Path:
+    """The maintainer file `--public` writes: always the shipped references/user-scores.json of this checkout."""
     return Path(path) if path is not None else PUBLIC_SCORES_FILE
+
+
 
 
 def _public_lock_path(public_path: Path) -> Path:
@@ -335,11 +340,23 @@ def load_local(path=None, environ=None) -> dict:
 
 
 def load_public(path=None) -> dict:
-    target = public_scores_path(path)
-    if not target.is_file():
-        return empty_document()
-    raw = json.loads(target.read_text(encoding='utf-8-sig'))
-    return validate_document(raw, expected_kind='maintainer')
+    """The maintainer layer: the file at ``path``, else references/user-scores.json of the reference set this process
+    holds (public_data.document)."""
+    if path is not None:
+        if not Path(path).is_file():
+            return empty_document()
+        raw = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+    else:
+        try:
+            raw = public_data.document(PUBLIC_SCORES_FILE)
+        except FileNotFoundError:
+            return empty_document()
+    try:
+        return validate_document(raw, expected_kind='maintainer')
+    except public_data.ReferenceDataError:
+        raise
+    except ValueError as exc:                   # the reference layer's shape, not the user's input
+        raise public_data.ReferenceDataError(f'user-scores.json: {exc}') from None
 
 
 def resolve_model_key(model: str, accounts: dict | None = None) -> str:
@@ -370,13 +387,13 @@ def target_triad(targets_table: dict, category: str, facet: str | None = None) -
     levels = (((cat_block.get('facets') or {}).get(facet) or {}).get('levels') if facet is not None else cat_block.get('levels')) or {}
     if all(isinstance((levels.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
         return (float(levels['1']['target']), float(levels['2']['target']), float(levels['3']['target']))
-    raise ValueError(f'Panel targets for {category}{"." + facet if facet else ""} are missing from anchor.targets')
+    raise public_data.ReferenceDataError(f'Panel targets for {category}{"." + facet if facet else ""} are missing from anchor.targets')
 
 
 def _scale(t1, t2, t3) -> tuple[float, float, float]:
     t1_f, t2_f, t3_f = float(t1), float(t2), float(t3)
     if not t1_f < t2_f < t3_f:
-        raise ValueError(f'A level scale needs t1 < t2 < t3, got ({t1_f}, {t2_f}, {t3_f}).')
+        raise public_data.ReferenceDataError(f'A level scale needs t1 < t2 < t3, got ({t1_f}, {t2_f}, {t3_f}).')
     return t1_f, t2_f, t3_f
 
 
@@ -537,7 +554,7 @@ def list_scores(model: str | None = None, *, scope: str = 'all', accounts: dict 
     out = {'scope': scope}
     if scope in ('all', 'public'):
         out['public'] = _annotate_scores(pub_scores, targets_table)
-        out['public_path'] = str(public_scores_path(public_path))
+        out['public_path'] = str(public_path or public_data.held(PUBLIC_SCORES_FILE.parent)['dir'])
     if scope in ('all', 'local'):
         out['local'] = _annotate_scores(loc_scores, targets_table)
         out['local_path'] = str(local_scores_path(local_path))
@@ -869,9 +886,7 @@ def suggest_scores(model: str | None = None, *, scope: str = 'all',
     thresh = round(float(threshold), 6)
     import account_fleet
     import axis_scores
-    acc = copy.deepcopy(accounts) if isinstance(accounts, dict) else json.loads(
-        account_fleet.fleet_document_path().read_text(encoding='utf-8-sig')
-    )
+    acc = copy.deepcopy(accounts) if isinstance(accounts, dict) else account_fleet.fleet_document()
     five = five_data if isinstance(five_data, dict) else axis_scores.load_five_axis()
     base = axis_scores.five_axis_overlay(
         acc, data=five, read_local_state=False, public_scores={'scores': {}}, local_scores={'scores': {}},
@@ -966,7 +981,7 @@ def cli_main(argv: list[str] | None = None) -> int:
     p_list = sub.add_parser('list', help='List manual scores (both maintainer public and local user by default).')
     p_list.add_argument('model', nargs='?', help='Optional model id to filter by.')
     grp = p_list.add_mutually_exclusive_group()
-    grp.add_argument('--public', action='store_true', help='List only shipped maintainer scores.')
+    grp.add_argument('--public', action='store_true', help='List only maintainer scores (shipped or published).')
     grp.add_argument('--local', action='store_true', help='List only local user overrides.')
 
     p_clear = sub.add_parser('clear', help='Clear manual score(s) for <model> [target], or --all.')
@@ -981,14 +996,14 @@ def cli_main(argv: list[str] | None = None) -> int:
     p_sug.add_argument('--threshold', type=float, default=SUGGEST_DEFAULT_THRESHOLD,
                        help=f'Minimum |data_level - manual_level| to flag on measured boards (default: {SUGGEST_DEFAULT_THRESHOLD:g}).')
     sgrp = p_sug.add_mutually_exclusive_group()
-    sgrp.add_argument('--public', action='store_true', help='Inspect only shipped maintainer scores.')
+    sgrp.add_argument('--public', action='store_true', help='Inspect only maintainer scores (shipped or published).')
     sgrp.add_argument('--local', action='store_true', help='Inspect only local user overrides.')
 
     args = parser.parse_args(argv)
     import account_fleet
     import axis_scores
     try:
-        accounts = json.loads(account_fleet.fleet_document_path().read_text(encoding='utf-8-sig'))
+        accounts = account_fleet.fleet_document()
         five = axis_scores.load_five_axis()
         targets_table = (five.get('anchor') or {}).get('targets') or {}
     except Exception:
