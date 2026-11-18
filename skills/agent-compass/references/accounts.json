@@ -243,6 +243,7 @@
       {
         "pattern": "^gpt-6.*sol",
         "models": [
+          "gpt-6.2-sol",
           "gpt-6.1-sol",
           "gpt-6-astra"
         ]
@@ -542,6 +543,26 @@
         "kind": "vendor",
         "url": "https://developers.openai.com/api/docs/pricing",
         "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
+    },
+    "gpt-6.2-sol": {
+      "label": "Sol 6.2",
+      "api_family": "codex",
+      "listed_as": {
+        "aa": "GPT-6.2 Sol"
+      },
+      "list_price": {
+        "input": 2.0,
+        "cache_write_5m": 2.5,
+        "cache_write_1h": 2.5,
+        "cache_read": 0.1,
+        "output": 10.0
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://developers.openai.com/api/docs/pricing",
+        "as_of": "2026-11-18",
         "statement": "API list price, standard tier, short context, USD per million tokens"
       }
     },
@@ -1023,7 +1044,16 @@
         "medium",
         "high",
         "xhigh",
-        "max"
+        "max",
+        "ultra"
+      ],
+      "gpt-6.2-sol": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
       ],
       "gpt-6.1-sol": [
         "low",
@@ -1090,6 +1120,13 @@
         "max"
       ],
       "gpt-6.2-astra": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "gpt-6.2-sol": [
         "low",
         "medium",
         "high",
@@ -1206,6 +1243,22 @@
           "model": "gpt-6.1-sol",
           "effort": "medium"
         },
+        "sol62_max": {
+          "model": "gpt-6.2-sol",
+          "effort": "max"
+        },
+        "sol62_xhigh": {
+          "model": "gpt-6.2-sol",
+          "effort": "xhigh"
+        },
+        "sol62_high": {
+          "model": "gpt-6.2-sol",
+          "effort": "high"
+        },
+        "sol62_medium": {
+          "model": "gpt-6.2-sol",
+          "effort": "medium"
+        },
         "astra_high": {
           "model": "gpt-6-astra",
           "effort": "high"
@@ -1245,6 +1298,30 @@
           "effort": "medium",
           "provider": "pi",
           "launch_model": "openai-codex/gpt-6.1-sol"
+        },
+        "pi_sol62_max": {
+          "model": "gpt-6.2-sol",
+          "effort": "max",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.2-sol"
+        },
+        "pi_sol62_xhigh": {
+          "model": "gpt-6.2-sol",
+          "effort": "xhigh",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.2-sol"
+        },
+        "pi_sol62_high": {
+          "model": "gpt-6.2-sol",
+          "effort": "high",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.2-sol"
+        },
+        "pi_sol62_medium": {
+          "model": "gpt-6.2-sol",
+          "effort": "medium",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.2-sol"
         },
         "pi_astra_high": {
           "model": "gpt-6-astra",
