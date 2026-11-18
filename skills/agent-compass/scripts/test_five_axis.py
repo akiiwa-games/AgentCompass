@@ -2378,5 +2378,32 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
                             self.fail(f'{fname}:{node.lineno} calls plan_defaults(..., "default")')
 
 
+class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
+    """references/five-axis-scores.json is generated (calibration/refresh.py step 3): it must be what five_axis.build makes
+    from the shipped public-measurements.json, accounts.json and plan-templates.json. A hand edit, or an input changed
+    without the refresh, turns this red. `measurements_sha256` is part of the comparison, so a public-measurements.json
+    changed after the build is caught too."""
+
+    def test_the_shipped_five_axis_scores_are_rebuilt_from_the_shipped_inputs(self):
+        import five_axis
+        refs = account_fleet.REFERENCES
+        raw = (refs / 'public-measurements.json').read_bytes()
+        shipped = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))
+        # The run's own options, as the document records them: its time (source ages are counted to it) and the sources
+        # it was told to leave out.
+        built = five_axis.build(json.loads(raw.decode('utf-8-sig')),
+                                json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig')),
+                                json.loads((refs / 'plan-templates.json').read_text(encoding='utf-8-sig')),
+                                distrust=shipped['distrusted_sources'], meas_bytes=raw,
+                                now=datetime.fromisoformat(shipped['generated_at']))
+        built = json.loads(json.dumps(built, ensure_ascii=False))
+
+        def comparable(doc):
+            return {k: v for k, v in doc.items() if k != 'generated_at'}
+
+        self.assertEqual(comparable(built), comparable(shipped),
+                         'five-axis-scores.json does not match its inputs: run `agentcompass data refresh --no-fetch`')
+
+
 if __name__ == '__main__':
     unittest.main()
