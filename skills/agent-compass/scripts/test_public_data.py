@@ -173,12 +173,12 @@ class PublicationTests(unittest.TestCase):
                 shutil.rmtree(self.target)
 
 
-def unchecked_manifest(directory):
+def unchecked_manifest(directory, at=T0):
     """A manifest over the files in ``directory`` as they are (build_manifest refuses a file it cannot parse)."""
     files = {n: {'sha256': public_data.sha256_bytes(b), 'bytes': len(b)} for n in public_data.FILES
              for b in [(Path(directory) / n).read_bytes()]}
     manifest = {'schema_version': public_data.SCHEMA_VERSION, 'files': files}
-    return {**manifest, 'version': public_data.set_version(manifest), 'published_at': public_data._stamp(T0)}
+    return {**manifest, 'version': public_data.set_version(manifest), 'published_at': public_data._stamp(at.replace(microsecond=0))}
 
 
 class PublicationHistoryTests(unittest.TestCase):
@@ -311,7 +311,7 @@ class ChannelCase(unittest.TestCase):
             edit(self.remote_dir, 'accounts.json', lambda d: d['scoring'].__setitem__('safety_margin_pct', safety_margin_pct))
         if change is not None:
             edit(self.remote_dir, *change)
-        manifest = public_data.build_manifest(self.remote_dir, now=at)
+        manifest = unchecked_manifest(self.remote_dir, at or datetime.now(timezone.utc))
         if schema is not None:
             manifest['schema_version'] = schema
         write_json(self.remote_dir / public_data.MANIFEST, manifest)
@@ -390,6 +390,20 @@ class FetchTests(ChannelCase):
         chosen = self.held()
         self.assertEqual(chosen['source'], 'bundled')
         self.assertIn('not complete on disk', chosen['note'])
+
+    def test_a_published_set_with_a_non_finite_number_is_rejected_by_version_not_retried(self):
+        """Rule (finding 3): the sha256 proves the content is that version's, so a number no reader can take is a defect
+        of the version: rejected once (status rejected, no last_error), never downloaded again."""
+        self.publish(change=('five-axis-scores.json', lambda d: d['models'][next(iter(d['models']))].__setitem__(
+            'probe', float('inf'))), at=T0 + timedelta(days=1))
+        result = self.refresh()
+        self.assertEqual(result['status'], 'rejected')
+        self.assertIn('not a finite number', result['detail'])
+        state = public_data.read_state(self.env)
+        self.assertIsNone(state.get('last_error'))
+        self.remote.calls.clear()
+        self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'rejected')
+        self.assertEqual(len(self.remote.calls), 1)                         # the manifest only
 
     def test_nothing_published_yet_is_a_completed_check(self):
         """Rule (finding 9): a schema with no publication yet (404) is the normal state before its first one: no failure,

@@ -829,8 +829,7 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
                 downloaded.append(name)
                 if sha256_bytes(data) != want:
                     raise ValueError(f'{name} does not match the published sha256; nothing was applied')
-            parse_document(data, name)
-            (staging / name).write_bytes(data)
+            (staging / name).write_bytes(data)   # parsed strictly by the acceptance: a defect of this version rejects it
         (staging / MANIFEST).write_bytes(raw)
         verdict = _accepted(staging, version)
         if verdict:
