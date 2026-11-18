@@ -1854,13 +1854,17 @@ class CommunityCapacityTests(unittest.TestCase):
         import refresh
         cls.cm, cls.fa, cls.rf = community, five_axis, refresh
 
+    # The shape of https://wokey.ai/claude-usage-limits fetched 2026-11-18, where the plan the page used to call Max 20x is
+    # named `Claude Ultra (Max 20x)` (the page's own words: "Claude Ultra (formerly Max 20x)"); figures are illustrative.
     WOKEY = ('<html><body><p>Data updated 2026-11-02</p><p>Claude Pro ($20/mo)</p><p>: ≈ $155 of API use a week '
              '(IQR $146–173) · 24.2M uncached tokens · ≈ 13 full 5-hour windows</p>'
-             '<p>Claude Max 20x ($200/mo)</p><p>: ≈ $1,549 of API use a week (IQR) · 1M tokens · ≈ 5.7 full 5-hour windows</p>'
+             '<p>Claude Ultra (Max 20x) ($200/mo)</p><p>: ≈ $1,549 of API use a week (≈ $6,711/month) · 180M uncached tokens '
+             '· ≈ 5.7 full 5-hour windows · 9.7× Claude Pro, not 20×</p>'
              '<p>Fable 5.1 can use only half the weekly limit.</p>'
              '<p>value every plan at one fixed traffic split: Claude Code traffic on Wokey in the week to 2026-11-02, about '
-             '92% of tokens cache reads.</p><p>Claude Max 20x $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M '
-             '$272</p><p>Claude Max 20x: 92% cache reads, 1.98B tokens a week</p></body></html>')
+             '92% of tokens cache reads.</p><p>Claude Ultra (Max 20x) $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M '
+             '$272 (≈ 5.7 a week) 18 2026 11/02 – 11/09</p><p>Claude Ultra (Max 20x): 92% cache reads, 1.98B tokens a week</p>'
+             '</body></html>')
 
     def pages(self, folder, wokey=WOKEY):
         import tempfile
@@ -1898,7 +1902,7 @@ class CommunityCapacityTests(unittest.TestCase):
     def test_a_page_that_lost_its_sentence_gives_no_value(self):
         import tempfile
         with tempfile.TemporaryDirectory() as folder:
-            target, files = self.pages(folder, self.WOKEY.replace('Claude Max 20x', 'Claude Max 25x'))
+            target, files = self.pages(folder, self.WOKEY.replace('Claude Ultra (Max 20x)', 'Claude Ultra (Max 25x)'))
             _, obs, _, errors, _ = self.cm.extract(target, files)
         self.assertFalse([o for o in obs if o['plan'] == 'max20'])
         self.assertIn('mix_not_found', {e['reason'] for e in errors})       # the mix row is the Max 20x row too
