@@ -117,16 +117,27 @@ def test_unavailable_account_stays_visible_with_reason(tmp_path, monkeypatch):
     assert 'expired login' in row['badge']
     assert 'CLI' in row['badge']
 
-def test_old_shape_override_and_string_disabled_are_rejected(tmp_path, monkeypatch):
+def test_an_override_of_an_old_shape_without_an_upgrade_step_is_refused(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
     for bad in (
         {'schema_version': 1, 'accounts': {'codex': {'bundles': {'sol_high': {'disabled': True}}}}},
-        {'schema_version': 2, 'accounts': {'codex': {'bundles': {'sol_high': {'disabled': 'Legacy explanation'}}}}},
-        {'schema_version': 2, 'harness_overrides': {'codex': {'pi': {'disabled': 'off'}}}},
+        {'schema_version': 2, 'migration_ambiguous_enabled': [{'account': 'codex', 'bundle': 'sol_high'}]},
     ):
         target.write_text(json.dumps(bad), encoding='utf-8')
         with pytest.raises(ValueError, match=r'accounts-override\.json'):
             account_fleet.load_accounts()
+
+
+def test_a_string_disabled_in_an_earlier_releases_override_is_read_as_a_boolean(tmp_path, monkeypatch):
+    target = settings(tmp_path, monkeypatch)
+    for old in (
+        {'schema_version': 2, 'accounts': {'codex': {'bundles': {'sol_high': {'disabled': 'Legacy explanation'}}}}},
+        {'schema_version': 2, 'harness_overrides': {'codex': {'pi': {'disabled': 'off'}}}},
+    ):
+        target.write_text(json.dumps(old), encoding='utf-8')
+        before = target.read_bytes()
+        account_fleet.load_accounts()
+        assert target.read_bytes() == before
 
 
 def test_direct_file_toggle_writes_explicit_boolean_state(tmp_path, monkeypatch):

@@ -21,6 +21,8 @@ _REPLACE_RETRY_DELAYS = (0.02, 0.04, 0.05, 0.06)
 STATE_DIR = Path.home() / ".agent-compass"
 PATH = STATE_DIR / "plugins.json"
 PLUGINS_DIR = STATE_DIR / "plugins"
+# Before plugins.json, an empty marker file next to it switched off Usage Float's autostart (v0.1.0 to v0.5.0 read it).
+AUTOSTART_OFF_MARKER = "usage-float-autostart-disabled"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -96,7 +98,9 @@ def defaults() -> dict:
 
 
 def load(path: Path | None = None) -> dict:
-    """{plugin id: {'enabled', 'autostart'}}. A missing or broken file means the defaults (opt-in plugins off)."""
+    """{plugin id: {'enabled', 'autostart'}}. A missing or broken file means the defaults (opt-in plugins off), except
+    that the earlier release's autostart marker, while no plugin table was saved, keeps Usage Float's autostart off.
+    Nothing is written here: the next `save` writes the table and removes the marker."""
     with _LOCK:
         path = path or PATH
         config = defaults()
@@ -108,6 +112,8 @@ def load(path: Path | None = None) -> dict:
             pass
         if not isinstance(stored, dict):
             stored = {}
+            if (path.parent / AUTOSTART_OFF_MARKER).exists():
+                config["usage-float"]["autostart"] = False
         for plugin_id, row in stored.items():
             if plugin_id in config and isinstance(row, dict):
                 for key in ("enabled", "autostart"):
@@ -133,6 +139,7 @@ def save(config: dict, path: Path | None = None) -> None:
                     time.sleep(delay)
             else:
                 temporary.replace(path)
+            (path.parent / AUTOSTART_OFF_MARKER).unlink(missing_ok=True)
         finally:
             try:
                 if temporary.exists():

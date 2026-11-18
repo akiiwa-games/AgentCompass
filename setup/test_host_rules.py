@@ -29,19 +29,6 @@ class HostRulesTests(unittest.TestCase):
         self.assertEqual(host_rules.agentcompass_command(), f'python -X utf8 {(host_rules.REPO / "agentcompass").as_posix()}')
         self.assertTrue((host_rules.REPO / 'agentcompass' / '__main__.py').is_file())
 
-    def test_an_overlay_with_old_placeholder_or_worker_env_fails_fast(self):
-        directory = host_rules.overlay_dir(self.home)
-        directory.mkdir(parents=True)
-        for bad in (
-            b'run `python -X utf8 @@ROUTE_JUDGE@@ roll --task "x"`\n',
-            b'worker (`ROUTER_WORKER=1`) runs assignment\n',
-        ):
-            (directory / 'shared.md').write_bytes(bad)
-            with self.assertRaises(ValueError) as ctx:
-                host_rules.load('shared', self.home)
-            self.assertIn('shared.md', str(ctx.exception))
-            self.assertIn('delete', str(ctx.exception))
-
     def test_codex_and_daemon_overlays_include_the_shared_rules_instead_of_copying_them(self):
         directory = host_rules.overlay_dir(self.home)
         directory.mkdir(parents=True)
@@ -95,6 +82,53 @@ class HostRulesTests(unittest.TestCase):
         self.assertEqual(source, 'overlay')
         self.assertEqual(text, f'read {host_rules.DISPATCH_RULES} then '
                                f'{host_rules.personal_dispatch_path(self.home).as_posix()} ({host_rules.SKILL_DIR})\r\n')
+
+
+class HostRulesKeptAcrossUpdatesTests(unittest.TestCase):
+    """The user's own overlay of an earlier release is read in today's names; the file is never rewritten."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name)
+        self.directory = host_rules.overlay_dir(self.home)
+        self.directory.mkdir(parents=True)
+        self.overlay = self.directory / 'shared.md'
+
+    def test_an_overlay_written_for_an_earlier_release_keeps_its_words_and_takes_the_current_names(self):
+        old = ('# My rules\n\nrun `python -X utf8 @@ROUTE_JUDGE@@ roll --task "x"`\n'
+               'a worker (`ROUTER_WORKER=1`) with ROUTER_ACCOUNTS_OVERRIDE and ROUTER_LIVE_MODELS set\n'
+               'load the route-agent-work skill\n')
+        self.overlay.write_bytes(old.encode('utf-8'))
+        text, source = host_rules.load('shared', self.home)
+        self.assertEqual(source, 'overlay')
+        command = host_rules.agentcompass_command()
+        self.assertEqual(text, ('# My rules\n\nrun `' + command + ' roll --task "x"`\n'
+                                'a worker (`AGENTCOMPASS_WORKER=1`) with AGENTCOMPASS_ACCOUNTS_OVERRIDE and '
+                                'AGENTCOMPASS_LIVE_MODELS set\nload the agent-compass skill\n'))
+        self.assertEqual(self.overlay.read_bytes(), old.encode('utf-8'))   # a read never writes
+
+    def test_every_pair_renames_a_token_and_leaves_nothing_the_check_still_refuses(self):
+        import state_upgrade
+        for old, new in state_upgrade.HOST_RULE_UPGRADES.items():
+            with self.subTest(old=old):
+                self.assertNotEqual(old, new)
+                self.assertFalse([tok for tok in state_upgrade.LEGACY_RULE_TOKENS if tok in new])
+                self.assertEqual(state_upgrade.upgrade_host_rule_text(f'a {old} b'), f'a {new} b')
+
+    def test_a_token_with_no_current_name_is_refused_not_guessed(self):
+        for bad in (b'path `@@ROUTE_JUDGE@@` here\n', b'set ROUTE_MANAGER_HOST\n', b'run python route_judge.py plan\n'):
+            with self.subTest(bad=bad):
+                self.overlay.write_bytes(bad)
+                with self.assertRaises(ValueError) as ctx:
+                    host_rules.load('shared', self.home)
+                self.assertIn('shared.md', str(ctx.exception))
+                self.assertIn('delete', str(ctx.exception))
+
+    def test_doctor_names_nothing_for_an_overlay_that_has_a_step(self):
+        import state_upgrade
+        self.overlay.write_bytes(b'worker (`ROUTER_WORKER=1`) runs `python -X utf8 @@ROUTE_JUDGE@@ plan`\n')
+        self.assertIsNone(state_upgrade.check_host_rule_file(self.overlay))
 
 
 if __name__ == '__main__':

@@ -147,14 +147,7 @@ def render(text: str, home: Path) -> str:
 def load(kind: str, home: Path) -> tuple[str, str]:
     """Return ``(rendered_text, source)`` where source is ``overlay`` or ``default``."""
     path = overlay_dir(home) / OVERLAY_FILES[kind]
-    if path.exists():
-        issue = state_upgrade.check_host_rule_file(path)
-        if issue:
-            raise ValueError(issue)
-    try:
-        raw = path.read_bytes().decode("utf-8-sig")
-    except OSError:
-        raw = None
+    raw = state_upgrade.read_host_rule_file(path) if path.exists() else None
     if raw is not None and raw.strip():
         if kind != "shared" and "@@SHARED@@" in raw:
             shared = load("shared", home)[0]

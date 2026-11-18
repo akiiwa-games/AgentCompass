@@ -43,11 +43,6 @@ class PluginStoreTests(unittest.TestCase):
         self.assertTrue(config["chatgpt-web"]["enabled"])
         self.assertNotIn("unknown", config)
 
-    def test_old_usage_float_marker_is_ignored(self):
-        (self.path.parent / "usage-float-autostart-disabled").write_text("", encoding="utf-8")
-        self.assertTrue(plugins.load(self.path)["usage-float"]["autostart"])
-        self.assertTrue(plugins.load(self.path)["usage-float"]["enabled"])
-
     def test_save_is_atomic_and_round_trips(self):
         plugins.set_flag("easytier", "enabled", False, self.path)
         document = json.loads(self.path.read_text(encoding="utf-8"))
@@ -73,6 +68,41 @@ class PluginStoreTests(unittest.TestCase):
         config["dot2api"]["enabled"] = False
         self.assertFalse(plugins.autostarts("dot2api", config))
         self.assertTrue(plugins.autostarts("chatgpt-web", config))
+
+
+class PluginsKeptAcrossUpdatesTests(unittest.TestCase):
+    """An earlier release's Usage Float autostart marker (v0.1.0 to v0.5.0 read it) is carried into plugins.json."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.path = Path(directory.name) / "plugins.json"
+        self.marker = self.path.parent / plugins.AUTOSTART_OFF_MARKER
+        self.marker.write_text("", encoding="utf-8")
+
+    def test_the_marker_keeps_usage_float_autostart_off_while_no_plugin_table_was_saved_and_a_read_never_writes(self):
+        for content in (None, "{not json", json.dumps({"v": 1})):
+            with self.subTest(content=content):
+                if content is not None:
+                    self.path.write_text(content, encoding="utf-8")
+                config = plugins.load(self.path)
+                self.assertFalse(config["usage-float"]["autostart"])
+                self.assertTrue(config["usage-float"]["enabled"])
+                self.assertEqual(config["chatgpt-web"], plugins.defaults()["chatgpt-web"])
+                self.assertTrue(self.marker.exists())
+                self.assertEqual(self.path.exists(), content is not None)
+
+    def test_the_next_save_writes_the_current_shape_with_the_choice_and_removes_the_marker(self):
+        plugins.set_flag("easytier", "enabled", False, self.path)
+        document = json.loads(self.path.read_text(encoding="utf-8"))
+        self.assertFalse(document["plugins"]["usage-float"]["autostart"])
+        self.assertFalse(document["plugins"]["easytier"]["enabled"])
+        self.assertFalse(self.marker.exists())
+        self.assertFalse(plugins.load(self.path)["usage-float"]["autostart"])
+
+    def test_a_saved_table_wins_over_the_marker(self):
+        self.path.write_text(json.dumps({"v": 1, "plugins": {"usage-float": {"autostart": True}}}), encoding="utf-8")
+        self.assertTrue(plugins.load(self.path)["usage-float"]["autostart"])
 
 
 class LifecycleTests(unittest.TestCase):

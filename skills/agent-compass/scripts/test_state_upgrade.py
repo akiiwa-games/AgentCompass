@@ -133,10 +133,10 @@ class StateUpgradeContractTests(unittest.TestCase):
             json.dumps({'schema_version': 1, 'scores': {'grok-bot': {'coding': {'level': 2.0, 'date': '2026-11-01'}}}}),
             encoding='utf-8',
         )
-        # 4. host-rules overlay referencing ROUTER_WORKER
+        # 4. host-rules overlay holding a token with no current name
         rules_dir = self.state / 'host-rules'
         rules_dir.mkdir(parents=True, exist_ok=True)
-        (rules_dir / 'shared.md').write_text('Check ROUTER_WORKER=1 before delegating.\n', encoding='utf-8')
+        (rules_dir / 'shared.md').write_text('Run python route_judge.py plan before delegating.\n', encoding='utf-8')
         # 5. ledger containing pre-four-category profile
         old_prof = {
             **profile(),
@@ -171,11 +171,10 @@ class StateUpgradeContractTests(unittest.TestCase):
             json.dumps({'overrides': [{'id': 'o1', 'stop_on_reset': True, 'baseline_windows': {'usage': {'used_pct': 50}}}]}),
             encoding='utf-8',
         )
-        # 10. old Usage Float cache + autostart marker + calibration cache without fetch-manifest.json
+        # 10. old Usage Float cache + calibration cache without fetch-manifest.json
         uf_cache = self.home / '.usage-float' / 'usage-cache.json'
         uf_cache.parent.mkdir(parents=True, exist_ok=True)
         uf_cache.write_text('{"providers":{}}', encoding='utf-8')
-        (self.state / 'usage-float-autostart-disabled').write_text('', encoding='utf-8')
         cal_cache = self.home / '.cache' / 'agentcompass-calibration'
         cal_cache.mkdir(parents=True, exist_ok=True)
         (cal_cache / 'stale.parquet').write_bytes(b'old')
@@ -226,7 +225,6 @@ class StateUpgradeContractTests(unittest.TestCase):
             self.state / 'provider-inventory.json',
             self.state / 'router-overrides.json',
             uf_cache,
-            self.state / 'usage-float-autostart-disabled',
             cal_cache,
             claude_dir / 'settings.json',
             claude_dir / 'CLAUDE.md',
@@ -242,12 +240,12 @@ class StateUpgradeContractTests(unittest.TestCase):
 
     def test_runtime_loaders_fail_fast_with_the_exact_same_message_as_doctor(self):
         env = self._env()
-        # 1. accounts-override.json (v1, string disabled, allowed_cwd)
+        # 1. accounts-override.json (the shapes with no upgrade step)
         override_path = self.state / 'accounts-override.json'
         for bad_doc in (
             {'schema_version': 1, 'accounts': {}},
-            {'schema_version': 2, 'accounts': {'codex': {'bundles': {'sol_high': {'disabled': 'user off'}}}}},
-            {'schema_version': 2, 'accounts': {'codex': {'allowed_cwd': ['E:/P4']}}},
+            {'schema_version': 2, 'migration_ambiguous_enabled': [{'account': 'codex', 'bundle': 'sol_high'}]},
+            {'schema_version': 2, 'accounts': {'codex': {'allowed_cwd': ['D:/work'], 'cwd_regex': 'game'}}},
         ):
             override_path.write_text(json.dumps(bad_doc), encoding='utf-8')
             expected = state_upgrade.check_accounts_override(override_path)

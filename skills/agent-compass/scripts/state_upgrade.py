@@ -29,6 +29,16 @@ LEGACY_SETTINGS_REASON = (
     '旧设置残留。在设置里保存一次即可清掉，或运行 agentcompass setup。'
 )
 
+# Overlay words of an earlier release (v0.1.0 to v0.5.0) and the name they carry today: the release's own rewrite of the
+# command placeholder, the variable names it renamed (AGENTCOMPASS_* is the one canonical name), and the skill rename.
+# A token with no current name (a bare script path placeholder, a script file name, ROUTE_MANAGER_*) is not rewritten.
+HOST_RULE_UPGRADES = {
+    'python -X utf8 @@ROUTE_JUDGE@@': '@@AGENTCOMPASS@@',
+    'ROUTER_WORKER': 'AGENTCOMPASS_WORKER',
+    'ROUTER_ACCOUNTS_OVERRIDE': 'AGENTCOMPASS_ACCOUNTS_OVERRIDE',
+    'ROUTER_LIVE_MODELS': 'AGENTCOMPASS_LIVE_MODELS',
+    'route-agent-work': 'agent-compass',
+}
 HOST_POLICY_KEYS = frozenset({'allowed_accounts', 'judges', 'usage_providers', 'known_accounts'})
 RULE_BEGIN = '<!-- agentcompass:begin -->'
 RULE_END = '<!-- agentcompass:end -->'
@@ -92,59 +102,6 @@ def state_dir(home: Path | None = None, environ: dict | None = None) -> Path:
         return Path(os.path.expandvars(configured)).expanduser()
     base = Path(home) if home is not None else Path.home()
     return base / '.agent-compass'
-
-
-def _find_non_bool_disabled(node, prefix: str = '') -> str | None:
-    if isinstance(node, dict):
-        for key, value in node.items():
-            at = f'{prefix}.{key}' if prefix else str(key)
-            if key == 'disabled':
-                if not isinstance(value, bool):
-                    return f'non-boolean disabled ({value!r}) at {at}'
-            else:
-                found = _find_non_bool_disabled(value, at)
-                if found:
-                    return found
-    elif isinstance(node, list):
-        for index, value in enumerate(node):
-            found = _find_non_bool_disabled(value, f'{prefix}[{index}]')
-            if found:
-                return found
-    return None
-
-
-def validate_accounts_override_doc(doc, path: Path | str) -> None:
-    if not isinstance(doc, dict):
-        raise ValueError(format_issue(path, 'older or invalid accounts-override format (expected JSON object)', FIX_TRAY))
-    version = doc.get('schema_version')
-    if version != 2:
-        raise ValueError(format_issue(
-            path,
-            f'older accounts-override schema_version {version!r} (expected 2)',
-            FIX_TRAY,
-        ))
-    if 'migration_ambiguous_enabled' in doc:
-        raise ValueError(format_issue(
-            path,
-            'older accounts-override field migration_ambiguous_enabled is no longer supported',
-            FIX_TRAY,
-        ))
-    accounts = doc.get('accounts')
-    if accounts is not None:
-        if not isinstance(accounts, dict):
-            raise ValueError(format_issue(path, 'invalid accounts-override.accounts (expected JSON object)', FIX_TRAY))
-        for name, spec in accounts.items():
-            if not isinstance(spec, dict):
-                raise ValueError(format_issue(
-                    path, f'invalid accounts-override entry for {name!r} (expected JSON object)', FIX_TRAY,
-                ))
-            if 'allowed_cwd' in spec:
-                raise ValueError(format_issue(
-                    path, f'older field accounts.{name}.allowed_cwd (replaced by cwd_regex)', FIX_TRAY,
-                ))
-    bad_disabled = _find_non_bool_disabled(doc)
-    if bad_disabled:
-        raise ValueError(format_issue(path, f'older accounts-override format ({bad_disabled})', FIX_TRAY))
 
 
 def legacy_meter_field_names(spec) -> list[str]:
@@ -298,16 +255,9 @@ def check_usage_config(path: Path) -> str | None:
 def check_accounts_override(path: Path) -> str | None:
     if not path.exists():
         return None
+    import accounts_override
     try:
-        raw = path.read_text(encoding='utf-8-sig')
-    except (OSError, UnicodeError) as exc:
-        return format_issue(path, f'accounts-override unreadable ({exc})', FIX_TRAY)
-    try:
-        doc = json.loads(raw)
-    except ValueError as exc:
-        return format_issue(path, f'accounts-override invalid JSON ({exc})', FIX_TRAY)
-    try:
-        validate_accounts_override_doc(doc, path)
+        doc = accounts_override.load_override(path)
     except ValueError as exc:
         return str(exc)
     flagged = [name for name, spec in (doc.get('accounts') or {}).items() if spec.get('verified') is False]
@@ -373,20 +323,36 @@ def check_user_scores(path: Path) -> str | None:
     return None
 
 
+def upgrade_host_rule_text(text: str) -> str:
+    """An overlay an earlier release accepted, in today's words; the file itself is the user's and is never rewritten."""
+    for old, new in HOST_RULE_UPGRADES.items():
+        text = text.replace(old, new)
+    return text
+
+
+def read_host_rule_file(path: Path) -> str:
+    """The text of one ``host-rules`` overlay carried into the current names (`upgrade_host_rule_text`). Raises
+    ``ValueError`` for a file that is unreadable or still holds a token with no current name."""
+    try:
+        text = path.read_bytes().decode('utf-8-sig')    # bytes, not text mode: the overlay keeps its line endings
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(format_issue(path, f'host-rules file unreadable ({exc})', fix_delete(path))) from exc
+    text = upgrade_host_rule_text(text)
+    found = [tok for tok in LEGACY_RULE_TOKENS if tok in text]
+    if found:
+        raise ValueError(format_issue(
+            path, f'older host-rules overlay contains removed token(s): {", ".join(found)}', fix_delete(path),
+        ))
+    return text
+
+
 def check_host_rule_file(path: Path) -> str | None:
     if not path.exists():
         return None
     try:
-        text = path.read_text(encoding='utf-8-sig')
-    except (OSError, UnicodeError) as exc:
-        return format_issue(path, f'host-rules file unreadable ({exc})', fix_delete(path))
-    found = [tok for tok in LEGACY_RULE_TOKENS if tok in text]
-    if found:
-        return format_issue(
-            path,
-            f'older host-rules overlay contains removed token(s): {", ".join(found)}',
-            fix_delete(path),
-        )
+        read_host_rule_file(path)
+    except ValueError as exc:
+        return str(exc)
     return None
 
 
@@ -770,12 +736,6 @@ def collect_issues(home: Path | None = None, environ: dict | None = None) -> lis
     # Removed by `agentcompass setup` and by the step that runs after a product update (remove_retired_reference_data).
     for leftover in retired_reference_data(sdir):
         issues.append(format_issue(leftover, f'{RETIRED_REFERENCE_DATA[leftover.name]}, not read', FIX_SETUP))
-
-    legacy_uf_off = sdir / 'usage-float-autostart-disabled'
-    if legacy_uf_off.exists():
-        issues.append(format_issue(
-            legacy_uf_off, 'older usage-float autostart marker (replaced by plugins.json)', FIX_TRAY,
-        ))
 
     legacy_uf_cache = base_home / '.usage-float' / 'usage-cache.json'
     if not cache_env and legacy_uf_cache.exists():
