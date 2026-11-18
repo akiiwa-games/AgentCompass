@@ -675,12 +675,12 @@ def fall_back(error, bundled=None, environ=None):
 
 def set_aside(state, now=None):
     """The set-aside in effect for this code, or None: recorded by this code (`set_aside_by`), begun no later than now
-    (a start in the future is a clock that ran ahead, not a set-aside: the rule for a check time in the future), and not
-    yet over. ``{version, at, until, error, note}``."""
+    (a start in the future is a clock that ran ahead, not a set-aside: the rule for a check time in the future), no
+    longer than SET_ASIDE_HOURS (what settle writes), and not yet over. ``{version, at, until, error, note}``."""
     now = now or _now()
     at, until = _parse(state.get('set_aside_at')), _parse(state.get('set_aside_until'))
     if (not state.get('set_aside_version') or state.get('set_aside_by') != reader_id() or at is None or until is None
-            or at > now or now >= until):
+            or at > now or now >= until or until - at > timedelta(hours=SET_ASIDE_HOURS)):
         return None
     return {'version': state['set_aside_version'], 'at': state['set_aside_at'], 'until': state['set_aside_until'],
             'error': state.get('set_aside_error'), 'note': state.get('set_aside_note')}

@@ -561,7 +561,8 @@ class HeldSetTests(ChannelCase):
         self.assertNotIn('set_aside_version', public_data.read_state(self.env))
 
     def stand_set_aside(self, **fields):
-        self.assertEqual(self.refresh()['status'], 'updated')
+        if not public_data.read_state(self.env).get('version'):
+            self.assertEqual(self.refresh()['status'], 'updated')
         now = datetime.now(timezone.utc)
         state = public_data.read_state(self.env)
         values = {'set_aside_version': state['version'], 'set_aside_by': public_data.reader_id(),
@@ -570,14 +571,21 @@ class HeldSetTests(ChannelCase):
         public_data._update_state(self.env, lambda s: s.update(values))
         public_data.release()
 
-    def test_a_set_aside_begun_in_the_future_is_not_one(self):
-        """Rule (finding 4): a start after now is a clock that ran ahead, as for a check time in the future."""
-        later = datetime.now(timezone.utc) + timedelta(days=400)
-        self.stand_set_aside(set_aside_at=public_data._stamp(later),
-                             set_aside_until=public_data._stamp(later + timedelta(hours=24)))
-        self.assertEqual(self.held()['source'], 'fetched')
-        self.assertIsNone(public_data.status(self.env, self.bundled)['set_aside'])
-        self.assertIsNone(public_data.reference_alert(self.bundled, self.env))
+    def test_a_set_aside_begun_in_the_future_or_longer_than_its_period_is_not_one(self):
+        """Rule (finding 4): a start after now is a clock that ran ahead, as for a check time in the future; a period
+        longer than SET_ASIDE_HOURS is not one settle wrote (review round 3, r3_aside: until +400 days)."""
+        now, later = datetime.now(timezone.utc), datetime.now(timezone.utc) + timedelta(days=400)
+        for label, fields in (('begun in the future', {'set_aside_at': public_data._stamp(later),
+                                                       'set_aside_until': public_data._stamp(later + timedelta(hours=24))}),
+                              ('longer than its period', {'set_aside_at': public_data._stamp(now - timedelta(minutes=1)),
+                                                          'set_aside_until': public_data._stamp(later)})):
+            with self.subTest(label):
+                self.stand_set_aside(**fields)
+                self.assertEqual(self.held()['source'], 'fetched')
+                self.assertIsNone(public_data.status(self.env, self.bundled)['set_aside'])
+                self.assertIsNone(public_data.reference_alert(self.bundled, self.env))
+                self.assertNotIn('set_aside_version', public_data.read_state(self.env))      # cleared where it was read
+                public_data.release()
 
     def test_a_set_aside_recorded_by_other_code_does_not_hold_for_this_code(self):
         """Rule (review round 3, A1): an older install's code sharing this state set the set aside; this code accepted
