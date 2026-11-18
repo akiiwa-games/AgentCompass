@@ -70,8 +70,10 @@ def five_axis_config(policy):
 
 
 def load_five_axis(path=None):
-    target = Path(path) if path is not None else public_data.effective(account_fleet.REFERENCES / 'five-axis-scores.json')
-    return json.loads(target.read_text(encoding='utf-8'))
+    """five-axis-scores.json: the file at ``path``, else that of the reference set this process holds."""
+    if path is not None:
+        return json.loads(Path(path).read_text(encoding='utf-8'))
+    return public_data.document(account_fleet.REFERENCES / 'five-axis-scores.json')
 
 
 FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/6'
@@ -338,7 +340,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     community = data.get('capacity') or {}
     cap_rules = _capacity_rules(out)
     rule_families = {fam for fam, _ in cap_rules}
-    shipped_templates = provider_inventory._shipped_plan_templates()
+    shipped_templates = provider_inventory.shipped_plan_templates()
     families_by_account = {}
     for name, spec in (out.get('accounts') or {}).items():
         if not isinstance(spec, dict):

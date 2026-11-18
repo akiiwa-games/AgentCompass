@@ -97,14 +97,25 @@ Installs read a set the maintainer published on `main` without a product update
 
 1. Edit `references/accounts.json` (steps 1 to 4 above).
 2. `agentcompass data refresh --model <id>` (step 5).
-3. `agentcompass data publish`: checks the set and writes `references/public-data.json`.
-4. The checks: `agentcompass data publish --check`, `pytest skills/agent-compass/scripts/test_public_data.py
+3. `agentcompass data publish`: accepts the set (this code's readers load it and an offline plan completes with it) and
+   writes it to `published/<schema>/` and its manifest to `references/public-data.json`. Editing `references/` alone
+   publishes nothing.
+4. The checks: `agentcompass data publish --check` and `agentcompass data publish --check-released` (every released
+   version of the same schema accepts it), `pytest skills/agent-compass/scripts/test_public_data.py
    skills/agent-compass/scripts/test_reference_provenance.py`.
-5. Commit the changed files under `references/` and push to `main`.
+5. Commit the changed files under `references/` and `published/` and push to `main`, once.
 
 Nothing else: installs pick the set up at their next check (at most 6 hours). A corrected hand-written score or launch
-row is the same procedure with its own edit in place of steps 1 and 2. A model whose launch needs code (a new harness, a
-new launch field, a new schema) cannot be published this way and ships with a release.
+row is the same procedure with its own edit in place of steps 1 and 2. A model whose launch needs code (a new harness or
+provider, an effort its launch contract does not offer, a new launch field) cannot be published this way: the acceptance
+refuses it, and it ships with a release.
+
+When to bump `SCHEMA_VERSION` (`scripts/public_data.py`): with any change after which a released reader of the current
+schema would misread data written for the new code: a new required field, a renamed or removed key, a changed meaning or
+unit. `--check-released` catches a publication an older reader refuses; it cannot catch a field an older reader reads and
+interprets differently, so that judgement is the maintainer's. After a bump, `data publish` writes `published/<new>/`;
+installs of the older schema keep reading `published/<old>/`. A release prepared on `main` under a new schema publishes
+its own set first, so `--check --release` holds when it is tagged.
 
 ## Rules the data follows
 

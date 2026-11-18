@@ -1677,9 +1677,19 @@ def main() -> int:
     if not isinstance(payload, dict):
         print("{}")
         return 0
-    result = evaluate_payload(payload)
+    result = evaluate_with_reference_fallback(payload)
     print(json.dumps(result, ensure_ascii=False))
     return 0
+
+
+def evaluate_with_reference_fallback(payload: dict) -> dict:
+    """evaluate_payload; when a reader fails on a fetched reference set, evaluated again on the shipped set as a whole
+    (public_data.with_fallback), so published data never decides a gate verdict the shipped data would not."""
+    try:
+        public_data = router_module("public_data")
+    except Exception:
+        return evaluate_payload(payload)
+    return public_data.with_fallback(evaluate_payload, payload)
 
 
 if __name__ == "__main__":

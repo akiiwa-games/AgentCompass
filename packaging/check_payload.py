@@ -21,6 +21,9 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 WHEEL_DATA = {"agentcompass/data/skills/": "skills/", "agentcompass/data/setup/": "setup/"}
+# The published reference sets (published/<schema>/, written by `agentcompass data publish`) live on main for installs to
+# fetch; a wheel or the product ships references/ and never a published copy.
+PUBLISHED = "published/"
 
 
 def tracked(root: Path = ROOT) -> set[str]:
@@ -39,6 +42,8 @@ def wheel_problems(wheel: Path, files: set[str]) -> list[str]:
                 source = repo + name[len(prefix):]
         if source not in files:
             problems.append(f"{Path(wheel).name}: {name} is not tracked in git")
+        if source.startswith(PUBLISHED):
+            problems.append(f"{Path(wheel).name}: {name} is a published reference set, which a release never ships")
     return problems
 
 
@@ -91,6 +96,8 @@ def app_zip_problems(app_zip: Path, files: set[str]) -> list[str]:
             continue
         if name not in files:
             problems.append(f"{Path(app_zip).name}: {name} is not tracked in git")
+        if name.startswith(PUBLISHED):
+            problems.append(f"{Path(app_zip).name}: {name} is a published reference set, which a release never ships")
     return problems
 
 

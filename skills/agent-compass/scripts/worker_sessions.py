@@ -139,9 +139,11 @@ SHIPPED_ACCOUNTS = Path(__file__).resolve().parents[1] / 'references' / 'account
 
 
 def shipped_scoring(path=None):
-    """`scoring` mapping from the shipped `accounts.json`."""
+    """`scoring` mapping of the public `accounts.json`: the file at ``path``, else that of the reference set this process
+    holds (public_data.document), before the user's own overrides."""
+    import public_data
     source = Path(path) if path is not None else SHIPPED_ACCOUNTS
-    doc = json.loads(source.read_text(encoding='utf-8-sig'))
+    doc = json.loads(source.read_text(encoding='utf-8-sig')) if path is not None else public_data.document(source)
     scoring = doc.get('scoring') if isinstance(doc, dict) else None
     if not isinstance(scoring, dict):
         raise KeyError(f'Missing scoring block in {source}')

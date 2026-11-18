@@ -127,13 +127,13 @@ class PriceTableError(RuntimeError):
 
 
 def load_prices() -> dict[str, tuple[float, ...]]:
-    """{model id: list price per PRICE_FIELDS} from the catalog in effect (public_data.effective over the shipped copy)."""
+    """{model id: list price per PRICE_FIELDS} from the catalog of the reference set held (public_data.document)."""
     scripts = skill_scripts()
     if scripts is None:
         raise RuntimeError("agent-compass skill scripts not found: the catalog holding the models' list prices is unavailable")
     import public_data
-    path = public_data.effective(scripts.parent / "references" / "accounts.json")
-    doc = json.loads(path.read_text(encoding="utf-8-sig"))
+    path = scripts.parent / "references" / "accounts.json"
+    doc = public_data.document(path)
     prices = {model: tuple(float(row["list_price"][f]) for f in PRICE_FIELDS)
               for model, row in doc["models"].items() if isinstance(row, dict) and row.get("list_price")}
     if not prices:

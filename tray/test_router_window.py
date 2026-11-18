@@ -72,10 +72,11 @@ class DnaDimensionTests(unittest.TestCase):
     def test_model_table_carries_cited_prices_only_and_the_economy_is_relative_to_the_dearest(self):
         from types import SimpleNamespace
         models = {'priced': {'usd_per_hour': 15}, 'free': {'usd_per_hour': 0}, 'dear': {'usd_per_hour': 30}, 'unpriced': {}}
-        fake = SimpleNamespace(REFERENCES=Path('unused'), load_accounts=lambda _: {'models': models},
+        fake = SimpleNamespace(REFERENCES=Path('unused'), load_accounts=lambda *_, **__: {'models': models},
                                five_axis_overlay=lambda accounts: accounts,
                                models_table=lambda accounts: accounts['models'])
-        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, 'modules', return_value=(fake, None)),                 mock.patch.object(account_fleet, 'REFERENCES', fake.REFERENCES),                 mock.patch.object(account_fleet, 'load_accounts', fake.load_accounts),                 mock.patch.object(account_fleet, 'models_table', fake.models_table),                 mock.patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay),                 mock.patch.object(router_data, 'STATE_DIR', Path(directory)):
+        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, 'modules', return_value=(fake, None)),                 mock.patch.object(account_fleet, 'REFERENCES', fake.REFERENCES),                 mock.patch.object(account_fleet, 'load_accounts', fake.load_accounts),                 mock.patch.object(account_fleet, 'models_table', fake.models_table),                 mock.patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay),                 mock.patch.object(router_data, 'STATE_DIR', Path(directory)), \
+                mock.patch.object(router_data, '_public_accounts', return_value={'models': models}):
             table = router_data.model_table()
             series, _ = router_data.dna_series(table, 'priced', 'unpriced')
         self.assertNotIn('usd_per_hour', table['unpriced'])
@@ -1655,7 +1656,7 @@ class RotationThresholdEndToEndTests(unittest.TestCase):
             doc = json.loads(CATALOG_JSON.read_text(encoding="utf-8-sig"))
             doc["scoring"].pop("rotate_after_carried_tokens", None)
             bad.write_text(json.dumps(doc), encoding="utf-8")
-            with mock.patch.object(router_data, "_accounts_path", return_value=bad), \
+            with mock.patch.object(router_data, "_public_accounts", return_value=json.loads(bad.read_text(encoding="utf-8"))), \
                     mock.patch.object(router_data, "STATE_DIR", state):
                 with self.assertRaises(KeyError):
                     router_data.rotation_limit()

@@ -1,0 +1,352 @@
+{
+  "claude": {
+    "pro": {
+      "provenance": "community_benchmark",
+      "price_usd_per_month": 20,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://claude.com/pricing",
+        "as_of": "2026-11-12",
+        "statement": "Pro: \"$17 Per month with annual subscription discount ($200 billed up front). $20 if billed monthly.\""
+      },
+      "basis": "Windows: five_hour and seven_day. Claude Pro includes no Fable allowance, so there is no weekly_fable window. Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "windows": {
+        "five_hour": {
+          "hours": 5,
+          "launch_min_remaining_pct": 25
+        },
+        "seven_day": {
+          "hours": 168
+        }
+      }
+    },
+    "max5": {
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 100,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://claude.com/pricing",
+        "as_of": "2026-11-12",
+        "statement": "Page tier \"Max\" (plan ID max5): \"$100 Per month\" — \"5x Pro usage every 5 hours and every week*\""
+      },
+      "basis": "Windows: five_hour, seven_day and weekly_fable (the Fable allowance is its own weekly window). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "windows": {
+        "five_hour": {
+          "hours": 5
+        },
+        "seven_day": {
+          "hours": 168
+        },
+        "weekly_fable": {
+          "hours": 168,
+          "models": [
+            "fable"
+          ]
+        }
+      }
+    },
+    "max20": {
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 200,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://claude.com/pricing",
+        "as_of": "2026-11-12",
+        "statement": "Page tier \"Ultra\" (plan ID max20): \"$200 Per month\" — \"10x Pro usage every week*\""
+      },
+      "basis": "Windows: five_hour, seven_day and weekly_fable (the Fable allowance is its own weekly window). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "windows": {
+        "five_hour": {
+          "hours": 5
+        },
+        "seven_day": {
+          "hours": 168
+        },
+        "weekly_fable": {
+          "hours": 168,
+          "models": [
+            "fable"
+          ]
+        }
+      }
+    },
+    "max": {
+      "alias": "max5",
+      "basis": "Plan tier not reported as 5x or 20x; the windows of the smaller Max 5x plan apply and the capacity stays unknown until public data names one."
+    }
+  },
+  "codex": {
+    "plus": {
+      "provenance": "community_benchmark",
+      "price_usd_per_month": 20,
+      "basis": "Windows: the weekly usage window and, since 2026-08-25, a five_hour window. Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "windows": {
+        "usage": {
+          "hours": 168
+        },
+        "five_hour": {
+          "hours": 5,
+          "launch_min_remaining_pct": 25
+        }
+      }
+    },
+    "team": {
+      "alias": "plus",
+      "basis": "Team seats use the same per-seat allowance prior as Plus."
+    },
+    "pro100": {
+      "provenance": "community_benchmark",
+      "price_usd_per_month": 100,
+      "basis": "Window: the weekly usage window. Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "windows": {
+        "usage": {
+          "hours": 168
+        }
+      }
+    },
+    "pro": {
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 200,
+      "basis": "Window: the weekly usage window. Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "windows": {
+        "usage": {
+          "hours": 168
+        }
+      }
+    }
+  },
+  "antigravity": {
+    "ultra20": {
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 199.99,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://one.google.com/intl/ALL_us/about/feeds/pricing_2026_07_28.json",
+        "as_of": "2026-11-12",
+        "statement": "\"PRICE_GEN_AI_ULTRA_200_MONTHLY\": 199.99 (\"COUNTRY_CODE\": \"US\", \"CURRENCY_CODE\": \"USD\"), rendered as the \"Google AI Ultra 20x\" column on https://one.google.com/about/google-ai-plans/"
+      },
+      "tiers": [
+        "g1-ultra-tier",
+        "Google AI Ultra 20x",
+        "Google AI Ultra (20x)",
+        "ultra 20x",
+        "ultra x20"
+      ],
+      "basis": "Google AI Ultra 20x ($199.99/mo, loadCodeAssist paidTier.id \"g1-ultra-tier\"): a five-hour and a weekly window for the Gemini pool and for the independent third-party pool. Google One Help (https://support.google.com/googleone/answer/16286513?hl=en, 2026-11-12) states: \"Based on your specific Google AI Ultra plan, you get 5x or 20x usage quota in Gemini and Google Antigravity compared to the Google AI Pro plan.\" loadCodeAssist returns paidTier.name \"Google AI Ultra\" for both Ultra variants and distinguishes 20x by paidTier.id \"g1-ultra-tier\" (upgradeSubscriptionText: \"You are subscribed to the best Google AI plan.\", https://github.com/farion1231/cc-switch/pull/9319, 2026-11-10). Unread or unrecognized tiers have no default plan and enter Mode B (capacity_unknown). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "windows": {
+        "gemini-5h": {
+          "hours": 5,
+          "models": [
+            "gemini"
+          ]
+        },
+        "gemini-weekly": {
+          "hours": 168,
+          "models": [
+            "gemini"
+          ]
+        },
+        "3p-5h": {
+          "hours": 5,
+          "models_except": [
+            "gemini"
+          ]
+        },
+        "3p-weekly": {
+          "hours": 168,
+          "models_except": [
+            "gemini"
+          ]
+        }
+      }
+    },
+    "ultra5": {
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 99.99,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://one.google.com/intl/ALL_us/about/feeds/pricing_2026_07_28.json",
+        "as_of": "2026-11-12",
+        "statement": "\"PRICE_GEN_AI_ULTRA_100_MONTHLY\": 99.99 (\"COUNTRY_CODE\": \"US\", \"CURRENCY_CODE\": \"USD\"), rendered as the \"Google AI Ultra 5x\" column (\"$99.99/mo - Ultra plans are billed monthly only\") on https://one.google.com/about/google-ai-plans/"
+      },
+      "tiers": [
+        "g1-ultra-lite-tier",
+        "Google AI Ultra 5x",
+        "Google AI Ultra (5x)",
+        "ultra 5x",
+        "ultra x5"
+      ],
+      "basis": "Google AI Ultra 5x ($99.99/mo, loadCodeAssist paidTier.id \"g1-ultra-lite-tier\"): the windows of Ultra 20x. loadCodeAssist returns paidTier.name \"Google AI Ultra\" for both Ultra variants and distinguishes 5x by paidTier.id \"g1-ultra-lite-tier\" (upgradeSubscriptionText: \"You can upgrade to a higher Google AI Ultra plan to receive the highest rate limits.\", https://github.com/farion1231/cc-switch/pull/9319, 2026-11-10). Unread or unrecognized tiers have no default plan and enter Mode B (capacity_unknown). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "windows": {
+        "gemini-5h": {
+          "hours": 5,
+          "models": [
+            "gemini"
+          ]
+        },
+        "gemini-weekly": {
+          "hours": 168,
+          "models": [
+            "gemini"
+          ]
+        },
+        "3p-5h": {
+          "hours": 5,
+          "models_except": [
+            "gemini"
+          ]
+        },
+        "3p-weekly": {
+          "hours": 168,
+          "models_except": [
+            "gemini"
+          ]
+        }
+      }
+    },
+    "pro": {
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 19.99,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://one.google.com/intl/ALL_us/about/feeds/pricing_2026_07_28.json",
+        "as_of": "2026-11-12",
+        "statement": "\"PRICE_GEN_AI_PRO_MONTHLY\": 19.99 (\"COUNTRY_CODE\": \"US\", \"CURRENCY_CODE\": \"USD\"), rendered as \"Google AI Pro\" (\"Monthly ($19.99)\") on https://one.google.com/about/google-ai-plans/"
+      },
+      "tiers": [
+        "g1-pro-tier",
+        "Google AI Pro"
+      ],
+      "basis": "Google AI Pro ($19.99/mo, loadCodeAssist paidTier.id \"g1-pro-tier\"): the windows of Ultra 20x. Unread or unrecognized tiers have no default plan and enter Mode B (capacity_unknown). Capacity per window comes only from public community data (references/five-axis-scores.json); none is stated here.",
+      "windows": {
+        "gemini-5h": {
+          "hours": 5,
+          "models": [
+            "gemini"
+          ]
+        },
+        "gemini-weekly": {
+          "hours": 168,
+          "models": [
+            "gemini"
+          ]
+        },
+        "3p-5h": {
+          "hours": 5,
+          "models_except": [
+            "gemini"
+          ]
+        },
+        "3p-weekly": {
+          "hours": 168,
+          "models_except": [
+            "gemini"
+          ]
+        }
+      }
+    }
+  },
+  "chatgpt-web": {
+    "pro": {
+      "provenance": "empirical_prior",
+      "price_usd_per_month": 200,
+      "basis": "The ChatGPT web bridge is only ready when its config reports proAvailable, so a ready bridge is a Pro web seat. Pro consultations draw no API-priced quota (unmetered); the 5-per-12h cadence window is priced from current-period consultations used against the 5-seat capacity and remaining period time.",
+      "windows": {},
+      "cadence": {
+        "window_seconds": 43200,
+        "limit": 5
+      },
+      "unmetered": true
+    }
+  },
+  "grok": {
+    "free": {
+      "provenance": "vendor",
+      "price_usd_per_month": 0,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://docs.x.ai/x-subscription/pricing",
+        "as_of": "2026-11-12",
+        "statement": "| Free | $0 | $0 | Limited | — \"Free includes standard X.\" \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
+      },
+      "tiers": [
+        "Free",
+        "Free Tier",
+        "FreeTier"
+      ],
+      "basis": "| Free | $0 | $0 | Limited |. Live window IDs come from the usage collector when present.",
+      "windows": {}
+    },
+    "plus": {
+      "provenance": "vendor",
+      "price_usd_per_month": 8,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://docs.x.ai/x-subscription/pricing",
+        "as_of": "2026-11-12",
+        "statement": "| Plus | $8/mo | $80/yr ($7/mo) | Base | — \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
+      },
+      "tiers": [
+        "Plus",
+        "X Subscription Plus",
+        "The X Subscription Plus"
+      ],
+      "basis": "| Plus | $8/mo | $80/yr ($7/mo) | Base |. Live window IDs come from the usage collector when present; capacity follows the runtime price-matching rule.",
+      "windows": {}
+    },
+    "premium": {
+      "provenance": "vendor",
+      "price_usd_per_month": 30,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://docs.x.ai/x-subscription/pricing",
+        "as_of": "2026-11-12",
+        "statement": "| Premium | $30/mo | $300/yr ($25/mo) | 4x | — \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
+      },
+      "tiers": [
+        "Premium",
+        "X Subscription Premium",
+        "The X Subscription Premium",
+        "SuperGrok",
+        "GrokPro",
+        "Grok Pro"
+      ],
+      "basis": "| Premium | $30/mo | $300/yr ($25/mo) | 4x |. Server tier aliases SuperGrok (/v1/settings) and GrokPro (/v1/user?include=subscription) map to Premium per https://x.ai/news/x-subscription (2026-10-12) Premium row: \"The benefits of SuperGrok, Cursor Pro, and X Premium+, previously $90/month combined.\" Live window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
+      "windows": {}
+    },
+    "super": {
+      "provenance": "vendor",
+      "price_usd_per_month": 100,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://docs.x.ai/x-subscription/pricing",
+        "as_of": "2026-11-12",
+        "statement": "| Super | $100/mo | $1000/yr ($84/mo) | 15x | — \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
+      },
+      "tiers": [
+        "Super",
+        "X Subscription Super",
+        "The X Subscription Super"
+      ],
+      "basis": "| Super | $100/mo | $1000/yr ($84/mo) | 15x |. Live window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
+      "windows": {}
+    },
+    "ultra": {
+      "provenance": "vendor",
+      "price_usd_per_month": 200,
+      "price_source": {
+        "kind": "vendor",
+        "url": "https://docs.x.ai/x-subscription/pricing",
+        "as_of": "2026-11-12",
+        "statement": "| Ultra | $200/mo | $2000/yr ($167/mo) | 50x | — \"Grok Bot is included on Premium, Super, and Ultra. Plus does not include Grok Bot.\""
+      },
+      "tiers": [
+        "Ultra",
+        "X Subscription Ultra",
+        "The X Subscription Ultra"
+      ],
+      "basis": "| Ultra | $200/mo | $2000/yr ($167/mo) | 50x |. Live window IDs come from the usage collector; capacity follows the runtime price-matching rule.",
+      "windows": {}
+    }
+  }
+}

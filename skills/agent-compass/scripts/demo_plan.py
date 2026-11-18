@@ -1,6 +1,7 @@
 """Offline reference-fleet simulation. Never issues a dispatch receipt or reads host state."""
 
 from datetime import datetime, timedelta, timezone
+import json
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -30,23 +31,37 @@ NO_HOST_STATE_ENV = {'ROUTER_LAUNCH_FAILURES': 'off', 'ROUTER_PROVIDER_RETRY': '
                      'AGENTCOMPASS_LIVE_MODELS': 'off', 'OPENCODE_DB_PATH': 'demo-no-opencode.db'}
 
 
-def reference_accounts():
-    """Use an explicit offline fleet; never inspect this machine's saved account state."""
+def sample_document():
+    return json.loads(json.dumps(SAMPLE_DOCUMENT))
+
+
+def reference_accounts(fleet=None):
+    """Use an explicit offline fleet (the reference fleet, or ``fleet``); never inspect this machine's saved account
+    state."""
     with patch.dict(os.environ, NO_HOST_STATE_ENV):
-        return account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        return account_fleet.load_accounts(document=fleet if fleet is not None else account_fleet.reference_fleet_document())
 
 
-def plan(document):
+# The synthetic snapshot of an account the illustrative one below does not name: (remaining %, hours to reset).
+OTHER_ACCOUNT = (80, 120)
+
+
+def plan(document, fleet=None):
+    """Offline plan of ``document`` on the reference fleet, or on ``fleet`` (a public accounts document: the acceptance of
+    a reference set routes on the set's own fleet), with a synthetic quota snapshot."""
     task = document.get('task')
     if not isinstance(task, dict) or not task:
         raise ValueError('Input requires task.')
     # Continuations refer to live sessions; a demo always starts a fresh simulated task.
     task = {k: v for k, v in task.items() if k not in ('chain', 'worker')}
     now = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)
-    accounts = reference_accounts()
+    accounts = reference_accounts(fleet)
     # Illustrative observations, not a claim about current subscriptions or model availability.
     snapshot = {'claude': (55, 112), 'codex': (83, 144), 'antigravity': (63, 89), 'dot': (100, 168)}
-    accounts['accounts'] = {k: v for k, v in accounts['accounts'].items() if k in snapshot}
+    if fleet is None:
+        accounts['accounts'] = {k: v for k, v in accounts['accounts'].items() if k in snapshot}
+    else:
+        snapshot = {name: snapshot.get(name, OTHER_ACCOUNT) for name in accounts['accounts']}
     usage = {'status': 'demo_reference', 'read_ok': True, 'read_at': now.isoformat(), 'accounts': {}}
     for name, spec in accounts['accounts'].items():
         remaining, reset_hours = snapshot[name]

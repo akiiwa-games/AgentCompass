@@ -13,10 +13,10 @@
       "name": "Stale install & published reference data channel",
       "harness": "packaging/foreign_machine_check.py::verify_f01_published_reference_data",
       "behaviors": [
-        "Installed wheel runs from site-packages, never the repo checkout, and reads the published set from origin.py's PUBLIC_DATA_URL",
-        "agentcompass data --refresh requests the manifest and only the changed file from the repository's main branch, with no Authorization header, and activates the sha256+schema verified set under ROUTER_STATE_DIR/public-data/sets/<version>",
+        "Installed wheel runs from site-packages, never the repo checkout, and reads the published set of its schema from origin.py's PUBLIC_DATA_URL (published/<schema>/ on main)",
+        "agentcompass data --refresh requests the manifest and only the changed file of that schema's set, with no Authorization header, verifies sha256, accepts the set with the install's own readers and records it under ROUTER_STATE_DIR/public-data/sets/<version>",
         "providers, plan --demo --dry-run and doctor request nothing more while no check is due; doctor reports Reference data: fetched <version> (..., schema <shipped>, ...)",
-        "A tampered sha256 and corrupt JSON are rejected without replacing the accepted set",
+        "A tampered sha256 and corrupt JSON fail, and a consistent set no reader can route with is rejected, without replacing the accepted set",
         "A newer data schema returns schema_too_new after requesting only the manifest; the accepted set stays",
         "A set an older release fetched is kept and doctor names no upgrade item for the channel's state",
         "AGENTCOMPASS_PUBLIC_DATA=off makes no request, reads the shipped set and reports - channel off in doctor"

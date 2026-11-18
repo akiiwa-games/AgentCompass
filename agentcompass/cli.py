@@ -130,7 +130,7 @@ def data_command(args: list[str]) -> int:
         rest = args[1:]
         checkout = locations.checkout_root()
         in_git_checkout = checkout is not None and (checkout / ".git").exists()
-        reads_only = args[0] == "publish" and rest == ["--check"]
+        reads_only = args[0] == "publish" and rest[:1] in (["--check"], ["--check-released"])
         if not in_git_checkout and not reads_only and not any(
                 _has_option(rest, flag) for flag in ("-h", "--help", "--references")):
             sys.stderr.write(
@@ -225,7 +225,7 @@ def readiness_notice() -> str | None:
         import route_judge
         import usage_reading
 
-        accounts = json.loads(account_fleet.fleet_document_path().read_text(encoding="utf-8-sig"))
+        accounts = account_fleet.fleet_document()
         user_doc = accounts_override.load_override(account_fleet.accounts_override_path())
         provider_inventory.apply(accounts, provider_inventory.discover())
         if user_doc is not None:

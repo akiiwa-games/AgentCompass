@@ -72,8 +72,9 @@ the published reference data: a change merged to `main` and published (`agentcom
 5. Run only the tests of what you touched (for example `pytest skills/agent-compass/scripts/test_public_data.py`), never the
    full suite for a calibration change. If you edited Markdown or documented commands, also run
    `python -X utf8 skills/agent-compass/scripts/check_router_contract.py` and `pytest agentcompass/test_docs.py`.
-6. Ship it: commit the data and its manifest to a `work/<name>` branch and merge it to `main`; installs pick up the
-   published set at their next check, and the next release ships it.
+6. Ship it: commit the data, its manifest and `published/<schema>/` (written by `data publish`) to a `work/<name>`
+   branch and merge it to `main`; installs pick up the published set at their next check, and the next release ships
+   it. Data edited under `references/` without `data publish` reaches no install.
 
 ## What the report cannot show
 

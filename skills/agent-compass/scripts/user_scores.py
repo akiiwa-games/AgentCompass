@@ -94,9 +94,6 @@ def public_scores_path(path=None) -> Path:
     return Path(path) if path is not None else PUBLIC_SCORES_FILE
 
 
-def public_scores_read_path(path=None) -> Path:
-    """The maintainer file routing reads: the published set in effect (public_data.effective) unless a path is given."""
-    return Path(path) if path is not None else public_data.effective(PUBLIC_SCORES_FILE)
 
 
 def _public_lock_path(public_path: Path) -> Path:
@@ -343,10 +340,17 @@ def load_local(path=None, environ=None) -> dict:
 
 
 def load_public(path=None) -> dict:
-    target = public_scores_read_path(path)
-    if not target.is_file():
-        return empty_document()
-    raw = json.loads(target.read_text(encoding='utf-8-sig'))
+    """The maintainer layer: the file at ``path``, else references/user-scores.json of the reference set this process
+    holds (public_data.document)."""
+    if path is not None:
+        if not Path(path).is_file():
+            return empty_document()
+        raw = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+    else:
+        try:
+            raw = public_data.document(PUBLIC_SCORES_FILE)
+        except FileNotFoundError:
+            return empty_document()
     return validate_document(raw, expected_kind='maintainer')
 
 
@@ -545,7 +549,7 @@ def list_scores(model: str | None = None, *, scope: str = 'all', accounts: dict 
     out = {'scope': scope}
     if scope in ('all', 'public'):
         out['public'] = _annotate_scores(pub_scores, targets_table)
-        out['public_path'] = str(public_scores_read_path(public_path))
+        out['public_path'] = str(public_path or public_data.held(PUBLIC_SCORES_FILE.parent)['dir'])
     if scope in ('all', 'local'):
         out['local'] = _annotate_scores(loc_scores, targets_table)
         out['local_path'] = str(local_scores_path(local_path))
@@ -877,9 +881,7 @@ def suggest_scores(model: str | None = None, *, scope: str = 'all',
     thresh = round(float(threshold), 6)
     import account_fleet
     import axis_scores
-    acc = copy.deepcopy(accounts) if isinstance(accounts, dict) else json.loads(
-        account_fleet.fleet_document_path().read_text(encoding='utf-8-sig')
-    )
+    acc = copy.deepcopy(accounts) if isinstance(accounts, dict) else account_fleet.fleet_document()
     five = five_data if isinstance(five_data, dict) else axis_scores.load_five_axis()
     base = axis_scores.five_axis_overlay(
         acc, data=five, read_local_state=False, public_scores={'scores': {}}, local_scores={'scores': {}},
@@ -996,7 +998,7 @@ def cli_main(argv: list[str] | None = None) -> int:
     import account_fleet
     import axis_scores
     try:
-        accounts = json.loads(account_fleet.fleet_document_path().read_text(encoding='utf-8-sig'))
+        accounts = account_fleet.fleet_document()
         five = axis_scores.load_five_axis()
         targets_table = (five.get('anchor') or {}).get('targets') or {}
     except Exception:

@@ -855,7 +855,7 @@ def main():
         return 0 if args.help else 2
     decision_ledger.LEDGER_WRITES = not (args.dry_run and args.stage in ('plan', 'record', 'roll'))
     if args.stage in ('roll', 'plan', 'providers', 'select') and not args.demo:
-        # This run keeps the reference set it starts with; a due check runs beside it and applies to the next run.
+        # This run keeps the reference set it takes; a due check runs in its own process and applies to the next run.
         public_data.refresh_in_background()
         antigravity_plan.refresh_in_background(state_upgrade.state_dir())
     try:
@@ -908,8 +908,8 @@ def main():
             code = 0
         elif args.stage == 'plan':
             if args.input is None and args.demo:
-                from demo_plan import SAMPLE_DOCUMENT
-                document = json.loads(json.dumps(SAMPLE_DOCUMENT))
+                from demo_plan import sample_document
+                document = sample_document()
             elif args.input is None:
                 raise ValueError('plan requires --input.')
             else:
@@ -934,6 +934,10 @@ def main():
             print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
         return code
     except (OSError, ValueError, RuntimeError, TypeError, AttributeError, sqlite3.Error) as exc:
+        if public_data.fall_back(exc):          # a reader failed on a fetched set: run again on the shipped set
+            code = main()
+            public_data.settle()                # records the rejection when the shipped set succeeded
+            return code
         failure = {'error': 'Routing input or local runtime failed', 'error_type': type(exc).__name__}
         if isinstance(exc, (ValueError, scorer_client.ScorerError)):
             # Only fixed texts written in this repository (caller input rules, scorer limits); other errors may carry paths or bodies.
@@ -946,4 +950,4 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    raise SystemExit(public_data.with_fallback(main))

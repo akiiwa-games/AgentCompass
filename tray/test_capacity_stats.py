@@ -362,7 +362,7 @@ class PriceTableTests(Fixture):
         scripts = self.root / ".codex" / "skills" / "agent-compass" / "scripts"
         scripts.mkdir(parents=True)
         (scripts / "usage_cache.py").write_text("", encoding="utf-8")
-        (scripts / "public_data.py").write_text("def effective(path, environ=None):\n    return path\n", encoding="utf-8")
+        (scripts / "public_data.py").write_text("import json\n\ndef document(path, environ=None):\n    return json.loads(path.read_text(encoding=\'utf-8\'))\n", encoding="utf-8")
         (scripts.parent / "references").mkdir()
         (scripts.parent / "references" / "accounts.json").write_text(json.dumps({"models": models}), encoding="utf-8")
         environ = mock.patch.dict(cs.os.environ, {"CODEX_HOME": str(self.root / ".codex")})

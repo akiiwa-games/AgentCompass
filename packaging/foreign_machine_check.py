@@ -63,6 +63,8 @@ _ORIGIN_SPEC = importlib.util.spec_from_file_location("agentcompass_origin", ROO
 _ORIGIN = importlib.util.module_from_spec(_ORIGIN_SPEC)
 _ORIGIN_SPEC.loader.exec_module(_ORIGIN)
 PUBLISHED_PATH = urllib.parse.urlsplit(_ORIGIN.PUBLIC_DATA_URL).path
+# The published set an install of this schema reads: published/<schema>/ on main.
+SET_PATH = f"{PUBLISHED_PATH}{SHIPPED_SCHEMA}/"
 
 FOREIGN_ALLOWED_HOSTS = (
     "chatgpt.com",
@@ -90,7 +92,7 @@ class ForeignFixtureServer:
         # plan-templates.json codex.pro has only the weekly `usage` window. A five-hour reading belongs to Plus.
         self.codex_plan = "pro"
         # Published reference data fixture state
-        self.public_data_mode = "valid_update"  # valid_update | bad_sha | bad_json | future_schema | error
+        self.public_data_mode = "valid_update"  # valid_update | bad_sha | bad_json | unreadable | future_schema | error
         self.updated_accounts_bytes = b""
         self.updated_manifest_bytes = b""
         self.updated_version = ""
@@ -219,6 +221,9 @@ class ForeignFixtureServer:
         accounts_doc = json.loads((self.shipped_references / "accounts.json").read_text(encoding="utf-8"))
         accounts_doc["public_channel_verified"] = "fetched"
         self.updated_accounts_bytes = (json.dumps(accounts_doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        # Complete and consistent, but a reader cannot route with it (review p2): the install's acceptance refuses it.
+        accounts_doc["scoring"].pop("rotate_after_carried_tokens", None)
+        self.unreadable_accounts_bytes = (json.dumps(accounts_doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
         manifest = json.loads((self.shipped_references / "public-data.json").read_text(encoding="utf-8"))
         files = dict(manifest["files"])
         files["accounts.json"] = {"sha256": hashlib.sha256(self.updated_accounts_bytes).hexdigest(),
@@ -242,9 +247,9 @@ class ForeignFixtureServer:
     def _handle_github_raw(self, handler, path: str):
         if self.public_data_mode == "error":
             return handler._reply(503, {"error": "github unavailable"})
-        if not path.startswith(PUBLISHED_PATH):
+        if not path.startswith(SET_PATH):
             return handler._reply(404, {"error": f"not a published reference path: {path}"})
-        name = path[len(PUBLISHED_PATH):]
+        name = path[len(SET_PATH):]
         if name == "public-data.json":
             if self.public_data_mode == "future_schema":
                 manifest = json.loads(self.updated_manifest_bytes.decode("utf-8"))
@@ -254,6 +259,10 @@ class ForeignFixtureServer:
                 bad = b'{"not-valid-json"\n'
                 manifest = self._later_manifest(**{"accounts.json": {"sha256": hashlib.sha256(bad).hexdigest(), "bytes": len(bad)}})
                 return handler._reply(200, None, raw_bytes=json.dumps(manifest).encode("utf-8"))
+            if self.public_data_mode == "unreadable":
+                data = self.unreadable_accounts_bytes
+                manifest = self._later_manifest(**{"accounts.json": {"sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}})
+                return handler._reply(200, None, raw_bytes=json.dumps(manifest).encode("utf-8"))
             if self.public_data_mode == "bad_sha":
                 manifest = self._later_manifest(**{"accounts.json": {"sha256": "0" * 64, "bytes": 1}})
                 return handler._reply(200, None, raw_bytes=json.dumps(manifest).encode("utf-8"))
@@ -261,6 +270,8 @@ class ForeignFixtureServer:
         if name == "accounts.json":
             if self.public_data_mode == "bad_json":
                 return handler._reply(200, None, raw_bytes=b'{"not-valid-json"\n')
+            if self.public_data_mode == "unreadable":
+                return handler._reply(200, None, raw_bytes=self.unreadable_accounts_bytes)
             return handler._reply(200, None, raw_bytes=self.updated_accounts_bytes)
         if (self.shipped_references / name).is_file() and "/" not in name:
             return handler._reply(200, None, raw_bytes=(self.shipped_references / name).read_bytes())
@@ -470,9 +481,9 @@ def verify_f01_published_reference_data(ctx: dict):
     op = run.operation(
         "F01 stale-install & published reference data channel",
         "Installed wheel runs from site-packages (not checkout); with the channel on it requests only the published "
-        "manifest and the changed files from the repository's main branch, verifies sha256 and schema, rejects tampered "
-        "and corrupt sets, ignores a newer schema after one request, reports in doctor, keeps a set an older release "
-        "fetched, and AGENTCOMPASS_PUBLIC_DATA=off makes no request at all",
+        "manifest of its schema (published/<schema>/ on main) and the changed files, verifies sha256 and accepts the set "
+        "with its own readers, rejects tampered, corrupt and unreadable sets, ignores a newer schema after one request, "
+        "reports in doctor, keeps a set an older release fetched, and AGENTCOMPASS_PUBLIC_DATA=off makes no request at all",
     )
     env = base_cli_env(box, ctx, extra={"AGENTCOMPASS_PUBLIC_DATA": "1"})
 
@@ -489,7 +500,7 @@ def verify_f01_published_reference_data(ctx: dict):
     op.check("the shipped references are inside the venv's site-packages, never the repo checkout",
              "site-packages" in active_dir.parts and ROOT not in active_dir.parents, str(active_dir))
     op.check("an install reads the published set from origin.py's PUBLIC_DATA_URL",
-             str(doc_status.get("url") or "").endswith("raw.githubusercontent.com" + PUBLISHED_PATH), doc_status.get("url"))
+             str(doc_status.get("url") or "").endswith("raw.githubusercontent.com" + SET_PATH), doc_status.get("url"))
 
     # 2. An explicit check requests the manifest and only the file that changed, with no credentials.
     fx.public_data_mode = "valid_update"
@@ -501,7 +512,7 @@ def verify_f01_published_reference_data(ctx: dict):
              res_refresh.returncode == 0 and (doc_refresh.get("refresh") or {}).get("status") == "updated"
              and doc_refresh.get("source") == "fetched" and doc_refresh.get("version") == fx.updated_version, doc_refresh)
     op.check("what is requested: the manifest and the one changed file, nothing else, no Authorization header",
-             sorted(r["path"] for r in requested) == sorted([PUBLISHED_PATH + "public-data.json", PUBLISHED_PATH + "accounts.json"])
+             sorted(r["path"] for r in requested) == sorted([SET_PATH + "public-data.json", SET_PATH + "accounts.json"])
              and not any(r.get("authorization") for r in requested), requested)
     cached = box.state / "public-data" / "sets" / fx.updated_version / "accounts.json"
     op.check("the fetched set is cached under ROUTER_STATE_DIR/public-data/sets/<version> with the published content",
@@ -520,13 +531,15 @@ def verify_f01_published_reference_data(ctx: dict):
              f"Reference data: fetched {fx.updated_version}" in results[-1].stdout
              and f"schema {SHIPPED_SCHEMA}" in results[-1].stdout, results[-1].stdout[-1500:])
 
-    # 4. A tampered sha256 and corrupt JSON are rejected; the accepted set stays in effect.
-    for mode, label in (("bad_sha", "a tampered sha256"), ("bad_json", "corrupt JSON with a matching sha256")):
+    # 4. A tampered sha256, corrupt JSON and a set no reader can route with are refused; the accepted set stays.
+    for mode, label, outcome in (("bad_sha", "a tampered sha256", "failed"),
+                                 ("bad_json", "corrupt JSON with a matching sha256", "failed"),
+                                 ("unreadable", "a consistent set without scoring.rotate_after_carried_tokens", "rejected")):
         fx.public_data_mode = mode
         res_bad = run_in_box(box, op, [box.agentcompass, "data", "--refresh"], env)
         doc_bad = parse_json(res_bad.stdout)
-        op.check(f"{label} is rejected and the accepted set stays in effect",
-                 res_bad.returncode == 0 and (doc_bad.get("refresh") or {}).get("status") == "failed"
+        op.check(f"{label} is refused ({outcome}) and the accepted set stays in effect",
+                 res_bad.returncode == 0 and (doc_bad.get("refresh") or {}).get("status") == outcome
                  and doc_bad.get("source") == "fetched" and doc_bad.get("version") == fx.updated_version, doc_bad)
 
     # 5. A newer data schema is noted and ignored after one request.
@@ -536,7 +549,7 @@ def verify_f01_published_reference_data(ctx: dict):
     doc_new = parse_json(res_new.stdout)
     op.check("a newer schema returns schema_too_new after requesting only the manifest; the accepted set stays",
              (doc_new.get("refresh") or {}).get("status") == "schema_too_new"
-             and [r["path"] for r in reference_requests(before)] == [PUBLISHED_PATH + "public-data.json"]
+             and [r["path"] for r in reference_requests(before)] == [SET_PATH + "public-data.json"]
              and doc_new.get("version") == fx.updated_version, doc_new)
 
     # 6. A set an older release fetched is ignored and kept; doctor names no upgrade item for the channel's state.

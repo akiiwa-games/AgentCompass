@@ -2157,3 +2157,23 @@ def test_legacy_account_flag_does_not_break_rotation_check(tmp_path, monkeypatch
     monkeypatch.setattr(gate, 'load_paseo_agent', lambda *args: {})
     monkeypatch.setattr(worker_sessions, 'session_state', lambda *args, **kwargs: {})
     assert gate.check_worker_compaction_limit('worker', paseo_agents_dir=tmp_path / 'agents') is None
+
+
+def test_a_gate_verdict_reruns_on_the_shipped_reference_set_when_a_fetched_one_fails(monkeypatch):
+    """Rule (router-internals §5, never on the failure line): a reader failing on a fetched set decides no verdict; the
+    gate evaluates again on the shipped set as a whole."""
+    public_data = gate.router_module('public_data')
+    shipped = public_data._shipped_set(public_data.BUNDLED)
+    public_data._HELD[public_data._key(None, None)] = {**shipped, 'source': 'fetched', 'version': 'abc123def456',
+                                                       'id': 'fetched:abc123def456'}
+    seen = []
+
+    def evaluate(payload):
+        source = public_data.held()['source']
+        seen.append(source)
+        if source == 'fetched':
+            raise KeyError('rotate_after_carried_tokens')
+        return {'verdict': source}
+    monkeypatch.setattr(gate, 'evaluate_payload', evaluate)
+    assert gate.evaluate_with_reference_fallback({'tool_name': 'Agent'}) == {'verdict': shipped['source']}
+    assert seen == ['fetched', shipped['source']]

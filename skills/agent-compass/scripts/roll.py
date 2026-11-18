@@ -20,6 +20,7 @@ import dispatch_flow
 import entry
 import dispatch_registry as registry
 import host_placement
+import launch_values
 import provider_inventory
 import scorer_client
 import subscription_cli
@@ -48,7 +49,7 @@ CLI_RUNS = {
                                                                  '--permission-mode', 'bypassPermissions',
                                                                  '--settings', json.dumps({'fastMode': bool(fast)})]),
     'codex': ('codex', lambda model, effort, cwd, fast=False: ['exec', '-m', model,
-                                                               *(['-c', f'model_reasoning_effort="{effort}"'] if effort else []),
+                                                               *(['-c', 'model_reasoning_effort=' + launch_values.toml_string(effort)] if effort else []),
                                                                '-c', 'features.fast_mode=' + str(bool(fast)).lower(),
                                                                '-c', 'service_tier="priority"' if fast else 'service_tier="default"',
                                                                '--dangerously-bypass-approvals-and-sandbox',

@@ -9,6 +9,7 @@ import shutil
 import tempfile
 
 import host_policy
+import launch_values
 import provider_retry
 import provider_inventory
 import public_data
@@ -31,53 +32,73 @@ def accounts_override_path(environ=None):
     return Path.home() / '.agent-compass' / 'accounts-override.json'
 
 
-def fleet_document_path(environ=None):
-    """The public accounts.json in effect (public_data.effective: the published set when newer than the shipped one). Accounts, plans and capacities
-    come from discovery and public data; personal choices live in accounts-override.json. No machine-local fleet
-    document exists. ROUTER_ACCOUNTS_FILE pins an explicit document for tests and fixtures only."""
+def fleet_document(environ=None):
+    """The public accounts.json document of the reference set this process holds (public_data.document). Accounts,
+    plans and capacities come from discovery and public data; personal choices live in accounts-override.json. No
+    machine-local fleet document exists. ROUTER_ACCOUNTS_FILE pins an explicit document for tests and fixtures only."""
     env = os.environ if environ is None else environ
     configured = (env.get('ROUTER_ACCOUNTS_FILE') or '').strip()
     if configured and Path(configured).expanduser().is_file():
-        return Path(configured).expanduser()
-    return public_data.effective(REFERENCES / 'accounts.json', environ)
+        return json.loads(Path(configured).expanduser().read_text(encoding='utf-8-sig'))
+    return public_data.document(REFERENCES / 'accounts.json', environ)
 
 
 def configured_quota_sources(environ=None):
     """Declared quota pools from the fleet document, without running discovery."""
     try:
-        doc = json.loads(fleet_document_path(environ).read_text(encoding='utf-8-sig'))
+        doc = fleet_document(environ)
     except (OSError, ValueError):
         return {}
     return provider_inventory.quota_sources(doc)
+
+
+def reference_fleet_document():
+    """The offline reference fleet (`plan --demo`, the acceptance of a reference set), never read from the user home: the
+    checked-in fixtures/reference-accounts.json completed with the `families` declaration of the reference set this
+    process holds, so the family patterns have one source and the fleet never pairs one set's families with another's
+    scores."""
+    doc = json.loads((Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json').read_text(encoding='utf-8-sig'))
+    doc['families'] = public_data.document(REFERENCES / 'accounts.json')['families']
+    return doc
 
 
 _REFERENCE_FLEET = {}
 
 
 def reference_fleet_path():
-    """Fleet fixture for tests, never read from the user home: the checked-in fixtures/reference-accounts.json completed
-    with the shipped catalog's `families` declaration, so the family patterns have one source. Written once per process
-    to a temporary file, removed at exit."""
+    """reference_fleet_document() written to a temporary file for tests that pin ROUTER_ACCOUNTS_FILE; once per process,
+    removed at exit."""
     if 'path' not in _REFERENCE_FLEET:
-        doc = json.loads((Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json').read_text(encoding='utf-8-sig'))
-        doc['families'] = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))['families']
         folder = Path(tempfile.mkdtemp(prefix='agentcompass-reference-fleet-'))
         atexit.register(shutil.rmtree, folder, True)
         path = folder / 'reference-accounts.json'
-        path.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + '\n', encoding='utf-8', newline='\n')
+        path.write_text(json.dumps(reference_fleet_document(), ensure_ascii=False, indent=2) + '\n', encoding='utf-8',
+                        newline='\n')
         _REFERENCE_FLEET['path'] = path
     return _REFERENCE_FLEET['path']
 
 
-def load_accounts(path=None):
-    source = Path(path) if path is not None else fleet_document_path()
-    accounts = accounts_override.normalize(json.loads(source.read_text(encoding='utf-8-sig')))
-    if path is None:
+def load_accounts(path=None, document=None):
+    """The routing fleet: the reference document (``document``, the file at ``path``, else fleet_document()) with
+    discovery and, only for the fleet document itself, the user's own settings layered on top. The reference document's
+    launch values are checked first (launch_problems); a discovered row whose values cannot reach a launch is dropped
+    and named in `_launch_value_errors`."""
+    local = path is None and document is None
+    if document is not None:
+        source = json.loads(json.dumps(document))
+    else:
+        source = json.loads(Path(path).read_text(encoding='utf-8-sig')) if path is not None else fleet_document()
+    problems = launch_problems(source)
+    if problems:
+        raise ValueError(f'accounts.json has values this code cannot launch: {"; ".join(problems[:5])}')
+    accounts = accounts_override.normalize(source)
+    if local:
         user_doc = accounts_override.load_override(accounts_override_path())
         if user_doc is not None:
             if isinstance(user_doc.get('scoring'), dict):
                 accounts['scoring'] = accounts_override.merge(accounts['scoring'], user_doc['scoring'])
         provider_inventory.apply(accounts)
+        accounts['_launch_value_errors'] = drop_unlaunchable_rows(accounts)
         if user_doc is not None:
             accounts_override.apply(accounts, user_doc)
             for owner, spec in accounts.get('accounts', {}).items():
@@ -95,7 +116,7 @@ def load_accounts(path=None):
         provider_retry.scope_account_holds(accounts)
     except OSError:
         pass
-    if path is None:
+    if local:
         try:
             accounts['_host_policy_sync'] = host_policy.sync_discovered(accounts)
         except (OSError, host_policy.HostPolicyError) as exc:
@@ -181,8 +202,7 @@ def bundle_harness(bundle, account=None, bundle_id=None, *, family=None):
     bid = str(bundle_id or (bundle or {}).get('id') or '').strip().lower()
     launch_m = str((bundle or {}).get('launch_model') or '').strip().lower()
     model = str((bundle or {}).get('model') or '').strip().lower()
-    family = family or (prov if prov in ('claude', 'codex', 'pi', 'omp', 'opencode', 'grok', 'grok-bot',
-                                         'antigravity', 'antigravity-resilient') else None)
+    family = family or (prov if prov in (*CLI_FAMILIES, 'antigravity-resilient') else None)
     if family:
         return 'antigravity-resilient' if family == 'antigravity' else family
     if bid.startswith('pi_') or '__pi_' in bid or launch_m.startswith('openai-codex/'):
@@ -257,6 +277,74 @@ def dispatch_allowed_efforts(bundle, accounts, model=None):
             return tuple(table[name])
     own = (bundle or {}).get('efforts')
     return tuple(own) if isinstance(own, (list, tuple)) else ()
+
+
+# The account families whose bundles the launch code can start (roll.CLI_RUNS, Paseo providers, the Dot and ChatGPT Web
+# runners). A reference row of another family, or an effort the family's launch contract does not offer, needs a release.
+CLI_FAMILIES = ('claude', 'codex', 'pi', 'omp', 'opencode', 'grok', 'grok-bot', 'antigravity')
+LAUNCH_FAMILIES = (*CLI_FAMILIES, 'dot', 'chatgpt-web')
+LAUNCH_HARNESSES = (*(f for f in LAUNCH_FAMILIES if f != 'antigravity'), 'antigravity-resilient')
+# Harnesses whose launch passes no effort (dispatch_registry, roll.CLI_RUNS): the model id carries it.
+EFFORT_IN_MODEL = ('antigravity-resilient',)
+
+
+def launch_problems(doc):
+    """What in a reference accounts document this code cannot launch: values outside the declared launch patterns
+    (launch_values), an account family or bundle harness the launch code does not know, or an effort its family's
+    launch contract (`dispatch_efforts`) does not offer. A reference set with any of these is not accepted."""
+    if not isinstance(doc, dict) or not isinstance(doc.get('accounts'), dict):
+        return ['accounts.json has no accounts table']
+    found = []
+    for table in (doc.get('dispatch_efforts') or {}).values():
+        for model, efforts in (table.items() if isinstance(table, dict) else ()):
+            found += [p for p in (launch_values.problem('dispatch_efforts model', model, launch_values.MODEL),) if p]
+            found += [p for p in (launch_values.problem(f'dispatch_efforts.{model}[]', e, launch_values.NAME)
+                                  for e in (efforts if isinstance(efforts, list) else [efforts])) if p]
+    for name, row in (doc.get('models') or {}).items():
+        found += [p for p in (launch_values.problem('models key', name, launch_values.MODEL),) if p]
+        if isinstance(row, dict) and row.get('launch_model') not in (None, ''):
+            found += [p for p in (launch_values.problem(f'models.{name}.launch_model', row['launch_model'],
+                                                        launch_values.MODEL),) if p]
+    for account, spec in doc['accounts'].items():
+        found += [p for p in (launch_values.problem('account', account, launch_values.NAME),) if p]
+        if not isinstance(spec, dict):
+            found.append(f'account {account!r} is not an object')
+            continue
+        family = account_family(spec) or re.sub(r'[-_]\d+$', '', str(account))
+        if family not in LAUNCH_FAMILIES:
+            found.append(f'account {account!r} has family {family!r}, which this code does not launch')
+        rows = spec.get('bundles') if spec.get('bundles') is not None else {}
+        if not isinstance(rows, dict):
+            found.append(f'{account}.bundles is not an object')
+            continue
+        for bundle_id, bundle in rows.items():
+            row_problems = launch_values.bundle_problems(account, bundle_id, bundle)
+            found += row_problems
+            if row_problems:
+                continue
+            harness = bundle_harness(bundle, account, bundle_id, family=family if family in LAUNCH_FAMILIES else None)
+            if harness not in LAUNCH_HARNESSES:
+                found.append(f'{account}.bundles.{bundle_id} runs on harness {harness!r}, which this code does not launch')
+            effort = bundle.get('effort') or split_model_effort(bundle.get('model') or '')[1]
+            offered = dispatch_allowed_efforts({**bundle, 'account': account}, doc)
+            if effort and harness not in EFFORT_IN_MODEL and offered is not None and effort not in offered:
+                found.append(f'{account}.bundles.{bundle_id} effort {effort!r} is not one the launch contract offers '
+                             f'{bundle.get("model")!r} ({", ".join(offered) or "none"})')
+    return found
+
+
+def drop_unlaunchable_rows(accounts):
+    """Remove bundle rows (discovered ones: the reference rows were checked before) whose launch values do not match the
+    declared patterns; returns what was dropped, by name."""
+    dropped = []
+    for account, spec in (accounts.get('accounts') or {}).items():
+        rows = spec.get('bundles') if isinstance(spec, dict) else None
+        for bundle_id, bundle in list((rows or {}).items()):
+            problems = launch_values.bundle_problems(account, bundle_id, bundle)
+            if problems:
+                del rows[bundle_id]
+                dropped.extend(problems)
+    return dropped
 
 
 HARNESS_CAPABILITIES = {

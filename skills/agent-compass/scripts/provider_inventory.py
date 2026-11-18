@@ -119,21 +119,23 @@ def apply_shared_quota(accounts):
                     bundle.setdefault('discovery_unavailable', reason)
 
 
-def _shipped_plan_templates():
+def shipped_plan_templates():
+    """plan-templates.json of the reference set this process holds (public_data.document), parsed once per set."""
     global _SHIPPED_PLAN_TEMPLATES
-    source = public_data.effective(PLAN_TEMPLATES)  # the published set when it is newer than the shipped one
-    if _SHIPPED_PLAN_TEMPLATES is None or _SHIPPED_PLAN_TEMPLATES[0] != source or read_json is not _STDLIB_READ_JSON:
-        shipped, _ = read_json(source)
-        if read_json is _STDLIB_READ_JSON and shipped:
-            _SHIPPED_PLAN_TEMPLATES = (source, shipped)
-    else:
-        shipped = _SHIPPED_PLAN_TEMPLATES[1]
-    return obj(shipped)
+    if read_json is not _STDLIB_READ_JSON:     # a test's reader stands in for the file
+        return obj(read_json(PLAN_TEMPLATES)[0])
+    held = public_data.set_id(PLAN_TEMPLATES.parent)
+    if _SHIPPED_PLAN_TEMPLATES is None or _SHIPPED_PLAN_TEMPLATES[0] != held:
+        try:
+            _SHIPPED_PLAN_TEMPLATES = (held, obj(public_data.document(PLAN_TEMPLATES)))
+        except (OSError, ValueError):
+            return {}
+    return _SHIPPED_PLAN_TEMPLATES[1]
 
 
 def plan_table(accounts, family, shipped=None):
     """Merged `{plan_id: entry}` for `family` from shipped plan-templates.json plus `accounts['plan_templates']`."""
-    shipped_all = _shipped_plan_templates() if shipped is None else obj(shipped)
+    shipped_all = shipped_plan_templates() if shipped is None else obj(shipped)
     base = obj(shipped_all.get(family))
     overrides = obj(obj(obj(accounts).get('plan_templates')).get(family))
     return {**base, **overrides}
@@ -147,7 +149,7 @@ def plan_defaults(accounts, family, plan, shipped=None):
     `windows`, `cadence` and `unmetered` are copied onto an account; other keys (provenance, basis, price) are
     documentation. A plan's capacity is not in the template: it comes from the community capacity data by plan.
     """
-    shipped_all = _shipped_plan_templates() if shipped is None else obj(shipped)
+    shipped_all = shipped_plan_templates() if shipped is None else obj(shipped)
     overrides = obj(obj(obj(accounts).get('plan_templates')).get(family))
     base = obj(shipped_all.get(family))
     template = None
@@ -2117,7 +2119,7 @@ def apply(accounts, inventory=None, *, live=None):
     known_models = accounts.get('models') if isinstance(accounts.get('models'), dict) else {}
     aliases = accounts.get('aliases') if isinstance(accounts.get('aliases'), dict) else {}
     model_families = family_patterns(accounts)
-    shipped_templates = _shipped_plan_templates()
+    shipped_templates = shipped_plan_templates()
 
     for name, row in inventory['accounts'].items():
         if name not in specs:

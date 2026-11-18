@@ -18,6 +18,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import entry
+import launch_values
 
 
 def runs_dir():
@@ -81,7 +82,7 @@ def interactive(bundle):
                  '--settings', json.dumps({'fastMode': bool(bundle.get('fast'))})]
     elif family == 'codex':
         flags = ['--no-daemon', '-m', model, '--dangerously-bypass-approvals-and-sandbox',
-                 *(['-c', f'model_reasoning_effort="{effort}"'] if effort else []),
+                 *(['-c', 'model_reasoning_effort=' + launch_values.toml_string(effort)] if effort else []),
                  '-c', 'features.fast_mode=' + str(bool(bundle.get('fast'))).lower(),
                  '-c', 'service_tier="priority"' if bundle.get('fast') else 'service_tier="default"']
     else:
