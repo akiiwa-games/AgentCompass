@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import time
+import sqlite3
 import unittest
 from unittest.mock import patch
 import urllib.error
@@ -99,6 +100,9 @@ UNREADABLE = {
         'sol62_turbo', {'model': 'gpt-6.2-sol', 'effort': 'turbo'})),
     'injected_model': ('accounts.json', lambda d: d['accounts']['codex']['bundles'].__setitem__(
         'evil', {'model': 'gpt-6.2-sol $(calc.exe)', 'effort': 'high'})),
+    # review round 2, r2_sets: Infinity passed publish and the install, then every real plan failed on its JSON output
+    'infinity': ('five-axis-scores.json', lambda d: d['models'][next(iter(d['models']))].__setitem__('probe', float('inf'))),
+    'nan': ('accounts.json', lambda d: d['scoring'].__setitem__('safety_margin_pct', float('nan'))),
 }
 
 
@@ -164,9 +168,54 @@ class PublicationTests(unittest.TestCase):
                 self.target.mkdir(parents=True, exist_ok=True)
                 for file in public_data.FILES:
                     shutil.copyfile(self.references / file, self.target / file)
-                write_json(self.target / public_data.MANIFEST, public_data.build_manifest(self.target, now=T0))
-                self.assertIn('does not accept', public_data.check_published(self.root, self.references))
+                write_json(self.target / public_data.MANIFEST, unchecked_manifest(self.target))
+                self.assertRegex(public_data.check_published(self.root, self.references), 'does not accept|is not readable')
                 shutil.rmtree(self.target)
+
+
+def unchecked_manifest(directory):
+    """A manifest over the files in ``directory`` as they are (build_manifest refuses a file it cannot parse)."""
+    files = {n: {'sha256': public_data.sha256_bytes(b), 'bytes': len(b)} for n in public_data.FILES
+             for b in [(Path(directory) / n).read_bytes()]}
+    manifest = {'schema_version': public_data.SCHEMA_VERSION, 'files': files}
+    return {**manifest, 'version': public_data.set_version(manifest), 'published_at': public_data._stamp(T0)}
+
+
+class PublicationHistoryTests(unittest.TestCase):
+    """Rule (finding 7): the check against the previous publication runs or fails, never passes by default, and a published
+    set of an older schema is frozen."""
+
+    def test_an_unknown_since_revision_fails_the_check_saying_why(self):
+        with self.assertRaises(ValueError) as refused:
+            public_data.manifest_at('no-such-revision-0123')
+        self.assertIn('not a commit of this repository', str(refused.exception))
+        import io
+        err = io.StringIO()
+        with patch.object(sys, 'stderr', err):
+            self.assertEqual(public_data._publish_main(['--check', '--since', 'no-such-revision-0123']), 1)
+        self.assertIn('not a commit of this repository', err.getvalue())
+
+    def test_a_published_set_of_an_older_schema_is_frozen(self):
+        root = Path(tempfile.mkdtemp(prefix='public-data-frozen-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        old = root / 'published' / str(public_data.SCHEMA_VERSION - 1)
+        old.mkdir(parents=True)
+        (old / 'accounts.json').write_text('{"accounts": {}}\n', encoding='utf-8', newline='\n')
+        write_json(old / public_data.MANIFEST, unchecked_manifest_of(old, ['accounts.json']))
+        self.assertEqual(public_data.check_frozen(root / 'published'), '')
+        git = ['git', '-c', 'user.name=probe', '-c', 'user.email=probe@example.invalid', '-c', 'core.autocrlf=false']
+        for command in (['init', '-q'], ['add', '-A'], ['commit', '-q', '-m', 'base']):
+            subprocess.run(git + command, cwd=root, check=True, capture_output=True, timeout=60)
+        self.assertEqual(public_data.check_frozen(root / 'published', since='HEAD'), '')
+        (old / 'accounts.json').write_text('{"accounts": {"x": {}}}\n', encoding='utf-8', newline='\n')
+        self.assertIn('does not match its manifest', public_data.check_frozen(root / 'published'))
+        write_json(old / public_data.MANIFEST, unchecked_manifest_of(old, ['accounts.json']))   # edited consistently
+        self.assertEqual(public_data.check_frozen(root / 'published'), '')
+        self.assertIn('changed since HEAD', public_data.check_frozen(root / 'published', since='HEAD'))
+
+
+def unchecked_manifest_of(directory, names):
+    return {'files': {n: {'sha256': public_data.sha256_bytes((directory / n).read_bytes())} for n in names}}
 
 
 class AcceptanceTests(unittest.TestCase):
@@ -178,7 +227,9 @@ class AcceptanceTests(unittest.TestCase):
         steps = {'scoring_missing': ('scoring', 'rotate_after_carried_tokens'), 'bundle_str': (launch, 'not an object'),
                  'drop_targets': ('plan on the reference fleet', ''), 'scoring_type': ('plan on the fleet of the set', ''),
                  'new_family': (launch, "family 'newcli'"), 'new_harness': (launch, "harness 'newcli'"),
-                 'unknown_effort': (launch, "effort 'turbo'"), 'injected_model': (launch, 'does not match')}
+                 'unknown_effort': (launch, "effort 'turbo'"), 'injected_model': (launch, 'does not match'),
+                 'infinity': ('', 'Infinity, which is not a finite number'),
+                 'nan': ('', 'NaN, which is not a finite number')}
         public_data.accept(public_data.BUNDLED)
         for label, (name, change) in UNREADABLE.items():
             with self.subTest(label), tempfile.TemporaryDirectory() as folder:
@@ -190,6 +241,43 @@ class AcceptanceTests(unittest.TestCase):
                 step, cause = steps[label]
                 self.assertTrue(str(refused.exception).startswith(step), refused.exception)
                 self.assertIn(cause, str(refused.exception))
+
+    def test_every_reference_file_is_parsed_strictly_wherever_it_is_read(self):
+        """Rule (finding 3): a non-finite number is a named error, not a value, in a shipped or a fetched file."""
+        for text in ('{"a": NaN}', '{"a": -Infinity}', '{"a": 1e999}'):
+            with self.subTest(text), self.assertRaises(public_data.ReferenceDataError) as refused:
+                public_data.parse_document(text.encode(), 'accounts.json')
+            self.assertIn('accounts.json', str(refused.exception))
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            copy_set(folder)
+            data = (folder / 'accounts.json').read_text(encoding='utf-8').replace('"safety_margin_pct": 5', '"safety_margin_pct": 1e999', 1)
+            self.assertIn('1e999', data)
+            (folder / 'accounts.json').write_text(data, encoding='utf-8', newline='\n')
+            with self.assertRaises(public_data.ReferenceDataError):
+                public_data.document(folder / 'accounts.json', {'AGENTCOMPASS_PUBLIC_DATA': 'off'})
+
+    def test_the_plans_are_serialized_as_the_cli_prints_them(self):
+        """Rule (finding 3): the acceptance serializes each offline plan exactly as the CLI would (route_judge.render)."""
+        import demo_plan
+        real = demo_plan.plan
+        with patch.object(demo_plan, 'plan', lambda *a, **k: {**real(*a, **k), 'probe': float('inf')}), \
+                self.assertRaises(ValueError) as refused:
+            public_data.accept(public_data.BUNDLED)
+        self.assertTrue(str(refused.exception).startswith('plan on the reference fleet'), refused.exception)
+
+    def test_the_plan_on_the_set_fleet_must_have_a_selectable_candidate(self):
+        """Rule (finding 3): the second plan proves something only when it can select; a set none of whose bundles can be
+        selected on its own priced fleet is refused at that step."""
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            copy_set(folder)
+            edit(folder, 'accounts.json', lambda d: [b.__setitem__('disabled', True) for s in d['accounts'].values()
+                                                     for b in (s.get('bundles') or {}).values() if isinstance(b, dict)])
+            with self.assertRaises(ValueError) as refused:
+                public_data.accept(folder)
+        self.assertTrue(str(refused.exception).startswith('plan on the fleet of the set'), refused.exception)
+        self.assertIn('no selectable candidate', str(refused.exception))
 
     def test_the_acceptance_runs_every_run_time_reader_of_the_set(self):
         """Each reader is a step: replacing one with a no-op makes its broken shape pass (mutation guard)."""
@@ -293,6 +381,34 @@ class FetchTests(ChannelCase):
         self.assertEqual(self.remote.calls, [f'{URL}{SCHEMA}/{public_data.MANIFEST}'])
         self.assertEqual(self.held()['source'], 'fetched')
 
+    def test_a_fetched_set_changed_on_disk_after_its_acceptance_is_not_held(self):
+        """Rule: a process takes a fetched set only when every file matches its manifest (review round 2, M5n)."""
+        self.assertEqual(self.refresh()['status'], 'updated')
+        version = public_data.read_state(self.env)['version']
+        edit(self.state / 'public-data' / 'sets' / version, 'accounts.json',
+             lambda d: d['scoring'].__setitem__('safety_margin_pct', 0.7))
+        chosen = self.held()
+        self.assertEqual(chosen['source'], 'bundled')
+        self.assertIn('not complete on disk', chosen['note'])
+
+    def test_nothing_published_yet_is_a_completed_check(self):
+        """Rule (finding 9): a schema with no publication yet (404) is the normal state before its first one: no failure,
+        no last_error, the normal check interval."""
+        self.remote.overrides[public_data.MANIFEST] = None
+        missing = urllib.error.HTTPError(URL, 404, 'Not Found', {}, None)
+
+        def fetch(url, timeout):
+            if url.endswith(public_data.MANIFEST):
+                raise missing
+            return self.remote(url, timeout)
+        result = public_data.refresh(environ=self.env, fetch=fetch, bundled=self.bundled, now=T0 + timedelta(days=2))
+        self.assertEqual(result['status'], 'unpublished')
+        state = public_data.read_state(self.env)
+        self.assertIsNone(state.get('last_error'))
+        cfg = public_data.config(self.env)
+        self.assertFalse(public_data.due(state, cfg, T0 + timedelta(days=2, hours=1)))
+        self.assertTrue(public_data.due(state, cfg, T0 + timedelta(days=2, hours=cfg['interval_hours'] + 1)))
+
     def test_offline_the_last_accepted_set_then_the_shipped_copy_is_read(self):
         self.assertEqual(self.refresh()['status'], 'updated')
         self.remote.offline = True
@@ -365,7 +481,9 @@ class HeldSetTests(ChannelCase):
         self.assertEqual(public_data.retake(self.bundled, self.env)['version'],
                          public_data.read_state(self.env)['version'])             # moves as a whole, when asked
 
-    def test_a_reader_failing_on_the_fetched_set_reruns_on_the_shipped_set_and_rejects_it(self):
+    def fail_on_fetched(self, error=KeyError, every=False, before=None):
+        """with_fallback over a run that raises ``error`` on the fetched set (on every set with ``every``); returns the
+        sources it ran on."""
         self.assertEqual(self.refresh()['status'], 'updated')
         self.held()
         seen = []
@@ -373,31 +491,76 @@ class HeldSetTests(ChannelCase):
         def run():
             chosen = public_data.held(self.bundled, self.env)
             seen.append(chosen['source'])
-            if chosen['source'] == 'fetched':
-                raise KeyError('a field the acceptance did not exercise')
+            if before:
+                before()
+            if every or chosen['source'] == 'fetched':
+                raise error('raised by the run')
             return 'routed'
         with patch.object(public_data, 'BUNDLED', self.bundled), patch.dict(os.environ, self.env):
-            self.assertEqual(public_data.with_fallback(run), 'routed')
-        self.assertEqual(seen, ['fetched', 'bundled'])
+            try:
+                public_data.with_fallback(run)
+            except Exception:
+                pass
+        return seen
+
+    def test_a_data_error_on_the_fetched_set_reruns_on_the_shipped_set_and_sets_it_aside(self):
+        """Rule (finding 1): a blame that can be wrong is not permanent: the set is set aside for SET_ASIDE_HOURS."""
+        self.assertEqual(self.fail_on_fetched(KeyError), ['fetched', 'bundled'])
         state = public_data.read_state(self.env)
-        self.assertEqual((state['rejected_version'], state['rejected_by']), (state['version'], public_data.reader_id()))
+        self.assertEqual((state['set_aside_version'], state['set_aside_by']), (state['version'], public_data.reader_id()))
+        self.assertNotIn('rejected_version', state)
+        self.assertIn('KeyError', state['set_aside_error'])
         self.assertEqual(self.held()['source'], 'bundled')
-        self.assertIn('failed this install', public_data.status(self.env, self.bundled)['note'])
-        self.remote.calls.clear()
-        self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'rejected')
-        self.assertEqual(len(self.remote.calls), 1)
+        self.assertIn('set aside until', public_data.status(self.env, self.bundled)['note'])
+        self.assertEqual(public_data.reference_alert(self.bundled, self.env)['code'], 'reference_data_refused')
 
-    def test_a_failure_the_shipped_set_produces_as_well_rejects_nothing(self):
-        self.assertEqual(self.refresh()['status'], 'updated')
-        self.held()
+    def test_a_set_aside_set_is_taken_again_after_its_period_or_at_once_for_a_newer_set_or_other_code(self):
+        self.fail_on_fetched(KeyError)
+        until = public_data._parse(public_data.read_state(self.env)['set_aside_until'])
+        self.assertAlmostEqual((until - datetime.now(timezone.utc)).total_seconds() / 3600, public_data.SET_ASIDE_HOURS, delta=0.1)
+        with patch.object(public_data, '_now', lambda: until - timedelta(minutes=1)):
+            self.assertEqual(self.held()['source'], 'bundled')
+        with patch.object(public_data, '_now', lambda: until + timedelta(minutes=1)):
+            self.assertEqual(self.held()['source'], 'fetched')                   # the period is over
+        self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'unchanged')
+        self.assertEqual(self.held()['source'], 'bundled')                       # a check alone does not end it
+        with patch.object(public_data, 'reader_id', lambda: 'other-code'):
+            self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'accepted')
+            self.assertEqual(self.held()['source'], 'fetched')                   # this install's code changed
+        self.publish(safety_margin_pct=0.6, at=T0 + timedelta(days=2, hours=1))
+        self.fail_on_fetched(KeyError)
+        self.publish(safety_margin_pct=0.7, at=T0 + timedelta(days=2, hours=2))
+        self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'updated')
+        self.assertEqual(self.held()['source'], 'fetched')                       # a newer set is tried at once
+        self.assertNotIn('set_aside_version', public_data.read_state(self.env))
 
-        def run():
-            public_data.held(self.bundled, self.env)
-            raise ValueError('a caller error that is not about the data')
-        with patch.object(public_data, 'BUNDLED', self.bundled), patch.dict(os.environ, self.env), \
-                self.assertRaises(ValueError):
-            public_data.with_fallback(run)
-        self.assertNotIn('rejected_version', public_data.read_state(self.env))
+    def test_only_a_data_error_is_re_run_and_blamed(self):
+        """Rule (finding 1): a refusal (a ValueError, such as a dispatch_registry state refusal) and an environment
+        failure are answers: never re-run, never blamed, whatever set is held (review round 2, R3)."""
+        import dispatch_registry
+        refusals = (ValueError, functools.partial(dispatch_registry.WorkspaceBusy, holders=[]), OSError,
+                    sqlite3.OperationalError, RuntimeError)
+        for error in refusals:
+            with self.subTest(getattr(error, '__name__', 'WorkspaceBusy')):
+                public_data.release()
+                shutil.rmtree(self.state, ignore_errors=True)
+                self.assertEqual(self.fail_on_fetched(error), ['fetched'])
+                self.assertNotIn('set_aside_version', public_data.read_state(self.env))
+        for error in (public_data.ReferenceDataError, KeyError, TypeError, AttributeError, ZeroDivisionError):
+            with self.subTest(error.__name__):
+                public_data.release()
+                shutil.rmtree(self.state, ignore_errors=True)
+                self.assertEqual(self.fail_on_fetched(error), ['fetched', 'bundled'])
+                self.assertIn('set_aside_version', public_data.read_state(self.env))
+
+    def test_an_error_after_an_effect_propagates_and_nothing_is_re_run(self):
+        """Rule (finding 1): a re-run never repeats an effect."""
+        self.assertEqual(self.fail_on_fetched(KeyError, before=lambda: public_data.effect('ledger row')), ['fetched'])
+        self.assertNotIn('set_aside_version', public_data.read_state(self.env))
+
+    def test_a_failure_the_shipped_set_produces_as_well_blames_nothing(self):
+        self.assertEqual(self.fail_on_fetched(KeyError, every=True), ['fetched', 'bundled'])
+        self.assertNotIn('set_aside_version', public_data.read_state(self.env))
 
     def test_concurrent_checks_never_fail_on_the_state_file(self):
         """Rule: contention is no error: the state is written under the process-safe lock (override_store)."""
@@ -429,8 +592,9 @@ class HeldSetTests(ChannelCase):
 
 
 class RouteFallbackTests(unittest.TestCase):
-    """Rule: a fetched set is never on the failure line. A reader failing on it in a way the acceptance cannot see (here
-    one that fails only for a fetched set) makes `plan` run again on the shipped set; the set is recorded as rejected."""
+    """Rule: a fetched set is never on the failure line. A reader failing on it with a data error the acceptance cannot
+    see (here one that fails only for a fetched set), before the run had an effect, makes `plan` run again on the shipped
+    set; the set is set aside. After the ledger row, or for a refusal, the error is the run's answer."""
 
     def test_plan_reruns_on_the_shipped_set_through_the_stage_handler(self):
         import route_judge
@@ -447,11 +611,11 @@ class RouteFallbackTests(unittest.TestCase):
                 return done.code
         self.plan_falls_back(KeyError, entry)       # not one the stage handler catches: the entry point's fall-back
 
-    def plan_falls_back(self, error, entry):
-        import io
+    def fetched_set(self):
         isolated_router_state(self.addCleanup)
         public_data.release()
         self.addCleanup(public_data.release)
+        public_data.release()
         root = Path(tempfile.mkdtemp(prefix='public-data-route-'))
         self.addCleanup(shutil.rmtree, root, True)
         remote = root / 'remote'
@@ -464,7 +628,64 @@ class RouteFallbackTests(unittest.TestCase):
         self.assertEqual(public_data.refresh(environ=env, fetch=FakeRemote(remote))['status'], 'updated')
         task = root / 'task.json'
         write_json(task, {'task': {'objective': 'Fix an off-by-one slice in parser.py and add a unit test.',
-                                   'expected_hours': 0.5}})
+                                   'expected_hours': 0.5, 'profile': {
+                                       'work_kind': 'code_implementation', 'primary_level': 2, 'secondary_kind': 'none',
+                                       'secondary_level': 0, 'access': 'write', 'local_only': True, 'needs_visual': False,
+                                       'wants_fast': False, 'expected_hours': 0.5, 'task_count': '1'}}})
+        return env, task
+
+    def test_a_plan_error_after_its_ledger_row_is_its_answer_and_nothing_is_re_run(self):
+        """Review round 2, r2_inject: a failure after the ledger row was written ran the stage twice (two rows) and
+        rejected a good set for good."""
+        import decision_ledger
+        import io
+        import route_judge
+        for error in (KeyError, ValueError):
+            with self.subTest(error.__name__):
+                env, task = self.fetched_set()
+                real, seen = decision_ledger.append_ledger, []
+
+                def append(entry):
+                    written = real(entry)
+                    seen.append(public_data.held()['source'])
+                    raise error('a local failure after the row was written')
+                out = io.StringIO()
+                with patch.dict(os.environ, env), patch.object(decision_ledger, 'append_ledger', append), \
+                        patch.object(sys, 'argv', ['route_judge.py', 'plan', '--input', str(task)]), \
+                        patch.object(sys, 'stdout', out):
+                    try:
+                        code = route_judge.main()
+                    except KeyError:
+                        code = 'raised'
+                self.assertEqual(seen, ['fetched'])
+                rows = decision_ledger.ledger_path().read_text(encoding='utf-8').splitlines()
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(code, 'raised' if error is KeyError else 1)
+                self.assertNotIn('set_aside_version', public_data.read_state(env))
+
+    def test_a_refusal_on_the_fetched_set_is_the_answer_and_blames_nothing(self):
+        """A refusal is not a data error, even one that depends on the set (named_model_unavailable)."""
+        import allocator
+        import io
+        import route_judge
+        env, task = self.fetched_set()
+        seen = []
+
+        def plan(*args, **kwargs):
+            seen.append(public_data.held()['source'])
+            raise ValueError('named_model_unavailable: gpt-6.2-sol has no configured route')
+        out = io.StringIO()
+        with patch.dict(os.environ, env), patch.object(allocator, 'plan', plan), \
+                patch.object(sys, 'argv', ['route_judge.py', 'plan', '--input', str(task), '--dry-run']), \
+                patch.object(sys, 'stdout', out):
+            self.assertEqual(route_judge.main(), 1)
+        self.assertEqual(seen, ['fetched'])
+        self.assertIn('named_model_unavailable', out.getvalue())
+        self.assertNotIn('set_aside_version', public_data.read_state(env))
+
+    def plan_falls_back(self, error, entry):
+        import io
+        env, task = self.fetched_set()
         real = account_fleet.load_accounts
         seen = []
 
@@ -483,10 +704,10 @@ class RouteFallbackTests(unittest.TestCase):
         self.assertNotIn('Routing input or local runtime failed', out.getvalue())
         self.assertIn(code, (0, 2))                                       # a plan, as with the channel off
         state = public_data.read_state(env)
-        self.assertEqual(state['rejected_version'], state['version'])
+        self.assertEqual(state['set_aside_version'], state['version'])
         public_data.release()
         self.assertEqual(public_data.held(None, env)['source'], 'bundled')
-        self.assertIn('failed this install', public_data.status(env)['note'])
+        self.assertIn('set aside until', public_data.status(env)['note'])
 
 
 class SwitchAndBoundTests(ChannelCase):
@@ -553,29 +774,88 @@ class SwitchAndBoundTests(ChannelCase):
 
 
 class LaunchValueTests(unittest.TestCase):
-    """Rule: a value from reference data or discovery reaches a command only when it matches the declared pattern, and
-    every place that builds one quotes it for its syntax."""
+    """Rule (finding 4): reference data must match the declared patterns, which accept everything shipped and every id
+    this code generates; values from the user's machine are never dropped, only made safe where they are used, and a
+    launch that cannot be expressed safely is refused there, by name."""
 
-    def test_the_reference_document_is_refused_and_a_discovered_row_dropped_by_name(self):
+    def test_the_reference_document_is_refused_by_name_and_the_patterns_accept_what_this_code_ships_and_generates(self):
         doc = read_json(public_data.BUNDLED / 'accounts.json')
         self.assertEqual(account_fleet.launch_problems(doc), [])
         bad = copy.deepcopy(doc)
         bad['accounts']['codex']['bundles']['evil'] = {'model': 'gpt-6.2-sol $(calc.exe)', 'effort': 'high'}
-        with self.assertRaises(ValueError) as refused:
+        with self.assertRaises(public_data.ReferenceDataError) as refused:
             account_fleet.load_accounts(document=bad)
         self.assertIn('codex.bundles.evil.model', str(refused.exception))
-        fleet = {'accounts': {'codex': {'bundles': {'ok': {'model': 'gpt-6.2-sol', 'effort': 'high'},
-                                                    'evil': {'model': 'm', 'effort': 'high"; touch x; echo "'}}}}}
-        dropped = account_fleet.drop_unlaunchable_rows(fleet)
-        self.assertEqual(list(fleet['accounts']['codex']['bundles']), ['ok'])
-        self.assertTrue(dropped and 'codex.bundles.evil.effort' in dropped[0])
+        listed = {'models': [{'id': 'gpt-6.2-sol-2026-11-01'}, {'id': 'some-new-model-x1'}, {'id': 'gpt-6.2-sol:high'}]}
+        catalog = {'providers': {p: listed for p in ('codex', 'claude', 'pi', 'opencode', 'antigravity')}}
+        derived = auto_bundles.derive(doc, catalog, 1795000000)
+        generated = [(account, bid, row) for account, rows in (derived.get('bundles') or {}).items() for bid, row in rows.items()]
+        self.assertTrue(any('#' in bid for _, bid, _ in generated))         # a collision id is among them
+        for account, bid, row in generated + [('codex', 'auto:codex:codex:gpt-6.2-sol@high#a1b2c3d4', {'model': 'gpt-6.2-sol'})]:
+            self.assertEqual(launch_values.bundle_problems(account, bid, row), [], bid)
+
+    def test_a_local_state_shaped_by_v0_7_0_keeps_every_bundle_it_had(self):
+        """Account names the user chose, model ids a provider lists and the ids derived from them are never dropped."""
+        import provider_inventory
+        isolated_router_state(self.addCleanup)
+        discovered = {
+            'codex@work': {'gpt-6.2-sol@high': {'model': 'gpt-6.2-sol', 'effort': 'high', 'provider': 'codex@work'},
+                           'auto:codex@work:codex:gpt-6.2-sol@high#a1b2c3d4': {'model': 'gpt-6.2-sol', 'effort': 'high',
+                                                                               'provider': 'codex@work'}},
+            'my claude': {'auto:my claude:claude:claude-opus-5-5[1m]@high': {'model': 'claude-opus-5-5[1m]', 'effort': 'high',
+                                                                             'provider': 'my claude'}},
+            'claude:alt': {'grok fast': {'model': 'grok-4.7 fast', 'provider': 'claude:alt'}},
+        }
+        real = provider_inventory.apply
+
+        def apply(accounts, *args, **kwargs):
+            result = real(accounts, *args, **kwargs)
+            for name, rows in discovered.items():
+                accounts['accounts'][name] = {'plan': 'unknown', 'billing': 'subscription', 'verified': True,
+                                              'windows': {}, 'bundles': copy.deepcopy(rows)}
+            return result
+        override = {'schema_version': 2, 'accounts': {name: {'bundles': {bid: {'disabled': False} for bid in rows}}
+                                                      for name, rows in discovered.items()}}
+        path = account_fleet.accounts_override_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(path, override)
+        with patch.object(provider_inventory, 'apply', apply), patch.dict(os.environ, {'AGENTCOMPASS_PUBLIC_DATA': 'off'}):
+            accounts = account_fleet.load_accounts()
+        for name, rows in discovered.items():
+            self.assertEqual(set(rows) - set((accounts['accounts'].get(name) or {}).get('bundles') or {}), set(), name)
+
+    def test_a_launch_that_cannot_be_expressed_safely_is_refused_there_by_name(self):
+        import roll
+        launched = []
+
+        class Process:
+            pid = 4242
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(roll, 'provider_definition', lambda provider, bundle=None: ('codex', {})), \
+                patch.object(roll, 'cli_command', lambda family, provider: ['codex']), \
+                patch.object(roll.host_placement, 'place', lambda *a, **k: {'cwd': folder}), \
+                patch.object(roll, 'CLI_RUNS_DIR', Path(folder) / 'runs'), \
+                patch.object(roll.subprocess, 'Popen', lambda argv, **k: launched.append(argv) or Process()):
+            args = type('Args', (), {'workspace': None})()
+            out = {'parent_id': 'p', 'parent_host': 'paseo', 'parent_address': 'p'}
+            with self.assertRaises(launch_values.LaunchValueError) as refused:
+                roll.cli(args, out, {'provider': 'codex@work', 'model': '-c', 'effort': 'high'}, 'task')
+            self.assertIn("model '-c'", str(refused.exception))
+            self.assertEqual(launched, [])
+            result, code = roll.cli(args, out, {'provider': 'my claude:alt', 'model': 'gpt 6.2 sol[1m]', 'effort': 'high'}, 'task')
+            self.assertTrue(result['launched'])
+            self.assertIn('gpt 6.2 sol[1m]', launched[0])                      # its own argument, as it is
+            self.assertEqual([p.name.split('-', 2)[-1].rsplit('-', 1)[0] for p in (Path(folder) / 'runs').iterdir()],
+                             ['my_claude_alt'])
 
     def test_values_are_quoted_for_the_syntax_they_land_in(self):
         self.assertEqual(json.loads(launch_values.toml_string('high"; x = "')), 'high"; x = "')
         self.assertEqual(launch_values.shell_word('gpt-6.2-sol'), 'gpt-6.2-sol')
         self.assertEqual(launch_values.shell_word('a $(b)'), "'a $(b)'")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(launch_values.LaunchValueError):
             launch_values.shell_word("it's")
+        with self.assertRaises(launch_values.LaunchValueError):
+            launch_values.shell_word('-x')
         text = host_placement.native_next('orca', {'provider': 'codex', 'model': 'gpt $(calc)', 'effort': 'high'}, 'addr')
         self.assertIn("--model 'gpt $(calc)'", text)
         import roll
@@ -633,20 +913,25 @@ class LoaderPrecedenceTests(ChannelCase):
 
     def test_no_reader_opens_a_reference_file_except_through_the_accessor(self):
         """Construction: a reader gets reference content only from public_data.document (the held set), so it cannot mix
-        sets. A line that opens a file of the set elsewhere at run time fails here."""
-        allowed = {'public_data.py', 'reference_provenance.py', 'capability_catalog.py'}   # the accessor; maintainer checks
-        names = '|'.join(re.escape(n) for n in public_data.FILES)
-        opening = re.compile(rf"(?:{names}).*(?:read_text|read_bytes|open\(|json\.load\()|"
-                             rf"(?:read_text|read_bytes|open\(|json\.load\().*(?:{names})")
-        offenders = []
-        for folder in (REPO / 'skills' / 'agent-compass' / 'scripts', REPO / 'tray', REPO / 'setup', REPO / 'agentcompass'):
-            for path in folder.glob('*.py'):
-                if path.name.startswith(('test_', 'conftest')) or path.name in allowed or path.name.endswith('_test_support.py'):
-                    continue
-                for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
-                    if opening.search(line) and 'accounts-override' not in line and 'reference-accounts' not in line:
-                        offenders.append(f'{path.name}:{number}: {line.strip()}')
-        self.assertEqual(offenders, [])
+        sets. A run-time read (read_text, read_bytes, open, json.load) whose path, followed through every assignment in
+        the scanned modules (module constants across modules included), names a file of the set under the references
+        directory fails here, however many lines it is spread over (review round 2, R11)."""
+        self.assertEqual(reference_reads(REPO), [])
+        planted = {
+            # a reader spread over two lines (review round 2, R11)
+            REPO / 'tray' / 'planted_two_lines.py': (
+                "from pathlib import Path\nimport json\n\ndef read():\n    where = Path(__file__).parents[1] / 'references'\n"
+                "    path = where / 'accounts.json'\n    return json.loads(path.read_text())\n"),
+            # a module constant of another module
+            REPO / 'tray' / 'planted_constant.py': (
+                "import worker_sessions\n\ndef read():\n    return worker_sessions.SHIPPED_ACCOUNTS.read_bytes()\n"),
+            # a default argument
+            REPO / 'tray' / 'planted_default.py': (
+                "from pathlib import Path\nREF = Path('x') / 'references'\n\ndef read(path=REF / 'plan-templates.json'):\n"
+                "    with open(path) as stream:\n        return stream.read()\n"),
+        }
+        found = reference_reads(REPO, planted)
+        self.assertEqual(sorted(line.split(':')[0] for line in found), sorted(p.name for p in planted))
 
     def test_the_users_own_settings_beat_the_fetched_set_and_are_never_written(self):
         override = Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
@@ -669,6 +954,97 @@ class LoaderPrecedenceTests(ChannelCase):
         self.assertEqual({path: path.read_bytes() for path in owned}, owned)
         written = {p.relative_to(self.state).parts[0] for p in self.state.rglob('*') if p.is_file()}
         self.assertEqual(written - {'accounts-override.json', 'user-scores.json'}, {'public-data'})
+
+
+def reference_reads(repo, extra=None):
+    """Run-time reads of a reference-set file outside the accessor, as `file:line: expression` (the static scan)."""
+    import ast
+    allowed = {'public_data.py', 'reference_provenance.py', 'capability_catalog.py'}   # the accessor; maintainer checks
+    modules = {}
+    for folder in (repo / 'skills' / 'agent-compass' / 'scripts', repo / 'tray', repo / 'setup', repo / 'agentcompass'):
+        for path in folder.glob('*.py'):
+            if not path.name.startswith(('test_', 'conftest')) and not path.name.endswith('_test_support.py'):
+                modules[path] = path.read_text(encoding='utf-8')
+    modules.update(extra or {})
+    trees = {path: ast.parse(text) for path, text in modules.items()}
+    # Assignments by scope: (module stem, function or None, name) -> the expressions assigned to it. A name used in a
+    # function resolves to that function's own assignments and parameters (their defaults), else to the module's.
+    assigned, local = {}, {}
+
+    def record(stem, scope, name, value):
+        assigned.setdefault((stem, scope, name), []).append(value)
+        local.setdefault((stem, scope), set()).add(name)
+
+    def collect(stem, body, scope):
+        for node in body:
+            for sub in ast.walk(node) if scope else [node]:
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub is not node or scope is None and \
+                        isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    continue
+                targets = sub.targets if isinstance(sub, ast.Assign) else [sub.target] if isinstance(
+                    sub, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and sub.value else []
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        record(stem, scope, target.id, sub.value)
+    functions = {}
+    for path, tree in trees.items():
+        collect(path.stem, tree.body, None)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                functions[node] = path.stem
+                collect(path.stem, node.body, node)
+                params = node.args.posonlyargs + node.args.args
+                defaults = [None] * (len(params) - len(node.args.defaults)) + node.args.defaults
+                for arg, default in [*zip(params, defaults), *zip(node.args.kwonlyargs, node.args.kw_defaults)]:
+                    local.setdefault((path.stem, node), set()).add(arg.arg)
+                    if default is not None:
+                        record(path.stem, node, arg.arg, default)
+
+    def expand(node, stem, scope, depth=0):
+        text = ast.unparse(node)
+        if depth > 6:
+            return text
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Name):
+                where = scope if sub.id in local.get((stem, scope), ()) else None
+                found = [(stem, where, v) for v in assigned.get((stem, where, sub.id), ())]
+            elif isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name):
+                found = [(sub.value.id, None, v) for v in assigned.get((sub.value.id, None, sub.attr), ())]
+            else:
+                continue
+            for owner, where, value in found:
+                text += ' ' + expand(value, owner, where, depth + 1)
+        return text
+
+    def enclosing(tree):
+        owner = {}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for sub in ast.walk(node):
+                    owner[sub] = node               # the innermost function wins: walk visits outer ones first
+        return owner
+    files = public_data.FILES
+    offenders = []
+    for path, tree in trees.items():
+        if path.name in allowed:
+            continue
+        owner = enclosing(tree)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr in ('read_text', 'read_bytes', 'open'):
+                subject = func.value
+            elif isinstance(func, ast.Name) and func.id == 'open' and node.args:
+                subject = node.args[0]
+            elif isinstance(func, ast.Attribute) and func.attr == 'load' and node.args:
+                subject = node.args[0]
+            else:
+                continue
+            text = expand(subject, path.stem, owner.get(node))
+            if 'references' in text.lower() and any(name in text for name in files):
+                offenders.append(f'{path.name}:{node.lineno}: {ast.unparse(node)[:120]}')
+    return offenders
 
 
 class FixtureServer:

@@ -107,8 +107,10 @@ Installs read a set the maintainer published on `main` without a product update
 
 Nothing else: installs pick the set up at their next check (at most 6 hours). A corrected hand-written score or launch
 row is the same procedure with its own edit in place of steps 1 and 2. A model whose launch needs code (a new harness or
-provider, an effort its launch contract does not offer, a new launch field) cannot be published this way: the acceptance
-refuses it, and it ships with a release.
+provider, a new account family, a new launch field) cannot be published this way: the acceptance refuses a harness or
+family this code does not launch, and such a model ships with a release. A bundle's effort is checked only against the
+set's own `dispatch_efforts` row for its harness, which the same publication may extend; whether the CLI accepts that
+effort is not checked, so add one only when the CLI documents it.
 
 When to bump `SCHEMA_VERSION` (`scripts/public_data.py`): with any change after which a released reader of the current
 schema would misread data written for the new code: a new required field, a renamed or removed key, a changed meaning or

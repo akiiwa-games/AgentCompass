@@ -15,6 +15,7 @@ import sqlite3
 import uuid
 from host_placement import canonical_dir
 import provider_inventory
+import public_data
 
 
 def bundle_windows(bundle):
@@ -104,7 +105,10 @@ def transaction(path=None):
         connection.execute('CREATE TABLE IF NOT EXISTS decisions (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
         connection.execute('CREATE TABLE IF NOT EXISTS dispatches (id TEXT PRIMARY KEY, decision_id TEXT UNIQUE NOT NULL, data TEXT NOT NULL)')
         yield connection
+        changed = connection.total_changes
         connection.commit()
+        if changed:
+            public_data.effect('dispatch registry write')   # a reservation or dispatch row: never re-run
     except BaseException:
         connection.rollback()
         raise

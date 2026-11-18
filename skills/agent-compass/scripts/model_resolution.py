@@ -5,6 +5,8 @@ no scores (nothing here supplies a default row).
 """
 import re
 
+import public_data
+
 
 # A `:effort` suffix names an effort, not a vendor tag: `claude-opus-5-5:medium` asks for Medium.
 EFFORT_SUFFIXES = ('none', 'minimal', 'default', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
@@ -19,7 +21,7 @@ def family_patterns(accounts):
     """The catalog's ordered family patterns ([{'pattern', 'models'}]) from its `families` maintainer declaration."""
     table = accounts.get('families') if isinstance(accounts, dict) else None
     if not isinstance(table, dict) or not isinstance(table.get('rows'), list):
-        raise ValueError('accounts has no families table: the catalog needs `families` {kind, as_of, statement, '
+        raise public_data.ReferenceDataError('accounts has no families table: the catalog needs `families` {kind, as_of, statement, '
                          'rows: [{pattern, models}]} (references/accounts.json)')
     return table['rows']
 

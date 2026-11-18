@@ -1084,7 +1084,7 @@ def check_worker_compaction_limit(
         worker_sessions = router_module("worker_sessions")
     except ImportError:
         return None
-    max_tokens = worker_sessions.rotation_threshold(account_fleet.load_accounts())
+    max_tokens = read_reference(lambda: worker_sessions.rotation_threshold(account_fleet.load_accounts()))
     state = worker_sessions.session_state(agent_id, home=home_dir)
     compactions = state.get("compactions") or 0
     compacted_tok = state.get("compacted_tokens") or 0
@@ -1170,10 +1170,21 @@ def check_target_disabled(
     return f"[Router Gate] 拦截向已禁用账号/档位启动或续派任务{where}：{cause}。" + DISABLED_RECOVERY
 
 
-def load_dispatch_settings() -> tuple[dict | None, dict | None]:
-    """(accounts, host policy); unreadable configuration degrades to allow-all."""
+def read_reference(read):
+    """``read()``, a read of the reference set in effect with no effect of its own. When it fails on a fetched set, it
+    reads again from the shipped set as a whole (public_data.with_fallback), and the fetched set is set aside; only when
+    the shipped set fails too does the error reach the caller, whose degrade then applies. No network, no thread."""
     try:
-        accounts = router_module("account_fleet").load_accounts()
+        public_data = router_module("public_data")
+    except ImportError:
+        return read()
+    return public_data.with_fallback(read)
+
+
+def load_dispatch_settings() -> tuple[dict | None, dict | None]:
+    """(accounts, host policy); configuration unreadable also from the shipped reference set degrades to allow-all."""
+    try:
+        accounts = read_reference(router_module("account_fleet").load_accounts)
     except Exception:
         accounts = None
     try:
@@ -1229,7 +1240,6 @@ def check_account_quota_exhausted(
             f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
         )
     try:
-        accounts = accounts if accounts is not None else router_module("account_fleet").load_accounts()
         if records is None:
             try:
                 registry = router_module("dispatch_registry")
@@ -1243,7 +1253,11 @@ def check_account_quota_exhausted(
             except Exception:
                 pass
         records = without_own(records, exclude_dispatch_id, exclude_agent_id)
-        found = window_refusal(account, accounts, now, usage_cache_path, records, bundles, model)
+        # The reference read (accounts, the window verdict on them) falls back to the shipped set as a whole; the
+        # end notices above are an effect and stay outside it.
+        found = read_reference(lambda: window_refusal(
+            account, accounts if accounts is not None else router_module("account_fleet").load_accounts(), now,
+            usage_cache_path, records, bundles, model))
     except Exception:
         return None
     if not found:
@@ -1677,19 +1691,9 @@ def main() -> int:
     if not isinstance(payload, dict):
         print("{}")
         return 0
-    result = evaluate_with_reference_fallback(payload)
+    result = evaluate_payload(payload)
     print(json.dumps(result, ensure_ascii=False))
     return 0
-
-
-def evaluate_with_reference_fallback(payload: dict) -> dict:
-    """evaluate_payload; when a reader fails on a fetched reference set, evaluated again on the shipped set as a whole
-    (public_data.with_fallback), so published data never decides a gate verdict the shipped data would not."""
-    try:
-        public_data = router_module("public_data")
-    except Exception:
-        return evaluate_payload(payload)
-    return public_data.with_fallback(evaluate_payload, payload)
 
 
 if __name__ == "__main__":

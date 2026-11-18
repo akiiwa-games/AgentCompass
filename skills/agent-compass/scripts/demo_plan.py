@@ -46,6 +46,23 @@ def reference_accounts(fleet=None):
 OTHER_ACCOUNT = (80, 120)
 
 
+def priced_fleet(fleet):
+    """A public accounts document as an install would see it once discovery found its accounts: each account of a family
+    the reference fleet signs in to (a verified fixture account) is verified, declares that family and takes the
+    reference fleet's plan tier for it, so its windows are priced from the set's own capacity data. Accounts of other
+    families stay as the document has them (out of automatic routing until discovery prices them)."""
+    doc = json.loads(json.dumps(fleet))
+    tiers = {}
+    for name, spec in account_fleet.reference_fleet_document()['accounts'].items():
+        if isinstance(spec, dict) and spec.get('verified') and spec.get('plan'):
+            tiers.setdefault(spec.get('family') or name, spec['plan'])
+    for name, spec in (doc.get('accounts') or {}).items():
+        if isinstance(spec, dict) and name in tiers:
+            spec.update(verified=True, family=name, plan=tiers[name])
+            spec.pop('capacity_status', None)
+    return doc
+
+
 def plan(document, fleet=None):
     """Offline plan of ``document`` on the reference fleet, or on ``fleet`` (a public accounts document: the acceptance of
     a reference set routes on the set's own fleet), with a synthetic quota snapshot."""

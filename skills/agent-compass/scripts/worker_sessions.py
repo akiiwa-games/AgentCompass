@@ -142,8 +142,7 @@ def shipped_scoring(path=None):
     """`scoring` mapping of the public `accounts.json`: the file at ``path``, else that of the reference set this process
     holds (public_data.document), before the user's own overrides."""
     import public_data
-    source = Path(path) if path is not None else SHIPPED_ACCOUNTS
-    doc = json.loads(source.read_text(encoding='utf-8-sig')) if path is not None else public_data.document(source)
+    doc = json.loads(Path(path).read_text(encoding='utf-8-sig')) if path is not None else public_data.document(SHIPPED_ACCOUNTS)
     scoring = doc.get('scoring') if isinstance(doc, dict) else None
     if not isinstance(scoring, dict):
         raise KeyError(f'Missing scoring block in {source}')
@@ -161,7 +160,8 @@ def rotation_threshold(policy=None):
         raise KeyError('Missing scoring.rotate_after_carried_tokens in accounts configuration')
     raw = policy['rotate_after_carried_tokens']
     if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw <= 0:
-        raise ValueError(f'scoring.rotate_after_carried_tokens must be a positive number, got {raw!r}')
+        import public_data
+        raise public_data.ReferenceDataError(f'scoring.rotate_after_carried_tokens must be a positive number, got {raw!r}')
     return int(raw)
 
 

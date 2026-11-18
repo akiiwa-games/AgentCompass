@@ -351,7 +351,12 @@ def load_public(path=None) -> dict:
             raw = public_data.document(PUBLIC_SCORES_FILE)
         except FileNotFoundError:
             return empty_document()
-    return validate_document(raw, expected_kind='maintainer')
+    try:
+        return validate_document(raw, expected_kind='maintainer')
+    except public_data.ReferenceDataError:
+        raise
+    except ValueError as exc:                   # the reference layer's shape, not the user's input
+        raise public_data.ReferenceDataError(f'user-scores.json: {exc}') from None
 
 
 def resolve_model_key(model: str, accounts: dict | None = None) -> str:
@@ -382,13 +387,13 @@ def target_triad(targets_table: dict, category: str, facet: str | None = None) -
     levels = (((cat_block.get('facets') or {}).get(facet) or {}).get('levels') if facet is not None else cat_block.get('levels')) or {}
     if all(isinstance((levels.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
         return (float(levels['1']['target']), float(levels['2']['target']), float(levels['3']['target']))
-    raise ValueError(f'Panel targets for {category}{"." + facet if facet else ""} are missing from anchor.targets')
+    raise public_data.ReferenceDataError(f'Panel targets for {category}{"." + facet if facet else ""} are missing from anchor.targets')
 
 
 def _scale(t1, t2, t3) -> tuple[float, float, float]:
     t1_f, t2_f, t3_f = float(t1), float(t2), float(t3)
     if not t1_f < t2_f < t3_f:
-        raise ValueError(f'A level scale needs t1 < t2 < t3, got ({t1_f}, {t2_f}, {t3_f}).')
+        raise public_data.ReferenceDataError(f'A level scale needs t1 < t2 < t3, got ({t1_f}, {t2_f}, {t3_f}).')
     return t1_f, t2_f, t3_f
 
 

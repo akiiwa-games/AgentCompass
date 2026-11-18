@@ -8,6 +8,7 @@ import time
 
 import dispatch_registry
 import env_vars
+import public_data
 import scorer_client
 import subscription_judge
 import usage_reading
@@ -40,6 +41,7 @@ def append_ledger(entry):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('a', encoding='utf-8') as stream:
             stream.write(json.dumps(entry, ensure_ascii=False, allow_nan=False) + '\n')
+        public_data.effect('ledger row')        # a re-run would write a second row: never re-run after this
         return True
     except (OSError, ValueError, TypeError):
         return False

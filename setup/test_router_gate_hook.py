@@ -2159,21 +2159,45 @@ def test_legacy_account_flag_does_not_break_rotation_check(tmp_path, monkeypatch
     assert gate.check_worker_compaction_limit('worker', paseo_agents_dir=tmp_path / 'agents') is None
 
 
-def test_a_gate_verdict_reruns_on_the_shipped_reference_set_when_a_fetched_one_fails(monkeypatch):
-    """Rule (router-internals §5, never on the failure line): a reader failing on a fetched set decides no verdict; the
-    gate evaluates again on the shipped set as a whole."""
+def hold_broken_fetched_set(monkeypatch):
+    """A fetched set held by this process whose accounts.json breaks account_fleet.load_accounts with a data error."""
     public_data = gate.router_module('public_data')
+    public_data.release()
+    monkeypatch.setattr(public_data, '_EFFECTS', [0])
     shipped = public_data._shipped_set(public_data.BUNDLED)
-    public_data._HELD[public_data._key(None, None)] = {**shipped, 'source': 'fetched', 'version': 'abc123def456',
-                                                       'id': 'fetched:abc123def456'}
-    seen = []
+    broken = json.loads(shipped['files']['accounts.json'])
+    del broken['accounts']
+    public_data._HELD[public_data._key(None, None)] = {
+        **shipped, 'source': 'fetched', 'version': 'abc123def456', 'id': 'fetched:abc123def456',
+        'files': {**shipped['files'], 'accounts.json': json.dumps(broken).encode()}}
+    return public_data
 
-    def evaluate(payload):
-        source = public_data.held()['source']
-        seen.append(source)
-        if source == 'fetched':
-            raise KeyError('rotate_after_carried_tokens')
-        return {'verdict': source}
-    monkeypatch.setattr(gate, 'evaluate_payload', evaluate)
-    assert gate.evaluate_with_reference_fallback({'tool_name': 'Agent'}) == {'verdict': shipped['source']}
-    assert seen == ['fetched', shipped['source']]
+
+def test_the_gate_reads_its_configuration_from_the_shipped_set_when_the_fetched_one_fails(monkeypatch):
+    """Rule (router-internals §5, never on the failure line): load_dispatch_settings swallows its errors into allow-all,
+    so the reference read inside it falls back to the shipped set first; the degrade applies only if that fails too."""
+    public_data = hold_broken_fetched_set(monkeypatch)
+    accounts, _policy = gate.load_dispatch_settings()
+    assert accounts and accounts.get('accounts'), 'degraded to allow-all instead of reading the shipped set'
+    assert public_data.held()['source'] == 'bundled'
+    state = public_data.read_state()
+    assert state['set_aside_version'] == 'abc123def456' and 'ReferenceDataError' in state['set_aside_error']
+    public_data.release()
+
+
+def test_the_quota_verdict_is_decided_on_the_shipped_set_when_the_fetched_one_fails(monkeypatch):
+    public_data = hold_broken_fetched_set(monkeypatch)
+    latched, without_own, window_refusal = gate.router_owner('turn_refusal', 'latched', 'without_own', 'window_refusal')
+    decided = []
+
+    def refusal(account, accounts, *args):
+        decided.append((public_data.held()['source'], bool(accounts.get('accounts'))))
+        return ('model', 'codex:weekly', 'used up')
+    real_owner = gate.router_owner
+    monkeypatch.setattr(gate, 'router_owner', lambda module, *names: (
+        (lambda *a: False), without_own, refusal) if module == 'turn_refusal' else real_owner(module, *names))
+    reason = gate.check_account_quota_exhausted('codex', records=[])
+    assert decided == [('bundled', True)]
+    assert reason and 'codex:weekly' in reason
+    assert public_data.read_state()['set_aside_version'] == 'abc123def456'
+    public_data.release()

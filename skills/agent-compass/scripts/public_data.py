@@ -12,7 +12,9 @@ credentials, proxies from the environment) into <state dir>/public-data/, verifi
 acceptance before it records the set. A process takes one reference set, the whole of it in memory, the first time it
 reads one (held) and keeps it; a long-lived process moves to a newer set only as a whole (retake). A fetched set is used
 only when it is complete, accepted by this code and published after the shipped copy. If a reader fails on it at run
-time all the same, the run falls back to the shipped set as a whole and the set is recorded as rejected (with_fallback).
+time all the same with a data error, before the run had any effect, the run falls back to the shipped set as a whole and
+the set is set aside for SET_ASIDE_HOURS (with_fallback); a refusal, an environment failure or an error after an effect
+propagates unchanged and blames nothing.
 
 Precedence: shipped < fetched < the user's own settings. Nothing here writes accounts-override.json, the local
 user-scores.json or host policy; their loaders layer them on top of whichever set is held. Shipped references that differ
@@ -35,6 +37,7 @@ import tarfile
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 import uuid
 
@@ -71,14 +74,63 @@ BUNDLED = Path(__file__).resolve().parents[1] / 'references'
 # product, which ship references/).
 PUBLISHED = Path(__file__).resolve().parents[3] / 'published'
 USER_AGENT = 'AgentCompass-public-data'
-# What a reader raises on data of a shape it does not expect. An environment failure (OSError, sqlite3) never rejects a set.
-DATA_ERRORS = (LookupError, TypeError, ValueError, AttributeError, ArithmeticError)
+# A set a reader failed on at run time is set aside this long, then tried again (at once when a newer set is published or
+# this install's code changes). A run-time failure is evidence, not proof (the acceptance is the proof), so the blame
+# expires: a truly bad set costs each install one failed-then-shipped run per period.
+SET_ASIDE_HOURS = 24
+# What a reader raises on data of a shape it does not expect: Python's own lookup, type, attribute and arithmetic errors,
+# and ReferenceDataError, which the readers' explicit shape checks raise. Any other ValueError is the router's answer (an
+# input error, a refusal such as a dispatch_registry state refusal or named_model_unavailable) and an OSError or sqlite3
+# error the environment: neither re-runs anything nor blames a set.
+DATA_ERRORS = (LookupError, TypeError, AttributeError, ArithmeticError)
+
+
+class ReferenceDataError(ValueError):
+    """A reference file does not have the shape this code reads: a reader's explicit shape check, or a non-finite
+    number. A ValueError so that callers that report input errors report it the same way."""
 
 _LOCK = threading.RLock()
 _HELD = {}
 _CANDIDATE = []
 _FALLBACK = {}
 _READER = {}
+_EFFECTS = [0]      # effects this process has had (effect()); with_fallback re-runs only what came before the first
+
+
+def is_data_error(error):
+    """Whether ``error`` says the data has a shape a reader does not expect (DATA_ERRORS, ReferenceDataError)."""
+    return isinstance(error, (ReferenceDataError, *DATA_ERRORS))
+
+
+def _non_finite(name):
+    def refuse(token):
+        raise ReferenceDataError(f'{name} holds {token}, which is not a finite number')
+    return refuse
+
+
+def parse_document(data, name):
+    """The one parse of a reference file, shipped or fetched: JSON whose numbers are all finite. NaN, Infinity and a
+    literal too large for a float are a named ReferenceDataError, never a value."""
+    def number(text):
+        value = float(text)
+        if value in (float('inf'), float('-inf')):
+            raise ReferenceDataError(f'{name} holds {text}, which is not a finite number')
+        return value
+    try:
+        text = data.decode('utf-8-sig') if isinstance(data, (bytes, bytearray)) else data
+        return json.loads(text, parse_constant=_non_finite(name), parse_float=number)
+    except ReferenceDataError:
+        raise
+    except ValueError as exc:
+        raise ReferenceDataError(f'{name} is not valid JSON: {exc}') from None
+
+
+def effect(what):
+    """Called by every writer whose repetition a re-run would duplicate: a ledger row, a dispatch reservation or row, a
+    launch request, an override. From here on a failure of this run propagates as it is and is never re-run on the
+    shipped set (with_fallback). ``what`` names the writer, for a reader of the code."""
+    with _LOCK:
+        _EFFECTS[0] += 1
 
 
 def _env(environ):
@@ -175,7 +227,7 @@ def build_manifest(directory, previous=None, now=None):
     files = {}
     for name in FILES:
         data = (directory / name).read_bytes()
-        json.loads(data.decode('utf-8-sig'))
+        parse_document(data, name)
         files[name] = {'sha256': sha256_bytes(data), 'bytes': len(data)}
     manifest = {'schema_version': SCHEMA_VERSION, 'files': files}
     version = set_version(manifest)
@@ -198,6 +250,8 @@ def validate_files(directory):
     import axis_scores
     import reference_provenance
     directory = Path(directory)
+    for name in FILES:
+        parse_document((directory / name).read_bytes(), name)
     reference_provenance.validate_references(directory)
     try:
         axis_scores.require_current_schema(json.loads((directory / 'five-axis-scores.json').read_text(encoding='utf-8-sig')))
@@ -211,17 +265,25 @@ def validate_files(directory):
 
 def _acceptance_steps():
     """(label, step) for accept: every run-time reader of the set, then an offline plan on the reference fleet (what
-    `plan --demo --dry-run` runs) and one on the set's own fleet. Read by the candidate set; no network, no classifier."""
+    `plan --demo --dry-run` runs) and one on the set's own fleet priced as the reference fleet prices its families
+    (demo_plan.priced_fleet), which must have a selectable candidate; both serialized as the CLI prints them. Read by
+    the candidate set; no network, no classifier."""
     import account_fleet
     import axis_scores
     import demo_plan
     import provider_inventory
+    import route_judge
     import scorer_client
     import user_scores
     import worker_sessions
 
     def fleet():
         return document(account_fleet.REFERENCES / 'accounts.json')
+
+    def planned(result, selectable=False):
+        route_judge.render(result)              # what the CLI prints: strict JSON, no NaN or Infinity
+        if selectable and not any(not c.get('excluded') for c in result.get('ranking') or []):
+            raise ValueError(f"no selectable candidate among {len(result.get('ranking') or [])}")
 
     def classifier_cases():
         cases = scorer_client.load_classifier_cases()
@@ -238,8 +300,9 @@ def _acceptance_steps():
         ('user-scores.json', user_scores.load_public),
         ('classifier-cases.json', classifier_cases),
         ('plan-templates.json', lambda: provider_inventory.plan_table(fleet(), 'codex')),
-        ('plan on the reference fleet', lambda: demo_plan.plan(demo_plan.sample_document())),
-        ('plan on the fleet of the set', lambda: demo_plan.plan(demo_plan.sample_document(), fleet=fleet())),
+        ('plan on the reference fleet', lambda: planned(demo_plan.plan(demo_plan.sample_document()))),
+        ('plan on the fleet of the set', lambda: planned(
+            demo_plan.plan(demo_plan.sample_document(), fleet=demo_plan.priced_fleet(fleet())), selectable=True)),
     )
 
 
@@ -352,12 +415,42 @@ def _git(*args, cwd=None):
 
 
 def manifest_at(revision):
-    """The published manifest of this schema at a git ``revision``, or None when there was none."""
+    """The published manifest of this schema at a git ``revision``, or None when there was none. A revision that is
+    not a commit of this repository (unknown, or unreachable after a force push) is a ValueError: the check against
+    the previous publication cannot run, and that is never a pass."""
+    if _git('rev-parse', '--verify', '--quiet', f'{revision}^{{commit}}') is None:
+        raise ValueError(f'--since {revision}: not a commit of this repository (unknown or unreachable revision); the '
+                         'published set cannot be checked against the publication it replaces')
     data = _git('show', f'{revision}:published/{SCHEMA_VERSION}/{MANIFEST}')
     try:
         return json.loads(data.decode('utf-8-sig')) if data else None
     except ValueError:
         return None
+
+
+def check_frozen(root=None, since=None):
+    """'' when every published set of an older schema (published/<n>/, n != SCHEMA_VERSION) still matches its own
+    manifest and, with ``since`` (a revision), is unchanged since then: an older schema's set is frozen, never edited, for
+    installs of that schema keep reading it. Else what is wrong."""
+    root = Path(root or PUBLISHED)
+    for folder in sorted(p for p in (root.iterdir() if root.is_dir() else ()) if p.is_dir() and p.name.isdigit()):
+        if folder.name == str(SCHEMA_VERSION):
+            continue
+        manifest = _read_json(folder / MANIFEST)
+        listed = (manifest or {}).get('files') if isinstance((manifest or {}).get('files'), dict) else None
+        if not listed:
+            return f'{folder} has no readable {MANIFEST}: a published set of an older schema is frozen'
+        for name, entry in listed.items():
+            data = _read_bytes(folder / name)
+            if data is None or sha256_bytes(data) != (entry or {}).get('sha256'):
+                return f'{folder / name} does not match its manifest: a published set of an older schema is frozen, never edited'
+        if since is not None:
+            done = subprocess.run(['git', 'diff', '--quiet', since, '--', f'published/{folder.name}'], cwd=root.parent,
+                                  capture_output=True, timeout=120)
+            if done.returncode != 0:
+                return (f'{folder} changed since {since}: a published set of an older schema is frozen, never edited '
+                        f'(installs of schema {folder.name} keep reading it)')
+    return ''
 
 
 def check_released(root=None):
@@ -458,6 +551,10 @@ def _take(bundled, environ):
         return {**shipped, 'note': state.get('note') or f'fetched set {version} was rejected by this install'}
     if state.get('accepted_by') != reader_id():
         return {**shipped, 'note': f'fetched set {version} is not yet accepted by this version of the code; the next check does'}
+    aside_until = _parse(state.get('set_aside_until'))
+    if (state.get('set_aside_version') == version and state.get('set_aside_by') == reader_id()
+            and aside_until is not None and _now() < aside_until):
+        return {**shipped, 'note': state.get('note') or f'fetched set {version} is set aside until {state["set_aside_until"]}'}
     directory = cache_dir(environ) / 'sets' / version
     fetched = _read_json(directory / MANIFEST)
     files = {name: data for name in FILES for data in [_read_bytes(directory / name)] if data is not None}
@@ -499,7 +596,7 @@ def document(path, environ=None):
     data = held(path.parent, environ)['files'].get(path.name)
     if data is None:                            # a shipped directory without this file: the error names the path
         data = path.read_bytes()
-    return json.loads(data.decode('utf-8-sig'))
+    return parse_document(data, path.name)
 
 
 def set_id(bundled=None, environ=None):
@@ -554,7 +651,7 @@ def fall_back(error, bundled=None, environ=None):
             pending['failed_again'] = True
             return False
         chosen = _HELD.get(key)
-        if _CANDIDATE or chosen is None or chosen['source'] != 'fetched' or not isinstance(error, DATA_ERRORS):
+        if _CANDIDATE or chosen is None or chosen['source'] != 'fetched' or not is_data_error(error):
             return False
         _FALLBACK[key] = {'version': chosen['version'], 'error': f'{type(error).__name__}: {str(error)[:200]}',
                           'failed_again': False}
@@ -563,18 +660,22 @@ def fall_back(error, bundled=None, environ=None):
 
 
 def settle(bundled=None, environ=None):
-    """Close a pending fall-back: when the shipped set succeeded where the fetched one failed, record the fetched set as
-    rejected by this reader (doctor names it, and no process takes or downloads it again)."""
+    """Close a pending fall-back: when the shipped set succeeded where the fetched one failed, set the fetched set aside
+    for SET_ASIDE_HOURS (doctor names it with the error); it is taken again after that, or at once when a newer set is
+    published or this install's code changes. Not a permanent rejection: only the acceptance proves a set unusable."""
     key = _key(bundled, environ)
     with _LOCK:
         pending = _FALLBACK.pop(key, None)
     if pending is None or pending['failed_again']:
         return None
-    note = (f"published set {pending['version']} failed this install's readers at run time ({pending['error']}); the "
-            f'shipped set is used: {UPDATE_APP}; if it is already the latest release, the published data is defective')
+    until = _stamp(_now() + timedelta(hours=SET_ASIDE_HOURS))
+    note = (f"published set {pending['version']} failed this install's readers at run time ({pending['error']}); it is "
+            f'set aside until {until} and the shipped set is used. It is tried again then, or at once when a newer set is '
+            f'published or this install is updated')
 
     def change(state):
-        state.update(rejected_version=pending['version'], rejected_by=reader_id(), note=note)
+        state.update(set_aside_version=pending['version'], set_aside_by=reader_id(), set_aside_until=until,
+                     set_aside_error=pending['error'], note=note)
     try:
         _update_state(environ, change)
     except (OSError, TimeoutError):
@@ -583,11 +684,14 @@ def settle(bundled=None, environ=None):
 
 
 def with_fallback(call, *args, **kwargs):
-    """Run ``call``; when a reader fails on a fetched set, run it again on the shipped set as a whole, then settle()."""
+    """Run ``call``. When a reader fails on a fetched set with a data error (is_data_error) before the run had any
+    effect (effect()), run it again on the shipped set as a whole, then settle(). After an effect, for a refusal or an
+    environment failure, the error propagates unchanged and nothing is re-run or blamed."""
+    before = _EFFECTS[0]
     try:
         result = call(*args, **kwargs)
     except Exception as exc:
-        if not fall_back(exc):
+        if _EFFECTS[0] != before or not fall_back(exc):
             settle()
             raise
         try:
@@ -680,7 +784,15 @@ def _schema_note(schema):
 def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
     """(result, state changes, state keys to drop) of one check; the caller writes the state under the lock."""
     checked = {'checked_at': _stamp(now), 'last_error': None}
-    raw = fetch(cfg['url'] + MANIFEST, timeout)
+    try:
+        raw = fetch(cfg['url'] + MANIFEST, timeout)
+    except urllib.error.URLError as error:
+        # Nothing published for this schema yet (the normal state before its first publication): a completed check.
+        missing = (getattr(error, 'code', None) == 404 if isinstance(error, urllib.error.HTTPError)
+                   else isinstance(error.reason, FileNotFoundError))
+        if not missing:
+            raise
+        return {'status': 'unpublished', 'detail': f'nothing is published for schema {SCHEMA_VERSION} yet'}, checked, ()
     manifest = json.loads(raw.decode('utf-8-sig'))
     if not isinstance(manifest, dict) or not isinstance(manifest.get('files'), dict):
         raise ValueError('published manifest has no files table')
@@ -717,7 +829,7 @@ def _refresh(cfg, cache, state, fetch, now, bundled, timeout):
                 downloaded.append(name)
                 if sha256_bytes(data) != want:
                     raise ValueError(f'{name} does not match the published sha256; nothing was applied')
-            json.loads(data.decode('utf-8-sig'))
+            parse_document(data, name)
             (staging / name).write_bytes(data)
         (staging / MANIFEST).write_bytes(raw)
         verdict = _accepted(staging, version)
@@ -754,7 +866,8 @@ def _accepted_result(manifest, cfg, now, state, version, downloaded, status, cac
         changes['fetched_at'] = _stamp(now)
     _prune(cache / 'sets', {version, previous})
     return ({'status': status, 'version': version, 'previous': previous, 'downloaded': downloaded}, changes,
-            ('remote_schema_version', 'rejected_version', 'rejected_by'))
+            ('remote_schema_version', 'rejected_version', 'rejected_by', 'set_aside_version', 'set_aside_by',
+             'set_aside_until', 'set_aside_error'))
 
 
 def _prune(sets, keep):
@@ -796,6 +909,23 @@ def refresh_in_background(environ=None):
         return None
 
 
+def reference_alert(bundled=None, environ=None):
+    """The plan's warning when the published set is not used because this code refused it (the acceptance rejected it,
+    or a run-time failure set it aside), naming why; None otherwise. Nothing is left out silently."""
+    chosen = held(bundled, environ)
+    if chosen['source'] == 'fetched' or not chosen.get('enabled'):
+        return None
+    state = read_state(environ)
+    until = _parse(state.get('set_aside_until'))
+    refused = ((state.get('rejected_version') and state.get('rejected_by') == reader_id())
+               or (state.get('set_aside_version') and state.get('set_aside_by') == reader_id()
+                   and until is not None and _now() < until))
+    if not refused:
+        return None
+    return {'code': 'reference_data_refused', 'severity': 'warn', 'account': None,
+            'message': state.get('note') or 'the published reference set was refused by this install; the shipped set is used'}
+
+
 def status(environ=None, bundled=None):
     """What doctor, `agentcompass providers` and `agentcompass data` print. Read only."""
     cfg = config(environ)
@@ -807,6 +937,8 @@ def status(environ=None, bundled=None):
             'reads_schema': SCHEMA_VERSION, 'bundled_version': chosen['bundled_version'], 'dir': chosen['dir'],
             'note': '; '.join(notes) or None, 'fetched_at': state.get('fetched_at'),
             'checked_at': state.get('checked_at'), 'last_error': state.get('last_error'), 'url': cfg['url'],
+            'set_aside': ({k: state.get(f'set_aside_{k}') for k in ('version', 'until', 'error')}
+                          if state.get('set_aside_version') else None),
             'interval_hours': cfg['interval_hours'], 'cache': str(cache_dir(environ))}
 
 
@@ -839,7 +971,8 @@ install's data schema on the AgentCompass repository's main branch.
 Maintainers (in a git checkout):
   agentcompass data publish          accept references/ and write it to published/<schema>/ (publishes it)
   agentcompass data publish --check  fail unless published/<schema>/ is consistent, accepted by this code and, with
-                                     --since REV, published later than at REV; --release: and what references/ ships
+                                     --since REV (a commit; any other revision fails), published later than at REV;
+                                     --release: and what references/ ships. Sets of older schemas are frozen.
   agentcompass data publish --check-released
                                      run every released reader of this schema (tags v*) against the published set
   agentcompass data refresh ...      rebuild the calibrated data; the fetching refresh runs once, when a release is prepared
@@ -855,16 +988,21 @@ def _publish_main(args):
         print(f"released readers of schema {SCHEMA_VERSION} checked: {', '.join(checked) or 'none released yet'}")
         return 1 if problems else 0
     if args[:1] == ['--check']:
-        rest, previous, release = args[1:], None, False
+        rest, previous, release, since = args[1:], None, False, None
         while rest:
             if rest[0] == '--release':
                 release, rest = True, rest[1:]
             elif rest[0] == '--since' and len(rest) > 1:
-                previous, rest = manifest_at(rest[1]), rest[2:]
+                since, rest = rest[1], rest[2:]
+                try:
+                    previous = manifest_at(since)
+                except ValueError as exc:
+                    sys.stderr.write(f'{exc}\n')
+                    return 1
             else:
                 sys.stderr.write(USAGE)
                 return 2
-        problem = check_published(previous=previous, release=release)
+        problem = check_published(previous=previous, release=release) or check_frozen(since=since)
         if problem:
             sys.stderr.write(problem + '\n')
             return 1

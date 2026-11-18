@@ -22,6 +22,7 @@ import dispatch_registry as registry
 import host_placement
 import launch_values
 import provider_inventory
+import public_data
 import scorer_client
 import subscription_cli
 import turn_refusal
@@ -920,6 +921,9 @@ def cli(args, out, bundle, text):
     if family not in CLI_RUNS:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     next=f'No Paseo daemon and no CLI here for {bundle["provider"]!r}' + native), 0
+    # A value that cannot be one argument refuses this launch here, before anything is written for it.
+    model = launch_values.argument('model', bundle.get('launch_model') or bundle['model'])
+    effort = bundle.get('effort') and launch_values.argument('effort', bundle['effort'])
     if bundle.get('fast'):
         from fast_modes import validate
         import account_fleet
@@ -931,7 +935,7 @@ def cli(args, out, bundle, text):
     env.update(provider_env)
     env.update(AGENTCOMPASS_WORKER='1', ROUTER_PARENT_AGENT_ID=out['parent_id'],
                ROUTER_PARENT_HOST=out['parent_host'], ROUTER_PARENT_ADDRESS=out['parent_address'])
-    run = CLI_RUNS_DIR / f'{time.strftime("%Y%m%d-%H%M%S")}-{bundle["provider"]}-{os.getpid()}'
+    run = CLI_RUNS_DIR / f'{time.strftime("%Y%m%d-%H%M%S")}-{launch_values.path_part(bundle["provider"])}-{os.getpid()}'
     run.mkdir(parents=True, exist_ok=True)
     (run / 'brief.md').write_bytes(text.encode('utf-8'))
     options = {'creationflags': subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP} \
@@ -939,11 +943,12 @@ def cli(args, out, bundle, text):
     prompt_argument = family in PROMPT_ARGUMENT
     try:
         argv = [*cli_command(family, bundle['provider']),
-                *flags(bundle.get('launch_model') or bundle['model'], bundle.get('effort'), cwd, bool(bundle.get('fast')))]
+                *flags(model, effort, cwd, bool(bundle.get('fast')))]
         if family in PROMPT_FILE:
             argv += ['--prompt-file', str(run / 'brief.md')]
         with open(run / 'brief.md', 'rb') as brief, open(run / 'output.txt', 'wb') as stdout, \
                 open(run / 'stderr.txt', 'wb') as stderr:
+            public_data.effect('cli worker launch')
             process = subprocess.Popen(argv + [text] if prompt_argument else argv, cwd=cwd, env=env,
                                        stdin=subprocess.DEVNULL if prompt_argument or family in PROMPT_FILE else brief,
                                        stdout=stdout, stderr=stderr, **options)

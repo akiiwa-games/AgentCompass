@@ -80,9 +80,10 @@ def reference_fleet_path():
 
 def load_accounts(path=None, document=None):
     """The routing fleet: the reference document (``document``, the file at ``path``, else fleet_document()) with
-    discovery and, only for the fleet document itself, the user's own settings layered on top. The reference document's
-    launch values are checked first (launch_problems); a discovered row whose values cannot reach a launch is dropped
-    and named in `_launch_value_errors`."""
+    discovery and, only for the fleet document itself, the user's own settings layered on top. The source document is
+    reference data (the held set, a candidate set, a test fixture) and is checked against the declared launch patterns
+    first (launch_problems). What discovery adds comes from the user's machine and is never dropped by a pattern: each
+    launch site makes its values safe (launch_values)."""
     local = path is None and document is None
     if document is not None:
         source = json.loads(json.dumps(document))
@@ -90,7 +91,7 @@ def load_accounts(path=None, document=None):
         source = json.loads(Path(path).read_text(encoding='utf-8-sig')) if path is not None else fleet_document()
     problems = launch_problems(source)
     if problems:
-        raise ValueError(f'accounts.json has values this code cannot launch: {"; ".join(problems[:5])}')
+        raise public_data.ReferenceDataError(f'accounts.json has values this code cannot launch: {"; ".join(problems[:5])}')
     accounts = accounts_override.normalize(source)
     if local:
         user_doc = accounts_override.load_override(accounts_override_path())
@@ -98,7 +99,6 @@ def load_accounts(path=None, document=None):
             if isinstance(user_doc.get('scoring'), dict):
                 accounts['scoring'] = accounts_override.merge(accounts['scoring'], user_doc['scoring'])
         provider_inventory.apply(accounts)
-        accounts['_launch_value_errors'] = drop_unlaunchable_rows(accounts)
         if user_doc is not None:
             accounts_override.apply(accounts, user_doc)
             for owner, spec in accounts.get('accounts', {}).items():
@@ -331,20 +331,6 @@ def launch_problems(doc):
                 found.append(f'{account}.bundles.{bundle_id} effort {effort!r} is not one the launch contract offers '
                              f'{bundle.get("model")!r} ({", ".join(offered) or "none"})')
     return found
-
-
-def drop_unlaunchable_rows(accounts):
-    """Remove bundle rows (discovered ones: the reference rows were checked before) whose launch values do not match the
-    declared patterns; returns what was dropped, by name."""
-    dropped = []
-    for account, spec in (accounts.get('accounts') or {}).items():
-        rows = spec.get('bundles') if isinstance(spec, dict) else None
-        for bundle_id, bundle in list((rows or {}).items()):
-            problems = launch_values.bundle_problems(account, bundle_id, bundle)
-            if problems:
-                del rows[bundle_id]
-                dropped.extend(problems)
-    return dropped
 
 
 HARNESS_CAPABILITIES = {

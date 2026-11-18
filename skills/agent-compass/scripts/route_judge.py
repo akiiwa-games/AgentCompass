@@ -656,6 +656,9 @@ def plan_stage(document, args):
     if extra_alerts:
         planned.setdefault('alerts', []).extend(extra_alerts)
     _add_plan_alerts(planned, task, capabilities, dot_down)
+    reference_alert = public_data.reference_alert()
+    if reference_alert:
+        planned.setdefault('alerts', []).append(reference_alert)
     if task.get('hours_source') == 'classifier_estimate':
         planned['hours_estimate'] = hours_estimate or {
             'hours': (planned.get('decision', {}).get('task') or {}).get('hours'), 'source': 'caller_profile'}
@@ -838,8 +841,16 @@ def build_parser():
     return parser
 
 
+def render(result, table=False):
+    """The text a stage prints: the plan table, or strict JSON (no NaN or Infinity). The acceptance of a reference set
+    serializes its offline plans with this too (public_data.accept)."""
+    if table:
+        from demo_plan import format_table
+        return format_table(result)
+    return json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
+
+
 def main():
-    import account_fleet
     if sys.argv[1:2] == ['score'] and len(sys.argv) >= 3 and sys.argv[2] in ('set', 'list', 'clear', 'suggest'):
         import user_scores
         return user_scores.cli_main(sys.argv[2:])
@@ -859,85 +870,11 @@ def main():
         public_data.refresh_in_background()
         antigravity_plan.refresh_in_background(state_upgrade.state_dir())
     try:
-        if args.demo and (args.stage != 'plan' or not args.dry_run):
-            raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
-        if not 1 <= args.timeout <= 600:
-            raise ValueError('Timeout must be 1 to 600 seconds.')
-        if not 1 <= args.score_timeout <= 120:
-            raise ValueError('Score timeout must be 1 to 120 seconds.')
-        if args.stage == 'scorer':
-            result, code = scorer_cli(args)
-            print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-            return code
-        if args.stage == 'score':
-            result, code = score_stage(args)
-            print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-            return code
-        if args.can_wait_hours is not None and (not math.isfinite(args.can_wait_hours) or args.can_wait_hours < 0):
-            raise ValueError('--can-wait-hours must be a non-negative number of hours.')
-        if args.stage == 'roll':
-            briefs = args.brief or []
-            if bool(briefs) == (args.task is not None):
-                raise ValueError('roll requires exactly one of --task "<text>" (or --task - for stdin) or --brief <task.md>.')
-            if len(briefs) > 1:
-                result, code = roll.run_batch(args, sys.modules[__name__])
-            else:
-                args.brief = briefs[0] if briefs else None
-                result, code = roll.run(args, sys.modules[__name__])
-        elif args.stage in ('dispatch', 'launch'):
-            if args.dry_run:
-                raise ValueError('Dispatch/launch is a lifecycle operation; use an isolated fake host for tests')
-            result = dispatch_flow.cli(args)
-            code = 1 if result.get('state') in ('failed', 'create_failed') else 0
-        elif args.stage == 'providers':
-            accounts = account_fleet.load_accounts()
-            result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync'),
-                      'public_data': public_data.status()}
-            code = 0
-        elif args.stage == 'usage':
-            result = usage_reading.usage_snapshot(args.usage_cache, args.accounts)
-            result = provider_inventory.merge_usage(result, account_fleet.load_accounts(), datetime.now(timezone.utc), args.accounts)
-            code = 0 if result['read_ok'] else 1
-        elif args.stage == 'override':
-            result = quota_overrides.manage_overrides(args)
-            code = 0
-        elif args.stage == 'record':
-            if args.constraint is None:
-                raise ValueError('record requires --constraint.')
-            result = record_constraint(args)
-            code = 0
-        elif args.stage == 'plan':
-            if args.input is None and args.demo:
-                from demo_plan import sample_document
-                document = sample_document()
-            elif args.input is None:
-                raise ValueError('plan requires --input.')
-            else:
-                document = json.loads(args.input.read_text(encoding='utf-8-sig'))
-            result, code = plan_stage(document, args)
-        else:
-            if args.input is None:
-                raise ValueError('Routing stages require --input.')
-            document = json.loads(args.input.read_text(encoding='utf-8-sig'))
-            payload = subscription_judge.build_request(args.stage, document, args.usage_cache)
-            started = time.monotonic()
-            if args.dry_run:
-                result = payload
-            else:
-                result = decision_ledger.finalize(subscription_judge.evaluate(payload, args.judge, args.timeout), payload, args.judge,
-                                  started, document.get('task'))
-            code = 1 if result.get('source') == 'judge_unavailable' else 0
-        if args.stage == 'plan' and (args.format == 'table' or (args.demo and args.format is None)):
-            from demo_plan import format_table
-            print(format_table(result))
-        else:
-            print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-        return code
+        # A reader failing on a fetched reference set with a data error before this run had an effect (a ledger row, a
+        # reservation, a launch: public_data.effect) runs the stage again on the shipped set; after an effect, for a
+        # refusal or an environment failure, the error is this run's answer (public_data.with_fallback).
+        return public_data.with_fallback(lambda: _run_stage(build_parser().parse_args()))
     except (OSError, ValueError, RuntimeError, TypeError, AttributeError, sqlite3.Error) as exc:
-        if public_data.fall_back(exc):          # a reader failed on a fetched set: run again on the shipped set
-            code = main()
-            public_data.settle()                # records the rejection when the shipped set succeeded
-            return code
         failure = {'error': 'Routing input or local runtime failed', 'error_type': type(exc).__name__}
         if isinstance(exc, (ValueError, scorer_client.ScorerError)):
             # Only fixed texts written in this repository (caller input rules, scorer limits); other errors may carry paths or bodies.
@@ -949,5 +886,80 @@ def main():
         return 1
 
 
+def _run_stage(args):
+    """One stage, from freshly parsed arguments (a re-run gets its own)."""
+    import account_fleet
+    if args.demo and (args.stage != 'plan' or not args.dry_run):
+        raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
+    if not 1 <= args.timeout <= 600:
+        raise ValueError('Timeout must be 1 to 600 seconds.')
+    if not 1 <= args.score_timeout <= 120:
+        raise ValueError('Score timeout must be 1 to 120 seconds.')
+    if args.stage == 'scorer':
+        result, code = scorer_cli(args)
+        print(render(result))
+        return code
+    if args.stage == 'score':
+        result, code = score_stage(args)
+        print(render(result))
+        return code
+    if args.can_wait_hours is not None and (not math.isfinite(args.can_wait_hours) or args.can_wait_hours < 0):
+        raise ValueError('--can-wait-hours must be a non-negative number of hours.')
+    if args.stage == 'roll':
+        briefs = args.brief or []
+        if bool(briefs) == (args.task is not None):
+            raise ValueError('roll requires exactly one of --task "<text>" (or --task - for stdin) or --brief <task.md>.')
+        if len(briefs) > 1:
+            result, code = roll.run_batch(args, sys.modules[__name__])
+        else:
+            args.brief = briefs[0] if briefs else None
+            result, code = roll.run(args, sys.modules[__name__])
+    elif args.stage in ('dispatch', 'launch'):
+        if args.dry_run:
+            raise ValueError('Dispatch/launch is a lifecycle operation; use an isolated fake host for tests')
+        result = dispatch_flow.cli(args)
+        code = 1 if result.get('state') in ('failed', 'create_failed') else 0
+    elif args.stage == 'providers':
+        accounts = account_fleet.load_accounts()
+        result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync'),
+                  'public_data': public_data.status()}
+        code = 0
+    elif args.stage == 'usage':
+        result = usage_reading.usage_snapshot(args.usage_cache, args.accounts)
+        result = provider_inventory.merge_usage(result, account_fleet.load_accounts(), datetime.now(timezone.utc), args.accounts)
+        code = 0 if result['read_ok'] else 1
+    elif args.stage == 'override':
+        result = quota_overrides.manage_overrides(args)
+        code = 0
+    elif args.stage == 'record':
+        if args.constraint is None:
+            raise ValueError('record requires --constraint.')
+        result = record_constraint(args)
+        code = 0
+    elif args.stage == 'plan':
+        if args.input is None and args.demo:
+            from demo_plan import sample_document
+            document = sample_document()
+        elif args.input is None:
+            raise ValueError('plan requires --input.')
+        else:
+            document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+        result, code = plan_stage(document, args)
+    else:
+        if args.input is None:
+            raise ValueError('Routing stages require --input.')
+        document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+        payload = subscription_judge.build_request(args.stage, document, args.usage_cache)
+        started = time.monotonic()
+        if args.dry_run:
+            result = payload
+        else:
+            result = decision_ledger.finalize(subscription_judge.evaluate(payload, args.judge, args.timeout), payload, args.judge,
+                              started, document.get('task'))
+        code = 1 if result.get('source') == 'judge_unavailable' else 0
+    print(render(result, table=args.stage == 'plan' and (args.format == 'table' or (args.demo and args.format is None))))
+    return code
+
+
 if __name__ == '__main__':
-    raise SystemExit(public_data.with_fallback(main))
+    raise SystemExit(main())

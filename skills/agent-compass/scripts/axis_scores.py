@@ -470,9 +470,12 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     anchor = data.get('anchor') or {}
     targets = anchor.get('targets') or {}
     if not anchor.get('model') or set(targets) != set(FIVE_AXES):
-        raise ValueError('five-axis-scores.json names no anchor model or no panel targets for the four categories: the fit '
-                         'has nothing to stand on')
-    require_current_schema(data)
+        raise public_data.ReferenceDataError('five-axis-scores.json names no anchor model or no panel targets for the four '
+                                             'categories: the fit has nothing to stand on')
+    try:
+        require_current_schema(data)
+    except ValueError as exc:
+        raise public_data.ReferenceDataError(str(exc)) from None
     out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor['model'], 'targets': targets,
                          'panel_n': anchor.get('panel_n')}
     pub_manual = public_scores if public_scores is not None else (
