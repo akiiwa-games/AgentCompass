@@ -1068,7 +1068,7 @@ class AaReleasePageTests(unittest.TestCase):
             self.assertEqual(set(headers), {'User-agent'})
             self.assertNotIn(str(Path.home().name), headers['User-agent'])
 
-    def test_a_release_page_is_read_only_when_the_plan_chooses_it_and_never_replaces_a_leaderboard_record(self):
+    def test_a_release_page_is_read_only_when_the_plan_chooses_it_and_only_for_the_base_names_it_chose_it_for(self):
         data, _ = self.fixture(aa_deprecated=('gpt-6-astra',))
         baseline = self.build(data)
         # a page of a release the leaderboard carries (the plan does not ask for it), left in the cache and dated long ago
@@ -1087,7 +1087,7 @@ class AaReleasePageTests(unittest.TestCase):
                 self.assertEqual(set(built['sources']['aa.index']['release_pages']), {wanted})
                 self.assertEqual(built['missing_sources'], baseline['missing_sources'])
                 self.assertEqual(built['models'], baseline['models'])
-        # a chosen page's record of a base name the leaderboard carries does not stand in place of the leaderboard's
+        # a chosen page's record of a base name the plan did not choose it for (here one the leaderboard carries) is not read
         board = sources.aa_records(data)
         self.rewrite_page(data, 'gpt-6-astra', lambda r: r.update(name=board[0]['name'], intelligenceIndex=1.0))
         records = measurements.aa_records_read(data, self.catalogue(data))[0]
@@ -1308,6 +1308,61 @@ class AaReleasePageTests(unittest.TestCase):
         self.assertEqual([e['source'] for e in tier], ['tier.aa_index'])
         self.assertEqual(tier[0]['url'], self.page_url('grok-4.9'))
         self.assertIn(sources.AA_RELEASE_FILE.format('grok-4-9'), built['sources']['tier.aa_index']['release_pages'])
+
+    def test_a_row_the_matcher_resolves_to_another_base_name_than_the_plan_chose_is_a_surfaced_missing_source(self):
+        """Rule: a planned row that resolves to another base name than the plan chose it for is reported, not silent. The
+        release "Foo Free" has a record named "Foo Free Plus (High)": the matcher (which reads `-free` as the same model)
+        resolves the row `foo-free` to `Foo`."""
+        data, _ = self.fixture()
+        listing = (data / 'aa-models.html').read_text(encoding='utf-8')
+        payload = json.loads(json.loads(sources.AA_RSC_PUSH.findall(listing)[0]))
+        shown = [self.release('rx', 'Foo Free', True, ['Foo Free'], '2026-01-01'), self.release('ry', 'Foo', True, [], '2026-01-01')]
+        (data / 'aa-models.html').write_text(rsc_page([*payload, *shown]), encoding='utf-8')
+        manifest_path = data / sources.MANIFEST
+        doc = json.loads(manifest_path.read_text(encoding='utf-8'))
+        for slug, name, value in (('rx', 'Foo Free Plus (High)', 10.0), ('ry', 'Foo (High)', 40.0)):
+            record = {'name': name, 'intelligenceIndex': value, 'release': {'slug': slug, 'name': slug}}
+            page = sources.AA_RELEASE_FILE.format(slug)
+            (data / page).write_text(rsc_page({'models': [record]}), encoding='utf-8')
+            doc['files'][page] = {'url': sources.AA_RELEASE_URL.format(slug), 'fetched_at': self.now.isoformat(), 'status': 'ok'}
+        manifest_path.write_text(json.dumps(doc), encoding='utf-8')
+        built = self.build_with(data, {**self.catalogue(data), 'foo-free': {}, 'foo': {}})
+        row = built['missing_sources']['aa-release-rx.html']
+        self.assertEqual(row['url'], sources.AA_RELEASE_URL.format('rx'))
+        self.assertIn("foo-free resolves to 'Foo', not 'Foo Free'", row['reason'])
+        self.assertNotIn('aa-release-ry.html', built['missing_sources'])
+        read = lambda model: [e for fields in built['models'][model].values() for e in fields if e['source'] == 'aa.index']
+        self.assertEqual([e['listed_as'] for e in read('foo')], ['Foo (High)'])
+
+    def test_a_release_chosen_for_two_base_names_keeps_the_records_of_both(self):
+        releases = [self.release('old', 'Old', True, ['B (High)', 'B2 (High)'], '2026-01-01')]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            (target / 'aa-models.html').write_text(rsc_page(releases), encoding='utf-8')
+            records = [{'name': f'{base} (High)', 'intelligenceIndex': 1.0, 'release': {'slug': 'old', 'name': 'old'}}
+                       for base in ('B', 'B2', 'Other')]
+            (target / 'aa-release-old.html').write_text(rsc_page({'models': records}), encoding='utf-8')
+            (target / sources.MANIFEST).write_text(json.dumps({'files': {'aa-release-old.html': {
+                'url': 'u', 'fetched_at': '2026-11-18T00:00:00+00:00', 'status': 'ok'}}}), encoding='utf-8')
+            read, plan, _, _ = measurements.aa_records_read(target, {'b': {}, 'b2': {}})
+        self.assertEqual(plan, {'b': ('old', 'B'), 'b2': ('old', 'B2')})
+        self.assertEqual(sorted(r['name'] for r in read if 'page' in r), ['B (High)', 'B2 (High)'])        # not 'Other'
+
+    def test_a_fetch_removes_only_release_page_files_among_the_rows_it_drops_and_none_for_a_partial_fetch(self):
+        page, other = sources.AA_RELEASE_FILE.format('old'), 'other.json'
+        row = {'url': 'u', 'fetched_at': '2026-11-01T00:00:00+00:00', 'status': 'ok'}
+        for only in (None, ['aa-models.html']):
+            with self.subTest(only=only), tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp)
+                for name in (page, other):
+                    (target / name).write_text('earlier download', encoding='utf-8')
+                (target / sources.MANIFEST).write_text(json.dumps({'files': {page: row, other: row}}), encoding='utf-8')
+                with patch.object(sources, '_download', lambda jobs, files: None):
+                    sources.fetch(target, only=only)
+                files = json.loads((target / sources.MANIFEST).read_text(encoding='utf-8'))['files']
+                self.assertTrue((target / other).exists())      # a dropped row of another file leaves its file
+                self.assertEqual((target / page).exists(), only is not None)
+                self.assertEqual(sorted(files), sorted([page, other]) if only else [])
 
     def test_every_sub_benchmark_the_pipeline_reads_has_a_field_on_the_release_page(self):
         self.assertLessEqual(set(measurements.AA_SCORE.values()), set(sources.AA_RELEASE_SCORE_FIELD))

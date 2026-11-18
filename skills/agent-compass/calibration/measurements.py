@@ -231,18 +231,15 @@ def aa_records_read(target, models):
     """(records, plan, ambiguous, errors) of the Artificial Analysis records the pipeline reads: the leaderboard page's,
     then those of the release pages `aa_release_plan` chose and the manifest lists as fetched, in every mode (a page
     the plan does not choose is never read, whatever the data directory holds). Of a page only the records of the base
-    names the plan chose that release for are kept, so a base name has the records of one release; a release page's
-    record never stands where the leaderboard has a record the pipeline reads (`aa_variants`) of the same base name.
-    `errors` is `sources.aa_release_records`'."""
+    names the plan chose that release for are kept, so a base name has the records of one release. `errors` is
+    `sources.aa_release_records`'."""
     plan, ambiguous = aa_release_plan(target, models)
     pages, errors = sources.aa_release_records(target, aa_release_files(plan))
     chosen = {}
     for slug, base in plan.values():
         chosen.setdefault(sources.AA_RELEASE_FILE.format(slug), set()).add(base)
-    board = sources.aa_records(target)
-    on_board = set(aa_variants(board))        # the base names the pipeline reads from the leaderboard
-    kept = (r for r in pages if (base := sources.base_name(r['name'])) in chosen[r['page']] and base not in on_board)
-    return [*board, *kept], plan, ambiguous, errors
+    kept = [r for r in pages if sources.base_name(r['name']) in chosen[r['page']]]
+    return [*sources.aa_records(target), *kept], plan, ambiguous, errors
 
 
 class Builder:
@@ -303,13 +300,13 @@ class Builder:
     def release_gaps(self):
         """Surface each release the leaderboard page and the catalogue ask for that cannot be read: the choice between
         releases is ambiguous, the page was never fetched, a record of it has a shape the reader does not know, or it
-        gives a model no reading of its release (no record the matcher finds, or only records without a figure). A
-        page whose fetch failed is a missing manifest row, surfaced with its error by `build`."""
+        gives a model no reading of its release (no record the matcher finds, or only records without a figure), or the
+        matcher resolves the model to another base name than the one the plan chose it for. A page whose fetch failed is a missing manifest row, surfaced with its error by `build`."""
         for model, why in self.release_ambiguous.items():
             self.miss(f'aa.release/{model}', 'aa-models.html', why)
         variants = aa_variants(self.aa_records)
-        found, empty = Matcher(variants), {}
-        for model, (slug, _) in self.release_plan.items():
+        found, empty, wrong = Matcher(variants), {}, {}
+        for model, (slug, planned) in self.release_plan.items():
             name, url = sources.AA_RELEASE_FILE.format(slug), sources.AA_RELEASE_URL.format(slug)
             row = self.manifest.get(name)
             if row is None or (row.get('status') == 'ok' and not (self.target / name).exists()):
@@ -319,11 +316,17 @@ class Builder:
             elif self.ok(name):
                 exp = tiers.listed_as(self.models, model, 'aa')
                 base = found.find(model, exp) or (found.find(model) if exp else None)
-                if not base or not any(sources.aa_has_figure(r) for r in variants[base].values()):
+                if base and base != planned:
+                    wrong.setdefault((name, url), []).append(f'{model} resolves to {base!r}, not {planned!r}, the base name '
+                                                             'the plan chose it for on this page')
+                elif not base or not any(sources.aa_has_figure(r) for r in variants[base].values()):
                     empty.setdefault((name, url), []).append(model)
-        for (name, url), models in empty.items():
-            self.miss(name, name, f'the page carries no reading of its release for {", ".join(models)} (no record of the '
-                                  'planned base name that the matcher finds for it, or none with a figure)', url)
+        for key_ in {*empty, *wrong}:
+            reasons = [*wrong.get(key_, ())]
+            if key_ in empty:
+                reasons.append(f'the page carries no reading of its release for {", ".join(empty[key_])} (no record of the '
+                               'planned base name that the matcher finds for it, or none with a figure)')
+            self.miss(key_[0], key_[0], '; '.join(reasons), key_[1])
 
     @staticmethod
     def select_variants(items):
