@@ -769,6 +769,54 @@ class RouterGateHookTests(unittest.TestCase):
                         with self.subTest(case=case, passed=payload):
                             self.assertNotIn("reason", gate.evaluate_payload(payload, ledger_path=ledger, now=T0))
 
+    def test_a_caller_known_only_by_its_host_session_owns_the_worker_whose_parent_record_runs_that_session(self):
+        # Gate contract (parent-address-gate.md): ownership is proven when every parent label names the caller, by its
+        # Paseo agent ID, by the host session ID its hook payload carries, or as a Paseo agent whose record runs that
+        # session (`persistence.sessionId`). Without such a proof a turn is communication and is not checked.
+        directory = self.state / "agents" / "project"
+        directory.mkdir(parents=True, exist_ok=True)
+        sonnet = {"provider": "claude-lab", "config": {"model": "claude-sonnet-5-5", "thinkingOptionId": "high"}}
+        records = {
+            "parent-agent": {"provider": "claude", "persistence": {"sessionId": "sess-parent"}},
+            "worker-of-parent": {**sonnet, "persistence": {"sessionId": "sess-worker"},
+                                 "labels": {"router.account": "claude-lab", "router.parent_id": "parent-agent"}},
+            "worker-of-session": {**sonnet, "labels": {"router.account": "claude-lab", "router.parent_id": "sess-direct"}},
+            "worker-mixed": {**sonnet, "labels": {"router.account": "claude-lab", "router.parent_id": "parent-agent",
+                                                  "paseo.parent-agent-id": "someone-else"}},
+            "self-labelled": {**sonnet, "persistence": {"sessionId": "sess-self"},
+                              "labels": {"router.account": "claude-lab", "router.parent_id": "self-labelled"}},
+        }
+        for agent_id, doc in records.items():
+            (directory / (agent_id + ".json")).write_text(json.dumps(doc), encoding="utf-8")
+        ledger = self.write_ledger(str(self.state), [self.route("claude-lab", "claude-sonnet-5-5", "high")])
+        real_accounts = gate.load_dispatch_accounts
+
+        def with_legacy():
+            accounts = real_accounts()
+            accounts["accounts"]["claude-lab"]["legacy_meter"] = "old meter fields remain on claude-lab"
+            return accounts
+
+        cases = (   # (target, hook session id, owned: the fact refuses the turn)
+            ("worker-of-parent", "sess-parent", True),      # the parent's record runs the caller's session
+            ("worker-of-session", "sess-direct", True),     # the label names the caller's session itself
+            ("worker-of-parent", "sess-other", False),      # another session: communication
+            ("worker-of-parent", None, False),              # nothing names the caller
+            ("worker-mixed", "sess-parent", False),         # conflicting parent labels prove nothing
+            ("worker-of-parent", "sess-worker", False),     # the worker messaging itself is not its own parent
+            ("self-labelled", "sess-self", False),          # a record naming itself as parent: the caller is the target
+        )
+        with mock.patch.dict(os.environ, {"PASEO_AGENT_ID": ""}), \
+                mock.patch.object(gate, "load_dispatch_accounts", side_effect=with_legacy):
+            for target, session, owned in cases:
+                payload = {"tool_name": "mcp__paseo__send_agent_prompt",
+                           "tool_input": {"agentId": target, "prompt": "continue"},
+                           **({"session_id": session} if session else {})}
+                with self.subTest(target=target, session=session):
+                    result = gate.evaluate_payload(payload, ledger_path=ledger, now=T0)
+                    self.assertEqual("reason" in result, owned, result)
+                    if owned:
+                        self.assertIn("old meter fields remain", result["reason"])
+
     def test_a_native_launch_on_a_refused_record_is_blocked_and_a_named_one_passes(self):
         # A record that its router refused as launch authority (a project rule on an account out of automatic routing,
         # `host_policy_violation`) does not authorize a native launch; the same record as the user's own naming does.
@@ -776,11 +824,14 @@ class RouterGateHookTests(unittest.TestCase):
                                                          "model": "claude-sonnet-5-5"}}
         violation = {"account": "claude", "dispatch_allowed": False, "policy_path": "host-policy.json",
                      "reason": "account claude is out of automatic routing on this host"}
-        for constraint, refused in (("hard_constraint", True), ("user_override", False)):
+        # Decided on the row's constraint: v0.7.0 wrote host_policy_violation on user_override rows too, and those rows
+        # are the user's naming, so they pass with the field present.
+        for constraint, carries, refused in (("hard_constraint", True, True), ("dot_closed_loop", True, True),
+                                             ("user_override", False, False), ("user_override", True, False)):
             row = dict(self.route("claude", "claude-sonnet-5-5", "high"), stage="record", constraint=constraint,
-                       **({"host_policy_violation": violation} if refused else {}))
+                       **({"host_policy_violation": violation} if carries else {}))
             ledger = self.write_ledger(str(self.state), [row])
-            with self.subTest(constraint=constraint):
+            with self.subTest(constraint=constraint, carries=carries):
                 result = gate.evaluate_payload(launch, ledger_path=ledger, now=T0)
                 self.assertEqual("reason" in result, refused, result)
                 if refused:
@@ -2170,14 +2221,14 @@ class ConfiguredRotationThresholdGateTests(unittest.TestCase):
                 return_value={"compactions": 1, "compacted_tokens": 600_000, "context_tokens": 100_000, "historical_context_tokens": 700_000},
             ):
                 self.assertIsNone(
-                    gate.check_worker_compaction_limit(self.wid, paseo_agents_dir=self.agents_dir, home=self.tmp, caller_id="parent-main")
+                    gate.check_worker_compaction_limit(self.wid, paseo_agents_dir=self.agents_dir, home=self.tmp, identities={"parent-main"})
                 )
             with mock.patch.object(
                 worker_sessions,
                 "session_state",
                 return_value={"compactions": 1, "compacted_tokens": 700_000, "context_tokens": 100_000, "historical_context_tokens": 800_000},
             ):
-                reason = gate.check_worker_compaction_limit(self.wid, paseo_agents_dir=self.agents_dir, home=self.tmp, caller_id="parent-main")
+                reason = gate.check_worker_compaction_limit(self.wid, paseo_agents_dir=self.agents_dir, home=self.tmp, identities={"parent-main"})
                 self.assertIsNotNone(reason)
                 self.assertIn("historical_context_tokens=800,000/750,000", reason)
                 self.assertIn("rotate_after_carried_tokens=750,000", reason)
@@ -2185,7 +2236,7 @@ class ConfiguredRotationThresholdGateTests(unittest.TestCase):
         with mock.patch.object(account_fleet, "load_accounts", return_value={"scoring": {}, "accounts": {}}), \
                 mock.patch.object(worker_sessions, "session_state", return_value={"historical_context_tokens": 800_000}):
             with self.assertRaises(KeyError):
-                gate.check_worker_compaction_limit(self.wid, paseo_agents_dir=self.agents_dir, home=self.tmp, caller_id="parent-main")
+                gate.check_worker_compaction_limit(self.wid, paseo_agents_dir=self.agents_dir, home=self.tmp, identities={"parent-main"})
 
 
 if __name__ == "__main__":

@@ -594,10 +594,6 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                 f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({gate_reason}). '
                 'Omit --resume to start a fresh worker.',
             )
-        worker_account = (explicit_worker.get('bundle') or {}).get('account')
-        if not host_policy.account_allowed(host_policy.load_policy(), worker_account):
-            out = dict(out, warnings=[*out.get('warnings', ()), f'{host_policy.outside_routing(worker_account)}; '
-                                      f'worker {explicit_id!r} resumed because --resume named it'])
         selected_bundle = decision.get('selected_bundle') or {}
         if not _bundle_matches_worker(selected_bundle, explicit_worker, same_model):
             routed_id = selected_bundle.get('bundle_id') or selected_bundle.get('id')
@@ -672,6 +668,16 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         outcome = dispatch_fallback.after_refusal(decision['decision_id'], fresh, refused, access=access,
                                                   workspace=workspace, cwd=landing, judge=judge)
         return fallback_result(out, outcome, decision, parent, args)
+    except ValueError as refused:
+        if not explicit_id:
+            raise
+        # A fact about the named worker's own bundle (its row is gone from the configuration, the decision expired):
+        # a blocked result with its reason, never an uncaught exception.
+        return _resume_refusal(
+            out, explicit_id, 'resume_worker_unavailable',
+            f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({refused}). '
+            'Omit --resume to start a fresh worker.',
+        )
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=0)
     if (receipt.get('state') == 'create_failed' or (receipt.get('state') == 'failed' and receipt.get('agent_id'))) \
             and dispatch_fallback.enabled() and judge is not None:
@@ -1154,7 +1160,8 @@ def run(args, judge):
 
 
 def _run(args, judge):
-    """judge is the route_judge module (classify_pinned, record_constraint, plan_stage, scorer_unavailable_result)."""
+    """judge is the route_judge module (classify_pinned, record_constraint, record_resume, plan_stage,
+    scorer_unavailable_result)."""
     text = read_task_text(args)
     if not text.strip():
         raise ValueError('The task is empty.')
@@ -1250,7 +1257,13 @@ def _run(args, judge):
                 },
             }
     with provider_inventory.snapshot():
-        if args.provider or args.model or args.effort:
+        if explicit_id and not (args.provider or args.model or args.effort):
+            # The caller named the worker: its route is the worker's own bundle, not what an automatic plan of this
+            # task would choose (which excludes, for one, an account out of automatic routing).
+            classified = judge.classify_pinned(task, args)
+            decision = (classified['result'] if 'result' in classified else
+                        judge.record_resume(args, task, classified, _resolve_worker_bundle(matched_worker), explicit_id))
+        elif args.provider or args.model or args.effort:
             if not args.basis:
                 raise ValueError('Naming --provider/--model/--effort is a user override; quote the user with --basis.')
             args.constraint = 'user_override'

@@ -184,6 +184,8 @@ class HostPolicyTests(unittest.TestCase):
         result, ledger = self.record()
         self.assertNotIn('host_policy_violation', result)
         self.assertNotIn('host_policy_violation', ledger[-1])
+        # The one field the audit filters on, written by the ledger owner.
+        self.assertEqual(ledger[-1]['outside_automatic_routing'], 'claude')
         self.assertTrue(any(w.startswith('account claude is out of automatic routing on this host')
                             and w.endswith('launched because the user named it in this request')
                             for w in result['warnings']), result.get('warnings'))
@@ -202,8 +204,13 @@ class HostPolicyTests(unittest.TestCase):
                 self.assertEqual(violation['account'], 'claude')
                 self.assertIn('--constraint user_override', violation['reason'])
                 self.assertEqual(ledger[-1]['host_policy_violation'], violation)
+                self.assertNotIn('outside_automatic_routing', ledger[-1])      # refused, so nothing reached past it
                 self.assertFalse(dispatch_registry.decision_record(result['decision_id'])['dispatchable'])
         self.write({**LS, 'allowed_accounts': [*LS['allowed_accounts'], 'claude']})
+        result, ledger = self.record('hard_constraint')
+        self.assertNotIn('outside_automatic_routing', ledger[-1])
+        result, ledger = self.record()
+        self.assertNotIn('outside_automatic_routing', ledger[-1])             # in automatic routing: nothing to mark
         result, _ = self.record('hard_constraint')
         self.assertNotIn('host_policy_violation', result)
         self.assertFalse(any('out of automatic routing' in w for w in result.get('warnings', ())))

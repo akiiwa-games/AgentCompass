@@ -1237,12 +1237,14 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             alloc_task['disable_fast'] = True
         if decision.get('constraint') == 'user_override' and resume_bundle is None:
             alloc_task['pinned_bundle'] = bundle['bundle_id']
-        plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts)
+        named = decision.get('constraint') == 'user_override' or resume_bundle is not None
+        plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts,
+                              named_accounts={bundle['account']} if named else ())
         candidate = candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):
             raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
-        if decision.get('constraint') == 'user_override' or resume_bundle is not None:
+        if named:
             import candidate_eval
             import provider_retry
             # A named model on a held account or model is the probe that can lift the hold (provider_retry);

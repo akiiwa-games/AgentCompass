@@ -227,6 +227,7 @@ def record_constraint(args, task=None, classified=None):
         outside = host_policy.outside_routing(args.account)
         if args.constraint == 'user_override':
             warnings = [f'{outside}; launched because the user named it in this request', *warnings]
+            result['outside_automatic_routing'] = args.account
         else:
             result['host_policy_violation'] = {
                 'account': args.account, 'dispatch_allowed': False, 'policy_path': str(host_policy.policy_path()[0]),
@@ -246,6 +247,44 @@ def record_constraint(args, task=None, classified=None):
         result['_allocation_task'] = {**(task or {}), 'force_fast': True}
     _compare_with_router(result, task, usage, now, chosen, fast_requested, classified)
     return decision_ledger.finalize(result, None, 'auto', started, reviewed_task if classified else task)
+
+
+def record_resume(args, task, classified, bundle, agent_id):
+    """`roll --resume <agent_id>`: the caller named a worker, so the route is that worker's own bundle, whatever an
+    automatic plan would choose for the task (an account out of automatic routing included). The task is classified
+    like any roll (`classify_pinned`) so the turn is priced and reserved; the facts about the worker (busy, worn, a
+    refusing window, leftover meter fields, a model its account no longer offers) are decided where they live: roll's
+    resume checks, the gate's turn check and `dispatch_registry.prepare`. Returns the finalized decision."""
+    started = time.monotonic()
+    import account_fleet
+    accounts = account_fleet.load_accounts()
+    now = datetime.now(timezone.utc)
+    usage = usage_reading.usage_snapshot(args.usage_cache, args.accounts, now)
+    usage = provider_inventory.merge_usage(usage, accounts, now, args.accounts)
+    plan_task = {**classified['task'],
+                 **({'parent_agent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {})}
+    chosen = bundle.get('bundle_id') or bundle.get('id')
+    result = {'stage': 'record', 'choice': 'constraint', 'source': 'explicit_resume', 'constraint': 'explicit_resume',
+              'basis': f'roll --resume {agent_id}', 'selected_bundle': dict(bundle), 'judge': None,
+              'observed_at': now.isoformat(), 'usage': usage, '_allocation_task': plan_task}
+    if classified.get('scorer') is not None:
+        result.update(scorer=classified['scorer'], task_profile=plan_task['profile'])
+    if classified.get('hours_estimate'):
+        result['hours_estimate'] = classified['hours_estimate']
+    if classified.get('alerts'):
+        result['alerts'] = list(classified['alerts'])
+    warnings = []
+    if not host_policy.account_allowed(host_policy.load_policy(), bundle['account']):
+        warnings.append(f"{host_policy.outside_routing(bundle['account'])}; worker {agent_id!r} resumed because "
+                        '--resume named it')
+        result['outside_automatic_routing'] = bundle['account']
+    _compare_with_router(result, plan_task, usage, now, chosen, bool(bundle.get('fast')), classified)
+    if result.get('agrees') is False and result.get('router_choice') not in (None, 'none'):
+        warnings.append(f"Resuming worker {agent_id!r} on its existing bundle {chosen!r} as requested (--resume); "
+                        f"the router would otherwise have chosen {result['router_choice']!r}.")
+    if warnings:
+        result['warnings'] = warnings
+    return decision_ledger.finalize(result, None, 'auto', started, task)
 
 
 def _record_task(args, task):

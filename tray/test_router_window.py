@@ -1759,7 +1759,7 @@ class RotationThresholdEndToEndTests(unittest.TestCase):
 
                 with mock.patch.object(worker_sessions, "session_state", return_value=under_state):
                     self.assertIsNone(
-                        gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, caller_id="parent-e2e")
+                        gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, identities={"parent-e2e"})
                     )
                     plan_under = allocator.plan(
                         dict(task_template, chain={"id": "c-e2e", "coupling": "high", "total_hours": 3,
@@ -1773,7 +1773,7 @@ class RotationThresholdEndToEndTests(unittest.TestCase):
                     self.assertEqual(tray_workers[0]["limit"], 750_000)
 
                 with mock.patch.object(worker_sessions, "session_state", return_value=over_state):
-                    reason = gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, caller_id="parent-e2e")
+                    reason = gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, identities={"parent-e2e"})
                     self.assertIsNotNone(reason)
                     self.assertIn("historical_context_tokens=800,000/750,000", reason)
                     self.assertIn("rotate_after_carried_tokens=750,000", reason)

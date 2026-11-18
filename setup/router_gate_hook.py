@@ -983,16 +983,34 @@ def agent_labels(doc: object) -> dict:
     return doc["labels"] if isinstance(doc, dict) and isinstance(doc.get("labels"), dict) else {}
 
 
-def owns_worker(doc: object, agent_id: str, caller_id: str | None) -> bool:
-    """Only unambiguous persisted parent labels prove ownership."""
+def recorded_sessions(doc: object) -> set[str]:
+    """The provider session a Paseo agent record says the agent runs (`persistence.sessionId`, `runtimeInfo.sessionId`):
+    the ID that agent's harness reports to its hooks as `session_id`."""
+    if not isinstance(doc, dict):
+        return set()
+    return {str(part.get("sessionId")) for part in (doc.get("persistence"), doc.get("runtimeInfo"))
+            if isinstance(part, dict) and part.get("sessionId")}
+
+
+def is_caller(agent_id: str, identities: set[str], paseo_agents_dir: Path | None = None) -> bool:
+    """The Paseo agent `agent_id` is the calling session: its ID is one of the caller's identities, or its record's
+    provider session is (a Paseo-hosted caller whose hook carries only its host session ID)."""
+    return agent_id in identities or bool(recorded_sessions(load_paseo_agent(agent_id, paseo_agents_dir)) & identities)
+
+
+def owns_worker(doc: object, agent_id: str, identities: set[str], paseo_agents_dir: Path | None = None) -> bool:
+    """Only unambiguous persisted parent labels prove ownership: every parent label names the caller (`is_caller`), and
+    the target is not the caller itself. `identities` are the caller's IDs (`caller_identities`)."""
     labels = agent_labels(doc)
     parents = [labels.get(key) for key in ("router.parent_id", "paseo.parent-agent-id") if labels.get(key)]
-    return bool(caller_id and agent_id != caller_id and parents and all(parent == caller_id for parent in parents))
+    return bool(identities and parents and agent_id not in identities and not (recorded_sessions(doc) & identities)
+                and all(is_caller(parent, identities, paseo_agents_dir) for parent in parents))
 
 
-def owns_running_worker(doc: object, agent_id: str, caller_id: str | None) -> bool:
+def owns_running_worker(doc: object, agent_id: str, identities: set[str], paseo_agents_dir: Path | None = None) -> bool:
     """A parent can control an existing turn; unknown state cannot authorize one."""
-    return owns_worker(doc, agent_id, caller_id) and doc.get("status", doc.get("lastStatus")) == "running"
+    return (owns_worker(doc, agent_id, identities, paseo_agents_dir)
+            and doc.get("status", doc.get("lastStatus")) == "running")
 
 
 def caller_parent_ids(caller_id: str | None, paseo_agents_dir: Path | None = None) -> set[str]:
@@ -1059,12 +1077,14 @@ def check_worker_compaction_limit(
     agent_id: str | None,
     paseo_agents_dir: Path | None = None,
     home: Path | None = None,
-    caller_id: str | None = None,
+    identities: set[str] | None = None,
 ) -> str | None:
     """Block a parent's new turn to its own idle worker at the configured historical-token rotation threshold. A message
-    to an agent the caller does not own is communication, and control of the caller's own running turn passes."""
+    to an agent the caller does not own is communication, and control of the caller's own running turn passes.
+    `identities` are the caller's IDs (`caller_identities`)."""
+    ids = identities or set()
     doc = load_paseo_agent(agent_id, paseo_agents_dir) if agent_id else None
-    if not owns_worker(doc, agent_id, caller_id) or owns_running_worker(doc, agent_id, caller_id):
+    if not owns_worker(doc, agent_id, ids, paseo_agents_dir) or owns_running_worker(doc, agent_id, ids, paseo_agents_dir):
         return None
     base = paseo_agents_dir or Path(os.environ.get("ROUTER_PASEO_AGENTS_DIR", DEFAULT_PASEO_AGENTS))
     home_dir = home or (base.parents[1] if base.name == "agents" and base.parent.name == ".paseo" else base.parent)
@@ -1168,10 +1188,11 @@ def check_own_worker_legacy(target: dict, account: str | None, accounts: dict | 
 
 
 def check_route_authority(row: dict, trigger: str) -> str | None:
-    """A native launch matched to a record its own router refused as launch authority: a project rule
-    (`hard_constraint`) on an account outside this host's automatic routing (`host_policy_violation`)."""
+    """A native launch matched to a record that is not the user's own naming (`hard_constraint`, `dot_closed_loop`) on
+    an account outside this host's automatic routing (`host_policy_violation`). Decided on the row's constraint: a
+    `user_override` row is launch authority whatever else it carries (v0.7.0 wrote the field on those rows too)."""
     violation = row.get("host_policy_violation")
-    if not isinstance(violation, dict):
+    if row.get("constraint") == "user_override" or not isinstance(violation, dict):
         return None
     return (f"[Router Gate] 拦截 ({trigger})：{violation.get('reason')}。"
             f"这条 {row.get('constraint')} 记录不是启动授权：项目规则不覆盖本机的自动派发开关。"
@@ -1533,6 +1554,8 @@ def evaluate_payload(
     tool_name = base_tool_name(tool_name)
     caller_id = str(payload.get("parent_agent_id") or payload.get("callerAgentId")
                     or os.environ.get("PASEO_AGENT_ID") or "").strip() or None
+    # Who the caller is, for ownership: its Paseo agent ID and the host session ID its hook payload carries.
+    identities = caller_identities(payload, caller_id)
 
     calls = wrapped_agent_calls(tool_name, tool_input) or [(tool_name, tool_input)]
     calls.extend(cli_turn_calls(tool_name, tool_input))
@@ -1556,11 +1579,11 @@ def evaluate_payload(
     executing = []
     for name, args in calls:
         if (name == "send_agent_prompt"
-                and caller_id and args.get("notifyOnFinish") is False):
+                and identities and args.get("notifyOnFinish") is False):
             for agent_id in detect_target_agent_ids(name, args):
                 # Only persisted ownership proves direction; absent/conflicting
                 # labels or caller identity leave this notification check open.
-                if owns_worker(load_paseo_agent(agent_id, paseo_agents_dir), agent_id, caller_id):
+                if owns_worker(load_paseo_agent(agent_id, paseo_agents_dir), agent_id, identities, paseo_agents_dir):
                     return format_response(False, harness_kind,
                         '[Router Gate] Parent-to-worker send_agent_prompt must keep completion '
                         'notifications enabled. Set notifyOnFinish: true or omit it; completion '
@@ -1586,14 +1609,15 @@ def evaluate_payload(
             targets = [launch_target(name, args, trigger)]
         else:
             # The gate governs dispatch, not communication. A turn is dispatch only when it hands more work to the
-            # caller's own idle worker (persisted parent labels prove it, `owns_worker`); a message to any other agent,
+            # caller's own idle worker (persisted parent labels name the caller, `owns_worker`); a message to any other agent,
             # an ancestor, or an agent whose ownership cannot be proven is communication and passes unchecked, and
             # control of the caller's own running turn passes too.
             docs = {agent_id: load_paseo_agent(agent_id, paseo_agents_dir)
                     for agent_id in detect_target_agent_ids(name, args) or detect_target_agent_ids(tool_name, tool_input)
                     if agent_id not in upward}
             agent_ids = [agent_id for agent_id, doc in docs.items()
-                         if owns_worker(doc, agent_id, caller_id) and not owns_running_worker(doc, agent_id, caller_id)]
+                         if owns_worker(doc, agent_id, identities, paseo_agents_dir)
+                         and not owns_running_worker(doc, agent_id, identities, paseo_agents_dir)]
             targets = [dict(target_spec(docs[agent_id], agent_labels(docs[agent_id])), agent_id=agent_id,
                             dispatch_id=agent_labels(docs[agent_id]).get("router.dispatch_id")) for agent_id in agent_ids]
         dispatch_id = args.get("labels", {}).get("router.dispatch_id") if isinstance(args.get("labels"), dict) else None
@@ -1624,7 +1648,7 @@ def evaluate_payload(
         if not trigger:
             for agent_id in agent_ids:
                 compaction_reason = check_worker_compaction_limit(
-                    agent_id, paseo_agents_dir=paseo_agents_dir, caller_id=caller_id
+                    agent_id, paseo_agents_dir=paseo_agents_dir, identities=identities
                 )
                 if compaction_reason:
                     return format_response(False, harness_kind, compaction_reason)

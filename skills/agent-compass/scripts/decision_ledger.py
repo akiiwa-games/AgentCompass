@@ -256,6 +256,10 @@ def finalize(result, payload, requested, started, task=None, records=None):
         **({'trigger': result['trigger']} if result.get('trigger') else {}),
         **({'reason_category': result['reason_category']} if result.get('reason_category') else {}),
         **({'host_policy_violation': result['host_policy_violation']} if 'host_policy_violation' in result else {}),
+        # The account a launch reached past this host's automatic-routing switch (a named route or an explicit
+        # resume): the one field the daily audit filters on.
+        **({'outside_automatic_routing': result['outside_automatic_routing']}
+           if result.get('outside_automatic_routing') else {}),
         'judge': (judge or {}).get('model'), 'judge_pinned': requested != 'auto' if judge else None,
         'bundle': {k: bundle.get(k) for k in ('provider', 'account', 'model', 'effort', 'bundle_id', 'expected_usd', 'fast')
                    if bundle.get(k) is not None} if bundle else None,

@@ -248,7 +248,8 @@ class RefusalFixesWorkWhenFollowedTests(unittest.TestCase):
             with self.assertRaises(host_policy.HostPolicyError) as caught:
                 host_policy.load_policy()
             self.assertEqual(str(caught.exception), state_upgrade.check_host_policy(path))
-            self.assertIn('every account is allowed again', str(caught.exception))
+            self.assertIn('which accounts take part in automatic routing on this machine; every account does again',
+                          str(caught.exception))
             self.assertNotIn('re-toggle', str(caught.exception))
             path.write_text(json.dumps({'allowed_accounts': ['acct-a']}), encoding='utf-8')          # edit
             self.assertEqual(host_policy.load_policy(), {'allowed_accounts': ['acct-a']})
