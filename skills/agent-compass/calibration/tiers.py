@@ -202,7 +202,7 @@ class Fitter:
         self.aa_read = read
         self.overall = arena_high_rows(sources.arena_rows(target, 'text_style_control', 'overall'))
         self.anchor_raw, self.sd = self.overall_scale(self.overall, anchor_name)
-        self.aa = aa_high_index(sources.aa_records(target))
+        self.aa = aa_high_index(sources.aa_all_records(target))
         self.maps = {'aa.index': self.board_map(self.aa)}
 
     @staticmethod

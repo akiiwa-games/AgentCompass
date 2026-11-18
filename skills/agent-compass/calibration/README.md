@@ -23,7 +23,7 @@ The router scores a model on **four capability categories** (`creativity`, `codi
 
 | Script | What it does |
 | :--- | :--- |
-| `sources.py fetch` | Downloads LMArena (`lmarena-ai/leaderboard-dataset`), Design Arena (`website`, `3d`, `svg`), Artificial Analysis (`aa-models.html`), OpenRouter models, and the community capacity pages (`community.py`), writing `fetch-manifest.json` (url, fetch time, sha256 per file). `--only FILE` refetches single files. |
+| `sources.py fetch` | Downloads LMArena (`lmarena-ai/leaderboard-dataset`), Design Arena (`website`, `3d`, `svg`), Artificial Analysis (`aa-models.html`), OpenRouter models, and the community capacity pages (`community.py`), writing `fetch-manifest.json` (url, fetch time, sha256 per file). `--only FILE` refetches single files. The Artificial Analysis leaderboard page embeds records only for releases it does not mark deprecated; `refresh.py` also fetches (`sources.fetch_releases`), one page each as `aa-release-<slug>.html`, the release page of every catalogue model that no leaderboard record matches but a deprecated release is listed under (`measurements.aa_release_pages`, derived from the fetched page and the `listed_as` names, never a list of models). `sources.aa_release_record` reads such a page's records into the leaderboard's record shape; each reading made from one cites that page's url, and a page that cannot be fetched is a missing source, never an older copy. |
 | `tiers.py [ids]` | Reads each model's tier off the `arena.ai` Overall board through the six anchor rows; models that board does not list get `tier.aa_index`. |
 | `series.py` | Library: same-series siblings and `same_model` links; picks the nearest base on the AA Intelligence Index, shared board readings, or tier. |
 | `measurements.py` | Writes `references/public-measurements.json`: panel standard scores (`z` and AA `z_by_effort`), structural and statistical data-hygiene checks, `usd_per_hour`, list prices, image input, and fast-mode multipliers. |
@@ -42,7 +42,7 @@ agentcompass data refresh --no-fetch --accept-panel-change   # write a rebuild w
 
 Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`.
 
-One command runs the full chain in topological order: `sources.py fetch` (skipped with `--no-fetch`) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> `public_data.py manifest --write` -> validation (`public-data` checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
+One command runs the full chain in topological order: `sources.py fetch` plus the Artificial Analysis release pages (skipped with `--no-fetch`) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> `public_data.py manifest --write` -> validation (`public-data` checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
 
 ## To add a model or a score
 

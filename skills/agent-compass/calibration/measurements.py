@@ -171,6 +171,46 @@ class Matcher:
         return next((self.by_key[k] for k in candidates(model) if k in self.by_key), None)
 
 
+def aa_variants(records):
+    """{base name: {effort: record}} for AA listings whose variant tag is an effort or a date only."""
+    out = {}
+    for rec in records:
+        tag = sources.variant(rec['name'])
+        parts = [p.strip().lower() for p in tag.split(',') if p.strip()]
+        allowed = all(p in sources.EFFORT_WORDS or p in ('default fallback', 'with fallback') or re.fullmatch(r'\d{4}', p)
+                      for p in parts)
+        if not allowed:
+            continue
+        out.setdefault(sources.base_name(rec['name']), {})[sources.aa_effort(rec['name'])] = rec
+    return out
+
+
+def aa_release_pages(target, models):
+    """{file name: url} of the Artificial Analysis release pages to fetch. The leaderboard page embeds records only for
+    releases AA does not mark deprecated, and names a deprecated release without records. A catalogue model that no
+    leaderboard record matches, but that a deprecated release is listed under, is read from that release's own page:
+    the same matcher and `listed_as` as every board, over the release's listings (`modelNames`, else its name). A base
+    name more than one deprecated release lists takes the most recently released one."""
+    on_page = Matcher(aa_variants(sources.aa_records(target)))
+    listed = {}
+    for release in sources.aa_releases(target):
+        if release.get('deprecated') is True:
+            for listing in release.get('modelNames') or [release['name']]:
+                listed.setdefault(sources.base_name(listing), {})[release['slug']] = str(release.get('releaseDate') or '')
+    off_page = Matcher(listed)
+    models = {m: row for m, row in models.items() if isinstance(row, dict)}     # accounts.json `models` holds notes too
+    pages = {}
+    for model in models:
+        exp = tiers.listed_as(models, model, 'aa')
+        if on_page.find(model, exp) or (exp and on_page.find(model)):
+            continue
+        base = off_page.find(model, exp) or (off_page.find(model) if exp else None)
+        if base:
+            slug = max(listed[base], key=lambda s: (listed[base][s], s))
+            pages[sources.AA_RELEASE_FILE.format(slug)] = sources.AA_RELEASE_URL.format(slug)
+    return pages
+
+
 class Builder:
     def __init__(self, target, acc, now=None):
         self.target, self.acc, self.now = target, acc, now
@@ -187,6 +227,10 @@ class Builder:
     def ok(self, filename):
         return (self.manifest.get(filename) or {}).get('status') == 'ok' and (self.target / filename).exists()
 
+    def aa_release_rows(self):
+        """{file name: manifest row} of the Artificial Analysis release pages fetched."""
+        return {n: r for n, r in self.manifest.items() if sources.AA_RELEASE_NAME.fullmatch(n) and r.get('status') == 'ok'}
+
     def register(self, source, filename, as_of, method, count, note=None):
         row = self.manifest.get(filename) or {}
         self.source_rows[source] = {'file': filename, 'url': row.get('url'), 'fetched_at': row.get('fetched_at'),
@@ -194,6 +238,21 @@ class Builder:
                                     'as_of_kind': 'data date' if as_of else 'fetch date (the source publishes no data date)',
                                     'method': method, 'models_listed': count, 'kind': SOURCE_KIND.get(source, 'benchmark'),
                                     **({'note': note} if note else {})}
+        pages = self.aa_release_rows() if filename == 'aa-models.html' else {}
+        if pages:       # the release pages are read with the leaderboard: the source is as old as the oldest of its files
+            self.source_rows[source]['release_pages'] = {n: {k: r.get(k) for k in ('url', 'fetched_at', 'sha256')}
+                                                         for n, r in pages.items()}
+            self.source_rows[source]['as_of'] = min(self.source_rows[source]['as_of'],
+                                                    *(r['fetched_at'][:10] for r in pages.values()))
+
+    def cite(self, rec):
+        """Where one AA record was read, for the entry made from it: the url and fetch time of its release page. A
+        leaderboard record carries no `page`; its source row says."""
+        page = rec.get('page')
+        if page is None:
+            return {}
+        row = self.manifest[page]
+        return {'url': row['url'], 'fetched_at': row['fetched_at'], 'as_of': row['fetched_at'][:10]}
 
     def add(self, model, field, source, value, method, **extra):
         meta = self.source_rows[source]
@@ -201,9 +260,21 @@ class Builder:
                  'as_of': meta['as_of'], 'fetched_at': meta['fetched_at'], 'url': meta['url'], 'method': method, **extra}
         self.out[model].setdefault(field, []).append(entry)
 
-    def miss(self, source, filename, reason):
+    def miss(self, source, filename, reason, url=None):
         self.missing[source] = {'file': filename, 'reason': reason,
-                                'url': (self.manifest.get(filename) or {}).get('url') or sources.PAGES.get(filename)}
+                                'url': url or (self.manifest.get(filename) or {}).get('url') or sources.PAGES.get(filename)}
+
+    def release_gaps(self):
+        """Surface each release page `aa_release_pages` wants that cannot be read: never fetched, or carrying no record
+        of its release. A page whose fetch failed is a missing manifest row, surfaced with its error by `build`."""
+        if not self.ok('aa-models.html'):
+            return
+        read = {rec['page'] for rec in sources.aa_release_records(self.target)}
+        for name, url in aa_release_pages(self.target, self.models).items():
+            if name not in self.manifest:
+                self.miss(name, name, 'not fetched; run `agentcompass data refresh`', url)
+            elif self.ok(name) and name not in read:
+                self.miss(name, name, 'the page carries no record of its release', url)
 
     @staticmethod
     def select_variants(items):
@@ -295,9 +366,9 @@ class Builder:
         if self.ok('aa-models.html'):
             variants = self.aa_variants()
             for src in [*AA_SCORE, AA_TTFA]:
-                board, by_effort, listed = {}, {}, {}
+                board, by_effort, listed, extra = {}, {}, {}, {}
                 for base, recs in variants.items():
-                    vals = {(eff or 'default'): (v, rec['name']) for eff, rec in recs.items()
+                    vals = {(eff or 'default'): (v, rec) for eff, rec in recs.items()
                             if (v := self.aa_value(src, rec)) is not None}
                     if not vals:
                         continue
@@ -306,10 +377,11 @@ class Builder:
                             'default' if 'default' in vals else
                             min(routable, key=lambda e: (abs(EFFORT_RANK[e] - EFFORT_RANK['high']), -EFFORT_RANK[e])) if routable else
                             next(iter(vals)))
-                    board[base], listed[base] = vals[pick][0], vals[pick][1]
+                    board[base], listed[base] = vals[pick][0], vals[pick][1]['name']
+                    extra[base] = self.cite(vals[pick][1])
                     by_effort[base] = {e: round(v, 6) for e, (v, _) in vals.items()}
                 what = ('time to first answer token, read as -ln(seconds)' if src == AA_TTFA else f'`{AA_SCORE[src]}`')
-                out[src] = {'board': board, 'as_of': None, 'strip': None, 'listed': listed, 'extra': {},
+                out[src] = {'board': board, 'as_of': None, 'strip': None, 'listed': listed, 'extra': extra,
                             'by_effort': by_effort,
                             'method': f'Artificial Analysis {what}, every listed effort; the score is the High row (else the only listing)'}
         else:
@@ -333,16 +405,7 @@ class Builder:
 
     def aa_variants(self):
         """{base name: {effort: record}} for AA listings whose variant tag is an effort or a date only."""
-        out = {}
-        for rec in sources.aa_records(self.target):
-            tag = sources.variant(rec['name'])
-            parts = [p.strip().lower() for p in tag.split(',') if p.strip()]
-            allowed = all(p in sources.EFFORT_WORDS or p in ('default fallback', 'with fallback') or re.fullmatch(r'\d{4}', p)
-                          for p in parts)
-            if not allowed:
-                continue
-            out.setdefault(sources.base_name(rec['name']), {})[sources.aa_effort(rec['name'])] = rec
-        return out
+        return aa_variants(sources.aa_all_records(self.target))
 
     def capabilities(self):
         boards, raw, names = self.boards(), {}, {}
@@ -382,7 +445,8 @@ class Builder:
                 self.add(model, axis, src, round((x - sc['anchor_raw']) / sc['sd'], 4), f"{b['method']}; {how}",
                          facet=facet, listed_as=listed, raw=round(x, 6), **extra)
                 if src in IMAGE_BENCHMARKS:
-                    self.add(model, 'image_input', src, True, f"{b['method']}: measured on image input", listed_as=listed)
+                    self.add(model, 'image_input', src, True, f"{b['method']}: measured on image input", listed_as=listed,
+                             **{k: extra[k] for k in ('url', 'fetched_at', 'as_of') if k in extra})
         self.conflicts = []
         iso_date = re.compile(r'^\d{4}-\d{2}-\d{2}$')
         for model, info in self.models.items():
@@ -524,6 +588,7 @@ class Builder:
                       'arena.ai Overall High scale through the models listed at High on both boards',
                       len(fitter.aa))
         arena, aa = Matcher(overall), Matcher(fitter.aa)
+        release_rec = {sources.base_name(r['name']): r for r in sources.aa_release_records(self.target)}
         for model in self.models:
             explicit = tiers.listed_as(self.models, model, 'arena')
             found = arena.find(model, explicit) or (arena.find(model) if explicit else None)
@@ -542,7 +607,8 @@ class Builder:
                                  f"{r['board']} {r['value']:g} at High interpolated onto the arena.ai Overall High scale "
                                  f"between {r['neighbours']['below']['models']} and {r['neighbours']['above']['models']} "
                                  f"of the {r['n']} models listed at High on both boards",
-                                 listed_as=r['listed_as'], board_value=r['value'], neighbours=r['neighbours'], n=r['n'])
+                                 listed_as=r['listed_as'], board_value=r['value'], neighbours=r['neighbours'], n=r['n'],
+                                 **self.cite(release_rec.get(aa_found, {})))
 
     # --- price and usd per hour ------------------------------------------------------------------
     def usd(self):
@@ -569,7 +635,7 @@ class Builder:
                 if t or (isinstance(speed, (int, float)) and speed > 0):
                     self.add(model, 'throughput', 'aa.cost_time', round(t / 60.0, 3) if t else None,
                              'AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)',
-                             effort=eff or 'default', listed_as=rec['name'],
+                             effort=eff or 'default', listed_as=rec['name'], **self.cite(rec),
                              time_per_task_s=round(t, 2) if t else None,
                              time_per_task_min=round(t / 60.0, 3) if t else None,
                              output_tps=round(speed, 2) if isinstance(speed, (int, float)) and speed > 0 else None)
@@ -587,7 +653,7 @@ class Builder:
             price = {k: rec.get(src) for k, src in (('input', 'price1mInputTokens'), ('output', 'price1mOutputTokens'),
                                                     ('cache_read', 'cacheHitPrice')) if isinstance(rec.get(src), (int, float))}
             if price:
-                self.add(model, 'price', 'aa.price', price, 'USD per million tokens', listed_as=rec['name'])
+                self.add(model, 'price', 'aa.price', price, 'USD per million tokens', listed_as=rec['name'], **self.cite(rec))
         panel_models = (getattr(self, 'panel_doc', None) or {}).get('models') or []
         idx_panel = [m for m in panel_models if m in idx_high]
         idx_scale = None
@@ -602,7 +668,7 @@ class Builder:
                 extra_idx['z_by_effort'] = {e: round((v - idx_scale['anchor_raw']) / idx_scale['sd'], 4) for e, v in vals.items()}
                 extra_idx['z'] = round((val - idx_scale['anchor_raw']) / idx_scale['sd'], 4)
             self.add(model, 'intelligence_index', 'aa.index', round(val, 2), 'AA Intelligence Index, every listed effort',
-                     listed_as=rec['name'], **extra_idx)
+                     listed_as=rec['name'], **self.cite(rec), **extra_idx)
         if self.ok('openrouter-models.json'):
             table = sources.openrouter(self.target)
             self.register('openrouter.price', 'openrouter-models.json', None, 'OpenRouter /api/v1/models pricing (USD per million tokens)', len(table))
@@ -710,6 +776,7 @@ class Builder:
                           {'what': 'community token mix', 'source': mix['source'], 'url': mix['url'], 'as_of': mix['as_of'],
                            'quotes': mix['quotes']}]}
         variants = self.aa_variants()
+        pages = {}
         for model, base in self.names.items():
             base = base.get('aa.cost_time')
             if not base:
@@ -721,12 +788,18 @@ class Builder:
                     continue
                 p_out, p_in, p_cr = prices
                 per_m_output = p_out + per_out['input'] * p_in + per_out['cache_read'] * p_cr
+                cite = self.cite(rec)       # the as_of of this source stays the older of the mix and the AA dates
+                if cite:
+                    pages[rec['page']] = cite
                 self.add(model, 'usd_per_hour', 'derived.community_mix', round(speed * 3600 / 1e6 * per_m_output, 3),
                          'AA output speed x community token mix at AA list prices', effort=eff or 'default',
                          listed_as=rec['name'], output_tokens_per_hour=round(speed * 3600),
                          usd_per_million_output_at_mix=round(per_m_output, 3),
                          prices={'output': p_out, 'input': p_in, 'cache_read': p_cr}, mix_source=mix['source'],
-                         mix_as_of=mix['as_of'])
+                         mix_as_of=mix['as_of'], **{k: v for k, v in cite.items() if k != 'as_of'})
+        self.source_rows['derived.community_mix']['citations'][1:1] = [
+            {'what': 'output speed and list prices (release page)', 'source': 'aa.price', 'url': c['url'], 'as_of': c['as_of']}
+            for _, c in sorted(pages.items())]
 
     def fast_mode(self):
         """Cited vendor fast-mode price and speed multipliers and vendor API pricing (round 11, user 2026-11-10): the
@@ -755,6 +828,7 @@ class Builder:
                      'USD per million tokens (Anthropic API pricing documentation)', listed_as=model)
 
     def build(self):
+        self.release_gaps()
         self.tier()
         self.capabilities()
         self.usd()

@@ -7,6 +7,10 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
   sub-boards, Text (style control), Vision.
 - Artificial Analysis models leaderboard (HTML): Intelligence Index per model variant, including effort variants, and
   the page's embedded model records (cost and time per task, time to first answer token, prices, sub-benchmarks).
+  The page embeds records only for releases Artificial Analysis does not mark deprecated; a deprecated release is named
+  without records. Its own page (`https://artificialanalysis.ai/models/<slug>`, one per release a catalogue model is
+  listed under, chosen by `measurements.aa_release_pages`, fetched by `fetch_releases`) embeds the same figures in
+  another shape, which `aa_release_records` reads into the leaderboard's record shape.
 - Design Arena leaderboards (designarena.ai; blind human votes, Bradley-Terry ratings): Website, 3D Design and SVG.
   The page embeds each board's rows (`modelId`, wins, losses, battles, rating) and the model list (id, display name).
 - OpenRouter `/api/v1/models` (prices and input modalities).
@@ -17,6 +21,8 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
 
 `fetch` writes `fetch-manifest.json` beside the downloads: each file's url, fetched_at (UTC), sha256 and size, or the
 error when a source could not be fetched. A source that fails is recorded as missing, never replaced by an older copy.
+The Artificial Analysis release pages are fetched by `fetch_releases` (`agentcompass data refresh` runs it after `fetch`)
+into the same directory and manifest, as `aa-release-<slug>.html`, under the same rule.
 """
 import argparse
 import bisect
@@ -55,9 +61,14 @@ COMMUNITY_PAGES = {'community-wokey-claude.html': 'https://wokey.ai/claude-usage
                    'vendor-anthropic-max.html': 'https://support.claude.com/en/articles/11049741-what-is-the-max-plan',
                    'vendor-openai-pro100.html': 'https://community.openai.com/t/introducing-new-100-month-pro-tier/1378752'}
 PAGES.update(COMMUNITY_PAGES)
+AA_SLUG = r'[A-Za-z0-9][A-Za-z0-9._-]*'     # a release slug as the site writes it; it becomes part of a url and a file name
+AA_RELEASE_URL = 'https://artificialanalysis.ai/models/{}'      # one Artificial Analysis release page, by release slug
+AA_RELEASE_FILE = 'aa-release-{}.html'
+AA_RELEASE_NAME = re.compile(rf'aa-release-(?P<slug>{AA_SLUG})\.html')     # the file name AA_RELEASE_FILE gives a slug
 MANIFEST = 'fetch-manifest.json'
 REPO = Path(__file__).resolve().parents[1]
 ACCOUNTS = REPO / 'references' / 'accounts.json'
+AGENT = {'User-Agent': 'Mozilla/5.0 (agentcompass calibration)'}
 
 
 def data_dir(arg=None, *, create=True):
@@ -67,20 +78,12 @@ def data_dir(arg=None, *, create=True):
     return path
 
 
-def fetch(target, only=None):
-    """Download every source (or the file names in `only`, keeping the other manifest rows as they are)."""
-    agent = {'User-Agent': 'Mozilla/5.0 (agentcompass calibration)'}
-    jobs = [(HF.format(b), target / f'{b}.parquet') for b in ARENA_BOARDS] + [(u, target / n) for n, u in PAGES.items()]
-    known = dict(manifest(target)) if (target / MANIFEST).exists() else {}
-    # Boards transcribed from the user's browser (arena_capture.py) are imported, not fetched: a fetch keeps their rows.
-    files = {n: r for n, r in known.items() if r.get('kind') == 'transcribed'}
-    if only:
-        jobs = [(u, p) for u, p in jobs if p.name in set(only)]
-        files = known
+def _download(jobs, files):
+    """Download each `(url, path)` and record its manifest row in `files`; a failed download deletes the file."""
     for url, path in jobs:
         stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=agent), timeout=60) as resp:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=AGENT), timeout=60) as resp:
                 body = resp.read()
         except Exception as exc:     # a failed source is recorded as missing; its stale copy must not be read
             path.unlink(missing_ok=True)
@@ -91,7 +94,34 @@ def fetch(target, only=None):
         files[path.name] = {'url': url, 'fetched_at': stamp, 'status': 'ok', 'bytes': len(body),
                             'sha256': hashlib.sha256(body).hexdigest()}
         print(f'{path.name:36s} {len(body):>9} bytes  {url}')
+
+
+def fetch(target, only=None):
+    """Download every source (or the file names in `only`, keeping the other manifest rows as they are)."""
+    jobs = [(HF.format(b), target / f'{b}.parquet') for b in ARENA_BOARDS] + [(u, target / n) for n, u in PAGES.items()]
+    known = dict(manifest(target)) if (target / MANIFEST).exists() else {}
+    # Boards transcribed from the user's browser (arena_capture.py) are imported, not fetched: a fetch keeps their rows.
+    files = {n: r for n, r in known.items() if r.get('kind') == 'transcribed'}
+    if only:
+        jobs = [(u, p) for u, p in jobs if p.name in set(only)]
+        files = known
+    _download(jobs, files)
     (target / MANIFEST).write_text(json.dumps({'files': files}, indent=1), encoding='utf-8')
+
+
+def fetch_releases(target, pages):
+    """Download the Artificial Analysis release pages `pages` ({file name: url}, from `measurements.aa_release_pages`)
+    beside the other sources, keeping every other manifest row. A release page the manifest or the directory holds
+    that is not in `pages` is removed: the pages read are exactly the ones just fetched."""
+    files = dict(manifest(target))
+    stale = {n for n in {p.name for p in target.glob(AA_RELEASE_FILE.format('*'))} | set(files)
+             if AA_RELEASE_NAME.fullmatch(n) and n not in pages}
+    for name in stale:
+        (target / name).unlink(missing_ok=True)
+        files.pop(name, None)
+    _download([(url, target / name) for name, url in pages.items()], files)
+    (target / MANIFEST).write_text(json.dumps({'files': files}, indent=1), encoding='utf-8')
+
 
 
 def manifest(target):
@@ -141,6 +171,31 @@ EFFORT_WORDS = {'max': 'max', 'xhigh': 'xhigh', 'high': 'high', 'medium': 'mediu
 
 
 AA_RSC_PUSH = re.compile(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)', re.S)   # Next.js RSC push chunks
+# The sub-benchmarks the pipeline reads (measurements.AA_SCORE ids), under the field a release page's record holds them in.
+AA_RELEASE_SCORE_FIELD = {'terminalbench-4-0': 'terminalBench40', 'frontiercode-2-0': 'frontierCode20', 'mmmu-pro': 'mmmuPro'}
+
+
+def _aa_stream(path):
+    """The page's RSC stream: its push chunks decoded and joined."""
+    raw = Path(path).read_text(encoding='utf-8', errors='ignore')
+    return ''.join(json.loads(c) for c in AA_RSC_PUSH.findall(raw))
+
+
+def _aa_owners(stream, pattern):
+    """The innermost JSON object around each match of `pattern` in `stream`: the nearest opening brace before the match
+    whose object reaches past it."""
+    dec = json.JSONDecoder()
+    opens = [m.start() for m in re.finditer(r'\{', stream)]
+    for hit in re.finditer(pattern, stream):
+        for start in reversed(opens[:bisect.bisect_left(opens, hit.start())]):
+            try:
+                obj, end = dec.raw_decode(stream, start)
+            except ValueError:
+                continue
+            if end <= hit.start():
+                continue
+            yield obj
+            break
 
 
 def aa_records(target):
@@ -149,29 +204,78 @@ def aa_records(target):
     `scores` (sub-benchmarks, fractions).
 
     A record is the object that owns an `intelligenceIndex` key, whatever its other keys and their order: the page
-    has changed the leading key of its records (2026-11-18, `slug` moved under `release`)."""
+    has changed the leading key of its records (2026-11-18, `slug` moved under `release`). Since about 2026-11-17 the
+    page embeds records only for releases AA does not mark deprecated (`aa_releases`)."""
     html_path = target / 'aa-models.html'
     if not html_path.exists():
         return []
-    dec, out, seen = json.JSONDecoder(), [], set()
-    raw = html_path.read_text(encoding='utf-8', errors='ignore')
-    stream = ''.join(json.loads(c) for c in AA_RSC_PUSH.findall(raw))
-    opens = [m.start() for m in re.finditer(r'\{', stream)]
-    for hit in re.finditer(r'"intelligenceIndex"\s*:', stream):
-        # The innermost object around the key: the nearest opening brace before it whose object reaches past it.
-        for start in reversed(opens[:bisect.bisect_left(opens, hit.start())]):
-            try:
-                obj, end = dec.raw_decode(stream, start)
-            except ValueError:
-                continue
-            if end <= hit.start():
-                continue
-            name = obj.get('name')
-            if 'intelligenceIndex' in obj and isinstance(name, str) and name not in seen:
-                seen.add(name)
-                out.append(obj)
-            break
+    out, seen = [], set()
+    for obj in _aa_owners(_aa_stream(html_path), r'"intelligenceIndex"\s*:'):
+        name = obj.get('name')
+        if 'intelligenceIndex' in obj and isinstance(name, str) and name not in seen:
+            seen.add(name)
+            out.append(obj)
     return out
+
+
+def aa_releases(target):
+    """The releases the AA leaderboard page names, each as the page writes it: `slug`, `name`, `deprecated`,
+    `releaseDate` and `modelNames` (the listings of its records; empty when the release lists one unnamed variant).
+    Only the page's releases whose slug can be a url and file name."""
+    html_path = target / 'aa-models.html'
+    if not html_path.exists():
+        return []
+    out, seen = [], set()
+    for obj in _aa_owners(_aa_stream(html_path), r'"modelNames"\s*:'):
+        slug = obj.get('slug')
+        if isinstance(slug, str) and re.fullmatch(AA_SLUG, slug) and isinstance(obj.get('name'), str) and slug not in seen:
+            seen.add(slug)
+            out.append(obj)
+    return out
+
+
+def _aa_number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def aa_release_record(obj, page):
+    """One record of a release page as a leaderboard record. The page holds the same figures under other fields: the
+    sub-benchmarks flat (`AA_RELEASE_SCORE_FIELD`), the cost per task as `{cost: {total}}`, output speed and time to
+    first answer token under `headline`. `page` is the file the record was read from."""
+    head, cost = obj.get('headline'), obj.get('intelligenceIndexCostPerTask')
+    head = head if isinstance(head, dict) else {}
+    cost = (cost.get('cost') or {}).get('total') if isinstance(cost, dict) else cost
+    return {'name': obj['name'], 'page': page, 'intelligenceIndex': obj.get('intelligenceIndex'),
+            'intelligenceIndexCostPerTask': cost, 'intelligenceIndexTimePerTask': obj.get('intelligenceIndexTimePerTask'),
+            'outputSpeed': head.get('outputSpeed'), 'timeToFirstAnswerToken': head.get('timeToFirstAnswerToken'),
+            'price1mInputTokens': obj.get('price1mInputTokens'), 'price1mOutputTokens': obj.get('price1mOutputTokens'),
+            'cacheHitPrice': obj.get('cacheHitPrice'),
+            'scores': {sid: v for sid, field in AA_RELEASE_SCORE_FIELD.items() if (v := _aa_number(obj.get(field))) is not None}}
+
+
+def aa_release_records(target):
+    """The records of every release page the manifest lists as fetched, in the leaderboard's record shape plus `page`
+    (the file name). A release page also embeds other releases' records for comparison; only the records of the
+    page's own release (`release.slug` the page's slug) are read."""
+    out = []
+    for name, row in sorted(manifest(target).items()):
+        match = AA_RELEASE_NAME.fullmatch(name)
+        if not match or row.get('status') != 'ok' or not (target / name).exists():
+            continue
+        slug, seen = match['slug'], set()
+        for obj in _aa_owners(_aa_stream(target / name), r'"release"\s*:\s*\{'):
+            release = obj.get('release')
+            if (isinstance(release, dict) and release.get('slug') == slug and 'intelligenceIndex' in obj
+                    and isinstance(obj.get('name'), str) and obj['name'] not in seen):
+                seen.add(obj['name'])
+                out.append(aa_release_record(obj, name))
+    return out
+
+
+def aa_all_records(target):
+    """Every AA record the pipeline reads: the leaderboard page's, then those of each release page fetched."""
+    return [*aa_records(target), *aa_release_records(target)]
+
 
 
 def aa_effort(name):

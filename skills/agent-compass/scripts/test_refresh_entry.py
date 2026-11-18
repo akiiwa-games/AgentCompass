@@ -23,6 +23,8 @@ for _p in (str(CAL_DIR), str(SCRIPTS_DIR)):
 
 import arena_capture  # noqa: E402
 import capability_catalog  # noqa: E402
+import five_axis  # noqa: E402
+import measurements  # noqa: E402
 import public_data  # noqa: E402
 import refresh  # noqa: E402
 import sources  # noqa: E402
@@ -56,10 +58,38 @@ def _write_file(target: Path, name: str, content: bytes | str, url: str, fetched
     }
 
 
-def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, arena_partial=(), aa_only=()) -> tuple[Path, Path]:
+def release_slug(model_id):
+    """The slug the fixture gives a model's Artificial Analysis release."""
+    return model_id.replace('.', '-')
+
+
+def aa_release_shape(record, release):
+    """A leaderboard record as its release page embeds it: the sub-benchmarks flat, the cost per task as `{cost: {total}}`,
+    output speed and time to first answer token under `headline`, and `release` naming the page's own release."""
+    scores = record['scores']
+    return {'id': record['id'], 'name': record['name'], 'release': {'deprecatedTo': None, 'name': release[1], 'slug': release[0]},
+            'deprecated': True, 'intelligenceIndex': record['intelligenceIndex'],
+            'intelligenceIndexTimePerTask': record['intelligenceIndexTimePerTask'],
+            'intelligenceIndexCostPerTask': {'cost': {'total': record['intelligenceIndexCostPerTask']}, 'evaluations': []},
+            'price1mInputTokens': record['price1mInputTokens'], 'price1mOutputTokens': record['price1mOutputTokens'],
+            'cacheHitPrice': record['cacheHitPrice'],
+            'terminalBench40': scores['terminalbench-4-0'], 'frontierCode20': scores['frontiercode-2-0'],
+            'mmmuPro': scores['mmmu-pro'],
+            'headline': {'outputSpeed': record['outputSpeed'], 'timeToFirstToken': record['timeToFirstAnswerToken'],
+                         'timeToFirstAnswerToken': record['timeToFirstAnswerToken']}}
+
+
+def rsc_page(payload):
+    return f'<html><body><script>self.__next_f.push([1,{json.dumps(json.dumps(payload, separators=(",", ":")))}])</script></body></html>'
+
+
+def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, arena_partial=(), aa_only=(),
+                              aa_deprecated=()) -> tuple[Path, Path]:
     """Create a self-contained `(data_dir, references_dir)` fixture with fresh cited sources and zero network calls.
     `arena_partial` (slug, display, lab) rows are listed on the arena.ai text boards and Artificial Analysis only, so they
-    stay out of the panel; `aa_only` rows are listed on Artificial Analysis only."""
+    stay out of the panel; `aa_only` rows are listed on Artificial Analysis only. `aa_deprecated` model ids are released
+    on Artificial Analysis as deprecated: the leaderboard page names the release without records and the release page
+    (fetched, in the manifest) embeds them, as the site serves them."""
     moment = (as_of_dt or datetime.now(timezone.utc)).astimezone(timezone.utc)
     iso_date = moment.date().isoformat()
     long_date = f"{moment.strftime('%B')} {moment.day}, {moment.year}"
@@ -108,21 +138,25 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
     for unused_board in ('agent', 'agent_bash_reliability', 'agent_task_outcome_explicit', 'agent_steerability'):
         write_parquet(unused_board, [('overall', 1350.0, 11.0)])
 
-    # 2. Artificial Analysis RSC stream with multi-effort curves (the record shape the page serves).
-    rsc_records = []
+    # 2. Artificial Analysis RSC stream with multi-effort curves (the record shape the page serves). The page names every
+    # release (`modelNames`), embeds records only for the releases it does not mark deprecated, and a deprecated release
+    # has a page of its own.
+    rsc_records, releases, release_records = [], [], {}
     effort_offsets = (('low', -6.0, 0.55, 1.4), ('medium', -2.5, 0.78, 1.9), ('high', 0.0, 1.0, 2.6), ('xhigh', 1.8, 1.35, 3.4))
     for idx, (slug, display, _) in enumerate((*PANEL_MODELS, *arena_partial, *aa_only)):
         base_idx = 78.0 - idx * 3.1
+        names = []
         for eff, idx_shift, time_mult, ttfa_base in effort_offsets:
             listed = f'{display} ({eff.capitalize()})'
+            names.append(listed)
             ii_val = round(base_idx + idx_shift, 2)
             cost_task = round((1.8 - idx * 0.08) * time_mult, 2)
             tb4 = round(max(0.12, min(0.95, 0.76 - idx * 0.042 + idx_shift * 0.008)), 4)
             fc2 = round(max(0.10, min(0.94, 0.71 - idx * 0.039 + idx_shift * 0.009 - (idx % 2) * 0.011)), 4)
             mmmu = round(max(0.15, min(0.96, 0.82 - idx * 0.036 + idx_shift * 0.006 + (idx % 3) * 0.007)), 4)
-            rsc_records.append({
+            record = {
                 'id': f'{slug}-{eff}',
-                'release': {'slug': slug, 'name': display},
+                'release': {'slug': release_slug(slug), 'name': display},
                 'name': listed,
                 'intelligenceIndex': ii_val,
                 'intelligenceIndexCostPerTask': cost_task,
@@ -137,13 +171,24 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
                     'frontiercode-2-0': fc2,
                     'mmmu-pro': mmmu,
                 },
-            })
-    rsc_payload = json.dumps(rsc_records, separators=(',', ':'))
-    aa_html = (
-        '<html><body>'
-        f'<script>self.__next_f.push([1,{json.dumps(rsc_payload)}])</script></body></html>'
-    )
-    _write_file(data_dir, 'aa-models.html', aa_html, sources.PAGES['aa-models.html'], fetched_at, manifest_files)
+            }
+            if slug in aa_deprecated:
+                release_records.setdefault(slug, []).append(aa_release_shape(record, (release_slug(slug), display)))
+            else:
+                rsc_records.append(record)
+        releases.append({'slug': release_slug(slug), 'name': display, 'deprecated': slug in aa_deprecated,
+                         'releaseDate': '2026-09-01', 'modelNames': names})
+    releases.append({'slug': 'retired-model', 'name': 'Retired Model', 'deprecated': True, 'releaseDate': '2025-01-01',
+                     'modelNames': ['Retired Model (High)']})        # no catalogue row is listed under it
+    _write_file(data_dir, 'aa-models.html', rsc_page([*rsc_records, *releases]), sources.PAGES['aa-models.html'],
+                fetched_at, manifest_files)
+    for slug, records in release_records.items():
+        own = release_slug(slug)
+        comparison = dict(records[0], name='Comparison Model (High)', intelligenceIndex=1.0,
+                          release={'deprecatedTo': None, 'name': 'Comparison', 'slug': 'comparison'})       # another release's record
+        lean = {'name': records[0]['name'], 'intelligenceIndex': 1.0, 'outputSpeed': 1.0}       # a table row: no release key
+        _write_file(data_dir, sources.AA_RELEASE_FILE.format(own), rsc_page({'models': [*records, comparison, lean]}),
+                    sources.AA_RELEASE_URL.format(own), fetched_at, manifest_files)
 
     # 3. Design Arena boards.
     for board_idx, (fname, (url, category)) in enumerate(sources.DESIGN_ARENA.items()):
@@ -759,6 +804,177 @@ class AaRecordTests(unittest.TestCase):
         record = {'id': 'a1', 'name': 'Model A (High)', 'intelligenceIndex': 51.5}
         payload = [record, dict(record, id='a1-again'), {'intelligenceIndex': 40.0}]
         self.assertEqual(self._records(payload), [record])
+
+
+class AaReleasePageTests(unittest.TestCase):
+    """Artificial Analysis embeds records in its leaderboard page only for releases it does not mark deprecated; a
+    deprecated release is named without records and has a page of its own. Rules: a catalogue model that no leaderboard
+    record matches, but a deprecated release is listed under, is read from that release's page; a reading of a release
+    page equals the reading of the same record on the leaderboard; each reading cites the page it came from; a page that
+    cannot be read is a surfaced missing source, never an older copy."""
+    DEPRECATED = ('gpt-6-astra', 'gpt-6.1-sol')
+
+    def setUp(self):
+        public_data.unpin()
+        self.addCleanup(public_data.unpin)
+        self.now = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+
+    def fixture(self, **kwargs):
+        root = Path(tempfile.mkdtemp(prefix='aa-release-'))
+        self.addCleanup(shutil.rmtree, root, True)
+        return build_calibration_fixture(root, self.now, **kwargs)
+
+    def build(self, data):
+        refs = data.parent / 'references'
+        acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8'))
+        return measurements.Builder(data, acc, now=self.now).build()
+
+    @staticmethod
+    def page_url(model):
+        return sources.AA_RELEASE_URL.format(release_slug(model))
+
+    def test_a_release_page_reading_equals_the_leaderboard_reading_of_the_same_record_and_cites_the_page(self):
+        data, _ = self.fixture(aa_deprecated=self.DEPRECATED)
+        on_leaderboard = self.build(self.fixture()[0])
+        on_pages = self.build(data)
+        read = sources.aa_release_records(data)
+        self.assertTrue(read)
+        self.assertEqual({sources.base_name(r['name']) for r in read}, {'GPT-6 Astra', 'GPT-6.1 Sol'})
+        self.assertNotIn(1.0, [r['intelligenceIndex'] for r in read])      # a comparison record or a table row was read
+        cited = ('url', 'fetched_at', 'as_of')
+        for model, fields in on_pages['models'].items():
+            for field, entries in fields.items():
+                for entry in entries:
+                    from_page = entry.get('url') == self.page_url(model)
+                    if model in self.DEPRECATED and entry['source'].startswith(('aa.', 'derived.community_mix')):
+                        self.assertTrue(from_page, (model, field, entry['source']))
+                    else:
+                        self.assertNotIn(entry.get('url'), {self.page_url(m) for m in self.DEPRECATED}, (model, field))
+        strip = lambda doc: {m: {f: [{k: v for k, v in e.items() if k not in cited} for e in es] for f, es in fields.items()}
+                             for m, fields in doc['models'].items()}
+        self.assertEqual(strip(on_pages), strip(on_leaderboard))
+        self.assertEqual(on_pages['panel'], on_leaderboard['panel'])
+        self.assertEqual({s: r.get('scale') for s, r in on_pages['sources'].items()},
+                         {s: r.get('scale') for s, r in on_leaderboard['sources'].items()})
+        self.assertEqual(set(on_pages['sources']['aa.index']['release_pages']),
+                         {sources.AA_RELEASE_FILE.format(release_slug(m)) for m in self.DEPRECATED})
+        self.assertNotIn('release_pages', on_leaderboard['sources']['aa.index'])
+        self.assertEqual(on_pages['missing_sources'], on_leaderboard['missing_sources'])
+
+    def test_the_source_is_as_old_as_the_oldest_page_read(self):
+        data, _ = self.fixture(aa_deprecated=self.DEPRECATED)
+        manifest_path = data / sources.MANIFEST
+        doc = json.loads(manifest_path.read_text(encoding='utf-8'))
+        page = sources.AA_RELEASE_FILE.format(release_slug('gpt-6-astra'))
+        older = (self.now - timedelta(days=30)).isoformat(timespec='seconds')
+        doc['files'][page]['fetched_at'] = older
+        manifest_path.write_text(json.dumps(doc), encoding='utf-8')
+        built = self.build(data)
+        self.assertEqual(built['sources']['aa.index']['as_of'], older[:10])
+        self.assertEqual(built['sources']['aa.index']['fetched_at'], self.now.isoformat(timespec='seconds'))
+        self.assertGreaterEqual(five_axis.source_ages(built, self.now)['aa.index']['age_days'], 30)
+        gpt6 = next(e for e in built['models']['gpt-6-astra']['price'] if e['source'] == 'aa.price')
+        self.assertEqual((gpt6['url'], gpt6['fetched_at'], gpt6['as_of']), (self.page_url('gpt-6-astra'), older, older[:10]))
+
+    def test_a_page_that_cannot_be_read_is_a_surfaced_missing_source_and_its_model_gets_no_reading(self):
+        page = sources.AA_RELEASE_FILE.format(release_slug('gpt-6-astra'))
+        for case in ('fetch failed', 'never fetched', 'no record of its release'):
+            with self.subTest(case=case):
+                data, _ = self.fixture(aa_deprecated=('gpt-6-astra',))
+                manifest_path = data / sources.MANIFEST
+                doc = json.loads(manifest_path.read_text(encoding='utf-8'))
+                if case == 'fetch failed':
+                    (data / page).unlink()
+                    doc['files'][page] = {'url': self.page_url('gpt-6-astra'), 'fetched_at': self.now.isoformat(), 'status': 'missing',
+                                          'error': 'URLError: offline'}
+                elif case == 'never fetched':
+                    (data / page).unlink()
+                    del doc['files'][page]
+                else:
+                    (data / page).write_text(rsc_page({'models': [{'name': 'Other (High)', 'intelligenceIndex': 1.0,
+                                                                    'release': {'slug': 'other', 'name': 'Other'}}]}), encoding='utf-8')
+                manifest_path.write_text(json.dumps(doc), encoding='utf-8')
+                built = self.build(data)
+                row = built['missing_sources'][page]
+                self.assertEqual(row['url'], self.page_url('gpt-6-astra'))
+                self.assertTrue(five_axis.source_ages(built, self.now)[page]['missing'])
+                self.assertEqual(row['reason'], {'fetch failed': 'URLError: offline',
+                                                 'never fetched': 'not fetched; run `agentcompass data refresh`',
+                                                 'no record of its release': 'the page carries no record of its release'}[case])
+                readings = [e for fields in built['models']['gpt-6-astra'].values() for e in fields
+                            if e['source'].startswith(('aa.', 'tier.aa', 'derived.community_mix'))]
+                self.assertEqual(readings, [])
+                self.assertEqual('release_pages' in built['sources']['aa.index'], case == 'no record of its release')    # fetched
+
+    def test_the_pages_to_fetch_are_the_deprecated_releases_a_catalogue_model_is_listed_under(self):
+        def release(slug, name, deprecated, names, date):
+            return {'slug': slug, 'name': name, 'deprecated': deprecated, 'releaseDate': date, 'modelNames': names}
+        releases = [release('model-a', 'Model A', False, ['Model A (High)'], '2026-09-01'),
+                    release('model-b', 'Model B', True, ['Model B (High)', 'Model B (Low)'], '2026-09-01'),
+                    release('model-c-new', 'Model C (0902)', True, [], '2026-09-02'),      # one unnamed variant: listed by its name
+                    release('model-c-old', 'Model C', True, [], '2026-08-03'),
+                    release('model-e', 'Model E', False, [], '2026-09-01'),                # not deprecated, no record yet
+                    release('retired', 'Retired', True, ['Retired (High)'], '2025-01-01'),
+                    release('../escape', 'Escape', True, ['Escape (High)'], '2025-01-01')]
+        catalogue = {'model-a': {}, 'model-b': {'listed_as': {'aa': 'Model B'}}, 'model-c': {'listed_as': {'aa': 'Model C'}},
+                     'model-d': {}, 'model-e': {}, 'escape': {'listed_as': {'aa': 'Escape'}}, 'note': 'a note, not a row'}
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            self.assertEqual(measurements.aa_release_pages(target, catalogue), {})      # no leaderboard page fetched
+            (target / 'aa-models.html').write_text(
+                rsc_page([{'name': 'Model A (High)', 'intelligenceIndex': 50.0}, *releases]), encoding='utf-8')
+            pages = measurements.aa_release_pages(target, catalogue)
+        self.assertEqual(pages, {f'aa-release-{s}.html': sources.AA_RELEASE_URL.format(s) for s in ('model-b', 'model-c-new')})
+
+    def test_the_fetch_records_each_page_and_a_failure_is_missing_never_an_older_copy(self):
+        good, bad, old = (sources.AA_RELEASE_FILE.format(s) for s in ('good', 'bad', 'old'))
+        urls = {good: sources.AA_RELEASE_URL.format('good'), bad: sources.AA_RELEASE_URL.format('bad')}
+        body, requested = b'<html>release page</html>', []
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return body
+
+        def urlopen(request, timeout):
+            requested.append((request.full_url, dict(request.header_items())))
+            if request.full_url == urls[bad]:
+                raise OSError('offline')
+            return Response()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            kept = {'url': 'https://example.org/x', 'fetched_at': 'earlier', 'status': 'ok', 'bytes': 1, 'sha256': 'x'}
+            (target / bad).write_bytes(b'older copy of bad')
+            (target / old).write_bytes(b'no longer wanted')
+            (target / sources.MANIFEST).write_text(json.dumps({'files': {
+                'x.json': kept, bad: dict(kept, url=urls[bad]), old: dict(kept)}}), encoding='utf-8')
+            with patch.object(sources.urllib.request, 'urlopen', urlopen), patch('sys.stdout', io.StringIO()):
+                sources.fetch_releases(target, urls)
+            files = json.loads((target / sources.MANIFEST).read_text(encoding='utf-8'))['files']
+            self.assertEqual((target / good).read_bytes(), body)
+            self.assertEqual({k: files[good][k] for k in ('url', 'status', 'bytes', 'sha256')},
+                             {'url': urls[good], 'status': 'ok', 'bytes': len(body), 'sha256': hashlib.sha256(body).hexdigest()})
+            self.assertTrue(datetime.fromisoformat(files[good]['fetched_at']).tzinfo)
+            self.assertFalse((target / bad).exists())
+            self.assertEqual({k: files[bad][k] for k in ('url', 'status', 'error')},
+                             {'url': urls[bad], 'status': 'missing', 'error': 'OSError: offline'})
+            self.assertFalse((target / old).exists())
+            self.assertNotIn(old, files)
+            self.assertEqual(files['x.json'], kept)
+            self.assertEqual(sorted(files), sorted(['x.json', good, bad]))
+        self.assertEqual([u for u, _ in requested], list(urls.values()))        # one plain request per page
+        for _, headers in requested:
+            self.assertEqual(set(headers), {'User-agent'})
+            self.assertNotIn(str(Path.home().name), headers['User-agent'])
+
+    def test_every_sub_benchmark_the_pipeline_reads_has_a_field_on_the_release_page(self):
+        self.assertLessEqual(set(measurements.AA_SCORE.values()), set(sources.AA_RELEASE_SCORE_FIELD))
 
 
 if __name__ == '__main__':
