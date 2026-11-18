@@ -22,6 +22,7 @@ import dispatch_registry as registry
 import host_placement
 import launch_values
 import provider_inventory
+import caller_input
 import public_data
 import scorer_client
 import subscription_cli
@@ -82,9 +83,9 @@ def title_of(text):
 def read_task_text(args):
     """The assignment exactly as given: --brief file, --task text, or --task - for stdin (no command-line length limit)."""
     if args.brief is not None:
-        return args.brief.read_bytes().decode('utf-8-sig')  # bytes, so CRLF is not rewritten
+        return caller_input.read_bytes(args, args.brief).decode('utf-8-sig')  # bytes, so CRLF is not rewritten
     if args.task == '-':
-        return sys.stdin.buffer.read().decode('utf-8-sig')
+        return caller_input.stdin_bytes(args).decode('utf-8-sig')
     return args.task
 
 
@@ -381,6 +382,7 @@ def dot(args, out, prompt_file, *, task=None, decision=None):
     apply_to = ['--apply-to', target_cwd] if target_cwd else []
     command = python(DOT_RUNNER, 'run', '--prompt-file', str(prompt_file),
                      *[x for f in files for x in ('--file', f)], *apply_to, '--no-wait')
+    public_data.effect('dot worker launch')     # marked before the runner starts: a launch is never repeated
     proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
                           timeout=180)
     found = re.search(r'task_id=(\S+)', proc.stderr)
@@ -430,6 +432,7 @@ def grok_bot(args, out, prompt_file, task, bundle, *, decision=None):
     if bundle.get('model') != 'grok-bot' or bundle.get('account') != 'grok-bot' or bundle.get('effort'):
         raise ValueError('Use --provider grok-bot --account grok-bot --model grok-bot without an effort; upstream owns model selection.')
     try:
+        public_data.effect('grok-bot worker launch')    # marked before the runner starts: a launch is never repeated
         receipt = runner.submit(prompt_file.read_text(encoding='utf-8'), out['parent_id'], task['task_id'])
     except (runner.TransportError, OSError, ValueError) as exc:
         return dict(out, launched=False, dispatch_mode='grok-bot', caller_action='check_error', error=str(exc)), 1

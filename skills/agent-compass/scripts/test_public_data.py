@@ -5,6 +5,7 @@ Each test names the rule it holds (router-internals.md, Reference data). No requ
 fetch through FakeRemote or a file:// location, the end-to-end class through a local HTTP fixture on 127.0.0.1.
 """
 from datetime import datetime, timedelta, timezone
+import argparse
 import copy
 import functools
 import http.server
@@ -495,10 +496,11 @@ class HeldSetTests(ChannelCase):
         self.assertEqual(public_data.retake(self.bundled, self.env)['version'],
                          public_data.read_state(self.env)['version'])             # moves as a whole, when asked
 
-    def fail_on_fetched(self, error=KeyError, every=False, before=None):
+    def fail_on_fetched(self, error=KeyError, every=False, before=None, fresh=True):
         """with_fallback over a run that raises ``error`` on the fetched set (on every set with ``every``); returns the
-        sources it ran on."""
-        self.assertEqual(self.refresh()['status'], 'updated')
+        sources it ran on. ``fresh``: a new set is published and fetched first."""
+        if fresh:
+            self.assertEqual(self.refresh()['status'], 'updated')
         self.held()
         seen = []
 
@@ -530,14 +532,24 @@ class HeldSetTests(ChannelCase):
 
     def test_a_set_aside_set_is_taken_again_after_its_period_or_at_once_for_a_newer_set_or_other_code(self):
         self.fail_on_fetched(KeyError)
-        until = public_data._parse(public_data.read_state(self.env)['set_aside_until'])
-        self.assertAlmostEqual((until - datetime.now(timezone.utc)).total_seconds() / 3600, public_data.SET_ASIDE_HOURS, delta=0.1)
+        state = public_data.read_state(self.env)
+        until = public_data._parse(state['set_aside_until'])
+        self.assertAlmostEqual((until - public_data._parse(state['set_aside_at'])).total_seconds() / 3600,
+                               public_data.SET_ASIDE_HOURS, delta=0.01)
         with patch.object(public_data, '_now', lambda: until - timedelta(minutes=1)):
             self.assertEqual(self.held()['source'], 'bundled')
-        with patch.object(public_data, '_now', lambda: until + timedelta(minutes=1)):
-            self.assertEqual(self.held()['source'], 'fetched')                   # the period is over
+            self.assertEqual(public_data.status(self.env, self.bundled)['set_aside']['version'], state['version'])
         self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'unchanged')
         self.assertEqual(self.held()['source'], 'bundled')                       # a check alone does not end it
+        with patch.object(public_data, '_now', lambda: until + timedelta(minutes=1)):
+            self.assertEqual(self.held()['source'], 'fetched')                   # the period is over
+            report = public_data.status(self.env, self.bundled)
+            self.assertIsNone(report['set_aside'])                               # finding 4: doctor says what is in effect
+            self.assertNotIn('set aside', report['note'] or '')
+            self.assertIsNone(public_data.reference_alert(self.bundled, self.env))
+        self.assertNotIn('set_aside_version', public_data.read_state(self.env))  # cleared where it was read
+        public_data.release()
+        self.assertEqual(self.fail_on_fetched(KeyError, fresh=False), ['fetched', 'bundled'])
         with patch.object(public_data, 'reader_id', lambda: 'other-code'):
             self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'accepted')
             self.assertEqual(self.held()['source'], 'fetched')                   # this install's code changed
@@ -547,6 +559,37 @@ class HeldSetTests(ChannelCase):
         self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=3))['status'], 'updated')
         self.assertEqual(self.held()['source'], 'fetched')                       # a newer set is tried at once
         self.assertNotIn('set_aside_version', public_data.read_state(self.env))
+
+    def stand_set_aside(self, **fields):
+        self.assertEqual(self.refresh()['status'], 'updated')
+        now = datetime.now(timezone.utc)
+        state = public_data.read_state(self.env)
+        values = {'set_aside_version': state['version'], 'set_aside_by': public_data.reader_id(),
+                  'set_aside_at': public_data._stamp(now), 'set_aside_until': public_data._stamp(now + timedelta(hours=1)),
+                  'set_aside_error': 'KeyError: x', 'set_aside_note': 'set aside until later', **fields}
+        public_data._update_state(self.env, lambda s: s.update(values))
+        public_data.release()
+
+    def test_a_set_aside_begun_in_the_future_is_not_one(self):
+        """Rule (finding 4): a start after now is a clock that ran ahead, as for a check time in the future."""
+        later = datetime.now(timezone.utc) + timedelta(days=400)
+        self.stand_set_aside(set_aside_at=public_data._stamp(later),
+                             set_aside_until=public_data._stamp(later + timedelta(hours=24)))
+        self.assertEqual(self.held()['source'], 'fetched')
+        self.assertIsNone(public_data.status(self.env, self.bundled)['set_aside'])
+        self.assertIsNone(public_data.reference_alert(self.bundled, self.env))
+
+    def test_a_set_aside_recorded_by_other_code_does_not_hold_for_this_code(self):
+        """Rule (review round 3, A1): an older install's code sharing this state set the set aside; this code accepted
+        the set itself and takes it."""
+        self.stand_set_aside(set_aside_by='an-older-reader')
+        self.assertEqual(self.held()['source'], 'fetched')
+        self.assertIsNone(public_data.status(self.env, self.bundled)['set_aside'])
+        self.assertIsNone(public_data.reference_alert(self.bundled, self.env))
+        public_data._update_state(self.env, lambda s: s.update(set_aside_by=public_data.reader_id()))
+        public_data.release()
+        self.assertEqual(self.held()['source'], 'bundled')                       # the same record by this code holds
+        self.assertEqual(public_data.reference_alert(self.bundled, self.env)['code'], 'reference_data_refused')
 
     def test_only_a_data_error_is_re_run_and_blamed(self):
         """Rule (finding 1): a refusal (a ValueError, such as a dispatch_registry state refusal) and an environment
@@ -567,10 +610,75 @@ class HeldSetTests(ChannelCase):
                 self.assertEqual(self.fail_on_fetched(error), ['fetched', 'bundled'])
                 self.assertIn('set_aside_version', public_data.read_state(self.env))
 
+    def test_a_re_run_never_repeats_a_classifier_call(self):
+        """Rule (round 4): a paid classifier call is carried into the re-run (public_data.carried), not made again, even
+        with the score cache off and a prompt the shipped set builds differently."""
+        import scorer_client
+        calls = []
+
+        def run_scorer(scorer_type, task, capabilities, timeout, config, account=None):
+            calls.append(public_data.held()['source'])
+            return {'work_kind': 'code_implementation'}, 'claude', 'haiku'
+
+        def run_structured(scorer_type, instructions, text, schema, timeout, config, account=None):
+            calls.append(public_data.held()['source'])
+            return {'scope': 'model'}, 'claude', 'haiku'
+
+        def classify():
+            scorer_client.score_task({'objective': 'Fix the parser.'}, {}, 5, scorer_config={})
+            scorer_client.classify_structured('Which scope?', 'text', {'type': 'object'}, lambda a: a, 5, scorer_config={})
+        with patch.dict(os.environ, {'ROUTER_SCORE_CACHE': 'off'}), \
+                patch.object(scorer_client, 'run_scorer', run_scorer), \
+                patch.object(scorer_client, 'run_structured', run_structured), \
+                patch.object(scorer_client, 'scorer_accounts', lambda *a, **k: [None]):
+            self.assertEqual(self.fail_on_fetched(KeyError, before=classify), ['fetched', 'bundled'])
+        self.assertEqual(calls, ['fetched', 'fetched'])                          # one scorer, one structured call
+
+    def test_the_judge_call_is_an_effect_and_never_repeated(self):
+        """Rule (round 4): a select/delegate judge call is an effect; what follows it is only the ledger row."""
+        import subscription_cli
+        import subscription_judge
+        judged = []
+
+        def run_process(command, directory, prompt=None, timeout=None, account=None):
+            if prompt is None:
+                return 0, 'Logged in using ChatGPT', ''
+            judged.append(public_data._EFFECTS[0])
+            (Path(directory) / 'answer.json').write_text('{"choice": "none", "reason": "x"}', encoding='utf-8')
+            return 0, '', ''
+        payload = {'stage': 'delegate', 'state': {'usage': {}, 'now': 'now'}, 'response_schema': {'type': 'object'}}
+        before = []
+        with patch.object(subscription_judge, 'judge_order', lambda usage, requested: ['codex']), \
+                patch.object(subscription_judge, 'resolve_judge', lambda kind, usage, availability: {'account': None}), \
+                patch.object(subscription_judge.host_policy, 'load_policy', lambda: None), \
+                patch.object(subscription_cli, 'cli_prefix', lambda provider: ['codex']), \
+                patch.object(subscription_cli, 'run_process', run_process):
+            seen = self.fail_on_fetched(KeyError, before=lambda: before.append(public_data._EFFECTS[0]) or
+                                        subscription_judge.evaluate(payload, 'codex', 30))
+        self.assertEqual(seen, ['fetched'])
+        self.assertEqual(len(judged), 1)
+        self.assertEqual(judged[0], before[0] + 1)                               # marked before the judge ran
+
     def test_an_error_after_an_effect_propagates_and_nothing_is_re_run(self):
         """Rule (finding 1): a re-run never repeats an effect."""
         self.assertEqual(self.fail_on_fetched(KeyError, before=lambda: public_data.effect('ledger row')), ['fetched'])
         self.assertNotIn('set_aside_version', public_data.read_state(self.env))
+
+    def test_a_registry_change_is_an_effect_and_upkeep_is_not(self):
+        """Rule (finding 2): a write this call decided is an effect; bringing recorded state in step with what happened
+        on its own (an expired lease, an ended worker) is not."""
+        import dispatch_registry
+        path = self.state / 'dispatch.sqlite3'
+        before = public_data._EFFECTS[0]
+        with dispatch_registry.transaction(path, upkeep=True) as connection:
+            connection.execute('INSERT INTO decisions VALUES (?,?)', ('upkeep', '{}'))
+        self.assertEqual(public_data._EFFECTS[0], before)
+        with dispatch_registry.transaction(path) as connection:
+            connection.execute('INSERT INTO decisions VALUES (?,?)', ('decided', '{}'))
+        self.assertEqual(public_data._EFFECTS[0], before + 1)
+        with dispatch_registry.transaction(path) as connection:
+            connection.execute('SELECT 1')                                       # nothing changed: nothing marked
+        self.assertEqual(public_data._EFFECTS[0], before + 1)
 
     def test_a_failure_the_shipped_set_produces_as_well_blames_nothing(self):
         self.assertEqual(self.fail_on_fetched(KeyError, every=True), ['fetched', 'bundled'])
@@ -667,14 +775,12 @@ class RouteFallbackTests(unittest.TestCase):
                 with patch.dict(os.environ, env), patch.object(decision_ledger, 'append_ledger', append), \
                         patch.object(sys, 'argv', ['route_judge.py', 'plan', '--input', str(task)]), \
                         patch.object(sys, 'stdout', out):
-                    try:
-                        code = route_judge.main()
-                    except KeyError:
-                        code = 'raised'
+                    code = route_judge.main()                                   # finding 2: never a traceback
                 self.assertEqual(seen, ['fetched'])
                 rows = decision_ledger.ledger_path().read_text(encoding='utf-8').splitlines()
                 self.assertEqual(len(rows), 1)
-                self.assertEqual(code, 'raised' if error is KeyError else 1)
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out.getvalue())['error_type'], error.__name__)
                 self.assertNotIn('set_aside_version', public_data.read_state(env))
 
     def test_a_refusal_on_the_fetched_set_is_the_answer_and_blames_nothing(self):
@@ -696,6 +802,88 @@ class RouteFallbackTests(unittest.TestCase):
         self.assertEqual(seen, ['fetched'])
         self.assertIn('named_model_unavailable', out.getvalue())
         self.assertNotIn('set_aside_version', public_data.read_state(env))
+
+    def test_expiring_a_lease_on_the_way_is_not_an_effect(self):
+        """Rule (finding 2, review round 3 `housekeeping`): plan's reservation read expires a lease that ran out; that
+        commit does not stop a later data error from re-running on the shipped set."""
+        import dispatch_registry
+        import io
+        import route_judge
+        env, task = self.fetched_set()
+        with patch.dict(os.environ, env):
+            with dispatch_registry.transaction() as connection:
+                dispatch_registry.save(connection, {'dispatch_id': 'd-old', 'decision_id': 'dec-old', 'state': 'launched',
+                                                    'dispatch_mode': 'cli', 'lease_until': '2026-11-18T00:00:00Z',
+                                                    'events': [], 'parent_id': 'p'})
+        real, seen = route_judge._add_plan_alerts, []
+
+        def late(*args, **kwargs):
+            seen.append(public_data.held()['source'])
+            if len(seen) == 1:
+                raise KeyError('a field only the live fleet reaches')
+            return real(*args, **kwargs)
+        out = io.StringIO()
+        with patch.dict(os.environ, env), patch.object(route_judge, '_add_plan_alerts', late), \
+                patch.object(sys, 'argv', ['route_judge.py', 'plan', '--input', str(task)]), \
+                patch.object(sys, 'stdout', out):
+            code = route_judge.main()
+            self.assertEqual(dispatch_registry.inspect('d-old')['state'], 'expired')   # the upkeep did happen
+        self.assertEqual(seen, ['fetched', 'bundled'])
+        self.assertIn(code, (0, 2))
+        self.assertIn('set_aside_version', public_data.read_state(env))
+
+    def test_the_caller_input_is_read_once_and_a_re_run_receives_it(self):
+        """Rule (finding 1): stdin and the --input / --brief files are read once, before the part that may run again."""
+        import io
+        import roll
+        import route_judge
+        text = 'Fix an off-by-one slice in parser.py and add a unit test.'
+        for how in ('stdin', 'brief', 'input'):
+            with self.subTest(how):
+                env, task = self.fetched_set()
+                brief = task.with_name('brief.md')
+                brief.write_text(text, encoding='utf-8')
+                real_plan, real_read, runs, texts = route_judge.plan_stage, roll.read_task_text, [], []
+
+                def plan_stage(*args, **kwargs):
+                    runs.append(public_data.held()['source'])
+                    if len(runs) == 1:
+                        for named in (brief, task):
+                            named.unlink()                                       # a re-run that read again would fail
+                        raise KeyError('a field only the live fleet reaches')
+                    return real_plan(*args, **kwargs)
+                argv = {'stdin': ['roll', '--task', '-'], 'brief': ['roll', '--brief', str(brief)],
+                        'input': ['plan', '--input', str(task)]}[how]
+                out = io.StringIO()
+                stdin = io.TextIOWrapper(io.BytesIO(text.encode('utf-8')), encoding='utf-8')
+                with patch.dict(os.environ, env), patch.object(route_judge, 'plan_stage', plan_stage), \
+                        patch.object(roll, 'read_task_text', lambda args: texts.append(real_read(args)) or texts[-1]), \
+                        patch.object(sys, 'argv', ['route_judge.py', *argv, '--dry-run']), \
+                        patch.object(sys, 'stdin', stdin), patch.object(sys, 'stdout', out):
+                    route_judge.main()
+                self.assertEqual(runs, ['fetched', 'bundled'], out.getvalue()[-400:])
+                self.assertNotIn('The task is empty', out.getvalue())
+                self.assertNotIn('Routing input or local runtime failed', out.getvalue())
+                if how != 'input':
+                    self.assertEqual(texts, [text, text])
+
+    def test_a_plan_says_when_the_published_set_is_set_aside(self):
+        """Rule (review round 3, A2): while the published set is set aside, every plan carries reference_data_refused."""
+        import io
+        import route_judge
+        env, task = self.fetched_set()
+        now = datetime.now(timezone.utc)
+        public_data._update_state(env, lambda s: s.update(
+            set_aside_version=s['version'], set_aside_by=public_data.reader_id(), set_aside_at=public_data._stamp(now),
+            set_aside_until=public_data._stamp(now + timedelta(hours=1)), set_aside_error='KeyError: x',
+            set_aside_note='set aside until later'))
+        public_data.release()
+        out = io.StringIO()
+        with patch.dict(os.environ, env), patch.object(sys, 'stdout', out), \
+                patch.object(sys, 'argv', ['route_judge.py', 'plan', '--input', str(task), '--dry-run']):
+            route_judge.main()
+        alerts = json.loads(out.getvalue()).get('alerts') or []
+        self.assertIn('reference_data_refused', [a.get('code') for a in alerts])
 
     def plan_falls_back(self, error, entry):
         import io
@@ -862,6 +1050,70 @@ class LaunchValueTests(unittest.TestCase):
             self.assertEqual([p.name.split('-', 2)[-1].rsplit('-', 1)[0] for p in (Path(folder) / 'runs').iterdir()],
                              ['my_claude_alt'])
 
+    def test_every_launch_is_marked_an_effect_before_it_starts(self):
+        """Rule (round 4): a launch is an effect also when no ledger row came before it: the CLI Popen, Dot, grok-bot,
+        Herdr and the Paseo bridge mark before they start anything."""
+        import dispatch_flow
+        import host_herdr
+        import roll
+        import run_grok_bot
+        at = {}
+
+        class Stop(Exception):
+            pass
+
+        def starting(name):
+            def start(*args, **kwargs):
+                at[name] = public_data._EFFECTS[0]
+                raise Stop(name)
+            return start
+
+        def marked(name, call):
+            before = public_data._EFFECTS[0]
+            try:
+                call()
+            except (Stop, OSError):
+                pass
+            self.assertEqual(at.get(name), before + 1, name)
+        out = {'parent_id': 'p', 'parent_host': 'paseo', 'parent_address': 'p'}
+        with tempfile.TemporaryDirectory() as folder:
+            prompt = Path(folder) / 'prompt.md'
+            prompt.write_text('task', encoding='utf-8')
+            args = argparse.Namespace(file=[], apply_to=None, local_only=None, workspace=None)
+            with patch.object(roll.subprocess, 'run', starting('dot')):
+                marked('dot', lambda: roll.dot(args, out, prompt))
+            with patch.object(run_grok_bot, 'submit', starting('grok-bot')):
+                marked('grok-bot', lambda: roll.grok_bot(args, out, prompt, {'task_id': 't'},
+                                                         {'model': 'grok-bot', 'account': 'grok-bot'}))
+            with patch.object(roll, 'provider_definition', lambda provider, bundle=None: ('codex', {})), \
+                    patch.object(roll, 'cli_command', lambda family, provider: ['codex']), \
+                    patch.object(roll.host_placement, 'place', lambda *a, **k: {'cwd': folder}), \
+                    patch.object(roll, 'CLI_RUNS_DIR', Path(folder) / 'runs'), \
+                    patch.object(roll.subprocess, 'Popen', starting('cli')):
+                marked('cli', lambda: roll.cli(type('Args', (), {'workspace': None})(), out,
+                                               {'provider': 'codex', 'model': 'gpt-6.2-sol', 'effort': 'high'}, 'task'))
+            with patch.object(host_herdr, 'interactive', lambda bundle: None), \
+                    patch.object(host_herdr, 'hc', lambda *a: '{}'), \
+                    patch.object(host_herdr, 'terminal_from', lambda value: {'state': 'live'}), \
+                    patch.object(host_herdr, 'runs_dir', starting('herdr')):
+                marked('herdr', lambda: host_herdr._launch(out, {'provider': 'codex'}, prompt, 't'))
+            for operation, launches in (('create', True), ('resume', True), ('observe', False), ('notify_end', False)):
+                with patch.object(dispatch_flow.subprocess, 'Popen', starting(operation)):
+                    before = public_data._EFFECTS[0]
+                    with self.assertRaises(Stop):
+                        dispatch_flow.host_call({'operation': operation, 'timeout_seconds': 1})
+                self.assertEqual(at[operation], before + (1 if launches else 0), operation)
+
+    def test_herdr_passes_the_model_as_its_own_argument_or_refuses_the_launch(self):
+        """Rule (finding 4, review round 3 L2)."""
+        import host_herdr
+        import roll
+        with patch.object(roll, 'provider_definition', lambda provider, bundle=None: ('claude', {})), \
+                patch.object(roll, 'cli_command', lambda family, provider: ['claude']):
+            with self.assertRaises(launch_values.LaunchValueError):
+                host_herdr.interactive({'provider': 'claude', 'model': '-c', 'effort': 'high'})
+            self.assertIn('gpt 6 [1m]', host_herdr.interactive({'provider': 'claude', 'model': 'gpt 6 [1m]'})[0])
+
     def test_values_are_quoted_for_the_syntax_they_land_in(self):
         self.assertEqual(json.loads(launch_values.toml_string('high"; x = "')), 'high"; x = "')
         self.assertEqual(launch_values.shell_word('gpt-6.2-sol'), 'gpt-6.2-sol')
@@ -926,26 +1178,40 @@ class LoaderPrecedenceTests(ChannelCase):
             self.assertEqual(router_data.TUNING_DEFAULTS['short_window_floor_pct'], 11)
 
     def test_no_reader_opens_a_reference_file_except_through_the_accessor(self):
-        """Construction: a reader gets reference content only from public_data.document (the held set), so it cannot mix
-        sets. A run-time read (read_text, read_bytes, open, json.load) whose path, followed through every assignment in
-        the scanned modules (module constants across modules included), names a file of the set under the references
-        directory fails here, however many lines it is spread over (review round 2, R11)."""
-        self.assertEqual(reference_reads(REPO), [])
-        planted = {
-            # a reader spread over two lines (review round 2, R11)
-            REPO / 'tray' / 'planted_two_lines.py': (
-                "from pathlib import Path\nimport json\n\ndef read():\n    where = Path(__file__).parents[1] / 'references'\n"
-                "    path = where / 'accounts.json'\n    return json.loads(path.read_text())\n"),
-            # a module constant of another module
-            REPO / 'tray' / 'planted_constant.py': (
-                "import worker_sessions\n\ndef read():\n    return worker_sessions.SHIPPED_ACCOUNTS.read_bytes()\n"),
-            # a default argument
-            REPO / 'tray' / 'planted_default.py': (
-                "from pathlib import Path\nREF = Path('x') / 'references'\n\ndef read(path=REF / 'plan-templates.json'):\n"
-                "    with open(path) as stream:\n        return stream.read()\n"),
+        """Rule (finding 6): the hermetic run refuses a run-time module opening a file of the set other than through
+        public_data.document, whatever shape the read takes (hermetic_run.reference_reader); the shapes a static scan
+        misses (review round 3, r3_scan) are refused here as real code under tray/."""
+        import hermetic_run
+        self.assertEqual(hermetic_run.REFERENCE_FILES, public_data.FILES)
+        head = ("from pathlib import Path\nimport json\nimport public_data\n"
+                "ROOT = Path(public_data.BUNDLED)\n")
+        shapes = {
+            'two lines': "REF = ROOT / 'accounts.json'\nDIRECT = json.loads(REF.read_text(encoding='utf-8'))\n",
+            'a loop variable': "for name in ('accounts.json',):\n    DIRECT = (ROOT / name).read_text(encoding='utf-8')\n",
+            'a function returns the path': "def ref():\n    return ROOT / 'accounts.json'\nDIRECT = ref().read_text()\n",
+            'a built name': "KIND = 'accounts'\nDIRECT = (ROOT / (KIND + '.json')).read_text(encoding='utf-8')\n",
+            "the accessor's private helper": "DIRECT = public_data._read_bytes(ROOT / 'accounts.json')\n",
+            'open()': "with open(ROOT / 'five-axis-scores.json', 'rb') as f:\n    DIRECT = f.read()\n",
+            'a default argument': "def load(path=ROOT / 'accounts.json'):\n    return Path(path).read_text()\nDIRECT = load()\n",
         }
-        found = reference_reads(REPO, planted)
-        self.assertEqual(sorted(line.split(':')[0] for line in found), sorted(p.name for p in planted))
+        for label, code in shapes.items():
+            with self.subTest(label):
+                before = len(hermetic_run.VIOLATIONS)
+                with self.assertRaises(hermetic_run.HermeticViolation):
+                    exec(compile(head + code, str(REPO / 'tray' / 'planted_reader.py'), 'exec'), {'__name__': 'planted'})
+                found = hermetic_run.VIOLATIONS[before:]
+                del hermetic_run.VIOLATIONS[before:]                             # this test's own, expected refusal
+                self.assertEqual(len(found), 1)
+                self.assertIn('planted_reader.py', found[0][1])
+        before = len(hermetic_run.VIOLATIONS)
+        exec(compile(head + "DIRECT = public_data.document(ROOT / 'accounts.json')\n",
+                     str(REPO / 'tray' / 'planted_reader.py'), 'exec'), {'__name__': 'planted'})
+        self.assertEqual(hermetic_run.VIOLATIONS[before:], [])                   # through the accessor
+        planted = {'__name__': 'planted'}
+        exec(compile(head + "def load(path):\n    return Path(path).read_text(encoding='utf-8')\n",
+                     str(REPO / 'tray' / 'planted_reader.py'), 'exec'), planted)
+        planted['load'](public_data.BUNDLED / 'accounts.json')                   # a file its caller (this test) named
+        self.assertEqual(hermetic_run.VIOLATIONS[before:], [])
 
     def test_the_users_own_settings_beat_the_fetched_set_and_are_never_written(self):
         override = Path(os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
@@ -968,97 +1234,6 @@ class LoaderPrecedenceTests(ChannelCase):
         self.assertEqual({path: path.read_bytes() for path in owned}, owned)
         written = {p.relative_to(self.state).parts[0] for p in self.state.rglob('*') if p.is_file()}
         self.assertEqual(written - {'accounts-override.json', 'user-scores.json'}, {'public-data'})
-
-
-def reference_reads(repo, extra=None):
-    """Run-time reads of a reference-set file outside the accessor, as `file:line: expression` (the static scan)."""
-    import ast
-    allowed = {'public_data.py', 'reference_provenance.py', 'capability_catalog.py'}   # the accessor; maintainer checks
-    modules = {}
-    for folder in (repo / 'skills' / 'agent-compass' / 'scripts', repo / 'tray', repo / 'setup', repo / 'agentcompass'):
-        for path in folder.glob('*.py'):
-            if not path.name.startswith(('test_', 'conftest')) and not path.name.endswith('_test_support.py'):
-                modules[path] = path.read_text(encoding='utf-8')
-    modules.update(extra or {})
-    trees = {path: ast.parse(text) for path, text in modules.items()}
-    # Assignments by scope: (module stem, function or None, name) -> the expressions assigned to it. A name used in a
-    # function resolves to that function's own assignments and parameters (their defaults), else to the module's.
-    assigned, local = {}, {}
-
-    def record(stem, scope, name, value):
-        assigned.setdefault((stem, scope, name), []).append(value)
-        local.setdefault((stem, scope), set()).add(name)
-
-    def collect(stem, body, scope):
-        for node in body:
-            for sub in ast.walk(node) if scope else [node]:
-                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub is not node or scope is None and \
-                        isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    continue
-                targets = sub.targets if isinstance(sub, ast.Assign) else [sub.target] if isinstance(
-                    sub, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)) and sub.value else []
-                for target in targets:
-                    if isinstance(target, ast.Name):
-                        record(stem, scope, target.id, sub.value)
-    functions = {}
-    for path, tree in trees.items():
-        collect(path.stem, tree.body, None)
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                functions[node] = path.stem
-                collect(path.stem, node.body, node)
-                params = node.args.posonlyargs + node.args.args
-                defaults = [None] * (len(params) - len(node.args.defaults)) + node.args.defaults
-                for arg, default in [*zip(params, defaults), *zip(node.args.kwonlyargs, node.args.kw_defaults)]:
-                    local.setdefault((path.stem, node), set()).add(arg.arg)
-                    if default is not None:
-                        record(path.stem, node, arg.arg, default)
-
-    def expand(node, stem, scope, depth=0):
-        text = ast.unparse(node)
-        if depth > 6:
-            return text
-        for sub in ast.walk(node):
-            if isinstance(sub, ast.Name):
-                where = scope if sub.id in local.get((stem, scope), ()) else None
-                found = [(stem, where, v) for v in assigned.get((stem, where, sub.id), ())]
-            elif isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name):
-                found = [(sub.value.id, None, v) for v in assigned.get((sub.value.id, None, sub.attr), ())]
-            else:
-                continue
-            for owner, where, value in found:
-                text += ' ' + expand(value, owner, where, depth + 1)
-        return text
-
-    def enclosing(tree):
-        owner = {}
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                for sub in ast.walk(node):
-                    owner[sub] = node               # the innermost function wins: walk visits outer ones first
-        return owner
-    files = public_data.FILES
-    offenders = []
-    for path, tree in trees.items():
-        if path.name in allowed:
-            continue
-        owner = enclosing(tree)
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            if isinstance(func, ast.Attribute) and func.attr in ('read_text', 'read_bytes', 'open'):
-                subject = func.value
-            elif isinstance(func, ast.Name) and func.id == 'open' and node.args:
-                subject = node.args[0]
-            elif isinstance(func, ast.Attribute) and func.attr == 'load' and node.args:
-                subject = node.args[0]
-            else:
-                continue
-            text = expand(subject, path.stem, owner.get(node))
-            if 'references' in text.lower() and any(name in text for name in files):
-                offenders.append(f'{path.name}:{node.lineno}: {ast.unparse(node)[:120]}')
-    return offenders
 
 
 class FixtureServer:

@@ -9,6 +9,7 @@ import dispatch_flow
 import env_vars
 import host_policy
 import provider_inventory
+import public_data
 import subscription_cli
 import usage_reading
 
@@ -310,6 +311,7 @@ def evaluate(payload, requested='auto', timeout=120):
                     subscribed = code == 0 and auth.get('loggedIn') and auth.get('authMethod') == 'claude.ai'
                 if not subscribed:
                     raise RuntimeError('No verified subscription login for this judge.')
+                public_data.effect('judge model call')  # paid: a fall-back never asks again (only the ledger row follows)
                 code, out, _ = subscription_cli.run_process(judge_command(kind, prefix, directory, schema),
                                            directory, prompt, timeout, account=spec['account'])
                 if code != 0:

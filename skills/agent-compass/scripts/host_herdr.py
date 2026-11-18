@@ -19,6 +19,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import entry
 import launch_values
+import public_data
 
 
 def runs_dir():
@@ -125,6 +126,7 @@ def _launch(out, bundle, prompt_file, task_id, *, cwd=None, dispatch_id=None):
     except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
         return dict(out, launched=False, dispatch_mode='herdr', error=str(exc),
                     next='Resolve the Herdr availability or routed bundle error, then roll again.'), 2
+    public_data.effect('herdr worker launch')   # validated; marked before any receipt or terminal: never repeated
     identity = '\0'.join([os.environ.get('HC_SESSION', 'default'), out['parent_id'], task_id])
     key = hashlib.sha256(identity.encode()).hexdigest()[:24]
     root = runs_dir()

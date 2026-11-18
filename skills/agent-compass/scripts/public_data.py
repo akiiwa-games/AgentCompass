@@ -95,6 +95,7 @@ _CANDIDATE = []
 _FALLBACK = {}
 _READER = {}
 _EFFECTS = [0]      # effects this process has had (effect()); with_fallback re-runs only what came before the first
+_CARRIED = []       # per with_fallback call: the answers of paid calls its first run made, carried into its re-run
 
 
 def is_data_error(error):
@@ -123,6 +124,18 @@ def parse_document(data, name):
         raise
     except ValueError as exc:
         raise ReferenceDataError(f'{name} is not valid JSON: {exc}') from None
+
+
+def carried(key, call):
+    """``call()``, a paid call (a classifier model call), made at most once per with_fallback call: its re-run gets the
+    answer the first run got under ``key``, so a fall-back never pays for the same question twice. Outside
+    with_fallback it is just ``call()``. ``key`` names the question independently of the reference set."""
+    if not _CARRIED:
+        return call()
+    store = _CARRIED[-1]
+    if key not in store:
+        store[key] = call()
+    return store[key]
 
 
 def effect(what):
@@ -551,10 +564,11 @@ def _take(bundled, environ):
         return {**shipped, 'note': state.get('note') or f'fetched set {version} was rejected by this install'}
     if state.get('accepted_by') != reader_id():
         return {**shipped, 'note': f'fetched set {version} is not yet accepted by this version of the code; the next check does'}
-    aside_until = _parse(state.get('set_aside_until'))
-    if (state.get('set_aside_version') == version and state.get('set_aside_by') == reader_id()
-            and aside_until is not None and _now() < aside_until):
-        return {**shipped, 'note': state.get('note') or f'fetched set {version} is set aside until {state["set_aside_until"]}'}
+    aside = set_aside(state)
+    if aside is not None and aside['version'] == version:
+        return {**shipped, 'note': aside['note']}
+    if _ended_set_aside(state):
+        _clear_set_aside(environ)               # ended: cleared where it is read, so nothing still reports it
     directory = cache_dir(environ) / 'sets' / version
     fetched = _read_json(directory / MANIFEST)
     files = {name: data for name in FILES for data in [_read_bytes(directory / name)] if data is not None}
@@ -659,6 +673,44 @@ def fall_back(error, bundled=None, environ=None):
     return True
 
 
+def set_aside(state, now=None):
+    """The set-aside in effect for this code, or None: recorded by this code (`set_aside_by`), begun no later than now
+    (a start in the future is a clock that ran ahead, not a set-aside: the rule for a check time in the future), and not
+    yet over. ``{version, at, until, error, note}``."""
+    now = now or _now()
+    at, until = _parse(state.get('set_aside_at')), _parse(state.get('set_aside_until'))
+    if (not state.get('set_aside_version') or state.get('set_aside_by') != reader_id() or at is None or until is None
+            or at > now or now >= until):
+        return None
+    return {'version': state['set_aside_version'], 'at': state['set_aside_at'], 'until': state['set_aside_until'],
+            'error': state.get('set_aside_error'), 'note': state.get('set_aside_note')}
+
+
+SET_ASIDE_KEYS = ('set_aside_version', 'set_aside_by', 'set_aside_at', 'set_aside_until', 'set_aside_error',
+                  'set_aside_note')
+
+
+def _ended_set_aside(state, now=None):
+    """A recorded set-aside that holds for no code any more: this code's that is not in effect, or anyone's whose
+    period is over. Another code's set-aside still running is left to that code (installs may share the state)."""
+    if not state.get('set_aside_version') or set_aside(state, now) is not None:
+        return False
+    until = _parse(state.get('set_aside_until'))
+    return state.get('set_aside_by') == reader_id() or until is None or (now or _now()) >= until
+
+
+def _clear_set_aside(environ):
+    """Drop a set-aside that has ended (best effort: one that stays is still ignored by set_aside())."""
+    def change(state):
+        if _ended_set_aside(state):
+            for key in SET_ASIDE_KEYS:
+                state.pop(key, None)
+    try:
+        _update_state(environ, change)
+    except (OSError, TimeoutError):
+        pass
+
+
 def settle(bundled=None, environ=None):
     """Close a pending fall-back: when the shipped set succeeded where the fetched one failed, set the fetched set aside
     for SET_ASIDE_HOURS (doctor names it with the error); it is taken again after that, or at once when a newer set is
@@ -668,14 +720,15 @@ def settle(bundled=None, environ=None):
         pending = _FALLBACK.pop(key, None)
     if pending is None or pending['failed_again']:
         return None
-    until = _stamp(_now() + timedelta(hours=SET_ASIDE_HOURS))
+    at = _now().replace(microsecond=0)
+    until = _stamp(at + timedelta(hours=SET_ASIDE_HOURS))
     note = (f"published set {pending['version']} failed this install's readers at run time ({pending['error']}); it is "
             f'set aside until {until} and the shipped set is used. It is tried again then, or at once when a newer set is '
             f'published or this install is updated')
 
     def change(state):
-        state.update(set_aside_version=pending['version'], set_aside_by=reader_id(), set_aside_until=until,
-                     set_aside_error=pending['error'], note=note)
+        state.update(set_aside_version=pending['version'], set_aside_by=reader_id(), set_aside_at=_stamp(at),
+                     set_aside_until=until, set_aside_error=pending['error'], set_aside_note=note)
     try:
         _update_state(environ, change)
     except (OSError, TimeoutError):
@@ -688,20 +741,24 @@ def with_fallback(call, *args, **kwargs):
     effect (effect()), run it again on the shipped set as a whole, then settle(). After an effect, for a refusal or an
     environment failure, the error propagates unchanged and nothing is re-run or blamed."""
     before = _EFFECTS[0]
+    _CARRIED.append({})
     try:
-        result = call(*args, **kwargs)
-    except Exception as exc:
-        if _EFFECTS[0] != before or not fall_back(exc):
-            settle()
-            raise
         try:
             result = call(*args, **kwargs)
-        except Exception as again:
-            fall_back(again)
-            settle()
-            raise
-    settle()
-    return result
+        except Exception as exc:
+            if _EFFECTS[0] != before or not fall_back(exc):
+                settle()
+                raise
+            try:
+                result = call(*args, **kwargs)
+            except Exception as again:
+                fall_back(again)
+                settle()
+                raise
+        settle()
+        return result
+    finally:
+        _CARRIED.pop()
 
 
 def due(state, cfg, now=None):
@@ -865,8 +922,7 @@ def _accepted_result(manifest, cfg, now, state, version, downloaded, status, cac
         changes['fetched_at'] = _stamp(now)
     _prune(cache / 'sets', {version, previous})
     return ({'status': status, 'version': version, 'previous': previous, 'downloaded': downloaded}, changes,
-            ('remote_schema_version', 'rejected_version', 'rejected_by', 'set_aside_version', 'set_aside_by',
-             'set_aside_until', 'set_aside_error'))
+            ('remote_schema_version', 'rejected_version', 'rejected_by', *SET_ASIDE_KEYS))
 
 
 def _prune(sets, keep):
@@ -915,14 +971,15 @@ def reference_alert(bundled=None, environ=None):
     if chosen['source'] == 'fetched' or not chosen.get('enabled'):
         return None
     state = read_state(environ)
-    until = _parse(state.get('set_aside_until'))
-    refused = ((state.get('rejected_version') and state.get('rejected_by') == reader_id())
-               or (state.get('set_aside_version') and state.get('set_aside_by') == reader_id()
-                   and until is not None and _now() < until))
-    if not refused:
+    aside = set_aside(state)
+    if aside is not None:
+        message = aside['note']
+    elif state.get('rejected_version') and state.get('rejected_by') == reader_id():
+        message = state.get('note')
+    else:
         return None
     return {'code': 'reference_data_refused', 'severity': 'warn', 'account': None,
-            'message': state.get('note') or 'the published reference set was refused by this install; the shipped set is used'}
+            'message': message or 'the published reference set was refused by this install; the shipped set is used'}
 
 
 def status(environ=None, bundled=None):
@@ -936,8 +993,7 @@ def status(environ=None, bundled=None):
             'reads_schema': SCHEMA_VERSION, 'bundled_version': chosen['bundled_version'], 'dir': chosen['dir'],
             'note': '; '.join(notes) or None, 'fetched_at': state.get('fetched_at'),
             'checked_at': state.get('checked_at'), 'last_error': state.get('last_error'), 'url': cfg['url'],
-            'set_aside': ({k: state.get(f'set_aside_{k}') for k in ('version', 'until', 'error')}
-                          if state.get('set_aside_version') else None),
+            'set_aside': ({k: v for k, v in aside.items() if k != 'note'} if (aside := set_aside(state)) else None),
             'interval_hours': cfg['interval_hours'], 'cache': str(cache_dir(environ))}
 
 

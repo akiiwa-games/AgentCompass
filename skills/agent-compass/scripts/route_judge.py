@@ -15,6 +15,7 @@ import urllib.request
 # Also support the path-loaded allocator and python -I entrypoints.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import account_state
+import caller_input
 import antigravity_plan
 import decision_ledger
 import dispatch_flow
@@ -249,7 +250,7 @@ def _record_task(args, task):
     if task is None:
         task = {}
     if not task and args.input is not None:
-        loaded = json.loads(args.input.read_text(encoding='utf-8-sig'))
+        loaded = json.loads(caller_input.read_text(args, args.input))
         task = loaded.get('task') if isinstance(loaded, dict) and isinstance(loaded.get('task'), dict) else {}
     if not task.get('parent_agent_id'):
         # The gate matches same-session rows first; a record without the session ID loses to any
@@ -721,7 +722,7 @@ def scorer_cli(args):
     if args.action == 'set':
         if not args.scorer_type:
             raise ValueError('scorer set requires --type.')
-        api_key = sys.stdin.readline().strip() if args.api_key == '-' else args.api_key
+        api_key = caller_input.stdin_line(args).strip() if args.api_key == '-' else args.api_key
         scorer_client.save_scorer_config(args.scorer_type, api_key, args.base_url, args.model,
                            None if args.fallback_to_agy is None else args.fallback_to_agy == 'on', path)
         return {'stage': 'scorer', 'action': 'set', 'saved': True, **scorer_client.scorer_status(scorer_client.load_scorer_config(path), path)}, 0
@@ -739,7 +740,7 @@ def score_stage(args):
     import account_fleet
     if args.input is None:
         raise ValueError('score requires --input.')
-    document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+    document = json.loads(caller_input.read_text(args, args.input))
     task = document.get('task')
     if not isinstance(task, dict) or not task:
         raise ValueError('Input requires task.')
@@ -870,15 +871,22 @@ def main():
         public_data.refresh_in_background()
         antigravity_plan.refresh_in_background(state_upgrade.state_dir())
     try:
-        # A reader failing on a fetched reference set with a data error before this run had an effect (a ledger row, a
-        # reservation, a launch: public_data.effect) runs the stage again on the shipped set; after an effect, for a
-        # refusal or an environment failure, the error is this run's answer (public_data.with_fallback).
-        return public_data.with_fallback(lambda: _run_stage(build_parser().parse_args()))
-    except (OSError, ValueError, RuntimeError, TypeError, AttributeError, sqlite3.Error) as exc:
+        # The caller's input (stdin, the --input and --brief files) is read once, here, before the part that may run
+        # again; a re-run receives what was read (caller_input). A reader failing on a fetched reference set with a
+        # data error before this run had an effect (a ledger row, a reservation, a launch: public_data.effect) runs the
+        # stage again on the shipped set; after an effect, for a refusal or an environment failure, the error is this
+        # run's answer (public_data.with_fallback).
+        caller = caller_input.capture(args)
+        return public_data.with_fallback(lambda: _run_stage(caller_input.attach(build_parser().parse_args(), caller)))
+    except (OSError, ValueError, RuntimeError, sqlite3.Error, *public_data.DATA_ERRORS) as exc:
+        # Every failure, a data-class error (KeyError, TypeError, ...) included, is reported as the named error, never
+        # as a traceback.
         failure = {'error': 'Routing input or local runtime failed', 'error_type': type(exc).__name__}
         if isinstance(exc, (ValueError, scorer_client.ScorerError)):
             # Only fixed texts written in this repository (caller input rules, scorer limits); other errors may carry paths or bodies.
             failure['detail'] = str(exc)[:400]
+        elif public_data.is_data_error(exc):
+            failure['error'] = 'Reference or local data could not be read'
         failure['next'] = ('Fix the cause in detail, then roll again. A task that already has a Paseo dispatch comes back as that '
                            'worker (pending), not as a second launch.' if args.stage == 'roll' else
                            'Check reviewed input and usage cache; continue feasible parent work.')
@@ -943,12 +951,12 @@ def _run_stage(args):
         elif args.input is None:
             raise ValueError('plan requires --input.')
         else:
-            document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+            document = json.loads(caller_input.read_text(args, args.input))
         result, code = plan_stage(document, args)
     else:
         if args.input is None:
             raise ValueError('Routing stages require --input.')
-        document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+        document = json.loads(caller_input.read_text(args, args.input))
         payload = subscription_judge.build_request(args.stage, document, args.usage_cache)
         started = time.monotonic()
         if args.dry_run:

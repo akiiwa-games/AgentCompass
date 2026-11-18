@@ -791,6 +791,17 @@ class OverrideContractTests(unittest.TestCase):
         self.assertEqual(json.loads(self.path.read_text())['overrides'], [newer])
 
     @pytest.mark.slow
+    def test_the_override_write_is_an_effect_before_its_ledger_row(self):
+        """Rule (round 4, review round 3 E3): an override the call was asked to write is an effect the moment it is
+        written, so a data error between the write and the ledger row is not re-run on the shipped set."""
+        import public_data
+        at = []
+        before = public_data._EFFECTS[0]
+        with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage), \
+                patch.object(decision_ledger, 'append_ledger', lambda row: at.append(public_data._EFFECTS[0])):
+            quota_overrides.manage_overrides(self.args(), self.now)
+        self.assertEqual(at, [before + 1])
+
     def test_upsert_rebaseline_and_atomic_concurrency(self):
         with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
             first = quota_overrides.manage_overrides(self.args(), self.now)['active'][0]

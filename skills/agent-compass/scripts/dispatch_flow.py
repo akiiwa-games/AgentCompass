@@ -11,7 +11,9 @@ import time
 
 from datetime import timedelta
 
+import caller_input
 import dispatch_fallback
+import public_data
 import dispatch_registry as registry
 import entry
 from worker_context import require_parent_id
@@ -115,12 +117,17 @@ REMOVED_NEXT = ('Paseo created this worker and it was removed before this dispat
                 'holds nothing. The worker may have done part of the work: check that before rolling this brief again.')
 
 
+LAUNCH_OPERATIONS = ('create', 'resume')     # bridge operations that start or continue a worker (effects)
+
+
 def host_call(payload):
     """One bridge round trip, bounded by payload timeout_seconds. Files rather than pipes: a killed bridge cannot
     keep the caller waiting on a stream some descendant still holds open."""
     bridge = Path(os.environ.get('ROUTER_PASEO_BRIDGE') or
                   Path(__file__).resolve().parents[3] / 'setup' / 'paseo_dispatch_bridge.mjs')
     timeout = payload.get('timeout_seconds') or (RESUME_TIMEOUT if payload.get('operation') == 'resume' else HOST_TIMEOUT)
+    if payload.get('operation') in LAUNCH_OPERATIONS:
+        public_data.effect(f"paseo {payload['operation']}")    # marked before the bridge starts: never repeated
     try:
         with tempfile.TemporaryFile() as stdin, tempfile.TemporaryFile() as stdout:
             stdin.write(json.dumps(payload).encode('utf-8'))
@@ -649,7 +656,7 @@ def cli(args):
     if action == 'prepare':
         if not args.input:
             raise ValueError('dispatch prepare requires --input {decision_id, task, launch}')
-        document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+        document = json.loads(caller_input.read_text(args, args.input))
         require_actual_parent(document['task'].get('parent_agent_id'))
         import usage_reading
         reconcile()

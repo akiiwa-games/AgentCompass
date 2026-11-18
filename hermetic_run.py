@@ -11,6 +11,10 @@ Two guards make a leak fail loudly instead of passing:
   refused (sys.addaudithook) and fails the test that did it;
 - psutil terminate / kill / send_signal / suspend, os.kill, or a taskkill command line, of a process this run did not
   start is refused and fails the test. (2026-11-11: tests sent "quit" to the user's real Usage Float and wrote the real logs.)
+
+A third guard holds the reference set to its one accessor (router-internals §5): opening a file of the set under this
+checkout's `skills/agent-compass/references/` from a run-time module (scripts, tray, setup, agentcompass) other than
+`public_data.py` fails the test, whatever shape the read takes, for every reader a test exercises.
 """
 import atexit
 import os
@@ -136,6 +140,83 @@ def _refuse(what):
     raise HermeticViolation(f'hermetic test run: refused {what}')
 
 
+REFERENCES = os.path.normcase(str(REPO_ROOT / 'skills' / 'agent-compass' / 'references'))
+# The files of the reference set (public_data.FILES), which run-time code reads only through public_data.document.
+REFERENCE_FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'five-axis-scores.json',
+                   'user-scores.json')
+RUN_TIME_DIRS = tuple(os.path.normcase(str(REPO_ROOT / d)) for d in (
+    os.path.join('skills', 'agent-compass', 'scripts'), 'tray', 'setup', 'agentcompass'))
+# The accessor, and the maintainer checks that read the set as files on purpose (provenance, the capability catalogue).
+REFERENCE_OWNERS = ('public_data.py', 'reference_provenance.py', 'capability_catalog.py')
+PASS_THROUGH = ('override_store.py',)      # a helper the accessor reads through (retry_denied), owning nothing itself
+_STDLIB = os.path.normcase(os.path.dirname(os.__file__))
+_HERE = os.path.normcase(os.path.abspath(__file__))
+
+
+def _code_frames(frame):
+    """(normcased file, frame) from ``frame`` outwards, without the standard library, site packages and this module."""
+    while frame is not None:
+        name = os.path.normcase(os.path.abspath(frame.f_code.co_filename))
+        if not (name.startswith(_STDLIB) or name == _HERE or frame.f_code.co_filename.startswith('<')):
+            yield name, frame
+        frame = frame.f_back
+
+
+def _names(full, frame):
+    """Whether ``frame``'s function received the path ``full`` as an argument (its caller named the file)."""
+    code = frame.f_code
+    count = code.co_argcount + code.co_kwonlyargcount
+    for value in (frame.f_locals.get(name) for name in code.co_varnames[:count]):
+        if isinstance(value, (str, os.PathLike)):
+            try:
+                if os.path.normcase(os.path.abspath(os.fsdecode(value))) == full:
+                    return True
+            except (TypeError, ValueError):
+                pass
+    return False
+
+
+def _from_environment(full):
+    return any(os.path.normcase(os.path.abspath(value)) == full for value in os.environ.values()
+               if value and (os.sep in value or '/' in value))
+
+
+def reference_reader(path, frame=None):
+    """`module:line` of the run-time module that opens reference-set file ``path`` other than through the accessor, or
+    None. Walking out from the open past the accessor's own frames (and the helpers it reads through): the module that
+    called in is a test or a maintainer check, or it entered the accessor through a public function (`document`,
+    `held`, ...). A run-time function that reads a file its caller named (an argument such as `load_accounts(path)`, or
+    a variable of the environment such as `ROUTER_ACCOUNTS_FILE`) passes the question to that caller. A direct open, or
+    a call into one of the accessor's private helpers (`public_data._read_bytes`), from a run-time module that chose
+    the file itself is the violation."""
+    if isinstance(path, int) or path is None:
+        return None
+    try:
+        full = os.path.normcase(os.path.abspath(os.fsdecode(path)))
+    except (TypeError, ValueError):
+        return None
+    if os.path.dirname(full) != REFERENCES or os.path.basename(full) not in REFERENCE_FILES:
+        return None
+    entry = None
+    for name, current in _code_frames(frame or sys._getframe(2)):
+        base = os.path.basename(name)
+        if base in REFERENCE_OWNERS or base in PASS_THROUGH:
+            if base in REFERENCE_OWNERS:
+                entry = current
+            continue
+        run_time = any(name.startswith(d + os.sep) for d in RUN_TIME_DIRS)
+        if not run_time or base.startswith(('test_', 'conftest')) or base.endswith('_test_support.py'):
+            return None
+        if entry is not None and not entry.f_code.co_name.startswith('_'):
+            return None
+        if _names(full, current):
+            continue                    # the caller named the file: ask the caller
+        if _from_environment(full):
+            return None
+        return f'{base}:{current.f_lineno}'
+    return None
+
+
 _WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_TRUNC
 _PATH_INDICES = {
     'os.remove': (0,), 'os.rmdir': (0,), 'os.mkdir': (0,), 'os.truncate': (0,), 'os.utime': (0,), 'os.chmod': (0,),
@@ -150,6 +231,11 @@ def _audit(event, args):
                   else bool(isinstance(flags, int) and flags & _WRITE_FLAGS))
         if writes and _protected(path):
             _refuse(f'writing {os.fsdecode(path)}')
+        if not writes:
+            reader = reference_reader(path)
+            if reader:
+                _refuse(f'{reader} opening reference file {os.path.basename(os.fsdecode(path))} other than through '
+                        f'public_data.document')
     elif event in _PATH_INDICES:
         for idx in _PATH_INDICES[event]:
             if idx < len(args) and _protected(args[idx]):

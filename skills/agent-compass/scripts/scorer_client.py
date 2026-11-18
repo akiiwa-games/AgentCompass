@@ -789,7 +789,6 @@ def score_task(task, capabilities, timeout=SCORER_TIMEOUT_SECONDS, use_model=Tru
         return task_intake.validate_caller_profile(task['profile']), {'source': 'caller_profile', 'model': None}
     config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
     configured, order = scorer_attempt_order(config)
-    reason, attempts, skipped = 'model_call_skipped', [], []
     policy = host_policy.load_policy() if use_model else None
     if use_model:
         cache_key = score_cache_key(task, capabilities, order, config)
@@ -799,43 +798,58 @@ def score_task(task, capabilities, timeout=SCORER_TIMEOUT_SECONDS, use_model=Tru
                 return task_intake.validate_profile(cached['profile']), {**cached['scorer'], 'cached': True, 'duration_ms': 0}
             except ValueError:
                 pass        # written under an older schema, or damaged: a miss, not a failure
-        input_error = None
-        for scorer_type in order:
-            # Every usable account of the family in turn; none (no account, client or key) skips it without an error.
-            # `skipped` only explains an absence (e.g. to the tray's scorer test); it is not a failure.
-            accounts = scorer_accounts(scorer_type, policy=policy)
-            if not accounts:
-                skipped.append({'scorer_type': scorer_type,
-                                'detail': f'No ready {SCORER_FAMILIES.get(scorer_type)} account on this host.'})
-            for account in accounts:
-                started = time.monotonic()
-                try:
-                    profile, provider, model = run_scorer(scorer_type, task, capabilities, timeout, config, account)
-                except ScorerUnavailable as exc:
-                    skipped.append({'scorer_type': scorer_type, 'detail': str(exc)})
-                    break
-                except SCORER_ERRORS as exc:
-                    # Never echo CLI output or response bodies; the type (and our own fixed text) tells the cause.
-                    attempt = {'scorer_type': scorer_type, 'error_type': type(exc).__name__,
-                               **({'account': account} if account else {})}
-                    if isinstance(exc, ScorerError):
-                        attempt['detail'] = str(exc)
-                    attempts.append(attempt)
-                    if isinstance(exc, ScorerInputError):
-                        input_error = input_error or exc
-                    continue
-                meta = {'source': 'system_one', 'scorer_type': scorer_type, 'provider': provider, 'model': model,
-                        **({'account': account} if account else {}), **({'skipped': skipped} if skipped else {}),
-                        'duration_ms': int((time.monotonic() - started) * 1000)}
-                if attempts:
-                    meta.update(configured_scorer=configured, fallback_reason=attempts[0]['error_type'], attempts=attempts)
-                else:       # the first scorer this host can run answered; earlier ones were absent here, not failing
-                    score_cache_put(cache_key, profile, meta)
-                return profile, meta
-        if input_error is not None:
-            # No scorer could take the whole text: stop here rather than route on a cut or keyword-guessed profile.
-            raise input_error
-        reason = attempts[0]['error_type'] if attempts else 'scorer_unavailable'
+        # A paid call: a fall-back re-run gets this run's answer (public_data.carried), keyed by the task and the
+        # scorers, not by the reference set the prompt was built from.
+        question = json.dumps(['score', scorer_task_fields(task), order], sort_keys=True, ensure_ascii=False, default=str)
+        return public_data.carried(question, lambda: _ask_scorers(task, capabilities, timeout, config, configured, order,
+                                                                   policy, cache_key))
+    return _unavailable(configured, 'model_call_skipped', [], [])
+
+
+def _ask_scorers(task, capabilities, timeout, config, configured, order, policy, cache_key):
+    """score_task's model calls: each scorer in ``order`` until one answers."""
+    attempts, skipped = [], []
+    input_error = None
+    for scorer_type in order:
+        # Every usable account of the family in turn; none (no account, client or key) skips it without an error.
+        # `skipped` only explains an absence (e.g. to the tray's scorer test); it is not a failure.
+        accounts = scorer_accounts(scorer_type, policy=policy)
+        if not accounts:
+            skipped.append({'scorer_type': scorer_type,
+                            'detail': f'No ready {SCORER_FAMILIES.get(scorer_type)} account on this host.'})
+        for account in accounts:
+            started = time.monotonic()
+            try:
+                profile, provider, model = run_scorer(scorer_type, task, capabilities, timeout, config, account)
+            except ScorerUnavailable as exc:
+                skipped.append({'scorer_type': scorer_type, 'detail': str(exc)})
+                break
+            except SCORER_ERRORS as exc:
+                # Never echo CLI output or response bodies; the type (and our own fixed text) tells the cause.
+                attempt = {'scorer_type': scorer_type, 'error_type': type(exc).__name__,
+                           **({'account': account} if account else {})}
+                if isinstance(exc, ScorerError):
+                    attempt['detail'] = str(exc)
+                attempts.append(attempt)
+                if isinstance(exc, ScorerInputError):
+                    input_error = input_error or exc
+                continue
+            meta = {'source': 'system_one', 'scorer_type': scorer_type, 'provider': provider, 'model': model,
+                    **({'account': account} if account else {}), **({'skipped': skipped} if skipped else {}),
+                    'duration_ms': int((time.monotonic() - started) * 1000)}
+            if attempts:
+                meta.update(configured_scorer=configured, fallback_reason=attempts[0]['error_type'], attempts=attempts)
+            else:       # the first scorer this host can run answered; earlier ones were absent here, not failing
+                score_cache_put(cache_key, profile, meta)
+            return profile, meta
+    if input_error is not None:
+        # No scorer could take the whole text: stop here rather than route on a cut or keyword-guessed profile.
+        raise input_error
+    reason = attempts[0]['error_type'] if attempts else 'scorer_unavailable'
+    return _unavailable(configured, reason, attempts, skipped)
+
+
+def _unavailable(configured, reason, attempts, skipped):
     meta = {'source': 'scorer_unavailable', 'model': None, 'configured_scorer': configured, 'fallback_reason': reason}
     if attempts:
         meta['attempts'] = attempts
@@ -912,6 +926,14 @@ def classify_structured(instructions, text, schema, validate, timeout=SCORER_TIM
     classifier answered: the caller treats that as unknown, never as a keyword guess."""
     config = scorer_config if isinstance(scorer_config, dict) else load_scorer_config()
     configured, order = scorer_attempt_order(config)
+    # A paid call: a fall-back re-run gets this run's answer (public_data.carried).
+    question = json.dumps(['structured', instructions, text, schema, order], sort_keys=True, ensure_ascii=False, default=str)
+    return public_data.carried(question, lambda: _ask_structured(instructions, text, schema, validate, timeout, config,
+                                                                 configured, order))
+
+
+def _ask_structured(instructions, text, schema, validate, timeout, config, configured, order):
+    """classify_structured's model calls: each scorer in ``order`` until one answers."""
     policy = host_policy.load_policy()
     attempts, skipped = [], []
     for scorer_type in order:
