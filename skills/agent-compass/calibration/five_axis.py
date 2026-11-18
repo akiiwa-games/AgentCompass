@@ -66,10 +66,11 @@ scores on the four categories and the quota economy together. Nothing else score
   MIN_SIZE_PAIRS pairs and they all point one way (`pair_agreement`); otherwise it is zero and the cell says why
   (`directions disagree`, `fewer than 2 pairs`). Time/Task the same on the log ratio time(small) / time(large) at High
   (`time_size_step`). An ability value is then never above the larger model's (`min(step, 0)`, `bound_across_size`).
-- Edge efforts (`fill_edge`): an effort of the ladder beyond the measured ones (`EDGES`: `minimal` below Low, `ultra` above
-  Max) is its neighbour plus the fleet's median step between that neighbour and the next measured effort, over the models
-  measured at both (`edge_step_table`, n >= 2: value(low) - value(medium) for `minimal`, value(max) - value(xhigh) for
-  `ultra`), bounded by no inversion; Time/Task the neighbour times the fleet's median ratio (n >= MIN_FLEET_RATIO_N).
+- Edge efforts (`fill_edge`): an effort of the ladder beyond the measured ones (`EDGES`, user_scores: `minimal` and `none`
+  below Low, `ultra` above Max) is its neighbour toward them plus the fleet's median step at that end of the measured
+  efforts, over the models measured at both (`edge_step_table`, n >= 2: value(low) - value(medium) for `minimal` and again
+  for `none` below it, value(max) - value(xhigh) for `ultra`), bounded by no inversion; Time/Task the neighbour times the
+  fleet's median ratio at that end (n >= MIN_FLEET_RATIO_N).
 - Own ability median (`own_ability_median`, owner 2026-11-18), last and coarsest: an ability facet still without a value is,
   at each effort, the median of the model's own ability facets there (at least MIN_OWN_FACETS of them, all on the panel-z
   scale); status `estimated`, with the facets used.
@@ -145,13 +146,14 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # anchor instead of pooled, the `tier_down` estimate. Levels mean what they meant under /6.
 # /8 (2026-11-18): the `minimal` effort (Low plus the fleet's step below it, `effort_steps.<facet>.low.minimal`, and
 # `effort_steps.time_per_task`), the `size_step` estimate and the top-level `size_steps` table. Levels unchanged.
-SCHEMA = 'agent-compass.five-axis-scores/9'
+# /9 (2026-11-18): `ultra`, the declared `effort_readings` and size steps per pair. Levels unchanged.
+# /10 (2026-11-18): the `none` effort, one more edge step below `minimal` (`effort_steps.<facet>.minimal.none`,
+# `effort_steps.time_per_task.minimal.none`). Levels unchanged.
+SCHEMA = 'agent-compass.five-axis-scores/10'
 AXES = measurements.AXES
-EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')      # the efforts boards measure and the panel steps reach
+EFFORTS = user_scores.MEASURED_EFFORTS                   # the efforts boards measure and the panel steps reach
 LADDER = user_scores.EFFORTS                              # every effort a curve carries: the edge efforts too (fill_edge)
-# {edge effort: (its measured neighbour, the next measured effort)}: each effort of LADDER beyond the measured ones
-EDGES = {e: (LADDER[i + 1], LADDER[i + 2]) if i < LADDER.index(EFFORTS[0]) else (LADDER[i - 1], LADDER[i - 2])
-         for i, e in enumerate(LADDER) if e not in EFFORTS}
+EDGES = user_scores.EDGES     # {edge effort: (its neighbour toward the measured ones, (measured end, next measured))}
 MIN_SIZE_PAIRS = 2      # same-version (small, larger) pairs a size step needs, as the panel effort step (n >= 2)
 MIN_OWN_FACETS = 2      # ability facets a model's own median needs (a median of one value is that value, not a median)
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
@@ -1205,7 +1207,7 @@ class Scorer:
         effort (`EDGES`: its neighbour, the next measured effort), the fleet's median of value(neighbour) - value(next) over
         the models that measured the facet at both, n >= 2."""
         out = {}
-        for edge, (near, nxt) in EDGES.items():
+        for edge, (_, (near, nxt)) in EDGES.items():
             xs = {}
             for fs in facets.values():
                 for key, rec in fs.items():
@@ -1220,14 +1222,14 @@ class Scorer:
     def fill_edge(self, m, key, rec, edge):
         """Edge effort `edge` of facet record `rec`: its neighbour plus the fleet's edge step, then the bound with every other
         effort pinned, so it never moves one. Returns the refusals."""
-        near, nxt = EDGES[edge]
+        near, (end, nxt) = EDGES[edge]
         by = dict(rec.get('by_effort') or {})
         if edge in by or near not in by:
             return []
         step = ((self.steps.get('.'.join(key)) or {}).get(near) or {}).get(edge)
         if step is None:
             return [{'model': m, 'facet': '.'.join(key), 'effort': edge, 'from': near,
-                     'reason': f'fewer than 2 fleet models measured at {near} and {nxt}'}]
+                     'reason': f'fewer than 2 fleet models measured at {end} and {nxt}'}]
         value = round(by[near] + step['step'], 4)
         held = round(float(user_scores.bound_along_effort({**by, edge: value}, rises(key), list(by))[edge]), 4)
         how = {'method': step['method'], 'from_effort': near, 'from_value': by[near], 'step': step['step'], 'n': step['n']}
@@ -1563,8 +1565,8 @@ def durations(scorer, rows, acc, index, board, tier):
     # time(next) over the Artificial Analysis listings with both, bounded by no inversion; a `same_model` row carrying the
     # time copies its model's.
     scorer.time_steps = {}
-    for edge, (near, nxt) in EDGES.items():
-        xs = [t[near]['time_per_task_min'] / t[nxt]['time_per_task_min'] for t in aa.values() if near in t and nxt in t]
+    for edge, (near, (end, nxt)) in EDGES.items():
+        xs = [t[end]['time_per_task_min'] / t[nxt]['time_per_task_min'] for t in aa.values() if end in t and nxt in t]
         if len(xs) >= MIN_FLEET_RATIO_N:
             scorer.time_steps.setdefault(near, {})[edge] = {'ratio': round(float(np.median(xs)), 4), 'n': len(xs),
                                                             'sample': 'fleet', 'method': edge_method(edge)}

@@ -90,7 +90,7 @@ def validate_accounts_provenance(doc):
 
 def _validate_cited_tables(doc):
     """`alias_sources` and `dispatch_efforts_sources`: each cited row is a public declaration of an alias or a launch row
-    the catalog has."""
+    the catalog has, and every alias is cited with its date and statement (round 4)."""
     def rows(name):
         table = doc.get(name, {'rows': {}})
         if not isinstance(table, dict) or not isinstance(table.get('rows'), dict):
@@ -102,6 +102,10 @@ def _validate_cited_tables(doc):
         'dispatch_efforts_sources': {f'{h}/{m}': (e, m in (launch.get(h) or {}))
                                      for h, per in rows('dispatch_efforts_sources').items() for m, e in per.items()},
     }
+    uncited = sorted(set(doc.get('aliases') or {}) - set(rows('alias_sources')))
+    if uncited:
+        raise ValueError('accounts.json aliases need their public statement in alias_sources (a vendor statement, a cited '
+                         f'catalog such as models.dev, or a dated maintainer declaration): {", ".join(uncited)}')
     for name, cited in checks.items():
         missing = [k for k, (_, known) in cited.items() if not known]
         if missing:
@@ -109,6 +113,11 @@ def _validate_cited_tables(doc):
         bad = [k for k, (e, _) in cited.items() if not valid_public_declaration(e)]
         if bad:
             raise ValueError(f'accounts.json {name} rows need an https url or a dated maintainer declaration: {", ".join(bad)}')
+    undated = [k for k, (e, _) in checks['alias_sources'].items()
+               if not _ISO_DATE.match(str(e.get('as_of') or '')) or not str(e.get('statement') or '').strip()]
+    if undated:
+        raise ValueError(f'accounts.json alias_sources rows need the date they were read (as_of) and the statement: '
+                         f'{", ".join(undated)}')
 
 
 LISTING_BOARDS = ('arena', 'aa')        # calibration/tiers.py LISTING_BOARDS: `listed_as` keys
@@ -195,7 +204,7 @@ def _validate_catalog_tables(doc):
     readings = doc.get('effort_readings')
     reads = (readings or {}).get('reads') if isinstance(readings, dict) else None
     if (not valid_public_declaration(readings) or not isinstance(reads, dict) or not reads
-            or not all(isinstance(k, str) and k not in user_scores.EFFORTS and v in user_scores.EFFORTS[1:-1]
+            or not all(isinstance(k, str) and k not in user_scores.EFFORTS and v in user_scores.MEASURED_EFFORTS
                        for k, v in reads.items())):
         raise ValueError('accounts.json needs effort_readings {reads: {effort name off the scale: the measured effort it '
                          'reads}} as a dated maintainer declaration (calibration/five_axis.py effort_readings)')

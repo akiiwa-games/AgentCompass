@@ -1801,7 +1801,7 @@ class DurationTests(unittest.TestCase):
         self.assertEqual((out[self.anchor]['by_effort']['high'], out['m']['by_effort']), (1.0, {'high': 1.5, 'max': 2.0}))
         self.assertEqual(out['m']['minutes_by_effort'], {'high': 15.0, 'max': 20.0})
         self.assertEqual({b['method'] for b in out['m']['basis_by_effort'].values()}, {'aa'})   # the arena listing is not used
-        self.assertEqual(out['m']['efforts_without_time'], ['minimal', 'low', 'medium', 'xhigh', 'ultra'])
+        self.assertEqual(out['m']['efforts_without_time'], [e for e in self.fa.LADDER if e not in ('high', 'max')])
         self.assertEqual(out['m']['basis_by_effort']['max']['url'], f'https://example.test/{aa}')
 
     def test_an_effortless_listing_is_the_single_configuration_keyed_high(self):
@@ -1871,7 +1871,7 @@ class DurationTests(unittest.TestCase):
         self.assertEqual((basis['method'], basis['base_model'], basis['from_effort'], basis['ratio']),
                          ('series_effort', 'gpt-5.6-luna', 'high', 3.0))
         self.assertEqual(row['basis_by_effort']['high']['method'], 'aa')
-        self.assertEqual(row['efforts_without_time'], ['minimal', 'medium', 'xhigh', 'ultra'])   # the sibling lists neither
+        self.assertEqual(row['efforts_without_time'], [e for e in self.fa.LADDER if e not in ('low', 'high', 'max')])   # the sibling lists neither
         # alone, with no sibling to convert through, the other efforts have no time
         alone, _, _ = self.build({self.anchor: [self.tp(aa, 'high', 10.0)], 'gpt-6-luna': [self.tp(aa, 'high', 6.0)]})
         self.assertEqual(alone['gpt-6-luna']['by_effort'], {'high': 0.6})
@@ -2750,14 +2750,16 @@ class EffortCoverageRuleTests(unittest.TestCase):
 
     def test_the_edge_steps_are_the_fleet_medians_next_to_them(self):
         """Rule (`edge_step_table`, `EDGES`): per facet and edge effort, the median of value(neighbour) - value(next) over the
-        fleet models that measured the facet at both (n >= 2: low - medium for `minimal`, max - xhigh for `ultra`); Time/Task
-        the neighbour times the fleet ratio, never past the neighbour against its direction."""
-        self.assertEqual(self.fa.EDGES, {'minimal': ('low', 'medium'), 'ultra': ('max', 'xhigh')})
-        for edge, (near, nxt) in self.fa.EDGES.items():
+        fleet models that measured the facet at both (n >= 2: low - medium for `minimal` and again for `none`, one more step
+        below it, max - xhigh for `ultra`); Time/Task the neighbour times the fleet ratio at that end, never past the
+        neighbour against its direction."""
+        self.assertEqual(self.fa.EDGES, {'minimal': ('low', ('low', 'medium')), 'none': ('minimal', ('low', 'medium')),
+                                         'ultra': ('max', ('max', 'xhigh'))})
+        for edge, (near, (end, nxt)) in self.fa.EDGES.items():
             xs = {}
             for m, key, c in self.facets():
-                if {near, nxt} <= set(c.get('measured_efforts') or ()):
-                    xs.setdefault('.'.join(key), []).append(c['by_effort'][near] - c['by_effort'][nxt])
+                if {end, nxt} <= set(c.get('measured_efforts') or ()):
+                    xs.setdefault('.'.join(key), []).append(c['by_effort'][end] - c['by_effort'][nxt])
             for k, v in xs.items():
                 if len(v) >= 2:
                     got = self.doc['effort_steps'][k][near][edge]
@@ -2981,8 +2983,9 @@ class CrossSizeAndEdgeRuleTests(unittest.TestCase):
         for edge in self.fa.EDGES:
             self.assertEqual(sc.fill_edge('x', self.EXE, rec, edge), [])
         self.assertEqual(rec['by_effort']['minimal'], -1.5)
+        self.assertEqual((rec['by_effort']['none'], rec['filled_efforts']['none']['from_effort']), (-2.0, 'minimal'))   # one more step
         self.assertEqual((rec['by_effort']['ultra'], rec['filled_efforts']['ultra']['bounded_from']), (0.6, 0.4))
-        self.assertEqual(list(rec['by_effort']), list(self.fa.LADDER[:1]) + ['low', 'high', 'max', 'ultra'])
+        self.assertEqual(list(rec['by_effort']), ['none', 'minimal', 'low', 'high', 'max', 'ultra'])
         refused = self.scorer().fill_edge('x', self.EXE, self.rec({'max': 0.0}), 'ultra')
         self.assertEqual(refused[0]['reason'], 'fewer than 2 fleet models measured at max and xhigh')
 

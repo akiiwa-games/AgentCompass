@@ -46,6 +46,7 @@ EN = {
     '最高': 'Max',
     '超高': 'Ultra',
     '最低': 'Minimal',
+    '不推理': 'No reasoning',
     '默认': 'Default',
     '动画': 'Animate',
     '重播 · 点击画面或按 Esc 跳过': 'Replay · Click the stage or press Esc to skip',

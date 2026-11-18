@@ -129,6 +129,23 @@ class ProvenanceTests(unittest.TestCase):
             with self.subTest(table=table, rows=str(rows)[:60]), self.assertRaisesRegex(ValueError, table):
                 reference_provenance.validate_accounts_provenance({**accounts, table: {**accounts[table], 'rows': rows}})
 
+    def test_every_alias_carries_its_citation(self):
+        """Rule (round 4): an alias is a public statement of identity, name by name (the maker's word, models.dev's
+        canonical_model_id with its date, or a dated maintainer declaration); an alias without its row is refused."""
+        accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        self.assertEqual(set(accounts['aliases']), set(accounts['alias_sources']['rows']))
+        row = next(k for k, v in accounts['models'].items() if isinstance(v, dict))
+        cited = {'kind': 'community', 'url': 'https://models.dev/api.json', 'as_of': '2026-11-10',
+                 'statement': f'models.dev lists p/x-alias with canonical_model_id p/{row}'}
+        doc = {**accounts, 'aliases': {**accounts['aliases'], 'x-alias': row}}
+        with self.assertRaisesRegex(ValueError, 'x-alias'):
+            reference_provenance.validate_accounts_provenance(doc)
+        doc['alias_sources'] = {**accounts['alias_sources'], 'rows': {**accounts['alias_sources']['rows'], 'x-alias': cited}}
+        reference_provenance.validate_accounts_provenance(doc)
+        doc['alias_sources']['rows']['x-alias'] = {**cited, 'as_of': None}
+        with self.assertRaisesRegex(ValueError, 'x-alias'):
+            reference_provenance.validate_accounts_provenance(doc)
+
     def test_accounts_provenance_accepts_dated_maintainer_and_rejects_uncited_or_hard_coded_declarations(self):
         reference_provenance.validate_references(self.folder)
         accounts = json.loads((self.folder / 'accounts.json').read_text(encoding='utf-8'))

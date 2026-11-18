@@ -1131,6 +1131,11 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
         self.assertEqual(user_scores._manual_by_effort(0.5, None, False, None,
                                                        {'low': {'minimal': {'step': -0.7, 'n': 12}},
                                                         'high': {'low': {'step': 0.9, 'n': 3}}})[0]['minimal'], 1.4)
+        # `none` (reasoning off) is one more step below `minimal`: `minimal` plus effort_steps.<facet>.minimal.none, the same
+        # fleet step (round 4); without `minimal` there is no `none`
+        off = {**below, 'minimal': {'none': {'step': -0.7, 'n': 12}}}
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, off)[0]['none'], -1.9)
+        self.assertNotIn('none', user_scores._manual_by_effort(0.5, None, True, None, {**steps, 'minimal': off['minimal']})[0])
         # `ultra` is Max plus the fleet's step above Max (effort_steps.<facet>.max.ultra), bounded the same way
         above = {**steps, 'max': {'ultra': {'step': 0.25, 'n': 5}}}
         self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, above)[0]['ultra'], 0.95)   # Max 0.7 held at XHigh 0.8 after
@@ -1139,7 +1144,8 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
 
     def test_a_hand_written_score_wins_over_a_derived_value(self):
         """Rule (calibration/README.md, order of methods): a hand-written score wins over every estimate, the downward
-        derivation (`tier_down`) and the size step (`size_step`) included, and fills `minimal` from Low."""
+        derivation (`tier_down`) and the size step (`size_step`) included, and fills `minimal` from Low and `none` from
+        `minimal`."""
         five = axis_scores.load_five_axis()
         derived = [(m, a, f) for m, r in five['models'].items() for a, ax in r['axes'].items()
                    for f, c in (ax.get('facets') or {}).items()
@@ -1162,6 +1168,18 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
             low, minimal = cell['by_effort']['low'], cell['by_effort']['minimal']
             self.assertEqual(minimal, round(min(low + below, low) if user_scores.rises_with_effort(a, f)
                                             else max(low + below, low), 4), (m, a, f))
+            off = five['effort_steps'][f'{a}.{f}']['minimal']['none']['step']
+            self.assertEqual(cell['by_effort']['none'], round(min(minimal + off, minimal) if user_scores.rises_with_effort(a, f)
+                                                              else max(minimal + off, minimal), 4), (m, a, f))
+
+    def test_the_effort_order_puts_none_one_step_below_minimal_and_the_edges_nearest_first(self):
+        """Rule (round 4, vendor documents): `none` is reasoning switched off, below `minimal`; every effort beyond the
+        measured ones names its neighbour toward them and the measured end whose step it takes, nearest first."""
+        self.assertEqual(user_scores.EFFORTS, ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'))
+        self.assertEqual(user_scores.MEASURED_EFFORTS, ('low', 'medium', 'high', 'xhigh', 'max'))
+        self.assertEqual(list(user_scores.EDGES.items()), [('minimal', ('low', ('low', 'medium'))),
+                                                           ('none', ('minimal', ('low', 'medium'))),
+                                                           ('ultra', ('max', ('max', 'xhigh')))])
 
 
 class EffectiveSourceTests(unittest.TestCase):

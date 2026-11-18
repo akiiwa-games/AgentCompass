@@ -64,10 +64,23 @@ CATEGORY_FACETS = {
 }
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
 # The effort order, its one owner (owner 2026-11-18): every effort a curve carries and a launch can name on the scale, lowest
-# first. `minimal` and `ultra` lie beyond what boards measure (Low .. Max) and are filled from the fleet's edge step
-# (calibration/five_axis.py EDGES). An effort name off the scale (`default`) reads the effort five-axis-scores.json
+# first. `none`, `minimal` and `ultra` lie beyond what boards measure (MEASURED_EFFORTS, Low .. Max) and are filled from the
+# fleet's edge step (EDGES). `none` is reasoning switched off, one step below `minimal` (round 4, from the vendors' documents:
+# OpenAI's reasoning guide gives `none` for "tasks that do not benefit from any reasoning", MiniMax refuses `effort: "none"`
+# together with `thinking: {"type": "disabled"}` on a model whose thinking cannot be switched off, and Magpie offers `none`
+# for a model with a thinking switch only, as its off level; Google's thinking guide calls `minimal` "a near-off setting",
+# a reasoning level above off). An effort name off the scale (`default`) reads the effort five-axis-scores.json
 # `effort_readings` names.
-EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
+EFFORTS = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
+MEASURED_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')     # the efforts boards measure
+# {effort beyond the measured ones: (its neighbour toward them, (the measured end, the next measured effort))}, nearest
+# first: such an effort is its neighbour plus the fleet's step at that end of the measured efforts (owner 2026-11-18;
+# calibration/five_axis.py fill_edge, _manual_by_effort): `minimal` Low plus value(low) - value(medium), `none` one more
+# such step below `minimal`, `ultra` Max plus value(max) - value(xhigh).
+EDGES = {**{EFFORTS[i]: (EFFORTS[i + 1], MEASURED_EFFORTS[:2])
+            for i in range(EFFORTS.index(MEASURED_EFFORTS[0]) - 1, -1, -1)},
+         **{EFFORTS[i]: (EFFORTS[i - 1], MEASURED_EFFORTS[:-3:-1])
+            for i in range(EFFORTS.index(MEASURED_EFFORTS[-1]) + 1, len(EFFORTS))}}
 SUGGEST_DEFAULT_THRESHOLD = 0.4
 MEASURED_DATA_STATUSES = ('measured', 'measured_partial', 'interpolated')
 VALID_TARGETS = tuple(
@@ -677,8 +690,9 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
     the facet measured keep their values; its other efforts follow the facet's own curve moved to `z_val` at High; an effort
     the facet has no value at takes `z_val` plus the panel's median own step from High to it (`steps`: the facet's entry of
     five-axis-scores.json `effort_steps`; owner 2026-11-18, every effort gets a value, also after a hand-written score) and
-    stays missing only where the panel gives no step; an edge effort is its neighbour plus the fleet's edge step (`minimal`:
-    Low plus `effort_steps.<facet>.low.minimal`; `ultra`: Max plus `effort_steps.<facet>.max.ultra`). The curve is then bounded in the facet's direction
+    stays missing only where the panel gives no step; an edge effort is its neighbour plus the fleet's edge step (EDGES;
+    `minimal`: Low plus `effort_steps.<facet>.low.minimal`; `none`: `minimal` plus `effort_steps.<facet>.minimal.none`;
+    `ultra`: Max plus `effort_steps.<facet>.max.ultra`). The curve is then bounded in the facet's direction
     (`rises_with_effort`, `bound_along_effort`): first the measured efforts with the set efforts pinned at `z_val` (a measured
     effort that bound moves is no longer listed as measured), then the other efforts with those pinned, so a followed or
     filled value never moves a measured one."""
@@ -692,7 +706,7 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
     for e, step in ((steps or {}).get('high') or {}).items():
         if e in EFFORTS and e not in out and isinstance(step, dict) and step.get('step') is not None:
             out[e] = z_val + float(step['step'])
-    for edge, near in ((EFFORTS[0], EFFORTS[1]), (EFFORTS[-1], EFFORTS[-2])):
+    for edge, (near, _) in EDGES.items():
         step = ((steps or {}).get(near) or {}).get(edge)
         if edge not in out and near in out and isinstance(step, dict) and step.get('step') is not None:
             out[edge] = out[near] + float(step['step'])

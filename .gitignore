@@ -33,6 +33,7 @@
 /audit/*
 !/audit/*.py
 !/audit/gateway-coverage-known-gaps.json
+!/audit/gateway-out-of-scope.json
 !/audit/gateway-catalogs/
 !/audit/gateway-catalogs/*.json
 !/audit/calibrate/
