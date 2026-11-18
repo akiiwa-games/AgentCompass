@@ -151,7 +151,7 @@ ROUNDED_SCALE_NOTE = ('the recorded scale has 6 significant digits, so a recompu
 def refuse_panel_models(names, acc, shipped):
     """Raise for a named model the row merge cannot add: not a catalog row, or one that defines the scale."""
     declared = acc.get('calibration_panel') or {}
-    scale_models = {declared.get('anchor'), *(declared.get('models') or ()),
+    scale_models = {declared.get('anchor'), *(declared.get('models') or ()), *(declared.get('members') or ()),
                     *((shipped.get('panel') or {}).get('models') or ())}
     for name in names:
         if name not in (acc.get('models') or {}):

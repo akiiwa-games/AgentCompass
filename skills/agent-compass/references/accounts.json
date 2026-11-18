@@ -204,9 +204,23 @@
       "grok-4.7",
       "gemini-3.8-flash-high"
     ],
+    "members": [
+      "claude-fable-5-1",
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "deepseek-v4.1-flash-free",
+      "gemini-3.8-flash-high",
+      "gpt-6-astra",
+      "gpt-6-luna",
+      "gpt-6-sol",
+      "gpt-6.1-sol",
+      "grok-4.6",
+      "grok-4.7",
+      "minimax-m3"
+    ],
     "kind": "maintainer",
-    "as_of": "2026-11-04",
-    "statement": "maintainer: the anchor (0 on every board) and the sentinel models whose shared board coverage defines the calibration panel (calibration/measurements.py)"
+    "as_of": "2026-11-18",
+    "statement": "maintainer: the anchor (0 on every board), the sentinel models whose shared listing defines the core boards, and the panel members, declared (owner 2026-11-18: the members of v0.7.0, the panel the owner's hand-written levels were set against). A row listed on every core board does not join the panel; only the owner changes `members`; a member a core board does not list is an error (calibration/measurements.py)"
   },
   "families": {
     "kind": "maintainer",

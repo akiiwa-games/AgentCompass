@@ -33,8 +33,11 @@ Fields
 One conversion for every board, a panel standard score relative to the anchor model (ANCHOR, accounts.json
 `calibration_panel.anchor`):
 z = (x - x_anchor) / sd_panel(x), x the board's raw value (Elo, rating, success rate, index; -ln seconds for the time to
-first answer token). The panel is the fleet models listed on every scoring board that lists all six anchor rows
-(accounts.json `calibration_panel.models`); sd_panel is the sample standard deviation of the board over the panel. A board that lists the
+first answer token). The panel is declared (owner, 2026-11-18): accounts.json `calibration_panel.members`, a dated
+maintainer list only the owner changes; a new row is scored against it and never joins it by being listed. The core boards
+are the scoring boards that list every sentinel row (`calibration_panel.models`), and every declared member must be
+listed on every core board: a member one does not list is an error naming both, never a smaller panel. sd_panel is the
+sample standard deviation of the board over the panel. A board that lists the
 anchor and at least MIN_PANEL panel members is a source; any other is recorded as missing with the reason. Nothing is
 capped or bridged: a new model at the top of a board moves no other model, and the anchor is 0 on every board.
 Artificial Analysis boards list every effort variant: each entry carries the score at High (else the effort-less
@@ -249,6 +252,7 @@ class Builder:
         self.target, self.acc, self.now = target, acc, now
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
         anchor, self.panel_ids, self.anchor_name = tiers.panel(acc)
+        self.members = list(acc['calibration_panel']['members'])
         if anchor != ANCHOR:
             raise ValueError(f'calibration_panel anchor {anchor!r} differs from the shipped accounts.json anchor {ANCHOR!r} '
                              'that five_axis.py scales on')
@@ -478,8 +482,9 @@ class Builder:
         self.structural(boards, raw, names)
         panel, core, scale = self.panel(raw)
         self.panel_doc = {'models': panel, 'n': len(panel), 'core_boards': core, 'min_panel': MIN_PANEL,
-                          'rule': 'the fleet models listed on every scoring board that lists all six anchor rows '
-                                  f'({", ".join(self.panel_ids)}); sd_panel is the sample standard deviation over them'}
+                          'rule': 'the declared members (accounts.json calibration_panel.members), each listed on every '
+                                  f'core board (the scoring boards that list {", ".join(self.panel_ids)}); sd_panel is the '
+                                  'sample standard deviation over them'}
         for src, sc in scale.items():
             axis, facet = CAPABILITY_SOURCES[src]
             b = boards[src]
@@ -612,7 +617,12 @@ class Builder:
     def panel(self, raw):
         """(panel models, core boards, {source: {'anchor_raw', 'sd', 'n'}}) of the module docstring."""
         core = [src for src, board in raw.items() if board and all(a in board for a in self.panel_ids)]
-        panel = sorted(set.intersection(*(set(raw[src]) for src in core))) if core else []
+        for src in core:
+            lost = [m for m in self.members if m not in raw[src]]
+            if lost:
+                raise ValueError(f'calibration_panel member(s) {", ".join(lost)} not listed on the core board {src}: the '
+                                 'declared panel is never shrunk silently; the owner changes calibration_panel.members')
+        panel = sorted(self.members)
         scale = {}
         for src, board in raw.items():
             members = [m for m in panel if m in board]

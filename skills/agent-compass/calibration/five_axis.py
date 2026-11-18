@@ -73,8 +73,8 @@ scores on the four categories and the quota economy together. Nothing else score
   level-3 row (category, facet, and `by_facet` entries) carries its `ceiling`: the highest measured or interpolated High
   value among the catalogued models, with the model that sets it and its status (owner, 2026-11-13). A level-3 demand is
   capped there instead of at t3; levels 1 and 2 stay capped at their target.
-- Panel guard (`panel_change`): the panel this run computed is compared with the panel of the five-axis-scores.json being
-  replaced. When the members differ, the run prints the added and removed models and the old and new `sd_panel` per
+- Panel guard (`panel_change`): the declared panel (accounts.json `calibration_panel.members`, measurements.py) is
+  compared with the panel of the five-axis-scores.json being replaced, so only an edit of the declaration changes it. When the members differ, the run prints the added and removed models and the old and new `sd_panel` per
   board, t1, t2, t3 and ceiling per category and facet, and writes nothing (`PanelChangeRefused`) unless the change is
   accepted (`--accept-panel-change`); an accepted change is recorded in `anchor.panel_change` and carried forward.
 - Checks: structural ones drop a listing (a variant tag that is not an effort, a raw value out of range, one listing

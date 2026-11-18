@@ -75,10 +75,12 @@ several pools must clear every window; the tightest window binds. The same model
 (Codex vs Pi is only a tie-break step for read-heavy vs. edit-heavy work). Unknown capacity stays unknown: the account stays
 out of automatic routing until public data has it.
 A metered USD account is not one of those resetting windows. The account, the spend reading, the balance, and the leftover-field cleanup are defined in [Metered USD](#metered-usd).
-Panel membership is derived from the rule above, never a hand list. Adding a non-panel model moves no panel score and no
-target (it can raise a ceiling). A change of members moves `sd_panel`, `t1` and `t2`, and with them the level-2 cap and the
-exchange rate between ability and quota cost, so `agentcompass data refresh` (and `five_axis.py`) compares the panel it computed
-with the shipped `five-axis-scores.json`: when the members differ it prints the added and removed models and, per category and
+Panel membership is declared (owner, 2026-11-18): `calibration_panel.members` in `accounts.json`, a dated maintainer list only
+the owner changes (definition: [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). A new row, even one
+every board lists, is scored against the panel and never joins it, so it moves no panel score and no target (it can raise a
+ceiling). A change of members moves `sd_panel`, `t1` and `t2`, and with them the level-2 cap and the exchange rate between
+ability and quota cost, so `agentcompass data refresh` (and `five_axis.py`) compares the declared panel with the shipped
+`five-axis-scores.json`: when the members differ it prints the added and removed models and, per category and
 facet, the old and new `sd_panel`, `t1`, `t2` and ceiling, then exits 3 (refused) and writes nothing unless `--accept-panel-change` is
 passed. An accepted change is recorded in `anchor.panel_change` (date, added, removed, shifts) and carried forward until the next.
 Category scores live in [`skills/agent-compass/references/five-axis-scores.json`](../skills/agent-compass/references/five-axis-scores.json),

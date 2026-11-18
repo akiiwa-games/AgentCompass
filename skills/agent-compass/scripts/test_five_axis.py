@@ -1276,7 +1276,7 @@ class AnchorRelativeTests(unittest.TestCase):
     def test_panel_standard_scores_put_anchor_at_zero_and_reject_unanchored_or_thin_boards(self):
         members = self.panel_models()
         b = self.ms.Builder.__new__(self.ms.Builder)
-        b.panel_ids = self.anchors
+        b.panel_ids, b.members = self.anchors, members
         b.source_rows = {s: {'file': 'f'} for s in ('lmarena.webdev', 'designarena.website', 'aa.mmmu_pro',
                                                     'no_anchor', 'too_few', 'flat')}
         b.missing, b.manifest = {}, {}
@@ -1299,6 +1299,26 @@ class AnchorRelativeTests(unittest.TestCase):
         self.assertIn('not listed', b.source_rows['no_anchor']['not_scaled'])
         self.assertIn(f'needs {self.ms.MIN_PANEL}', b.source_rows['too_few']['not_scaled'])
         self.assertIn('same value', b.source_rows['flat']['not_scaled'])
+
+    def test_a_declared_member_missing_from_a_core_board_is_a_named_error(self):
+        """Rule (measurements.py, owner 2026-11-18): the panel is accounts.json calibration_panel.members; a member a core
+        board does not list is an error naming both, never a smaller panel; the shipped declaration holds on the boards."""
+        import sources
+        members = self.panel_models()
+        b = self.ms.Builder.__new__(self.ms.Builder)
+        b.panel_ids, b.members = self.anchors, members
+        b.source_rows = {'lmarena.webdev': {'file': 'f'}}
+        b.missing, b.manifest = {}, {}
+        board = {m: 1500.0 - 25.0 * i for i, m in enumerate(members)}
+        self.assertEqual(b.panel({'lmarena.webdev': board})[0], sorted(members))
+        lost = members[-1]
+        with self.assertRaisesRegex(ValueError, f'{lost}.*lmarena.webdev'):
+            b.panel({'lmarena.webdev': {m: v for m, v in board.items() if m != lost}})
+        declared = sources.accounts()['calibration_panel']
+        self.assertTrue(set(declared['models']) <= set(declared['members']))
+        refs = Path(__file__).resolve().parents[1] / 'references'
+        shipped = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8'))
+        self.assertEqual(sorted(shipped['anchor']['panel']), sorted(declared['members']))
 
     def test_structural_and_statistical_checks_drop_bad_listings_and_flag_non_monotone_high(self):
         b = self.ms.Builder.__new__(self.ms.Builder)
@@ -1382,25 +1402,26 @@ class AnchorRelativeTests(unittest.TestCase):
         raw = {'lmarena.creative_writing': {m: 1500.0 - 20.0 * i for i, m in enumerate(members)}}
         b1 = self.ms.Builder.__new__(self.ms.Builder)
         b1.source_rows, b1.missing, b1.manifest = {'lmarena.creative_writing': {'file': 'f'}}, {}, {}
-        b1.panel_ids = self.anchors
+        b1.panel_ids, b1.members = self.anchors, members
         panel1, _, scale1 = b1.panel(raw)
         grown = {'lmarena.creative_writing': {**raw['lmarena.creative_writing'], 'newtop': 1700.0}}  # not on all core boards if added to one
         # Add a second core board where newtop is absent so newtop is outside the panel
         raw2 = {**raw, 'arena.agent_code': {m: 50.0 - 2.0 * i for i, m in enumerate(members)}}
+        # newtop is listed on every core board: the declared panel (owner 2026-11-18) still does not take it in
         grown2 = {'lmarena.creative_writing': {**raw2['lmarena.creative_writing'], 'newtop': 1700.0},
-                  'arena.agent_code': dict(raw2['arena.agent_code'])}
+                  'arena.agent_code': {**raw2['arena.agent_code'], 'newtop': 60.0}}
         for d in (b1,):
             d.source_rows['arena.agent_code'] = {'file': 'f'}
         b_before = self.ms.Builder.__new__(self.ms.Builder)
         b_before.source_rows = {s: {'file': 'f'} for s in raw2}
         b_before.missing, b_before.manifest = {}, {}
-        b_before.panel_ids = self.anchors
+        b_before.panel_ids, b_before.members = self.anchors, members
         panel_a, _, scale_a = b_before.panel(raw2)
 
         b_after = self.ms.Builder.__new__(self.ms.Builder)
         b_after.source_rows = {s: {'file': 'f'} for s in grown2}
         b_after.missing, b_after.manifest = {}, {}
-        b_after.panel_ids = self.anchors
+        b_after.panel_ids, b_after.members = self.anchors, members
         panel_b, _, scale_b = b_after.panel(grown2)
 
         self.assertEqual(panel_a, panel_b)

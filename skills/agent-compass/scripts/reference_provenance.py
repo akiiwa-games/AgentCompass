@@ -175,10 +175,13 @@ def _validate_catalog_tables(doc):
     panel = doc.get('calibration_panel')
     if not valid_public_declaration(panel) or not isinstance(panel.get('anchor'), str) or not isinstance(panel.get('models'), list):
         raise ValueError('accounts.json needs calibration_panel {anchor, models} as a dated maintainer declaration')
-    unknown = [m for m in [panel['anchor'], *panel['models']] if m not in models]
-    if unknown or panel['anchor'] not in panel['models']:
-        raise ValueError(f'calibration_panel anchor and models must be model rows, the anchor among the models'
-                         + (f' (no row: {", ".join(map(str, unknown))})' if unknown else ''))
+    members = panel.get('members')
+    if not isinstance(members, list) or not members:
+        raise ValueError('calibration_panel needs `members`, the declared panel (calibration/measurements.py)')
+    unknown = [m for m in [panel['anchor'], *panel['models'], *members] if m not in models]
+    if unknown or panel['anchor'] not in panel['models'] or not set(panel['models']) <= set(members):
+        raise ValueError(f'calibration_panel anchor, models and members must be model rows, the anchor among the models '
+                         f'and the models among the members' + (f' (no row: {", ".join(map(str, unknown))})' if unknown else ''))
 
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'

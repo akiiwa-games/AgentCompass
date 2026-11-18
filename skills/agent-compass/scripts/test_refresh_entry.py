@@ -110,6 +110,11 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
 
     for name in ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'user-scores.json'):
         shutil.copyfile(reference_provenance.REFERENCES / name, refs_dir / name)
+    # The fixture's boards list PANEL_MODELS: it declares them as its panel (calibration_panel.members, measurements.py).
+    accounts = json.loads((refs_dir / 'accounts.json').read_text(encoding='utf-8'))
+    accounts['calibration_panel']['members'] = [m for m, _, _ in PANEL_MODELS]
+    text = json.dumps(accounts, indent=2, ensure_ascii=False) + '\n'
+    (refs_dir / 'accounts.json').write_text(text, encoding='utf-8', newline='\n')
 
     manifest_files: dict[str, dict] = {}
 
