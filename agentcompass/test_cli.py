@@ -94,21 +94,48 @@ class CliTests(unittest.TestCase):
             "five-axis-scores.json",
             "model-capabilities.json",
             "model-capabilities.md",
-            "public-data.json",
         ):
             self.assertTrue((refs_dir / name).is_file(), name)
-        before_manifest = (refs_dir / "public-data.json").read_bytes()
+        before_scores = (refs_dir / "five-axis-scores.json").read_bytes()
         done_again = self.run_cli("data", "refresh", "--no-fetch", "--data", str(data_dir), "--references", str(refs_dir))
         self.assertEqual(done_again.returncode, 0, done_again.stderr + done_again.stdout)
-        self.assertEqual((refs_dir / "public-data.json").read_bytes(), before_manifest)
+        self.assertEqual((refs_dir / "five-axis-scores.json").read_bytes(), before_scores)
 
-        # Outside a git checkout, `agentcompass data refresh` without `--references` refuses cleanly and suggests `data --refresh`.
+        # Outside a git checkout, `agentcompass data refresh` without `--references` refuses and points at updating.
         import io
         err = io.StringIO()
         with patch.object(cli.locations, "checkout_root", return_value=None), patch("sys.stderr", err):
             rc = cli.data_command(["refresh", "--no-fetch"])
         self.assertEqual(rc, 2)
-        self.assertIn("agentcompass data --refresh", err.getvalue())
+        self.assertIn("update AgentCompass", err.getvalue())
+
+        # Besides `data refresh` (checkout only) and `data --refresh` (the post-update step), `agentcompass data` has no
+        # subcommand: an install reads only the data shipped with its version.
+        for argv, code, stream in ((["--fetch"], 2, "stderr"), ([], 2, "stderr"), (["-h"], 0, "stdout")):
+            out, err = io.StringIO(), io.StringIO()
+            with patch("sys.stdout", out), patch("sys.stderr", err):
+                self.assertEqual(cli.data_command(argv), code, argv)
+            self.assertIn("agentcompass data refresh", (out if stream == "stdout" else err).getvalue())
+
+    def test_the_post_update_step_removes_an_earlier_versions_reference_data_and_nothing_else(self):
+        """Rule (router-internals, Older local state): released updaters run `agentcompass data --refresh` after an
+        update; it removes the removed channel's cache and setting by their exact paths and exits 0."""
+        import io
+        from unittest.mock import patch
+        from agentcompass import cli
+        with TemporaryDirectory() as tmp:
+            state = Path(tmp) / "state"
+            (state / "public-data" / "sets").mkdir(parents=True)
+            (state / "public-data-config.json").write_text("{}", encoding="utf-8")
+            (state / "user-scores.json").write_text("{}", encoding="utf-8")
+            for expected in ([str(state / "public-data"), str(state / "public-data-config.json")], []):
+                out = io.StringIO()
+                with patch.dict(os.environ, {"ROUTER_STATE_DIR": str(state)}), patch("sys.stdout", out):
+                    self.assertEqual(cli.data_command(["--refresh"]), 0)
+                for path in expected:
+                    self.assertIn(f"removed {path}", out.getvalue())
+                self.assertEqual(out.getvalue().count("removed "), len(expected))
+            self.assertEqual(sorted(p.name for p in state.iterdir()), ["user-scores.json"])
 
 
 if __name__ == "__main__":

@@ -401,5 +401,5 @@ def refresh_in_background(state_dir, environ=None):
 
 if __name__ == '__main__':
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from public_data import state_dir as _state_dir
-    print(json.dumps(refresh(_state_dir()), indent=2))
+    import state_upgrade
+    print(json.dumps(refresh(state_upgrade.state_dir()), indent=2))

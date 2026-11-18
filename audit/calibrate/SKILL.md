@@ -11,7 +11,7 @@ description: >
 Runs on the maintainer's machine only. It lives in `audit/calibrate/`, next to the report it drives, and like
 `packaging/verify-release/SKILL.md` it is not one of the skills `agentcompass setup` links into hosts
 (`sync_host_globals.py` links only `skills/`). Open it by path when calibrating. What it changes reaches users through
-the normal channels: shipped public reference data and releases.
+releases: reference data ships with the version and is fixed until the next one.
 
 ## Boundaries (decided, do not relax)
 
@@ -68,11 +68,11 @@ the normal channels: shipped public reference data and releases.
    python -X utf8 agentcompass data refresh --no-fetch
    ```
 
-5. Run only the tests of what you touched (for example `pytest skills/agent-compass/scripts/test_public_data.py`), never the
+5. Run only the tests of what you touched (for example `pytest skills/agent-compass/scripts/test_reference_provenance.py`), never the
    full suite for a calibration change. If you edited Markdown or documented commands, also run
    `python -X utf8 skills/agent-compass/scripts/check_router_contract.py` and `pytest agentcompass/test_docs.py`.
-6. Ship through the normal channels: commit the data to a `work/<name>` branch and merge to `main` (installs pick up the
-   verified public-data set between releases) or include it in the next release.
+6. Ship through a release: commit the data to a `work/<name>` branch and merge it to `main`; installs receive it with
+   the next release, never before.
 
 ## What the report cannot show
 

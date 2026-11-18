@@ -1131,7 +1131,7 @@ class ToolOperationAndTaxonomyR2Tests(unittest.TestCase):
         # With shipped maintainer scores in references/user-scores.json, dot_text carries maintainer responsiveness;
         # when public manual scores are empty, channels with no responsiveness measurement leave automatic routing via Mode B.
         self.assertEqual(by_id['dot_text']['excluded'], [])
-        with patch.object(axis_scores, 'load_public_user_scores', return_value={'schema_version': 2, 'scores': {}}):
+        with patch.object(axis_scores.user_scores, 'load_public', return_value={'schema_version': 2, 'scores': {}}):
             res_unscored = allocator.plan(live_cli_task, usage, now=self.now, accounts=copy.deepcopy(base_accounts),
                                           capabilities=capabilities, overrides=[])
         by_id_unscored = {c['id']: c for c in res_unscored['ranking']}

@@ -104,11 +104,11 @@ class Fleet:
         if usage_hook:
             usage_hook(usage)
         profile = {**PROFILE, 'axis_demand': dict(zip(axis_scores.FIVE_AXES, axes)), 'expected_hours': hours, 'local_only': local_only}
-        pub = copy.deepcopy(axis_scores.load_public_user_scores())
+        pub = copy.deepcopy(axis_scores.user_scores.load_public())
         pub.setdefault('scores', {}).setdefault('claude-haiku-5-5', {})['coding.faithfulness'] = {
             'level': 1.0, 'as_of': '2026-11-11', 'kind': 'maintainer',
         }
-        with patch.object(axis_scores, 'load_public_user_scores', return_value=pub):
+        with patch.object(axis_scores.user_scores, 'load_public', return_value=pub):
             return allocator.plan({'objective': 't', 'hours': hours, 'profile': profile, **task}, usage, NOW, accounts=acc,
                                   overrides=[], records=[], host_policy_config={'allowed_accounts': list(allowed)})
 

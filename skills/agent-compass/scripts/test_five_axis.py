@@ -152,8 +152,8 @@ def _synthetic_doc_ctx(doc):
 
     @contextlib.contextmanager
     def _ctx():
-        with patch.object(axis_scores, 'load_five_axis', lambda path=None, use_effective=True: doc), \
-                patch.object(axis_scores, 'load_public_user_scores', lambda path=None, use_effective=True: {'schema_version': 2, 'scores': {}}):
+        with patch.object(axis_scores, 'load_five_axis', lambda path=None: doc), \
+                patch.object(axis_scores.user_scores, 'load_public', lambda path=None: {'schema_version': 2, 'scores': {}}):
             yield
     return _ctx()
 
@@ -977,7 +977,6 @@ class FiveAxisTests(unittest.TestCase):
             with patch.object(sys, 'argv', argv), \
                     patch.object(route_judge, 'plan_stage', side_effect=fake_plan_stage), \
                     patch.object(usage_reading, 'usage_snapshot', return_value=usage), \
-                    patch.object(route_judge.public_data, 'refresh_in_background'), \
                     patch.object(route_judge.antigravity_plan, 'refresh_in_background'), \
                     patch.object(roll, 'resolve_parent', return_value=('parent-1', 'cli', 'parent-1')), \
                     patch.object(roll.registry, 'pending', return_value=[]), \
@@ -2322,7 +2321,7 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
             scripts_dir / 'axis_scores.py',
             scripts_dir / 'candidate_eval.py',
             scripts_dir / 'provider_inventory.py',
-            scripts_dir / 'public_data.py',
+            scripts_dir / 'reference_provenance.py',
             cal_dir / 'five_axis.py',
         ]
         for path in target_files:
@@ -2377,6 +2376,39 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
                     for arg in node.args:
                         if isinstance(arg, ast.Constant) and arg.value == 'default':
                             self.fail(f'{fname}:{node.lineno} calls plan_defaults(..., "default")')
+
+
+class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
+    """references/five-axis-scores.json is generated (calibration/refresh.py step 3): it must be what five_axis.build makes
+    from the shipped public-measurements.json, accounts.json and plan-templates.json. A hand edit, or an input changed
+    without the refresh, turns this red. `measurements_sha256` is part of the comparison, so a public-measurements.json
+    changed after the build is caught too."""
+
+    def test_the_shipped_five_axis_scores_are_rebuilt_from_the_shipped_inputs(self):
+        import five_axis
+        refs = account_fleet.REFERENCES
+        raw = (refs / 'public-measurements.json').read_bytes()
+        shipped = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))
+        # The run's own options, as the document records them: its time (source ages are counted to it) and the sources
+        # it was told to leave out.
+        built = five_axis.build(json.loads(raw.decode('utf-8-sig')),
+                                json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig')),
+                                json.loads((refs / 'plan-templates.json').read_text(encoding='utf-8-sig')),
+                                distrust=shipped['distrusted_sources'], meas_bytes=raw,
+                                now=datetime.fromisoformat(shipped['generated_at']))
+        built = json.loads(json.dumps(built, ensure_ascii=False))
+
+        def differences(a, b, at=''):
+            if isinstance(a, dict) and isinstance(b, dict):
+                return [d for k in sorted(set(a) | set(b), key=str) if (at or k != 'generated_at')
+                        for d in differences(a.get(k), b.get(k), f'{at}.{k}')]
+            if isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+                return [d for i, (x, y) in enumerate(zip(a, b)) for d in differences(x, y, f'{at}[{i}]')]
+            return [] if a == b else [f'{at}: built {str(a)[:80]} != shipped {str(b)[:80]}']
+
+        found = differences(built, shipped)
+        self.assertEqual(found[:10], [], f'five-axis-scores.json does not match its inputs ({len(found)} difference(s)): '
+                                         'run `agentcompass data refresh --no-fetch`')
 
 
 if __name__ == '__main__':

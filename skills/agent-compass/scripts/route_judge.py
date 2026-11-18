@@ -23,11 +23,11 @@ import entry
 import fast_modes
 import host_policy
 import provider_inventory
-import public_data
 import quota_overrides
 import roll
 import scorer_client
 import stage_help
+import state_upgrade
 import subscription_judge
 import usage_reading
 
@@ -854,9 +854,7 @@ def main():
         return 0 if args.help else 2
     decision_ledger.LEDGER_WRITES = not (args.dry_run and args.stage in ('plan', 'record', 'roll'))
     if args.stage in ('roll', 'plan', 'providers', 'select') and not args.demo:
-        # This run keeps the reference set it starts with; a due refresh runs beside it and applies to the next run.
-        public_data.refresh_in_background()
-        antigravity_plan.refresh_in_background(public_data.state_dir())
+        antigravity_plan.refresh_in_background(state_upgrade.state_dir())
     try:
         if args.demo and (args.stage != 'plan' or not args.dry_run):
             raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
@@ -890,8 +888,7 @@ def main():
             code = 1 if result.get('state') in ('failed', 'create_failed') else 0
         elif args.stage == 'providers':
             accounts = account_fleet.load_accounts()
-            result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync'),
-                      'public_data': public_data.status()}
+            result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync')}
             code = 0
         elif args.stage == 'usage':
             result = usage_reading.usage_snapshot(args.usage_cache, args.accounts)

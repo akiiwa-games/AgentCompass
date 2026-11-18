@@ -157,7 +157,7 @@ class CleanInstallParityTests(unittest.TestCase):
                         'axis_demand': {'creativity': 0, 'coding': 0, 'aesthetics': 0, 'tool_operation': 2}},
         }
         # Without manual scores, unmeasured tool_operation.responsiveness enters Mode B with actionable CLI hint:
-        with unittest.mock.patch.object(axis_scores, 'load_public_user_scores',
+        with unittest.mock.patch.object(axis_scores.user_scores, 'load_public',
                                         return_value={'schema_version': 2, 'scores': {}}):
             unscored = allocator.plan(task_doc, {'accounts': {}}, now, accounts=self.accounts, overrides=[],
                                       host_policy_config=None, read_local_state=False)

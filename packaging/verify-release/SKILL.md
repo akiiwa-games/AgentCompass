@@ -21,7 +21,7 @@ Verify **AgentCompass** (router + tray) and **usage-float** from their packaged 
 
 - **OS:** Windows 10/11 with Python 3.11+ (`python -X utf8`) and Node.js (`node`) on `PATH`.
 - **Optional for full installer / GUI check:** Windows Sandbox (`wsb.exe`) enabled and Inno Setup installer staged under `%TEMP%\agentcompass-tools\innosetup-*.exe`.
-- **No live credentials or network required:** provider HTTP (`chatgpt.com`, `api.anthropic.com`, `raw.githubusercontent.com`, `cloudcode-pa.googleapis.com`, Magpie gateway) and CLIs (`claude`, `codex`, `agy`) are served by local fixtures inside each harness.
+- **No live credentials or network required:** provider HTTP (`chatgpt.com`, `api.anthropic.com`, `cloudcode-pa.googleapis.com`, Magpie gateway) and CLIs (`claude`, `codex`, `agy`) are served by local fixtures inside each harness.
 
 ## How to Run
 
@@ -48,7 +48,7 @@ This additionally boots an offline Windows Sandbox (`packaging/windows_sandbox_c
 
 After pushing the release tag and waiting for `.github/workflows/release.yml` to publish the release assets:
 1. Upgrade the wheel on `LS` (`pip install --upgrade <wheel or git tag>`) and update `usage-float`.
-2. Run `agentcompass data --refresh`, `agentcompass doctor`, `agentcompass providers`, `agentcompass usage`, and `agentcompass plan --demo --dry-run` on `LS` and verify zero errors, `schema 2` reference data, and fresh quota readings.
+2. Run `agentcompass doctor`, `agentcompass providers`, `agentcompass usage`, and `agentcompass plan --demo --dry-run` on `LS` and verify zero errors, no upgrade-check items, and fresh quota readings.
 
 ## Feature Inventory
 

@@ -38,8 +38,7 @@ def _catalog_path() -> Path:
     try:
         router_priority.modules()
         import account_fleet
-        import public_data
-        return public_data.effective(account_fleet.REFERENCES / "accounts.json")
+        return account_fleet.REFERENCES / "accounts.json"
     except Exception:
         return Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "references" / "accounts.json"
 

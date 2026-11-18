@@ -40,8 +40,8 @@ delegate work:
 install and health:
   setup       first-run onboarding (--dry-run previews)
   uninstall   undo what setup changed
-  doctor      read-only report of Python, CLIs, accounts, cache, reference data, plugins, ports and hooks
-  data        which public reference data routing reads (shipped or fetched); `data --refresh` checks for newer data now; `data refresh [--no-fetch] [--accept-panel-change] [--model ID]` rebuilds shipped data in a checkout
+  doctor      read-only report of Python, CLIs, accounts, cache, plugins, ports, hooks and upgrade checks
+  data        `data refresh [--no-fetch] [--accept-panel-change] [--model ID]` rebuilds the shipped reference data in a checkout, once per release; `data --refresh` runs after an update and removes what an earlier version left
 
 other stages: score, scorer, delegate, select, dispatch, launch
 follow-up of a roll result (its next_argv already spells these): dot status, grok-bot status, chatgpt-web, herdr status
@@ -123,28 +123,57 @@ def usage_command(args: list[str]) -> int:
     return subprocess.call([sys.executable, "-I", "-X", "utf8", str(script), "--once", *rest])
 
 
+DATA_HELP = """usage: agentcompass data refresh [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE]
+                               [--accept-panel-change] [--model ID ...]
+       agentcompass data --refresh
+
+data refresh   rebuilds the shipped reference data inside a git checkout, once per release (`agentcompass data refresh -h`).
+data --refresh brings local state in line with the installed version after an update: it removes the reference data an
+               earlier version left in the state directory. The tray updater runs it after every update.
+An install reads the reference data shipped with its version and nothing newer; update AgentCompass for newer data.
+"""
+
+
+def post_update() -> int:
+    """`agentcompass data --refresh`: the step that runs after a product update (this version's tray updater and the
+    updaters of earlier releases run it). Removes what an earlier version left (state_upgrade.remove_retired_reference_data)."""
+    scripts = locations.skill_root() / "agent-compass" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import state_upgrade
+    sdir = state_upgrade.state_dir()
+    try:
+        removed = state_upgrade.remove_retired_reference_data(sdir)
+    except OSError as error:
+        sys.stderr.write(f"could not remove an earlier version's reference data under {sdir}: {error}\n")
+        return 1
+    print(f"AgentCompass {__version__}: local state is in line with this version"
+          + "".join(f"\n  removed {path}" for path in removed))
+    return 0
+
+
 def data_command(args: list[str]) -> int:
-    """Show or refresh the public reference data channel (`public_data.py`), or rebuild shipped data (`calibration/refresh.py`)."""
-    if args[:1] == ["refresh"]:
-        rest = args[1:]
-        checkout = locations.checkout_root()
-        in_git_checkout = checkout is not None and (checkout / ".git").exists()
-        if not in_git_checkout and not any(_has_option(rest, flag) for flag in ("-h", "--help", "--references")):
-            sys.stderr.write(
-                "agentcompass data refresh rebuilds shipped reference files inside a git checkout.\n"
-                "To check for newer published data in an install, run: agentcompass data --refresh\n"
-            )
-            return 2
-        script = locations.skill_root() / "agent-compass" / "calibration" / "refresh.py"
-        if not script.is_file():
-            sys.stderr.write(f"calibration/refresh.py was not found ({script})\n")
-            return 2
-        return subprocess.call([sys.executable, "-X", "utf8", str(script), *rest])
-    script = locations.skill_root() / "agent-compass" / "scripts" / "public_data.py"
-    if not script.is_file():
-        sys.stderr.write(f"public_data.py was not found ({script})\n")
+    """Rebuild the shipped reference data in a checkout (`calibration/refresh.py`), or run the post-update step."""
+    if args == ["--refresh"]:
+        return post_update()
+    if args[:1] != ["refresh"]:
+        asked = _has_option(args, "-h") or _has_option(args, "--help")
+        (sys.stdout if asked else sys.stderr).write(DATA_HELP)
+        return 0 if asked else 2
+    rest = args[1:]
+    checkout = locations.checkout_root()
+    in_git_checkout = checkout is not None and (checkout / ".git").exists()
+    if not in_git_checkout and not any(_has_option(rest, flag) for flag in ("-h", "--help", "--references")):
+        sys.stderr.write(
+            "agentcompass data refresh rebuilds shipped reference files inside a git checkout.\n"
+            "An install reads the reference data shipped with its version; update AgentCompass for newer data.\n"
+        )
         return 2
-    return subprocess.call([sys.executable, "-I", "-X", "utf8", str(script), *args])
+    script = locations.skill_root() / "agent-compass" / "calibration" / "refresh.py"
+    if not script.is_file():
+        sys.stderr.write(f"calibration/refresh.py was not found ({script})\n")
+        return 2
+    return subprocess.call([sys.executable, "-X", "utf8", str(script), *rest])
 
 
 def hold_command(args: list[str]) -> int:

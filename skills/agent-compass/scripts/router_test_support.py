@@ -33,7 +33,7 @@ def isolated_router_state(add_cleanup, *, discovery=True, policy=True):
                ROUTER_LEDGER=str(root / 'ledger.jsonl'), ROUTER_USAGE_CACHE=str(root / 'usage.json'),
                ROUTER_CAPACITY=str(root / 'capacity.json'), ROUTER_OVERRIDES=str(root / 'overrides.json'),
                AGENTCOMPASS_ACCOUNTS_OVERRIDE=str(root / 'accounts-override.json'),
-               ROUTER_SCORER_CONFIG=str(root / 'scorer-config.json'), AGENTCOMPASS_PUBLIC_DATA='off',
+               ROUTER_SCORER_CONFIG=str(root / 'scorer-config.json'),
                AGENTCOMPASS_ANTIGRAVITY_PLAN='off', AGENTCOMPASS_LIVE_MODELS='off')
     # Point tests at the fleet fixture so they do not depend on the current public data.
     import account_fleet

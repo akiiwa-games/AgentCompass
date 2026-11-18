@@ -22,7 +22,6 @@ import antigravity_plan
 import grok_bot_paths
 from model_resolution import family_patterns, resolve_canonical_model
 import provider_retry
-import public_data
 import usage_cache
 
 MAX_BYTES = 5 * 1024 * 1024
@@ -120,7 +119,7 @@ def apply_shared_quota(accounts):
 
 def _shipped_plan_templates():
     global _SHIPPED_PLAN_TEMPLATES
-    source = public_data.effective(PLAN_TEMPLATES)  # the fetched public copy when it is newer than the shipped one
+    source = PLAN_TEMPLATES
     if _SHIPPED_PLAN_TEMPLATES is None or _SHIPPED_PLAN_TEMPLATES[0] != source or read_json is not _STDLIB_READ_JSON:
         shipped, _ = read_json(source)
         if read_json is _STDLIB_READ_JSON and shipped:

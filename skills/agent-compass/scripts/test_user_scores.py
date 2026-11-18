@@ -17,7 +17,7 @@ import account_fleet
 import axis_scores
 import candidate_ranking
 import ledger_snapshot
-import public_data
+import reference_provenance
 import roll
 import route_judge
 import user_scores
@@ -173,7 +173,7 @@ class ManualScoreLayerTests(unittest.TestCase):
             },
         }
         empty_pub = {'schema_version': 2, 'scores': {}}
-        with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
+        with patch.object(user_scores, 'load_public', return_value=empty_pub):
             before = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts))
         gb_before = next(c for c in before['ranking'] if c['id'] == 'grok_bot')
         self.assertTrue(gb_before['excluded'])
@@ -193,7 +193,7 @@ class ManualScoreLayerTests(unittest.TestCase):
             },
         }
         user_scores.set_score('grok-bot', 'tool_operation.responsiveness', 1.1, public=False, accounts=accounts)
-        with patch.object(axis_scores, 'load_public_user_scores', return_value=pub_doc):
+        with patch.object(user_scores, 'load_public', return_value=pub_doc):
             fresh_plan = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts), read_local_state=False)
             local_plan = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts), read_local_state=True)
         gb_fresh = next(c for c in fresh_plan['ranking'] if c['id'] == 'grok_bot')
@@ -204,15 +204,13 @@ class ManualScoreLayerTests(unittest.TestCase):
         self.assertTrue(any('maintainer' in str(n) for n in gb_fresh['notes']))
         self.assertTrue(any('user' in str(n) for n in gb_local['notes']))
 
-    def test_public_data_checks_pass_with_uncited_maintainer_values_and_local_never_leaks(self):
-        before_manifest = (REFERENCES_DIR / 'public-data.json').read_bytes()
+    def test_provenance_checks_pass_with_uncited_maintainer_values_and_local_never_leaks(self):
         before_shipped = (REFERENCES_DIR / 'user-scores.json').read_bytes()
 
         # Local CLI call writes only under ROUTER_STATE_DIR and never touches shipped references.
         with patch.object(sys, 'argv', ['route_judge.py', 'score', 'set', 'gpt-6.1-sol', 'coding.faithfulness', '2.8']):
             rc = route_judge.main()
         self.assertEqual(rc, 0)
-        self.assertEqual((REFERENCES_DIR / 'public-data.json').read_bytes(), before_manifest)
         self.assertEqual((REFERENCES_DIR / 'user-scores.json').read_bytes(), before_shipped)
         listed = user_scores.list_scores('gpt-6.1-sol', scope='local')
         self.assertEqual(listed['local']['gpt-6.1-sol']['coding.faithfulness']['kind'], 'user')
@@ -221,13 +219,13 @@ class ManualScoreLayerTests(unittest.TestCase):
             self.assertEqual(route_judge.main(), 0)
         self.assertEqual(user_scores.list_scores('gpt-6.1-sol', scope='local')['local'], {})
 
-        # Simulated git repo checkout: `--public` writes kind='maintainer' without citations and refreshes public-data.json.
+        # Simulated git repo checkout: `--public` writes kind='maintainer' without citations.
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             (repo / '.git').mkdir()
             refs = repo / 'skills' / 'agent-compass' / 'references'
             refs.mkdir(parents=True)
-            for name in (*public_data.FILES, public_data.MANIFEST):
+            for name in ('accounts.json', 'plan-templates.json', 'user-scores.json'):
                 shutil.copy2(REFERENCES_DIR / name, refs / name)
             res = user_scores.set_score(
                 'gpt-6.1-sol', 'creativity', 2.6, note='maintainer impression', public=True,
@@ -235,16 +233,13 @@ class ManualScoreLayerTests(unittest.TestCase):
             )
             self.assertEqual(res['entry']['kind'], 'maintainer')
             self.assertNotIn('url', res['entry'])
-            manifest = json.loads((refs / 'public-data.json').read_text(encoding='utf-8'))
-            self.assertEqual(public_data.check_set(refs, manifest), ('ok', ''))
+            reference_provenance.validate_references(refs)
 
-            # Writing kind='user' into the public file is rejected by public_data.check_set.
+            # Writing kind='user' into the public file is rejected by the provenance checks.
             bad = {'schema_version': 2, 'scores': {'gpt-6.1-sol': {'creativity': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'user'}}}}
             (refs / 'user-scores.json').write_text(json.dumps(bad), encoding='utf-8')
-            bad_manifest = public_data.build_manifest(refs)
-            status, detail = public_data.check_set(refs, bad_manifest)
-            self.assertEqual(status, 'incomplete')
-            self.assertIn('kind', detail)
+            with self.assertRaisesRegex(ValueError, 'kind'):
+                reference_provenance.validate_references(refs)
 
 
 class FixRoundRegressionTests(unittest.TestCase):
@@ -564,7 +559,7 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         # It ships with the version, so it is always in the current schema; an older one is a packaging error.
         self.write({'schema_version': 1, 'scores': {}})
         with self.assertRaisesRegex(ValueError, 'schema_version'):
-            user_scores.load_public(self.local, effective=False)
+            user_scores.load_public(self.local)
 
 
 class TaxonomyR2Round2FixTests(unittest.TestCase):
@@ -661,7 +656,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         empty_pub = {'schema_version': 2, 'scores': {}}
 
         def excluded():
-            with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
+            with patch.object(user_scores, 'load_public', return_value=empty_pub):
                 d = allocator.plan(code_task, usage, self.now, accounts=copy.deepcopy(accounts),
                                    host_policy_config={'allowed_accounts': ['codex']})
             return {c['id']: c['excluded'] for c in d['ranking']}
@@ -736,7 +731,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
                 'axis_demand': {'creativity': 0, 'coding': 0, 'aesthetics': 2, 'tool_operation': 0},
             },
         }
-        with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
+        with patch.object(user_scores, 'load_public', return_value=empty_pub):
             d = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts),
                                host_policy_config={'allowed_accounts': ['codex']})
         self.assertEqual(d['choice'], 'luna56_high')
@@ -749,7 +744,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             **task, 'constraints': {'model': 'gpt-oss-120b'},
             'profile': {**task['profile'], 'axis_demand': {'creativity': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}},
         }
-        with patch.object(axis_scores, 'load_public_user_scores', return_value=empty_pub):
+        with patch.object(user_scores, 'load_public', return_value=empty_pub):
             d_un = allocator.plan(task_unscored, usage, self.now, accounts=copy.deepcopy(accounts),
                                   host_policy_config={'allowed_accounts': ['codex']})
         self.assertEqual(d_un['choice'], 'unscored_high')
@@ -825,8 +820,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             (repo / '.git').mkdir()
             refs = repo / 'skills' / 'agent-compass' / 'references'
             refs.mkdir(parents=True)
-            for name in (*public_data.FILES, public_data.MANIFEST):
-                shutil.copy2(REFERENCES_DIR / name, refs / name)
+            shutil.copy2(REFERENCES_DIR / 'user-scores.json', refs / 'user-scores.json')
             user_scores.set_score('grok-bot', 'creativity', 2.8, public=True,
                                   public_path=refs / 'user-scores.json', accounts=self.accounts)
             locks = list(refs.glob('*.lock'))
