@@ -20,6 +20,7 @@ import dispatch_flow
 import entry
 import dispatch_registry as registry
 import host_placement
+import host_policy
 import provider_inventory
 import scorer_client
 import subscription_cli
@@ -213,6 +214,24 @@ def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
         return str(exc) or 'worker_not_resolvable'
 
 
+def _auto_resumable(worker, policy, usage_cache_path=None, accounts=None):
+    """Whether roll may resume `worker` without being told to. Resuming is then the router's choice, so the two
+    preference switches apply as they do to a plan: the account takes part in automatic routing on this host
+    (`host_policy.account_allowed`) and the worker's model is not unchecked in model management. The gate must admit
+    the turn too. An explicit `--resume` is the caller's choice and reads only the gate (`_worker_gate_refusal`)."""
+    import account_fleet
+    if accounts is None:
+        accounts = account_fleet.load_accounts()
+    bundle = _resolve_worker_bundle(worker, accounts)
+    if bundle is None or not host_policy.account_allowed(policy, bundle.get('account')):
+        return False
+    rows = [r for r in account_fleet.bundle_rows(accounts, bundle.get('bundle_id') or bundle.get('id'))
+            if r['account'] == bundle.get('account')]
+    if host_policy.disabled_cause(bundle['account'], rows, accounts):
+        return False
+    return not _worker_gate_refusal(worker, usage_cache_path=usage_cache_path, accounts=accounts)
+
+
 def _resume_refusal(out, explicit_id, error, next_text, code=2):
     return dict(out, launched=False, dispatch_mode='paseo', caller_action='roll_fresh_worker',
                 error=error, agent_id=explicit_id, next=next_text), code
@@ -301,8 +320,7 @@ def summary(decision):
     bundle = decision.get('selected_bundle') or {}
     out = {'choice': decision.get('choice'),
            'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast', 'fast_billing') if bundle.get(k)},
-           'reason': ((decision.get('host_policy_violation') or {}).get('reason') or
-                      (decision.get('decision') or {}).get('reason') or '')[:300] or None,
+           'reason': ((decision.get('decision') or {}).get('reason') or '')[:300] or None,
            'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn'],
            **({'warnings': warnings} if (warnings := decision.get('warnings') or (decision.get('decision') or {}).get('warnings')) else {})}
     return out
@@ -576,6 +594,10 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                 f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({gate_reason}). '
                 'Omit --resume to start a fresh worker.',
             )
+        worker_account = (explicit_worker.get('bundle') or {}).get('account')
+        if not host_policy.account_allowed(host_policy.load_policy(), worker_account):
+            out = dict(out, warnings=[*out.get('warnings', ()), f'{host_policy.outside_routing(worker_account)}; '
+                                      f'worker {explicit_id!r} resumed because --resume named it'])
         selected_bundle = decision.get('selected_bundle') or {}
         if not _bundle_matches_worker(selected_bundle, explicit_worker, same_model):
             routed_id = selected_bundle.get('bundle_id') or selected_bundle.get('id')
@@ -587,9 +609,10 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         resume_bundle = _resolve_worker_bundle(explicit_worker, fleet)
     elif not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
+        policy = host_policy.load_policy()
         compatible = [w for w in all_reusable
                       if _bundle_matches_worker(selected_bundle, w, same_model)
-                      and not _worker_gate_refusal(w, usage_cache_path=usage_cache_path, accounts=fleet)]
+                      and _auto_resumable(w, policy, usage_cache_path=usage_cache_path, accounts=fleet)]
         if is_ro_review:
             compatible = independent_reviewers(compatible)
         chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')
@@ -1209,8 +1232,9 @@ def _run(args, judge):
                 )
             matched_worker = explicit_worker
         elif not getattr(args, 'new_worker', False):
+            policy = host_policy.load_policy()
             eligible = [w for w in all_reusable
-                        if not w.get('worn') and not _worker_gate_refusal(w, usage_cache_path=usage_cache_path)]
+                        if not w.get('worn') and _auto_resumable(w, policy, usage_cache_path=usage_cache_path)]
             matched_worker = match_reusable_worker(args, task, text, parent, workers=eligible)
         else:
             matched_worker = None
@@ -1280,13 +1304,6 @@ def _run(args, judge):
     if decision.get('choice') in (None, 'none') or not bundle:
         return dict(out, launched=False, dispatch_mode='none', caller_action='execute_self_or_ask_user',
                     next=decision.get('next') or 'No worker fits this brief; do it yourself or ask the user.'), 2
-    if decision.get('host_policy_violation'):
-        violation = decision['host_policy_violation']
-        return dict(out, launched=False, dispatch_mode='none', caller_action='check_host_policy',
-                    host_policy_violation=violation,
-                    next=f"Host policy excludes account {violation.get('account')!r}. Inspect "
-                         f"{violation.get('policy_path') or 'the configured host policy'}; discovery and an explicit "
-                         'task request do not change allowed_accounts.'), 2
     if (decision.get('decision') or {}).get('needs_user_decision') and not (explicit_id and bundle):
         return dict(out, launched=False, dispatch_mode='none', caller_action='ask_user',
                     next='The router needs a user decision; show route.reason to the user.'), 2

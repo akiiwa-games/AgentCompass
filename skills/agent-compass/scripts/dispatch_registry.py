@@ -1243,11 +1243,15 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
         if decision.get('constraint') == 'user_override' or resume_bundle is not None:
+            import candidate_eval
             import provider_retry
             # A named model on a held account or model is the probe that can lift the hold (provider_retry);
             # an explicit --resume continues the worker's own bundle regardless of ability/model-latch exclusions.
-            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint',
-                                                                     provider_retry.EXCLUSION_PREFIX))]
+            # Neither is the router's choice, so an account out of automatic routing does not stop them, and an
+            # explicit resume continues a worker whose model was unchecked after its launch.
+            lifted = {candidate_eval.OUT_OF_AUTOMATIC_ROUTING, *((candidate_eval.UNCHECKED,) if resume_bundle is not None else ())}
+            exclusions = [e for e in exclusions if e not in lifted and not e.startswith((
+                'ability ', 'explicit model constraint', 'explicit effort constraint', provider_retry.EXCLUSION_PREFIX))]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
         if exclusions or (resume_bundle is None and candidate.get('available_in_hours')):

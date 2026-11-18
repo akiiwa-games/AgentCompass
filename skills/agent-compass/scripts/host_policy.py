@@ -107,33 +107,44 @@ def sync_discovered(accounts):
 
 
 def account_allowed(policy, account):
+    """Whether the account takes part in automatic routing on this host (no policy file: every account does).
+
+    An account outside `allowed_accounts` is never chosen by the router: not by a plan, a fallback, an automatic resume
+    of an idle worker, nor as a judge or scorer. It is not banned: a route the user names in the request still
+    dispatches on it (`route_judge.record_constraint`, constraint `user_override`), and a turn to an existing session on
+    it is not a routing choice."""
     return policy is None or account in policy['allowed_accounts']
 
 
-def disabled_cause(account, candidates, accounts, policy):
-    """(kind, detail) when the account, or every bundle the target can be, is switched off on this host, else None.
-    Kinds: `legacy` (the account's leftover meter text), `host_policy` (account not in the policy's allowed accounts),
-    `bundles` (ids all unchecked in model management). `candidates` are the account's matching bundle rows."""
+def outside_routing(account):
+    """The one wording of an account outside `allowed_accounts`; callers add why it is or is not launched."""
+    return f'account {account} is out of automatic routing on this host (not in allowed_accounts of host-policy.json)'
+
+
+def legacy_cause(account, accounts):
+    """('legacy', text) when the account still carries leftover meter text, else None. A fact: it refuses a launch and
+    a parent's new turn to its own worker alike."""
     legacy = ((accounts or {}).get('accounts') or {}).get(account, {}).get('legacy_meter')
-    if isinstance(legacy, str) and legacy.strip():
-        return 'legacy', legacy
-    if policy is not None and not account_allowed(policy, account):
-        return 'host_policy', account
+    return ('legacy', legacy) if isinstance(legacy, str) and legacy.strip() else None
+
+
+def disabled_cause(account, candidates, accounts):
+    """(kind, detail) when a launch of the target is refused whatever the route, else None. Kinds: `legacy`
+    (`legacy_cause`), `bundles` (ids all unchecked in model management; `candidates` are the account's matching bundle
+    rows). A new turn to an existing worker reads only `legacy_cause`: continuing a worker is not choosing its model.
+    Host policy is not a cause: it governs automatic routing only (`account_allowed`)."""
+    found = legacy_cause(account, accounts)
+    if found:
+        return found
     if candidates and all(c.get('disabled') for c in candidates):
         return 'bundles', [c['bundle_id'] for c in candidates]
     return None
 
 
-def disabled_text(account, cause, language):
-    """The one wording of a `disabled_cause`, in `en` (the verdict for a parent) or `zh` (the spawn gate's reply)."""
+def disabled_text(cause):
+    """The spawn gate's wording of a `disabled_cause`: the leftover meter text itself, or the unchecked bundles."""
     kind, detail = cause
-    if kind == 'legacy':
-        return detail
-    if language == 'zh':
-        return (f"账号 {account} 已在本机禁用（不在 host-policy.json 的 allowed_accounts 中）" if kind == 'host_policy'
-                else "档位 " + ", ".join(detail) + " 已在模型管理中停用")
-    return (f'account {account} is disabled on this host by its host policy' if kind == 'host_policy'
-            else f'bundle {", ".join(detail)} is unchecked in model management')
+    return detail if kind == 'legacy' else "档位 " + ", ".join(detail) + " 已在模型管理中停用"
 
 
 def judge_allowed(policy, name, account):

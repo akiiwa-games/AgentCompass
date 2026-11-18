@@ -1,6 +1,8 @@
 """Host exclusions apply at dispatch boundaries; fixtures never read real host state."""
-from datetime import datetime, timezone
+from contextlib import contextmanager, nullcontext
+from datetime import datetime, timedelta, timezone
 import json
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -9,6 +11,7 @@ import account_fleet
 import host_policy
 import route_judge as router
 import decision_ledger
+import dispatch_registry
 import subscription_cli
 import subscription_judge
 import usage_reading
@@ -18,6 +21,26 @@ from router_test_support import isolated_router_state, profile, temporary_root
 
 def setUpModule():
     isolated_router_state(unittest.addModuleCleanup, policy=False)
+
+@contextmanager
+def override_file(path, accounts):
+    path.write_text(json.dumps({'schema_version': 2, 'accounts': accounts}), encoding='utf-8')
+    try:
+        yield
+    finally:
+        path.unlink(missing_ok=True)
+
+
+@contextmanager
+def cooling(launch_failures, now):
+    bundle = {'account': 'claude', 'provider': 'claude', 'model': 'claude-opus-5-5'}
+    with patch.object(launch_failures, 'enabled', return_value=True):
+        launch_failures.record(bundle, 'model_unavailable', now=now)
+        try:
+            yield
+        finally:
+            launch_failures.clear('claude')
+
 
 LS = {'allowed_accounts': ['codex', 'antigravity', 'dot', 'chatgpt-web'],
       'judges': ['codex'], 'usage_providers': ['codex', 'antigravity']}
@@ -143,21 +166,96 @@ class HostPolicyTests(unittest.TestCase):
             result = subscription_judge.evaluate(request)
         self.assertEqual(result['choice'], 'none')
 
-    def test_record_keeps_constraint_and_flags_violation_in_ledger(self):
+    def record(self, constraint='user_override', model='claude-opus-5-5', usage=None):
+        """record_constraint for a route on `claude`, an account outside LS (out of automatic routing)."""
         task = self.directory/'task.json'
         task.write_text(json.dumps({'task': {'work_kind': 'code_implementation', 'difficulty': 'hard', 'profile': profile()}}))
-        args = router.argparse.Namespace(basis='User explicit retained owner', provider='claude', account='claude',
-                model='claude-opus-5-5', effort='high', input=task, usage_cache=None, accounts=None,
-                constraint='user_override', specialty=None)
+        args = router.argparse.Namespace(basis='User: run this on Opus on claude', provider='claude', account='claude',
+                model=model, effort='high', input=task, usage_cache=None, accounts=None,
+                constraint=constraint, specialty=None)
         with patch.object(decision_ledger, 'ledger_path', return_value=self.directory/'ledger.jsonl'), \
-             patch.object(usage_reading, 'usage_snapshot', return_value={'accounts': {}}), \
+             patch.object(usage_reading, 'usage_snapshot', return_value=usage or {'accounts': {}}), \
              patch.object(subscription_cli, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
-            result = router.record_constraint(args)
-            ledger = decision_ledger.read_ledger()
-        self.assertFalse(result['host_policy_violation']['dispatch_allowed'])
-        self.assertEqual(ledger[0]['host_policy_violation'], result['host_policy_violation'])
-        self.assertFalse(result['classifier_skipped'])
+            return router.record_constraint(args), decision_ledger.read_ledger()
+
+    def test_a_route_the_user_named_outside_automatic_routing_dispatches_with_a_warning(self):
+        # Rule (router-internals.md, Pins): allowed_accounts governs automatic routing; the user's own naming
+        # (user_override) reaches an account outside it, says so in the decision, and is launch authority.
+        result, ledger = self.record()
+        self.assertNotIn('host_policy_violation', result)
+        self.assertNotIn('host_policy_violation', ledger[-1])
+        self.assertTrue(any(w.startswith('account claude is out of automatic routing on this host')
+                            and w.endswith('launched because the user named it in this request')
+                            for w in result['warnings']), result.get('warnings'))
+        self.assertTrue(dispatch_registry.decision_record(result['decision_id'])['dispatchable'])
+        # The router by itself would still not choose it.
         self.assertIn('excluded by host policy', result['override_cost']['excluded'])
+
+    def test_a_project_rule_does_not_override_this_hosts_switch(self):
+        # Rule: a hard_constraint (or any constraint but user_override) is shared between machines and does not override
+        # one machine's switch; on an account in automatic routing it is launch authority as before.
+        for constraint in ('hard_constraint', 'dot_closed_loop'):
+            with self.subTest(constraint=constraint):
+                result, ledger = self.record(constraint)
+                violation = result['host_policy_violation']
+                self.assertFalse(violation['dispatch_allowed'])
+                self.assertEqual(violation['account'], 'claude')
+                self.assertIn('--constraint user_override', violation['reason'])
+                self.assertEqual(ledger[-1]['host_policy_violation'], violation)
+                self.assertFalse(dispatch_registry.decision_record(result['decision_id'])['dispatchable'])
+        self.write({**LS, 'allowed_accounts': [*LS['allowed_accounts'], 'claude']})
+        result, _ = self.record('hard_constraint')
+        self.assertNotIn('host_policy_violation', result)
+        self.assertFalse(any('out of automatic routing' in w for w in result.get('warnings', ())))
+
+    def test_facts_still_refuse_a_named_route_outside_automatic_routing(self):
+        # Rule 3: naming lifts the preference switch only; no sign-in, a model the account does not offer, a model
+        # unchecked in model management, an exhausted window and a launch cooldown still refuse.
+        now = datetime.now(timezone.utc)
+        exhausted = {'accounts': {'claude': {'status': 'fresh', 'fetched_at': now.isoformat(), 'available': True,
+                                             'windows': [{'id': 'five_hour', 'used_pct': 100,
+                                                          'resets_at': (now + timedelta(hours=2)).isoformat()}]}}}
+        override = Path(router.os.environ['AGENTCOMPASS_ACCOUNTS_OVERRIDE'])
+        import launch_failures
+        import provider_inventory
+        cases = (
+            ('no sign-in', lambda: patch.object(provider_inventory, 'current', return_value={
+                'accounts': {'claude': {'family': 'claude', 'status': 'auth_failed', 'reason': 'credentials_rejected'}},
+                'launchers': {}}),
+             {}, 'credentials_rejected'),
+            ('model not offered', None, {'model': 'gpt-6-astra'}, 'named_model_unavailable|no known provider/account/model'),
+            ('unchecked', lambda: override_file(override, {'claude': {'bundles': {'opus55_high': {'disabled': True},
+                                                                                 'opus55_medium': {'disabled': True},
+                                                                                 'opus55_low': {'disabled': True},
+                                                                                 'opus55_xhigh': {'disabled': True},
+                                                                                 'opus55_max': {'disabled': True}}}}),
+             {}, 'disabled'),
+            ('exhausted window', None, {'usage': exhausted}, 'five_hour'),
+            ('cooldown', lambda: cooling(launch_failures, now), {}, 'cooling down'),
+        )
+        for label, context, kwargs, cause in cases:
+            with self.subTest(fact=label), (context() if context else nullcontext()):
+                with self.assertRaisesRegex(ValueError, cause):
+                    self.record(**kwargs)
+
+    def test_automatic_resume_never_picks_a_worker_out_of_automatic_routing_or_on_an_unchecked_model(self):
+        # Rule 1: resuming an idle worker without being told to is the router's choice, so both preference switches
+        # apply; an explicit --resume reads only the gate's facts (roll._auto_resumable / _worker_gate_refusal).
+        import roll
+        accounts = account_fleet.load_accounts()
+        policy = host_policy.load_policy()
+        worker = {'agent_id': 'w1', 'dispatch_id': 'd1', 'bundle_id': 'opus55_high',
+                  'bundle': {'account': 'claude', 'provider': 'claude', 'model': 'claude-opus-5-5', 'effort': 'high',
+                             'bundle_id': 'opus55_high'}}
+        with patch.object(roll, '_worker_gate_refusal', return_value=None):
+            self.assertFalse(roll._auto_resumable(worker, policy, accounts=accounts))
+            self.assertTrue(roll._auto_resumable(worker, {'allowed_accounts': ['claude']}, accounts=accounts))
+            for row in accounts['accounts']['claude']['bundles'].values():
+                if row.get('model') == 'claude-opus-5-5':
+                    row['disabled'] = True
+            self.assertFalse(roll._auto_resumable(worker, {'allowed_accounts': ['claude']}, accounts=accounts))
+        with patch.object(roll, '_worker_gate_refusal', return_value='quota window five_hour is unavailable'):
+            self.assertFalse(roll._auto_resumable(worker, None, accounts=account_fleet.load_accounts()))
 
     def test_same_policy_at_different_paths_has_identical_allocation(self):
         first = self.plan()

@@ -220,6 +220,18 @@ def record_constraint(args, task=None, classified=None):
     if retrying:
         warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a turn "
                     "that ends on the model's reply lifts the hold (a cancel or stop does not)", *warnings]
+    # Host policy says which accounts the router chooses by itself. Only the user's own naming reaches an account
+    # outside it; a project rule (hard_constraint) is shared between machines and does not override one machine's switch.
+    # Account loading may enroll a newly discovered account; check the resulting policy.
+    if not host_policy.account_allowed(host_policy.load_policy(), args.account):
+        outside = host_policy.outside_routing(args.account)
+        if args.constraint == 'user_override':
+            warnings = [f'{outside}; launched because the user named it in this request', *warnings]
+        else:
+            result['host_policy_violation'] = {
+                'account': args.account, 'dispatch_allowed': False, 'policy_path': str(host_policy.policy_path()[0]),
+                'reason': (f'{outside}; a {args.constraint} record does not override that, only a route the user named '
+                           "in this request (--constraint user_override with the user's words in --basis)")}
     if warnings:
         result['warnings'] = warnings
     if classified:
@@ -232,12 +244,6 @@ def record_constraint(args, task=None, classified=None):
             result['alerts'] = list(classified['alerts'])
     if fast_requested:
         result['_allocation_task'] = {**(task or {}), 'force_fast': True}
-    # Account loading may enroll a newly discovered account; check the resulting policy.
-    availability = host_policy.load_policy()
-    if not host_policy.account_allowed(availability, args.account):
-        result['host_policy_violation'] = {'account': args.account, 'dispatch_allowed': False,
-                                           'policy_path': str(host_policy.policy_path()[0]),
-                                           'reason': 'excluded by host policy; constraint recorded, not dispatch authorization'}
     _compare_with_router(result, task, usage, now, chosen, fast_requested, classified)
     return decision_ledger.finalize(result, None, 'auto', started, reviewed_task if classified else task)
 

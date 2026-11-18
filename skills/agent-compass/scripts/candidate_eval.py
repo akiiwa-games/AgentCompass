@@ -28,6 +28,11 @@ QUOTA_LONG_UNREAD = ('weekly quota reading unavailable (the account has a long r
 QUOTA_NO_LONG_WINDOW = ('no weekly quota window (neither the account configuration nor the public capacity data gives this '
                         'account a long reset-period window, so its spend cannot be priced)')
 QUOTA_DATA_ERRORS = (QUOTA_READING_UNAVAILABLE, QUOTA_LONG_UNREAD, QUOTA_NO_LONG_WINDOW)
+# The two exclusions that are the user's routing preferences rather than facts. A route the user names lifts
+# OUT_OF_AUTOMATIC_ROUTING (host policy governs only what the router chooses by itself); an explicit resume of an
+# existing worker lifts both, since continuing a worker is not choosing its account or model (dispatch_registry.prepare).
+OUT_OF_AUTOMATIC_ROUTING = 'excluded by host policy'
+UNCHECKED = 'unchecked in model management'
 
 
 def model_pin_matches(task, bundle, model):
@@ -161,10 +166,10 @@ def evaluate_bundle(bundle, task, ctx):
         exclude(f"outside account cwd restriction ({cwd_spec['cwd_regex']})")
 
     if not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
-        exclude('excluded by host policy')
+        exclude(OUT_OF_AUTOMATIC_ROUTING)
     # Off by default (superseded in public data) is not the user's checkbox: naming the model still reaches it.
     if bundle.get('disabled') and not (bundle.get('disabled_by_default') and bundle_named(task, bundle, own_model)):
-        exclude('unchecked in model management')
+        exclude(UNCHECKED)
     if bundle.get('discovery_unavailable'):
         exclude(bundle['discovery_unavailable'] if isinstance(bundle['discovery_unavailable'], str)
                 else 'model not detected by discovery for 7+ days')

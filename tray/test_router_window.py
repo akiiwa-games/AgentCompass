@@ -787,7 +787,7 @@ class LanguageTests(unittest.TestCase):
         self.assertIn("省额度", router_data.STRATEGY_PRESETS)
         self.assertEqual(router_data.countdown(3600), "1h 00m")
         self.assertEqual(panel_widgets.short_badge("Paused: disabled"), "Paused")
-        self.assertEqual(panel_widgets.short_badge("Blocked by Host"), "Blocked by Host")
+        self.assertEqual(panel_widgets.short_badge("Out of auto routing"), "Out of auto routing")
         self.assertEqual(easytier.label({"state": easytier.RUNNING, "peers": [{"cost": "p2p"}, {"cost": "p2p"}]}),
                          "Running (2 peers)")
         self.assertEqual(network_status.peer_values({"cost": "Local"})[2], "Local")

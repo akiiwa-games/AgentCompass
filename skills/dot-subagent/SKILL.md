@@ -20,9 +20,11 @@ authorizes handing Dot explicitly designated data, never credentials (see [Getti
 
 Before calling this runner directly, run `python -X utf8 scripts/host_policy.py --account dot`
 from the installed sibling `agent-compass` skill and require exit 0. It reads the optional
-`~/.agent-compass/host-policy.json` / `ROUTER_HOST_POLICY` override. A denied account or invalid
-profile blocks this dispatch only; Self may continue other work. A recorded user constraint does
-not bypass host availability. Router authorization is still required.
+`~/.agent-compass/host-policy.json` / `ROUTER_HOST_POLICY` override. Exit 1 means the account is
+out of automatic routing on this host: run only a route the user named in this request (`roll
+--provider ... --basis` or `record --constraint user_override` returned it with that warning); a
+project rule does not override it. An invalid profile blocks this dispatch; Self may continue other
+work. Router authorization is still required.
 
 ## Runner
 

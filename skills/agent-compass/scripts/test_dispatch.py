@@ -91,6 +91,22 @@ class DispatchTests(unittest.TestCase):
             self.assertEqual(registry.claim(row['request'], parent_id='parent-a',
                                            call_id='fixture', now=self.now)['state'], 'launching')
 
+    def test_prepare_admits_a_named_route_out_of_automatic_routing_and_the_router_never_picks_it(self):
+        # Rule (router-internals.md, Pins): the host-policy exclusion is the router's own choice; prepare lifts it for the
+        # user's naming (user_override), keeps it for a plan decision, and a refused record is never dispatchable.
+        import host_policy
+        outside = {'allowed_accounts': [a for a in self.accounts['accounts'] if a != 'claude-lab']}
+        with patch.object(host_policy, 'load_policy', return_value=outside):
+            named = self.issue(stage='record', choice='constraint', constraint='user_override', basis='User named it')
+            self.assertEqual(self.prepare(named)['bundle']['account'], 'claude-lab')
+            with self.assertRaisesRegex(registry.CapacityChanged, 'excluded by host policy'):
+                self.prepare(self.issue(task=dict(self.task, task_id='automatic')), task=dict(self.task, task_id='automatic'))
+            refused = self.issue(stage='record', choice='constraint', constraint='hard_constraint', basis='Project rule',
+                                 host_policy_violation={'account': 'claude-lab', 'dispatch_allowed': False},
+                                 task=dict(self.task, task_id='project-rule'))
+            with self.assertRaisesRegex(ValueError, 'requires a new route'):
+                self.prepare(refused, task=dict(self.task, task_id='project-rule'))
+
     def test_pi_request_omits_unsupported_mode_including_saved_legacy_value(self):
         for legacy_mode in (None, 'full-access'):
             bundle = {'provider': 'pi', 'model': 'gpt-6-astra',
@@ -269,17 +285,17 @@ class DispatchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'no known'):
                 self.override_decision(selected_bundle=bundle)
 
-    def test_explicit_low_override_preserves_host_policy_and_capacity_checks(self):
+    def test_explicit_low_override_keeps_capacity_checks_and_reaches_an_account_out_of_automatic_routing(self):
+        # Rule 3: the user's naming does not lift a fact (an exhausted window); rule 2: it does lift host policy.
         decision = self.override_decision()
-        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-lab']}))
-        with self.assertRaisesRegex(ValueError, 'host policy'):
-            self.prepare(decision)
-        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['codex']}))
         exhausted = {'accounts': {'codex': {'status': 'fresh', 'fetched_at': self.now.isoformat(), 'windows': [
             {'id': 'usage', 'used_pct': 99, 'remaining_pct_before_reset': 1,
              'seconds_until_reset': 86400, 'resets_at': (self.now + timedelta(days=1)).isoformat()}]}}}
-        with self.assertRaisesRegex(ValueError, 'Capacity/availability'):
-            registry.prepare(decision['decision_id'], self.task, self.launch, exhausted, now=self.now)
+        for allowed in (['codex'], ['claude-lab']):
+            (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': allowed}))
+            with self.subTest(allowed=allowed), self.assertRaisesRegex(ValueError, 'Capacity/availability'):
+                registry.prepare(decision['decision_id'], self.task, self.launch, exhausted, now=self.now)
+        self.assertEqual(self.prepare(decision)['bundle']['account'], 'codex')
 
     def test_fresh_claude2_eighty_percent_protects_prepare_mcp_and_sdk_claim(self):
         import scorer_client
@@ -3326,6 +3342,7 @@ class RollLifecycleTests(unittest.TestCase):
         import roll
         worker = {'agent_id': 'worker-x'}
         self.enterContext(patch.object(roll, '_worker_gate_refusal', return_value=None))
+        self.enterContext(patch.object(roll, '_auto_resumable', return_value=True))
         return (patch.object(registry, 'reusable_workers', return_value=[worker]),
                 patch.object(roll, '_bundle_matches_worker', return_value=True),
                 patch.object(roll, 'match_reusable_worker', return_value=worker),
@@ -4569,7 +4586,10 @@ class ContinuationRollTests(unittest.TestCase):
         self.assertEqual(recorded['request']['labels']['router.bundle_id'], 'lab_opus55_high')
 
     def test_worker_gate_refusal_resolves_bundle_id_and_fails_closed(self):
+        # An unresolvable worker fails closed. A model unchecked since the launch, or an account out of automatic
+        # routing, is a preference: an explicit --resume proceeds (the latter with a warning), an automatic one does not.
         import argparse
+        import host_policy
         import roll
         b1 = self.root / 'g1.md'
         b1.write_text('# Gate check on disabled worker\n', encoding='utf-8')
@@ -4587,10 +4607,11 @@ class ContinuationRollTests(unittest.TestCase):
             'session_state': {'context_tokens': 1000, 'compacted_tokens': 0},
             'worn': False,
         }
-        self.assertIsNotNone(roll._worker_gate_refusal(disabled_worker, accounts=self.accounts))
+        self.assertIsNone(roll._worker_gate_refusal(disabled_worker, accounts=self.accounts))
+        self.assertFalse(roll._auto_resumable(disabled_worker, None, accounts=self.accounts))
         self.assertIsNotNone(roll._worker_gate_refusal({'agent_id': 'agent-x', 'bundle': {}}, accounts=self.accounts))
         self.enterContext(fake_owners(self))
-        base_args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None,
+        base_args = dict(task=None, file=[], apply_to=None, local_only=None, keep_whole=None,
                          hours=0.5, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
                          parent_host=None, parent_address=None, provider=None, account=None, model=None,
                          effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
@@ -4600,9 +4621,16 @@ class ContinuationRollTests(unittest.TestCase):
                 patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
                 patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
                 patch.object(registry, 'reusable_workers', return_value=[disabled_worker]), \
+                patch.object(host_policy, 'load_policy', return_value={'allowed_accounts': [
+                    a for a in self.accounts['accounts'] if a != 'claude-lab']}), \
                 patch.object(flow, 'host_call', host):
             res, code = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
-        self.assertEqual((code, res['status'], res['cause']), (2, 'blocked', 'resume_worker_gated'))
+        self.assertNotEqual(res.get('cause'), 'resume_worker_gated', res)
+        self.assertTrue(any("account claude-lab is out of automatic routing on this host" in w
+                            and "worker 'agent-disabled-opus' resumed because --resume named it" in w
+                            for w in res.get('warnings', ())), res)
+        with patch.object(roll, '_worker_gate_refusal', return_value='quota window five_hour of claude-lab is unavailable'):
+            self.assertFalse(roll._auto_resumable(disabled_worker, None, accounts=self.accounts))
 
     def test_explicit_resume_of_busy_worker_refuses_while_auto_match_falls_back(self):
         import argparse

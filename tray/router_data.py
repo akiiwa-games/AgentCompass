@@ -595,7 +595,7 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     if not host_policy.account_allowed(policy, name):
         if row.get('billing') in ('metered', 'unknown'):
             return _tr('仅手动使用'), 'idle'
-        return _tr("本机策略禁用"), "idle"
+        return _tr("不参与自动派发"), "idle"
     status = row.get("status")
     if status == 'quota_exhausted':
         return _tr('额度已耗尽，等待刷新恢复'), 'warn'
@@ -780,7 +780,7 @@ def account_cards() -> list[dict]:
     inv_accounts = inventory.get("accounts") or {}
     acc_table = accounts.get("accounts") or {}
     # An account drawing on another's quota (fleet `quota_sources`) shows as that pool's one card;
-    # dispatch exclusions (`allowed_accounts`) mark the card as not dispatched rather than hiding its usage.
+    # accounts out of automatic routing (`allowed_accounts`) mark the card rather than hiding its usage.
     members: dict[str, list[str]] = {}
     for member, source in sources.items():
         members.setdefault(source, []).append(member)

@@ -697,17 +697,15 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
                 self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
                 self.assertIn('no known provider/account/model/effort contract', proc.stdout)
                 self.assertNotIn('mocked_send', proc.stdout)
+        # Out of automatic routing is not a ban: the route the user named still launches, and says why it did
+        # (router-internals.md, Pins). The automatic roll above never reaches the account.
         host_policy.write_text(json.dumps({'allowed_accounts': []}))
         proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', env=env, timeout=30)
-        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
-        blocked = json.loads(proc.stdout)
-        self.assertFalse(blocked['launched'])
-        self.assertEqual(blocked['caller_action'], 'check_host_policy')
-        self.assertIn('excluded by host policy', blocked['route']['reason'])
-        self.assertEqual(blocked['host_policy_violation']['account'], 'grok-bot')
-        self.assertEqual(blocked['host_policy_violation']['policy_path'], str(host_policy))
-        self.assertIn(str(host_policy), blocked['next'])
-        self.assertNotIn('mocked_send', proc.stdout)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        named = json.loads(proc.stdout)
+        self.assertTrue(named['worker']['mocked_send'])
+        self.assertTrue(any('grok-bot is out of automatic routing' in w and 'the user named it' in w
+                            for w in named['route']['warnings']), named['route'])
 
 
 
