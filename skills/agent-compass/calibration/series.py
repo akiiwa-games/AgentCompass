@@ -13,8 +13,10 @@ The downward relation (`tier_up`, owner 2026-11-18) is a second relation, not se
 its `families` row's `models` (a current member of that family) whose `families` row declares `tier_up` (the pattern of
 the same line's next larger family row) has, as its larger model, the first model of that larger row the catalog has;
 `tier_up_version` declares whether that model is the same version as the row's current members (`same`) or the nearest
-version of the line (`nearest`). five_axis.py uses it only for a facet the small row's own same-size series and the tier
-fit leave without any value: the small row's own gap only for `same`, the fleet's size step for both.
+version of the line (`nearest`). An older member of the line that is no current member gets its larger model only from
+the row's `tier_up_older` declaration ({model: {model: larger, version}}). five_axis.py uses it only for a facet the small
+row's own same-size series and the tier fit leave without any value: the small row's own gap only for `same`, the fleet's
+size step for both.
 
 A `same_model` row (accounts.json) declares that one row is the very model another row names (a vendor statement with its
 url): the declared model is that row's base before any other sibling, and the row carries the type scores of the
@@ -88,7 +90,11 @@ def tier_up(acc):
         larger = next((t for t in by_pattern[row['tier_up']]['models'] if t in models), None)
         if larger:
             out[k] = {'model': larger, 'version': row['tier_up_version']}
-    return out
+    for row in fams:
+        for k, rel in (row.get('tier_up_older') or {}).items():
+            if k in models and rel['model'] in models:
+                out[k] = {'model': rel['model'], 'version': rel['version']}
+    return dict(sorted(out.items()))
 
 
 def same_model(acc):

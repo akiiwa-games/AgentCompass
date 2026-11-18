@@ -27,7 +27,10 @@ WORK_KINDS = {
 }
 DIFFICULTIES = {"routine": "常规", "hard": "困难", "coupled": "高耦合", "frontier": "前沿", "extreme": "极难", "easy": "简单", "medium": "中等"}
 FAST_SUFFIX = "+fast"      # fast_modes.ID_SUFFIX: the router's id for a bundle's fast-mode twin
-EFFORTS = {"low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最高", "ultra": "超高"}
+# A label for every effort of the order (user_scores.EFFORTS) and every effort name off it a launch can carry (five-axis
+# `effort_readings`): test_display_names states the rule.
+EFFORTS = {"minimal": "最低", "low": "低", "medium": "中", "high": "高", "xhigh": "极高", "max": "最高", "ultra": "超高",
+           "default": "默认"}
 
 
 def _tr(text):

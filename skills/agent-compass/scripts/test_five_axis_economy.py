@@ -781,7 +781,8 @@ class DurationKeyTests(unittest.TestCase):
 
     def info(self, model):
         dur = self.record(model)
-        return {'five_axis': {'duration': {k: copy.deepcopy(dur[k]) for k in ('status', 'by_effort', 'basis_by_effort')}}}
+        return {'five_axis': {'effort_readings': dict(self.data['effort_readings']),
+                              'duration': {k: copy.deepcopy(dur[k]) for k in ('status', 'by_effort', 'basis_by_effort')}}}
 
     def minutes(self, model, effort):
         return self.record(model)['minutes_by_effort'][effort]
@@ -829,6 +830,20 @@ class DurationKeyTests(unittest.TestCase):
         self.assertEqual(quota_economy.duration_at(opus, 'high')[1]['method'], 'aa')
         self.assertEqual(quota_economy.duration_at(opus, None), quota_economy.duration_at(opus, 'high'))    # no effort: the single configuration
         self.assertEqual(quota_economy.duration_at({}, 'high'), (None, None))
+
+    def test_an_effort_off_the_scale_reads_the_effort_the_data_declares(self):
+        """Rule (axis_scores.reading_effort, accounts.json `effort_readings`): a launch at `default`, and a bundle that names
+        no effort, read the stored values at the declared effort, for the time and for the scores alike."""
+        opus = self.info('claude-opus-5-5')
+        reads = self.data['effort_readings']['default']
+        self.assertEqual(quota_economy.duration_at(opus, 'default'), quota_economy.duration_at(opus, reads))
+        opus['five_axis']['effort_readings'] = {'default': 'medium'}
+        self.assertEqual(quota_economy.duration_at(opus, 'default'), quota_economy.duration_at(opus, 'medium'))
+        self.assertEqual(quota_economy.duration_at(opus, None), quota_economy.duration_at(opus, 'medium'))
+        state = {'effort_readings': {'default': 'xhigh'},
+                 'categories': copy.deepcopy(self.data['models']['claude-opus-5-5']['axes'])}
+        self.assertEqual(axis_scores.five_axis_values(state, 'default'), axis_scores.five_axis_values(state, 'xhigh'))
+        self.assertNotEqual(axis_scores.five_axis_values(state, 'default'), axis_scores.five_axis_values(state, 'low'))
 
     def test_a_fast_variant_shortens_the_candidates_hours_and_keeps_the_source(self):
         d = self.fleet.plan(0.6, 0.5, ec=1 - 2 / WEEK)

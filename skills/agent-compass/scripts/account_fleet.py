@@ -55,11 +55,12 @@ _REFERENCE_FLEET = {}
 
 def reference_fleet_path():
     """Fleet fixture for tests, never read from the user home: the checked-in fixtures/reference-accounts.json completed
-    with the shipped catalog's `families` declaration, so the family patterns have one source. Written once per process
+    with the shipped catalog's `families` and `effort_readings` declarations, so each has one source. Written once per process
     to a temporary file, removed at exit."""
     if 'path' not in _REFERENCE_FLEET:
         doc = json.loads((Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json').read_text(encoding='utf-8-sig'))
-        doc['families'] = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))['families']
+        shipped = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8-sig'))
+        doc.update({k: shipped[k] for k in ('families', 'effort_readings')})
         folder = Path(tempfile.mkdtemp(prefix='agentcompass-reference-fleet-'))
         atexit.register(shutil.rmtree, folder, True)
         path = folder / 'reference-accounts.json'

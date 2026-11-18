@@ -29,6 +29,8 @@ from test_fleet_parity import shipped_template, snapshot
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'calibration'))
 
+READINGS = {'effort_readings': {'reads': {'default': 'high'}}}   # accounts.json's declaration (five_axis.effort_readings)
+
 
 def setUpModule():
     isolated_router_state(unittest.addModuleCleanup, discovery=False, policy=False)
@@ -133,7 +135,8 @@ def document(models, **override):
     rows = {name: row() for name, info in models.items() if isinstance(info, dict)}
     rows['claude-opus-5-5'] = row(1.0, 15.0)
     rows.update(override)
-    return {'schema': axis_scores.FIVE_AXIS_SCHEMA, 'models': rows, 'anchor': ANCHOR, 'capacity': CAPACITY}
+    return {'schema': axis_scores.FIVE_AXIS_SCHEMA, 'models': rows, 'anchor': ANCHOR, 'capacity': CAPACITY,
+            'effort_readings': {'default': 'high'}}
 
 
 def window(usd, age=3, ref=None):
@@ -1023,7 +1026,7 @@ class HighFillTests(unittest.TestCase):
     def scorer(bundle_efforts=()):
         import five_axis
         bundles = {f'b{i}': {'model': 'm', 'effort': e} for i, e in enumerate(bundle_efforts)}
-        return five_axis.Scorer({'models': {}}, {'models': {}, 'accounts': {'acct': {'bundles': bundles}}})
+        return five_axis.Scorer({'models': {}}, {**READINGS, 'models': {}, 'accounts': {'acct': {'bundles': bundles}}})
 
     @staticmethod
     def facet(by, status='measured'):
@@ -1378,7 +1381,7 @@ class AnchorRelativeTests(unittest.TestCase):
                  'listed_as': 'M1 High', 'listed_effort': 'high'},
             ]},
         }}
-        rows, _, _, _, _, _ = self.fa.Scorer(meas, {'models': {self.ms.ANCHOR: {}, 'm1': {}}, 'families': {'rows': []}}).score()
+        rows, _, _, _, _, _ = self.fa.Scorer(meas, {**READINGS, 'models': {self.ms.ANCHOR: {}, 'm1': {}}, 'families': {'rows': []}}).score()
         ex = rows['m1']['axes']['coding']['facets']['execution']
         self.assertEqual(ex['status'], 'measured')
         self.assertEqual(ex['sources']['arena.agent_code']['effort_shift'], 'aa')
@@ -1541,7 +1544,7 @@ class AnchorRelativeTests(unittest.TestCase):
     def score(self, meas):
         # The fable rows form one series through this catalog's family pattern (model_resolution `families`).
         families = {'rows': [{'pattern': '^claude-fable', 'models': ['claude-fable-5-2']}]}
-        return self.fa.Scorer(meas, {'models': {m: {} for m in meas['models']}, 'families': families}).score()
+        return self.fa.Scorer(meas, {**READINGS, 'models': {m: {} for m in meas['models']}, 'families': families}).score()
 
     def test_the_tier_is_read_only_from_the_overall_boards(self):
         measured = self.tiered(4.0)
@@ -1676,7 +1679,7 @@ class AnchorRelativeTests(unittest.TestCase):
              'z_by_effort': dict.fromkeys(EFFORT_NAMES, -0.1)}],
             tool_operation=[{'source': 'lmarena.vision', 'facet': 'image_recognition', 'value': -0.15}])
         meas['models']['channel'] = {}
-        acc = {'models': {m: {} for m in meas['models']}, 'families': {'rows': []},
+        acc = {**READINGS, 'models': {m: {} for m in meas['models']}, 'families': {'rows': []},
                'same_model': {'channel': {'model': 'astra', 'carries': ['coding'], 'url': 'https://openai.com/index/introducing-dots/'}}}
         rows, tier, _, _, _, _ = self.fa.Scorer(meas, acc).score()
         self.assertEqual((tier['channel']['value'], tier['channel']['method'], tier['channel']['base_model']), (4.2, 'sibling', 'astra'))
@@ -1689,7 +1692,7 @@ class AnchorRelativeTests(unittest.TestCase):
         tool = rows['channel']['axes']['tool_operation']
         self.assertEqual((tool['status'], tool.get('flag'), tool['facets']), ('missing', 'missing', {}))
         # without the declaration the row has no tier and nothing to estimate from
-        rows, tier, _, _, _, _ = self.fa.Scorer(meas, {'models': acc['models'], 'families': acc['families']}).score()
+        rows, tier, _, _, _, _ = self.fa.Scorer(meas, {**READINGS, 'models': acc['models'], 'families': acc['families']}).score()
         self.assertEqual(tier['channel']['method'], 'none')
         self.assertEqual(rows['channel']['axes']['coding']['status'], 'missing')
 
@@ -1761,7 +1764,7 @@ class SourceMergeTests(unittest.TestCase):
         meas = {'models': {'m': {'usd_per_hour': self.entries(), 'aesthetics': [
             {'source': 'designarena.website', 'facet': 'design', 'value': -1.2},
             {'source': 'lmarena.webdev', 'facet': 'design', 'value': 0.4}]}}}
-        scorer = self.fa.Scorer(meas, {'models': {'m': {}}, 'families': {'rows': []}}, distrust=['arena.agent_sessions', 'designarena.website'])
+        scorer = self.fa.Scorer(meas, {**READINGS, 'models': {'m': {}}, 'families': {'rows': []}}, distrust=['arena.agent_sessions', 'designarena.website'])
         usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas)
         self.assertEqual((usd['m']['value'], usd['m']['fallback']), (31.0, True))
         rows, _, _, _, _, _ = scorer.score()
@@ -1786,7 +1789,7 @@ class DurationTests(unittest.TestCase):
 
     def build(self, models, **acc_extra):
         rows = {m: {'fields': {'throughput': tps}} for m, tps in models.items()}
-        acc = {'models': {m: {} for m in models}, 'aliases': {}, 'families': {'rows': []}, **acc_extra}
+        acc = {**READINGS, 'models': {m: {} for m in models}, 'aliases': {}, 'families': {'rows': []}, **acc_extra}
         scorer = self.fa.Scorer({'models': {m: r['fields'] for m, r in rows.items()}}, acc)
         tier = {m: {'value': None, 'method': 'none'} for m in rows}
         return self.fa.durations(scorer, rows, acc, {}, {}, tier)
@@ -1798,7 +1801,7 @@ class DurationTests(unittest.TestCase):
         self.assertEqual((out[self.anchor]['by_effort']['high'], out['m']['by_effort']), (1.0, {'high': 1.5, 'max': 2.0}))
         self.assertEqual(out['m']['minutes_by_effort'], {'high': 15.0, 'max': 20.0})
         self.assertEqual({b['method'] for b in out['m']['basis_by_effort'].values()}, {'aa'})   # the arena listing is not used
-        self.assertEqual(out['m']['efforts_without_time'], ['minimal', 'low', 'medium', 'xhigh'])
+        self.assertEqual(out['m']['efforts_without_time'], ['minimal', 'low', 'medium', 'xhigh', 'ultra'])
         self.assertEqual(out['m']['basis_by_effort']['max']['url'], f'https://example.test/{aa}')
 
     def test_an_effortless_listing_is_the_single_configuration_keyed_high(self):
@@ -1834,12 +1837,24 @@ class DurationTests(unittest.TestCase):
         self.assertEqual((basis['method'], basis['arena_minutes'], basis['fit'], basis['n']), ('arena_fit', 4.0, 'aa_time~arena_time', 10))
         self.assertAlmostEqual(row['by_effort']['high'], row['minutes_by_effort']['high'] / 10.0, places=3)
 
+    def test_an_edge_effort_takes_the_fleet_ratio_next_to_it_and_never_passes_its_neighbour(self):
+        """Rule (durations, `EDGES`): `ultra` is Max times the fleet's median time(max) / time(xhigh) over the Artificial
+        Analysis listings with both (n >= MIN_FLEET_RATIO_N), held at Max where that ratio would make it shorter."""
+        aa = 'aa.cost_time'
+        for ratios, ultra, held in (((1.5, 2.0, 2.5), 24.0, False), ((0.5, 0.6, 0.7), 12.0, True)):
+            fleet = {f'f{i}': [self.tp(aa, 'xhigh', 10.0), self.tp(aa, 'max', 10.0 * r)] for i, r in enumerate(ratios)}
+            out, _, _ = self.build({self.anchor: [self.tp(aa, 'high', 10.0)], **fleet, 'm': [self.tp(aa, 'max', 12.0)]})
+            basis = out['m']['basis_by_effort']['ultra']
+            self.assertEqual((out['m']['minutes_by_effort']['ultra'], basis['method'], basis['from_effort']),
+                             (ultra, 'fleet_highest_step', 'max'), ratios)
+            self.assertEqual(basis.get('bounded_by') == 'max', held, ratios)
+
     def test_an_arena_fit_without_skill_leaves_the_arena_only_model_without_a_time(self):
         out, fit, why = self.build(self.paired(-1.0))           # slower on arena, faster on AA: not a usable fit
         self.assertIsNone(fit)
         self.assertIn('not positive', why)
         self.assertEqual((out['arena_only']['status'], out['arena_only']['by_effort']), ('missing', {}))
-        self.assertEqual(out['arena_only']['efforts_without_time'], ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+        self.assertEqual(out['arena_only']['efforts_without_time'], list(self.fa.LADDER))
         # models with their own AA time do not need the fit
         self.assertEqual(out['p3']['basis_by_effort']['high']['method'], 'aa')
 
@@ -1856,7 +1871,7 @@ class DurationTests(unittest.TestCase):
         self.assertEqual((basis['method'], basis['base_model'], basis['from_effort'], basis['ratio']),
                          ('series_effort', 'gpt-5.6-luna', 'high', 3.0))
         self.assertEqual(row['basis_by_effort']['high']['method'], 'aa')
-        self.assertEqual(row['efforts_without_time'], ['minimal', 'medium', 'xhigh'])        # the sibling lists neither
+        self.assertEqual(row['efforts_without_time'], ['minimal', 'medium', 'xhigh', 'ultra'])   # the sibling lists neither
         # alone, with no sibling to convert through, the other efforts have no time
         alone, _, _ = self.build({self.anchor: [self.tp(aa, 'high', 10.0)], 'gpt-6-luna': [self.tp(aa, 'high', 6.0)]})
         self.assertEqual(alone['gpt-6-luna']['by_effort'], {'high': 0.6})
@@ -1981,10 +1996,10 @@ class DurationTests(unittest.TestCase):
             dur = r['duration_multiplier']
             self.assertEqual(set(dur['by_effort']), set(dur['basis_by_effort']), name)
             self.assertEqual(set(dur['efforts_without_time']) | set(dur['by_effort']),
-                             {'minimal', 'low', 'medium', 'high', 'xhigh', 'max'}, name)
+                             set(self.fa.LADDER), name)
             self.assertTrue(all(b['method'] in ('aa', 'arena_fit', 'series', 'series_effort', 'fleet_effort_ratio',
                                                 'fleet_effort_position', 'same_model', 'effort_bound', 'size_step',
-                                                'fleet_lowest_step')
+                                                'fleet_lowest_step', 'fleet_highest_step')
                                 for b in dur['basis_by_effort'].values()), name)
             self.assertNotIn('value', dur)
 
@@ -2198,7 +2213,7 @@ class DerivedUsdTests(unittest.TestCase):
         self.assertEqual({c['source'] for c in cites}, {'aa.price', 'community.wokey.claude'})
         self.assertEqual(builder.source_rows['derived.community_mix']['as_of'], '2026-11-02')
         self.assertNotIn('usd_per_hour', builder.out['unlisted'])
-        scorer = self.fa.Scorer({'models': builder.out}, {'models': {'m': {}, 'unlisted': {}}})
+        scorer = self.fa.Scorer({'models': builder.out}, {**READINGS, 'models': {'m': {}, 'unlisted': {}}})
         usd = self.fa.usd_community_mix(scorer, {k: {'fields': v} for k, v in builder.out.items()}, {})
         self.assertEqual(usd['m']['value'], entries[0]['value'])
         self.assertTrue(usd['m']['fallback'])
@@ -2241,7 +2256,7 @@ class DerivedUsdTests(unittest.TestCase):
             {'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'max', 'value': 6.125},
             {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 13.688},
         ]}}}
-        scorer = self.fa.Scorer(meas, {'models': {'m': {}}, 'families': {'rows': []}}, distrust=('arena.agent_sessions',))
+        scorer = self.fa.Scorer(meas, {**READINGS, 'models': {'m': {}}, 'families': {'rows': []}}, distrust=('arena.agent_sessions',))
         usd = self.fa.usd_community_mix(scorer, {'m': {'fields': meas['models']['m']}}, meas)
         self.assertEqual((usd['m']['value'], usd['m']['fallback']), (13.688, True))
         self.assertIn('arena.agent_sessions distrusted', usd['m']['merge'])
@@ -2254,7 +2269,7 @@ class DerivedUsdTests(unittest.TestCase):
                    {'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high', 'value': 6.658},
                    {'source': 'derived.community_mix', 'kind': 'derived', 'effort': 'high', 'value': 31.901}]
         meas = {'models': {'a': {'usd_per_hour': entries}, 'b': {'usd_per_hour': [entries[0], entries[2]]}, 'c': {'usd_per_hour': [entries[0]]}}}
-        scorer = self.fa.Scorer(meas, {'models': dict.fromkeys(meas['models'], {})})
+        scorer = self.fa.Scorer(meas, {**READINGS, 'models': dict.fromkeys(meas['models'], {})})
         usd = self.fa.usd_community_mix(scorer, {m: {'fields': f} for m, f in meas['models'].items()}, meas)
         self.assertEqual((usd['a']['value'], usd['a']['used'], usd['a']['kind'], usd['a']['fallback']),
                          (6.658, ['arena.agent_sessions'], 'community', False))
@@ -2646,13 +2661,16 @@ class EffortCoverageRuleTests(unittest.TestCase):
                 self.assertEqual(own | set(c.get('bound_moved') or ()), set(c['by_effort']), (m, key))
 
     def test_filled_values_follow_the_declared_methods(self):
-        """Rule (`fill_one`): one-sided, own value plus the published panel step (then the bound); bracketed, linear in rank."""
+        """Rule (`fill_one`, `fill_edge`): one-sided, own value plus the published panel step (then the bound); an edge effort
+        its neighbour plus the fleet's edge step; bracketed, linear in rank."""
         for m, key, c in self.facets():
             for e, how in (c.get('filled_efforts') or {}).items():
-                if how['method'] in ('panel_effort_step', 'fleet_lowest_step'):
+                if how['method'] in ('panel_effort_step', 'fleet_lowest_step', 'fleet_highest_step'):
                     step = self.doc['effort_steps']['.'.join(key)][how['from_effort']][e]
                     self.assertEqual((how['step'], how['n']), (step['step'], step['n']), (m, key, e))
-                    self.assertEqual(how['method'] == 'fleet_lowest_step', e == 'minimal', (m, key, e))
+                    self.assertEqual(how['method'] != 'panel_effort_step', e in self.fa.EDGES, (m, key, e))
+                    if e in self.fa.EDGES:
+                        self.assertEqual((how['method'], how['from_effort']), (self.fa.edge_method(e), self.fa.EDGES[e][0]))
                     expected = round(how['from_value'] + how['step'], 4)
                 else:
                     (lo, vlo), (up, vup) = next(iter(how['from'].items())), next(iter(how['to'].items()))
@@ -2688,71 +2706,78 @@ class EffortCoverageRuleTests(unittest.TestCase):
         return {m: rel for m, rel in self.series.tier_up(self.acc).items()
                 if m in rows and rel['model'] in rows and m not in (self.acc.get('same_model') or {})}
 
-    def test_the_size_step_table_is_the_median_over_the_measured_same_version_pairs(self):
-        """Rule (`size_step_table`, calibration/README.md): per facet, the median of small - large at High over the declared
-        same-version pairs both measured there (n >= MIN_SIZE_PAIRS); an ability facet short of pairs takes the median over
-        every ability facet's pairs; Time/Task the exp of the median log ratio over the pairs both listed at High."""
+    def test_the_size_step_table_follows_pair_agreement(self):
+        """Rule (`size_step_table`, `pair_agreement`, calibration/README.md): one value per declared same-version pair both
+        measured at High (an ability facet short of pairs: per pair, the mean over the ability facets it measured); `n`
+        counts pairs; the step is their median when n >= MIN_SIZE_PAIRS and all point one way, else 0 with the reason;
+        Time/Task the same on the log ratio at High (ratio 1 where the pairs do not agree)."""
         same = sorted((m, r['model']) for m, r in self.size_relations().items() if r['version'] == 'same')
         axes = {m: r['axes'] for m, r in self.doc['models'].items()}
 
         def high(m, key):
             c = (axes[m][key[0]].get('facets') or {}).get(key[1]) or {}
             return c['by_effort']['high'] if 'high' in (c.get('measured_efforts') or ()) else None
+
+        def per_pair(ks):
+            out = []
+            for s, l in same:
+                ds = [high(s, k) - high(l, k) for k in ks if high(s, k) is not None and high(l, k) is not None]
+                if ds:
+                    out.append(float(np.mean(ds)))
+            return out
         keys = [(a, f) for a, fs in self.fa.AXES.items() for f in fs]
-        diffs = {k: [(s, l, '.'.join(k), high(s, k) - high(l, k)) for s, l in same
-                     if high(s, k) is not None and high(l, k) is not None] for k in keys}
-        pooled = [d for k in keys if self.fa.rises(k) for d in diffs[k]]
         for k in keys:
-            got = self.doc['size_steps'].get('.'.join(k))
-            pick = diffs[k] if len(diffs[k]) >= self.fa.MIN_SIZE_PAIRS else (
-                pooled if self.fa.rises(k) and len(pooled) >= self.fa.MIN_SIZE_PAIRS else None)
-            if pick is None:
-                self.assertIsNone(got, k)
-                continue
-            self.assertEqual((got['step'], got['n'], got['pairs']),
-                             (round(float(np.median([d[3] for d in pick])), 4), len(pick), [list(d[:3]) for d in pick]), k)
-            self.assertEqual(got['basis'], 'facet' if pick is diffs[k] else 'ability_pooled', k)
+            got = self.doc['size_steps']['.'.join(k)]
+            vals, basis = per_pair([k]), 'facet'
+            if len(vals) < self.fa.MIN_SIZE_PAIRS and self.fa.rises(k):
+                vals, basis = per_pair([x for x in keys if self.fa.rises(x)]), 'ability_pooled'
+            agree = len(vals) >= self.fa.MIN_SIZE_PAIRS and (max(vals) <= 0 or min(vals) >= 0)
+            self.assertEqual((got['n'], got['basis'], got['agree']), (len(vals), basis, agree), k)
+            self.assertEqual(got['step'], round(float(np.median(vals)), 4) if agree else 0.0, k)
+            self.assertEqual(len(got['pairs']), got['n'], k)
+            if not agree:
+                self.assertIn(got['reason'], ('directions disagree', f'fewer than {self.fa.MIN_SIZE_PAIRS} pairs'), k)
 
         def listed(m):
             t = self.doc['models'][m]['duration_multiplier']
             b = (t.get('basis_by_effort') or {}).get('high') or {}
-            if b.get('method') == 'aa':
-                return t['minutes_by_effort']['high']
-            return b.get('minutes_before') if (b.get('was') or {}).get('method') == 'aa' else None
-        logs = [(s, l, float(np.log(listed(s) / listed(l)))) for s, l in same if listed(s) and listed(l)]
-        got = self.doc['size_steps'].get('time_per_task')
-        if len(logs) < self.fa.MIN_SIZE_PAIRS:
-            self.assertIsNone(got)
-        else:
-            self.assertEqual((got['ratio'], got['n'], got['pairs']),
-                             (round(float(np.exp(np.median([x for _, _, x in logs]))), 4), len(logs),
-                              [[s, l] for s, l, _ in logs]))
+            return t['minutes_by_effort']['high'] if b.get('method') == 'aa' else None
+        logs = [float(np.log(listed(s) / listed(l))) for s, l in same if listed(s) and listed(l)]
+        got = self.doc['size_steps']['time_per_task']
+        agree = len(logs) >= self.fa.MIN_SIZE_PAIRS and (max(logs) <= 0 or min(logs) >= 0)
+        self.assertEqual((got['n'], got['agree']), (len(logs), agree))
+        self.assertEqual(got['ratio'], round(float(np.exp(np.median(logs))), 4) if agree else 1.0)
 
-    def test_the_minimal_step_is_the_fleet_median_below_low(self):
-        """Rule (`minimal_step_table`): per facet, the median of value(low) - value(medium) over the fleet models that
-        measured the facet at both (n >= 2); `minimal` is Low plus it, never past Low in the facet's direction."""
-        xs = {}
-        for m, key, c in self.facets():
-            if {'low', 'medium'} <= set(c.get('measured_efforts') or ()):
-                xs.setdefault('.'.join(key), []).append(c['by_effort']['low'] - c['by_effort']['medium'])
-        for k, v in xs.items():
-            if len(v) >= 2:
-                got = self.doc['effort_steps'][k]['low']['minimal']
-                self.assertEqual((got['step'], got['n']), (round(float(np.median(v)), 4), len(v)), k)
-        below = self.doc['effort_steps']['time_per_task']['low']['minimal']
-        self.assertLessEqual(below['ratio'], 1.0 + 1e-9)    # not assumed: a lower effort measured faster on the fleet
-        for m, r in self.doc['models'].items():
-            t = r['duration_multiplier']
-            b = (t.get('basis_by_effort') or {}).get('minimal') or {}
-            if b.get('method') == 'fleet_lowest_step':
-                low = t['minutes_by_effort']['low']
-                self.assertEqual(t['minutes_by_effort']['minimal'], round(min(low * below['ratio'], low), 3), m)
+    def test_the_edge_steps_are_the_fleet_medians_next_to_them(self):
+        """Rule (`edge_step_table`, `EDGES`): per facet and edge effort, the median of value(neighbour) - value(next) over the
+        fleet models that measured the facet at both (n >= 2: low - medium for `minimal`, max - xhigh for `ultra`); Time/Task
+        the neighbour times the fleet ratio, never past the neighbour against its direction."""
+        self.assertEqual(self.fa.EDGES, {'minimal': ('low', 'medium'), 'ultra': ('max', 'xhigh')})
+        for edge, (near, nxt) in self.fa.EDGES.items():
+            xs = {}
+            for m, key, c in self.facets():
+                if {near, nxt} <= set(c.get('measured_efforts') or ()):
+                    xs.setdefault('.'.join(key), []).append(c['by_effort'][near] - c['by_effort'][nxt])
+            for k, v in xs.items():
+                if len(v) >= 2:
+                    got = self.doc['effort_steps'][k][near][edge]
+                    self.assertEqual((got['step'], got['n'], got['method']),
+                                     (round(float(np.median(v)), 4), len(v), self.fa.edge_method(edge)), (k, edge))
+            step = self.doc['effort_steps']['time_per_task'][near][edge]
+            below = self.fa.LADDER.index(edge) < self.fa.LADDER.index(near)
+            for m, r in self.doc['models'].items():
+                t = r['duration_multiplier']
+                b = (t.get('basis_by_effort') or {}).get(edge) or {}
+                if b.get('method') == self.fa.edge_method(edge):
+                    v = t['minutes_by_effort'][near] * step['ratio']
+                    bound = min(v, t['minutes_by_effort'][near]) if below else max(v, t['minutes_by_effort'][near])
+                    self.assertEqual(t['minutes_by_effort'][edge], round(bound, 3), (m, edge))
 
-    def test_a_size_step_cell_follows_its_formula_its_order_and_never_crosses_its_larger_model(self):
-        """Rule (`size_down`, order of methods): only a facet the small row lacks after measurement, series, fit and (same
-        version only) its own gap; value(high) = large(high) + min(step, 0) for ability, + max(step, 0) for responsiveness;
-        at every effort an ability value is never above the larger model's, responsiveness never slower; Time/Task is the
-        larger model's times min(ratio, 1), never longer."""
+    def test_a_size_step_cell_follows_its_formula_and_an_ability_value_never_crosses_its_larger_model(self):
+        """Rule (`size_down`, `bound_across_size`, order of methods): only a facet the small row lacks after measurement,
+        series, fit and (same version only) its own gap; value(high) = large(high) + move, move = min(step, 0) for an
+        ability facet, the step itself for responsiveness (zero where the pairs disagree); an ability value is never above
+        the larger model's at any effort; Time/Task is the larger model's times the step's ratio."""
         rel = self.size_relations()
         seen = set()
         for m, key, c in self.facets():
@@ -2762,17 +2787,20 @@ class EffortCoverageRuleTests(unittest.TestCase):
             big, up = est['base_model'], self.fa.rises(key)
             self.assertEqual(rel[m]['model'], big, m)
             large = self.doc['models'][big]['axes'][key[0]]['facets'][key[1]]['by_effort']
-            for e, v in c['by_effort'].items():
-                self.assertTrue(v <= large[e] + 1e-9 if up else v >= large[e] - 1e-9, (m, key, e, v, large[e]))
+            if up:
+                for e, v in c['by_effort'].items():
+                    self.assertLessEqual(v, large[e] + 1e-9, (m, key, e, v, large[e]))
             if est['method'] == 'tier_down':
                 continue
             seen.add(m)
             self.assertEqual(c['measured_efforts'], [], (m, key))
             step = self.doc['size_steps']['.'.join(key)]
-            self.assertEqual((est['step'], est['n'], est['version']), (step['step'], step['n'], rel[m]['version']))
-            move = min(step['step'], 0.0) if up else max(step['step'], 0.0)
+            self.assertEqual((est['step'], est['n'], est['agree'], est['version']),
+                             (step['step'], step['n'], step['agree'], rel[m]['version']))
+            move = min(step['step'], 0.0) if up else step['step']
             self.assertEqual(est['move'], round(move, 4))
-            self.assertAlmostEqual(c['by_effort']['high'], large['high'] + move, places=3, msg=(m, key))
+            if 'high' not in est.get('held_at_larger', ()):
+                self.assertAlmostEqual(c['by_effort']['high'], large['high'] + move, places=3, msg=(m, key))
             others = {(a, f): x for a, ax in self.doc['models'][m]['axes'].items() for f, x in (ax.get('facets') or {}).items()}
             if rel[m]['version'] == 'nearest' or not up:
                 self.assertNotIn('tier_down', {(x.get('estimate') or {}).get('method') for k2, x in others.items()
@@ -2788,10 +2816,27 @@ class EffortCoverageRuleTests(unittest.TestCase):
                     continue
                 tseen += 1
                 large = self.doc['models'][b['base_model']]['duration_multiplier']['minutes_by_effort']
-                self.assertEqual(b['applied'], round(min(b['ratio'], 1.0), 4))
-                self.assertLessEqual(t['minutes_by_effort'][e], large[e] + 1e-9, (m, e))
-                self.assertAlmostEqual(t['minutes_by_effort'][e], large[e] * b['applied'], places=2)
+                self.assertEqual(b['ratio'], self.doc['size_steps']['time_per_task']['ratio'])
+                self.assertAlmostEqual(t['minutes_by_effort'][e], large[e] * b['ratio'], places=2)
         self.assertGreater(tseen, 0)
+
+    def test_an_own_ability_median_cell_is_the_median_of_the_models_other_ability_facets(self):
+        """Rule (`own_ability_median`, last in the order): at each effort, the median of the ability facets the estimate
+        names (at least MIN_OWN_FACETS), never used for responsiveness and never where another method gave a value."""
+        seen = 0
+        for m, key, c in self.facets():
+            est = c.get('estimate') or {}
+            if est.get('method') != 'own_ability_median':
+                continue
+            seen += 1
+            self.assertTrue(self.fa.rises(key))
+            self.assertGreaterEqual(len(est['facets']), self.fa.MIN_OWN_FACETS)
+            axes = self.doc['models'][m]['axes']
+            used = [axes[a]['facets'][f]['by_effort'] for a, f in (k.split('.') for k in est['facets'])]
+            self.assertNotIn('.'.join(key), est['facets'])
+            for e, v in c['by_effort'].items():
+                self.assertAlmostEqual(v, float(np.median([u[e] for u in used if e in u])), places=3, msg=(m, key, e))
+        self.assertGreater(seen, 0)
 
     def test_small_rows_never_join_a_full_series_and_previews_join_their_row(self):
         """Rule (series.groups): a `small` row (by its deciding `families` row) never shares a series with a non-small one; a
@@ -2809,6 +2854,185 @@ class EffortCoverageRuleTests(unittest.TestCase):
         # the same family resolution with the mini's row declared full joins it
         synthetic['families']['rows'][0]['size'] = 'full'
         self.assertIn('fam-1-mini', self.series.groups(synthetic)['fam-1'])
+
+
+
+class CrossSizeAndEdgeRuleTests(unittest.TestCase):
+    """The size, edge and last-method rules on made-up models and values (owner 2026-11-18, round 3): each test breaks when
+    the line of code that states its rule is broken, whatever the shipped data happens to hold."""
+
+    @classmethod
+    def setUpClass(cls):
+        import five_axis
+        cls.fa = five_axis
+
+    def scorer(self, size_of=None, size_steps=None, steps=None, acc=None):
+        s = self.fa.Scorer.__new__(self.fa.Scorer)
+        s.acc = acc or {'accounts': {}, 'dispatch_efforts': {}}
+        s.size_of, s.size_steps, s.steps = size_of or {}, size_steps or {}, steps or {}
+        s.same, s.fill_refused = {}, []
+        return s
+
+    @staticmethod
+    def rec(by, status='measured', measured=None, estimate=None):
+        out = {'value': by.get('high'), 'by_effort': dict(by), 'status': status, 'sources': {},
+               'measured_efforts': list(by) if measured is None else list(measured)}
+        if estimate:
+            out['estimate'] = estimate
+        return out
+
+    EXE, RESP = ('coding', 'execution'), ('tool_operation', 'responsiveness')
+
+    def step(self, value):
+        return {'step': value, 'median': value, 'n': 2, 'agree': True, 'basis': 'facet', 'pairs': []}
+
+    def test_pair_agreement_uses_the_median_only_when_every_pair_points_one_way(self):
+        pa = self.fa.pair_agreement
+        self.assertEqual((pa([-0.2, -0.4])['step'], pa([-0.2, -0.4])['agree']), (-0.3, True))
+        self.assertEqual(pa([0.2, 0.6])['step'], 0.4)
+        self.assertEqual((pa([-0.5, 0.1])['step'], pa([-0.5, 0.1])['reason']), (0.0, 'directions disagree'))
+        self.assertEqual((pa([-0.5])['step'], pa([-0.5])['reason']), (0.0, f'fewer than {self.fa.MIN_SIZE_PAIRS} pairs'))
+        self.assertEqual((pa([])['step'], pa([])['n']), (0.0, 0))
+
+    def test_the_size_step_table_counts_pairs_and_pools_ability_facets_per_pair(self):
+        """Two same-version pairs: execution measured by both (they disagree: step 0); faithfulness by none, so pooled per
+        pair over the ability facets each pair measured (n = 2 pairs, 3 readings); responsiveness by one pair (step 0)."""
+        cw = ('creativity', 'creative_writing')
+        facets = {
+            's1': {self.EXE: self.rec({'high': -1.0}), cw: self.rec({'high': -2.0}), self.RESP: self.rec({'high': 0.5})},
+            'l1': {self.EXE: self.rec({'high': 0.0}), cw: self.rec({'high': 0.0}), self.RESP: self.rec({'high': 0.0})},
+            's2': {self.EXE: self.rec({'high': 0.4})}, 'l2': {self.EXE: self.rec({'high': 0.0})}}
+        sc = self.scorer(size_of={'s1': {'model': 'l1', 'version': 'same'}, 's2': {'model': 'l2', 'version': 'same'}})
+        keys = [self.EXE, ('coding', 'faithfulness'), cw, self.RESP]
+        got = sc.size_step_table(facets, keys)
+        self.assertEqual((got['coding.execution']['step'], got['coding.execution']['reason'], got['coding.execution']['n']),
+                         (0.0, 'directions disagree', 2))
+        pooled = got['coding.faithfulness']
+        self.assertEqual((pooled['basis'], pooled['n'], pooled['differences']), ('ability_pooled', 2, 3))
+        self.assertEqual([p['difference'] for p in pooled['pairs']], [-1.5, 0.4])
+        self.assertEqual((pooled['step'], pooled['agree']), (0.0, False))
+        self.assertEqual((got['tool_operation.responsiveness']['step'], got['tool_operation.responsiveness']['n']), (0.0, 1))
+        facets['s2'][self.EXE]['by_effort']['high'] = -0.4                     # now both pairs point down
+        got = sc.size_step_table(facets, keys)
+        self.assertEqual((got['coding.execution']['step'], got['coding.execution']['agree']), (-0.7, True))
+
+    def test_size_down_moves_ability_never_up_and_responsiveness_by_the_step_in_either_direction(self):
+        for step, ability_move in ((0.3, 0.0), (-0.3, -0.3)):
+            for key, move in ((self.EXE, ability_move), (self.RESP, step)):
+                facets = {'small': {}, 'big': {key: self.rec({'low': -1.0, 'high': 0.0, 'max': 0.5} if key == self.EXE
+                                                             else {'low': 1.0, 'high': 0.0, 'max': -0.5})}}
+                sc = self.scorer(size_of={'small': {'model': 'big', 'version': 'nearest'}},
+                                 size_steps={'.'.join(key): self.step(step)})
+                sc.size_down(facets, [key])
+                got = facets['small'][key]
+                self.assertEqual(got['estimate']['move'], move, (key, step))
+                for e, v in facets['big'][key]['by_effort'].items():
+                    self.assertAlmostEqual(got['by_effort'][e], v + move, places=4, msg=(key, step, e))
+
+    def test_tier_down_drops_by_a_negative_gap_and_never_raises_by_a_positive_one(self):
+        cw = ('creativity', 'creative_writing')
+        for gap, drop in ((0.4, 0.0), (-0.4, -0.4)):
+            facets = {'small': {cw: self.rec({'high': gap})},
+                      'big': {cw: self.rec({'high': 0.0}), self.EXE: self.rec({'low': -1.0, 'high': 0.0, 'max': 0.5})}}
+            sc = self.scorer(size_of={'small': {'model': 'big', 'version': 'same'}})
+            sc.tier_down(facets, [cw, self.EXE])
+            got = facets['small'][self.EXE]
+            self.assertEqual((got['estimate']['method'], got['estimate']['drop']), ('tier_down', drop), gap)
+            for e, v in facets['big'][self.EXE]['by_effort'].items():
+                self.assertAlmostEqual(got['by_effort'][e], v + drop, places=4, msg=(gap, e))
+
+    def test_the_bound_across_size_holds_an_ability_value_at_the_larger_models_and_leaves_speed_alone(self):
+        est = {'method': 'size_step', 'base_model': 'big'}
+        facets = {'small': {self.EXE: self.rec({'high': -0.1, 'max': 0.9}, 'estimated', [], dict(est)),
+                            self.RESP: self.rec({'high': 0.4, 'max': 0.1}, 'estimated', [], dict(est))},
+                  'big': {self.EXE: self.rec({'high': 0.0, 'max': 0.5}), self.RESP: self.rec({'high': 0.0, 'max': -0.5})}}
+        sc = self.scorer(size_of={'small': {'model': 'big', 'version': 'nearest'}})
+        sc.bound_across_size(facets)
+        self.assertEqual(facets['small'][self.EXE]['by_effort'], {'high': -0.1, 'max': 0.5})
+        self.assertEqual(facets['small'][self.EXE]['estimate']['held_at_larger'], ['max'])
+        self.assertEqual(facets['small'][self.RESP]['by_effort'], {'high': 0.4, 'max': 0.1})     # faster than the larger: kept
+
+    def test_complete_bounds_a_filled_small_value_at_its_larger_models(self):
+        """End to end: the larger model runs on a ladder of its own (low, xhigh, max), so the fill interpolates its xhigh at
+        the midpoint, the small model's at three quarters; without the bound after the fill the small one ends above."""
+        facets = {'small': {}, 'big': {self.EXE: self.rec({'low': -1.0, 'max': 1.0})}}
+        sc = self.scorer(size_of={'small': {'model': 'big', 'version': 'nearest'}},
+                         size_steps={}, acc={'accounts': {}, 'dispatch_efforts': {'h': {'big': ['low', 'xhigh', 'max']}}})
+        sc.size_step_table = lambda f, k: {'coding.execution': self.step(-0.1)}
+        sc.complete(facets, [self.EXE], ['small', 'big'])
+        small, big = facets['small'][self.EXE]['by_effort'], facets['big'][self.EXE]['by_effort']
+        self.assertEqual(big['xhigh'], 0.0)
+        for e, v in small.items():
+            self.assertLessEqual(v, big[e] + 1e-9, e)
+        self.assertEqual(facets['small'][self.EXE]['estimate']['held_at_larger'], ['xhigh'])
+
+    def test_an_edge_effort_is_its_neighbour_plus_the_fleet_step_held_by_no_inversion(self):
+        fleet = {f'm{i}': {self.EXE: self.rec({'low': -1.0, 'medium': -0.5, 'xhigh': 0.2, 'max': 0.2 + d})}
+                 for i, d in enumerate((-0.1, -0.2, -0.3))}            # max below xhigh: a falling step for an ability
+        sc = self.scorer()
+        table = sc.edge_step_table(fleet)
+        self.assertEqual(table['coding.execution']['minimal']['step'], -0.5)
+        self.assertEqual(table['coding.execution']['ultra'], {'step': -0.2, 'n': 3, 'sample': 'fleet',
+                                                               'method': 'fleet_highest_step'})
+        for key, by in table.items():
+            for edge, st in by.items():
+                sc.steps.setdefault(key, {}).setdefault(self.fa.EDGES[edge][0], {})[edge] = st
+        rec = self.rec({'low': -1.0, 'high': 0.0, 'max': 0.6})
+        for edge in self.fa.EDGES:
+            self.assertEqual(sc.fill_edge('x', self.EXE, rec, edge), [])
+        self.assertEqual(rec['by_effort']['minimal'], -1.5)
+        self.assertEqual((rec['by_effort']['ultra'], rec['filled_efforts']['ultra']['bounded_from']), (0.6, 0.4))
+        self.assertEqual(list(rec['by_effort']), list(self.fa.LADDER[:1]) + ['low', 'high', 'max', 'ultra'])
+        refused = self.scorer().fill_edge('x', self.EXE, self.rec({'max': 0.0}), 'ultra')
+        self.assertEqual(refused[0]['reason'], 'fewer than 2 fleet models measured at max and xhigh')
+
+    def test_the_own_ability_median_is_last_needs_two_facets_and_never_fills_responsiveness(self):
+        keys = [('creativity', 'creative_writing'), self.EXE, ('coding', 'faithfulness'), ('aesthetics', 'design'),
+                ('tool_operation', 'image_recognition'), self.RESP]
+        own = {keys[0]: self.rec({'high': -1.0, 'max': -0.5}), self.EXE: self.rec({'high': 0.0, 'max': 0.2}),
+               keys[3]: self.rec({'high': -3.0, 'max': -2.0})}
+        self.scorer().own_ability_median(own, keys)
+        for k in (('coding', 'faithfulness'), ('tool_operation', 'image_recognition')):
+            self.assertEqual(own[k]['by_effort'], {'high': -1.0, 'max': -0.5}, k)
+            self.assertEqual(own[k]['estimate'], {'method': 'own_ability_median', 'n': 3,
+                                                  'facets': ['creativity.creative_writing', 'coding.execution',
+                                                             'aesthetics.design']})
+        self.assertNotIn(self.RESP, own)
+        lone = {keys[0]: self.rec({'high': -1.0})}
+        self.scorer().own_ability_median(lone, keys)
+        self.assertEqual(list(lone), [keys[0]])                                 # one facet is no median
+
+    def test_the_time_size_step_follows_pair_agreement_with_no_bound_across_size(self):
+        rel = {'s1': {'model': 'l1', 'version': 'same'}, 's2': {'model': 'l2', 'version': 'same'},
+               's3': {'model': 'l1', 'version': 'nearest'}}
+        for listed, ratio in (({'s1': 2.0, 'l1': 4.0, 's2': 1.0, 'l2': 4.0}, round(float(np.exp(np.log(0.5 * 0.25) / 2)), 4)),
+                              ({'s1': 6.0, 'l1': 4.0, 's2': 8.0, 'l2': 4.0}, round(float(np.exp(np.log(1.5 * 2.0) / 2)), 4)),
+                              ({'s1': 2.0, 'l1': 4.0, 's2': 8.0, 'l2': 4.0}, 1.0),
+                              ({'s1': 2.0, 'l1': 4.0}, 1.0)):
+            step = self.fa.time_size_step(listed, rel)
+            self.assertEqual(step['ratio'], ratio, listed)
+            self.assertEqual(step['n'], sum(1 for s in ('s1', 's2') if s in listed))
+            minutes = {'s3': {}, 'l1': {'high': 4.0, 'max': 6.0}}
+            basis = {'s3': {}, 'l1': {}}
+            self.fa.apply_time_size_step(minutes, basis, {'s3': rel['s3']}, step)
+            self.assertEqual(minutes['s3'], {'high': round(4.0 * ratio, 3), 'max': round(6.0 * ratio, 3)}, listed)
+            self.assertEqual(basis['s3']['high']['agree'], ratio != 1.0)
+
+    def test_an_effortless_listing_is_stored_and_read_at_the_declared_effort(self):
+        """Rule (`effort_readings`): the declaration names where `default` is stored and read; without it the build stops."""
+        sc = self.scorer()
+        for reads in ('high', 'medium'):
+            sc.readings = {'default': reads}
+            self.assertEqual(sc.aa_rows({'z_by_effort': {'default': 0.3, 'low': -0.2}}), {reads: 0.3, 'low': -0.2})
+            rows = self.fa.time_rows([{'source': 'aa.cost_time', 'effort': None, 'time_per_task_min': 5.0}], 'aa.cost_time',
+                                     {'default': reads})
+            self.assertEqual(list(rows), [reads])
+        sc.readings = {'default': 'high'}
+        self.assertEqual(sc.aa_rows({'z_by_effort': {'default': 0.3, 'high': 0.1}}), {'high': 0.1})   # a listed High stands
+        for bad in ({}, {'effort_readings': {'reads': {}}}, {'effort_readings': {'reads': {'default': 'ultra'}}},
+                    {'effort_readings': {'reads': {'max': 'high'}}}):
+            with self.assertRaises(ValueError):
+                self.fa.effort_readings(bad)
 
 
 if __name__ == '__main__':

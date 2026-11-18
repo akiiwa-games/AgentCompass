@@ -11,6 +11,8 @@ import five_axis as fa  # noqa: E402
 import series  # noqa: E402
 import tiers  # noqa: E402
 
+READINGS = {'effort_readings': {'reads': {'default': 'high'}}}   # accounts.json's declaration (five_axis.effort_readings)
+
 
 class SeriesTests(unittest.TestCase):
     ACC = {'models': {m: {} for m in ('gpt-6-luna', 'gpt-5.6-luna', 'gpt-6-astra', 'dot', 'claude-opus-5-5')},
@@ -197,7 +199,7 @@ class UsdConversionTests(unittest.TestCase):
         usd = {'gpt-5.6-luna': {'value': 4.0, 'status': 'ok', 'kind': 'community'},
                'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'},
                'claude-opus-5-5': {'value': 7.0, 'status': 'ok', 'kind': 'community'}}
-        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
+        acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         scorer = fa.Scorer(meas, acc)
         fa.convert_usd(usd, rows, scorer, meas, acc, {m: {'value': None, 'method': 'none'} for m in rows})
@@ -211,10 +213,44 @@ class UsdConversionTests(unittest.TestCase):
         rows = {'gpt-5.6-luna': {'fields': {'price': []}}, 'gpt-6-luna': {'fields': {'price': []}}}
         usd = {'gpt-5.6-luna': {'value': 4.0, 'status': 'ok', 'kind': 'community'},
                'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'}}
-        acc = {'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
+        acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc, {m: {'value': None} for m in rows})
         self.assertIsNone(usd['gpt-6-luna']['value'])
+
+    def test_tier_up_older_gives_an_older_row_its_declared_larger_model_and_nothing_else_does(self):
+        """Rule (series.tier_up): a current member of a small row gets the first model of its `tier_up` row; an older row of
+        the line only through the row's `tier_up_older` declaration, with its declared version."""
+        older = {'fam-0-mini': {'model': 'fam-1', 'version': 'nearest'}}
+        row = {'pattern': '^fam.*mini', 'models': ['fam-1-mini'], 'size': 'small', 'tier_up': '^fam', 'tier_up_version': 'same'}
+        acc = {'models': {m: {} for m in ('fam-1-mini', 'fam-0-mini', 'fam-1')},
+               'families': {'rows': [{**row, 'tier_up_older': older}, {'pattern': '^fam', 'models': ['fam-1'], 'size': 'full'}]}}
+        self.assertEqual(series.tier_up(acc), {'fam-0-mini': older['fam-0-mini'],
+                                               'fam-1-mini': {'model': 'fam-1', 'version': 'same'}})
+        acc['families']['rows'][0] = row
+        self.assertEqual(list(series.tier_up(acc)), ['fam-1-mini'])
+
+    def test_a_model_with_no_priced_sibling_takes_its_larger_models_usd_times_the_ratio_on_one_price_list(self):
+        """Rule (`convert_usd`, `pair_prices`): with no same-series sibling, the larger model (series.tier_up) is the base,
+        `relation: size`; both prices come from the first source that lists both, not one from each."""
+        def entry(src, i, o):
+            return {'source': src, 'kind': 'vendor', 'value': {'input': i, 'output': o}, 'as_of': '2026-11-09',
+                    'url': 'https://example.test/p', 'listed_as': 'x'}
+        rows = {'fam-big': {'fields': {'price': [entry('aa.price', 8.0, 8.0), entry('openrouter.price', 4.0, 4.0)]}},
+                'fam-big-flash': {'fields': {'price': [entry('openrouter.price', 1.0, 1.0)]}}}
+        usd = {'fam-big': {'value': 10.0, 'status': 'ok', 'kind': 'community'},
+               'fam-big-flash': {'value': None, 'status': 'missing', 'kind': 'none'}}
+        acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {},
+               'families': {'rows': [{'pattern': '^fam.*flash', 'models': ['fam-big-flash'], 'size': 'small',
+                                      'tier_up': '^fam', 'tier_up_version': 'same'},
+                                     {'pattern': '^fam', 'models': ['fam-big'], 'size': 'full'}]}}
+        meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
+        fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc, {m: {'value': None, 'method': 'none'} for m in rows})
+        got = usd['fam-big-flash']
+        self.assertEqual((got['value'], got['relation'], got['sources']['base']['model'], got['sources']['ratio']),
+                         (2.5, 'size', 'fam-big', 0.25))                     # openrouter on both: 1 / 4, not 1 / 8
+        self.assertEqual(fa.pair_prices([entry('aa.price', 8.0, 8.0)], [entry('openrouter.price', 1.0, 1.0)])[0]['source'],
+                         'aa.price')                                         # no shared list: each its own first
 
 
 if __name__ == '__main__':

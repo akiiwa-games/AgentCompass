@@ -95,6 +95,30 @@ class ProvenanceTests(unittest.TestCase):
             with self.subTest(row=i, change=change), self.assertRaisesRegex(ValueError, 'families.rows'):
                 reference_provenance.validate_accounts_provenance({**accounts, 'families': {**accounts['families'], 'rows': broken}})
 
+    def test_tier_up_older_and_effort_readings_are_declared_in_shape(self):
+        """Rule (calibration/series.py, five_axis.effort_readings): `tier_up_older` maps an older row of the small row's
+        pattern (no current member) to a row of its `tier_up` pattern with a version; `effort_readings.reads` maps an effort
+        name off the scale to a measured effort, as a dated maintainer declaration."""
+        accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        rows = accounts['families']['rows']
+        i = next(i for i, r in enumerate(rows) if r.get('tier_up_older'))
+        older, rel = next(iter(rows[i]['tier_up_older'].items()))
+        current = rows[i]['models'][0]
+        for change in ({older: {**rel, 'version': 'older'}}, {older: {'model': current, 'version': 'same'}},
+                       {current: rel}, {'no-such-model': rel}, {older: {'model': rel['model']}}):
+            broken = [dict(r) for r in rows]
+            broken[i]['tier_up_older'] = change
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'tier_up_older'):
+                reference_provenance.validate_accounts_provenance({**accounts, 'families': {**accounts['families'], 'rows': broken}})
+        for readings in (None, {**accounts['effort_readings'], 'reads': {'default': 'ultra'}},
+                         {**accounts['effort_readings'], 'reads': {'high': 'high'}},
+                         {k: v for k, v in accounts['effort_readings'].items() if k != 'as_of'}):
+            broken = {k: v for k, v in accounts.items() if k != 'effort_readings'}
+            if readings is not None:
+                broken['effort_readings'] = readings
+            with self.subTest(readings=str(readings)[:60]), self.assertRaisesRegex(ValueError, 'effort_readings'):
+                reference_provenance.validate_accounts_provenance(broken)
+
     def test_cited_alias_and_launch_rows_must_exist_and_be_cited(self):
         accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
         alias = next(iter(accounts['alias_sources']['rows']))

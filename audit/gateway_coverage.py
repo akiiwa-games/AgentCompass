@@ -11,6 +11,9 @@ id or credential. The rule asserted, a data-completeness rule and no routing out
   design, tool_operation responsiveness and image recognition) and Time/Task has a value at that effort, maintainer scores
   applied (axis_scores.five_axis_overlay without local state); for a catalog row that lists no efforts (`efforts: null`),
   the efforts are those of `dispatch_efforts[harness][row]`, and a row the table does not list for that harness is a gap;
+- the same for every (row, effort) the shipped launch table offers (catalog id `shipped-launch-table`: each
+  `dispatch_efforts[harness][row]` entry, and each account bundle at its effort, an effort-less bundle at `default`); an
+  effort off the scale is read where the data declares (axis_scores.reading_effort: `default` reads High);
 - or the pair is on the declared known-gap list (`audit/gateway-coverage-known-gaps.json`, each entry with its reason);
 - and no entry of that list is covered or names a pair no saved catalog offers (the list only shrinks).
 
@@ -37,6 +40,7 @@ GAPS_SCHEMA = 'agent-compass.gateway-coverage-known-gaps/1'
 CATALOGS = Path(__file__).resolve().parent / 'gateway-catalogs'
 KNOWN_GAPS = Path(__file__).resolve().parent / 'gateway-coverage-known-gaps.json'
 REFERENCES = ROOT / 'skills' / 'agent-compass' / 'references'
+LAUNCH_TABLE = 'shipped-launch-table'
 FACETS = (('creativity', 'creative_writing'), ('coding', 'execution'), ('coding', 'faithfulness'),
           ('aesthetics', 'design'), ('tool_operation', 'responsiveness'), ('tool_operation', 'image_recognition'))
 
@@ -56,9 +60,24 @@ def load_catalogs(directory=CATALOGS):
     return out
 
 
+def launch_rows(accounts):
+    """The rows of the shipped launch table as catalog rows: every `dispatch_efforts[harness][row]` entry, and every account
+    bundle (harness: the account) at its effort, an effort-less bundle at `default`."""
+    rows = [{'harness': h, 'model': m, 'efforts': list(e)}
+            for h, table in sorted((accounts.get('dispatch_efforts') or {}).items()) if isinstance(table, dict)
+            for m, e in sorted(table.items()) if isinstance(e, list)]
+    for name, spec in sorted((accounts.get('accounts') or {}).items()):
+        bundles = (spec.get('bundles') or {}) if isinstance(spec, dict) else {}
+        rows += [{'harness': name, 'model': b['model'], 'efforts': [b.get('effort') or 'default']}
+                 for _, b in sorted(bundles.items()) if isinstance(b, dict) and b.get('model')]
+    return rows
+
+
 def missing_at(info, effort):
-    """The facets and Time/Task the overlaid model row `info` has no value for at `effort` (empty: covered)."""
+    """The facets and Time/Task the overlaid model row `info` has no value for at `effort` (empty: covered); an effort off
+    the scale is read where the data declares (axis_scores.reading_effort)."""
     five = (info or {}).get('five_axis') or {}
+    effort = axis_scores.reading_effort(five, effort)
     cats = five.get('categories') or {}
     miss = [f'{c}.{f}' for c, f in FACETS
             if ((((cats.get(c) or {}).get('facets') or {}).get(f) or {}).get('by_effort') or {}).get(effort) is None]
@@ -124,7 +143,8 @@ def run(references=REFERENCES, catalogs=CATALOGS, known_gaps=KNOWN_GAPS):
     gaps = read_json(known_gaps)
     if gaps.get('schema') != GAPS_SCHEMA:
         raise ValueError(f'{known_gaps}: not a {GAPS_SCHEMA} document')
-    found = pairs(read_json(references / 'accounts.json'), load_catalogs(catalogs),
+    accounts = read_json(references / 'accounts.json')
+    found = pairs(accounts, {**load_catalogs(catalogs), LAUNCH_TABLE: {'rows': launch_rows(accounts)}},
                   read_json(references / 'five-axis-scores.json'),
                   user_scores.load_public(references / 'user-scores.json'))
     violations, counts = check(found, gaps)

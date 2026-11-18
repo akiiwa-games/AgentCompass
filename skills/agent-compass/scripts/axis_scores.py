@@ -75,14 +75,15 @@ def load_five_axis(path=None):
     return json.loads(target.read_text(encoding='utf-8'))
 
 
-FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/8'
+FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/9'
 
 
 def require_current_schema(data):
     """Fail fast on a five-axis-scores.json of another schema than the one this code reads. Schema /6 changed what level 3
     means (the panel maximum, no longer the anchor), so an older file would be read with the wrong scale; schema /7 adds a
-    value at every effort and the `effort_steps` table manual scores fill from; /8 adds `minimal` and `size_steps`. A shipped file always matches its code, so
-    there is no reader for the older one."""
+    value at every effort and the `effort_steps` table manual scores fill from; /8 adds `minimal` and `size_steps`; /9 adds
+    `ultra`, the declared `effort_readings` and size steps per pair. A shipped file always matches its code, so there is no
+    reader for the older one."""
     schema = data.get('schema')
     if schema != FIVE_AXIS_SCHEMA:
         raise ValueError(
@@ -319,7 +320,8 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
         dur_row = (row or {}).get('duration_multiplier') or {}
         price = (row or {}).get('price')       # public list price, USD per million tokens (aa.price, else openrouter.price)
         cats = (row or {}).get('axes') or {}
-        info['five_axis'] = {'categories': {a: cats[a] for a in FIVE_AXES if isinstance(cats.get(a), dict)},
+        info['five_axis'] = {'effort_readings': dict(data['effort_readings']),
+                             'categories': {a: cats[a] for a in FIVE_AXES if isinstance(cats.get(a), dict)},
                              'scores': {a: (cats.get(a) or {}).get('value') for a in FIVE_AXES},
                              'missing': list(FIVE_AXES) if row is None else list(row.get('missing_axes') or ()),
                              'estimates': {} if row is None else estimate_summary(row),
@@ -527,9 +529,20 @@ def _facet_at_effort(cats, category, facet, effort):
     return None
 
 
+def reading_effort(state, effort):
+    """The effort whose stored values a launch at `effort` reads (owner 2026-11-18): an effort name off the scale reads the
+    effort five-axis-scores.json `effort_readings` declares for it (`default`: High, where the calibration stores a board's
+    effort-less listing); a bundle that names no effort runs its single configuration, the `default` reading; an effort on
+    the scale (user_scores.EFFORTS) reads itself. `state` is a model's `five_axis` (five_axis_overlay)."""
+    key = effort or 'default'
+    return (state or {}).get('effort_readings', {}).get(key, key)
+
+
 def five_axis_values(state, effort):
     """{category: z}, with aesthetics and tool_operation as {facet: z}: this model's panel standard scores at `effort`
-    (None where it has no value). Aesthetics shares `tool_operation.image_recognition` alongside its own `design` facet."""
+    (None where it has no value; an effort off the scale reads its declared effort, `reading_effort`). Aesthetics shares
+    `tool_operation.image_recognition` alongside its own `design` facet."""
+    effort = reading_effort(state, effort)
     cats = (state or {}).get('categories') or {}
     out = {a: _at_effort(cats.get(a), effort) for a in FIVE_AXES if a not in LEVEL_FACETS}
     for a, by_lvl in LEVEL_FACETS.items():

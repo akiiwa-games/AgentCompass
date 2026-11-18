@@ -175,12 +175,30 @@ def _validate_catalog_tables(doc):
         if ('tier_up' in entry) != ('tier_up_version' in entry) or entry.get('tier_up_version', 'same') not in ('same', 'nearest'):
             raise ValueError(f'families.rows[{i}] ({entry["pattern"]}) tier_up needs tier_up_version `same` or `nearest` '
                              'and tier_up_version needs tier_up')
+        older = entry.get('tier_up_older')
+        if older is not None:
+            larger = (by_pattern.get(entry.get('tier_up')) or {}).get('pattern')
+            ok = isinstance(older, dict) and bool(older) and larger is not None and all(
+                k in models and k not in entry['models'] and re.search(entry['pattern'], k)
+                and isinstance(rel, dict) and set(rel) == {'model', 'version'} and rel['model'] in models
+                and re.search(larger, rel['model']) and rel['version'] in ('same', 'nearest') for k, rel in older.items())
+            if not ok:
+                raise ValueError(f'families.rows[{i}] ({entry["pattern"]}) tier_up_older needs tier_up and maps older model '
+                                 'rows of this pattern (not current members) to {model: a row of the tier_up pattern, '
+                                 'version: same | nearest}')
     panel = doc.get('calibration_panel')
     if not valid_public_declaration(panel) or not isinstance(panel.get('anchor'), str) or not isinstance(panel.get('models'), list):
         raise ValueError('accounts.json needs calibration_panel {anchor, models} as a dated maintainer declaration')
     members = panel.get('members')
     if not isinstance(members, list) or not members:
         raise ValueError('calibration_panel needs `members`, the declared panel (calibration/measurements.py)')
+    readings = doc.get('effort_readings')
+    reads = (readings or {}).get('reads') if isinstance(readings, dict) else None
+    if (not valid_public_declaration(readings) or not isinstance(reads, dict) or not reads
+            or not all(isinstance(k, str) and k not in user_scores.EFFORTS and v in user_scores.EFFORTS[1:-1]
+                       for k, v in reads.items())):
+        raise ValueError('accounts.json needs effort_readings {reads: {effort name off the scale: the measured effort it '
+                         'reads}} as a dated maintainer declaration (calibration/five_axis.py effort_readings)')
     unknown = [m for m in [panel['anchor'], *panel['models'], *members] if m not in models]
     if unknown or panel['anchor'] not in panel['models'] or not set(panel['models']) <= set(members):
         raise ValueError(f'calibration_panel anchor, models and members must be model rows, the anchor among the models '

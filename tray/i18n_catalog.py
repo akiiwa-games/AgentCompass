@@ -45,6 +45,8 @@ EN = {
     '极高': 'Very high',
     '最高': 'Max',
     '超高': 'Ultra',
+    '最低': 'Minimal',
+    '默认': 'Default',
     '动画': 'Animate',
     '重播 · 点击画面或按 Esc 跳过': 'Replay · Click the stage or press Esc to skip',
     '预计 {0}h 后重置': 'Expected reset in {0}h',

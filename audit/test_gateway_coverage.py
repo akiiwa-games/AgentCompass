@@ -63,6 +63,42 @@ class CheckRuleTests(unittest.TestCase):
         self.assertEqual(len(other), 1)
         self.assertIn('not in dispatch_efforts', other[0]['missing'][0])
 
+    def test_missing_at_names_each_facet_and_the_time_and_reads_an_effort_off_the_scale_where_declared(self):
+        """Rule (`missing_at`): a pair is covered only when every facet and Time/Task has a value at the effort; `default`
+        reads the effort the data declares."""
+        def info():
+            by = {'high': 0.0, 'max': 0.1}
+            cats = {}
+            for c, f in gc.FACETS:
+                cats.setdefault(c, {'facets': {}})['facets'][f] = {'by_effort': dict(by)}
+            return {'five_axis': {'effort_readings': {'default': 'high'}, 'categories': cats,
+                                  'duration': {'by_effort': dict(by)}}}
+        full = info()
+        self.assertEqual([gc.missing_at(full, e) for e in ('high', 'max', 'default')], [[], [], []])
+        self.assertEqual(gc.missing_at(full, 'low'), [f'{c}.{f}' for c, f in gc.FACETS] + ['time_per_task'])
+        no_time = info()
+        del no_time['five_axis']['duration']['by_effort']['high']
+        self.assertEqual((gc.missing_at(no_time, 'high'), gc.missing_at(no_time, 'default'), gc.missing_at(no_time, 'max')),
+                         (['time_per_task'], ['time_per_task'], []))
+        no_facet = info()
+        del no_facet['five_axis']['categories']['coding']['facets']['faithfulness']['by_effort']['max']
+        self.assertEqual(gc.missing_at(no_facet, 'max'), ['coding.faithfulness'])
+
+    def test_the_launch_table_rows_are_every_dispatch_entry_and_every_bundle(self):
+        """Rule (`launch_rows`): the check also covers every (row, effort) the shipped launch table offers; an effort-less
+        bundle is offered at `default`."""
+        accounts = {'dispatch_efforts': {'h': {'m1': ['low', 'ultra']}},
+                    'accounts': {'a': {'bundles': {'b1': {'model': 'm2', 'effort': 'max'}, 'b2': {'model': 'm3'}}}}}
+        self.assertEqual(gc.launch_rows(accounts), [{'harness': 'h', 'model': 'm1', 'efforts': ['low', 'ultra']},
+                                                    {'harness': 'a', 'model': 'm2', 'efforts': ['max']},
+                                                    {'harness': 'a', 'model': 'm3', 'efforts': ['default']}])
+        found, _, _ = gc.run()
+        shipped = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        offered = {(p['harness'], p['model'], p['effort']) for p in found if p['catalog'] == gc.LAUNCH_TABLE}
+        for row in gc.launch_rows(shipped):
+            for e in row['efforts']:
+                self.assertIn((row['harness'], row['model'], e), offered)
+
     def test_a_catalog_of_another_schema_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, 'x.json').write_text(json.dumps({'schema': 'other', 'rows': []}), encoding='utf-8')

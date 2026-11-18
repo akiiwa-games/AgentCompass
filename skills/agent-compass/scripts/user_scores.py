@@ -63,7 +63,11 @@ CATEGORY_FACETS = {
     'tool_operation': ('responsiveness', 'image_recognition'),
 }
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
-EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')   # the effort ladder every curve is ordered on
+# The effort order, its one owner (owner 2026-11-18): every effort a curve carries and a launch can name on the scale, lowest
+# first. `minimal` and `ultra` lie beyond what boards measure (Low .. Max) and are filled from the fleet's edge step
+# (calibration/five_axis.py EDGES). An effort name off the scale (`default`) reads the effort five-axis-scores.json
+# `effort_readings` names.
+EFFORTS = ('minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
 SUGGEST_DEFAULT_THRESHOLD = 0.4
 MEASURED_DATA_STATUSES = ('measured', 'measured_partial', 'interpolated')
 VALID_TARGETS = tuple(
@@ -673,8 +677,8 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
     the facet measured keep their values; its other efforts follow the facet's own curve moved to `z_val` at High; an effort
     the facet has no value at takes `z_val` plus the panel's median own step from High to it (`steps`: the facet's entry of
     five-axis-scores.json `effort_steps`; owner 2026-11-18, every effort gets a value, also after a hand-written score) and
-    stays missing only where the panel gives no step; `minimal` is Low plus the fleet's step below Low
-    (`effort_steps.<facet>.low.minimal`). The curve is then bounded in the facet's direction
+    stays missing only where the panel gives no step; an edge effort is its neighbour plus the fleet's edge step (`minimal`:
+    Low plus `effort_steps.<facet>.low.minimal`; `ultra`: Max plus `effort_steps.<facet>.max.ultra`). The curve is then bounded in the facet's direction
     (`rises_with_effort`, `bound_along_effort`): first the measured efforts with the set efforts pinned at `z_val` (a measured
     effort that bound moves is no longer listed as measured), then the other efforts with those pinned, so a followed or
     filled value never moves a measured one."""
@@ -688,9 +692,10 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
     for e, step in ((steps or {}).get('high') or {}).items():
         if e in EFFORTS and e not in out and isinstance(step, dict) and step.get('step') is not None:
             out[e] = z_val + float(step['step'])
-    below = ((steps or {}).get('low') or {}).get('minimal')
-    if 'minimal' not in out and 'low' in out and isinstance(below, dict) and below.get('step') is not None:
-        out['minimal'] = out['low'] + float(below['step'])
+    for edge, near in ((EFFORTS[0], EFFORTS[1]), (EFFORTS[-1], EFFORTS[-2])):
+        step = ((steps or {}).get(near) or {}).get(edge)
+        if edge not in out and near in out and isinstance(step, dict) and step.get('step') is not None:
+            out[edge] = out[near] + float(step['step'])
     held = bound_along_effort({e: out[e] for e in EFFORTS if e in out and (e in pinned or e in measured)}, rises, pinned)
     out = bound_along_effort({e: held.get(e, out[e]) for e in EFFORTS if e in out}, rises, held)
     out = {e: round(float(v), 4) for e, v in out.items()}
@@ -863,6 +868,7 @@ def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dic
             return alias_to_canonical[leaf]
         return raw
 
+    shipped = {name: _facet_curves(info) for name, info in (models_table or {}).items() if isinstance(info, dict)}
     for layer in (pub, loc):
         grouped: dict[str, dict] = {}
         for raw_model, entries in (layer or {}).items():
@@ -883,6 +889,49 @@ def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dic
                 'fast_mode': {'status': 'not_offered'}, 'duration': {},
             })
             _apply_one_layer(five_state, entries, targets_table, info.get('fixed_effort'), effort_steps)
+    _follow_effective_sources(models_table, shipped)
+
+
+DERIVED_FROM_LARGER = ('tier_down', 'size_step')     # calibration/five_axis.py: a small row's facet from its larger model
+
+
+def _facet_curves(info: dict) -> dict:
+    """{(category, facet): by_effort} of a model row's five-axis facets as they stand."""
+    cats = ((info or {}).get('five_axis') or {}).get('categories') or {}
+    return {(c, f): dict(cell.get('by_effort') or {}) for c, cat in cats.items() if isinstance(cat, dict)
+            for f, cell in (cat.get('facets') or {}).items() if isinstance(cell, dict)}
+
+
+def _follow_effective_sources(models_table: dict, shipped: dict) -> None:
+    """Derived cells follow the effective source (owner 2026-11-18): a facet five_axis derived from a larger model
+    (`DERIVED_FROM_LARGER`) whose source facet a hand-written score (shipped or local) changed moves by the source's change
+    at each effort, derived(e) + effective(e) - shipped(e); an ability facet is then never above the effective source
+    (no inversion across size), and the curve is bounded along effort. A hand-written score on the derived model's own
+    facet wins: the cell it writes carries no estimate, so it is left alone. The category is recomputed from its facets."""
+    for name, info in (models_table or {}).items():
+        state = (info or {}).get('five_axis') if isinstance(info, dict) else None
+        for cat, cat_cell in ((state or {}).get('categories') or {}).items():
+            changed = False
+            for facet, cell in ((cat_cell or {}).get('facets') or {}).items():
+                est = (cell or {}).get('estimate') or {}
+                base = est.get('base_model')
+                if est.get('method') not in DERIVED_FROM_LARGER or base not in shipped:
+                    continue
+                now = _facet_curves(models_table.get(base) or {}).get((cat, facet)) or {}
+                was = shipped[base].get((cat, facet)) or {}
+                if now == was:
+                    continue
+                rises = rises_with_effort(cat, facet)
+                by = {e: v + now[e] - was[e] for e, v in (cell.get('by_effort') or {}).items() if e in now and e in was}
+                if rises:
+                    by = {e: min(v, now[e]) for e, v in by.items()}
+                by = {e: round(float(v), 4) for e, v in bound_along_effort(by, rises).items()} if by else {}
+                cell.update(by_effort=by, value=by.get('high'), follows={'base_model': base, 'base_status': (
+                    ((models_table[base]['five_axis']['categories'].get(cat) or {}).get('facets') or {}).get(facet) or {}).get('status')})
+                changed = True
+            if changed:
+                state['categories'][cat] = _recompute_category_from_facets(cat, cat_cell, cat_cell.get('status') or 'estimated')
+                state.setdefault('scores', {})[cat] = state['categories'][cat].get('value')
 
 
 def suggest_scores(model: str | None = None, *, scope: str = 'all',

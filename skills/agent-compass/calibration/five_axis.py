@@ -60,12 +60,21 @@ scores on the four categories and the quota economy together. Nothing else score
   value(e) = large(e) + min(gap, 0). No shared facet: no value. Status `estimated`, method `tier_down`. Only for
   `tier_up_version: same`: a row's own gap is not carried across versions. Ability facets only.
 - Size step (`size_step`, owner 2026-11-18): a facet a small row with `tier_up` (same or nearest version) still lacks is its
-  larger model's moved by the fleet's size step, the median of small - large at High over the same-version pairs both
-  measured (`size_step_table`, n >= MIN_SIZE_PAIRS; an ability facet short of pairs: the median over every ability facet's
-  pairs, `ability_pooled`); Time/Task the larger model's times the median ratio over the pairs listed at High (durations).
-  Bounded across size: ability never above the larger model, responsiveness never slower, Time/Task never longer.
-- `minimal` (`fill_minimal`): Low plus the fleet's median value(low) - value(medium) over the models measured at both
-  (`minimal_step_table`, n >= 2); Time/Task Low times the fleet's median time(low) / time(medium) (n >= MIN_FLEET_RATIO_N).
+  larger model's moved by the fleet's size step (`size_step_table`): one value per declared same-version pair both
+  measured at High (small - large; an ability facet with fewer than MIN_SIZE_PAIRS pairs: per pair, the mean over the
+  ability facets that pair measured, `ability_pooled`), and the step is their median only when there are at least
+  MIN_SIZE_PAIRS pairs and they all point one way (`pair_agreement`); otherwise it is zero and the cell says why
+  (`directions disagree`, `fewer than 2 pairs`). Time/Task the same on the log ratio time(small) / time(large) at High
+  (`time_size_step`). An ability value is then never above the larger model's (`min(step, 0)`, `bound_across_size`).
+- Edge efforts (`fill_edge`): an effort of the ladder beyond the measured ones (`EDGES`: `minimal` below Low, `ultra` above
+  Max) is its neighbour plus the fleet's median step between that neighbour and the next measured effort, over the models
+  measured at both (`edge_step_table`, n >= 2: value(low) - value(medium) for `minimal`, value(max) - value(xhigh) for
+  `ultra`), bounded by no inversion; Time/Task the neighbour times the fleet's median ratio (n >= MIN_FLEET_RATIO_N).
+- Own ability median (`own_ability_median`, owner 2026-11-18), last and coarsest: an ability facet still without a value is,
+  at each effort, the median of the model's own ability facets there (at least MIN_OWN_FACETS of them, all on the panel-z
+  scale); status `estimated`, with the facets used.
+- `default` (accounts.json `effort_readings`): an effort-less board listing is the model's one configuration, stored at the
+  effort the declaration names (High), and a launch at `default` reads that value (`effort_readings` in the output).
 - Order of methods: calibration/README.md (one statement).
 - Level scale and targets (`anchor.targets`, `targets`; owner 2026-11-18): a facet's three reference points all come from
   the panel's measured and interpolated High values: level 1 `t1` the panel's weakest, level 2 `t2` its median, level 3
@@ -98,7 +107,9 @@ scores on the four categories and the quota economy together. Nothing else score
   listing, else the median of its listed efforts). For a model arena does not list with cost and time, the labelled
   option B (`derived.community_mix`, `fallback: True`: AA's measured output speed per hour priced at the community token
   mix at list prices); a model with a same-series sibling that has a direct value takes that sibling's times the ratio
-  of the two cited API list prices over the full community token mix (`convert_usd`, `converted`).
+  of the two cited API list prices over the full community token mix, both read on one price list where one lists both
+  (`pair_prices`; `convert_usd`, `converted`), else, the same way,
+  its larger model (series.tier_up) when that has a direct value (`relation: size`).
 - Plan capacity comes down a ladder (rounds 4-5, user 2026-11-09: "都用社区真实使用量 且保持最新"; capacity is never
   left unknown), per window of each plan in plan-templates.json, recording the rung.
 - Each window's reference-model hours are its capacity over that model's usd_per_hour.
@@ -134,11 +145,15 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # anchor instead of pooled, the `tier_down` estimate. Levels mean what they meant under /6.
 # /8 (2026-11-18): the `minimal` effort (Low plus the fleet's step below it, `effort_steps.<facet>.low.minimal`, and
 # `effort_steps.time_per_task`), the `size_step` estimate and the top-level `size_steps` table. Levels unchanged.
-SCHEMA = 'agent-compass.five-axis-scores/8'
+SCHEMA = 'agent-compass.five-axis-scores/9'
 AXES = measurements.AXES
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')      # the efforts boards measure and the panel steps reach
-LADDER = user_scores.EFFORTS                              # every effort a curve carries: `minimal` below Low (fill_minimal)
+LADDER = user_scores.EFFORTS                              # every effort a curve carries: the edge efforts too (fill_edge)
+# {edge effort: (its measured neighbour, the next measured effort)}: each effort of LADDER beyond the measured ones
+EDGES = {e: (LADDER[i + 1], LADDER[i + 2]) if i < LADDER.index(EFFORTS[0]) else (LADDER[i - 1], LADDER[i - 2])
+         for i, e in enumerate(LADDER) if e not in EFFORTS}
 MIN_SIZE_PAIRS = 2      # same-version (small, larger) pairs a size step needs, as the panel effort step (n >= 2)
+MIN_OWN_FACETS = 2      # ability facets a model's own median needs (a median of one value is that value, not a median)
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 AESTHETICS_LEVEL_FACETS = {1: ('design',), 2: ('design', 'image_recognition'), 3: ('design', 'image_recognition')}
 # The facets each tool_operation level asks for (user, 2026-11-11): level 1 no ability beyond the image-input check of
@@ -176,6 +191,34 @@ def mean(xs):
 def rises(key):
     """True when facet `key` ((category, facet)) never decreases as effort rises (user_scores.rises_with_effort)."""
     return user_scores.rises_with_effort(*key)
+
+
+def edge_method(edge):
+    """The method name of an edge effort's fill: below the measured ladder `fleet_lowest_step`, above it `fleet_highest_step`."""
+    return 'fleet_lowest_step' if LADDER.index(edge) < LADDER.index(EFFORTS[0]) else 'fleet_highest_step'
+
+
+def effort_readings(acc):
+    """{effort name off the ladder: the measured effort it reads}, the accounts.json `effort_readings.reads` declaration
+    (owner 2026-11-18): a board listing without an effort label is stored at that effort, and a launch at that name reads
+    it. A build without the declaration stops."""
+    reads = ((acc or {}).get('effort_readings') or {}).get('reads')
+    if not isinstance(reads, dict) or not reads or not all(v in EFFORTS and k not in LADDER for k, v in reads.items()):
+        raise ValueError('accounts.json effort_readings.reads must map each effort name off the ladder (`default`) to the '
+                         f'measured effort it reads ({", ".join(EFFORTS)})')
+    return dict(reads)
+
+
+def pair_agreement(values):
+    """The size step from its per-pair values (owner 2026-11-18): {'step', 'median', 'n', 'agree', 'reason'?}. The step is
+    the median when there are at least MIN_SIZE_PAIRS pairs and they all point one way (none above zero, or none below);
+    otherwise it is zero, with the reason."""
+    med = round(float(np.median(values)), 4) if values else None
+    if len(values) < MIN_SIZE_PAIRS:
+        return {'step': 0.0, 'median': med, 'n': len(values), 'agree': False, 'reason': f'fewer than {MIN_SIZE_PAIRS} pairs'}
+    if min(values) < 0 < max(values):
+        return {'step': 0.0, 'median': med, 'n': len(values), 'agree': False, 'reason': 'directions disagree'}
+    return {'step': med, 'median': med, 'n': len(values), 'agree': True}
 
 
 def bound_curve(by_effort, up=True, moved=None):
@@ -278,9 +321,12 @@ def pick_fast_mode(model, entries, models=None):
     return {'status': 'unsupported', 'price_multiplier': None, 'speed_multiplier': None, 'source': None}
 
 
+PRICE_SOURCES = ('aa.price', 'openrouter.price', 'vendor.price')      # the order a list price is read in
+
+
 def pick_price(entries):
     """Public list price (USD per million tokens) for converting local token counts (e.g. opencode.db) into USD."""
-    for src in ('aa.price', 'openrouter.price', 'vendor.price'):
+    for src in PRICE_SOURCES:
         for e in entries or ():
             if e.get('source') == src and isinstance(e.get('value'), dict):
                 v = e['value']
@@ -294,6 +340,7 @@ class Scorer:
     def __init__(self, meas, acc, distrust=()):
         self.meas, self.acc = meas, acc
         self.distrust = set(distrust)
+        self.readings = effort_readings(acc)
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
 
     def trusted(self, entries):
@@ -373,12 +420,13 @@ class Scorer:
                     out.setdefault((a, e['facet']), {}).setdefault(e['source'], e)
         return out
 
-    @staticmethod
-    def aa_rows(entry):
-        """{effort: z} of an Artificial Analysis entry; an effort-less listing is the model's one configuration, keyed High."""
-        rows = {k: v for k, v in (entry.get('z_by_effort') or {}).items() if k in EFFORTS or k == 'default'}
-        if 'default' in rows:
-            rows.setdefault('high', rows.pop('default'))
+    def aa_rows(self, entry):
+        """{effort: z} of an Artificial Analysis entry; an effort-less listing is the model's one configuration, stored at
+        the effort `effort_readings` names (unless that effort is listed too)."""
+        rows = {k: v for k, v in (entry.get('z_by_effort') or {}).items() if k in EFFORTS or k in self.readings}
+        for name, reads in self.readings.items():
+            if name in rows:
+                rows.setdefault(reads, rows.pop(name))
         return {k: v for k, v in rows.items() if k in EFFORTS}
 
     @staticmethod
@@ -386,8 +434,9 @@ class Scorer:
         return bool(aa_map and len(aa_map) >= 2 and float(np.ptp(list(aa_map.values()))) > 0)
 
     def _linked_aa_capability_boards(self, rows, panel):
-        """({aa_source: {model: {effort: z_linked_isotonic}}}, {aa_source: {model: high_z}}) linked on `panel` BEFORE
-        shifting any non-AA board (R2-F5: strictly each model's own listed efforts; R2-F10: link before shifting)."""
+        """({aa_source: {model: {effort: z_linked}}}, {aa_source: {model: high_z}}) linked on `panel` BEFORE shifting any
+        non-AA board (R2-F5: strictly each model's own listed efforts; R2-F10: link before shifting). No pooling or monotone
+        fit here: the bound along effort comes later, once, on the facet (`bound_curve`)."""
         anchor = measurements.ANCHOR
         meas_sources = self.meas.get('sources') or {}
         aa_raw = {}
@@ -975,39 +1024,10 @@ class Scorer:
                          and (facets[b].get(key) or {}).get('value') is not None and tier[b]['value'] is not None]
                 if bases or fits.get(key):
                     facets[m][key] = self.estimate(m, bases[0] if bases else None, key, facets, fits, rejected, tier)
-        # A `same_model` row is the very model it declares: it takes that model's facets as they stand, for the
-        # categories it carries. Its own measurement, when it has one, stands.
-        for m in declared:
-            entry = self.same[m]
-            carries = entry.get('carries')
-            for key, rec in facets[entry['model']].items():
-                if key in facets[m] or (carries is not None and key[0] not in carries):
-                    continue
-                facets[m][key] = {'value': rec['value'], 'by_effort': dict(rec['by_effort']), 'sources': {}, 'status': 'estimated',
-                                  'estimate': {'method': 'same_model', 'base_model': entry['model'], 'base_status': rec['status'],
-                                               **{k: entry[k] for k in ('kind', 'statement', 'url', 'as_of') if entry.get(k)}},
-                                  'measured_efforts': []}
+        self.copy_same_model(facets, declared)
         self.size_of = {m: rel for m, rel in series.tier_up(self.acc).items()
                         if m in rows and rel['model'] in rows and m not in declared}
-        self.size_steps = self.size_step_table(facets, keys)
-        self.tier_down(facets, keys)
-        self.size_down(facets, keys)
-        for m in rows:
-            for key, rec in facets[m].items():
-                self.fill_refused += self.fill_efforts(m, key, rec)
-        for m, rel in self.size_of.items():
-            for key, rec in facets[m].items():
-                if (rec.get('estimate') or {}).get('method') in ('tier_down', 'size_step'):
-                    theirs, up = facets[rel['model']][key]['by_effort'], rises(key)
-                    rec['by_effort'] = {e: ((min(v, theirs[e]) if up else max(v, theirs[e])) if e in theirs else v)
-                                        for e, v in rec['by_effort'].items()}
-                    rec['value'] = rec['by_effort'].get('high')
-        below = self.minimal_step_table(facets)
-        for key, step in below.items():
-            self.steps.setdefault(key, {}).setdefault('low', {})['minimal'] = step
-        for m in rows:
-            for key, rec in facets[m].items():
-                self.fill_refused += self.fill_minimal(m, key, rec)
+        self.complete(facets, keys, rows, declared)
         for m, r in rows.items():
             carries = (self.same.get(m) or {}).get('carries')
             r['axes'] = {}
@@ -1018,6 +1038,78 @@ class Scorer:
                 r['axes'][a] = self.category(a, own)
         fit_doc = {f'{a}.{c}~tier': {k: round(v, 4) for k, v in f.items()} for (a, c), f in fits.items() if f}
         return rows, tier, fit_doc, rejected, links, self.targets(rows, panel)
+
+    def copy_same_model(self, facets, declared):
+        """A `same_model` row is the very model it declares: it takes that model's facets as they stand, for the categories
+        it carries. A facet it already has (its own measurement, or one copied before) stands."""
+        for m in declared:
+            entry = self.same[m]
+            carries = entry.get('carries')
+            for key, rec in facets[entry['model']].items():
+                if key in facets[m] or (carries is not None and key[0] not in carries):
+                    continue
+                facets[m][key] = {'value': rec['value'], 'by_effort': dict(rec['by_effort']), 'sources': {}, 'status': 'estimated',
+                                  'estimate': {'method': 'same_model', 'base_model': entry['model'], 'base_status': rec['status'],
+                                               **{k: entry[k] for k in ('kind', 'statement', 'url', 'as_of') if entry.get(k)}},
+                                  'measured_efforts': []}
+
+    def complete(self, facets, keys, rows, declared=()):
+        """Every method after measurement, series and fit, in the order calibration/README.md states: the downward
+        derivation with the row's own gap (`tier_down`), the size step (`size_down`), every measured effort a facet lacks
+        (`fill_efforts`), the edge efforts (`fill_edge`), the bound across size (`bound_across_size`), the model's own ability
+        median (`own_ability_median`), and the `same_model` copy of what these added. Reads `size_of` and `steps`, writes
+        `size_steps` and adds to `fill_refused`."""
+        self.size_steps = self.size_step_table(facets, keys)
+        self.tier_down(facets, keys)
+        self.size_down(facets, keys)
+        for m in rows:
+            for key, rec in facets[m].items():
+                self.fill_refused += self.fill_efforts(m, key, rec)
+        for key, by_edge in self.edge_step_table(facets).items():
+            for edge, step in by_edge.items():
+                self.steps.setdefault(key, {}).setdefault(EDGES[edge][0], {})[edge] = step
+        for m in rows:
+            for key, rec in facets[m].items():
+                for edge in EDGES:
+                    self.fill_refused += self.fill_edge(m, key, rec, edge)
+        self.bound_across_size(facets)
+        for m in rows:
+            if m not in declared:
+                self.own_ability_median(facets[m], keys)
+        self.copy_same_model(facets, declared)
+
+    def bound_across_size(self, facets):
+        """No inversion across size (owner 2026-11-18): an ability facet a small row derived from its larger model
+        (`tier_down`, `size_step`) is never above the larger model's at any effort both have; the efforts it held are listed
+        in the estimate's `held_at_larger`. The speed facets have no bound across size: their size step is used only where
+        the pairs agree (`pair_agreement`)."""
+        for m, rel in sorted(self.size_of.items()):
+            for key, rec in facets[m].items():
+                est = rec.get('estimate') or {}
+                if not rises(key) or est.get('method') not in ('tier_down', 'size_step'):
+                    continue
+                theirs = facets[rel['model']][key]['by_effort']
+                held = [e for e, v in rec['by_effort'].items() if e in theirs and v > theirs[e]]
+                if held:
+                    rec['by_effort'] = {e: (theirs[e] if e in held else v) for e, v in rec['by_effort'].items()}
+                    rec['value'] = rec['by_effort'].get('high')
+                    est['held_at_larger'] = held
+
+    def own_ability_median(self, own, keys):
+        """The last, coarsest method (owner 2026-11-18): an ability facet the model still lacks (`own`: its facet records)
+        is, at each effort, the median of the ability facets it has there, when it has at least MIN_OWN_FACETS of them (all
+        on the panel-z scale); status `estimated`, method `own_ability_median` with the facets used."""
+        have = [k for k in keys if rises(k) and (own.get(k) or {}).get('by_effort')]
+        for key in keys:
+            if not rises(key) or key in own:
+                continue
+            by = {e: float(np.median([own[k]['by_effort'][e] for k in have if e in own[k]['by_effort']])) for e in LADDER
+                  if sum(e in own[k]['by_effort'] for k in have) >= MIN_OWN_FACETS}
+            if 'high' not in by:
+                continue
+            by = bound_curve(by, True)
+            own[key] = {'value': by['high'], 'by_effort': by, 'status': 'estimated', 'sources': {}, 'measured_efforts': [],
+                        'estimate': {'method': 'own_ability_median', 'facets': ['.'.join(k) for k in have], 'n': len(have)}}
 
     def tier_down(self, facets, keys):
         """An ability facet a small row lacks after measurement and estimation, from its larger model of the same version
@@ -1055,40 +1147,42 @@ class Scorer:
                                          'n': len(shared)}}
 
     def size_step_table(self, facets, keys):
-        """{facet id: {'step', 'n', 'basis', 'pairs'}} (module docstring, size step): over the declared same-version pairs
-        (small row, its larger model) that both measured the facet at High, the median of small - large; a facet with fewer
-        than MIN_SIZE_PAIRS pairs takes, when it is an ability facet, the median over every ability facet's pairs
-        (`basis` `ability_pooled`: the ability facets share the panel-z scale), else no step. Read from the measured
-        efforts only, so no estimate enters it."""
+        """{facet id: {'step', 'median', 'n', 'agree', 'reason'?, 'basis', 'pairs', 'differences'?}} (module docstring, size
+        step): one value per declared same-version pair (small row, its larger model) that both measured the facet at High,
+        small - large (`basis` `facet`); an ability facet with fewer than MIN_SIZE_PAIRS such pairs takes, per pair, the mean
+        over the ability facets that pair measured (`ability_pooled`: they share the panel-z scale; `differences` counts
+        the facet readings). `n` counts pairs; the step follows `pair_agreement`. Read from the measured efforts only, so no
+        estimate enters it."""
         def at_high(m, key):
             rec = facets[m].get(key) or {}
             return rec['by_effort'].get('high') if 'high' in (rec.get('measured_efforts') or ()) else None
+
+        def reading(small, large, ks):
+            got = [(k, at_high(small, k) - at_high(large, k)) for k in ks
+                   if at_high(small, k) is not None and at_high(large, k) is not None]
+            if not got:
+                return None
+            return {'small': small, 'large': large, 'facets': ['.'.join(k) for k, _ in got],
+                    'differences': [round(d, 4) for _, d in got], 'value': float(np.mean([d for _, d in got]))}
         same = sorted((m, rel['model']) for m, rel in self.size_of.items() if rel['version'] == 'same')
-        diffs = {}
-        for key in keys:
-            for small, large in same:
-                a, b = at_high(small, key), at_high(large, key)
-                if a is not None and b is not None:
-                    diffs.setdefault(key, []).append((small, large, '.'.join(key), a - b))
-        pooled = [d for key in keys if rises(key) for d in diffs.get(key, ())]
+        ability = [k for k in keys if rises(k)]
         out = {}
         for key in keys:
-            own = diffs.get(key, [])
-            if len(own) >= MIN_SIZE_PAIRS:
-                pick, basis = own, 'facet'
-            elif rises(key) and len(pooled) >= MIN_SIZE_PAIRS:
-                pick, basis = pooled, 'ability_pooled'
-            else:
-                continue
-            out['.'.join(key)] = {'step': round(float(np.median([d[3] for d in pick])), 4), 'n': len(pick), 'basis': basis,
-                                  'pairs': [[s, l, f] for s, l, f, _ in pick]}
+            pairs, basis = [p for s, l in same if (p := reading(s, l, [key]))], 'facet'
+            if len(pairs) < MIN_SIZE_PAIRS and rises(key):
+                pairs, basis = [p for s, l in same if (p := reading(s, l, ability))], 'ability_pooled'
+            rec = pair_agreement([p['value'] for p in pairs])
+            out['.'.join(key)] = {**rec, 'basis': basis,
+                                  'pairs': [{**{k: v for k, v in p.items() if k != 'value'}, 'difference': round(p['value'], 4)}
+                                            for p in pairs],
+                                  **({'differences': sum(len(p['facets']) for p in pairs)} if basis == 'ability_pooled' else {})}
         return out
 
     def size_down(self, facets, keys):
         """A facet a small row still lacks (no measurement, sibling, fit or own-gap derivation), from its larger model, same
-        or nearest version, moved by the fleet's size step (module docstring): an ability facet never up, responsiveness
-        never down (a smaller model is never slower), value(e) = large(e) + min(step, 0) (responsiveness max(step, 0)).
-        Status `estimated`, method `size_step`; no step for the facet: no value."""
+        or nearest version, moved by the fleet's size step (module docstring): value(e) = large(e) + move, move the step
+        (zero where the pairs do not agree, `pair_agreement`), and for an ability facet never up: min(step, 0). Status
+        `estimated`, method `size_step`, with the pairs and, for a zero step, the reason."""
         for m, rel in sorted(self.size_of.items()):
             big = rel['model']
             own, theirs = facets[m], facets[big]
@@ -1096,44 +1190,51 @@ class Scorer:
                 base, step = theirs.get(key), self.size_steps.get('.'.join(key))
                 if key in own or not (base or {}).get('by_effort') or step is None:
                     continue
-                move = min(step['step'], 0.0) if rises(key) else max(step['step'], 0.0)
+                move = min(step['step'], 0.0) if rises(key) else step['step']
                 by = {e: round(v + move, 4) for e, v in base['by_effort'].items()}
                 own[key] = {'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {},
                             'measured_efforts': [],
                             'estimate': {'method': 'size_step', 'base_model': big, 'version': rel['version'],
                                          'base_status': base['status'], 'step': step['step'], 'move': round(move, 4),
-                                         'n': step['n'], 'basis': step['basis'], 'pairs': step['pairs']}}
+                                         'n': step['n'], 'agree': step['agree'],
+                                         **({'reason': step['reason']} if 'reason' in step else {}), 'basis': step['basis'],
+                                         'pairs': [[p['small'], p['large']] for p in step['pairs']]}}
 
-    def minimal_step_table(self, facets):
-        """{facet id: {'step', 'n', 'sample', 'method'}} (module docstring, `minimal`): the fleet's median of
-        value(low) - value(medium) over the models that measured the facet at both, n >= 2."""
-        xs = {}
-        for fs in facets.values():
-            for key, rec in fs.items():
-                got = set(rec.get('measured_efforts') or ())
-                if {'low', 'medium'} <= got:
-                    xs.setdefault('.'.join(key), []).append(rec['by_effort']['low'] - rec['by_effort']['medium'])
-        return {k: {'step': round(float(np.median(v)), 4), 'n': len(v), 'sample': 'fleet', 'method': 'fleet_lowest_step'}
-                for k, v in sorted(xs.items()) if len(v) >= 2}
+    def edge_step_table(self, facets):
+        """{facet id: {edge effort: {'step', 'n', 'sample', 'method'}}} (module docstring, edge efforts): for each edge
+        effort (`EDGES`: its neighbour, the next measured effort), the fleet's median of value(neighbour) - value(next) over
+        the models that measured the facet at both, n >= 2."""
+        out = {}
+        for edge, (near, nxt) in EDGES.items():
+            xs = {}
+            for fs in facets.values():
+                for key, rec in fs.items():
+                    if {near, nxt} <= set(rec.get('measured_efforts') or ()):
+                        xs.setdefault('.'.join(key), []).append(rec['by_effort'][near] - rec['by_effort'][nxt])
+            for k, v in sorted(xs.items()):
+                if len(v) >= 2:
+                    out.setdefault(k, {})[edge] = {'step': round(float(np.median(v)), 4), 'n': len(v), 'sample': 'fleet',
+                                                   'method': edge_method(edge)}
+        return out
 
-    def fill_minimal(self, m, key, rec):
-        """`minimal` of facet record `rec`: its Low plus the fleet's step below Low, then the bound with every other effort
-        pinned, so it never moves one. Returns the refusals."""
+    def fill_edge(self, m, key, rec, edge):
+        """Edge effort `edge` of facet record `rec`: its neighbour plus the fleet's edge step, then the bound with every other
+        effort pinned, so it never moves one. Returns the refusals."""
+        near, nxt = EDGES[edge]
         by = dict(rec.get('by_effort') or {})
-        if 'minimal' in by or 'low' not in by:
+        if edge in by or near not in by:
             return []
-        step = ((self.steps.get('.'.join(key)) or {}).get('low') or {}).get('minimal')
+        step = ((self.steps.get('.'.join(key)) or {}).get(near) or {}).get(edge)
         if step is None:
-            return [{'model': m, 'facet': '.'.join(key), 'effort': 'minimal', 'from': 'low',
-                     'reason': 'fewer than 2 fleet models measured at low and medium'}]
-        value = round(by['low'] + step['step'], 4)
-        held = round(float(user_scores.bound_along_effort({**by, 'minimal': value}, rises(key), list(by))['minimal']), 4)
-        how = {'method': 'fleet_lowest_step', 'from_effort': 'low', 'from_value': by['low'], 'step': step['step'],
-               'n': step['n']}
+            return [{'model': m, 'facet': '.'.join(key), 'effort': edge, 'from': near,
+                     'reason': f'fewer than 2 fleet models measured at {near} and {nxt}'}]
+        value = round(by[near] + step['step'], 4)
+        held = round(float(user_scores.bound_along_effort({**by, edge: value}, rises(key), list(by))[edge]), 4)
+        how = {'method': step['method'], 'from_effort': near, 'from_value': by[near], 'step': step['step'], 'n': step['n']}
         if held != value:
             how['bounded_from'] = value
-        rec['by_effort'] = {e: (held if e == 'minimal' else by[e]) for e in LADDER if e in by or e == 'minimal'}
-        rec['filled_efforts'] = {**(rec.get('filled_efforts') or {}), 'minimal': how}
+        rec['by_effort'] = {e: (held if e == edge else by[e]) for e in LADDER if e in by or e == edge}
+        rec['filled_efforts'] = {**(rec.get('filled_efforts') or {}), edge: how}
         return []
 
     def targets(self, rows, panel):
@@ -1236,17 +1337,18 @@ AA_TIME, ARENA_TIME = 'aa.cost_time', 'arena.agent_sessions'
 MIN_FLEET_RATIO_N = 3       # models that must list both efforts before their time ratio is cited for a model that lists neither
 
 
-def time_rows(entries, source):
-    """{effort: row} of `source`'s Time/Task listings (minutes > 0). An effort-less listing is the model's single
-    configuration and is keyed High, the basis of the anchor's own listing, unless High is also listed; efforts outside
-    EFFORTS (a non-reasoning variant) are not routable efforts and are left out."""
+def time_rows(entries, source, readings):
+    """{effort: row} of `source`'s Time/Task listings (minutes > 0). An effort-less listing (stored as `default`) is the
+    model's single configuration and is keyed at the effort `readings` (effort_readings) names for it, unless that effort
+    is also listed; efforts outside EFFORTS (a non-reasoning variant) are not routable efforts and are left out."""
     rows = {}
     for e in entries or ():
         t = e.get('time_per_task_min')
         if e.get('source') == source and isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0:
             rows[e.get('effort') or 'default'] = e
-    if 'default' in rows:
-        rows.setdefault('high', rows.pop('default'))
+    for name, reads in readings.items():
+        if name in rows:
+            rows.setdefault(reads, rows.pop(name))
     return {k: v for k, v in rows.items() if k in EFFORTS}
 
 
@@ -1266,13 +1368,42 @@ def nearest_effort(known, effort):
     return min(known, key=lambda e: (abs(EFFORTS.index(e) - at), EFFORTS.index(e)))
 
 
+def time_size_step(listed, relations):
+    """The Time/Task size step (owner 2026-11-18): {'ratio', 'median_ratio', 'n', 'agree', 'reason'?, 'basis', 'pairs'}.
+    One log ratio log(small / large) per declared same-version pair (`relations`: series.tier_up) both listed at High
+    (`listed`: {model: minutes}); `ratio` is the exp of their median when the pairs agree (`pair_agreement`), else 1: the
+    larger model's time."""
+    pairs = [(s, r['model']) for s, r in sorted(relations.items())
+             if r['version'] == 'same' and listed.get(s) and listed.get(r['model'])]
+    logs = [float(np.log(listed[s] / listed[large])) for s, large in pairs]
+    rec = pair_agreement(logs)
+    return {'ratio': round(float(np.exp(np.median(logs))), 4) if rec['agree'] else 1.0,
+            'median_ratio': round(float(np.exp(np.median(logs))), 4) if logs else None, 'n': rec['n'], 'agree': rec['agree'],
+            **({'reason': rec['reason']} if 'reason' in rec else {}), 'basis': 'time_per_task',
+            'pairs': [{'small': s, 'large': large, 'ratio': round(listed[s] / listed[large], 4)} for s, large in pairs]}
+
+
+def apply_time_size_step(minutes, basis, relations, step):
+    """A small row with no time of its own takes its larger model's (same or nearest version) times the size step's
+    `ratio` at every effort (`time_size_step`); `minutes` and `basis` ({model: {effort: ...}}) are updated in place."""
+    for m, r in sorted(relations.items()):
+        if minutes[m] or not minutes[r['model']]:
+            continue
+        for e, t in minutes[r['model']].items():
+            minutes[m][e] = round(t * step['ratio'], 3)
+            basis[m][e] = {'method': 'size_step', 'base_model': r['model'], 'version': r['version'], 'ratio': step['ratio'],
+                           'n': step['n'], 'agree': step['agree'], **({'reason': step['reason']} if 'reason' in step else {}),
+                           'pairs': [[p['small'], p['large']] for p in step['pairs']], 'source': AA_TIME}
+
+
 def durations(scorer, rows, acc, index, board, tier):
     """({model: duration record}, fit or None, why the fit was rejected or None): one basis for the time a task takes,
     Artificial Analysis Time/Task at the same effort, as a multiple of the anchor's at High (module docstring)."""
+    reads = scorer.readings
     anchor = anchor_minutes(time_rows(scorer.trusted((rows.get(measurements.ANCHOR) or {}).get('fields', {}).get('throughput')),
-                                      AA_TIME))
-    aa = {m: time_rows(scorer.trusted(r['fields'].get('throughput')), AA_TIME) for m, r in rows.items()}
-    arena = {m: time_rows(scorer.trusted(r['fields'].get('throughput')), ARENA_TIME) for m, r in rows.items()}
+                                      AA_TIME, reads))
+    aa = {m: time_rows(scorer.trusted(r['fields'].get('throughput')), AA_TIME, reads) for m, r in rows.items()}
+    arena = {m: time_rows(scorer.trusted(r['fields'].get('throughput')), ARENA_TIME, reads) for m, r in rows.items()}
     pairs = []
     for m in rows:
         shared = next((e for e in PAIR_EFFORTS if e in aa[m] and e in arena[m]), None)
@@ -1410,25 +1541,11 @@ def durations(scorer, rows, acc, index, board, tier):
                         'note': f'fleet effort ratio {e}/{e0}, n={n}, IQR {q1:.2f}-{q3:.2f}'}, e, anchors)
             minutes[m].update({e: t for e, t in known.items() if e not in direct})
     # Size step (module docstring): a small row with no time of its own takes its larger model's (same or nearest version)
-    # times the fleet's ratio small / large at High over the same-version pairs both listed there, never longer.
+    # times the size step, the pairs' median ratio at High where they agree, else 1.
     rel = {m: r for m, r in series.tier_up(acc).items() if m in rows and r['model'] in rows and m not in same}
-
-    def listed_high(m):
-        return minutes[m].get('high') if (basis[m].get('high') or {}).get('method') == 'aa' else None
-    logs = [(s, r['model'], float(np.log(listed_high(s) / listed_high(r['model'])))) for s, r in sorted(rel.items())
-            if r['version'] == 'same' and listed_high(s) and listed_high(r['model'])]
-    scorer.time_size_step = None if len(logs) < MIN_SIZE_PAIRS else {
-        'ratio': round(float(np.exp(np.median([x for _, _, x in logs]))), 4), 'n': len(logs),
-        'basis': 'time_per_task', 'pairs': [[s, l] for s, l, _ in logs]}
-    for m, r in sorted(rel.items()):
-        step = scorer.time_size_step
-        if minutes[m] or not minutes[r['model']] or step is None:
-            continue
-        applied = min(step['ratio'], 1.0)
-        for e, t in minutes[r['model']].items():
-            minutes[m][e] = round(t * applied, 3)
-            basis[m][e] = {'method': 'size_step', 'base_model': r['model'], 'version': r['version'], 'ratio': step['ratio'],
-                           'applied': round(applied, 4), 'n': step['n'], 'pairs': step['pairs'], 'source': AA_TIME}
+    listed = {m: minutes[m]['high'] for m in rows if (basis[m].get('high') or {}).get('method') == 'aa'}
+    scorer.time_size_step = time_size_step(listed, rel)
+    apply_time_size_step(minutes, basis, rel, scorer.time_size_step)
     for m in rows:
         if minutes[m]:
             # Time/Task never shortens as effort rises (owner 2026-11-18): bounded with High as the anchor; a listed time the
@@ -1442,25 +1559,33 @@ def durations(scorer, rows, acc, index, board, tier):
                     basis[m][e] = {'method': 'effort_bound', 'bound_by': toward, 'minutes_before': minutes[m][e],
                                    'was': basis[m][e]}
                     minutes[m][e] = round(float(t), 3)
-    # `minimal` (module docstring), after the bound: Low times the fleet's median ratio time(low) / time(medium) over the
-    # Artificial Analysis listings with both, never longer than Low; a `same_model` row carrying the time copies its model's.
-    xs = [t['low']['time_per_task_min'] / t['medium']['time_per_task_min'] for t in aa.values() if 'low' in t and 'medium' in t]
-    scorer.time_steps = {} if len(xs) < MIN_FLEET_RATIO_N else {'low': {'minimal': {
-        'ratio': round(float(np.median(xs)), 4), 'n': len(xs), 'sample': 'fleet', 'method': 'fleet_lowest_step'}}}
-    below = (scorer.time_steps.get('low') or {}).get('minimal')
+    # Edge efforts (module docstring), after the bound: the neighbour times the fleet's median ratio time(neighbour) /
+    # time(next) over the Artificial Analysis listings with both, bounded by no inversion; a `same_model` row carrying the
+    # time copies its model's.
+    scorer.time_steps = {}
+    for edge, (near, nxt) in EDGES.items():
+        xs = [t[near]['time_per_task_min'] / t[nxt]['time_per_task_min'] for t in aa.values() if near in t and nxt in t]
+        if len(xs) >= MIN_FLEET_RATIO_N:
+            scorer.time_steps.setdefault(near, {})[edge] = {'ratio': round(float(np.median(xs)), 4), 'n': len(xs),
+                                                            'sample': 'fleet', 'method': edge_method(edge)}
     carriers = {m: e['model'] for m, e in same.items() if m in rows and 'duration' in (e.get('carries') or ()) and e.get('model') in rows}
     for m in rows:
-        if below and m not in carriers and 'low' in minutes[m] and 'minimal' not in minutes[m]:
-            t = minutes[m]['low'] * below['ratio']
-            minutes[m]['minimal'] = round(min(t, minutes[m]['low']), 3)
-            basis[m]['minimal'] = {'method': 'fleet_lowest_step', 'from_effort': 'low', 'ratio': below['ratio'],
-                                   'n': below['n'], 'source': AA_TIME, **({'bounded_by': 'low'} if t > minutes[m]['low'] else {})}
+        for edge, (near, _) in EDGES.items():
+            step = (scorer.time_steps.get(near) or {}).get(edge)
+            if step is None or m in carriers or near not in minutes[m] or edge in minutes[m]:
+                continue
+            t = minutes[m][near] * step['ratio']
+            held = user_scores.bound_along_effort({**minutes[m], edge: t}, True, list(minutes[m]))[edge]
+            minutes[m][edge] = round(float(held), 3)
+            basis[m][edge] = {'method': step['method'], 'from_effort': near, 'ratio': step['ratio'], 'n': step['n'],
+                              'source': AA_TIME, **({'bounded_by': near} if held != t else {})}
     for m, base in carriers.items():
-        if 'minimal' in minutes[base] and 'minimal' not in minutes[m]:
-            entry = same[m]
-            minutes[m]['minimal'] = minutes[base]['minimal']
-            basis[m]['minimal'] = {'method': 'same_model', 'base_model': base, 'kind': entry.get('kind'),
-                                   'url': entry.get('url'), 'as_of': entry.get('as_of'), 'statement': entry.get('statement')}
+        for edge in EDGES:
+            if edge in minutes[base] and edge not in minutes[m]:
+                entry = same[m]
+                minutes[m][edge] = minutes[base][edge]
+                basis[m][edge] = {'method': 'same_model', 'base_model': base, 'kind': entry.get('kind'),
+                                  'url': entry.get('url'), 'as_of': entry.get('as_of'), 'statement': entry.get('statement')}
     for m in rows:
         out[m] = {'status': 'ok' if minutes[m] else 'missing', 'anchor_minutes': anchor,
                   'by_effort': {e: round(t / anchor, 4) for e, t in minutes[m].items()},
@@ -1686,6 +1811,16 @@ def token_mix(meas):
     return shares if sum(shares.values()) > 0 else {}
 
 
+def pair_prices(entries_t, entries_b):
+    """(price of t, price of b) for a list-price ratio (pick_price): from the first price source that lists both models, so
+    the ratio is read on one price list, else each model's own first."""
+    for src in PRICE_SOURCES:
+        pt, pb = (pick_price([e for e in entries or () if e.get('source') == src]) for entries in (entries_t, entries_b))
+        if pt and pb:
+            return pt, pb
+    return pick_price(entries_t), pick_price(entries_b)
+
+
 def list_price_ratio(price_t, price_b, mix):
     """The ratio of two cited API list prices (pick_price) over the token mix, or None when either lacks a component."""
     if not mix or price_t is None or price_b is None:
@@ -1699,24 +1834,29 @@ def list_price_ratio(price_t, price_b, mix):
 def convert_usd(usd, rows, scorer, meas, acc, tier):
     """Series conversion of usd_per_hour: a model without a direct value (`derived` or missing) and with a same-series
     sibling that has one takes the nearest such sibling's value times the ratio of the two cited API list prices over
-    the full community token mix."""
+    the full community token mix; one with no such sibling takes, the same way, its larger model's (series.tier_up,
+    `relation: size`) when that has a direct value."""
     direct = {m for m, u in usd.items() if u.get('value') is not None and u.get('kind') not in ('derived', 'converted')}
     same = {k: v for k, v in series.same_model(acc).items() if valid_public_declaration(v)}
     sibs = series.groups({**acc, 'same_model': same})
     index = {m: ((scorer.trusted(r['fields'].get('intelligence_index')) or [{}])[0]).get('value') for m, r in rows.items()}
     tier_map = {m: t['value'] for m, t in tier.items()}
     mix = token_mix(meas)
+    larger = series.tier_up(acc)
     for m in rows:
         if m in direct:
             continue
-        for b in series.nearest(m, [b for b in sibs.get(m, ()) if b in direct], index, series.boards(meas), tier_map,
-                                same):
-            prices = {k: pick_price(scorer.trusted(rows[k]['fields'].get('price'))) for k in (m, b)}
+        near = series.nearest(m, [b for b in sibs.get(m, ()) if b in direct], index, series.boards(meas), tier_map, same)
+        up = [larger[m]['model']] if m in larger and larger[m]['model'] in direct else []
+        for b in [*near, *up]:
+            prices = dict(zip((m, b), pair_prices(*(scorer.trusted(rows[k]['fields'].get('price')) for k in (m, b)))))
             ratio = list_price_ratio(prices[m], prices[b], mix)
             if ratio is None:
                 continue
+            how = 'series' if b in near else 'size'
             usd[m] = {'value': round(usd[b]['value'] * ratio, 3), 'status': 'ok', 'kind': 'converted', 'fallback': False,
-                      'merge': f'series conversion: usd of {b} x API list price ratio {ratio:.4f} over the community token mix',
+                      'relation': how,
+                      'merge': f'{how} conversion: usd of {b} x API list price ratio {ratio:.4f} over the community token mix',
                       'used': [],
                       'sources': {'base': {**usd[b], 'model': b}, 'ratio': round(ratio, 4), 'prices': prices, 'token_mix': mix}}
             break
@@ -1937,6 +2077,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
                           for h in (meas.get('capacity') or {}).get('hourly_checks') or ()],
            'anchor': anchor,
            'links': links, 'effort_correlations': scorer.effort_correlations,
+           'effort_readings': scorer.readings,
            'effort_steps': {**scorer.steps, 'time_per_task': scorer.time_steps},
            'size_steps': {**scorer.size_steps, 'time_per_task': scorer.time_size_step},
            'effort_fill_refused': scorer.fill_refused,

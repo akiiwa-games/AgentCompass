@@ -307,7 +307,8 @@ class FixRoundRegressionTests(unittest.TestCase):
                                 'z_by_effort': {'high': 0.2}}],
         }
         rows, _, _, _, _, _ = fa.Scorer({'panel': {'models': panel}, 'models': models},
-                                        {'models': {m: {} for m in models}, 'families': {'rows': []}}).score()
+                                        {'models': {m: {} for m in models}, 'families': {'rows': []},
+                                         'effort_readings': {'reads': {'default': 'high'}}}).score()
         self.assertIsNone(rows['partial_coder']['axes']['coding']['value'])
         self.assertEqual(rows['partial_coder']['axes']['coding']['missing_facets'], ['faithfulness'])
         self.assertEqual(rows['partial_coder']['axes']['tool_operation']['by_level']['2']['by_effort']['high'], 0.2)
@@ -1130,6 +1131,11 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
         self.assertEqual(user_scores._manual_by_effort(0.5, None, False, None,
                                                        {'low': {'minimal': {'step': -0.7, 'n': 12}},
                                                         'high': {'low': {'step': 0.9, 'n': 3}}})[0]['minimal'], 1.4)
+        # `ultra` is Max plus the fleet's step above Max (effort_steps.<facet>.max.ultra), bounded the same way
+        above = {**steps, 'max': {'ultra': {'step': 0.25, 'n': 5}}}
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, above)[0]['ultra'], 0.95)   # Max 0.7 held at XHigh 0.8 after
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None,
+                                                       {**steps, 'max': {'ultra': {'step': -0.25, 'n': 5}}})[0]['ultra'], 0.8)
 
     def test_a_hand_written_score_wins_over_a_derived_value(self):
         """Rule (calibration/README.md, order of methods): a hand-written score wins over every estimate, the downward
@@ -1156,6 +1162,55 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
             low, minimal = cell['by_effort']['low'], cell['by_effort']['minimal']
             self.assertEqual(minimal, round(min(low + below, low) if user_scores.rises_with_effort(a, f)
                                             else max(low + below, low), 4), (m, a, f))
+
+
+class EffectiveSourceTests(unittest.TestCase):
+    """Rule (owner 2026-11-18, user_scores._follow_effective_sources): a facet derived from a larger model follows that
+    model's effective value after hand-written scores, shipped and local, and is never above it; a hand-written score on the
+    derived model itself wins."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.targets = axis_scores.load_five_axis()['anchor']['targets']
+
+    def table(self):
+        def cell(by, **extra):
+            return {'value': by['high'], 'by_effort': dict(by), 'status': 'estimated', 'measured_efforts': [], **extra}
+        big = {'faithfulness': cell({'low': -1.0, 'high': 0.0, 'max': 0.3}), 'execution': cell({'low': -1.0, 'high': 0.0, 'max': 0.3})}
+        small = {'faithfulness': cell({'low': -1.5, 'high': -0.5, 'max': -0.2},
+                                      estimate={'method': 'size_step', 'base_model': 'big', 'move': -0.5}),
+                 'execution': cell({'low': -2.0, 'high': -1.0, 'max': -0.5})}
+        return {m: {'five_axis': {'categories': {'coding': {'facets': f, 'value': None, 'by_effort': {}}}, 'scores': {}}}
+                for m, f in (('big', big), ('small', small))}
+
+    def overlay(self, scores):
+        models = self.table()
+        user_scores.apply_overlay(models, self.targets, local_scores={'schema_version': user_scores.SCHEMA_VERSION,
+                                                                      'scores': scores})
+        return {m: models[m]['five_axis']['categories']['coding'] for m in models}
+
+    def test_a_derived_facet_moves_with_its_sources_hand_written_score_and_never_rises_above_it(self):
+        for level in (1.0, 3.0):
+            got = self.overlay({'big': {'coding.faithfulness': {'level': level, 'as_of': '2026-11-18', 'kind': 'user'}}})
+            eff = got['big']['facets']['faithfulness']['by_effort']
+            small = got['small']['facets']['faithfulness']
+            shipped_small, shipped_big = self.table()['small'], self.table()['big']
+            for e, v in small['by_effort'].items():
+                was = shipped_small['five_axis']['categories']['coding']['facets']['faithfulness']['by_effort'][e]
+                base = shipped_big['five_axis']['categories']['coding']['facets']['faithfulness']['by_effort'][e]
+                self.assertAlmostEqual(v, was + eff[e] - base, places=4, msg=(level, e))
+                self.assertLessEqual(v, eff[e] + 1e-9, (level, e))
+            self.assertEqual(small['follows']['base_model'], 'big')
+            self.assertEqual(got['small']['by_effort']['high'],
+                             min(small['by_effort']['high'], got['small']['facets']['execution']['by_effort']['high']))
+
+    def test_a_hand_written_score_on_the_derived_model_itself_wins(self):
+        got = self.overlay({'big': {'coding.faithfulness': {'level': 1.0, 'as_of': '2026-11-18', 'kind': 'user'}},
+                            'small': {'coding.faithfulness': {'level': 2.0, 'as_of': '2026-11-18', 'kind': 'user'}}})
+        z = round(user_scores.level_to_z(2.0, *user_scores.target_triad(self.targets, 'coding', 'faithfulness')), 4)
+        small = got['small']['facets']['faithfulness']
+        self.assertEqual((small['status'], small['by_effort']['high']), ('user', z))
+        self.assertNotIn('follows', small)
 
 
 if __name__ == '__main__':
