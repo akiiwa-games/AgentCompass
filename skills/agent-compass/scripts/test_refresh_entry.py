@@ -303,12 +303,12 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
         'community-wokey-claude.html': (
             f'<html><body><p>Data updated {iso_date}</p>'
             '<p>Claude Pro ($20/mo) : ≈ $155 of API use a week · 24.2M uncached tokens · ≈ 13 full 5-hour windows</p>'
-            '<p>Claude Max 20x ($200/mo) : ≈ $1,549 of API use a week · 1M tokens · ≈ 5.7 full 5-hour windows</p>'
+            '<p>Claude Ultra (Max 20x) ($200/mo) : ≈ $1,549 of API use a week · 1M tokens · ≈ 5.7 full 5-hour windows</p>'
             '<p>Fable 5.1 can use only half the weekly limit.</p>'
             f'<p>value every plan at one fixed traffic split: Claude Code traffic on Wokey in the week to {iso_date}, '
             'about 92% of tokens cache reads.</p>'
-            '<p>Claude Max 20x $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M $272</p>'
-            '<p>Claude Max 20x: 92% cache reads, 1.98B tokens a week</p></body></html>'
+            '<p>Claude Ultra (Max 20x) $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M $272</p>'
+            '<p>Claude Ultra (Max 20x): 92% cache reads, 1.98B tokens a week</p></body></html>'
         ),
         'community-wokey-codex.html': (
             f'<html><body><p>Data updated {iso_date}</p>'
@@ -976,6 +976,16 @@ class AaReleasePageTests(unittest.TestCase):
                                 'model-c-free': ('model-c-new', 'Model C'), 'model-f': ('model-f-new', 'Model F')})
         self.assertEqual(measurements.aa_release_files(plan),
                          {f'aa-release-{s}.html': sources.AA_RELEASE_URL.format(s) for s in ('model-b', 'model-c-new', 'model-f-new')})
+
+    def test_the_release_pages_are_listed_in_slug_order_whatever_the_hash_seed(self):
+        """The file written from the plan (`release_pages` in public-measurements.json) must not depend on the order a set
+        iterates in, which follows PYTHONHASHSEED: the files are listed in slug order. Forty slugs make an accidentally
+        sorted set order practically impossible."""
+        plan = {f'model-{i}': (f'release-{(i * 7) % 40:02d}', 'Base') for i in range(40)}
+        slugs = [f'release-{i:02d}' for i in range(40)]
+        files = measurements.aa_release_files(plan)
+        self.assertEqual(list(files), [sources.AA_RELEASE_FILE.format(s) for s in slugs])
+        self.assertEqual(list(files.values()), [sources.AA_RELEASE_URL.format(s) for s in slugs])
 
     def test_a_slug_that_cannot_be_a_url_and_a_file_name_names_no_release(self):
         hostile = ('../escape', 'a/b', 'ok/../x', 'x y', 'a%2fb', 'a?b=1', '..', '.hidden', 'é')

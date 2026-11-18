@@ -48,12 +48,12 @@ def ceiling_row(value):
 
 def level_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
     """One category's panel targets as five-axis-scores.json writes them (level 1 the panel's weakest, 2 the median, 3
-    the anchor; `zero` is the level-1 target; the level-3 row carries the `ceiling`, the best measured model, t3 unless
+    the panel's best; `zero` is the level-1 target; the level-3 row carries the `ceiling`, the best measured model, t3 unless
     given). tool_operation asks per facet."""
     def lv(t, name):
         return {'target': t, 'zero': t1, 'statistic': name, 'n': 12}
     return {'levels': {'1': lv(t1, 'panel minimum'), '2': lv(t2, 'panel median'),
-                       '3': {**lv(t3, 'anchor'), 'ceiling': ceiling_row(t3 if ceiling is None else ceiling)}},
+                       '3': {**lv(t3, 'panel maximum'), 'ceiling': ceiling_row(t3 if ceiling is None else ceiling)}},
             'continuity': round(t3 - t2, 4)}
 
 
@@ -68,11 +68,11 @@ def aesthetics_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
 
 def tool_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
     facet = lambda t: {'target': t, 'zero': t1, 'n': 12}
-    top = lambda t: {**facet(t), 'ceiling': ceiling_row(t if ceiling is None else max(t, ceiling))}
+    top = lambda t: {**facet(t), 'ceiling': ceiling_row(t3 if ceiling is None else max(t3, ceiling))}
     return {'levels': {'1': {'by_facet': {}, 'reason': 'no ability requirement'},
                        '2': {'by_facet': {'responsiveness': facet(t2)}},
-                       '3': {'by_facet': {'responsiveness': top(max(t2, t3)), 'image_recognition': top(t3)}}},
-            'continuity': round(max(t2, t3) - t2, 4)}
+                       '3': {'by_facet': {'responsiveness': top(t2), 'image_recognition': top(t3)}}},
+            'continuity': round(max(t3 - t2, 0.0), 4)}
 
 
 TARGETS = {'creativity': level_targets(), 'coding': level_targets(), 'aesthetics': aesthetics_targets(),
@@ -133,7 +133,7 @@ def document(models, **override):
     rows = {name: row() for name, info in models.items() if isinstance(info, dict)}
     rows['claude-opus-5-5'] = row(1.0, 15.0)
     rows.update(override)
-    return {'models': rows, 'anchor': ANCHOR, 'capacity': CAPACITY}
+    return {'schema': axis_scores.FIVE_AXIS_SCHEMA, 'models': rows, 'anchor': ANCHOR, 'capacity': CAPACITY}
 
 
 def window(usd, age=3, ref=None):
@@ -213,9 +213,10 @@ class FiveAxisTests(unittest.TestCase):
         self.assertAlmostEqual(below, (3 * -1.0 + 0 + 2 * 0.2) / 6, places=4)       # below the weakest: negative term
         # tool_operation level 1: no requirement, so it is not part of the fit at all
         self.assertEqual(axis_scores.five_axis_targets(demand(0, 0, 0, 1), TARGETS), {})
-        # level 3: the weaker facet decides; a level never asks less of a facet than the level below
+        # level 3: the weaker facet decides; a level-3 task asks of responsiveness what a level-2 task asks (declared rule)
         t3 = axis_scores.five_axis_targets(demand(0, 0, 0, 3), TARGETS)['tool_operation']['by_facet']
-        self.assertEqual(t3['responsiveness']['target'], 0.0)
+        t2 = axis_scores.five_axis_targets(demand(0, 0, 0, 2), TARGETS)['tool_operation']['by_facet']
+        self.assertEqual(t3['responsiveness']['target'], t2['responsiveness']['target'])
         mono = axis_scores.five_axis_targets(demand(0, 0, 0, 3), {'tool_operation': tool_targets(-1.7, 0.14, 0.0)})
         self.assertEqual(mono['tool_operation']['by_facet']['responsiveness']['target'], 0.14)
         fit3, rows3 = axis_scores.five_axis_fit(values, demand(0, 0, 0, 3), {'tool_operation': {'by_facet': t3}})
@@ -352,20 +353,19 @@ class FiveAxisTests(unittest.TestCase):
             rows_z = axis_scores.five_axis_fit({**values, 'creativity': z}, d, t)[1]
             self.assertEqual(axis_scores.five_axis_headroom(rows_z, targets)['creativity']['above_anchor'], shown)
 
-    def test_a_five_axis_file_without_level_three_ceilings_is_named_with_what_to_run(self):
-        """A file written before schema /3 fails with a message naming the missing rows and the command, never a KeyError."""
-        old = copy.deepcopy(TARGETS)
-        del old['coding']['levels']['3']['ceiling']
-        del old['tool_operation']['levels']['3']['by_facet']['image_recognition']['ceiling']
-        doc = {'schema': 'agent-compass.five-axis-scores/2', 'anchor': {**ANCHOR, 'targets': old}}
-        with self.assertRaises(ValueError) as caught:
-            axis_scores.require_level3_ceilings(doc)
-        text = str(caught.exception)
-        for part in ('coding', 'tool_operation.image_recognition', 'five-axis-scores/2', 'agentcompass data'):
-            self.assertIn(part, text)
-        self.assertNotIn('creativity', text)
-        axis_scores.require_level3_ceilings({'anchor': ANCHOR})                    # the current shape passes
-        axis_scores.require_level3_ceilings(axis_scores.load_five_axis())           # and so does the shipped file
+    def test_a_five_axis_file_of_another_schema_is_refused_with_what_to_run(self):
+        """Schema /6 changed what level 3 means (the panel maximum, not the anchor): a file of any other schema fails fast with
+        the schema it has and the command to run, never read with the wrong scale."""
+        for schema in ('agent-compass.five-axis-scores/5', 'agent-compass.five-axis-scores/2', None):
+            with self.assertRaises(ValueError) as caught:
+                axis_scores.require_current_schema({'schema': schema, 'anchor': ANCHOR})
+            text = str(caught.exception)
+            for part in (repr(schema), axis_scores.FIVE_AXIS_SCHEMA, 'agentcompass data'):
+                self.assertIn(part, text)
+        axis_scores.require_current_schema({'schema': axis_scores.FIVE_AXIS_SCHEMA})        # the current one passes
+        axis_scores.require_current_schema(axis_scores.load_five_axis())                    # and so does the shipped file
+        import five_axis
+        self.assertEqual(five_axis.SCHEMA, axis_scores.FIVE_AXIS_SCHEMA)                    # the builder writes what the reader reads
 
     def test_continuity_is_one_demand_level_of_the_highest_demanded_categories(self):
         targets = {**TARGETS, 'coding': level_targets(-2.0, -1.4, 0.0), 'tool_operation': tool_targets(-1.7, 0.14, 0.0)}
@@ -764,18 +764,27 @@ class FiveAxisTests(unittest.TestCase):
                 self.assertIsNone(usd.get('value'), name)
                 self.assertIn('no_cited_source', {e['reason'] for e in row['data_errors']}, name)
 
-    def test_fable_5_2_is_converted_from_fable_5_1(self):
+    def test_fable_5_2_reads_its_own_sessions_figure_and_converts_the_rest_from_fable_5_1(self):
         """User 2026-11-10 ("后续同系列新出，缺少实测数据的情况下，先按照同系列的全分数进行折算，不要留下任何一个默认值或者
         fallback"): every type score claude-fable-5-2 does not measure is claude-fable-5-1's (its same-series sibling) moved along
-        the type score's fit on tier by the two tiers' difference, and its usd_per_hour is 5.1's times the API list price
-        ratio over the community token mix. No pessimistic 0, no option-B fallback. Fast-mode pricing ($16/$80 = 2x, 2.5x
-        speed) and its maintainer image-input declaration (2026-11-12) stay its own."""
+        the type score's fit on tier by the two tiers' difference. Its usd_per_hour is the figure of arena.ai's Agent sessions
+        when that board lists it, else 5.1's times the declared API list price ratio over the community token mix. No
+        pessimistic 0, no option-B fallback. Fast-mode pricing ($16/$80 = 2x, 2.5x speed) and its maintainer image-input
+        declaration (2026-11-12) stay its own."""
         shipped = axis_scores.load_five_axis()
         fable52, fable51 = shipped['models']['claude-fable-5-2'], shipped['models']['claude-fable-5-1']
         usd = fable52['usd_per_hour']
-        self.assertEqual((usd['kind'], usd['fallback'], usd['sources']['base']['model']), ('converted', False, 'claude-fable-5-1'))
-        self.assertAlmostEqual(usd['value'], round(fable51['usd_per_hour']['value'] * usd['sources']['ratio'], 3), places=2)
-        self.assertAlmostEqual(usd['sources']['ratio'], 0.8, places=4)      # $8/$40/$0.20 against $10/$50/$0.25
+        # Rule: a model arena.ai's Agent sessions list has its own community figure; one they do not list is converted from
+        # its sibling at the price ratio; neither is ever the option-B fallback.
+        self.assertFalse(usd['fallback'])
+        self.assertIn(usd['kind'], ('community', 'converted'))
+        if usd['kind'] == 'converted':
+            self.assertEqual(usd['sources']['base']['model'], 'claude-fable-5-1')
+            self.assertAlmostEqual(usd['value'], round(fable51['usd_per_hour']['value'] * usd['sources']['ratio'], 3), places=2)
+            self.assertAlmostEqual(usd['sources']['ratio'], 0.8, places=4)      # $8/$40/$0.20 against $10/$50/$0.25
+        else:
+            self.assertEqual(usd['used'], ['arena.agent_sessions'])
+            self.assertEqual(usd['value'], usd['sources']['arena.agent_sessions']['value'])      # the cited reading, nothing else
         self.assertEqual(fable52['fast_mode']['status'], 'ok')
         self.assertEqual((fable52['fast_mode']['price_multiplier'], fable52['fast_mode']['speed_multiplier']), (2.0, 2.5))
         self.assertEqual((fable52['image_input']['status'], fable52['image_input']['source']), ('yes', 'maintainer.image_input'))
@@ -1084,7 +1093,7 @@ class HighFillTests(unittest.TestCase):
 
     def test_the_level_three_ceiling_is_the_best_measured_high_value_of_any_catalogued_model(self):
         """Owner 2026-11-13: the ceiling is computed from the data: the highest measured or interpolated High value among
-        all catalogued models (a model outside the panel included), never an estimate; t3 itself stays the anchor."""
+        all catalogued models (a model outside the panel included), never an estimate; t3 is the panel's own maximum."""
         import five_axis
         import measurements
 
@@ -1111,22 +1120,127 @@ class HighFillTests(unittest.TestCase):
             self.assertEqual((lv['ceiling']['value'], lv['ceiling']['model']), (round(best[0], 4), best[1]))
             self.assertEqual(lv['ceiling']['status'], 'interpolated')
             self.assertGreaterEqual(lv['ceiling']['value'], lv['target'])
-        self.assertEqual(targets['creativity']['levels']['3']['target'], 0.0)        # t3 stays the anchor
+        panel_best = max(float(v) for v in (0.0, *panel_vals))          # the panel's own maximum, not the outside model's
+        self.assertEqual(targets['creativity']['levels']['3']['target'], round(panel_best, 4))
+        self.assertLess(targets['creativity']['levels']['3']['target'], targets['creativity']['levels']['3']['ceiling']['value'])
         for level in ('1', '2'):
             self.assertNotIn('ceiling', targets['creativity']['levels'][level])
+
+    @staticmethod
+    def _level_rows(values):
+        """{model: row} of creativity and tool_operation High values, each facet of a model at the model's value."""
+        import five_axis
+
+        def row(value, status='measured'):
+            facet = {'value': value, 'by_effort': {'high': value}, 'status': status}
+            axes = {a: {} for a in five_axis.AXES}
+            axes['creativity'] = {'value': value, 'status': status, 'facets': {'creative_writing': dict(facet)}}
+            axes['tool_operation'] = {'facets': {f: dict(facet) for f in five_axis.AXES['tool_operation']}}
+            return {'axes': axes}
+        return {m: row(v) for m, v in values.items()}
+
+    def test_level_3_is_the_panel_maximum_not_the_anchor(self):
+        """Owner 2026-11-18 (five_axis.targets): a facet's level scale is the panel's minimum, median and maximum of the measured
+        High values; the anchor is the origin of z and is level 3 only where it is the panel's best. Computed here from the
+        panel the test builds, so no output is pinned."""
+        import measurements
+        import user_scores
+        rng = np.random.default_rng(11)
+        values = {f'p{i}': float(v) for i, v in enumerate(rng.uniform(-2.0, 1.5, 7).round(4))}
+        values[measurements.ANCHOR] = -0.3                    # below the panel's best on purpose
+        values['outside'] = max(values.values()) + 1.0        # catalogued, not in the panel: raises the ceiling only
+        panel = [m for m in values if m != 'outside']
+        rows = self._level_rows(values)
+        targets = self.scorer().targets(rows, panel)
+        in_panel = [values[m] for m in panel]
+        best_model = max(panel, key=lambda m: (values[m], m))
+        for name, levels in (('creativity', targets['creativity']['levels']),
+                             ('creative_writing', targets['creativity']['facets']['creative_writing']['levels']),
+                             ('image_recognition', targets['tool_operation']['facets']['image_recognition']['levels'])):
+            self.assertEqual((levels['1']['target'], levels['2']['target'], levels['3']['target']),
+                             (round(min(in_panel), 4), round(float(np.median(in_panel)), 4), round(max(in_panel), 4)), name)
+            self.assertEqual(levels['3']['statistic'], 'panel maximum')
+            self.assertEqual(levels['3']['model'], best_model)
+            self.assertGreater(levels['3']['ceiling']['value'], levels['3']['target'])   # the outside model raises the cap only
+            triad = tuple(levels[k]['target'] for k in '123')
+            self.assertLess(user_scores.z_to_level(-0.3, *triad), 3.0)       # the anchor is not level 3 here
+            self.assertGreater(user_scores.z_to_level(values['outside'], *triad), 3.0)   # a level above 3, not clamped
+        # continuity is t3 - t2 of the category
+        self.assertEqual(targets['creativity']['continuity'],
+                         round(targets['creativity']['levels']['3']['target'] - targets['creativity']['levels']['2']['target'], 4))
+
+    def test_responsiveness_level_3_task_asks_what_level_2_asks_but_its_scale_ends_at_the_panel_maximum(self):
+        """Owner 2026-11-18 (LEVEL3_ASKS_LEVEL2): a tool_operation level-3 task adds image recognition to the responsiveness a
+        level-2 task asks; the facet's own scale is (min, median, maximum) like every other."""
+        import measurements
+        rng = np.random.default_rng(5)
+        values = {f'p{i}': float(v) for i, v in enumerate(rng.uniform(-2.0, 1.5, 6).round(4))}
+        values[measurements.ANCHOR] = 0.0
+        targets = self.scorer().targets(self._level_rows(values), list(values))['tool_operation']
+        asks = lambda level: targets['levels'][level]['by_facet']
+        self.assertEqual(asks('3')['responsiveness']['target'], asks('2')['responsiveness']['target'])
+        scale = targets['facets']['responsiveness']['levels']
+        self.assertGreater(scale['3']['target'], scale['2']['target'])
+        self.assertEqual(scale['3']['target'], round(max(values.values()), 4))
+        self.assertEqual(asks('3')['image_recognition']['target'], targets['facets']['image_recognition']['levels']['3']['target'])
+        # continuity reads what the level-3 task asks of each facet: image recognition only
+        image = targets['facets']['image_recognition']['levels']
+        self.assertEqual(targets['continuity'], round(image['3']['target'] - image['2']['target'], 4))
+
+    def test_a_panel_without_three_different_level_targets_is_a_build_error_naming_the_facet(self):
+        """Owner 2026-11-18: levels 2 and 3 coincide only when the panel's median is its maximum; nothing is written then
+        and there is nothing to accept (five_axis.check_scales)."""
+        import five_axis
+        import measurements
+        flat = {f'p{i}': 0.5 for i in range(5)}
+        flat[measurements.ANCHOR] = 0.5
+        targets = self.scorer().targets(self._level_rows(flat), list(flat))
+        with self.assertRaises(ValueError) as caught:
+            five_axis.check_scales(targets)
+        self.assertIn('degenerate level scale on creativity', str(caught.exception))
+        # median equal to the maximum: more than half of the panel at the top
+        top = {f'p{i}': 1.0 for i in range(4)}
+        top.update({'low1': -1.0, measurements.ANCHOR: 1.0, 'low2': -2.0})
+        targets = self.scorer().targets(self._level_rows(top), list(top))
+        with self.assertRaises(ValueError) as caught:
+            five_axis.check_scales(targets)
+        self.assertIn('degenerate level scale', str(caught.exception))
+        spread = {f'p{i}': float(i) for i in range(6)}
+        spread[measurements.ANCHOR] = 2.5
+        five_axis.check_scales(self.scorer().targets(self._level_rows(spread), list(spread)))      # a proper panel passes
 
     def test_shipped_targets_ignore_the_estimated_grok_4_7_image_recognition(self):
         shipped = axis_scores.load_five_axis()
         grok = shipped['models']['grok-4.7']['axes']['tool_operation']['facets']['image_recognition']
         self.assertEqual(grok['estimate']['method'], 'panel_effort_step')
         level2 = shipped['anchor']['targets']['tool_operation']['facets']['image_recognition']['levels']['2']
-        self.assertEqual((level2['target'], level2['n']), (-0.7322, 11))
+        # Rule (five_axis.Scorer.targets): the level-2 target is the median of the panel's measured High values, and an
+        # estimated panel member (grok-4.7 here) is not counted, so n is the panel's size less its estimated rows.
+        import statistics
+        import five_axis
+        cells = {m: shipped['models'][m]['axes']['tool_operation']['facets']['image_recognition']
+                 for m in shipped['anchor']['panel']}
+        counted = [c['value'] for c in cells.values() if c['status'] in five_axis.TARGET_STATUSES]
+        self.assertLess(len(counted), len(cells))
+        self.assertEqual((level2['target'], level2['n']), (round(statistics.median(counted), 4), len(counted)))
 
     def test_shipped_glm_5_3_and_deepseek_v4_pro_have_high(self):
         models = axis_scores.load_five_axis()['models']
         glm = models['glm-5.3']['axes']
         self.assertEqual(glm['creativity']['facets']['creative_writing']['status'], 'interpolated')
-        self.assertEqual(glm['creativity']['by_effort']['high'], round((-1.9724 + -1.5955) / 2, 4))
+        # Rule (fill_high): High between the bracketing efforts is linear in effort rank on the model's ladder (an ordered
+        # subset of EFFORTS that holds both efforts and High, else EFFORTS), so the weight is the rank distance of High
+        # from the lower effort over that of the upper effort, computed here, not read back from the data.
+        import five_axis
+        fill = glm['creativity']['facets']['creative_writing']['interpolation']
+        (low_effort, low), = fill['from'].items()
+        (high_effort, high), = fill['to'].items()
+        ladder = fill['ladder']
+        self.assertEqual(ladder, [e for e in five_axis.EFFORTS if e in ladder])
+        self.assertTrue({low_effort, 'high', high_effort} <= set(ladder) or ladder == list(five_axis.EFFORTS))
+        weight = (ladder.index('high') - ladder.index(low_effort)) / (ladder.index(high_effort) - ladder.index(low_effort))
+        self.assertEqual(fill['weight'], round(weight, 4))
+        self.assertEqual(glm['creativity']['by_effort']['high'], round(low + weight * (high - low), 4))
         ds = models['deepseek-v4-pro']['axes']['tool_operation']['facets']['responsiveness']
         self.assertEqual((ds['status'], ds['estimate']['method']), ('estimated', 'panel_effort_step'))
         self.assertGreater(ds['by_effort']['high'], ds['by_effort']['max'])
@@ -1360,7 +1474,7 @@ class AnchorRelativeTests(unittest.TestCase):
             for name, facet in row['facets'].items():
                 if facet['status'].startswith('measured'):
                     self.assertEqual(facet['value'], 0.0, f'{axis}.{name}')
-        # targets are non-decreasing from L1 -> L2 -> L3, including tool_operation.responsiveness (raised_to_level_below)
+        # targets are non-decreasing from L1 -> L2 -> L3, including tool_operation.responsiveness (a level-3 task asks what level 2 asks)
         targets = scores['anchor']['targets']
         for axis in ('creativity', 'coding'):
             lv = targets[axis]['levels']
@@ -1854,13 +1968,17 @@ class CommunityCapacityTests(unittest.TestCase):
         import refresh
         cls.cm, cls.fa, cls.rf = community, five_axis, refresh
 
+    # The shape of https://wokey.ai/claude-usage-limits fetched 2026-11-18, where the plan the page used to call Max 20x is
+    # named `Claude Ultra (Max 20x)` (the page's own words: "Claude Ultra (formerly Max 20x)"); figures are illustrative.
     WOKEY = ('<html><body><p>Data updated 2026-11-02</p><p>Claude Pro ($20/mo)</p><p>: ≈ $155 of API use a week '
              '(IQR $146–173) · 24.2M uncached tokens · ≈ 13 full 5-hour windows</p>'
-             '<p>Claude Max 20x ($200/mo)</p><p>: ≈ $1,549 of API use a week (IQR) · 1M tokens · ≈ 5.7 full 5-hour windows</p>'
+             '<p>Claude Ultra (Max 20x) ($200/mo)</p><p>: ≈ $1,549 of API use a week (≈ $6,711/month) · 180M uncached tokens '
+             '· ≈ 5.7 full 5-hour windows · 9.7× Claude Pro, not 20×</p>'
              '<p>Fable 5.1 can use only half the weekly limit.</p>'
              '<p>value every plan at one fixed traffic split: Claude Code traffic on Wokey in the week to 2026-11-02, about '
-             '92% of tokens cache reads.</p><p>Claude Max 20x $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M '
-             '$272</p><p>Claude Max 20x: 92% cache reads, 1.98B tokens a week</p></body></html>')
+             '92% of tokens cache reads.</p><p>Claude Ultra (Max 20x) $200/mo $1,549 ($1,216–$1,697), ≈ $6,711/mo 34× 180M 9.9M '
+             '$272 (≈ 5.7 a week) 18 2026 11/02 – 11/09</p><p>Claude Ultra (Max 20x): 92% cache reads, 1.98B tokens a week</p>'
+             '</body></html>')
 
     def pages(self, folder, wokey=WOKEY):
         import tempfile
@@ -1898,7 +2016,7 @@ class CommunityCapacityTests(unittest.TestCase):
     def test_a_page_that_lost_its_sentence_gives_no_value(self):
         import tempfile
         with tempfile.TemporaryDirectory() as folder:
-            target, files = self.pages(folder, self.WOKEY.replace('Claude Max 20x', 'Claude Max 25x'))
+            target, files = self.pages(folder, self.WOKEY.replace('Claude Ultra (Max 20x)', 'Claude Ultra (Max 25x)'))
             _, obs, _, errors, _ = self.cm.extract(target, files)
         self.assertFalse([o for o in obs if o['plan'] == 'max20'])
         self.assertIn('mix_not_found', {e['reason'] for e in errors})       # the mix row is the Max 20x row too
@@ -2076,8 +2194,10 @@ class DerivedUsdTests(unittest.TestCase):
         shipped = axis_scores.load_five_axis()
         ds = shipped['models']['deepseek-v4.1-flash-free']['usd_per_hour']
         mw = shipped['models']['muse-wonder-1.0']['usd_per_hour']
-        self.assertEqual((ds['value'], ds['kind'], ds['fallback'], ds['used']), (1.084, 'community', False, ['arena.agent_sessions']))
-        self.assertEqual((mw['value'], mw['kind'], mw['fallback'], mw['used']), (21.771, 'community', False, ['arena.agent_sessions']))
+        # Rule: both resolve to their dated listing on the Agent sessions board, and the value is that board's figure.
+        for row in (ds, mw):
+            self.assertEqual((row['kind'], row['fallback'], row['used']), ('community', False, ['arena.agent_sessions']))
+            self.assertEqual(row['value'], row['sources']['arena.agent_sessions']['value'])
         # A model listed on arena.ai Agent / Overall without Cost/Task says so instead of 'not listed'.
         nem = shipped['models']['nemotron-3.5-super-vl-free']['usd_per_hour']
         self.assertIn('without Cost/Task', nem['merge'])
@@ -2149,6 +2269,32 @@ class ArenaCaptureTests(unittest.TestCase):
         self.assertEqual([(r['name'], r['lab']) for r in page['rows']], [('GPT-6.1 Sol', 'OpenAI'), ('Claude Sonnet 5.5 High', 'Anthropic')])
         self.assertEqual(page['rows'][1]['deceptive_completion'], [9.53, 8.54, 10.61])
         self.assertEqual(page['rows'][0]['alignment_index'], [87.9, 1.5])
+
+    def test_alignment_rows_of_the_2026_11_15_page_shape_split_with_lab_prefixes_and_unlisted_case(self):
+        """Row shapes of the page as of 2026-11-15: some rows carry the lab's text in front of the name, the lab at the end
+        is written in the page's own case, and a row whose lab is unknown is an error, never a partial board."""
+        rates = '66.6±2.31.00%0.50–1.50%2.00%1.00–3.00%3.00%2.00–4.00%'
+        # (rank interval, the cell as the page runs it together, expected name, expected lab); the rank precedes the interval
+        shapes = [('921', 'AnthropicClaude Opus 5.5Anthropic', 'Claude Opus 5.5', 'Anthropic'),
+                  ('747', 'Reflection AIBeam 1.0 501B A23BReflection', 'Beam 1.0 501B A23B', 'Reflection'),
+                  ('850', 'Nemotron 3 UltraNvidia', 'Nemotron 3 Ultra', 'Nvidia'),
+                  ('249', 'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)Nvidia',
+                   'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)', 'Nvidia'),
+                  ('264', 'Thinking MachinesInkling 2 SmallThinky', 'Inkling 2 Small', 'Thinky'),
+                  ('164', 'StepfunStep 5 PreviewStepFun', 'Step 5 Preview', 'StepFun'),
+                  ('555', 'Mistral Large 4Mistral', 'Mistral Large 4', 'Mistral'),
+                  ('250', 'SynlanSpark-X2.6XHToken', 'Spark-X2.6', 'XHToken'),     # the Agent page: Spark-X2.6, lab XHToken
+                  ('155', 'Solar Pro 4Upstage', 'Solar Pro 4', 'Upstage')]
+        head = ('Agent Arena | Alignment IndexNovember 15, 2026184,539 sessions{n} modelsRankModelAlignment Index'
+                'Unauthorized actionFalse attributionDeceptive completion')
+        text = head.format(n=len(shapes)) + ''.join(f'{rank}{interval}{cell}{rates}' for rank, (interval, cell, _, _)
+                                                    in enumerate(shapes, 1)) + 'Footer'
+        page = self.ac.parse_alignment(text)
+        self.assertEqual([(r['rank'], r['name'], r['lab']) for r in page['rows']],
+                         [(rank, name, lab) for rank, (_, _, name, lab) in enumerate(shapes, 1)])
+        with self.assertRaises(ValueError) as caught:       # a lab the parser does not know is an error, not a partial board
+            self.ac.parse_alignment(head.format(n=1) + '1' + '14' + 'Some ModelUnlistedLab' + rates)
+        self.assertIn('lab not recognised', str(caught.exception))
 
     def test_the_users_mapping_of_the_agent_boards_onto_the_axes(self):
         cap = self.ms.CAPABILITY_SOURCES
@@ -2389,13 +2535,14 @@ class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
         refs = account_fleet.REFERENCES
         raw = (refs / 'public-measurements.json').read_bytes()
         shipped = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))
-        # The run's own options, as the document records them: its time (source ages are counted to it) and the sources
-        # it was told to leave out.
+        # The run's own options, as the document records them: its time (source ages are counted to it), the sources
+        # it was told to leave out, and the document it replaces (`refresh` passes it; with the same panel members it
+        # carries `anchor.panel_change`, the record of an accepted change, forward).
         built = five_axis.build(json.loads(raw.decode('utf-8-sig')),
                                 json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig')),
                                 json.loads((refs / 'plan-templates.json').read_text(encoding='utf-8-sig')),
                                 distrust=shipped['distrusted_sources'], meas_bytes=raw,
-                                now=datetime.fromisoformat(shipped['generated_at']))
+                                now=datetime.fromisoformat(shipped['generated_at']), previous=shipped)
         built = json.loads(json.dumps(built, ensure_ascii=False))
 
         def differences(a, b, at=''):

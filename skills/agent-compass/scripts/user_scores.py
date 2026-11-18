@@ -6,26 +6,23 @@ Precedence (highest to lowest):
   3. Public board measurement (`measured` / `measured_partial`)
   4. Sibling or tier-fit estimate / series conversion (`estimated` / `converted`)
 
-Scale (demand-level scale, mapped dynamically to panel z-scores from `anchor.targets`):
-  - `1` = panel weakest (`t1`)
-  - `2` = panel median (`t2`)
-  - `3` = anchor Opus 5.5 (`t3`)
+Scale (demand-level scale, mapped dynamically to panel z-scores from `anchor.targets`; schema 3, owner 2026-11-18):
+  - `1` = the panel's weakest (`t1`), `2` = the panel median (`t2`), `3` = the panel's best (`t3`, the maximum of the
+    panel's measured or interpolated High values on the facet). The anchor `claude-opus-5-5` is the origin of `z` (`z = 0`), not a level:
+    it is level 3 only on a facet where it is the panel's best.
   - Decimals in `[1, 3]` interpolate piecewise linearly through `(1, t1), (2, t2), (3, t3)`.
-  - On `tool_operation.responsiveness`, the Opus 5.5 anchor is at or below the panel median, so `t3` is raised to `t2`
-    (`t2 == t3`): levels `>= 2` mean "at least the panel median" (`[2, 3]` maps to `t2`, and `> 3` extrapolates above
-    `t2` by `t2 - t1`).
-  - Values `> 3` extrapolate by `t3 - t2` (or `t2 - t1` when `t3 == t2`). Because `t3 - t2` can be narrow when the
-    anchor sits close to the panel median (for example `coding.faithfulness`), `z_to_level` can exceed `3.0` steeply on
-    measured models above the anchor; UI displays should cap the primary `1..3` scale indicator at `3+` (or show the raw
-    `+Δz SD` above anchor alongside) rather than rendering unbounded extrapolated level numbers.
-  - Values `< 1` extrapolate by `t2 - t1`.
+  - `3` is not a top: a value above `t3` is a level above 3, extrapolated with the step from level 2 to 3 (`t3 - t2`), and a
+    value below `t1` a level below 1 (step `t2 - t1`). No clamp: shown as the number it is.
+  - A scale needs `t1 < t2 < t3`; the builder refuses a panel that does not give it, and the maps here refuse it too.
+  - Levels written before schema 3 (3 = the anchor) keep their position: at or below 2 unchanged, above 2 stretched by the
+    anchor's level on the facet (`convert_level`, `LOCAL_UPGRADES`, `references/level-3-conversion.json`).
   - Manual capability scores never alter `image_input` modality; modality requires a cited benchmark, vendor source, or
     dated `kind: "maintainer"` declaration in `accounts.json`.
 
 Tray UI Python API contract:
   - `user_scores.VALID_TARGETS`: tuple of valid `<category>` and `<category>.<facet>` strings.
   - `user_scores.z_to_level(z, t1, t2, t3)` / `user_scores.level_for_target_z(target, z, targets_table)`: inverse map
-    from panel z-score onto the `1..3` demand-level scale for displaying current model values.
+    from panel z-score onto the demand-level scale (1 = panel weakest, 3 = panel best) for displaying current model values.
   - `user_scores.list_scores(model=None, *, scope="all")` -> `{"local": {...}, "public": {...}, "effective": {...}}`
     with each entry annotated with its current mapped `z` against `five-axis-scores.json` `anchor.targets`.
   - `user_scores.set_score(model, target, level, *, public=False, note=None, as_of=None)` -> saved entry + path.
@@ -52,7 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import override_store  # noqa: E402
 import state_upgrade  # noqa: E402
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 FILE_NAME = 'user-scores.json'
 ENV_VAR = 'ROUTER_USER_SCORES'
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
@@ -141,11 +138,11 @@ def parse_target(target: str) -> tuple[str, str | None]:
 
 def normalize_level(level) -> float:
     if isinstance(level, bool):
-        raise ValueError('Score level must be a finite number on the 1..3 demand scale, not a boolean.')
+        raise ValueError('Score level must be a finite number on the demand-level scale, not a boolean.')
     try:
         value = float(level)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f'Score level {level!r} must be a finite number on the 1..3 demand scale.') from exc
+        raise ValueError(f'Score level {level!r} must be a finite number on the demand-level scale.') from exc
     if not math.isfinite(value):
         raise ValueError('Score level must be finite.')
     return round(value, 6)
@@ -161,7 +158,7 @@ def normalize_date(as_of: str | None = None) -> str:
 
 
 def validate_document(doc, *, expected_kind: str | None = None) -> dict:
-    """Validate and return a normalized `{schema_version: 2, scores: {model: {target: entry}}}` document."""
+    """Validate and return a normalized `{schema_version: 3, scores: {model: {target: entry}}}` document."""
     if not isinstance(doc, dict):
         raise ValueError('user-scores document must be a JSON object')
     ver = doc.get('schema_version')
@@ -217,8 +214,88 @@ def _local_schema_1_to_2(doc: dict) -> dict:
     return {**doc, 'schema_version': 2, 'scores': renamed}
 
 
+LEVEL3_CONVERSION_FILE = REFERENCES / 'level-3-conversion.json'
+ROUND_LEVELS = 2        # decimals of a converted level
+
+
+def anchor_levels(schema: int) -> dict:
+    """{'<category>.<facet>': A} for user-scores schema `schema`: the level the old level 3 (the anchor) has on the facet
+    scale of v0.7.0 (`references/level-3-conversion.json`, declared with its provenance and frozen, so the conversion gives the
+    same levels on every later version)."""
+    doc = json.loads(LEVEL3_CONVERSION_FILE.read_text(encoding='utf-8'))
+    return {target: float(level) for target, level in doc['conversions'][str(schema)]['anchor_levels'].items()}
+
+
+def above_3_slopes(schema: int) -> dict:
+    """{'<category>.<facet>': s} for user-scores schema `schema`: on a facet whose old scale was a plateau (`t2 == t3`, level 3 =
+    the panel median) the new levels per old level above 3 (`references/level-3-conversion.json`, declared and frozen)."""
+    doc = json.loads(LEVEL3_CONVERSION_FILE.read_text(encoding='utf-8'))
+    return {target: float(slope) for target, slope in doc['conversions'][str(schema)]['above_3_slopes'].items()}
+
+
+def convert_level(level: float, anchor_level: float, *, above_3_slope: float | None = None, ndigits: int = ROUND_LEVELS) -> float:
+    """A level written with level 3 = the anchor, carried onto the scale whose level 3 is the panel maximum. Levels 1 and 2 are
+    the panel minimum and median on both scales, so a level at or below 2 stays; above 2 the position between the median and
+    the old level 3 is kept: `2 + (L - 2) * (A - 2)`, A = the anchor's level on the facet (the segment above 3 continues with the
+    same slope). A facet whose old scale was a plateau (A = 2: every level in (2, 3] meant the median) gives 2 up to level 3 and,
+    above it, `2 + (L - 3) * s`, `s` = the declared `above_3_slope`. Against the panel the old scale was read with, the value is
+    the same."""
+    lv = normalize_level(level)
+    if lv <= 2.0:
+        return lv
+    if above_3_slope is not None:
+        return round(2.0 + max(lv - 3.0, 0.0) * above_3_slope, ndigits)
+    return round(2.0 + (lv - 2.0) * (anchor_level - 2.0), ndigits)
+
+
+def _facet_of(target: str) -> tuple[str, str | None]:
+    """(category, facet) of a score target; a category of one facet stands for that facet's scale."""
+    cat, facet = parse_target(target)
+    if facet is None and len(CATEGORY_FACETS[cat]) == 1:
+        facet = CATEGORY_FACETS[cat][0]
+    return cat, facet
+
+
+def convert_scores(scores: dict, anchor_level: dict, above_3_slope: dict, *, ndigits: int = ROUND_LEVELS) -> dict:
+    """`scores` ({model: {target: entry}}, levels with level 3 = the anchor) converted by `convert_level` with the facet's
+    `anchor_level` ({'<category>.<facet>': A}) and, on a plateau facet, its `above_3_slope`. An entry for a category of several facets (`coding`, `tool_operation`) above
+    level 2 is written per facet (their anchor levels differ), except for a facet the model has an entry of its own for, which
+    stands; at or below 2 it stays one entry. Everything but `level` is kept."""
+    out = {}
+    for model, entries in scores.items():
+        converted = {}
+        explicit = {t for t in entries if parse_target(t)[1] is not None}
+        for target, entry in entries.items():
+            cat, facet = parse_target(target)
+            if facet is None and len(CATEGORY_FACETS[cat]) > 1:
+                if normalize_level(entry['level']) <= 2.0:
+                    converted[target] = dict(entry)
+                    continue
+                for f in CATEGORY_FACETS[cat]:
+                    if f'{cat}.{f}' not in explicit:
+                        key = f'{cat}.{f}'
+                        converted[key] = {**entry, 'level': convert_level(entry['level'], anchor_level[key], above_3_slope=above_3_slope.get(key), ndigits=ndigits)}
+                continue
+            cat, facet = _facet_of(target)
+            key = f'{cat}.{facet}'
+            converted[target] = {**entry, 'level': convert_level(entry['level'], anchor_level[key], above_3_slope=above_3_slope.get(key), ndigits=ndigits)}
+        out[model] = dict(sorted(converted.items()))
+    return out
+
+
+def _local_schema_2_to_3(doc: dict) -> dict:
+    """Schema 2 (v0.6.7 and v0.6.8) levels were written with level 3 = the anchor; schema 3 levels have level 3 = the panel
+    maximum. Each entry is converted by `convert_scores` with the declared anchor levels and slopes of `references/level-3-conversion.json`,
+    the same data and function that converted the maintainer file."""
+    scores = doc.get('scores')
+    if not isinstance(scores, dict):
+        return {**doc, 'schema_version': 3}
+    converted = convert_scores({m: t for m, t in scores.items() if isinstance(t, dict)}, anchor_levels(2), above_3_slopes(2))
+    return {**doc, 'schema_version': 3, 'scores': {**scores, **converted}}
+
+
 # The user's own scores are kept across updates: {schema a released version wrote: the step to the next schema}.
-LOCAL_UPGRADES = {1: _local_schema_1_to_2}
+LOCAL_UPGRADES = {1: _local_schema_1_to_2, 2: _local_schema_2_to_3}
 
 
 def upgrade_local_document(doc):
@@ -285,84 +362,51 @@ def resolve_model_key(model: str, accounts: dict | None = None) -> str:
 
 
 def target_triad(targets_table: dict, category: str, facet: str | None = None) -> tuple[float, float, float]:
-    """Return `(t1, t2, t3)` on the current panel z-scale for `category` or `category.facet`."""
+    """Return `(t1, t2, t3)` on the current panel z-scale for `category` or `category.facet` (a category of one facet reads
+    that facet's scale)."""
     cat_block = (targets_table or {}).get(category) or {}
-    eff_facet = facet
-    if eff_facet is None and len(CATEGORY_FACETS.get(category) or ()) == 1:
-        levels_probe = cat_block.get('levels') or {}
-        if not all(isinstance((levels_probe.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
-            eff_facet = CATEGORY_FACETS[category][0]
-    if eff_facet is not None:
-        f_levels = (((cat_block.get('facets') or {}).get(eff_facet) or {}).get('levels')) or {}
-        if all(isinstance((f_levels.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
-            return (float(f_levels['1']['target']), float(f_levels['2']['target']), float(f_levels['3']['target']))
-        levels = cat_block.get('levels') or {}
-        r3 = ((levels.get('3') or {}).get('by_facet') or {}).get(eff_facet) or {}
-        r2 = ((levels.get('2') or {}).get('by_facet') or {}).get(eff_facet) or {}
-        if isinstance(r3.get('zero'), (int, float)) and isinstance(r3.get('target'), (int, float)):
-            t1 = float(r3['zero'])
-            t3 = float(r3['target'])
-            t2 = float(r2['target']) if isinstance(r2.get('target'), (int, float)) else 0.5 * (t1 + t3)
-            return t1, t2, t3
-    levels = cat_block.get('levels') or {}
+    if facet is None and len(CATEGORY_FACETS.get(category) or ()) == 1:
+        facet = CATEGORY_FACETS[category][0]
+    levels = (((cat_block.get('facets') or {}).get(facet) or {}).get('levels') if facet is not None else cat_block.get('levels')) or {}
     if all(isinstance((levels.get(k) or {}).get('target'), (int, float)) for k in ('1', '2', '3')):
         return (float(levels['1']['target']), float(levels['2']['target']), float(levels['3']['target']))
     raise ValueError(f'Panel targets for {category}{"." + facet if facet else ""} are missing from anchor.targets')
 
 
-def level_to_z(level: float, t1: float, t2: float, t3: float) -> float:
-    """Map demand-level `level` (`1 -> t1`, `2 -> t2`, `3 -> t3`) onto panel z-scores.
-
-    Decimals in `[1, 3]` interpolate piecewise linearly; `> 3` extrapolates by `t3 - t2` (falling back to `t2 - t1`
-    when `t3 == t2`, as on `tool_operation.responsiveness`, where levels `>= 2` mean "at least the panel median");
-    `< 1` extrapolates by `t2 - t1`.
-    """
-    lv = normalize_level(level)
+def _scale(t1, t2, t3) -> tuple[float, float, float]:
     t1_f, t2_f, t3_f = float(t1), float(t2), float(t3)
-    step_lo = t2_f - t1_f
-    step_hi = t3_f - t2_f
-    if lv < 1.0:
-        return t1_f + (lv - 1.0) * step_lo
+    if not t1_f < t2_f < t3_f:
+        raise ValueError(f'A level scale needs t1 < t2 < t3, got ({t1_f}, {t2_f}, {t3_f}).')
+    return t1_f, t2_f, t3_f
+
+
+def level_to_z(level: float, t1: float, t2: float, t3: float) -> float:
+    """Map demand-level `level` (`1 -> t1`, `2 -> t2`, `3 -> t3`) onto panel z-scores: linear between the points, and
+    beyond them with the step of the nearest pair (`t3 - t2` above 3, `t2 - t1` below 1)."""
+    lv = normalize_level(level)
+    t1_f, t2_f, t3_f = _scale(t1, t2, t3)
     if lv <= 2.0:
-        return t1_f + (lv - 1.0) * step_lo
-    if lv <= 3.0:
-        return t2_f + (lv - 2.0) * step_hi
-    extrap = step_hi if step_hi > 0.0 else step_lo
-    return t3_f + (lv - 3.0) * extrap
+        return t1_f + (lv - 1.0) * (t2_f - t1_f)
+    return t2_f + (lv - 2.0) * (t3_f - t2_f)
 
 
 def z_to_level(z: float, t1: float, t2: float, t3: float) -> float:
-    """Inverse of `level_to_z`: map panel z-score `z` onto the `1..3` demand-level scale (`t1 -> 1`, `t2 -> 2`, `t3 -> 3`).
-
-    - Below `t2`, interpolates/extrapolates with slope `1 / (t2 - t1)`.
-    - When `t3 > t2`, `[t2, t3]` maps linearly onto `[2, 3]` and `z > t3` extrapolates by `1 / (t3 - t2)` (which can be
-      steep when `t3 - t2` is narrow; UI displays should clamp/badge above `3` as `3+`).
-    - When `t3 == t2` (`tool_operation.responsiveness`, where levels `>= 2` mean "at least the panel median"), `z == t2`
-      maps to `2.0` and `z > t3` extrapolates above `3.0` by `1 / (t2 - t1)`, matching `level_to_z`.
-    """
+    """Inverse of `level_to_z`: the demand level of panel z-score `z` (`t1 -> 1`, `t2 -> 2`, `t3 -> 3`), unclamped: a value
+    above the panel maximum is a level above 3."""
     if isinstance(z, bool):
         raise ValueError('Panel z-score must be a finite float, not a boolean.')
     z_f = float(z)
     if not math.isfinite(z_f):
         raise ValueError('Panel z-score must be finite.')
-    t1_f, t2_f, t3_f = float(t1), float(t2), float(t3)
-    step_lo = t2_f - t1_f
-    step_hi = t3_f - t2_f
+    t1_f, t2_f, t3_f = _scale(t1, t2, t3)
     if z_f <= t2_f:
-        if step_lo <= 0.0:
-            return 2.0 if z_f >= t2_f else 1.0
-        return round(1.0 + (z_f - t1_f) / step_lo, 4)
-    if step_hi > 0.0:
-        if z_f <= t3_f:
-            return round(2.0 + (z_f - t2_f) / step_hi, 4)
-        return round(3.0 + (z_f - t3_f) / step_hi, 4)
-    if step_lo <= 0.0:
-        return 3.0
-    return round(3.0 + (z_f - t3_f) / step_lo, 4)
+        return round(1.0 + (z_f - t1_f) / (t2_f - t1_f), 4)
+    return round(2.0 + (z_f - t2_f) / (t3_f - t2_f), 4)
 
 
 def level_for_target_z(target: str, z: float | None, targets_table: dict) -> float | None:
-    """Convert a panel `z` score on `target` (`<category>` or `<category>.<facet>`) onto the `1..3` scale, or None."""
+    """Convert a panel `z` score on `target` (`<category>` or `<category>.<facet>`) onto the facet's level scale (1 = panel
+    minimum, 2 = median, 3 = maximum, unclamped above and below), or None."""
     if z is None:
         return None
     cat, facet = parse_target(target)
@@ -589,13 +633,21 @@ def _pav(values: list[float]) -> list[float]:
     return [s / n for s, n in blocks for _ in range(n)]
 
 
-def _manual_by_effort(z_val: float, own_cell: dict | None, ability: bool,
+def rises_with_effort(cat: str, facet: str) -> bool:
+    """The direction of a facet's curve in effort, as the calibration declares it (`calibration/five_axis.py`: ability facets are
+    pooled to never decrease with effort; `tool_operation.responsiveness` falls as effort rises and is left unpooled)."""
+    return (cat, facet) != ('tool_operation', 'responsiveness')
+
+
+def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
                       fixed_effort: str | None = None) -> tuple[dict[str, float], list[str]]:
     """(`by_effort`, measured efforts) of a facet a manual score sets to `z_val` (user 2026-11-12). The score sets High,
     and also the model's `fixed_effort` when it declares one (its only configuration, which the score judges). Efforts
     the facet measured keep their values; its other efforts follow the facet's own curve moved to `z_val` at High, and
-    stay missing when it has none. An ability facet is then made non-decreasing with the set efforts held at `z_val`
-    (isotonic below and above them, bounded by `z_val`); an effort that bound moves is no longer listed as measured."""
+    stay missing when it has none. The curve is then made monotone in the facet's direction (`rises_with_effort`) with the
+    set efforts held at `z_val`: a facet that rises with effort is non-decreasing (efforts below the set ones isotonic and at
+    most `z_val`, above them isotonic and at least `z_val`), one that falls is non-increasing (below: at least `z_val`, above:
+    at most `z_val`); efforts between two set ones are `z_val`. An effort that bound moves is no longer listed as measured."""
     pinned = [e for e in EFFORTS if e in ('high', fixed_effort)]
     by = {e: float(v) for e, v in ((own_cell or {}).get('by_effort') or {}).items() if e in EFFORTS and v is not None}
     measured = [e for e in _measured_efforts(own_cell) if e not in pinned]
@@ -604,14 +656,16 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, ability: bool,
     if 'high' in by:
         out.update({e: z_val + v - by['high'] for e, v in by.items() if e not in out})
     out = {e: out[e] for e in EFFORTS if e in out}
-    if ability:
-        lo, hi = EFFORTS.index(pinned[0]), EFFORTS.index(pinned[-1])
-        below = [e for e in out if EFFORTS.index(e) < lo]
-        above = [e for e in out if EFFORTS.index(e) > hi]
-        out.update({e: min(v, z_val) for e, v in zip(below, _pav([out[e] for e in below]))})
-        out.update({e: max(v, z_val) for e, v in zip(above, _pav([out[e] for e in above]))})
-        out.update({e: z_val for e in out if lo < EFFORTS.index(e) < hi})
-    out = {e: round(v, 4) for e, v in out.items()}
+    sign = 1.0 if rises else -1.0       # a falling facet is bounded as its mirror image
+    signed = {e: sign * v for e, v in out.items()}
+    held = sign * z_val
+    lo, hi = EFFORTS.index(pinned[0]), EFFORTS.index(pinned[-1])
+    below = [e for e in signed if EFFORTS.index(e) < lo]
+    above = [e for e in signed if EFFORTS.index(e) > hi]
+    signed.update({e: min(v, held) for e, v in zip(below, _pav([signed[e] for e in below]))})
+    signed.update({e: max(v, held) for e, v in zip(above, _pav([signed[e] for e in above]))})
+    signed.update({e: held for e in signed if lo < EFFORTS.index(e) < hi})
+    out = {e: round(sign * signed[e], 4) for e in signed}
     return out, [e for e in measured if out[e] == round(by[e], 4)]
 
 
@@ -700,8 +754,7 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                 z_map[f] = zf
                 f_ref = _facet_data_reference(facets.get(f), cat, f, rec['level'], targets_table)
                 facet_refs[f] = f_ref
-                by_eff, measured = _manual_by_effort(zf, facets.get(f), (cat, f) != ('tool_operation', 'responsiveness'),
-                                                     fixed_effort)
+                by_eff, measured = _manual_by_effort(zf, facets.get(f), rises_with_effort(cat, f), fixed_effort)
                 facets[f] = {
                     'value': zf,
                     'by_effort': by_eff,
@@ -733,8 +786,7 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                         }
             z_val = round(level_to_z(rec['level'], *target_triad(targets_table, cat, facet)), 4)
             f_ref = _facet_data_reference(facets.get(facet), cat, facet, rec['level'], targets_table)
-            by_eff, measured = _manual_by_effort(z_val, facets.get(facet),
-                                                 (cat, facet) != ('tool_operation', 'responsiveness'), fixed_effort)
+            by_eff, measured = _manual_by_effort(z_val, facets.get(facet), rises_with_effort(cat, facet), fixed_effort)
             facets[facet] = {
                 'value': z_val,
                 'by_effort': by_eff,
@@ -897,15 +949,15 @@ def cli_main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(
         prog='agentcompass score',
-        description='Set, list, clear, or review manual capability scores on the 1..3 demand-level scale '
-                    '(1 = panel weakest, 2 = panel median, 3 = anchor Opus 5.5).',
+        description='Set, list, clear, or review manual capability scores on the demand-level scale '
+                    '(1 = panel weakest, 2 = panel median, 3 = panel best; a level above 3 is better than the panel best).',
     )
     sub = parser.add_subparsers(dest='subcommand', required=True)
 
     p_set = sub.add_parser('set', help='Set a manual score for <model> on <category>[.<facet>] at <level>.')
     p_set.add_argument('model', help='Model id or alias (e.g. gpt-6-sol, grok-bot).')
     p_set.add_argument('target', help='Category or category.facet (e.g. creativity, coding.faithfulness, tool_operation.image_recognition).')
-    p_set.add_argument('level', type=float, help='Demand-level score (1 = panel weakest, 2 = panel median, 3 = anchor Opus 5.5; decimals allowed).')
+    p_set.add_argument('level', type=float, help='Demand-level score (1 = panel weakest, 2 = panel median, 3 = panel best, higher allowed; decimals allowed).')
     p_set.add_argument('--note', help='Optional short note recorded with the manual score.')
     p_set.add_argument('--as-of', dest='as_of', help='Optional YYYY-MM-DD date (default: today UTC).')
     p_set.add_argument('--public', action='store_true',

@@ -88,12 +88,15 @@ class DecisionLedgerTests(unittest.TestCase):
         self.assertNotIn('private reasoning', json.dumps(snapshot))
 
     def test_snapshot_is_bounded_so_the_ledger_stays_cheap_to_tail(self):
-        self.run_plan()
+        _, result = self.run_plan()
         [line] = self.plan_rows()
         text = json.dumps(line)
-        # 6 full + 8 compact eligible rows and 16 blocked ones: the cap is the row limits, not a size tuned to one fixture.
-        self.assertLess(len(text), 40000, len(text))
+        # The cap is the row limits (SNAPSHOT_FULL + SNAPSHOT_COMPACT eligible rows, SNAPSHOT_EXCLUDED blocked ones), not a byte
+        # size tuned to one fixture: the recorded line is smaller than the whole ranking it was cut from, which the fleet's
+        # size and the data's notes decide.
         ranking = line['decision_snapshot']['ranking']
+        self.assertGreater(line['decision_snapshot']['ranking_total'], len(ranking), 'the fixture must exceed the row limits')
+        self.assertLess(len(json.dumps(ranking)), len(json.dumps(result['ranking'])))
         eligible = [row for row in ranking if not row['excluded']]
         self.assertLessEqual(len(eligible), ledger_snapshot.SNAPSHOT_FULL + ledger_snapshot.SNAPSHOT_COMPACT)
         self.assertLessEqual(len(ranking) - len(eligible), ledger_snapshot.SNAPSHOT_EXCLUDED)

@@ -1,9 +1,9 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "scores": {
     "claude-fable-5-2": {
       "aesthetics": {
-        "level": 3.2,
+        "level": 3.1,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -13,7 +13,7 @@
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.2,
+        "level": 2.28,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -23,13 +23,13 @@
         "kind": "maintainer"
       },
       "tool_operation.image_recognition": {
-        "level": 3.0,
+        "level": 2.93,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 2.5,
-        "as_of": "2026-11-11",
+        "level": 2.4,
+        "as_of": "2026-11-18",
         "kind": "maintainer"
       }
     },
@@ -43,12 +43,12 @@
     },
     "dot": {
       "aesthetics": {
-        "level": 2.8,
+        "level": 2.73,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.3,
+        "level": 2.31,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -125,50 +125,50 @@
     },
     "gemini-4-argon-high": {
       "tool_operation.image_recognition": {
-        "level": 3.0,
+        "level": 2.93,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gemini-4-carbon": {
       "coding.faithfulness": {
-        "level": 3.0,
+        "level": 2.24,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "tool_operation.image_recognition": {
-        "level": 3.1,
+        "level": 3.02,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gpt-6-astra": {
       "aesthetics": {
-        "level": 2.8,
+        "level": 2.73,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.3,
+        "level": 2.31,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gpt-6-luna": {
       "coding.faithfulness": {
-        "level": 2.5,
+        "level": 2.12,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 3.0,
-        "as_of": "2026-11-11",
+        "level": 2.8,
+        "as_of": "2026-11-18",
         "kind": "maintainer"
       }
     },
     "gpt-6-pro": {
       "aesthetics": {
-        "level": 3.0,
+        "level": 2.92,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -178,7 +178,7 @@
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.1,
+        "level": 2.26,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -188,7 +188,7 @@
         "kind": "maintainer"
       },
       "tool_operation.image_recognition": {
-        "level": 3.0,
+        "level": 2.93,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -205,7 +205,7 @@
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 3.0,
+        "level": 2.24,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       },
@@ -220,21 +220,21 @@
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 2.5,
-        "as_of": "2026-11-11",
+        "level": 1.5,
+        "as_of": "2026-11-18",
         "kind": "maintainer"
       }
     },
     "gpt-6.1-sol": {
       "coding.faithfulness": {
-        "level": 3.5,
+        "level": 2.35,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }
     },
     "gpt-6.1-terra": {
       "coding.faithfulness": {
-        "level": 3.2,
+        "level": 2.28,
         "as_of": "2026-11-11",
         "kind": "maintainer"
       }

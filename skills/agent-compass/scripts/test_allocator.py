@@ -120,12 +120,46 @@ class AllocatorTests(unittest.TestCase):
     def codex_bundles(self):
         return [b for b, v in account_fleet.bundles(account_fleet.load_accounts()).items() if v['account'] == 'codex']
 
+    def test_a_high_coupling_chain_asks_its_window_for_the_whole_chain_and_a_medium_one_for_the_step(self):
+        """Rule (`candidate_eval.evaluate_bundle`, quota-window check): the hours a window must cover are the chain's `total_hours`
+        (scaled by the bundle's duration) when `coupling` is `high`, else the step's `expected_hours`; the window is excluded when
+        what is left minus that spend is under the safety margin. The spend of one step is read from the plan's own row (expected
+        USD over the window's capacity), the chain's is that times chain hours / step hours, so the fixture follows the data: the
+        window is left with the margin plus the midpoint of the two, which covers the step but not the chain."""
+        step_hours, chain_hours, margin = 1, 3, 5
+        task = lambda coupling: {'work_kind': 'code_implementation', 'difficulty': 'coupled', 'expected_hours': step_hours,
+                                 'chain': self.chain(coupling=coupling, total=chain_hours)}
+        full = self.plan(task('high'), self.usage(codex=[('usage', 100, 100)]))
+        owner = next(c for c in full['ranking'] if c['id'] == 'sol_xhigh')
+        capacity = axis_scores.five_axis_overlay(account_fleet.load_accounts(), read_local_state=False)['accounts']['codex']['capacity_usd']['usage']
+        step_pct = 100 * owner['expected_usd'] / capacity
+        chain_pct = step_pct * chain_hours / step_hours
+        self.assertGreater(chain_pct, step_pct + 10, 'the fixture needs a chain clearly larger than a step')
+        left = margin + (step_pct + chain_pct) / 2
+        self.assertLess(left, 100)
+        usage = self.usage(codex=[('usage', left, 100)])
+        short = lambda result: [r for r in result['ranking'] if r['id'] == 'sol_xhigh'][0]['excluded']
+        high = self.plan(task('high'), usage)
+        self.assertTrue(short(high), 'a window that covers the step but not the whole chain excludes the owner of a high-coupling chain')
+        self.assertTrue(high['decision']['needs_user_decision'])
+        medium = self.plan(task('medium'), usage)
+        self.assertEqual(short(medium), [], 'the same window covers the step of a medium-coupling chain')
+        self.assertEqual((medium['choice'], medium['decision']['action']), ('sol_xhigh', 'resume'))
+
     def test_chain_continuity_and_handoff_rotation(self):
         # 1. Active high-coupling chain resumes owner; blocked owner asks user; low-coupling switches silently
-        # the whole 6 h chain at xhigh is ~59% of the Codex window at the Artificial Analysis time (0.96x the anchor's High), so the
-        # owner resumes with 80% left
-        roomy = self.usage(codex=[('usage', 80, 100)])
-        resumed = self.plan({'work_kind': 'code_implementation', 'difficulty': 'coupled', 'expected_hours': 2, 'chain': self.chain()}, roomy)
+        # Rule: the owner resumes while the whole chain fits its window with the margin left. The share the chain needs is
+        # computed from the plan's own row (chain hours / step hours x the step's spend, over the window's capacity), so the
+        # fixture follows the data: the window is left with that share plus 15 points (the margin is 5).
+        chain_task = {'work_kind': 'code_implementation', 'difficulty': 'coupled', 'expected_hours': 2, 'chain': self.chain()}
+        full = self.plan(chain_task, self.usage(codex=[('usage', 100, 100)]))
+        owner = next(c for c in full['ranking'] if c['id'] == 'sol_xhigh')
+        capacity = axis_scores.five_axis_overlay(account_fleet.load_accounts(), read_local_state=False)['accounts']['codex']['capacity_usd']['usage']
+        chain_pct = 100 * owner['expected_usd'] * (6 / 2) / capacity
+        left = min(100, int(chain_pct) + 15)
+        self.assertGreater(left, chain_pct + 10, 'the whole chain of the owner must fit the full window with room for the margin')
+        roomy = self.usage(codex=[('usage', left, 100)])
+        resumed = self.plan(chain_task, roomy)
         self.assertEqual((resumed['choice'], resumed['decision']['action'], resumed['decision']['needs_user_decision']),
                          ('sol_xhigh', 'resume', False))
         blocked_usage = self.usage(codex=[('usage', 1, 121)])
@@ -286,7 +320,7 @@ class AllocatorTests(unittest.TestCase):
             claude=[('five_hour', 90, 3), ('seven_day', 0, 100), ('weekly_fable', 100, 100)],
             codex=[('usage', 1, 100)],
             antigravity=[('gemini-5h', 90, 3), ('gemini-weekly', 2, 100), ('3p-5h', 90, 3), ('3p-weekly', 2, 100)],
-            **{'claude-lab': [('five_hour', 65, 3), ('seven_day', 83, 100), ('weekly_fable', 100, 100)]},
+            **{'claude-lab': [('five_hour', 95, 3), ('seven_day', 83, 100), ('weekly_fable', 100, 100)]},
         )
         # Rule: an exhausted window excludes its candidates. With every big pool spent, only claude-lab rows stay eligible
         # and the plan still routes; which claude-lab effort wins is not pinned.

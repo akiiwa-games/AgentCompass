@@ -268,7 +268,7 @@ def evaluate_bundle(bundle, task, ctx):
         eff_note = f' at effort {eff}' if eff and has_high else ''
         blind_msg = (
             f'no trusted data for the demanded category {", ".join(blind)} on {model}{eff_note} '
-            f'(missing {", ".join(missing_targets)}; fill with `agentcompass score set {model} {first_target} <1..3>` '
+            f'(missing {", ".join(missing_targets)}; fill with `agentcompass score set {model} {first_target} <level>` '
             f'or in the tray Manual Scores panel)'
         )
     else:

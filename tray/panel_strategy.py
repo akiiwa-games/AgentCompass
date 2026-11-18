@@ -141,7 +141,7 @@ class StrategyTab:
 
         box = theme.card(frame, padding=STRATEGY_PAD, fill="x", pady=(12, 0))
         ttk.Label(box, text=_tr("模型评分"), style="CardH2.TLabel").pack(anchor="w")
-        ttk.Label(box, text=_tr("等级 1 = 面板最弱，2 = 面板中位数，3 = 锚点模型；High 档。悬停看来源与证据。"),
+        ttk.Label(box, text=_tr("等级 1 = 面板最弱，2 = 面板中位数，3 = 面板最强；High 档。悬停看来源与证据。"),
                   style="CardTiny.TLabel", wraplength=theme.px(640), justify="left").pack(anchor="w", pady=(2, 8))
         columns = [("model", _tr("模型"), 200, "w")] + [(key, label, 84, "center") for key, label in so.CATEGORIES]
         table_frame, self.scores_table = self.tree(box, columns, 10)
@@ -159,7 +159,7 @@ class StrategyTab:
         self.manual_target = ttk.Combobox(editor, state="readonly", width=24)
         self.manual_target.grid(row=1, column=1, sticky="w", padx=(8, 0))
         self.manual_level = tk.StringVar(value="")
-        ttk.Spinbox(editor, from_=1, to=3, increment=0.1, textvariable=self.manual_level, width=5,
+        ttk.Spinbox(editor, from_=0, to=6, increment=0.1, textvariable=self.manual_level, width=5,
                     font=(self.mono, STRATEGY_FIELD)).grid(row=1, column=2, sticky="w", padx=(8, 0))
         ttk.Button(editor, text=_tr("保存"), style="SmallAccent.TButton",
                    command=self.save_manual_score).grid(row=1, column=3, padx=(8, 0))
@@ -169,7 +169,7 @@ class StrategyTab:
         self.manual_current.grid(row=2, column=0, columnspan=6, sticky="w", pady=(6, 0))
         self.manual_current._tooltip_text = _tr(
             "本机覆盖只写入你本机的 user-scores.json（与 agentcompass score set 相同的写入路径），不改公开数据。"
-            "响应速度的等级 ≥ 2 表示「至少达到面板中位数」。高于 3 的等级按 t3 − t2 外推，显示为 3.0+。")
+            "等级 3 = 面板最强；高于 3 的等级按 t3 − t2 外推，照实显示。")
         self.attach_tooltip(self.manual_current)
         self.manual_model.bind("<<ComboboxSelected>>", lambda e: self.manual_model_changed())
         self.manual_target.bind("<<ComboboxSelected>>", lambda e: self.show_manual_current())
@@ -338,7 +338,7 @@ class StrategyTab:
         try:
             level = float(self.manual_level.get())
         except ValueError:
-            self.status.set(_tr("评分需为数字（1–3）"))
+            self.status.set(_tr("评分需为数字"))
             return
         model = row["model"]
         self.run(lambda: self.data_module().set_manual_score(model, target, level), self.say(self.load_scores))

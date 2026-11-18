@@ -22,7 +22,7 @@ STAGES = {
                   'providers', (), ()),
     'usage': ('Print the merged provider usage windows the router would route on (read only).',
               'usage --show [--accounts KEY ...]', ('show',), ('accounts', 'usage_cache')),
-    'score': ('Set, list, clear or review manual capability scores (1..3 demand scale), or run the System-One classifier on a task file.',
+    'score': ('Set, list, clear or review manual capability scores (demand-level scale: 1 = panel weakest, 3 = panel best), or run the System-One classifier on a task file.',
               'score (set <model> <category>[.<facet>] <level> [--public] | list [<model>] | suggest [<model>] [--threshold N] | clear (<model> [target] | --all) [--public])   |   score --input TASK.json',
               ('input',), ('dry_run', 'score_timeout')),
     'scorer': ('Show, set or test the System-One scorer.', 'scorer [--action show|set|test]', ('action',),
