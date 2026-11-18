@@ -214,7 +214,10 @@ class PublicationHistoryTests(unittest.TestCase):
 
     def test_a_published_set_of_an_older_schema_is_frozen(self):
         root = Path(tempfile.mkdtemp(prefix='public-data-frozen-'))
-        self.addCleanup(shutil.rmtree, root, True)
+        # git writes its objects read-only, which rmtree cannot remove on Windows: make each writable and try again
+        writable = {'onexc' if sys.version_info >= (3, 12) else 'onerror':
+                    lambda remove, path, _: (os.chmod(path, 0o700), remove(path))}
+        self.addCleanup(shutil.rmtree, root, **writable)
         old = root / 'published' / str(public_data.SCHEMA_VERSION - 1)
         old.mkdir(parents=True)
         (old / 'accounts.json').write_text('{"accounts": {}}\n', encoding='utf-8', newline='\n')
