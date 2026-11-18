@@ -108,8 +108,7 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
     for unused_board in ('agent', 'agent_bash_reliability', 'agent_task_outcome_explicit', 'agent_steerability'):
         write_parquet(unused_board, [('overall', 1350.0, 11.0)])
 
-    # 2. Artificial Analysis HTML table + RSC stream with multi-effort curves.
-    tr_rows = []
+    # 2. Artificial Analysis RSC stream with multi-effort curves (the record shape the page serves).
     rsc_records = []
     effort_offsets = (('low', -6.0, 0.55, 1.4), ('medium', -2.5, 0.78, 1.9), ('high', 0.0, 1.0, 2.6), ('xhigh', 1.8, 1.35, 3.4))
     for idx, (slug, display, _) in enumerate((*PANEL_MODELS, *arena_partial, *aa_only)):
@@ -118,14 +117,12 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
             listed = f'{display} ({eff.capitalize()})'
             ii_val = round(base_idx + idx_shift, 2)
             cost_task = round((1.8 - idx * 0.08) * time_mult, 2)
-            tr_rows.append(
-                f'<tr><td>{listed}</td><td>128k</td><td>80</td><td>{ii_val}</td><td>${cost_task:.2f}</td></tr>'
-            )
             tb4 = round(max(0.12, min(0.95, 0.76 - idx * 0.042 + idx_shift * 0.008)), 4)
             fc2 = round(max(0.10, min(0.94, 0.71 - idx * 0.039 + idx_shift * 0.009 - (idx % 2) * 0.011)), 4)
             mmmu = round(max(0.15, min(0.96, 0.82 - idx * 0.036 + idx_shift * 0.006 + (idx % 3) * 0.007)), 4)
             rsc_records.append({
-                'slug': f'{slug}-{eff}',
+                'id': f'{slug}-{eff}',
+                'release': {'slug': slug, 'name': display},
                 'name': listed,
                 'intelligenceIndex': ii_val,
                 'intelligenceIndexCostPerTask': cost_task,
@@ -143,7 +140,7 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
             })
     rsc_payload = json.dumps(rsc_records, separators=(',', ':'))
     aa_html = (
-        '<html><body><table>' + ''.join(tr_rows) + '</table>'
+        '<html><body>'
         f'<script>self.__next_f.push([1,{json.dumps(rsc_payload)}])</script></body></html>'
     )
     _write_file(data_dir, 'aa-models.html', aa_html, sources.PAGES['aa-models.html'], fetched_at, manifest_files)
@@ -738,6 +735,30 @@ class ModelRowMergeTests(unittest.TestCase):
         after = {'models': {'a': {'x': 1.5, 'y': {'z': 2}}, 'new-m': {'x': 9}}}
         self.assertIn('1 values of 1 other models moved, by field: x 1', refresh.blast_radius(before, after, ['new-m']))
         self.assertEqual(refresh.blast_radius(before, before, ['new-m']), 'no value of another model moved')
+
+
+class AaRecordTests(unittest.TestCase):
+    """`sources.aa_records`: a record is the object that owns an `intelligenceIndex` key, whatever its other keys."""
+
+    def _records(self, payload):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = f'<html><body><script>self.__next_f.push([1,{json.dumps(json.dumps(payload))}])</script></body></html>'
+            (Path(tmp) / 'aa-models.html').write_text(page, encoding='utf-8', newline='\n')
+            return sources.aa_records(Path(tmp))
+
+    def test_the_owner_of_the_index_key_is_read_whatever_its_leading_keys_and_nesting(self):
+        leading_id = {'id': 'a1', 'release': {'slug': 'model-a', 'name': 'Model A'}, 'name': 'Model A (High)',
+                      'intelligenceIndex': 51.5, 'scores': {'mmmu-pro': 0.7}}
+        leading_slug = {'slug': 'model-b-high', 'name': 'Model B (High)', 'intelligenceIndex': 48.0}
+        index_first = {'intelligenceIndex': None, 'name': 'Model C'}
+        payload = {'models': [leading_id, leading_slug], 'wrapped': {'rows': [{'cell': index_first}]},
+                   'release': {'slug': 'model-a', 'name': 'Model A', 'modelNames': ['Model A (High)']}}
+        self.assertEqual(self._records(payload), [leading_id, leading_slug, index_first])
+
+    def test_a_listing_is_read_once_and_an_object_without_a_name_is_no_record(self):
+        record = {'id': 'a1', 'name': 'Model A (High)', 'intelligenceIndex': 51.5}
+        payload = [record, dict(record, id='a1-again'), {'intelligenceIndex': 40.0}]
+        self.assertEqual(self._records(payload), [record])
 
 
 if __name__ == '__main__':

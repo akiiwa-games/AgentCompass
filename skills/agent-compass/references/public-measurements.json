@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-13T04:06:35+00:00",
+ "generated_at": "2026-11-18T00:57:41+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [
@@ -16351,6 +16351,204 @@
       "medium": -0.8836
      },
      "z": -0.0874
+    }
+   ]
+  },
+  "gpt-6.2-astra": {
+   "tier": [
+    {
+     "source": "tier.aa_index",
+     "kind": "benchmark",
+     "value": 0.1576,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 60.0882 at High interpolated onto the arena.ai Overall High scale between ['Claude Opus 5.5'] and ['Gemini 4 Carbon'] of the 20 models listed at High on both boards",
+     "listed_as": "GPT-6.2 Astra",
+     "board_value": 60.0882280338247,
+     "neighbours": {
+      "below": {
+       "x": 51.8359958227294,
+       "tier": 0.0,
+       "models": [
+        "Claude Opus 5.5"
+       ]
+      },
+      "above": {
+       "x": 60.025738829526,
+       "tier": 0.1561,
+       "models": [
+        "Gemini 4 Carbon"
+       ]
+      }
+     },
+     "n": 20
+    }
+   ],
+   "coding": [
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": 0.1884,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.565657 (claude-opus-5-5), sd_panel 0.187624 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "GPT-6.2 Astra (High)",
+     "raw": 0.60101,
+     "z_by_effort": {
+      "xhigh": 0.4038,
+      "max": 0.4038,
+      "medium": 0.1077,
+      "low": -0.2961,
+      "high": 0.1884
+     },
+     "raw_by_effort": {
+      "xhigh": 0.641414,
+      "max": 0.641414,
+      "medium": 0.585859,
+      "low": 0.510101,
+      "high": 0.60101
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-6.2-astra",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 4.893,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "GPT-6.2 Astra (High)",
+     "time_per_task_s": 293.57,
+     "time_per_task_min": 4.893,
+     "output_tps": 60.73
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 1.493,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "GPT-6.2 Astra (Low)",
+     "time_per_task_s": 89.57,
+     "time_per_task_min": 1.493,
+     "output_tps": 58.24
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 10.715,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "max",
+     "listed_as": "GPT-6.2 Astra (Max)",
+     "time_per_task_s": 642.92,
+     "time_per_task_min": 10.715,
+     "output_tps": 63.82
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 3.744,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "GPT-6.2 Astra (Medium)",
+     "time_per_task_s": 224.66,
+     "time_per_task_min": 3.744,
+     "output_tps": 58.6
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 6.189,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "GPT-6.2 Astra (Xhigh)",
+     "time_per_task_s": 371.36,
+     "time_per_task_min": 6.189,
+     "output_tps": 59.88
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 8,
+      "output": 40,
+      "cache_read": 0.4
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "GPT-6.2 Astra (High)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 8.0,
+      "output": 40.0,
+      "cache_read": 0.4
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "openai/gpt-6.2-astra"
+    }
+   ],
+   "intelligence_index": [
+    {
+     "source": "aa.index",
+     "kind": "benchmark",
+     "value": 60.09,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T00:57:28+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index, every listed effort",
+     "listed_as": "GPT-6.2 Astra (High)",
+     "raw_by_effort": {
+      "xhigh": 61.5602,
+      "max": 62.1388,
+      "medium": 56.9986,
+      "low": 45.6504,
+      "high": 60.0882
+     }
     }
    ]
   }

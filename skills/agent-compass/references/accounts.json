@@ -1,5 +1,5 @@
 {
-  "reviewed_at": "2026-11-17",
+  "reviewed_at": "2026-11-18",
   "scoring": {
     "small_short_capacity_usd": 50,
     "small_short_window_floor_pct": 25,
@@ -196,7 +196,7 @@
   },
   "families": {
     "kind": "maintainer",
-    "as_of": "2026-11-13",
+    "as_of": "2026-11-18",
     "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py)",
     "rows": [
       {
@@ -257,6 +257,7 @@
       {
         "pattern": "^gpt-6",
         "models": [
+          "gpt-6.2-astra",
           "gpt-6-astra"
         ]
       },
@@ -563,6 +564,26 @@
         "kind": "vendor",
         "url": "https://developers.openai.com/api/docs/pricing",
         "as_of": "2026-10-12",
+        "statement": "API list price, standard tier, short context, USD per million tokens"
+      }
+    },
+    "gpt-6.2-astra": {
+      "label": "Astra 6.2",
+      "api_family": "codex",
+      "listed_as": {
+        "aa": "GPT-6.2 Astra"
+      },
+      "list_price": {
+        "input": 8.0,
+        "cache_write_5m": 10.0,
+        "cache_write_1h": 10.0,
+        "cache_read": 0.4,
+        "output": 40.0
+      },
+      "list_price_source": {
+        "kind": "vendor",
+        "url": "https://developers.openai.com/api/docs/pricing",
+        "as_of": "2026-11-18",
         "statement": "API list price, standard tier, short context, USD per million tokens"
       }
     },
@@ -997,6 +1018,13 @@
         "max",
         "ultra"
       ],
+      "gpt-6.2-astra": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
       "gpt-6.1-sol": [
         "low",
         "medium",
@@ -1055,6 +1083,13 @@
         "high"
       ],
       "gpt-6-astra": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "gpt-6.2-astra": [
         "low",
         "medium",
         "high",
@@ -1179,6 +1214,14 @@
           "model": "gpt-6-astra",
           "effort": "xhigh"
         },
+        "astra62_high": {
+          "model": "gpt-6.2-astra",
+          "effort": "high"
+        },
+        "astra62_xhigh": {
+          "model": "gpt-6.2-astra",
+          "effort": "xhigh"
+        },
         "pi_sol_max": {
           "model": "gpt-6.1-sol",
           "effort": "max",
@@ -1214,6 +1257,18 @@
           "effort": "xhigh",
           "provider": "pi",
           "launch_model": "openai-codex/gpt-6-astra"
+        },
+        "pi_astra62_high": {
+          "model": "gpt-6.2-astra",
+          "effort": "high",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.2-astra"
+        },
+        "pi_astra62_xhigh": {
+          "model": "gpt-6.2-astra",
+          "effort": "xhigh",
+          "provider": "pi",
+          "launch_model": "openai-codex/gpt-6.2-astra"
         }
       },
       "capacity_status": "unknown"

@@ -19,6 +19,7 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
 error when a source could not be fetched. A source that fails is recorded as missing, never replaced by an older copy.
 """
 import argparse
+import bisect
 import hashlib
 import html
 import json
@@ -26,7 +27,6 @@ import os
 import re
 import sys
 import urllib.request
-from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -140,55 +140,37 @@ EFFORT_WORDS = {'max': 'max', 'xhigh': 'xhigh', 'high': 'high', 'medium': 'mediu
                 'minimal': 'minimal', 'non-reasoning': 'none', 'none': 'none'}
 
 
-def artificial_analysis(target, field='index'):
-    """{base model: {effort or '': value}} from the AA models leaderboard table; `field` is 'index' (Intelligence Index)
-    or 'cost' (cost per task, USD)."""
-    html_path = target / 'aa-models.html'
-    if not html_path.exists():
-        return {}
-    out = defaultdict(dict)
-    raw = html_path.read_text(encoding='utf-8', errors='ignore')
-    table = re.search(r'<table.*?</table>', raw, re.S).group(0)
-    for row in re.findall(r'<tr.*?</tr>', table, re.S):
-        cells = [re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', c))).strip()
-                 for c in re.findall(r'<t[hd].*?</t[hd]>', row, re.S)]
-        if len(cells) < 4 or not re.fullmatch(r'\d+(\.\d+)?', cells[3]):
-            continue
-        b = base_name(cells[0])
-        tag = variant(cells[0]).replace(' with fallback', '').strip().lower()
-        if field == 'cost':
-            cost = re.fullmatch(r'\$([\d.]+)', cells[4])
-            if not cost:
-                continue
-            value = float(cost.group(1))
-        else:
-            value = float(cells[3])
-        out[b][EFFORT_WORDS.get(tag, tag)] = value
-    return dict(out)
-
-
 AA_RSC_PUSH = re.compile(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)', re.S)   # Next.js RSC push chunks
 
 
 def aa_records(target):
     """The model records embedded in the AA leaderboard page (Next.js RSC stream): one dict per listed variant with
     `name`, `intelligenceIndex`, `intelligenceIndexCostPerTask` (USD), `intelligenceIndexTimePerTask` (s), prices and
-    `scores` (sub-benchmarks, fractions)."""
+    `scores` (sub-benchmarks, fractions).
+
+    A record is the object that owns an `intelligenceIndex` key, whatever its other keys and their order: the page
+    has changed the leading key of its records (2026-11-18, `slug` moved under `release`)."""
     html_path = target / 'aa-models.html'
     if not html_path.exists():
         return []
     dec, out, seen = json.JSONDecoder(), [], set()
     raw = html_path.read_text(encoding='utf-8', errors='ignore')
     stream = ''.join(json.loads(c) for c in AA_RSC_PUSH.findall(raw))
-    for m in re.finditer(r'\{"slug":"', stream):
-        try:
-            obj, _ = dec.raw_decode(stream, m.start())
-        except ValueError:
-            continue
-        name = obj.get('name')
-        if 'intelligenceIndex' in obj and name not in seen:
-            seen.add(name)
-            out.append(obj)
+    opens = [m.start() for m in re.finditer(r'\{', stream)]
+    for hit in re.finditer(r'"intelligenceIndex"\s*:', stream):
+        # The innermost object around the key: the nearest opening brace before it whose object reaches past it.
+        for start in reversed(opens[:bisect.bisect_left(opens, hit.start())]):
+            try:
+                obj, end = dec.raw_decode(stream, start)
+            except ValueError:
+                continue
+            if end <= hit.start():
+                continue
+            name = obj.get('name')
+            if 'intelligenceIndex' in obj and isinstance(name, str) and name not in seen:
+                seen.add(name)
+                out.append(obj)
+            break
     return out
 
 
