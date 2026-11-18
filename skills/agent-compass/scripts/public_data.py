@@ -30,6 +30,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -430,8 +431,16 @@ def _git(*args, cwd=None):
 def manifest_at(revision):
     """The published manifest of this schema at a git ``revision``, or None when there was none. A revision that is
     not a commit of this repository (unknown, or unreachable after a force push) is a ValueError: the check against
-    the previous publication cannot run, and that is never a pass."""
+    the previous publication cannot run, and that is never a pass. A commit id this checkout does not have (the
+    workflow's base after a force push to main) says so and what to run, so the failure is not read as bad data."""
     if _git('rev-parse', '--verify', '--quiet', f'{revision}^{{commit}}') is None:
+        if re.fullmatch(r'[0-9a-fA-F]{7,64}', revision or ''):
+            raise ValueError(
+                f'--since {revision}: the base commit is not in this checkout (a force push to main removed it, or the '
+                'checkout is shallow), so the published set cannot be checked against the publication it replaces; '
+                'this says nothing about the published data. Fetch that commit if it still exists '
+                f'(git fetch origin {revision}), or run the check against the commit main had before the push: '
+                'agentcompass data publish --check --since <that commit>')
         raise ValueError(f'--since {revision}: not a commit of this repository (unknown or unreachable revision); the '
                          'published set cannot be checked against the publication it replaces')
     data = _git('show', f'{revision}:published/{SCHEMA_VERSION}/{MANIFEST}')
@@ -560,6 +569,11 @@ def _take(bundled, environ):
     version = state.get('version')
     if not isinstance(version, str) or not version.isalnum():
         return {**shipped, 'note': 'nothing fetched yet'}
+    schema = _held_schema(state, environ)
+    if schema != SCHEMA_VERSION:
+        _drop_other_schema(environ)
+        return {**shipped, 'note': (f'the shipped set is used: the fetched set {version} of data schema {schema!r} (left by '
+                                    f'an earlier version) was removed, since this install reads schema {SCHEMA_VERSION}')}
     if state.get('rejected_version') == version and state.get('rejected_by') == reader_id():
         return {**shipped, 'note': state.get('note') or f'fetched set {version} was rejected by this install'}
     if state.get('accepted_by') != reader_id():
@@ -582,6 +596,37 @@ def _take(bundled, environ):
     return {**shipped, 'source': 'fetched', 'dir': str(directory), 'version': version, 'note': None,
             'published_at': fetched['published_at'], 'schema_version': fetched['schema_version'], 'files': files,
             'id': f'fetched:{version}'}
+
+
+def _held_schema(state, environ):
+    """The data schema of the fetched set state.json records: as recorded, else as its manifest on disk declares."""
+    schema = state.get('schema_version')
+    if schema is None:
+        schema = (_read_json(cache_dir(environ) / 'sets' / state['version'] / MANIFEST) or {}).get('schema_version')
+    return schema
+
+
+def _drop_other_schema(environ):
+    """Remove a fetched set of a data schema this code does not read, where it is read: the state that records it and
+    every cached set not of SCHEMA_VERSION. It is derived state (a cache an earlier version's channel wrote), rebuilt by
+    the next check, never migrated. Best effort: a set that stays is still never taken."""
+    cache = cache_dir(environ)
+
+    def change(state):
+        if isinstance(state.get('version'), str) and state['version'].isalnum() and                 _held_schema(state, environ) != SCHEMA_VERSION:
+            for key in STATE_SET_KEYS:
+                state.pop(key, None)
+        try:
+            folders = list((cache / 'sets').iterdir())
+        except OSError:
+            folders = []
+        for folder in folders:
+            if folder.is_dir() and not folder.name.startswith('.staging-') and                     (_read_json(folder / MANIFEST) or {}).get('schema_version') != SCHEMA_VERSION:
+                shutil.rmtree(folder, ignore_errors=True)
+    try:
+        _update_state(environ, change)
+    except (OSError, TimeoutError):
+        pass
 
 
 def _key(bundled, environ):
@@ -688,6 +733,10 @@ def set_aside(state, now=None):
 
 SET_ASIDE_KEYS = ('set_aside_version', 'set_aside_by', 'set_aside_at', 'set_aside_until', 'set_aside_error',
                   'set_aside_note')
+# Everything state.json says about a fetched set and the checks that found it: dropped with a set of another schema, so
+# the next check is due at once.
+STATE_SET_KEYS = ('version', 'published_at', 'schema_version', 'fetched_at', 'checked_at', 'attempt_at', 'accepted_by',
+                  'url', 'note', 'last_error', 'remote_schema_version', 'rejected_version', 'rejected_by', *SET_ASIDE_KEYS)
 
 
 def _ended_set_aside(state, now=None):

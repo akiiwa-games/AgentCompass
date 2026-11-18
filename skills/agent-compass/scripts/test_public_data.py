@@ -196,6 +196,22 @@ class PublicationHistoryTests(unittest.TestCase):
             self.assertEqual(public_data._publish_main(['--check', '--since', 'no-such-revision-0123']), 1)
         self.assertIn('not a commit of this repository', err.getvalue())
 
+    def test_a_base_commit_missing_from_the_checkout_fails_the_check_naming_it_and_what_to_run(self):
+        """Note (round 5): after a force push to main the workflow's base (github.event.before) is not in the checkout;
+        the check still fails, and says that it is the base commit that is missing, not bad data, and what to run."""
+        gone = 'f' * 40
+        with self.assertRaises(ValueError) as refused:
+            public_data.manifest_at(gone)
+        message = str(refused.exception)
+        for part in ('base commit is not in this checkout', 'force push', 'says nothing about the published data',
+                     f'git fetch origin {gone}', 'agentcompass data publish --check --since'):
+            self.assertIn(part, message)
+        import io
+        err = io.StringIO()
+        with patch.object(sys, 'stderr', err):
+            self.assertEqual(public_data._publish_main(['--check', '--since', gone]), 1)       # still fails closed
+        self.assertIn('base commit is not in this checkout', err.getvalue())
+
     def test_a_published_set_of_an_older_schema_is_frozen(self):
         root = Path(tempfile.mkdtemp(prefix='public-data-frozen-'))
         self.addCleanup(shutil.rmtree, root, True)
@@ -382,6 +398,34 @@ class FetchTests(ChannelCase):
         self.assertEqual(self.remote.calls, [f'{URL}{SCHEMA}/{public_data.MANIFEST}'])
         self.assertEqual(self.held()['source'], 'fetched')
 
+    def test_a_held_set_of_another_schema_is_removed_where_it_is_read(self):
+        """Rule (derived state is rebuilt or skipped): a fetched set an earlier version's channel left (v0.6.8 wrote
+        schema 6 under the same names) is removed where it is read, state and files; doctor says the shipped set is in
+        effect, and the next check is due at once."""
+        for recorded in (6, None):                       # as state.json records it, or only as its manifest declares
+            with self.subTest(recorded=recorded):
+                sets = self.state / 'public-data' / 'sets'
+                for version in ('a0680001', 'a0670001'):
+                    copy_set(sets / version)
+                    write_json(sets / version / public_data.MANIFEST,
+                               {**unchecked_manifest(sets / version, T0 + timedelta(days=5)), 'schema_version': 6})
+                state = {'version': 'a0680001', 'published_at': public_data._stamp(T0 + timedelta(days=5)),
+                         'fetched_at': public_data._stamp(T0 + timedelta(days=1)), 'checked_at': public_data._stamp(T0 + timedelta(days=2)),
+                         'last_error': None, 'note': None, 'url': f'{URL}6/'}
+                if recorded is not None:
+                    state['schema_version'] = recorded
+                write_json(self.state / 'public-data' / 'state.json', state)
+                chosen = self.held()
+                self.assertEqual(chosen['source'], 'bundled')
+                self.assertIn('data schema 6', chosen['note'])
+                self.assertIn('was removed', public_data.status(self.env, self.bundled)['note'])
+                self.assertEqual(list(sets.iterdir()), [])
+                self.assertFalse(set(public_data.read_state(self.env)) & {'version', 'schema_version', 'checked_at', 'url'})
+                self.assertEqual(self.held()['note'], 'nothing fetched yet')              # the next process: no stale note
+                self.assertEqual(self.refresh()['status'], 'updated')                      # not waiting out the old check
+                self.assertEqual(self.held()['source'], 'fetched')
+                shutil.rmtree(self.state)
+
     def test_a_fetched_set_changed_on_disk_after_its_acceptance_is_not_held(self):
         """Rule: a process takes a fetched set only when every file matches its manifest (review round 2, M5n)."""
         self.assertEqual(self.refresh()['status'], 'updated')
@@ -469,14 +513,6 @@ class FetchTests(ChannelCase):
             self.assertEqual(self.refresh(force=True, now=T0 + timedelta(days=day + 1))['status'], 'updated')
         kept = sorted(p.name for p in (self.state / 'public-data' / 'sets').iterdir())
         self.assertEqual(kept, sorted(versions[1:]))
-
-    def test_a_set_an_older_release_fetched_is_ignored_and_kept(self):
-        older = self.state / 'public-data' / 'sets' / '0123456789ab'
-        older.mkdir(parents=True)
-        write_json(older / public_data.MANIFEST, {'schema_version': 6})
-        public_data._update_state(self.env, lambda s: s.update(version='0123456789ab'))
-        self.assertEqual(self.held()['source'], 'bundled')
-        self.assertTrue(older.is_dir())
 
 
 class HeldSetTests(ChannelCase):
@@ -1250,6 +1286,10 @@ class LoaderPrecedenceTests(ChannelCase):
             'a function returns the path': "def ref():\n    return ROOT / 'accounts.json'\nDIRECT = ref().read_text()\n",
             'a built name': "KIND = 'accounts'\nDIRECT = (ROOT / (KIND + '.json')).read_text(encoding='utf-8')\n",
             "the accessor's private helper": "DIRECT = public_data._read_bytes(ROOT / 'accounts.json')\n",
+            # finding 3 (review round 4, S2): an owner's own readers serve its commands, they are not an accessor
+            "an owner's public generator": "import capability_catalog\nDIRECT = capability_catalog.markdown({'accounts': {}})\n",
+            "an owner's public checker": "import capability_catalog\nDIRECT = capability_catalog.check_files()\n",
+            "another function of the accessor's module": "DIRECT = public_data.validate_files(ROOT)\n",
             'open()': "with open(ROOT / 'five-axis-scores.json', 'rb') as f:\n    DIRECT = f.read()\n",
             'a default argument': "def load(path=ROOT / 'accounts.json'):\n    return Path(path).read_text()\nDIRECT = load()\n",
         }

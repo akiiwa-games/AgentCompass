@@ -146,8 +146,15 @@ REFERENCE_FILES = ('accounts.json', 'plan-templates.json', 'classifier-cases.jso
                    'user-scores.json')
 RUN_TIME_DIRS = tuple(os.path.normcase(str(REPO_ROOT / d)) for d in (
     os.path.join('skills', 'agent-compass', 'scripts'), 'tray', 'setup', 'agentcompass'))
-# The accessor, and the maintainer checks that read the set as files on purpose (provenance, the capability catalogue).
+# The modules that read the set as files: the accessor, and the maintainer checks (provenance, the capability catalogue).
 REFERENCE_OWNERS = ('public_data.py', 'reference_provenance.py', 'capability_catalog.py')
+# What a run-time module may enter them through: the accessor (`document`) and the functions that build the set a process
+# holds (`held`, `retake`, `fall_back` to the shipped set as a whole, the between-release check `refresh`), and each
+# owner's own command (`main`: `data publish`
+# and the channel's check, the provenance check, the catalogue generator). Any other function of an owner, public or
+# not, called from a run-time module reads the files outside the accessor (finding 3: `capability_catalog.markdown`).
+REFERENCE_ENTRIES = {'public_data.py': ('document', 'held', 'retake', 'fall_back', 'refresh', 'main'),
+                     'reference_provenance.py': ('main',), 'capability_catalog.py': ('main',)}
 PASS_THROUGH = ('override_store.py',)      # a helper the accessor reads through (retry_denied), owning nothing itself
 _STDLIB = os.path.normcase(os.path.dirname(os.__file__))
 _HERE = os.path.normcase(os.path.abspath(__file__))
@@ -184,11 +191,12 @@ def _from_environment(full):
 def reference_reader(path, frame=None):
     """`module:line` of the run-time module that opens reference-set file ``path`` other than through the accessor, or
     None. Walking out from the open past the accessor's own frames (and the helpers it reads through): the module that
-    called in is a test or a maintainer check, or it entered the accessor through a public function (`document`,
-    `held`, ...). A run-time function that reads a file its caller named (an argument such as `load_accounts(path)`, or
-    a variable of the environment such as `ROUTER_ACCOUNTS_FILE`) passes the question to that caller. A direct open, or
-    a call into one of the accessor's private helpers (`public_data._read_bytes`), from a run-time module that chose
-    the file itself is the violation."""
+    called in is a test or a maintainer check (outside the run-time directories), or the owner frames it passed include
+    one of REFERENCE_ENTRIES (the accessor, the functions that build the held set, an owner's own command). A run-time
+    function that reads a file its caller named (an argument such as `load_accounts(path)`, or a variable of the
+    environment such as `ROUTER_ACCOUNTS_FILE`) passes the question to that caller. A direct open, or a call into any
+    other function of an owner (`public_data._read_bytes`, `capability_catalog.markdown`), from a run-time module that
+    chose the file itself is the violation."""
     if isinstance(path, int) or path is None:
         return None
     try:
@@ -197,17 +205,16 @@ def reference_reader(path, frame=None):
         return None
     if os.path.dirname(full) != REFERENCES or os.path.basename(full) not in REFERENCE_FILES:
         return None
-    entry = None
+    through = False
     for name, current in _code_frames(frame or sys._getframe(2)):
         base = os.path.basename(name)
         if base in REFERENCE_OWNERS or base in PASS_THROUGH:
-            if base in REFERENCE_OWNERS:
-                entry = current
+            through = through or current.f_code.co_name in REFERENCE_ENTRIES.get(base, ())
             continue
         run_time = any(name.startswith(d + os.sep) for d in RUN_TIME_DIRS)
         if not run_time or base.startswith(('test_', 'conftest')) or base.endswith('_test_support.py'):
             return None
-        if entry is not None and not entry.f_code.co_name.startswith('_'):
+        if through:
             return None
         if _names(full, current):
             continue                    # the caller named the file: ask the caller
