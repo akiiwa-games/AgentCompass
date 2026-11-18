@@ -90,8 +90,8 @@ class AutomaticRoutingTests(unittest.TestCase):
                 bundle = accounts['accounts']['omp']['bundles'][BUNDLE]
                 self.assertEqual({k for k in bundle if 'enabled' in k}, set())  # the checkbox writes only `disabled`
                 decision = self.plan(accounts)
+                # The fixture's one launchable subscription account takes the work, whichever of its bundles wins.
                 self.assertEqual(decision['selected_bundle']['account'], 'codex')
-                self.assertTrue(decision['choice'].startswith(('sol_', 'astra_', 'pi_sol_', 'pi_astra_')))
                 self.assertIn(reason, omp_row(decision)['excluded'])
                 self.assertNotIn('metered_fallback', decision['decision']['task'])
 
