@@ -1155,16 +1155,27 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
     return account, [c for c in candidates if c["account"] == account]
 
 
-def native_own_account(name: str, target: dict, accounts: dict | None) -> dict:
-    """A native sub-agent (Claude Code `Agent`/`Task`, Codex `spawn_agent`) runs on the calling session's own account.
-    A launch that names no provider or account resolves to it when discovery records it
-    (provider_inventory.session_account), so the checkbox rule applies as to a bound launch; otherwise it is left
-    unresolved (parent-address-gate.md states that limit)."""
+def native_own_account(name: str, target: dict, accounts: dict | None) -> str | None:
+    """The calling session's own account for a native sub-agent launch (Claude Code `Agent`/`Task`, Codex
+    `spawn_agent`) that names no provider or account, when discovery records it (provider_inventory.session_account);
+    None otherwise (parent-address-gate.md states that limit). Only the unchecked-model rule reads it, and only for a
+    launch that names a model (resolve_target matches bundles by model): every quota, window, floor and cooldown check
+    on a native launch resolves the launch as it is written."""
     family = "claude" if name in CLAUDE_AGENT_TOOLS else "codex" if name == "spawn_agent" else None
     if not family or any(target.get(k) for k in ("provider", "account", "bundle_id")):
-        return target
-    own = router_owner("provider_inventory", "session_account")(family, (accounts or {}).get("_discovery") or {})
-    return dict(target, account=own) if own else target
+        return None
+    return router_owner("provider_inventory", "session_account")(family, (accounts or {}).get("_discovery") or {})
+
+
+def native_unchecked_text(account: str, model: str, row: dict) -> str:
+    """The unchecked-model refusal of a native launch: the model the launch asked for, the account it runs on, and the
+    route record it was matched against."""
+    bundle = row.get("bundle") if isinstance(row.get("bundle"), dict) else {}
+    matched = bundle.get("id") or row.get("choice") or "?"
+    kind = row.get("constraint") or row.get("stage") or "?"
+    return (f"[Router Gate] 拦截：原生子 agent 请求的模型 {model} 在本会话账号 {account} 上的档位都在模型管理中未勾选"
+            f"（不参与自动派发）；匹配到的路由记录是 {matched}（{kind}），不是用户点名的路由。"
+            "只有用户在本次请求中点名的路由（user_override 记录）可以启动它。" + DISABLED_RECOVERY)
 
 
 DISABLED_RECOVERY = (
@@ -1639,13 +1650,21 @@ def evaluate_payload(
                             dispatch_id=agent_labels(docs[agent_id]).get("router.dispatch_id")) for agent_id in agent_ids]
         dispatch_id = args.get("labels", {}).get("router.dispatch_id") if isinstance(args.get("labels"), dict) else None
         unchecked = None    # an unchecked model: refused below unless the launch's authority is the user's naming
+        native_unchecked = None     # (account, model) of a native launch's unchecked model, named in its refusal
         for target in targets:
             try:
-                target = native_own_account(name, target, accounts)
                 account, candidates = resolve_target(target, accounts)
                 disabled = check_target_disabled(target, account, candidates, accounts) if trigger else None
                 if disabled and disabled[0] == "bundles":
                     unchecked, disabled = disabled[1], None
+                    if (name in CLAUDE_AGENT_TOOLS or name == "spawn_agent") and target.get("model"):
+                        native_unchecked = (account, target["model"])
+                own = native_own_account(name, target, accounts) if trigger else None
+                if own and own != account:
+                    own_target = dict(target, account=own)
+                    found = check_target_disabled(own_target, own, resolve_target(own_target, accounts)[1], accounts)
+                    if found and found[0] == "bundles":
+                        unchecked, native_unchecked = found[1], (own, target["model"])
                 reason = (
                     (disabled[1] if disabled else None if trigger
                      else check_own_worker_legacy(target, account, accounts))
@@ -1720,7 +1739,8 @@ def evaluate_payload(
         if row is not None and (reason := check_route_authority(row, trigger)):
             return format_response(False, harness_kind, reason)
         if row is not None and unchecked and row.get("constraint") != "user_override":
-            return format_response(False, harness_kind, unchecked)
+            return format_response(False, harness_kind,
+                                   native_unchecked_text(*native_unchecked, row) if native_unchecked else unchecked)
         if row is None:
             reason = (f"[Router Gate] 启动参数与有效期内路由不匹配 ({trigger})：{diagnostic}。"
                       "请按本次任务的 router provider/model/effort 启动，或重新运行 roll。"

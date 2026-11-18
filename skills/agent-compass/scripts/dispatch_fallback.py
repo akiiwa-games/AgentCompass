@@ -205,17 +205,11 @@ class Chain:
         return {'attempt': len(self.attempts) + 1, **bundle_view(bundle),
                 **({'dispatch_id': row['dispatch_id'], 'decision_id': row['decision_id']} if row else {})}
 
-    def profile_unreadable(self):
-        """True when this brief was routed under a task profile of an older version: it is neither replanned nor read
-        again (`dispatch_registry.prepare` refuses the same decision), so its relaunch ends here with a reason."""
-        import task_intake
-        if self.task.get('profile') is None:
-            return False
-        try:
-            task_intake.validate_profile(self.task['profile'])
-        except ValueError:
-            return True
-        return False
+    def recorded_earlier(self):
+        """True when this brief's decision was recorded by an earlier version (dispatch_registry.earlier_version): it is
+        neither replanned nor read again (`dispatch_registry.prepare` refuses the same decision), so its relaunch ends
+        here with a reason."""
+        return registry.earlier_version(self.task) is not None
 
     def failed(self, attempt, failure, row=None):
         attempt.update(failure=failure['label'], kind=failure['kind'], covered=failure['covered'],
@@ -351,7 +345,7 @@ class Chain:
                 attempt = self.entry(bundle or row['bundle'], row)
                 self.attempts.append(attempt)
             kept = len(self.attempts)
-            if self.profile_unreadable():
+            if self.recorded_earlier():
                 if not resume:
                     self.failed(attempt, failure, row)
                 self.ledger('older_profile', attempt)
@@ -606,9 +600,9 @@ def final_text(kind, attempts, task):
                 f'{listed}\nNothing is running it. The holds and cooldowns behind these failures lift on their own '
                 '(plan/roll warnings and the tray account list say when). Tell the user.')
     if kind == 'older_profile':
-        return ('This brief was routed by an older version of AgentCompass under a task profile this version does not '
-                f'read, so it was not relaunched after its failure:\n{listed}\nNothing is running it. Tell the user; '
-                'roll the brief again to route it afresh.')
+        return ('This brief was routed by an earlier version of AgentCompass, in a shape this version does not read, so '
+                f'it was not relaunched after its failure:\n{listed}\nNothing is running it. Tell the user; roll the '
+                'brief again to route it afresh.')
     if kind == 'worker_named':
         return ('The caller named this worker with --resume, so AgentCompass does not start another worker in its place '
                 f'(a new one would not have its context):\n{listed}\nNothing is running this brief. Roll it without '

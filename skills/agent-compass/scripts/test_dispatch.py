@@ -4985,15 +4985,19 @@ class ContinuationRollTests(unittest.TestCase):
         import decision_ledger
         import roll
         bundle = dict(self.bundle, bundle_id='lab_sonnet55_high')
-        cases = (   # (provider, account, model, effort, fast, conflict); fast mode is part of the route
-            ('claude-lab', 'claude-lab', 'claude-opus-5-5', 'high', False, True),
-            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'medium', False, True),
-            ('codex', 'codex', 'gpt-6.1-sol', 'high', False, True),
-            (None, None, None, None, True, True),
-            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'high', True, True),
-            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'high', False, False),
-            (None, None, 'claude-sonnet-5-5:high', None, False, False),
-            (None, None, 'claude-sonnet-5-5', None, False, False),
+        # (provider, account, model, effort, fast, the flags the error names: only those given that name another
+        # route; None when they all name the worker's own). Fast mode is part of the route.
+        cases = (
+            ('claude-lab', 'claude-lab', 'claude-opus-5-5', 'high', False, '--model'),
+            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'medium', False, '--effort'),
+            (None, None, 'claude-sonnet-5-5:medium', None, False, '--model'),
+            ('codex', 'codex', 'gpt-6.1-sol', 'high', False, '--provider and --account and --model'),
+            (None, None, None, None, True, '--fast'),
+            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'high', True, '--fast'),
+            ('claude-lab', 'claude-lab', 'claude-opus-5-5', 'high', True, '--model and --fast'),
+            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'high', False, None),
+            (None, None, 'claude-sonnet-5-5:high', None, False, None),
+            (None, None, 'claude-sonnet-5-5', None, False, None),
         )
         # --fast on a worker that runs fast names its own route: it adds nothing.
         own_fast = argparse.Namespace(provider=None, account=None, model=None, effort=None, fast=True)
@@ -5024,7 +5028,7 @@ class ContinuationRollTests(unittest.TestCase):
                     if conflict:
                         with self.assertRaisesRegex(ValueError, r"--resume names the worker and its route is the "
                                                                 r"worker's own \(claude-lab/claude-sonnet-5-5:high\); drop "
-                                                                + ('the model flags and --fast' if fast else 'the model flags')):
+                                                                + conflict + ', or roll'):
                             roll.run(argparse.Namespace(brief=brief, **args), judge)
                         self.assertEqual(len(decision_ledger.read_ledger()), rows_before)     # nothing recorded
                         self.assertEqual(operations, [])

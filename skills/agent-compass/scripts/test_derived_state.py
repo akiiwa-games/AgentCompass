@@ -74,7 +74,7 @@ class DerivedStateHealsTests(unittest.TestCase):
             self.prepare(old_task, old_id)
         message = str(caught.exception)
         self.assertIn(old_id, message)
-        self.assertIn('not resumed', message)
+        self.assertIn('was recorded by an earlier version of AgentCompass', message)
         self.assertNotIn(str(self.db), message)          # the database is not the fault: nothing asks to delete it
         self.assertNotIn('delete', message)
         self.assertEqual(self.prepare(new_task, new_id)['state'], 'prepared')
@@ -89,8 +89,33 @@ class DerivedStateHealsTests(unittest.TestCase):
             doc = json.loads(connection.execute('SELECT data FROM decisions WHERE id=?', (decision_id,)).fetchone()[0])
             doc['allocation_task']['profile'] = self.old_profile()
             connection.execute('UPDATE decisions SET data=? WHERE id=?', (json.dumps(doc), decision_id))
-        with self.assertRaisesRegex(ValueError, 'not resumed'):
+        with self.assertRaisesRegex(ValueError, 'was recorded by an earlier version of AgentCompass'):
             self.prepare(task, decision_id)
+
+    def test_a_decision_whose_stored_task_carries_a_field_agentcompass_sets_is_refused_as_an_earlier_versions(self):
+        # Rule (dispatch_registry.earlier_version): v0.7.0's `record --fast` wrote force_fast into the stored task. The
+        # caller-task check runs only where a caller's task enters, so prepare answers with the one earlier-version
+        # refusal, naming the field, and a decision of the current shape still prepares.
+        for field, value in (('force_fast', True), ('pinned_bundle', 'sol_high'), ('needs', {'force_fast': True})):
+            with self.subTest(field=field):
+                task = {'objective': 'Implement feature', 'task_id': f't-{field}', 'parent_agent_id': 'p1',
+                        'expected_hours': 0.5}
+                with patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
+                        patch.object(dispatch_registry.provider_inventory, 'launcher_family', return_value='codex'):
+                    old_id = dispatch_registry.issue(
+                        {'stage': 'plan', 'choice': 'sol_high', 'selected_bundle': self.bundle,
+                         'decision': {'action': 'start'}},
+                        task, now=NOW, path=self.db,
+                        allocation_task={**task, 'profile': profile(), field: value})['decision_id']
+                with self.assertRaises(ValueError) as caught:
+                    self.prepare(task, old_id)
+                message = str(caught.exception)
+                self.assertIn('was recorded by an earlier version of AgentCompass', message)
+                self.assertIn('roll or record it again', message)
+                self.assertIn(field if field != 'needs' else 'needs.force_fast', message)
+                self.assertNotIn('invalid_task_input', message)
+        new_task, new_id = self.record('t-current', profile())
+        self.assertEqual(self.prepare(new_task, new_id)['state'], 'prepared')
 
     def test_a_database_without_tables_is_created_on_use_and_doctor_does_not_name_it(self):
         sqlite3.connect(self.db).close()                  # an empty database file: no decisions, no dispatches

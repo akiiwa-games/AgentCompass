@@ -116,6 +116,36 @@ class FastModeFactTests(NamedRouteCase):
         self.assertTrue(launched['bundle'].get('fast'))
         self.assertTrue(any('unchecked in model management' in w for w in result.get('warnings') or ()), result.get('warnings'))
 
+    def test_the_registry_writes_a_fast_route_as_the_plain_bundle_id_with_its_fast_field(self):
+        """Round 6, finding 4: fast mode is the bundle's `fast` field; `<id>+fast` (fast_modes.ID_SUFFIX) is only the
+        ranking's name for the variant. The registry stores the catalog row's plain id with `fast: True`, whether the
+        route was a named record or a plan's fast variant (allocator selected_bundle: base_id), so a resume reads
+        the worker's fast mode from the field (roll.named_route_conflict)."""
+        import argparse
+        import roll
+        bundle = next((b for b in account_fleet.bundles(self.accounts).values() if b.get('effort') and fast_modes.supported(
+            account_fleet.bundle_harness(b, b['account']), b['model'], account_fleet.model_spec(self.accounts, b['model']))), None)
+        if bundle is None:
+            self.skipTest('the reference fleet has no row with a verified fast contract')
+        _, launched = self.launched(account=bundle['account'], provider=bundle['provider'],
+                                    model=bundle['model'], effort=bundle['effort'], fast=True)
+        variant = fast_modes.variant_id(bundle['id'])
+        task = self.task(parent_agent_id='parent-1', task_id='t-' + os.urandom(4).hex())
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory, \
+                patch.dict(os.environ, {'ROUTER_DISPATCH_DB': os.path.join(directory, 'db.sqlite3')}), \
+                patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(self.accounts)):
+            issued = dispatch_registry.issue({'stage': 'plan', 'choice': variant, 'decision': {'action': 'start'},
+                                              'selected_bundle': dict(bundle, bundle_id=bundle['id'], fast=True)}, task)
+            planned = dispatch_registry.decision_record(issued['decision_id'])['bundle']
+        stored = {'named record, launched': launched['bundle'], 'plan fast variant': planned}
+        for writer, written in stored.items():
+            with self.subTest(writer=writer):
+                self.assertEqual(written['bundle_id'], bundle['id'])
+                self.assertFalse(written['bundle_id'].endswith(fast_modes.ID_SUFFIX))
+                self.assertIs(written.get('fast'), True)
+                fast_resume = argparse.Namespace(provider=None, account=None, model=None, effort=None, fast=True)
+                self.assertIsNone(roll.named_route_conflict(fast_resume, written, self.accounts))
+
     def priced_contract(self):
         for bundle in account_fleet.bundles(self.accounts).values():
             if bundle.get('effort') and fast_modes.supported(account_fleet.bundle_harness(bundle, bundle['account']),
@@ -266,7 +296,9 @@ class UnclassifiedFactTests(NamedRouteCase):
 
 class CallerTaskBoundaryTests(NamedRouteCase):
     """Finding 1 (round 5): a field AgentCompass sets for itself is never settable from a caller's task. It is refused by
-    name at every reader of caller input, and router code passes it only as a route field (allocator.plan(route=...))."""
+    name where a caller's task enters (plan --input, record), and router code passes it only as a route field
+    (allocator.plan(route=...)); the planner never reads one from a task (round 6: a stored task of an earlier version
+    is dispatch_registry.earlier_version's, test_derived_state)."""
 
     KEYS = (*task_intake.NOT_CALLER_INPUT, 'needs.force_fast')
 
@@ -276,14 +308,16 @@ class CallerTaskBoundaryTests(NamedRouteCase):
             return dict(task, needs={**(task.get('needs') or {}), key.split('.', 1)[1]: True})
         return dict(task, **{key: 'opus55_high' if key.endswith('bundle') else True})
 
-    def test_every_router_field_in_a_callers_task_is_refused_by_name_at_every_reader(self):
+    def test_every_router_field_in_a_callers_task_is_refused_by_name_where_it_enters(self):
         self.assertTrue(set(task_intake.ROUTE_FIELDS) <= set(task_intake.NOT_CALLER_INPUT))
         path = os.path.join(self.root, 'in.json')
+        seen = lambda plan: (plan['decision'], [(r['bundle'].get('bundle_id') or r['bundle'].get('id'), r.get('excluded')) for r in plan['ranking']])
+        plain = seen(self.plan(self.task()))
         for key in self.KEYS:
             task = self.carrying(key, self.task())
             text = f'^invalid_task_input: {key} is set by AgentCompass itself'
-            with self.subTest(key=key, reader='allocator.plan'), self.assertRaisesRegex(ValueError, text):
-                self.plan(task)
+            with self.subTest(key=key, reader='allocator.plan reads no route field from a task'):
+                self.assertEqual(seen(self.plan(task)), plain)
             with self.subTest(key=key, reader='plan --input'), self.assertRaisesRegex(ValueError, text):
                 route_judge._plan_input_task({'task': task}, argparse.Namespace(hours=None, can_wait_hours=None))
             with open(path, 'w', encoding='utf-8') as handle:
@@ -327,8 +361,11 @@ class CallerTaskBoundaryTests(NamedRouteCase):
         unwrapped = patch.object(task_intake, 'normalize_task', task_intake.normalize_task.__wrapped__)
         with unwrapped, self.assertRaisesRegex(ValueError, 'task.profile is required'):
             self.plan(task)
+        with unwrapped, self.assertRaisesRegex(ValueError, 'task.profile is required'):
+            self.plan(dict(task, unclassified='no classifier'))      # a task field is never read as the route's
         with self.assertRaisesRegex(ValueError, '^invalid_task_input: unclassified'):
-            self.plan(dict(task, unclassified='no classifier'))
+            route_judge._plan_input_task({'task': dict(task, unclassified='no classifier')},
+                                         argparse.Namespace(hours=None, can_wait_hours=None))
 
 
 class ListedModelRefusalTests(NamedRouteCase):

@@ -822,10 +822,13 @@ class RouterGateHookTests(unittest.TestCase):
     def test_a_native_launch_resolves_to_the_sessions_own_account_only_when_discovery_records_it(self):
         # Gate contract (parent-address-gate.md): a native sub-agent runs on the calling session's own account. When
         # discovery records which account that is (one account of the family whose home is the session's directory),
-        # a launch naming only a model resolves to it and the checkbox rule applies as to a bound launch: only a
-        # user_override row passes an unchecked model. When it is not recorded, nothing is guessed.
+        # a launch naming a model resolves to it for the checkbox rule only: only a user_override row passes an
+        # unchecked model, and the refusal names the model asked for, the account and the matched record. When it is
+        # not recorded, or the launch names no model, nothing is guessed. Quota, window and floor checks resolve the
+        # launch as it is written, so the own account's exhausted window does not refuse it.
         native = {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "work",
                                                          "model": "opus"}}
+        no_model = {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "work"}}
         own_home, lab_home = self.state / ".claude-own", self.state / ".claude-lab"
         real_accounts = gate.load_dispatch_accounts
 
@@ -847,17 +850,48 @@ class RouterGateHookTests(unittest.TestCase):
             (recorded, None, True),
             ({}, None, False), (ambiguous, None, False),    # not recorded / not one account: unresolved, as before
         )
+        def opus_row(constraint):
+            row = self.route("claude", "claude-opus-5-5", "high")
+            row["bundle"]["id"] = "opus55_high"
+            return dict(row, **({"stage": "record", "constraint": constraint} if constraint else {}))
+
         with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(own_home)}):
             for rows, constraint, refused in cases:
-                row = dict(self.route("claude", "claude-opus-5-5", "high"),
-                           **({"stage": "record", "constraint": constraint} if constraint else {}))
-                ledger = self.write_ledger(str(self.state), [row])
+                ledger = self.write_ledger(str(self.state), [opus_row(constraint)])
                 with self.subTest(rows=sorted(rows), ambiguous=rows is ambiguous, constraint=constraint), \
                         mock.patch.object(gate, "load_dispatch_accounts", side_effect=discovered(rows)):
                     result = gate.evaluate_payload(native, ledger_path=ledger, now=T0)
                     self.assertEqual("reason" in result, refused, result)
                     if refused:
                         self.assertIn("在模型管理中未勾选", result["reason"])
+                        for named in ("模型 opus", "账号 claude ", "opus55_high"):
+                            self.assertIn(named, result["reason"])
+                        self.assertNotIn("?", result["reason"])
+                    with self.subTest(launch="no model"):
+                        self.assertNotIn("reason", gate.evaluate_payload(no_model, ledger_path=ledger, now=T0))
+
+            # A launch that names no model is not resolved to the own account even when every model of it is unchecked.
+            every = list(real_accounts()["accounts"]["claude"]["bundles"])
+            self.write_settings(accounts={"claude": {"bundles": {b: {"disabled": True} for b in every}}})
+            ledger = self.write_ledger(str(self.state), [opus_row(None)])
+            with self.subTest(launch="no model, every model unchecked"), \
+                    mock.patch.object(gate, "load_dispatch_accounts", side_effect=discovered(recorded)):
+                self.assertNotIn("reason", gate.evaluate_payload(no_model, ledger_path=ledger, now=T0))
+
+            # The own account's window is exhausted and its models are checked: the native launch is not resolved to
+            # it for that check, exactly as before the own-account resolution existed.
+            self.write_settings(accounts={})
+            cache = self.state / "usage-exhausted.json"
+            cache.write_text(json.dumps({"providers": {"claude": {
+                "available": True, "stale": False, "fetched_at": T0.isoformat(),
+                "windows": [{"id": w, "used_pct": 100, "resets_at": (T0 + dt.timedelta(hours=3)).isoformat()}
+                            for w in ("five_hour", "seven_day")]}}}), encoding="utf-8")
+            ledger = self.write_ledger(str(self.state), [opus_row(None)])
+            with mock.patch.object(gate, "load_dispatch_accounts", side_effect=discovered(recorded)):
+                for payload in (native, no_model):
+                    with self.subTest(quota=payload["tool_input"].get("model")):
+                        self.assertNotIn("reason", gate.evaluate_payload(payload, ledger_path=ledger, now=T0,
+                                                                         usage_cache_path=cache))
 
     def test_a_caller_known_only_by_its_host_session_owns_the_worker_whose_parent_record_runs_that_session(self):
         # Gate contract (parent-address-gate.md): ownership is proven when every parent label names the caller, by its

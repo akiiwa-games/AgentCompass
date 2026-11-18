@@ -418,11 +418,19 @@ ROUTE_FIELDS = ('pinned_bundle', 'user_named_bundle', 'unclassified', 'force_fas
 NOT_CALLER_INPUT = (*ROUTE_FIELDS, 'metered_fallback', 'worker', 'listed_rows', 'include_unverified')
 
 
-def check_caller_task(task):
-    """Refuse a caller's task that carries a field only AgentCompass sets (NOT_CALLER_INPUT), by name; never drop it."""
+def router_fields(task):
+    """The fields of `task` only AgentCompass sets (NOT_CALLER_INPUT, and `needs.force_fast`), by name."""
     task = task if isinstance(task, dict) else {}
     needs = task.get('needs') if isinstance(task.get('needs'), dict) else {}
-    found = [k for k in NOT_CALLER_INPUT if k in task] + [f'needs.{k}' for k in ('force_fast',) if k in needs]
+    return [k for k in NOT_CALLER_INPUT if k in task] + [f'needs.{k}' for k in ('force_fast',) if k in needs]
+
+
+def check_caller_task(task):
+    """Refuse a caller's task that carries a field only AgentCompass sets (router_fields), by name; never drop it.
+    Called where a caller's task enters (route_judge: plan --input, record), not on a task AgentCompass stored: a stored
+    decision in an earlier version's shape is dispatch_registry.earlier_version's."""
+    task = task if isinstance(task, dict) else {}
+    found = router_fields(task)
     if found:
         raise ValueError(
             f"invalid_task_input: {', '.join(found)} {'is' if len(found) == 1 else 'are'} set by AgentCompass itself, "
@@ -435,9 +443,10 @@ COUPLINGS = ('low', 'medium', 'high')       # chain.coupling; high is a related 
 
 
 def normalize_task(raw, policy, capabilities, accounts, route=None):
-    """`raw` is the caller's task (check_caller_task); `route` the route fields AgentCompass passes for a decision it
-    recorded (ROUTE_FIELDS)."""
-    task = dict(check_caller_task(raw or {}))
+    """`raw` is the task to plan: a caller's, checked where it entered (check_caller_task), or one a decision stored;
+    a route field in it is never read. `route` holds the route fields AgentCompass passes for a decision it recorded
+    (ROUTE_FIELDS)."""
+    task = dict(raw or {})
     route = dict(route or {})
     unknown = sorted(set(route) - set(ROUTE_FIELDS))
     if unknown:

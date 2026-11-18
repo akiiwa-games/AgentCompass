@@ -230,6 +230,30 @@ def check_launch_quota(bundle, accounts, usage, now):
             raise ValueError(f"Account {bundle['account']} {wid} is below its existing launch protection ({floor}% remaining floor); refresh quota or replan")
 
 
+EARLIER_VERSION = ('decision {decision_id} was recorded by an earlier version of AgentCompass ({detail}); roll or '
+                   'record it again')
+
+
+def earlier_version(task):
+    """Why a stored task is in a shape an earlier version recorded and this one does not read, or None. A decision is
+    derived state, so it is not upgraded: a task profile this version does not validate, or fields only AgentCompass
+    sets for itself (task_intake.router_fields; v0.7.0's `record --fast` wrote `force_fast` into the stored task).
+    The one owner of that refusal: dispatch_registry.prepare raises EARLIER_VERSION, and dispatch_fallback ends a
+    relaunch on it."""
+    import task_intake
+    if not isinstance(task, dict):
+        return None
+    if task.get('profile') is not None:
+        try:
+            task_intake.validate_profile(task['profile'])
+        except ValueError:
+            return 'its task profile is not one this version reads'
+    found = task_intake.router_fields(task)
+    if found:
+        return f"its task carries {', '.join(found)}, which this version sets only on the route it plans"
+    return None
+
+
 def issue(result, task, now=None, path=None, allocation_task=None, listed_rows=None, route=None):
     """Register a decision, without committing capacity. Legacy unbound decisions cannot dispatch. `listed_rows`
     (provider_inventory.listed_rows) are the rows of a model the user named that the shipped data has no row for and the
@@ -1169,14 +1193,10 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         decision = get(connection, 'decisions', decision_id)
         if not decision['bound'] or decision['task_hash'] != digest(task):
             raise ValueError('Decision is unbound or belongs to another task/parent/input')
-        if isinstance(decision.get('allocation_task'), dict) and decision['allocation_task'].get('profile') is not None:
-            try:
-                task_intake.validate_profile(decision['allocation_task']['profile'])
-            except ValueError as exc:
-                # Recorded by an older version: its profile is not reinterpreted, and neither a new launch nor a resume
-                # of its prepared row proceeds under it. Other decisions of the database are not affected.
-                raise ValueError(f'decision {decision_id} was recorded by an older version with a task profile this '
-                                 'version does not read; it is not resumed. Run plan and record again for the task') from exc
+        detail = earlier_version(decision.get('allocation_task'))
+        if detail:
+            # Neither a new launch nor a resume of its prepared row proceeds under it; other decisions are not affected.
+            raise ValueError(EARLIER_VERSION.format(decision_id=decision_id, detail=detail))
         if isinstance(resume_bundle, dict):
             bundle = dict(resume_bundle)
             resolved_resume = resolve_bundle(bundle, accounts, False)
