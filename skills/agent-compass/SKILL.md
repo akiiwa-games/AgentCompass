@@ -29,6 +29,6 @@ Optional, only when true (`agentcompass roll -h`): `--workspace <dir>`, `--hours
 
 Herdr core auto-detects its actual terminal. Read [Herdr first-time setup and support limits](references/herdr.md) for installation and completion collection. Raw shell roll in Cindy is refused; the Cindy plugin is a separate repository (`cindy-agentcompass-plugin`).
 
-Troubleshooting after an update: if local state under `~/.agent-compass`, hooks or global rule blocks fail with an old-shape error, run `agentcompass doctor` and apply the printed fix (`re-run "agentcompass setup"`, `re-toggle in the tray`, or `delete "<file>"`).
+Troubleshooting after an update: if local state under `~/.agent-compass`, hooks or global rule blocks fail with an old-shape error, run `agentcompass doctor` and apply the printed fix (`re-run "agentcompass setup"`, an edit the message names, or `delete "<file>"` with what it discards).
 
 More: [dispatch rules](references/dispatch-rules.md) · [roll reference](references/roll-reference.md) (result variants, Dot/Grok/CLI/native) · [router internals](references/router-internals.md) (when to delegate, plan and record, scoring, launch contract, reference index).

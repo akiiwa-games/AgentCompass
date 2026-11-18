@@ -30,7 +30,7 @@ def load_overrides(now, path=None, usage=None, accounts=None, prune=True):
         document = json.loads(target.read_text(encoding='utf-8-sig'))
     except (OSError, ValueError) as exc:
         raise ValueError(state_upgrade.format_issue(
-            target, f'router overrides invalid JSON ({exc})', state_upgrade.fix_delete(target),
+            target, f'router overrides invalid JSON ({exc})', state_upgrade.fix_delete(target, 'this discards the temporary priorities it holds'),
         )) from exc
     rows = document.get('overrides') if isinstance(document, dict) else None
     active, landed, depleted = [], {}, {}

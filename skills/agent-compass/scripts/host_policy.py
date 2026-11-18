@@ -37,21 +37,22 @@ def load_policy():
         if not explicit:
             return None
         raise HostPolicyError(state_upgrade.format_issue(
-            path, 'host-policy configuration missing', state_upgrade.FIX_TRAY,
+            path, 'host-policy configuration missing',
+            'create it as a JSON object with "allowed_accounts" (a list of account names), or unset ROUTER_HOST_POLICY',
         )) from None
     except UnicodeError:
         raise HostPolicyError(state_upgrade.format_issue(
-            path, 'host-policy configuration must be UTF-8', state_upgrade.FIX_TRAY,
+            path, 'host-policy configuration must be UTF-8', state_upgrade.host_policy_fix(path),
         )) from None
     except OSError as exc:
         raise HostPolicyError(state_upgrade.format_issue(
-            path, f'host-policy configuration unreadable ({exc})', state_upgrade.FIX_TRAY,
+            path, f'host-policy configuration unreadable ({exc})', state_upgrade.host_policy_fix(path),
         )) from None
     try:
         data = json.loads(raw)
     except (ValueError, UnicodeError):
         raise HostPolicyError(state_upgrade.format_issue(
-            path, 'host-policy configuration invalid JSON', state_upgrade.FIX_TRAY,
+            path, 'host-policy configuration invalid JSON', state_upgrade.host_policy_fix(path),
         )) from None
     try:
         return state_upgrade.validate_host_policy_doc(data, path)

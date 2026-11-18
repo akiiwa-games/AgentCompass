@@ -252,15 +252,16 @@ class Doctor(unittest.TestCase):
             'omp': {'billing': 'metered', 'windows': {'week': {'hours': 168}}},
             'claude': {'billing': 'subscription', 'windows': {'seven_day': {'hours': 168}}},
         }}
-        state_upgrade.validate_accounts_override_doc(omp, path)
+        path.write_text(json.dumps(omp), encoding='utf-8', newline='\n')
+        accounts_override.load_override(path)   # leftover meter fields do not fail the file
         self.assertEqual(state_upgrade.legacy_meter_field_names(omp['accounts']['omp']), [])
         self.assertEqual(state_upgrade.legacy_meter_field_names(omp['accounts']['claude']), [])
 
         kind = {'schema_version': 2, 'accounts': {
             'old': {'backend_kind': 'litellm', 'endpoint': 'https://proxy.example.test', 'api_key': 'sk-team-proxy'},
         }}
-        state_upgrade.validate_accounts_override_doc(kind, path)
         path.write_text(json.dumps(kind), encoding='utf-8', newline='\n')
+        accounts_override.load_override(path)
         kind_issue = state_upgrade.check_accounts_override(path)
         self.assertIn('backend_kind=litellm', kind_issue)
         self.assertIn(state_upgrade.LEGACY_METER_REASON, kind_issue)

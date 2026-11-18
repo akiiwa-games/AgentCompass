@@ -2578,10 +2578,11 @@ def discover_metered_usd_accounts() -> dict[str, MeteredUsdAccount]:
     """
     path = _accounts_override_path()
     found: dict[str, MeteredUsdAccount] = {}
+    import accounts_override
     try:
-        doc = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        doc = None
+        doc = accounts_override.load_override(path) if path.is_file() else None
+    except ValueError:
+        doc = None   # a file of a shape nothing can carry is named by `agentcompass doctor`; no account is polled from it
     accounts = doc.get("accounts") if isinstance(doc, dict) else None
     if isinstance(accounts, dict):
         for pid, spec in accounts.items():

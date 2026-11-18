@@ -1,9 +1,10 @@
 """Read-only upgrade checks for local ~/.agent-compass state, hooks and global rule blocks.
 
-Every diagnostic names the offending file and one of the three upgrade fixes:
+Every diagnostic names the offending file and a fix that works when followed:
   - re-run "agentcompass setup"
-  - re-toggle in the tray
-  - delete "<file>"
+  - edit the file (what to change is named)
+  - delete "<file>", with what the deletion discards when the file holds something the user chose
+Only what needs the user is listed: a cache or database the product rebuilds or skips itself is not.
 
 Runtime loaders call the same validators so an unreadable or wrong-schema file
 fails fast with the same message `agentcompass doctor` prints. A leftover meter
@@ -20,7 +21,6 @@ import stat
 from pathlib import Path
 
 FIX_SETUP = 're-run "agentcompass setup"'
-FIX_TRAY = 're-toggle in the tray'
 # Shown on the account row, in doctor, and as the routing exclusion. The fields are not applied.
 LEGACY_METER_REASON = (
     '旧的额度字段残留。运行 agentcompass setup 清掉旧字段。'
@@ -29,18 +29,26 @@ LEGACY_SETTINGS_REASON = (
     '旧设置残留。在设置里保存一次即可清掉，或运行 agentcompass setup。'
 )
 
+# Overlay words of an earlier release (v0.1.0 to v0.5.0) and the name they carry today: the release's own rewrite of the
+# command placeholder, the variable names it renamed (AGENTCOMPASS_* is the one canonical name), and the skill rename.
+# A token with no current name (a bare script path placeholder, a script file name, ROUTE_MANAGER_*) is not rewritten.
+HOST_RULE_UPGRADES = {
+    'python -X utf8 @@ROUTE_JUDGE@@': '@@AGENTCOMPASS@@',
+    'ROUTER_WORKER': 'AGENTCOMPASS_WORKER',
+    'ROUTER_ACCOUNTS_OVERRIDE': 'AGENTCOMPASS_ACCOUNTS_OVERRIDE',
+    'ROUTER_LIVE_MODELS': 'AGENTCOMPASS_LIVE_MODELS',
+    'route-agent-work': 'agent-compass',
+}
+# The files `host_rules.load` reads; the others in `host-rules/` (dispatch.md, personal-routing-policy.md) are the user's own
+# documents, which no release or check reads as an overlay.
+HOST_RULE_OVERLAYS = ('shared.md', 'codex.md', 'daemon-append.md')
 HOST_POLICY_KEYS = frozenset({'allowed_accounts', 'judges', 'usage_providers', 'known_accounts'})
+RETIRED_PLACEHOLDER = '@@ROUTE_JUDGE@@'     # no current meaning on its own; `python -X utf8 @@ROUTE_JUDGE@@` is renamed above
 RULE_BEGIN = '<!-- agentcompass:begin -->'
 RULE_END = '<!-- agentcompass:end -->'
-LEGACY_RULE_TOKENS = (
-    '@@ROUTE_JUDGE@@',
-    'ROUTER_WORKER',
-    'ROUTER_ACCOUNTS_OVERRIDE',
-    'ROUTER_LIVE_MODELS',
-    'ROUTE_MANAGER_',
-    'route-agent-work',
-    'route_judge.py',
-)
+# What an earlier release's rule block held and a current render never does (an overlay's words are carried through
+# `upgrade_host_rule_text`, and the retired placeholder is refused); a name the user wrote in prose stays in the block.
+STALE_RULE_TOKENS = (*HOST_RULE_UPGRADES, RETIRED_PLACEHOLDER)
 LEGACY_HOOK_TOKENS = (
     'route-agent-work',
     'cli/_internal/agentcompass/data/setup/router_gate_hook.py',
@@ -73,8 +81,9 @@ RETIRED_REFERENCE_DATA = {
 }
 
 
-def fix_delete(path: Path | str) -> str:
-    return f'delete "{path}"'
+def fix_delete(path: Path | str, discards: str | None = None) -> str:
+    """The delete fix; `discards` says what the user loses by it when the file holds something they chose."""
+    return f'delete "{path}"' + (f' ({discards})' if discards else '')
 
 
 def format_issue(path: Path | str, detail: str, fix: str) -> str:
@@ -92,59 +101,6 @@ def state_dir(home: Path | None = None, environ: dict | None = None) -> Path:
         return Path(os.path.expandvars(configured)).expanduser()
     base = Path(home) if home is not None else Path.home()
     return base / '.agent-compass'
-
-
-def _find_non_bool_disabled(node, prefix: str = '') -> str | None:
-    if isinstance(node, dict):
-        for key, value in node.items():
-            at = f'{prefix}.{key}' if prefix else str(key)
-            if key == 'disabled':
-                if not isinstance(value, bool):
-                    return f'non-boolean disabled ({value!r}) at {at}'
-            else:
-                found = _find_non_bool_disabled(value, at)
-                if found:
-                    return found
-    elif isinstance(node, list):
-        for index, value in enumerate(node):
-            found = _find_non_bool_disabled(value, f'{prefix}[{index}]')
-            if found:
-                return found
-    return None
-
-
-def validate_accounts_override_doc(doc, path: Path | str) -> None:
-    if not isinstance(doc, dict):
-        raise ValueError(format_issue(path, 'older or invalid accounts-override format (expected JSON object)', FIX_TRAY))
-    version = doc.get('schema_version')
-    if version != 2:
-        raise ValueError(format_issue(
-            path,
-            f'older accounts-override schema_version {version!r} (expected 2)',
-            FIX_TRAY,
-        ))
-    if 'migration_ambiguous_enabled' in doc:
-        raise ValueError(format_issue(
-            path,
-            'older accounts-override field migration_ambiguous_enabled is no longer supported',
-            FIX_TRAY,
-        ))
-    accounts = doc.get('accounts')
-    if accounts is not None:
-        if not isinstance(accounts, dict):
-            raise ValueError(format_issue(path, 'invalid accounts-override.accounts (expected JSON object)', FIX_TRAY))
-        for name, spec in accounts.items():
-            if not isinstance(spec, dict):
-                raise ValueError(format_issue(
-                    path, f'invalid accounts-override entry for {name!r} (expected JSON object)', FIX_TRAY,
-                ))
-            if 'allowed_cwd' in spec:
-                raise ValueError(format_issue(
-                    path, f'older field accounts.{name}.allowed_cwd (replaced by cwd_regex)', FIX_TRAY,
-                ))
-    bad_disabled = _find_non_bool_disabled(doc)
-    if bad_disabled:
-        raise ValueError(format_issue(path, f'older accounts-override format ({bad_disabled})', FIX_TRAY))
 
 
 def legacy_meter_field_names(spec) -> list[str]:
@@ -298,16 +254,9 @@ def check_usage_config(path: Path) -> str | None:
 def check_accounts_override(path: Path) -> str | None:
     if not path.exists():
         return None
+    import accounts_override
     try:
-        raw = path.read_text(encoding='utf-8-sig')
-    except (OSError, UnicodeError) as exc:
-        return format_issue(path, f'accounts-override unreadable ({exc})', FIX_TRAY)
-    try:
-        doc = json.loads(raw)
-    except ValueError as exc:
-        return format_issue(path, f'accounts-override invalid JSON ({exc})', FIX_TRAY)
-    try:
-        validate_accounts_override_doc(doc, path)
+        doc = accounts_override.load_override(path)
     except ValueError as exc:
         return str(exc)
     flagged = [name for name, spec in (doc.get('accounts') or {}).items() if spec.get('verified') is False]
@@ -320,24 +269,31 @@ def check_accounts_override(path: Path) -> str | None:
     return format_issue(path, '; '.join(problems), fix)
 
 
+def host_policy_fix(path: Path | str) -> str:
+    return ('edit the file to a JSON object with "allowed_accounts" (a list of account names) and, if wanted, '
+            '"known_accounts", "usage_providers" (lists of names) and "judges" (codex or sonnet), or '
+            + fix_delete(path, 'this discards which accounts this machine may use: every account is allowed again '
+                               'until you set them in the tray'))
+
+
 def validate_host_policy_doc(doc, path: Path | str) -> dict:
     if not isinstance(doc, dict) or 'allowed_accounts' not in doc:
         raise ValueError(format_issue(
-            path, 'host-policy configuration requires allowed_accounts', FIX_TRAY,
+            path, 'host-policy configuration requires allowed_accounts', host_policy_fix(path),
         ))
     unknown = sorted(set(doc) - HOST_POLICY_KEYS)
     if unknown:
         raise ValueError(format_issue(
-            path, f'host-policy configuration has unsupported fields ({", ".join(unknown)})', FIX_TRAY,
+            path, f'host-policy configuration has unsupported fields ({", ".join(unknown)})', host_policy_fix(path),
         ))
     for key, value in doc.items():
         if not isinstance(value, list) or any(not isinstance(v, str) or not v or v != v.strip() for v in value):
             raise ValueError(format_issue(
-                path, f'host-policy configuration {key} must be a list of nonempty names', FIX_TRAY,
+                path, f'host-policy configuration {key} must be a list of nonempty names', host_policy_fix(path),
             ))
     if any(v not in ('codex', 'sonnet') for v in doc.get('judges', [])):
         raise ValueError(format_issue(
-            path, 'host-policy configuration judges must name codex or sonnet', FIX_TRAY,
+            path, 'host-policy configuration judges must name codex or sonnet', host_policy_fix(path),
         ))
     return doc
 
@@ -348,13 +304,13 @@ def check_host_policy(path: Path) -> str | None:
     try:
         raw = path.read_text(encoding='utf-8-sig')
     except UnicodeError:
-        return format_issue(path, 'host-policy configuration must be UTF-8', FIX_TRAY)
+        return format_issue(path, 'host-policy configuration must be UTF-8', host_policy_fix(path))
     except OSError as exc:
-        return format_issue(path, f'host-policy configuration unreadable ({exc})', FIX_TRAY)
+        return format_issue(path, f'host-policy configuration unreadable ({exc})', host_policy_fix(path))
     try:
         doc = json.loads(raw)
     except ValueError:
-        return format_issue(path, 'host-policy configuration invalid JSON', FIX_TRAY)
+        return format_issue(path, 'host-policy configuration invalid JSON', host_policy_fix(path))
     try:
         validate_host_policy_doc(doc, path)
     except ValueError as exc:
@@ -373,20 +329,42 @@ def check_user_scores(path: Path) -> str | None:
     return None
 
 
+def upgrade_host_rule_text(text: str) -> str:
+    """An overlay an earlier release accepted, in today's words; the file itself is the user's and is never rewritten."""
+    for old, new in HOST_RULE_UPGRADES.items():
+        text = text.replace(old, new)
+    return text
+
+
+def overlay_fix(path: Path) -> str:
+    return (f'edit the overlay: replace {RETIRED_PLACEHOLDER} with `@@AGENTCOMPASS@@` (the command), or '
+            + fix_delete(path, 'this discards your overlay: the shipped default rules are used instead'))
+
+
+def read_host_rule_file(path: Path) -> str:
+    """The text of one ``host-rules`` overlay carried into the current names (`upgrade_host_rule_text`). The overlay is
+    the user's own text, so a name mentioned in it is left as written. Raises ``ValueError`` for a file that is
+    unreadable or still uses the retired placeholder, which cannot be rendered."""
+    try:
+        text = path.read_bytes().decode('utf-8-sig')    # bytes, not text mode: the overlay keeps its line endings
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(format_issue(path, f'host-rules file unreadable ({exc})', overlay_fix(path))) from exc
+    text = upgrade_host_rule_text(text)
+    if RETIRED_PLACEHOLDER in text:
+        raise ValueError(format_issue(
+            path, f'host-rules overlay uses the placeholder {RETIRED_PLACEHOLDER}, which has no current meaning',
+            overlay_fix(path),
+        ))
+    return text
+
+
 def check_host_rule_file(path: Path) -> str | None:
     if not path.exists():
         return None
     try:
-        text = path.read_text(encoding='utf-8-sig')
-    except (OSError, UnicodeError) as exc:
-        return format_issue(path, f'host-rules file unreadable ({exc})', fix_delete(path))
-    found = [tok for tok in LEGACY_RULE_TOKENS if tok in text]
-    if found:
-        return format_issue(
-            path,
-            f'older host-rules overlay contains removed token(s): {", ".join(found)}',
-            fix_delete(path),
-        )
+        read_host_rule_file(path)
+    except ValueError as exc:
+        return str(exc)
     return None
 
 
@@ -415,122 +393,43 @@ def row_has_old_profile(row: dict) -> bool:
     return False
 
 
-def check_ledger(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    try:
-        text = path.read_text(encoding='utf-8-sig')
-    except (OSError, UnicodeError) as exc:
-        return format_issue(path, f'ledger unreadable ({exc})', fix_delete(path))
-    bad_json = 0
-    old_profiles = 0
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except ValueError:
-            bad_json += 1
-            continue
-        if not isinstance(row, dict):
-            bad_json += 1
-            continue
-        if row_has_old_profile(row):
-            old_profiles += 1
-    parts = []
-    if old_profiles:
-        parts.append(f'{old_profiles} older-format profile row(s)')
-    if bad_json:
-        parts.append(f'{bad_json} malformed JSON row(s)')
-    if parts:
-        return format_issue(path, 'ledger contains ' + ' and '.join(parts), fix_delete(path))
-    return None
-
-
-def count_old_decision_rows(conn: sqlite3.Connection) -> int:
-    old_rows = 0
-    for (blob,) in conn.execute('SELECT data FROM decisions').fetchall():
-        try:
-            doc = json.loads(blob)
-        except (TypeError, ValueError):
-            old_rows += 1
-            continue
-        if not isinstance(doc, dict):
-            old_rows += 1
-            continue
-        for key in ('allocation_task', 'task'):
-            task = doc.get(key)
-            if isinstance(task, dict) and task.get('profile') is not None:
-                try:
-                    _validate_profile(task['profile'])
-                except ValueError:
-                    old_rows += 1
-                    break
-    return old_rows
-
-
 def check_dispatch_db(path: Path) -> str | None:
+    """Only a database sqlite cannot read. One an older version made is not a fault: missing tables are created on use
+    (`dispatch_registry.transaction`) and a decision recorded under an older task profile is refused on its own
+    (`dispatch_registry.prepare`) without touching the rest."""
     if not path.exists():
         return None
     try:
         uri = path.resolve().as_uri() + '?mode=ro'
         conn = sqlite3.connect(uri, uri=True, timeout=1.0)
     except (OSError, sqlite3.Error) as exc:
-        return format_issue(path, f'dispatch database unreadable ({exc})', fix_delete(path))
+        return format_issue(path, f'dispatch database unreadable ({exc})', _dispatch_db_fix(path))
     try:
-        tables = {
-            row[0]
-            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        }
-        if not {'decisions', 'dispatches'}.issubset(tables):
-            return format_issue(
-                path, 'dispatch database has older schema (missing decisions/dispatches tables)', fix_delete(path),
-            )
-        old_rows = count_old_decision_rows(conn)
-        if old_rows:
-            return format_issue(
-                path, f'dispatch database contains {old_rows} older-format decision row(s)', fix_delete(path),
-            )
+        conn.execute("SELECT name FROM sqlite_master").fetchall()
     except sqlite3.Error as exc:
-        return format_issue(path, f'dispatch database corrupt or older schema ({exc})', fix_delete(path))
+        return format_issue(path, f'dispatch database corrupt ({exc})', _dispatch_db_fix(path))
     finally:
         conn.close()
     return None
 
 
-def check_activity_file(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    try:
-        doc = json.loads(path.read_text(encoding='utf-8-sig'))
-    except (OSError, UnicodeError, ValueError) as exc:
-        return format_issue(path, f'usage activity file unreadable or invalid JSON ({exc})', fix_delete(path))
-    if not isinstance(doc, dict) or doc.get('schema') != 'agent-compass.activity.v1':
-        return format_issue(
-            path,
-            f'older usage activity schema {(doc.get("schema") if isinstance(doc, dict) else type(doc).__name__)!r} '
-            '(expected "agent-compass.activity.v1")',
-            fix_delete(path),
-        )
-    return None
+def _dispatch_db_fix(path: Path) -> str:
+    return fix_delete(path, 'this discards the recorded decisions and the reservations of workers still running; '
+                            'a new database is created on the next dispatch')
+
+
+def _overrides_fix(path: Path) -> str:
+    return fix_delete(path, 'this discards the temporary priorities it holds')
 
 
 def check_provider_inventory(path: Path) -> str | None:
     if not path.exists():
         return None
+    import provider_inventory
     try:
-        doc = json.loads(path.read_text(encoding='utf-8-sig'))
-    except (OSError, UnicodeError, ValueError) as exc:
-        return format_issue(path, f'provider inventory cache invalid JSON ({exc})', fix_delete(path))
-    if not isinstance(doc, dict):
-        return format_issue(path, 'provider inventory cache must be a JSON object', fix_delete(path))
-    if 'schema' in doc and doc.get('schema') != 'agent-compass.providers.v2.local':
-        return format_issue(
-            path,
-            f'older provider inventory schema {doc.get("schema")!r} (expected "agent-compass.providers.v2.local")',
-            fix_delete(path),
-        )
+        provider_inventory.previous_inventory(path)
+    except ValueError as exc:
+        return str(exc)
     return None
 
 
@@ -540,35 +439,15 @@ def check_router_overrides(path: Path) -> str | None:
     try:
         doc = json.loads(path.read_text(encoding='utf-8-sig'))
     except (OSError, UnicodeError, ValueError) as exc:
-        return format_issue(path, f'router overrides invalid JSON ({exc})', fix_delete(path))
+        return format_issue(path, f'router overrides invalid JSON ({exc})', _overrides_fix(path))
     if not isinstance(doc, dict):
-        return format_issue(path, 'router overrides must be a JSON object', fix_delete(path))
+        return format_issue(path, 'router overrides must be a JSON object', _overrides_fix(path))
     rows = doc.get('overrides')
     if rows is not None and not isinstance(rows, list):
-        return format_issue(path, 'router overrides.overrides must be a JSON array', fix_delete(path))
+        return format_issue(path, 'router overrides.overrides must be a JSON array', _overrides_fix(path))
     for item in rows or ():
         if not isinstance(item, dict):
-            return format_issue(path, 'router override entry must be a JSON object', fix_delete(path))
-        if item.get('stop_on_reset') and isinstance(item.get('baseline_windows'), dict):
-            for wid, base in item['baseline_windows'].items():
-                if isinstance(base, dict) and not base.get('fetched_at'):
-                    return format_issue(
-                        path,
-                        f'older untimestamped baseline_windows[{wid!r}] in router-overrides',
-                        fix_delete(path),
-                    )
-    return None
-
-
-def check_json_cache(path: Path, label: str) -> str | None:
-    if not path.exists():
-        return None
-    try:
-        doc = json.loads(path.read_text(encoding='utf-8-sig'))
-    except (OSError, UnicodeError, ValueError) as exc:
-        return format_issue(path, f'{label} invalid JSON ({exc})', fix_delete(path))
-    if not isinstance(doc, dict):
-        return format_issue(path, f'{label} must be a JSON object', fix_delete(path))
+            return format_issue(path, 'router override entry must be a JSON object', _overrides_fix(path))
     return None
 
 
@@ -577,7 +456,7 @@ def _check_global_rule_text(path: Path | str, text: str) -> str | None:
         start = text.index(RULE_BEGIN)
         end = text.index(RULE_END, start) + len(RULE_END)
         managed = text[start:end]
-        found = [tok for tok in LEGACY_RULE_TOKENS if tok in managed]
+        found = [tok for tok in STALE_RULE_TOKENS if tok in managed]
         if found:
             return format_issue(
                 path,
@@ -586,7 +465,7 @@ def _check_global_rule_text(path: Path | str, text: str) -> str | None:
             )
         return None
     stripped = text.strip()
-    if stripped.startswith('# Agent Routing (Global)') or '@@ROUTE_JUDGE@@' in text or 'route-agent-work' in text:
+    if stripped.startswith('# Agent Routing (Global)') or RETIRED_PLACEHOLDER in text or 'route-agent-work' in text:
         return format_issue(
             path,
             'older un-markered global routing rule block',
@@ -726,77 +605,31 @@ def collect_issues(home: Path | None = None, environ: dict | None = None) -> lis
     accounts_path = Path(os.path.expandvars(override_env)).expanduser() if override_env else sdir / 'accounts-override.json'
     policy_env = str(env.get('ROUTER_HOST_POLICY') or '').strip()
     policy_path = Path(os.path.expandvars(policy_env)).expanduser() if policy_env else sdir / 'host-policy.json'
-    ledger_env = str(env.get('ROUTER_LEDGER') or '').strip()
-    ledger_path = Path(os.path.expandvars(ledger_env)).expanduser() if ledger_env else sdir / 'router-ledger.jsonl'
     db_env = str(env.get('ROUTER_DISPATCH_DB') or '').strip()
     db_path = Path(os.path.expandvars(db_env)).expanduser() if db_env else sdir / 'dispatch.sqlite3'
-    activity_env = str(env.get('AGENTCOMPASS_ACTIVITY_FILE') or '').strip()
-    activity_path = Path(os.path.expandvars(activity_env)).expanduser() if activity_env else sdir / 'usage-activity.json'
     overrides_env = str(env.get('ROUTER_OVERRIDES') or '').strip()
     overrides_path = Path(os.path.expandvars(overrides_env)).expanduser() if overrides_env else sdir / 'router-overrides.json'
-    cache_env = str(env.get('ROUTER_USAGE_CACHE') or '').strip()
-    cache_path = Path(os.path.expandvars(cache_env)).expanduser() if cache_env else sdir / 'usage-cache.json'
 
     for issue in (
         check_accounts_override(accounts_path),
         check_usage_config(sdir / 'usage-config.json'),
         check_host_policy(policy_path),
         check_user_scores(sdir / 'user-scores.json'),
-        check_ledger(ledger_path),
         check_dispatch_db(db_path),
-        check_activity_file(activity_path),
-        check_provider_inventory(sdir / 'provider-inventory.json'),
         check_router_overrides(overrides_path),
-        check_json_cache(cache_path, 'usage cache'),
-        check_json_cache(sdir / 'live-models.json', 'live-models cache'),
-        check_json_cache(sdir / 'model-latch.json', 'model-latch cache'),
-        check_json_cache(sdir / 'provider-retry.json', 'provider-retry cache'),
-        check_json_cache(sdir / 'model-catalog.json', 'model-catalog cache'),
+        check_provider_inventory(sdir / 'provider-inventory.json'),
     ):
         if issue:
             issues.append(issue)
 
-    rules_dir = sdir / 'host-rules'
-    if rules_dir.is_dir():
-        try:
-            rule_files = sorted(rules_dir.glob('*.md'))
-        except OSError:
-            rule_files = []
-        for rfile in rule_files:
-            issue = check_host_rule_file(rfile)
-            if issue:
-                issues.append(issue)
+    for name in HOST_RULE_OVERLAYS:
+        issue = check_host_rule_file(sdir / 'host-rules' / name)
+        if issue:
+            issues.append(issue)
 
     # Removed by `agentcompass setup` and by the step that runs after a product update (remove_retired_reference_data).
     for leftover in retired_reference_data(sdir):
         issues.append(format_issue(leftover, f'{RETIRED_REFERENCE_DATA[leftover.name]}, not read', FIX_SETUP))
-
-    legacy_uf_off = sdir / 'usage-float-autostart-disabled'
-    if legacy_uf_off.exists():
-        issues.append(format_issue(
-            legacy_uf_off, 'older usage-float autostart marker (replaced by plugins.json)', FIX_TRAY,
-        ))
-
-    legacy_uf_cache = base_home / '.usage-float' / 'usage-cache.json'
-    if not cache_env and legacy_uf_cache.exists():
-        issues.append(format_issue(
-            legacy_uf_cache,
-            'older Usage Float cache location (AgentCompass reads only usage-cache.json under state dir)',
-            fix_delete(legacy_uf_cache),
-        ))
-
-    cal_dir = base_home / '.cache' / 'agentcompass-calibration'
-    if cal_dir.is_dir() and not (cal_dir / 'fetch-manifest.json').is_file():
-        try:
-            has_entries = any(cal_dir.iterdir())
-        except OSError:
-            has_entries = False
-        if has_entries:
-            issues.append(format_issue(
-                cal_dir,
-                'older calibration cache missing fetch-manifest.json',
-                fix_delete(cal_dir),
-            ))
 
     issues.extend(check_hooks_and_rules(base_home, env))
     return issues

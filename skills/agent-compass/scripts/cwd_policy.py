@@ -1,10 +1,13 @@
 """Account working-directory policy, shared by the allocator and model settings."""
+import ntpath
 from pathlib import Path
 import re
 
 
 def normalized(path=None):
-    return str(path or Path.cwd()).replace('\\', '/').rstrip('/')
+    """The one form a directory is matched in: forward slashes, `.`, `..` and doubled separators resolved (so
+    `D:/work/app/../app2` is `D:/work/app2`, never inside `D:/work/app`), no trailing separator."""
+    return ntpath.normpath(str(path or Path.cwd())).replace('\\', '/').rstrip('/')
 
 
 def validate(pattern):

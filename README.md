@@ -87,7 +87,7 @@ agentcompass roll --task "<what the worker should do>"    # route and launch a w
 
 Or delegate setup to your coding agent: *"Read this repository, run `agentcompass setup --dry-run` to preview changes, then apply it and route this task: …"*
 
-**Upgrading:** After an update, run `agentcompass doctor` to flag any old-shape local state and apply the listed fix (`re-run "agentcompass setup"`, `re-toggle in the tray`, or `delete "<file>"`; see [`docs/technical-reference.md`](docs/technical-reference.md#after-an-update)).
+**Upgrading:** After an update, run `agentcompass doctor` to flag any old-shape local state and apply the listed fix (`re-run "agentcompass setup"`, an edit the message names, or `delete "<file>"` with what it discards; see [`docs/technical-reference.md`](docs/technical-reference.md#after-an-update)).
 
 ### Hosts & Ecosystem
 
