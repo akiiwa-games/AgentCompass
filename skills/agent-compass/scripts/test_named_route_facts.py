@@ -5,6 +5,7 @@ import argparse
 import copy
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import account_fleet
@@ -240,6 +241,45 @@ class ProviderListFactTests(NamedRouteCase):
                 # One calculation only: the shipped fleet never gains the row.
                 self.assertFalse([b for b in account_fleet.bundles(self.accounts).values() if b['model'] == model])
             live_models.invalidate()
+
+    def test_a_listed_route_with_a_value_that_cannot_be_passed_safely_is_refused_where_it_launches(self):
+        """Rule (router-internals §5, Launch values): a model a provider lists and an effort the user names are values
+        from the user's machine: never dropped by a pattern, made safe where they are used, and a value that cannot be
+        passed as its own argument refuses that launch there (launch_values.LaunchValueError), before anything starts."""
+        import launch_values
+        import public_data
+        import roll
+        with patch.object(live_models, 'fetch_from_paseo', side_effect=fixture_fetch):
+            result, row = self.launched(account='codex', provider='codex', model='gpt-6.2-nova', effort='-c')
+        self.assertEqual(row['bundle'].get('effort'), '-c')
+        started, before = [], public_data._EFFECTS[0]
+        out = {'parent_id': 'p', 'parent_host': 'paseo', 'parent_address': 'p'}
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(roll.host_placement, 'place', lambda *a, **k: {'cwd': folder}), \
+                patch.object(roll, 'CLI_RUNS_DIR', Path(folder) / 'runs'), \
+                patch.object(roll.subprocess, 'Popen', lambda *a, **k: started.append(a)):
+            with self.assertRaises(launch_values.LaunchValueError):
+                roll.cli(argparse.Namespace(workspace=None), out, row['bundle'], 'task')
+        self.assertEqual((started, public_data._EFFECTS[0]), ([], before))
+
+    def test_a_named_record_and_an_explicit_resume_mark_their_decision_as_an_effect(self):
+        """Rule (router-internals §5, no effect is repeated) on main's named-route paths: a named record (a listed model
+        included) and `roll --resume`'s record each write their decision through the one ledger writer, which marks it."""
+        import public_data
+        marked = []
+        real = public_data.effect
+        with patch.object(public_data, 'effect', lambda what: marked.append(what) or real(what)):
+            with patch.object(live_models, 'fetch_from_paseo', side_effect=fixture_fetch):
+                self.record(account='codex', provider='codex', model='gpt-6.2-nova', effort='high')
+            self.assertEqual(marked, ['dispatch registry write', 'ledger row'])     # the decision row, then its record
+            del marked[:]
+            bundle = next(b for b in account_fleet.bundles(self.accounts).values() if b['account'] == 'codex')
+            task = self.task(parent_agent_id='parent-1')
+            args = argparse.Namespace(usage_cache=None, accounts=None)
+            with patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(self.accounts)), \
+                    patch.object(route_judge.usage_reading, 'usage_snapshot', return_value=copy.deepcopy(self.usage)):
+                route_judge.record_resume(args, task, {'task': task, 'scorer': None}, dict(bundle), 'agent-1')
+        self.assertIn('ledger row', marked)
 
     def test_the_providers_list_outranks_a_guessed_family_only_when_named(self):
         catalog = {'providers': {'claude': {'ok': True, 'checked_at': 0, 'models': ['claude-zeta-1']}}}

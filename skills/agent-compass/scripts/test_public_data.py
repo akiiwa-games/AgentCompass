@@ -875,6 +875,57 @@ class RouteFallbackTests(unittest.TestCase):
                 if how != 'input':
                     self.assertEqual(texts, [text, text])
 
+    def test_record_reads_its_input_once_and_reports_a_data_error_by_name(self):
+        """Rules (finding 1 and 2) on main's named-route entry `record --input`: the re-run receives the input as first
+        read, and a data error on the shipped set too is the stage's named error, never a traceback."""
+        import io
+        import route_judge
+        env, task = self.fetched_set()
+        real, tasks = route_judge._record_task, []
+
+        def read_then_fail(args, given):
+            tasks.append(real(args, given))
+            public_data.held()                                                   # a reader took the set
+            if len(tasks) == 1:
+                task.unlink()                                                    # a re-run that read again would fail
+                raise KeyError('a field only the live fleet reaches')
+            raise KeyError('the shipped set fails too')
+        out = io.StringIO()
+        with patch.dict(os.environ, env), patch.object(route_judge, '_record_task', read_then_fail), \
+                patch.object(sys, 'stdout', out), patch.object(sys, 'argv', [
+                    'route_judge.py', 'record', '--input', str(task), '--constraint', 'user_override',
+                    '--account', 'codex', '--provider', 'codex', '--model', 'gpt-6.2-sol', '--basis', 'the user named it']):
+            code = route_judge.main()
+        self.assertEqual([t.get('objective', '')[:10] for t in tasks], ['Fix an off'] * 2)
+        self.assertEqual(code, 1)
+        report = json.loads(out.getvalue())
+        self.assertEqual((report['error_type'], report['error']), ('KeyError', 'Reference or local data could not be read'))
+
+    def test_marking_a_ledger_row_on_a_broken_fetched_set_runs_again_on_the_shipped_set(self):
+        """Rule (merge of main): the automatic-routing marker main derives in append_ledger reads the fleet; a data error
+        there on a fetched set comes before the row, so the stage runs again on the shipped set and writes one row."""
+        import decision_ledger
+        env, _task = self.fetched_set()
+        with patch.dict(os.environ, env):
+            os.environ.pop('ROUTER_ACCOUNTS_FILE', None)                         # the fleet of the held set, as installed
+            held = public_data.held()
+            self.assertEqual(held['source'], 'fetched')
+            broken = json.loads(held['files']['accounts.json'])
+            del broken['accounts']
+            public_data._HELD[public_data._key(None, None)] = {
+                **held, 'files': {**held['files'], 'accounts.json': json.dumps(broken).encode()}}
+            entry = {'stage': 'record', 'choice': 'constraint', 'bundle': {'account': 'codex', 'model': 'gpt-6.2-sol'}}
+            sources = []
+
+            def write():
+                sources.append(public_data.held()['source'])
+                return decision_ledger.append_ledger(dict(entry))
+            self.assertTrue(public_data.with_fallback(write))
+            rows = decision_ledger.ledger_path().read_text(encoding='utf-8').splitlines()
+        self.assertEqual(sources, ['fetched', 'bundled'])
+        self.assertEqual(len(rows), 1)
+        self.assertIn('set_aside_version', public_data.read_state(env))
+
     def test_a_plan_says_when_the_published_set_is_set_aside(self):
         """Rule (review round 3, A2): while the published set is set aside, every plan carries reference_data_refused."""
         import io

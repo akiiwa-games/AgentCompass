@@ -49,14 +49,18 @@ def automatic_routing_marker(entry):
 
 
 def append_ledger(entry):
-    """Append one decision record. Auditing must never break routing, so failures are swallowed. Every row is marked
-    here (`automatic_routing_marker`), so no writer can leave the marker out or set it by hand."""
+    """Append one decision record. Auditing must never break routing, so failures are swallowed, except a data error of
+    a fetched reference set while marking, which comes before the row and so re-runs the stage on the shipped set
+    (public_data.with_fallback). Every row is marked here (`automatic_routing_marker`), so no writer can leave the
+    marker out or set it by hand."""
     if not LEDGER_WRITES:
         return False
     entry = {k: v for k, v in entry.items() if k != 'outside_automatic_routing'}
     try:
         marker = automatic_routing_marker(entry)
-    except Exception:   # noqa: BLE001 - an unreadable fleet or policy leaves the row unmarked, never unwritten
+    except Exception as exc:   # noqa: BLE001 - an unreadable fleet or policy leaves the row unmarked, never unwritten
+        if public_data.is_data_error(exc) and public_data.held()['source'] == 'fetched':
+            raise   # a reader failing on a fetched set, before the row: the stage runs again on the shipped set
         marker = None
     if marker:
         entry['outside_automatic_routing'] = marker
