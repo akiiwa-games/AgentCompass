@@ -126,7 +126,8 @@ class FallbackTests(unittest.TestCase):
         """The parent's dispatch: planned, prepared and launched as roll does."""
         task = task or self.task
         if decision is None:
-            planned = allocator.plan(dict(task, pinned_bundle='lab_sonnet55_high'), self.usage, self.now, accounts=self.accounts)
+            planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts,
+                                     route={'pinned_bundle': 'lab_sonnet55_high'})
             decision = dict(planned, **registry.issue(planned, task, self.now))
         row = registry.prepare(decision['decision_id'], task, self.launch, self.usage, accounts=self.accounts)
         flow.launch(row['dispatch_id'], 'parent-a', host=self.host, watch_seconds=0)
@@ -482,27 +483,38 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(len(self.host.creates), 1)
         self.assertEqual(flow.public(registry.inspect(root['dispatch_id']))['next_action'], flow.TASK_INPUT_NEXT)
 
-    def test_a_dispatch_routed_before_an_update_ends_with_a_reason_when_it_fails_after_it(self):
-        # Rule: a decision recorded under an older task profile is not reinterpreted, so its failure is not replanned
-        # (the real judge refuses that profile) and not retried: the chain ends with a reason and nothing is relaunched.
+    def ends_with_a_reason_when_recorded_earlier(self, edit):
         import json
         import sqlite3
         from contextlib import closing
         root = self.first()
-        old = {**profile(), 'realtime_loop': False,
-               'axis_demand': {'divergence': 1, 'global_rigor': 2, 'module_precision': 2, 'vision_tools': 0}}
         with closing(sqlite3.connect(registry.db_path(), isolation_level=None)) as connection:
             doc = json.loads(connection.execute('SELECT data FROM decisions WHERE id=?', (root['decision_id'],)).fetchone()[0])
-            doc['allocation_task']['profile'] = old
+            edit(doc['allocation_task'])
             connection.execute('UPDATE decisions SET data=? WHERE id=?', (json.dumps(doc), root['decision_id']))
         self.host.end(root['dispatch_id'], 'error', terminal={'reason': 'error', 'status': 'error'})
         out = fallback.handle(root['dispatch_id'], judge=route_judge, host=self.host)
         self.assertEqual((out['action'], out['result']), ('final', 'older_profile'))
-        self.assertIn('older version', out['text'])
+        self.assertIn('earlier version', out['text'])
         self.assertIn('roll the brief again', out['text'])
         self.assertEqual(len(self.host.creates), 1)                       # nothing was relaunched
         self.assertEqual(registry.inspect(root['dispatch_id'])['fallback']['state'], 'final')
-        self.assertEqual(old, registry.decision_record(root['decision_id'])['allocation_task']['profile'])
+        return registry.decision_record(root['decision_id'])['allocation_task']
+
+    def test_a_dispatch_routed_before_an_update_ends_with_a_reason_when_it_fails_after_it(self):
+        # Rule (dispatch_registry.earlier_version): a decision recorded under an older task profile is not
+        # reinterpreted, so its failure is not replanned (the real judge refuses that profile) and not retried: the
+        # chain ends with a reason and nothing is relaunched.
+        old = {**profile(), 'realtime_loop': False,
+               'axis_demand': {'divergence': 1, 'global_rigor': 2, 'module_precision': 2, 'vision_tools': 0}}
+        stored = self.ends_with_a_reason_when_recorded_earlier(lambda task: task.update(profile=old))
+        self.assertEqual(old, stored['profile'])
+
+    def test_a_dispatch_whose_stored_task_carries_force_fast_ends_with_a_reason_when_it_fails(self):
+        # Rule (dispatch_registry.earlier_version): v0.7.0's `record --fast` wrote force_fast into the stored task;
+        # that shape is an earlier version's, so the chain ends with the same reason, not invalid_task_input.
+        stored = self.ends_with_a_reason_when_recorded_earlier(lambda task: task.update(force_fast=True))
+        self.assertTrue(stored['force_fast'])
 
     def owner_named(self, task=None):
         decision_bundle = dict(self.bundle)
@@ -531,6 +543,21 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(self.host.creates, ['claude-lab/claude-sonnet-5-5'] * 2)
         routed = [e for e in self.ledger if e.get('stage') in ('plan', 'select', 'record')]
         self.assertEqual([(e['stage'], e['constraint']) for e in routed], [('record', 'user_override')])
+
+    def test_an_owner_named_retry_keeps_what_its_record_decided(self):
+        # Rule (task_intake.ROUTE_FIELDS): a named record's route fields (here: launched unclassified, priced from its
+        # hours) stay with its transient retry, which is the same named route.
+        task = dict(self.task, can_wait_hours=1)
+        result = {'stage': 'record', 'choice': 'constraint', 'constraint': 'user_override', 'basis': 'use sonnet',
+                  'selected_bundle': dict(self.bundle), 'decision': {'action': 'start'}}
+        decision = dict(result, **registry.issue(result, task, self.now, route={'unclassified': 'fixture'}))
+        root = self.transient_root(task=task, decision=decision)
+        self.assertEqual(self.handle(root['dispatch_id'])['action'], 'scheduled')
+        with self.at(minutes=3):
+            self.assertEqual(self.handle(root['dispatch_id'])['action'], 'relaunched')
+        retried = [e['decision_id'] for e in self.ledger if e.get('source') == 'fallback_retry']
+        self.assertEqual(len(retried), 1)
+        self.assertEqual(registry.decision_record(retried[0]).get('route'), {'unclassified': 'fixture'})
 
     def test_an_owner_named_model_waits_only_what_the_task_allows(self):
         """Review F2: the owner's model follows can_wait_hours too; a backoff past it reports to the parent."""
@@ -738,9 +765,9 @@ class RollFallbackTests(unittest.TestCase):
 
         def plan_stage(document, _):
             first = not document.get('unavailable')
-            planned = allocator.plan(dict(document['task'], **({'pinned_bundle': 'lab_sonnet55_high'} if first else {})),
-                                     test.usage, registry.utcnow(),
-                                     unavailable=document.get('unavailable') or (), accounts=test.accounts)
+            planned = allocator.plan(document['task'], test.usage, registry.utcnow(),
+                                     unavailable=document.get('unavailable') or (), accounts=test.accounts,
+                                     route={'pinned_bundle': 'lab_sonnet55_high'} if first else None)
             return dict(planned, **registry.issue(planned, document['task'])), 0
         judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage)})
         self.enterContext(test_dispatch.fake_owners(self))
@@ -794,9 +821,9 @@ class RollFallbackTests(unittest.TestCase):
                 test = self
 
                 def plan_stage(document, _):
-                    planned = allocator.plan(dict(document['task'], pinned_bundle='lab_sonnet55_high'),
-                                             test.usage, registry.utcnow(),
-                                             unavailable=document.get('unavailable') or (), accounts=test.accounts)
+                    planned = allocator.plan(document['task'], test.usage, registry.utcnow(),
+                                             unavailable=document.get('unavailable') or (), accounts=test.accounts,
+                                             route={'pinned_bundle': 'lab_sonnet55_high'})
                     return dict(planned, **registry.issue(planned, document['task'])), 0
                 judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage)})
                 self.enterContext(test_dispatch.fake_owners(self))

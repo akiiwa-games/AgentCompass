@@ -23,7 +23,8 @@ Contract:
   follow-up that resumes a failed attempt's worker retires any pending retry or switch (`resumed`) and restores that
   attempt as `current`. A model the owner named (`roll --model`, a
   `user_override` decision) follows the same can_wait_hours rule and is never switched: when its backoff does not fit,
-  the parent is told (`owner_named`).
+  the parent is told (`owner_named`). A worker the caller named (`roll --resume`, constraint `explicit_resume`) is
+  never retried on a new worker nor replaced: its failure is reported as it is (`worker_named`).
 - Otherwise: allocation runs again on the original decision's allocation task (its classifier profile, needs such as
   local_only, fast) with every bundle that failed in this dispatch marked unavailable; the classifier is not asked
   again. The winner is launched with the first dispatch's title, workspace, cwd, access, parent and the original prompt,
@@ -173,6 +174,8 @@ class Chain:
         self.judge, self.host = judge, host
         self.decision = decision
         self.owner_named = decision.get('constraint') == 'user_override'
+        # `roll --resume <id>` named a worker, not a route: no other worker, and no retry on a new one, replaces it.
+        self.worker_named = decision.get('constraint') == 'explicit_resume'
         task = dict(decision.get('allocation_task') or decision['task'])
         task.pop('chain', None)   # a relaunch is a new worker, never a resume
         self.task = task
@@ -202,17 +205,11 @@ class Chain:
         return {'attempt': len(self.attempts) + 1, **bundle_view(bundle),
                 **({'dispatch_id': row['dispatch_id'], 'decision_id': row['decision_id']} if row else {})}
 
-    def profile_unreadable(self):
-        """True when this brief was routed under a task profile of an older version: it is neither replanned nor read
-        again (`dispatch_registry.prepare` refuses the same decision), so its relaunch ends here with a reason."""
-        import task_intake
-        if self.task.get('profile') is None:
-            return False
-        try:
-            task_intake.validate_profile(self.task['profile'])
-        except ValueError:
-            return True
-        return False
+    def recorded_earlier(self):
+        """True when this brief's decision was recorded by an earlier version (dispatch_registry.earlier_version): it is
+        neither replanned nor read again (`dispatch_registry.prepare` refuses the same decision), so its relaunch ends
+        here with a reason."""
+        return registry.earlier_version(self.task) is not None
 
     def failed(self, attempt, failure, row=None):
         attempt.update(failure=failure['label'], kind=failure['kind'], covered=failure['covered'],
@@ -348,11 +345,15 @@ class Chain:
                 attempt = self.entry(bundle or row['bundle'], row)
                 self.attempts.append(attempt)
             kept = len(self.attempts)
-            if self.profile_unreadable():
+            if self.recorded_earlier():
                 if not resume:
                     self.failed(attempt, failure, row)
                 self.ledger('older_profile', attempt)
                 return self.finish('older_profile', failure, failed_id)
+            if self.worker_named and not resume:
+                self.failed(attempt, failure, row)
+                self.ledger('worker_named', attempt)
+                return self.finish('worker_named', failure, failed_id)
             if resume:
                 resume = False
                 resumed_id = self.resumed_attempt(row)
@@ -471,7 +472,12 @@ class Chain:
         every routed start (a plan line, or a record line for the owner's model), so the audit sees a route for it."""
         import decision_ledger
         # A transient failure is a provider's, so it always has the row whose bundle it was.
-        bundle = dict(registry.inspect(attempt['dispatch_id'])['bundle'])
+        failed_row = registry.inspect(attempt['dispatch_id'])
+        bundle = dict(failed_row['bundle'])
+        # A named route keeps what its record decided: the rows a provider listed for a model the shipped data has no row
+        # for (provider_inventory), and its route fields (an unclassified launch stays priced from its hours).
+        failed_decision = registry.decision_record(failed_row['decision_id']) if self.owner_named else {}
+        listed = failed_decision.get('listed_rows')
         result = {'stage': 'record' if self.owner_named else 'plan', 'source': 'fallback_retry',
                   'choice': bundle.get('bundle_id'), 'selected_bundle': bundle, 'decision': {'action': 'start'},
                   'parent_id': self.parent,
@@ -479,7 +485,8 @@ class Chain:
                       'basis': f'AgentCompass transient retry of dispatch {self.root_id} on the owner-named model'}
                      if self.owner_named else
                      {'basis': f'AgentCompass transient retry of dispatch {self.root_id} on its routed bundle'})}
-        issued = registry.issue(result, self.task, allocation_task=self.task)
+        issued = registry.issue(result, self.task, allocation_task=failed_decision.get('allocation_task') or self.task,
+                                listed_rows=listed, route=failed_decision.get('route'))
         decision = {**result, **issued}
         try:
             decision_ledger.append_ledger({
@@ -556,7 +563,7 @@ class Chain:
             decision, _ = self.judge.plan_stage({'task': self.task, 'unavailable': sorted(excluded)}, args)
             bundle = decision.get('selected_bundle') or {}
             if (decision.get('error') or decision.get('choice') in (None, 'none', 'self', 'split') or not bundle
-                    or decision.get('host_policy_violation') or (decision.get('decision') or {}).get('needs_user_decision')
+                    or (decision.get('decision') or {}).get('needs_user_decision')
                     or not decision.get('decision_id')):
                 return None
             bundle_id = bundle.get('bundle_id') or decision.get('choice')
@@ -593,9 +600,13 @@ def final_text(kind, attempts, task):
                 f'{listed}\nNothing is running it. The holds and cooldowns behind these failures lift on their own '
                 '(plan/roll warnings and the tray account list say when). Tell the user.')
     if kind == 'older_profile':
-        return ('This brief was routed by an older version of AgentCompass under a task profile this version does not '
-                f'read, so it was not relaunched after its failure:\n{listed}\nNothing is running it. Tell the user; '
-                'roll the brief again to route it afresh.')
+        return ('This brief was routed by an earlier version of AgentCompass, in a shape this version does not read, so '
+                f'it was not relaunched after its failure:\n{listed}\nNothing is running it. Tell the user; roll the '
+                'brief again to route it afresh.')
+    if kind == 'worker_named':
+        return ('The caller named this worker with --resume, so AgentCompass does not start another worker in its place '
+                f'(a new one would not have its context):\n{listed}\nNothing is running this brief. Roll it without '
+                '--resume to let the router choose, or name a route.')
     if kind == 'owner_named':
         return ('The model was named by the owner, so AgentCompass retried only a transient failure and does not '
                 f'switch to another model:\n{listed}\nNothing is running this brief. Tell the user; to let the router '

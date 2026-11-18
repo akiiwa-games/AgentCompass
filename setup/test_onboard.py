@@ -582,7 +582,7 @@ class SetupFlowTests(HomeCase):
         self.assertEqual(path.read_text(encoding="utf-8"), denied)
 
         def answer(question):
-            return "y" if "Route work to it?" in question else "n"
+            return "y" if "Include it in automatic routing?" in question else "n"
         with contextlib.redirect_stdout(io.StringIO()), patch.object(sys.stdin, "isatty", return_value=True),                 patch("builtins.input", side_effect=answer):
             onboard.main(["setup", "--home", str(self.home), "--no-usage", "--no-docs", "--no-skills"])
         self.assertIn("opencode", json.loads(path.read_text(encoding="utf-8"))["allowed_accounts"])

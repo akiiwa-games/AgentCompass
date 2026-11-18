@@ -983,16 +983,34 @@ def agent_labels(doc: object) -> dict:
     return doc["labels"] if isinstance(doc, dict) and isinstance(doc.get("labels"), dict) else {}
 
 
-def owns_worker(doc: object, agent_id: str, caller_id: str | None) -> bool:
-    """Only unambiguous persisted parent labels prove ownership."""
+def recorded_sessions(doc: object) -> set[str]:
+    """The provider session a Paseo agent record says the agent runs (`persistence.sessionId`, `runtimeInfo.sessionId`):
+    the ID that agent's harness reports to its hooks as `session_id`."""
+    if not isinstance(doc, dict):
+        return set()
+    return {str(part.get("sessionId")) for part in (doc.get("persistence"), doc.get("runtimeInfo"))
+            if isinstance(part, dict) and part.get("sessionId")}
+
+
+def is_caller(agent_id: str, identities: set[str], paseo_agents_dir: Path | None = None) -> bool:
+    """The Paseo agent `agent_id` is the calling session: its ID is one of the caller's identities, or its record's
+    provider session is (a Paseo-hosted caller whose hook carries only its host session ID)."""
+    return agent_id in identities or bool(recorded_sessions(load_paseo_agent(agent_id, paseo_agents_dir)) & identities)
+
+
+def owns_worker(doc: object, agent_id: str, identities: set[str], paseo_agents_dir: Path | None = None) -> bool:
+    """Only unambiguous persisted parent labels prove ownership: every parent label names the caller (`is_caller`), and
+    the target is not the caller itself. `identities` are the caller's IDs (`caller_identities`)."""
     labels = agent_labels(doc)
     parents = [labels.get(key) for key in ("router.parent_id", "paseo.parent-agent-id") if labels.get(key)]
-    return bool(caller_id and agent_id != caller_id and parents and all(parent == caller_id for parent in parents))
+    return bool(identities and parents and agent_id not in identities and not (recorded_sessions(doc) & identities)
+                and all(is_caller(parent, identities, paseo_agents_dir) for parent in parents))
 
 
-def owns_running_worker(doc: object, agent_id: str, caller_id: str | None) -> bool:
+def owns_running_worker(doc: object, agent_id: str, identities: set[str], paseo_agents_dir: Path | None = None) -> bool:
     """A parent can control an existing turn; unknown state cannot authorize one."""
-    return owns_worker(doc, agent_id, caller_id) and doc.get("status", doc.get("lastStatus")) == "running"
+    return (owns_worker(doc, agent_id, identities, paseo_agents_dir)
+            and doc.get("status", doc.get("lastStatus")) == "running")
 
 
 def caller_parent_ids(caller_id: str | None, paseo_agents_dir: Path | None = None) -> set[str]:
@@ -1001,22 +1019,11 @@ def caller_parent_ids(caller_id: str | None, paseo_agents_dir: Path | None = Non
     return {v for v in (labels.get("router.parent_id"), labels.get("paseo.parent-agent-id")) if v and v != caller_id}
 
 
-def is_delegated_worker(
-    agent_id: str,
-    paseo_agents_dir: Path | None = None,
-    caller_id: str | None = None,
-) -> bool:
-    doc = load_paseo_agent(agent_id, paseo_agents_dir)
-    if not doc:
-        return False
-    labels = agent_labels(doc)
-    has_router = any(k.startswith("router.") for k in labels)
-    target_parent = labels.get("router.parent_id") or labels.get("paseo.parent-agent-id")
-    if not (has_router or target_parent):
-        return False
-    if not has_router and caller_id and target_parent and caller_id != target_parent:
-        return False
-    return True
+def is_delegated_worker(agent_id: str, paseo_agents_dir: Path | None = None) -> bool:
+    """The agent was started by a parent: router labels or a persisted parent label."""
+    labels = agent_labels(load_paseo_agent(agent_id, paseo_agents_dir))
+    return bool(any(k.startswith("router.") for k in labels)
+                or labels.get("router.parent_id") or labels.get("paseo.parent-agent-id"))
 
 
 def detect_target_agent_ids(tool_name: str, tool_input: dict) -> list[str]:
@@ -1070,12 +1077,14 @@ def check_worker_compaction_limit(
     agent_id: str | None,
     paseo_agents_dir: Path | None = None,
     home: Path | None = None,
-    caller_id: str | None = None,
+    identities: set[str] | None = None,
 ) -> str | None:
-    """Block a new turn at the configured historical-token rotation threshold, preserving parent control of an active turn."""
-    if not agent_id or not is_delegated_worker(agent_id, paseo_agents_dir=paseo_agents_dir, caller_id=caller_id):
-        return None
-    if owns_running_worker(load_paseo_agent(agent_id, paseo_agents_dir), agent_id, caller_id):
+    """Block a parent's new turn to its own idle worker at the configured historical-token rotation threshold. A message
+    to an agent the caller does not own is communication, and control of the caller's own running turn passes.
+    `identities` are the caller's IDs (`caller_identities`)."""
+    ids = identities or set()
+    doc = load_paseo_agent(agent_id, paseo_agents_dir) if agent_id else None
+    if not owns_worker(doc, agent_id, ids, paseo_agents_dir) or owns_running_worker(doc, agent_id, ids, paseo_agents_dir):
         return None
     base = paseo_agents_dir or Path(os.environ.get("ROUTER_PASEO_AGENTS_DIR", DEFAULT_PASEO_AGENTS))
     home_dir = home or (base.parents[1] if base.name == "agents" and base.parent.name == ".paseo" else base.parent)
@@ -1146,41 +1155,87 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
     return account, [c for c in candidates if c["account"] == account]
 
 
+def native_own_account(name: str, target: dict, accounts: dict | None) -> str | None:
+    """The calling session's own account for a native sub-agent launch (Claude Code `Agent`/`Task`, Codex
+    `spawn_agent`) that names no provider or account, when discovery records it (provider_inventory.session_account);
+    None otherwise (parent-address-gate.md states that limit). Only the unchecked-model rule reads it, and only for a
+    launch that names a model (resolve_target matches bundles by model): every quota, window, floor and cooldown check
+    on a native launch resolves the launch as it is written."""
+    family = "claude" if name in CLAUDE_AGENT_TOOLS else "codex" if name == "spawn_agent" else None
+    if not family or any(target.get(k) for k in ("provider", "account", "bundle_id")):
+        return None
+    return router_owner("provider_inventory", "session_account")(family, (accounts or {}).get("_discovery") or {})
+
+
+def native_unchecked_text(account: str, model: str, row: dict) -> str:
+    """The unchecked-model refusal of a native launch: the model the launch asked for, the account it runs on, and the
+    route record it was matched against."""
+    bundle = row.get("bundle") if isinstance(row.get("bundle"), dict) else {}
+    # The shape decision_ledger writes: the bundle carries `bundle_id`; a row for a model without a data row has none.
+    matched = bundle.get("bundle_id") or bundle.get("model")
+    kind = row.get("constraint") or row.get("stage")
+    return (f"[Router Gate] 拦截：原生子 agent 请求的模型 {model} 在本会话账号 {account} 上的档位都在模型管理中未勾选"
+            f"（不参与自动派发）；匹配到的路由记录是 {matched}（{kind}），不是用户点名的路由。"
+            "只有用户在本次请求中点名的路由（user_override 记录）可以启动它。" + DISABLED_RECOVERY)
+
+
 DISABLED_RECOVERY = (
-    "禁止启动该账号/档位的 worker 或向 idle/状态未知的旧 worker 开启新 turn；"
-    "父会话仍可向自己明确运行中的 worker 发控制消息以收尾。否则请收取已有输出，必要时调用 cancel_agent，"
-    f"把进展或任务写进 <task.md>，运行 {ROUTER_CMD} "
-    "roll --brief <task.md> 改派当前启用的账号（确需使用该账号时，先在 AgentCompass "
-    "调度设置 -> 账号模型 中开启）。"
+    f"请把任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 由路由在参与自动派发的模型中选择；"
+    "用户在本次请求中点名了该模型时，用 --provider/--account/--model --basis \"<用户原话>\" 记录后启动"
+    f"（账号残留旧计量字段时运行 {ROUTER_CMD} setup 清除）。"
 )
 
 
 def check_target_disabled(
-    target: dict, account: str | None, candidates: list[dict], accounts: dict | None, policy: dict | None,
-) -> str | None:
-    """Block a target with leftover meter fields, disabled by host policy, or with every matching bundle disabled."""
+    target: dict, account: str | None, candidates: list[dict], accounts: dict | None,
+) -> tuple[str, str] | None:
+    """(kind, refusal) for a launch on an account with leftover meter fields (`legacy`, a fact: refused whatever the
+    route) or with every matching bundle unchecked in model management (`bundles`: out of automatic routing, so the
+    launch passes only on a route the user named, which the caller decides from the launch's authority). Host policy
+    is not read here: it governs automatic routing, and a launch carries the authority of the route it matches."""
     if not account:
         return None
-    where = f" (agent_id={target['agent_id']})" if target.get("agent_id") else ""
     disabled_cause, disabled_text = router_owner("host_policy", "disabled_cause", "disabled_text")
-    found = disabled_cause(account, candidates, accounts, policy)
+    found = disabled_cause(account, candidates, accounts)
     if not found:
         return None
-    cause = disabled_text(account, found, "zh")
-    return f"[Router Gate] 拦截向已禁用账号/档位启动或续派任务{where}：{cause}。" + DISABLED_RECOVERY
+    if found[0] == "legacy":
+        return "legacy", f"[Router Gate] 拦截启动残留旧计量字段的账号：{disabled_text(found)}。" + DISABLED_RECOVERY
+    return "bundles", (f"[Router Gate] 拦截：{disabled_text(found)}，只有用户在本次请求中点名的路由"
+                       "（user_override 记录）可以启动它。" + DISABLED_RECOVERY)
 
 
-def load_dispatch_settings() -> tuple[dict | None, dict | None]:
-    """(accounts, host policy); unreadable configuration degrades to allow-all."""
+def check_own_worker_legacy(target: dict, account: str | None, accounts: dict | None) -> str | None:
+    """Block a parent's new turn to its own idle worker on an account with leftover meter fields: a fact, like an
+    exhausted window. The preference switches (host policy, an unchecked model) do not refuse continuing a worker."""
+    found = account and router_owner("host_policy", "legacy_cause")(account, accounts)
+    if not found:
+        return None
+    return (f"[Router Gate] 拦截向残留旧计量字段的账号上的 worker 续派任务 (agent_id={target['agent_id']})：{found[1]}。"
+            "父会话仍可向自己明确运行中的 worker 发控制消息以收尾。否则请收取已有输出，把进展写进 <task.md>，"
+            f"运行 {ROUTER_CMD} roll --brief <task.md> 改派；{ROUTER_CMD} setup 会清除旧计量字段。")
+
+
+def check_route_authority(row: dict, trigger: str) -> str | None:
+    """A native launch matched to a record that is not the user's own naming (`hard_constraint`, `dot_closed_loop`) on
+    an account outside this host's automatic routing (`host_policy_violation`). Decided on the row's constraint: a
+    `user_override` row is launch authority whatever else it carries (v0.7.0 wrote the field on those rows too)."""
+    violation = row.get("host_policy_violation")
+    if row.get("constraint") == "user_override" or not isinstance(violation, dict):
+        return None
+    return (f"[Router Gate] 拦截 ({trigger})：{violation.get('reason')}。"
+            f"这条 {row.get('constraint')} 记录不是启动授权：项目规则不覆盖本机的自动派发开关。"
+            "用户在本次请求中点名了该路由时，改用 "
+            f"{ROUTER_CMD} record --constraint user_override ... --basis \"<用户原话>\" 记录后启动；"
+            f"否则运行 {ROUTER_CMD} roll --brief <task.md>，由路由在参与自动派发的账号中选择。")
+
+
+def load_dispatch_accounts() -> dict | None:
+    """The fleet; unreadable configuration degrades to None (no account or bundle resolves, nothing is refused)."""
     try:
-        accounts = router_module("account_fleet").load_accounts()
+        return router_module("account_fleet").load_accounts()
     except Exception:
-        accounts = None
-    try:
-        policy = router_module("host_policy").load_policy()
-    except Exception:
-        policy = None
-    return accounts, policy if isinstance(policy, dict) and isinstance(policy.get("allowed_accounts"), list) else None
+        return None
 
 
 def target_windows(candidates: list[dict], accounts: dict | None) -> list[str] | None:
@@ -1528,6 +1583,8 @@ def evaluate_payload(
     tool_name = base_tool_name(tool_name)
     caller_id = str(payload.get("parent_agent_id") or payload.get("callerAgentId")
                     or os.environ.get("PASEO_AGENT_ID") or "").strip() or None
+    # Who the caller is, for ownership: its Paseo agent ID and the host session ID its hook payload carries.
+    identities = caller_identities(payload, caller_id)
 
     calls = wrapped_agent_calls(tool_name, tool_input) or [(tool_name, tool_input)]
     calls.extend(cli_turn_calls(tool_name, tool_input))
@@ -1551,11 +1608,11 @@ def evaluate_payload(
     executing = []
     for name, args in calls:
         if (name == "send_agent_prompt"
-                and caller_id and args.get("notifyOnFinish") is False):
+                and identities and args.get("notifyOnFinish") is False):
             for agent_id in detect_target_agent_ids(name, args):
                 # Only persisted ownership proves direction; absent/conflicting
                 # labels or caller identity leave this notification check open.
-                if owns_worker(load_paseo_agent(agent_id, paseo_agents_dir), agent_id, caller_id):
+                if owns_worker(load_paseo_agent(agent_id, paseo_agents_dir), agent_id, identities, paseo_agents_dir):
                     return format_response(False, harness_kind,
                         '[Router Gate] Parent-to-worker send_agent_prompt must keep completion '
                         'notifications enabled. Set notifyOnFinish: true or omit it; completion '
@@ -1574,25 +1631,44 @@ def evaluate_payload(
         os.environ.get("ROUTER_GATE_WINDOW_SECONDS", DEFAULT_WINDOW_SECONDS)
     )
     rows = None
-    accounts, policy = load_dispatch_settings()
+    accounts = load_dispatch_accounts()
     upward = caller_parent_ids(caller_id, paseo_agents_dir)
     for name, args, trigger in executing:
         if trigger:
             targets = [launch_target(name, args, trigger)]
         else:
-            agent_ids = [agent_id for agent_id in detect_target_agent_ids(name, args) or
-                         detect_target_agent_ids(tool_name, tool_input) if agent_id not in upward]
-            docs = {agent_id: load_paseo_agent(agent_id, paseo_agents_dir) for agent_id in agent_ids}
-            targets = [dict(target_spec(doc, agent_labels(doc)), agent_id=agent_id,
-                            dispatch_id=agent_labels(doc).get("router.dispatch_id"))
-                       for agent_id, doc in docs.items() if isinstance(doc, dict)]
+            # The gate governs dispatch, not communication. A turn is dispatch only when it hands more work to the
+            # caller's own idle worker (persisted parent labels name the caller, `owns_worker`); a message to any other agent,
+            # an ancestor, or an agent whose ownership cannot be proven is communication and passes unchecked, and
+            # control of the caller's own running turn passes too.
+            docs = {agent_id: load_paseo_agent(agent_id, paseo_agents_dir)
+                    for agent_id in detect_target_agent_ids(name, args) or detect_target_agent_ids(tool_name, tool_input)
+                    if agent_id not in upward}
+            agent_ids = [agent_id for agent_id, doc in docs.items()
+                         if owns_worker(doc, agent_id, identities, paseo_agents_dir)
+                         and not owns_running_worker(doc, agent_id, identities, paseo_agents_dir)]
+            targets = [dict(target_spec(docs[agent_id], agent_labels(docs[agent_id])), agent_id=agent_id,
+                            dispatch_id=agent_labels(docs[agent_id]).get("router.dispatch_id")) for agent_id in agent_ids]
         dispatch_id = args.get("labels", {}).get("router.dispatch_id") if isinstance(args.get("labels"), dict) else None
+        unchecked = None    # an unchecked model: refused below unless the launch's authority is the user's naming
+        native_unchecked = None     # (account, model) of a native launch's unchecked model, named in its refusal
         for target in targets:
             try:
                 account, candidates = resolve_target(target, accounts)
-                controlling = not trigger and owns_running_worker(docs[target["agent_id"]], target["agent_id"], caller_id)
-                reason = None if controlling else (
-                    check_target_disabled(target, account, candidates, accounts, policy)
+                disabled = check_target_disabled(target, account, candidates, accounts) if trigger else None
+                if disabled and disabled[0] == "bundles":
+                    unchecked, disabled = disabled[1], None
+                    if (name in CLAUDE_AGENT_TOOLS or name == "spawn_agent") and target.get("model"):
+                        native_unchecked = (account, target["model"])
+                own = native_own_account(name, target, accounts) if trigger else None
+                if own and own != account:
+                    own_target = dict(target, account=own)
+                    found = check_target_disabled(own_target, own, resolve_target(own_target, accounts)[1], accounts)
+                    if found and found[0] == "bundles":
+                        unchecked, native_unchecked = found[1], (own, target["model"])
+                reason = (
+                    (disabled[1] if disabled else None if trigger
+                     else check_own_worker_legacy(target, account, accounts))
                     or check_account_quota_exhausted(
                         account or target.get("provider"),
                         usage_cache_path=usage_cache_path,
@@ -1614,7 +1690,7 @@ def evaluate_payload(
         if not trigger:
             for agent_id in agent_ids:
                 compaction_reason = check_worker_compaction_limit(
-                    agent_id, paseo_agents_dir=paseo_agents_dir, caller_id=caller_id
+                    agent_id, paseo_agents_dir=paseo_agents_dir, identities=identities
                 )
                 if compaction_reason:
                     return format_response(False, harness_kind, compaction_reason)
@@ -1623,11 +1699,16 @@ def evaluate_payload(
         if isinstance(labels, dict) and any(k.startswith('router.') for k in labels):
             try:
                 dispatch_registry = router_module('dispatch_registry')
+                if unchecked and dispatch_registry.dispatch_constraint(labels.get('router.dispatch_id')) != 'user_override':
+                    return format_response(False, harness_kind, unchecked)
                 call_id = payload.get('tool_use_id') or payload.get('tool_call_id') or payload.get('call_id')
                 dispatch_registry.claim(args, parent_id=caller_id, call_id=call_id, now=now)
             except (ValueError, OSError, ImportError, sqlite3.Error) as exc:
                 return format_response(False, harness_kind, '[Router Gate] Bound dispatch rejected: ' + str(exc))
             continue
+        if unchecked and (trigger == WORKFLOW_TRIGGER or trigger in SCHEDULE_TRIGGERS
+                          or name == 'create_agent' or trigger == 'shell:paseo agent create'):
+            return format_response(False, harness_kind, unchecked)
         # Workflow and schedules are not worker launches roll can make: each has its own authorization.
         if trigger == WORKFLOW_TRIGGER or trigger in SCHEDULE_TRIGGERS:
             if rows is None:
@@ -1656,6 +1737,11 @@ def evaluate_payload(
             requested["provider"] = t_prov
         context = correlation_fields(payload, tool_input, args)
         row, diagnostic = match_route(rows, requested, context, trigger, accounts=accounts)
+        if row is not None and (reason := check_route_authority(row, trigger)):
+            return format_response(False, harness_kind, reason)
+        if row is not None and unchecked and row.get("constraint") != "user_override":
+            return format_response(False, harness_kind,
+                                   native_unchecked_text(*native_unchecked, row) if native_unchecked else unchecked)
         if row is None:
             reason = (f"[Router Gate] 启动参数与有效期内路由不匹配 ({trigger})：{diagnostic}。"
                       "请按本次任务的 router provider/model/effort 启动，或重新运行 roll。"

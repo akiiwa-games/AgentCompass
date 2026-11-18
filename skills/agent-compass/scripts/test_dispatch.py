@@ -43,6 +43,26 @@ def fake_owners(test):
     return stack
 
 
+def roll_judge(test, plan_stage):
+    """A fake judge for `roll.run`: `plan_stage` plans an automatic roll; an explicit `--resume` goes through the real
+    `route_judge.record_resume` on the worker's bundle, with the task classified as `plan_stage` classifies it."""
+    import argparse
+    import route_judge
+
+    def classify_pinned(task, args):
+        return {'task': dict(task, work_kind=task.get('work_kind', 'code_implementation'),
+                             difficulty=task.get('difficulty', 'hard')),
+                'scorer': None, 'hours_estimate': None, 'alerts': []}
+
+    def record_resume(args, task, classified, bundle, agent_id):
+        with patch.object(account_fleet, 'load_accounts', return_value=test.accounts):
+            return route_judge.record_resume(argparse.Namespace(**{'accounts': None, **vars(args)}), task, classified,
+                                             bundle, agent_id)
+
+    return type('Judge', (), {'plan_stage': staticmethod(plan_stage), 'classify_pinned': staticmethod(classify_pinned),
+                              'record_resume': staticmethod(record_resume)})
+
+
 def setUpModule():
     isolated_router_state(unittest.addModuleCleanup, policy=False)
 
@@ -73,7 +93,7 @@ class DispatchTests(unittest.TestCase):
             decision = self.issue(stage='record', choice='constraint', constraint='user_override',
                                   basis='Diagnostic fixture')
         self.accounts['models']['claude-opus-5-5']['fast_capable'] = False
-        with self.assertRaisesRegex(ValueError, 'fast_capable'):
+        with self.assertRaisesRegex(ValueError, 'has no verified fast mode on claude; run it without --fast'):
             self.prepare(decision)
         self.accounts['models']['claude-opus-5-5']['fast_capable'] = True
         row = self.prepare(decision)
@@ -84,12 +104,28 @@ class DispatchTests(unittest.TestCase):
         import usage_reading
         with patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
                 patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
-            with self.assertRaisesRegex(ValueError, 'fast_capable'):
+            with self.assertRaisesRegex(ValueError, 'has no verified fast mode on claude; run it without --fast'):
                 registry.claim(row['request'], parent_id='parent-a', call_id='fixture', now=self.now)
             self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'prepared')
             self.accounts['models']['claude-opus-5-5']['fast_capable'] = True
             self.assertEqual(registry.claim(row['request'], parent_id='parent-a',
                                            call_id='fixture', now=self.now)['state'], 'launching')
+
+    def test_prepare_admits_a_named_route_out_of_automatic_routing_and_the_router_never_picks_it(self):
+        # Rule (router-internals.md, Pins): the host-policy exclusion is the router's own choice; prepare lifts it for the
+        # user's naming (user_override), keeps it for a plan decision, and a refused record is never dispatchable.
+        import host_policy
+        outside = {'allowed_accounts': [a for a in self.accounts['accounts'] if a != 'claude-lab']}
+        with patch.object(host_policy, 'load_policy', return_value=outside):
+            named = self.issue(stage='record', choice='constraint', constraint='user_override', basis='User named it')
+            self.assertEqual(self.prepare(named)['bundle']['account'], 'claude-lab')
+            with self.assertRaisesRegex(registry.CapacityChanged, 'excluded by host policy'):
+                self.prepare(self.issue(task=dict(self.task, task_id='automatic')), task=dict(self.task, task_id='automatic'))
+            refused = self.issue(stage='record', choice='constraint', constraint='hard_constraint', basis='Project rule',
+                                 host_policy_violation={'account': 'claude-lab', 'dispatch_allowed': False},
+                                 task=dict(self.task, task_id='project-rule'))
+            with self.assertRaisesRegex(ValueError, 'requires a new route'):
+                self.prepare(refused, task=dict(self.task, task_id='project-rule'))
 
     def test_pi_request_omits_unsupported_mode_including_saved_legacy_value(self):
         for legacy_mode in (None, 'full-access'):
@@ -247,7 +283,7 @@ class DispatchTests(unittest.TestCase):
             '--provider', 'pi', '--account', 'codex', '--model', 'gpt-6-astra', '--effort', 'high', '--fast']
         result = subprocess.run(command, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("Provider 'pi' does not support fast mode", json.loads(result.stdout)['detail'])
+        self.assertIn('gpt-6-astra has no verified fast mode on pi; run it without --fast', json.loads(result.stdout)['detail'])
         self.assertEqual(registry.reservations(), [])
 
     def override_decision(self, effort='low', **changes):
@@ -261,25 +297,27 @@ class DispatchTests(unittest.TestCase):
         for changes in ({'stage': 'plan'}, {'constraint': 'hard_constraint'}, {'basis': ''}):
             with self.assertRaisesRegex(ValueError, 'requires a new route'):
                 self.prepare(self.override_decision(**changes))
-        with self.assertRaisesRegex(ValueError, 'no known'):
+        # A refusal states its fact (router-internals.md, record): an effort the launch contract does not list, a
+        # model with no row on the named account and provider.
+        with self.assertRaisesRegex(ValueError, r'^turbo is not an effort codex/gpt-6-astra accepts \('):
             self.override_decision(effort='turbo')
         for changes in ({'account': 'claude-lab'}, {'provider': 'grok'}, {'model': 'unknown-model'}):
             bundle = dict(provider='codex', account='codex', model='gpt-6-astra', effort='low')
             bundle.update(changes)
-            with self.assertRaisesRegex(ValueError, 'no known'):
+            with self.assertRaisesRegex(ValueError, '^named_model_unavailable: .* has no row on '):
                 self.override_decision(selected_bundle=bundle)
 
-    def test_explicit_low_override_preserves_host_policy_and_capacity_checks(self):
+    def test_explicit_low_override_keeps_capacity_checks_and_reaches_an_account_out_of_automatic_routing(self):
+        # Rule 3: the user's naming does not lift a fact (an exhausted window); rule 2: it does lift host policy.
         decision = self.override_decision()
-        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['claude-lab']}))
-        with self.assertRaisesRegex(ValueError, 'host policy'):
-            self.prepare(decision)
-        (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': ['codex']}))
         exhausted = {'accounts': {'codex': {'status': 'fresh', 'fetched_at': self.now.isoformat(), 'windows': [
             {'id': 'usage', 'used_pct': 99, 'remaining_pct_before_reset': 1,
              'seconds_until_reset': 86400, 'resets_at': (self.now + timedelta(days=1)).isoformat()}]}}}
-        with self.assertRaisesRegex(ValueError, 'Capacity/availability'):
-            registry.prepare(decision['decision_id'], self.task, self.launch, exhausted, now=self.now)
+        for allowed in (['codex'], ['claude-lab']):
+            (self.root / 'host.json').write_text(json.dumps({'allowed_accounts': allowed}))
+            with self.subTest(allowed=allowed), self.assertRaisesRegex(ValueError, 'Capacity/availability'):
+                registry.prepare(decision['decision_id'], self.task, self.launch, exhausted, now=self.now)
+        self.assertEqual(self.prepare(decision)['bundle']['account'], 'codex')
 
     def test_fresh_claude2_eighty_percent_protects_prepare_mcp_and_sdk_claim(self):
         import scorer_client
@@ -2068,15 +2106,17 @@ class RollTests(unittest.TestCase):
         self.accounts['accounts']['claude-lab']['bundles']['lab_opus55_high']['disabled'] = False
         task = {**self.task, 'task_id': 'task-normal-1', 'work_kind': 'code_implementation'}
         task['profile'] = profile_for(task)
-        normal_task = {**task, 'pinned_bundle': 'lab_opus55_high', 'disable_fast': True}
-        normal_plan = allocator.plan(normal_task, self.usage, self.now, accounts=self.accounts)
+        normal_task = {**task, 'disable_fast': True}
+        normal_plan = allocator.plan(normal_task, self.usage, self.now, accounts=self.accounts,
+                                     route={'pinned_bundle': 'lab_opus55_high'})
         self.assertEqual(normal_plan['choice'], 'lab_opus55_high')
         normal_dec = registry.issue(dict(normal_plan, stage='plan'), task, self.now)
         normal_row = registry.prepare(normal_dec['decision_id'], task, self.launch, self.usage, self.accounts, self.now)
         self.assertEqual(normal_row['request']['settings']['features'], {'fast_mode': False})
 
-        fast_task = {**task, 'task_id': 'task-fast-1', 'pinned_bundle': 'lab_opus55_high', 'force_fast': True}
-        fast_plan = allocator.plan(fast_task, self.usage, self.now, accounts=self.accounts)
+        fast_task = {**task, 'task_id': 'task-fast-1'}
+        fast_plan = allocator.plan(fast_task, self.usage, self.now, accounts=self.accounts,
+                                   route={'pinned_bundle': 'lab_opus55_high', 'force_fast': True})
         self.assertTrue(fast_plan['selected_bundle'].get('fast'))
         fast_dec = registry.issue(dict(fast_plan, stage='plan'), fast_task, self.now)
         fast_row = registry.prepare(fast_dec['decision_id'], fast_task, self.launch, self.usage, self.accounts, self.now)
@@ -2117,7 +2157,7 @@ class RollTests(unittest.TestCase):
         b1.write_text('# Step 1: Initial implementation\n', encoding='utf-8')
         b2.write_text('# Step 1-Rev: Address review comments\n', encoding='utf-8')
         b3.write_text('# Step 1-Fresh: Independent task\n', encoding='utf-8')
-        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage)})
+        judge = roll_judge(self, real_plan_stage)
         self.enterContext(fake_owners(self))
         base_args = dict(task=None, file=[], apply_to=None, local_only='local daemon test', keep_whole=None,
                          hours=0.5, title=None, workspace=None, task_id=None, wait=0, parent_id=None,
@@ -2344,10 +2384,16 @@ class RollTests(unittest.TestCase):
                         'basis': a.basis, 'task_profile': review_prof, 'selected_bundle': self.bundle}
             return {**base_dec, **registry.issue(base_dec, t, self.now)}
 
+        def fake_record_resume(a, t, classified, bundle, agent_id):
+            base_dec = {'stage': 'record', 'choice': 'constraint', 'constraint': 'explicit_resume',
+                        'basis': f'roll --resume {agent_id}', 'task_profile': review_prof, 'selected_bundle': bundle}
+            return {**base_dec, **registry.issue(base_dec, t, self.now)}
+
         judge_named = type('Judge', (), {
             'classify_pinned': staticmethod(lambda t, a: {'task': dict(t, profile=review_prof), 'scorer': None,
                                                          'hours_estimate': None, 'alerts': []}),
             'record_constraint': staticmethod(fake_record_constraint),
+            'record_resume': staticmethod(fake_record_resume),
         })
         self.enterContext(fake_owners(self))
         ns_named_resume = argparse.Namespace(
@@ -2401,6 +2447,21 @@ class PinnedRollTests(unittest.TestCase):
                              patch.object(usage_reading, 'usage_snapshot', return_value=copy.deepcopy(self.usage)),
                              patch.object(scorer_client, 'score_task', return_value=scored))
 
+    def test_a_pinned_roll_past_automatic_routing_is_marked_in_the_ledger(self):
+        # Rule (router-internals.md, Pins): a route the user names reaches an account out of automatic routing, and the
+        # ledger row carries `outside_automatic_routing` so the audit can find it; nothing is marked otherwise.
+        import decision_ledger
+        import host_policy
+        judge, patches = self.judged((profile_for(self.task), {'source': 'system_one', 'model': 'fixture-scorer'}))
+        for allowed, marked in (([a for a in self.accounts['accounts'] if a != 'claude-lab'], ['account']),
+                                (list(self.accounts['accounts']), None)):
+            task, args = dict(self.unhoured(), task_id=f'pinned-{len(allowed)}'), self.args()
+            with patches[0], patches[1], patches[2], \
+                    patch.object(host_policy, 'load_policy', return_value={'allowed_accounts': allowed}):
+                decision = judge.record_constraint(args, task, judge.classify_pinned(task, args))
+            row = next(r for r in reversed(decision_ledger.read_ledger()) if r.get('decision_id') == decision['decision_id'])
+            self.assertEqual(row.get('outside_automatic_routing'), marked)
+
     def test_a_pinned_roll_gets_the_classifier_hours_and_a_nonzero_reservation(self):
         import roll
         classified_profile = dict(profile_for(self.task), expected_hours=0.7)
@@ -2440,8 +2501,9 @@ class PinnedRollTests(unittest.TestCase):
                 patch.object(registry, 'reusable_workers', return_value=[]):
             result, code = roll.run(ns, judge)
         self.assertEqual((code, result['status'], result['launched']), (2, 'blocked', False))
-        self.assertIn('--hours was not given, so there is no hours estimate', result['cause'])
-        self.assertIn('cannot be priced or reserved, so nothing was launched', result['cause'])
+        self.assertIn('--hours was not given, so there is nothing to price or reserve the launch from', result['cause'])
+        self.assertIn('nothing was launched', result['cause'])
+        self.assertIn('--hours', result['next'])
         self.assertEqual(result['assumptions'], [
             '--hours not given and no classifier estimate: no hours were budgeted, and none were invented. '
             'Pass --hours, or roll again when the classifier answers.'])
@@ -3326,6 +3388,7 @@ class RollLifecycleTests(unittest.TestCase):
         import roll
         worker = {'agent_id': 'worker-x'}
         self.enterContext(patch.object(roll, '_worker_gate_refusal', return_value=None))
+        self.enterContext(patch.object(roll, '_auto_resumable', return_value=True))
         return (patch.object(registry, 'reusable_workers', return_value=[worker]),
                 patch.object(roll, '_bundle_matches_worker', return_value=True),
                 patch.object(roll, 'match_reusable_worker', return_value=worker),
@@ -4205,6 +4268,55 @@ class LiveModelCheckTests(unittest.TestCase):
                 patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
             return roll.run(args, judge)
 
+    def test_a_named_route_on_an_account_out_of_automatic_routing_reads_its_live_list_and_only_then(self):
+        # Rule (router-internals.md, Pins): "the provider no longer offers this model" is a fact and refuses a named route
+        # on any account. An account out of automatic routing is not polled by a plan; its live list is read when a
+        # named route or an explicit resume names it.
+        import host_policy
+        import live_models
+        self.live_providers['claude-lab']['models'] = [m for m in self.live_providers['claude-lab']['models']
+                                                       if m['id'] != 'claude-sonnet-5-5']
+        for allowed in ([a for a in self.accounts['accounts'] if a != 'claude-lab'], list(self.accounts['accounts'])):
+            live_models.invalidate()
+            self.fetched_providers.clear()
+            task = dict(self.task, task_id=f'named-{len(allowed)}')
+            with patch.object(host_policy, 'load_policy', return_value={'allowed_accounts': allowed}), \
+                    patch.object(live_models, 'fetch_from_paseo', side_effect=self.fetch_live):
+                allocator.plan(dict(task), self.usage, self.now, accounts=self.accounts)
+                polled = {p for batch in self.fetched_providers for p in batch}
+                self.assertEqual('claude-lab' in polled, 'claude-lab' in allowed, self.fetched_providers)
+                named = self.issue(task=task, stage='record', choice='constraint', constraint='user_override',
+                                   basis='User named it')
+                with self.assertRaisesRegex(registry.CapacityChanged, 'provider no longer offers claude-sonnet-5-5'):
+                    self.prepare(named, task=task)
+
+    def test_a_named_route_on_an_unchecked_model_launches_and_reads_the_live_list_a_plan_does_not(self):
+        # Amendment 2 (router-internals.md, Pins): the checkbox is a preference. A route the user named (user_override)
+        # starts on an unchecked model; a plan decision on it is refused; and "the provider no longer offers this model"
+        # still refuses the named route, from the named account's live list even when every bundle on it is unchecked.
+        import live_models
+        for bundle in self.accounts['accounts']['claude-lab']['bundles'].values():
+            bundle['disabled'] = True
+        for offered in (True, False):
+            live_models.invalidate()
+            self.fetched_providers.clear()
+            if not offered:
+                self.live_providers['claude-lab']['models'] = [
+                    m for m in self.live_providers['claude-lab']['models'] if m['id'] != 'claude-sonnet-5-5']
+            task = dict(self.task, task_id=f'unchecked-{offered}')
+            with self.subTest(offered=offered), \
+                    patch.object(live_models, 'fetch_from_paseo', side_effect=self.fetch_live):
+                with self.assertRaisesRegex(registry.CapacityChanged, 'unchecked in model management'):
+                    self.prepare(self.issue(task=task), task=task)
+                named = self.issue(task=task, stage='record', choice='constraint', constraint='user_override',
+                                   basis='User named it')
+                if offered:
+                    self.assertEqual(self.prepare(named, task=task)['bundle']['bundle_id'], 'lab_sonnet55_high')
+                else:
+                    with self.assertRaisesRegex(registry.CapacityChanged, 'provider no longer offers claude-sonnet-5-5'):
+                        self.prepare(named, task=task)
+                self.assertIn('claude-lab', {p for batch in self.fetched_providers for p in batch})
+
     def test_a_bundle_missing_from_the_live_list_is_excluded_with_reason_and_the_next_one_launches_in_the_same_roll(self):
         import live_models
         # Without live filtering (when gemini-4-argon-high IS offered), argon_high wins a creativity-heavy task.
@@ -4439,8 +4551,7 @@ class ContinuationRollTests(unittest.TestCase):
             res.update(registry.issue(res, document['task'], self.now, allocation_task=task))
             return res, 0
 
-        judge = type('Judge', (), {'plan_stage': staticmethod(real_plan_stage)})
-        return operations, host, judge, roll
+        return operations, host, roll_judge(self, real_plan_stage), roll
 
     def test_same_workspace_idle_worker_resumes_and_other_workspace_does_not(self):
         import argparse
@@ -4528,6 +4639,7 @@ class ContinuationRollTests(unittest.TestCase):
     def test_explicit_resume_on_bundle_mismatch_resumes_with_warning(self):
         import argparse
         import roll
+        import route_judge
         self.accounts['accounts']['claude-lab']['bundles']['lab_opus55_high']['disabled'] = False
         b1 = self.root / 'm1.md'
         b1.write_text('# Follow-up on old worker\n', encoding='utf-8')
@@ -4556,6 +4668,8 @@ class ContinuationRollTests(unittest.TestCase):
                 patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
                 patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
                 patch.object(registry, 'reusable_workers', return_value=[old_worker]), \
+                patch.object(route_judge, '_compare_with_router',
+                             side_effect=lambda result, *_: result.update(router_choice='lab_sonnet55_high', agrees=False)), \
                 patch.object(flow, 'host_call', host):
             res, code = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
         self.assertEqual((code, res['status']), (0, 'launched'), res)
@@ -4569,7 +4683,10 @@ class ContinuationRollTests(unittest.TestCase):
         self.assertEqual(recorded['request']['labels']['router.bundle_id'], 'lab_opus55_high')
 
     def test_worker_gate_refusal_resolves_bundle_id_and_fails_closed(self):
+        # An unresolvable worker fails closed. A model unchecked since the launch, or an account out of automatic
+        # routing, is a preference: an explicit --resume proceeds (the latter with a warning), an automatic one does not.
         import argparse
+        import host_policy
         import roll
         b1 = self.root / 'g1.md'
         b1.write_text('# Gate check on disabled worker\n', encoding='utf-8')
@@ -4587,7 +4704,8 @@ class ContinuationRollTests(unittest.TestCase):
             'session_state': {'context_tokens': 1000, 'compacted_tokens': 0},
             'worn': False,
         }
-        self.assertIsNotNone(roll._worker_gate_refusal(disabled_worker, accounts=self.accounts))
+        self.assertIsNone(roll._worker_gate_refusal(disabled_worker, accounts=self.accounts))
+        self.assertFalse(roll._auto_resumable(disabled_worker, None, accounts=self.accounts))
         self.assertIsNotNone(roll._worker_gate_refusal({'agent_id': 'agent-x', 'bundle': {}}, accounts=self.accounts))
         self.enterContext(fake_owners(self))
         base_args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None,
@@ -4595,14 +4713,350 @@ class ContinuationRollTests(unittest.TestCase):
                          parent_host=None, parent_address=None, provider=None, account=None, model=None,
                          effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
                          resume='agent-disabled-opus', new_worker=False)
-        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
-                patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
-                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
-                patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
-                patch.object(registry, 'reusable_workers', return_value=[disabled_worker]), \
-                patch.object(flow, 'host_call', host):
-            res, code = roll.run(argparse.Namespace(brief=b1, **base_args), judge)
-        self.assertEqual((code, res['status'], res['cause']), (2, 'blocked', 'resume_worker_gated'))
+        off_policy = {'allowed_accounts': [a for a in self.accounts['accounts'] if a != 'claude-lab']}
+
+        def resume(brief, accounts=None, **patches):
+            with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                    patch.object(account_fleet, 'load_accounts', return_value=accounts or self.accounts), \
+                    patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                    patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                    patch.object(registry, 'reusable_workers', return_value=[disabled_worker]), \
+                    patch.object(host_policy, 'load_policy', return_value=off_policy), \
+                    patch.object(flow, 'host_call', host), ExitStack() as stack:
+                for target, name, value in patches.values():
+                    stack.enter_context(patch.object(target, name, **value))
+                return roll.run(argparse.Namespace(brief=brief, **base_args), judge)
+
+        # Rule: --resume names the worker, so its route is the worker's own bundle and does not depend on the automatic
+        # plan (which excludes claude-lab, out of automatic routing, and the unchecked model).
+        res, code = resume(b1)
+        self.assertEqual((code, res['status']), (0, 'launched'), res)
+        self.assertTrue(res['worker'].get('resumed'), res)
+        self.assertTrue(any("account claude-lab is out of automatic routing on this host" in w
+                            and "the turn goes to worker 'agent-disabled-opus' because --resume named it" in w
+                            for w in res.get('warnings', ())), res)
+        self.assertFalse(any('resumed' in w for w in res.get('warnings', ())), res)
+        import decision_ledger
+        row = decision_ledger.read_ledger()[-1]
+        self.assertEqual((row['constraint'], row.get('outside_automatic_routing')),
+                         ('explicit_resume', ['account', 'model']))
+        self.assertEqual(registry.read_dispatches()[-1]['bundle']['bundle_id'], 'lab_opus55_high')
+
+        # Facts still decide, each as a blocked result with its reason, never an uncaught exception.
+        b2 = self.root / 'g2.md'
+        b2.write_text('# Gate check, refusing window\n', encoding='utf-8')
+        res, code = resume(b2, gate=(roll, '_worker_gate_refusal', {'return_value': 'quota window five_hour is unavailable'}))
+        self.assertEqual((code, res['status'], res['cause']), (2, 'blocked', 'resume_worker_gated'), res)
+        b3 = self.root / 'g3.md'
+        b3.write_text('# Gate check, model the account no longer offers\n', encoding='utf-8')
+        import live_models
+
+        def live_list(accounts=None, allowed=None, named=(), now=None):
+            # Paseo's live list of claude-lab without the worker's model, answered only when claude-lab is asked for.
+            asked = 'claude-lab' in named or allowed is None or allowed('claude-lab')
+            return {'providers': {'claude-lab': {'ok': True, 'models': [{'id': 'claude-sonnet-5-5'}]}} if asked else {}}
+        res, code = resume(b3, live=(live_models, 'load_or_refresh', {'side_effect': live_list}))
+        self.assertEqual((code, res['status'], res['cause']), (2, 'blocked', 'resume_worker_gated'), res)
+        self.assertIn('provider no longer offers claude-opus-5-5', res['next_action'])
+        gone = copy.deepcopy(self.accounts)
+        del gone['accounts']['claude-lab']['bundles']['lab_opus55_high']
+        b4 = self.root / 'g4.md'
+        b4.write_text('# Gate check, bundle gone from the configuration\n', encoding='utf-8')
+        res, code = resume(b4, accounts=gone)
+        self.assertEqual((code, res['status']), (2, 'blocked'), res)
+        self.assertIn(res['cause'], ('resume_worker_unavailable', 'resume_worker_gated'), res)
+        # The refusal the review reproduced: prepare finds the decision no longer dispatchable (here: expired).
+        b5 = self.root / 'g5.md'
+        b5.write_text('# Gate check, decision expired before prepare\n', encoding='utf-8')
+        res, code = resume(b5, ttl=(registry, 'DECISION_TTL', {'new': -1}))
+        self.assertEqual((code, res['status'], res['cause']), (2, 'blocked', 'resume_worker_unavailable'), res)
+        self.assertIn('Decision expired, deferred or requires a new route', res['next_action'])
+        with patch.object(roll, '_worker_gate_refusal', return_value='quota window five_hour of claude-lab is unavailable'):
+            self.assertFalse(roll._auto_resumable(disabled_worker, None, accounts=self.accounts))
+
+    def test_roll_never_auto_resumes_a_worker_out_of_automatic_routing_or_on_an_unchecked_model(self):
+        # Rule (router-internals.md, Continuation): resuming an idle worker without being told to is the router's choice,
+        # so both preference switches apply at both call sites of roll (run: the worker a task continues; paseo: the
+        # worker a launch resumes). The plan names the worker's bundle so only those call sites decide.
+        # --resume names the worker and resumes it whatever the switches say.
+        import argparse
+        import host_policy
+        import roll
+        everyone = list(self.accounts['accounts'])
+        off = [a for a in everyone if a != 'claude-lab']
+        cases = (   # (worker bundle, allowed accounts, --resume, resumed?)
+            ('lab_sonnet55_high', everyone, None, True),       # control: nothing stands in the way
+            ('lab_sonnet55_high', off, None, False),           # account out of automatic routing
+            ('lab_opus55_high', everyone, None, False),        # model unchecked in model management (fixture)
+            ('lab_sonnet55_high', off, 'agent-idle', True),
+            ('lab_opus55_high', everyone, 'agent-idle', True),
+        )
+        prepared = []
+
+        def asked(real):
+            def prepare(decision_id, task, *a, **kw):
+                if not prepared or prepared[-1]['decision_id'] != decision_id:
+                    chain = task.get('chain') if isinstance(task.get('chain'), dict) else {}
+                    prepared.append({'decision_id': decision_id, 'resume_agent_id': kw.get('resume_agent_id'),
+                                     'chain_worker': (chain.get('worker') or {}).get('agent_id')})
+                return real(decision_id, task, *a, **kw)
+            return prepare
+
+        for n, (bid, allowed, named, resumed) in enumerate(cases):
+            prepared.clear()
+            with self.subTest(bundle=bid, off='claude-lab' not in allowed, resume=named):
+                bundle = dict(account_fleet.bundles(self.accounts)[bid], bundle_id=bid)
+                operations, host, _, _ = self._setup_paseo_env()
+
+                def plan_stage(document, _, bid=bid, bundle=bundle):
+                    # The plan names the worker's bundle and starts it, whatever the switches say.
+                    task = dict(document['task'], work_kind='code_implementation', difficulty='hard')
+                    res = {'stage': 'plan', 'choice': bid, 'selected_bundle': bundle, 'decision': {'action': 'start'},
+                           '_allocation_task': task}
+                    res.update(registry.issue(res, document['task'], self.now, allocation_task=task))
+                    return res, 0
+                judge = roll_judge(self, plan_stage)
+                worker = {'agent_id': 'agent-idle', 'dispatch_id': f'd-idle-{n}', 'bundle_id': bid, 'bundle': bundle,
+                          'chain_id': 'chain-idle', 'task_ids': [f't-idle-{n}'], 'brief_paths': [],
+                          'read_only_review': False, 'session_state': {'context_tokens': 1000, 'compacted_tokens': 0},
+                          'worn': False}
+                brief = self.root / f'auto-{n}.md'
+                brief.write_text(f'# Continue t-idle-{n}\n', encoding='utf-8')
+                args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None, hours=0.5,
+                            title=None, workspace=None, task_id=f't-idle-{n}', wait=0, parent_id=None,
+                            parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                            effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
+                            resume=named, new_worker=False)
+                with fake_owners(self), patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                        patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
+                        patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                        patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                        patch.object(registry, 'reusable_workers', return_value=[worker]), \
+                        patch.object(roll, '_worker_gate_refusal', return_value=None), \
+                        patch.object(host_policy, 'load_policy', return_value={'allowed_accounts': allowed}), \
+                        patch.object(registry, 'prepare', side_effect=asked(registry.prepare)),                         patch.object(flow, 'host_call', host):
+                    res, code = roll.run(argparse.Namespace(brief=brief, **args), judge)
+                # What roll asked prepare for is the call sites' decision; prepare's own re-plan may refuse a route the
+                # router excludes, so a refused launch afterwards is not what is tested here.
+                first = prepared[-1] if prepared else None
+                self.assertIsNotNone(first, res)
+                self.assertEqual(first['resume_agent_id'] == 'agent-idle', resumed, first)
+                self.assertEqual(first['chain_worker'] == 'agent-idle', resumed, first)
+                if resumed:
+                    self.assertEqual((code, res['status'], operations[0]), (0, 'launched', ('resume', 'agent-idle')), res)
+
+    def test_a_named_worker_that_cannot_take_the_turn_is_never_replaced_and_an_automatic_resume_falls_back(self):
+        # Rule (router-internals.md, Pins; dispatch_fallback `worker_named`): --resume names a worker, not a route. When
+        # the host refuses the resume, the result is blocked with the host's reason and nothing is created, on any
+        # account; an automatic resume the router chose keeps its fallback to a fresh create on the planned bundle.
+        import argparse
+        import host_policy
+        import roll
+        bundle = dict(self.bundle, bundle_id='lab_sonnet55_high')
+        everyone = list(self.accounts['accounts'])
+        for n, (named, allowed) in enumerate(((None, everyone), ('agent-idle', everyone),
+                                             ('agent-idle', [a for a in everyone if a != 'claude-lab']))):
+            for refusal in ('worker_not_found', 'worker_not_idle', 'worker_model_mismatch', 'worker_workspace_mismatch',
+                            'host_resume_failed'):
+                with self.subTest(resume=named, off='claude-lab' not in allowed, refusal=refusal):
+                    operations, base_host, _, _ = self._setup_paseo_env()
+
+                    def host(request, refusal=refusal):
+                        if request['operation'] == 'resume':
+                            operations.append(('resume', request.get('agent_id')))
+                            # The bridge names what differs (worker vs requested) on a mismatch.
+                            return {'ok': False, 'sent': False, 'error': refusal,
+                                    **({'detail': {'worker': 'D:/work/main', 'requested': 'D:/work/feature'}}
+                                       if refusal.endswith('_mismatch') else {})}
+                        return base_host(request)
+
+                    def plan_stage(document, _):
+                        task = dict(document['task'], work_kind='code_implementation', difficulty='hard')
+                        res = {'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': bundle,
+                               'decision': {'action': 'start'}, '_allocation_task': task}
+                        res.update(registry.issue(res, document['task'], self.now, allocation_task=task))
+                        return res, 0
+                    task_id = f't-refused-{n}-{refusal}'
+                    worker = {'agent_id': 'agent-idle', 'dispatch_id': f'd-{task_id}', 'bundle_id': 'lab_sonnet55_high',
+                              'bundle': bundle, 'chain_id': 'chain-idle', 'task_ids': [task_id], 'brief_paths': [],
+                              'read_only_review': False, 'worn': False,
+                              'session_state': {'context_tokens': 1000, 'compacted_tokens': 0}}
+                    brief = self.root / f'{task_id}.md'
+                    brief.write_text(f'# Continue {task_id}\n', encoding='utf-8')
+                    args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None, hours=0.5,
+                                title=None, workspace=None, task_id=task_id, wait=0, parent_id=None, parent_host=None,
+                                parent_address=None, provider=None, account=None, model=None, effort=None, basis=None,
+                                usage_cache=None, dry_run=False, verbose=False, fast=False, resume=named,
+                                new_worker=False)
+                    with fake_owners(self), patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                            patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
+                            patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                            patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                            patch.object(registry, 'reusable_workers', return_value=[worker]), \
+                            patch.object(roll, '_worker_gate_refusal', return_value=None), \
+                            patch.object(host_policy, 'load_policy', return_value={'allowed_accounts': allowed}), \
+                            patch.object(flow, 'host_call', host):
+                        res, code = roll.run(argparse.Namespace(brief=brief, **args), roll_judge(self, plan_stage))
+                    self.assertEqual(operations[0], ('resume', 'agent-idle'), operations)
+                    if named:
+                        self.assertEqual(operations, [('resume', 'agent-idle')])       # nothing created in its place
+                        if refusal == 'worker_workspace_mismatch':     # the precise reason: both directories
+                            self.assertEqual((code, res['status'], res['cause']),
+                                             (2, 'blocked', 'resume_workspace_mismatch'))
+                            self.assertIn("works in D:/work/main, and --workspace names D:/work/feature",
+                                          res['next_action'])
+                        else:
+                            self.assertEqual((code, res['status'], res['cause']),
+                                             (2, 'blocked', 'resume_worker_unavailable'))
+                            self.assertIn(refusal, res['next_action'])
+                        if refusal == 'worker_model_mismatch':
+                            self.assertIn('the worker has D:/work/main, this turn asked for D:/work/feature',
+                                          res['next_action'])
+                        self.assertNotIn('resumed', json.dumps(res.get('warnings', [])))
+                        self.assertFalse((res.get('worker') or {}).get('resumed'))
+                    else:
+                        self.assertEqual(operations[1][0], 'create', operations)        # the planned bundle carries it
+                        self.assertEqual((code, res['status']), (0, 'launched'), res)
+
+    def test_a_named_worker_is_resumed_only_in_its_own_directory_and_nothing_starts_in_another(self):
+        # Rule (roll-reference.md, --resume): a worker does not move. `--resume` with a --workspace other than the
+        # worker's own directory is blocked at the entry, before any record or host call, naming both directories;
+        # nothing is created. The
+        # same --workspace as the worker's own resumes it.
+        import argparse
+        import decision_ledger
+        import roll
+        bundle = dict(self.bundle, bundle_id='lab_sonnet55_high')
+        own, other = self.root / 'checkout', self.root / 'worktree'
+        own.mkdir()
+        other.mkdir()
+        for n, workspace in enumerate((other, own)):
+            with self.subTest(workspace=workspace.name):
+                operations, base_host, _, _ = self._setup_paseo_env()
+
+                def host(request):
+                    if request['operation'] in ('resume', 'create'):
+                        operations.append((request['operation'], request.get('agent_id')))
+                    return base_host(request)
+
+                def plan_stage(document, _):
+                    task = dict(document['task'], work_kind='code_implementation', difficulty='hard')
+                    res = {'stage': 'plan', 'choice': 'lab_sonnet55_high', 'selected_bundle': bundle,
+                           'decision': {'action': 'start'}, '_allocation_task': task}
+                    res.update(registry.issue(res, document['task'], self.now, allocation_task=task))
+                    return res, 0
+                task_id = f't-dir-{n}'
+                worker = {'agent_id': 'agent-idle', 'dispatch_id': f'd-{task_id}', 'bundle_id': 'lab_sonnet55_high',
+                          'bundle': bundle, 'chain_id': 'chain-idle', 'task_ids': [task_id], 'brief_paths': [],
+                          'read_only_review': False, 'worn': False, 'cwd': str(own), 'workspace': None,
+                          'session_state': {'context_tokens': 1000, 'compacted_tokens': 0}}
+                brief = self.root / f'{task_id}.md'
+                brief.write_text(f'# Continue {task_id}\n', encoding='utf-8')
+                args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None, hours=0.5,
+                            title=None, workspace=str(workspace), task_id=task_id, wait=0, parent_id=None,
+                            parent_host=None, parent_address=None, provider=None, account=None, model=None,
+                            effort=None, basis=None, usage_cache=None, dry_run=False, verbose=False, fast=False,
+                            resume='agent-idle', new_worker=False)
+                with fake_owners(self), patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                        patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
+                        patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                        patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                        patch.object(registry, 'reusable_workers', return_value=[worker]), \
+                        patch.object(roll, '_worker_gate_refusal', return_value=None), \
+                        patch.object(flow, 'host_call', host):
+                    rows_before = len(decision_ledger.read_ledger())
+                    res, code = roll.run(argparse.Namespace(brief=brief, **args), roll_judge(self, plan_stage))
+                if workspace == other:
+                    self.assertEqual(len(decision_ledger.read_ledger()), rows_before)     # refused before any record
+                    self.assertEqual([o for o in operations if o[0] in ('resume', 'create')], [])
+                    self.assertEqual((code, res['status'], res['cause']), (2, 'blocked', 'resume_workspace_mismatch'))
+                    self.assertIn(str(own).lower(), res['next_action'].lower())
+                    self.assertIn(str(other).lower(), res['next_action'].lower())
+                else:
+                    self.assertEqual([o for o in operations if o[0] in ('resume', 'create')][0], ('resume', 'agent-idle'))
+                    self.assertNotIn('create', [o[0] for o in operations])
+                    self.assertEqual((res['status'], res['worker']['agent_id']), ('launched', 'agent-idle'), res)
+
+    def test_resume_with_model_flags_naming_another_route_is_an_error_and_its_own_route_is_the_resume(self):
+        # Rule (roll-reference.md, --resume): --resume names the worker and its route is the worker's own. Model flags
+        # naming a different route contradict it: an error at the entry, before anything is recorded. Flags naming the
+        # worker's own route add nothing: the turn is the explicit resume (one path, record_resume).
+        import argparse
+        import decision_ledger
+        import roll
+        bundle = dict(self.bundle, bundle_id='lab_sonnet55_high')
+        # (provider, account, model, effort, fast, the flags the error names: only those given that name another
+        # route; None when they all name the worker's own). Fast mode is part of the route.
+        cases = (
+            ('claude-lab', 'claude-lab', 'claude-opus-5-5', 'high', False, '--model'),
+            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'medium', False, '--effort'),
+            (None, None, 'claude-sonnet-5-5:medium', None, False, '--model'),
+            ('codex', 'codex', 'gpt-6.1-sol', 'high', False, '--provider and --account and --model'),
+            (None, None, None, None, True, '--fast'),
+            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'high', True, '--fast'),
+            ('claude-lab', 'claude-lab', 'claude-opus-5-5', 'high', True, '--model and --fast'),
+            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'high', False, None),
+            (None, None, 'claude-sonnet-5-5:high', None, False, None),
+            (None, None, 'claude-sonnet-5-5', None, False, None),
+        )
+        # --fast on a worker that runs fast names its own route: it adds nothing.
+        own_fast = argparse.Namespace(provider=None, account=None, model=None, effort=None, fast=True)
+        self.assertIsNone(roll.named_route_conflict(own_fast, dict(bundle, fast=True), self.accounts))
+        for n, (provider, account, model, effort, fast, conflict) in enumerate(cases):
+            with self.subTest(model=model, effort=effort, account=account):
+                operations, host, judge, _ = self._setup_paseo_env()
+                task_id = f't-flags-{n}'
+                worker = {'agent_id': 'agent-idle', 'dispatch_id': f'd-{task_id}', 'bundle_id': 'lab_sonnet55_high',
+                          'bundle': bundle, 'chain_id': 'chain-idle', 'task_ids': ['t-old'], 'brief_paths': [],
+                          'read_only_review': False, 'worn': False,
+                          'session_state': {'context_tokens': 1000, 'compacted_tokens': 0}}
+                brief = self.root / f'{task_id}.md'
+                brief.write_text(f'# Continue {task_id}\n', encoding='utf-8')
+                args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None, hours=0.5,
+                            title=None, workspace=None, task_id=task_id, wait=0, parent_id=None, parent_host=None,
+                            parent_address=None, provider=provider, account=account, model=model, effort=effort,
+                            basis='User: run it there', usage_cache=None, dry_run=False, verbose=False, fast=fast,
+                            resume='agent-idle', new_worker=False)
+                rows_before = len(decision_ledger.read_ledger())
+                with fake_owners(self), patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                        patch.object(account_fleet, 'load_accounts', return_value=self.accounts), \
+                        patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'wp'), \
+                        patch.object(roll, 'RESULTS_DIR', self.root / 'rr'), \
+                        patch.object(registry, 'reusable_workers', return_value=[worker]), \
+                        patch.object(roll, '_worker_gate_refusal', return_value=None), \
+                        patch.object(flow, 'host_call', host):
+                    if conflict:
+                        with self.assertRaisesRegex(ValueError, r"--resume names the worker and its route is the "
+                                                                r"worker's own \(claude-lab/claude-sonnet-5-5:high\); drop "
+                                                                + conflict + ', or roll'):
+                            roll.run(argparse.Namespace(brief=brief, **args), judge)
+                        self.assertEqual(len(decision_ledger.read_ledger()), rows_before)     # nothing recorded
+                        self.assertEqual(operations, [])
+                        continue
+                    res, code = roll.run(argparse.Namespace(brief=brief, **args), judge)
+                self.assertEqual((code, res['status'], operations[0]), (0, 'launched', ('resume', 'agent-idle')), res)
+                self.assertEqual(decision_ledger.read_ledger()[-1]['constraint'], 'explicit_resume')
+
+    def test_a_named_worker_that_fails_on_its_turn_is_not_relaunched_on_another_worker(self):
+        # Rule (dispatch_fallback `worker_named`): a failure of the turn a named worker took is reported as it is; no
+        # transient retry on a new worker and no switch to the next candidate.
+        import dispatch_fallback
+        task = dict(self.task, task_id='t-named-failed')
+        decision = registry.issue({'stage': 'record', 'choice': 'constraint', 'constraint': 'explicit_resume',
+                                   'basis': 'roll --resume agent-named', 'selected_bundle': self.bundle,
+                                   'decision': {'action': 'start'}}, task, self.now)
+        row = registry.prepare(decision['decision_id'], task, self.launch, self.usage, accounts=self.accounts,
+                               now=self.now, resume_agent_id='agent-named',
+                               resume_bundle=dict(self.bundle, bundle_id='lab_sonnet55_high'), explicit_resume=True)
+        registry.claim(row['request'], now=self.now)
+        registry.observe(row['dispatch_id'], self.snapshot(row, 'error', id='agent-named'), now=self.now)
+        before = len(registry.read_dispatches())
+        with patch.object(flow, 'reconcile', return_value=[]), \
+                patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
+            outcome = dispatch_fallback.handle(row['dispatch_id'], judge=type('Judge', (), {}))
+        self.assertEqual((outcome['action'], outcome['result']), ('final', 'worker_named'), outcome)
+        self.assertIn('does not start another worker', outcome['text'])
+        self.assertEqual(len(registry.read_dispatches()), before)
 
     def test_explicit_resume_of_busy_worker_refuses_while_auto_match_falls_back(self):
         import argparse

@@ -258,6 +258,15 @@ def dispatch_allowed_efforts(bundle, accounts, model=None):
     return tuple(own) if isinstance(own, (list, tuple)) else ()
 
 
+def unaccepted_effort(harness, model, effort, accepted):
+    """The refusal of an effort the launch contract does not list for `model` on `harness`: the contract is the fact of
+    what the harness accepts, so the reason names it and what it does accept (`accepted`)."""
+    from auto_bundles import EFFORTS
+    order = {e: i for i, e in enumerate(EFFORTS)}
+    listed = sorted({e for e in accepted if e}, key=lambda e: (order.get(e, len(order)), e))
+    return f"{effort} is not an effort {harness}/{model} accepts ({', '.join(listed) or 'it takes none'})"
+
+
 HARNESS_CAPABILITIES = {
     'antigravity-resilient': {
         # No prompt image attachments; but the CLI's own read_file tool shows local image files to multimodal models.

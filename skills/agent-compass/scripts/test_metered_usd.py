@@ -509,14 +509,17 @@ class LegacyMeterFleet(unittest.TestCase):
         before = path.read_bytes()
         found = provider_inventory.discover()
         with patch.object(provider_inventory, 'current', return_value=found):
-            accounts, _policy = router_gate_hook.load_dispatch_settings()
+            accounts = router_gate_hook.load_dispatch_accounts()
         self.assertIsNotNone(accounts)
         self.assertIn('claude', accounts['accounts'])
         self.assertIn('llmproxy', accounts['accounts'])
         self.assertEqual(path.read_bytes(), before)
-        cause = router_gate_hook.check_target_disabled(
-            {'agent_id': 'worker-1'}, 'llmproxy', [], accounts, None)
-        self.assertIn('旧的额度字段残留', cause)
+        # Leftover meter fields are a fact: they refuse a launch and the parent's new turn to its own worker alike.
+        cause = router_gate_hook.check_target_disabled({'agent_id': 'worker-1'}, 'llmproxy', [], accounts)
+        self.assertEqual(cause[0], 'legacy')
+        self.assertIn('旧的额度字段残留', cause[1])
+        self.assertIn('旧的额度字段残留', router_gate_hook.check_own_worker_legacy({'agent_id': 'worker-1'}, 'llmproxy', accounts))
+        self.assertIsNone(router_gate_hook.check_own_worker_legacy({'agent_id': 'worker-1'}, 'claude', accounts))
 
 
 class SetupCleanup(unittest.TestCase):
