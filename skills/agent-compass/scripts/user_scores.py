@@ -633,13 +633,21 @@ def _pav(values: list[float]) -> list[float]:
     return [s / n for s, n in blocks for _ in range(n)]
 
 
-def _manual_by_effort(z_val: float, own_cell: dict | None, ability: bool,
+def rises_with_effort(cat: str, facet: str) -> bool:
+    """The direction of a facet's curve in effort, as the calibration declares it (`calibration/five_axis.py`: ability facets are
+    pooled to never decrease with effort; `tool_operation.responsiveness` falls as effort rises and is left unpooled)."""
+    return (cat, facet) != ('tool_operation', 'responsiveness')
+
+
+def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
                       fixed_effort: str | None = None) -> tuple[dict[str, float], list[str]]:
     """(`by_effort`, measured efforts) of a facet a manual score sets to `z_val` (user 2026-11-12). The score sets High,
     and also the model's `fixed_effort` when it declares one (its only configuration, which the score judges). Efforts
     the facet measured keep their values; its other efforts follow the facet's own curve moved to `z_val` at High, and
-    stay missing when it has none. An ability facet is then made non-decreasing with the set efforts held at `z_val`
-    (isotonic below and above them, bounded by `z_val`); an effort that bound moves is no longer listed as measured."""
+    stay missing when it has none. The curve is then made monotone in the facet's direction (`rises_with_effort`) with the
+    set efforts held at `z_val`: a facet that rises with effort is non-decreasing (efforts below the set ones isotonic and at
+    most `z_val`, above them isotonic and at least `z_val`), one that falls is non-increasing (below: at least `z_val`, above:
+    at most `z_val`); efforts between two set ones are `z_val`. An effort that bound moves is no longer listed as measured."""
     pinned = [e for e in EFFORTS if e in ('high', fixed_effort)]
     by = {e: float(v) for e, v in ((own_cell or {}).get('by_effort') or {}).items() if e in EFFORTS and v is not None}
     measured = [e for e in _measured_efforts(own_cell) if e not in pinned]
@@ -648,14 +656,16 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, ability: bool,
     if 'high' in by:
         out.update({e: z_val + v - by['high'] for e, v in by.items() if e not in out})
     out = {e: out[e] for e in EFFORTS if e in out}
-    if ability:
-        lo, hi = EFFORTS.index(pinned[0]), EFFORTS.index(pinned[-1])
-        below = [e for e in out if EFFORTS.index(e) < lo]
-        above = [e for e in out if EFFORTS.index(e) > hi]
-        out.update({e: min(v, z_val) for e, v in zip(below, _pav([out[e] for e in below]))})
-        out.update({e: max(v, z_val) for e, v in zip(above, _pav([out[e] for e in above]))})
-        out.update({e: z_val for e in out if lo < EFFORTS.index(e) < hi})
-    out = {e: round(v, 4) for e, v in out.items()}
+    sign = 1.0 if rises else -1.0       # a falling facet is bounded as its mirror image
+    signed = {e: sign * v for e, v in out.items()}
+    held = sign * z_val
+    lo, hi = EFFORTS.index(pinned[0]), EFFORTS.index(pinned[-1])
+    below = [e for e in signed if EFFORTS.index(e) < lo]
+    above = [e for e in signed if EFFORTS.index(e) > hi]
+    signed.update({e: min(v, held) for e, v in zip(below, _pav([signed[e] for e in below]))})
+    signed.update({e: max(v, held) for e, v in zip(above, _pav([signed[e] for e in above]))})
+    signed.update({e: held for e in signed if lo < EFFORTS.index(e) < hi})
+    out = {e: round(sign * signed[e], 4) for e in signed}
     return out, [e for e in measured if out[e] == round(by[e], 4)]
 
 
@@ -744,8 +754,7 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                 z_map[f] = zf
                 f_ref = _facet_data_reference(facets.get(f), cat, f, rec['level'], targets_table)
                 facet_refs[f] = f_ref
-                by_eff, measured = _manual_by_effort(zf, facets.get(f), (cat, f) != ('tool_operation', 'responsiveness'),
-                                                     fixed_effort)
+                by_eff, measured = _manual_by_effort(zf, facets.get(f), rises_with_effort(cat, f), fixed_effort)
                 facets[f] = {
                     'value': zf,
                     'by_effort': by_eff,
@@ -777,8 +786,7 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                         }
             z_val = round(level_to_z(rec['level'], *target_triad(targets_table, cat, facet)), 4)
             f_ref = _facet_data_reference(facets.get(facet), cat, facet, rec['level'], targets_table)
-            by_eff, measured = _manual_by_effort(z_val, facets.get(facet),
-                                                 (cat, facet) != ('tool_operation', 'responsiveness'), fixed_effort)
+            by_eff, measured = _manual_by_effort(z_val, facets.get(facet), rises_with_effort(cat, facet), fixed_effort)
             facets[facet] = {
                 'value': z_val,
                 'by_effort': by_eff,

@@ -851,15 +851,16 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
 
     def test_manual_by_effort_keeps_measured_efforts_follows_own_curve_and_never_borrows(self):
         """User 2026-11-12: a manual score sets High; measured efforts stay; missing efforts follow the facet's own curve,
-        or stay missing; ability facets stay non-decreasing with High held."""
+        or stay missing; ability facets stay non-decreasing and responsiveness non-increasing with High held."""
         measured_partial = {'by_effort': {'low': -2.0, 'max': -1.0}, 'status': 'measured_partial'}
         self.assertEqual(user_scores._manual_by_effort(-1.5, measured_partial, True),
                          ({'low': -2.0, 'high': -1.5, 'max': -1.0}, ['low', 'max']))
         # A measured effort contradicting the manual High is bounded by it and no longer listed as measured.
         self.assertEqual(user_scores._manual_by_effort(-0.5, measured_partial, True),
                          ({'low': -2.0, 'high': -0.5, 'max': -0.5}, ['low']))
-        # Responsiveness is not pooled.
-        self.assertEqual(user_scores._manual_by_effort(-0.5, measured_partial, False)[0], {'low': -2.0, 'high': -0.5, 'max': -1.0})
+        # Responsiveness falls with effort: Low (measured -2.0) cannot be slower than the set High, Max (measured -1.0) stays below it.
+        self.assertEqual(user_scores._manual_by_effort(-0.5, measured_partial, False),
+                         ({'low': -0.5, 'high': -0.5, 'max': -1.0}, ['max']))
         # An estimated curve is the facet's own curve: it moves to the manual High.
         estimated = {'by_effort': {'low': -1.0, 'high': 0.0, 'max': 0.5}, 'status': 'estimated'}
         self.assertEqual(user_scores._manual_by_effort(1.0, estimated, True), ({'low': 0.0, 'high': 1.0, 'max': 1.5}, []))
@@ -869,6 +870,49 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         # No own curve: only High, never another facet's curve; a declared fixed effort takes the score too.
         self.assertEqual(user_scores._manual_by_effort(0.3, None, True), ({'high': 0.3}, []))
         self.assertEqual(user_scores._manual_by_effort(0.3, None, False, 'medium'), ({'medium': 0.3, 'high': 0.3}, []))
+
+    def test_manual_by_effort_bounds_each_facet_in_its_direction_with_the_set_efforts_held(self):
+        """Rule (`user_scores._manual_by_effort`, direction from `rises_with_effort`): after a manual score sets High (and a fixed
+        effort), a facet that rises with effort is non-decreasing and one that falls is non-increasing; the set efforts hold the
+        score, efforts between two set ones equal it, efforts below/above are isotonic and on the allowed side of it. A group
+        that already satisfies this is left as it is, and only a measured effort the bound did not move is listed as measured."""
+        curves = {
+            'falls': {'low': 3.0, 'medium': 1.5, 'high': 0.5, 'xhigh': -0.5, 'max': -1.5},
+            'rises': {'low': -1.0, 'medium': 0.0, 'high': 0.5, 'xhigh': 1.0, 'max': 2.0},
+            'zigzag': {'low': 0.2, 'medium': 1.4, 'high': 0.5, 'xhigh': 0.9, 'max': -0.3},
+            'missing medium and xhigh': {'low': 2.0, 'high': 0.5, 'max': -1.0},
+        }
+        efforts = list(user_scores.EFFORTS)
+        for rises in (True, False):
+            sign = 1.0 if rises else -1.0
+            for name, by in curves.items():
+                cell = {'by_effort': dict(by), 'status': 'measured'}
+                for fixed in (None, 'medium'):
+                    for z in (-2.0, -1.0, -0.5, 0.0, 0.3, 0.5, 1.0, 1.7, 3.0):
+                        label = (rises, name, fixed, z)
+                        out, measured = user_scores._manual_by_effort(z, cell, rises, fixed)
+                        pinned = [e for e in efforts if e in ('high', fixed)]
+                        self.assertEqual(list(out), [e for e in efforts if e in out], label)
+                        signed = [sign * out[e] for e in out]
+                        self.assertEqual(signed, sorted(signed), label)                 # monotone in the facet's direction
+                        lo, hi = efforts.index(pinned[0]), efforts.index(pinned[-1])
+                        for e in out:
+                            i = efforts.index(e)
+                            if e in pinned or lo < i < hi:
+                                self.assertEqual(out[e], z, (label, e))
+                            elif i < lo:
+                                self.assertLessEqual(sign * out[e], sign * z + 1e-9, (label, e))
+                            else:
+                                self.assertGreaterEqual(sign * out[e], sign * z - 1e-9, (label, e))
+                        # the curve before the bound: measured efforts as measured, the set ones at z
+                        base = {e: z if e in pinned else v for e, v in by.items()}
+                        base = {e: base[e] for e in efforts if e in base}
+                        for group in ([e for e in base if efforts.index(e) < lo], [e for e in base if efforts.index(e) > hi]):
+                            vals = [sign * base[e] for e in group]
+                            allowed = all(v <= sign * z for v in vals) if group and efforts.index(group[0]) < lo else all(v >= sign * z for v in vals)
+                            if vals == sorted(vals) and allowed:
+                                self.assertEqual({e: out[e] for e in group}, {e: base[e] for e in group}, (label, 'moved without need'))
+                        self.assertEqual(measured, [e for e in by if e not in pinned and out[e] == by[e]], label)
 
     def test_r2_f7_named_model_without_effort_never_lets_unscored_effort_beat_scored_effort(self):
         accounts = copy.deepcopy(self.accounts)
