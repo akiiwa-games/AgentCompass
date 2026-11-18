@@ -105,6 +105,9 @@ def fetch(target, only=None):
     if only:
         jobs = [(u, p) for u, p in jobs if p.name in set(only)]
         files = known
+    for name in known.keys() - files.keys():        # a release page the rebuilt manifest no longer records goes with its row
+        if AA_RELEASE_NAME.fullmatch(name):
+            (target / name).unlink(missing_ok=True)
     _download(jobs, files)
     (target / MANIFEST).write_text(json.dumps({'files': files}, indent=1), encoding='utf-8')
 

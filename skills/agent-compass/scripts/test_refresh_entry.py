@@ -30,6 +30,13 @@ import refresh  # noqa: E402
 import sources  # noqa: E402
 
 
+def setUpModule():
+    """No test downloads: a code path that reaches the network fails the test at once (and is recorded as a failed fetch)."""
+    guard = patch.object(sources.urllib.request, 'urlopen', side_effect=AssertionError('a test must not use the network'))
+    guard.start()
+    unittest.addModuleCleanup(guard.stop)
+
+
 PANEL_MODELS = (
     ('claude-opus-5-5', 'Claude Opus 5.5', 'Anthropic'),
     ('gpt-6-astra', 'GPT-6 Astra', 'OpenAI'),
@@ -829,6 +836,12 @@ class AaReleasePageTests(unittest.TestCase):
         acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8'))
         return measurements.Builder(data, acc, now=self.now).build()
 
+    def build_with(self, data, models):
+        """The measurements of `data` for the catalogue `models` (the shipped one, with rows added)."""
+        refs = data.parent / 'references'
+        acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8'))
+        return measurements.Builder(data, {**acc, 'models': models}, now=self.now).build()
+
     @staticmethod
     def page_url(model):
         return sources.AA_RELEASE_URL.format(release_slug(model))
@@ -917,8 +930,8 @@ class AaReleasePageTests(unittest.TestCase):
                 self.assertEqual(row['reason'], {'fetch failed': 'URLError: offline',
                                                  'never fetched': 'not fetched; run `agentcompass data refresh`',
                                                  'no record of its release': 'the page carries no reading of its release for '
-                                                                             'gpt-6-astra (no record the matcher finds, or none '
-                                                                             'with a figure)'}[case])
+                                                                             'gpt-6-astra (no record of the planned base name '
+                                                                             'that the matcher finds for it, or none with a figure)'}[case])
                 readings = [e for fields in built['models']['gpt-6-astra'].values() for e in fields
                             if e['source'].startswith(('aa.', 'tier.aa', 'derived.community_mix'))]
                 self.assertEqual(readings, [])
@@ -943,19 +956,25 @@ class AaReleasePageTests(unittest.TestCase):
                     release('model-c-old', 'Model C', True, [], '2026-08-03'),
                     release('model-f-new', 'Model F (0902)', True, [], '2026-09-02'),
                     release('model-f-old', 'Model F', True, [], '2026-08-03'),
+                    release('model-g', 'Model G', True, ['Model G (High)'], '2025-01-01'),
                     release('model-e', 'Model E', False, [], '2026-09-01'),                # not deprecated, no record yet
                     release('retired', 'Retired', True, ['Retired (High)'], '2025-01-01')]
         catalogue = {'model-a': {}, 'model-b': {'listed_as': {'aa': 'Model B'}}, 'model-c': {'listed_as': {'aa': 'Model C'}},
-                     'model-f': {}, 'model-d': {}, 'model-e': {}, 'note': 'a note, not a row'}
+                     'model-c-free': {}, 'model-f': {}, 'model-d': {}, 'model-e': {}, 'note': 'a note, not a row',
+                     'model-h': {'listed_as': {'aa': 'Model A'}},                  # declared name the leaderboard lists
+                     'model-g': {'listed_as': {'aa': 'Another Name'}}}             # declared name it does not, the id it does
+        leaderboard = ({'name': 'Model A (High)', 'intelligenceIndex': 50.0}, {'name': 'Model G (High)', 'intelligenceIndex': 40.0})
         self.assertEqual(self.plan([], catalogue, leaderboard=()), ({}, {}))      # no release named
-        plan, ambiguous = self.plan(releases, catalogue)
+        plan, ambiguous = self.plan(releases, catalogue, leaderboard)
         self.assertEqual(ambiguous, {})
-        # model-a is on the leaderboard: not read from a deprecated release of its name; model-b is the only release of its
-        # base; model-f declares no listing: the most recently released of its base name; model-c declares a listing that
-        # is the exact name of a release: that release, whatever is newer; model-d, model-e, retired: no deprecated release.
-        self.assertEqual(plan, {'model-b': 'model-b', 'model-c': 'model-c-old', 'model-f': 'model-f-new'})
+        # model-a, model-h, model-g are on the leaderboard (by id, by declared name, by id with another declared name): not read
+        # from a deprecated release; model-b is the only release of its base; a declared listing is a base name, so model-c,
+        # model-c-free and model-f read the most recently released release of their base name; model-d, model-e, retired:
+        # no deprecated release.
+        self.assertEqual(plan, {'model-b': ('model-b', 'Model B'), 'model-c': ('model-c-new', 'Model C'),
+                                'model-c-free': ('model-c-new', 'Model C'), 'model-f': ('model-f-new', 'Model F')})
         self.assertEqual(measurements.aa_release_files(plan),
-                         {f'aa-release-{s}.html': sources.AA_RELEASE_URL.format(s) for s in ('model-b', 'model-c-old', 'model-f-new')})
+                         {f'aa-release-{s}.html': sources.AA_RELEASE_URL.format(s) for s in ('model-b', 'model-c-new', 'model-f-new')})
 
     def test_a_slug_that_cannot_be_a_url_and_a_file_name_names_no_release(self):
         hostile = ('../escape', 'a/b', 'ok/../x', 'x y', 'a%2fb', 'a?b=1', '..', '.hidden', 'é')
@@ -972,7 +991,7 @@ class AaReleasePageTests(unittest.TestCase):
                     release('y-1', 'Model Y', True, [], '2026-09-02'), release('y-2', 'Model Y (0902)', True, [], '2026-09-02'),
                     release('z-only', 'Model Z', True, [], None)]           # one release: nothing to choose
         plan, ambiguous = self.plan(releases, {'model-x': {}, 'model-y': {}, 'model-z': {}})
-        self.assertEqual(plan, {'model-z': 'z-only'})
+        self.assertEqual(plan, {'model-z': ('z-only', 'Model Z')})
         self.assertEqual(set(ambiguous), {'model-x', 'model-y'})
         self.assertIn('x-old: None', ambiguous['model-x'])
         self.assertIn('x-new', ambiguous['model-x'])
@@ -1160,6 +1179,135 @@ class AaReleasePageTests(unittest.TestCase):
                 row['release_pages'][page]['fetched_at'] = old
         merged, _, _ = refresh.merge_model_rows(copy.deepcopy(shipped), fresh, ['gpt-6-astra'])
         self.assertEqual(merged['sources']['aa.index']['as_of'], old[:10])
+        merged, _, _ = refresh.merge_model_rows(copy.deepcopy(shipped), self.build(data), ['gpt-6-astra'])
+        urls = [c['url'] for c in merged['sources']['derived.community_mix']['citations']]
+        self.assertEqual(len(urls), len(set(urls)))         # several entries cite the page: its citation is added once
+
+    def test_a_release_page_url_is_the_release_slug_under_the_models_path(self):
+        self.assertEqual(sources.AA_RELEASE_URL.format('gpt-6-astra'), 'https://artificialanalysis.ai/models/gpt-6-astra')
+
+    def test_a_base_name_has_the_records_of_one_release_only(self):
+        """Rule: a catalogue row reads the records of the release the plan chose for it. Two rows of one base name read the
+        same release; a release page's records of a base name the plan chose another release for are not read."""
+        data, _ = self.fixture(aa_deprecated=('gpt-6-astra',))
+        catalogue = {**self.catalogue(data), 'gpt-6-astra-free': {}}
+        plan = measurements.aa_records_read(data, catalogue)[1]
+        self.assertEqual(plan['gpt-6-astra'], plan['gpt-6-astra-free'])
+        built = self.build_with(data, catalogue)
+        read = lambda model: {(e['source'], e['listed_as'], e['url']) for fields in built['models'][model].values() for e in fields
+                              if e['source'].startswith('aa.') and 'url' in e}
+        self.assertTrue(read('gpt-6-astra'))
+        self.assertEqual(read('gpt-6-astra'), read('gpt-6-astra-free'))
+        self.assertNotIn('aa-release-gpt-6-astra.html', built['missing_sources'])
+        # a release listing two base names, the second of which a newer release lists too
+        releases = [self.release('old', 'Old', True, ['B (High)', 'B2 (High)'], '2026-01-01'),
+                    self.release('new', 'New', True, ['B2 (High)'], '2026-02-01')]
+        with tempfile.TemporaryDirectory() as tmp:
+            target, files = Path(tmp), {}
+            (target / 'aa-models.html').write_text(rsc_page(releases), encoding='utf-8')
+            for slug in ('old', 'new'):
+                records = [{'name': f'{base} (High)', 'intelligenceIndex': value, 'release': {'slug': slug, 'name': slug}}
+                           for base, value in (('B', 1.0), ('B2', 2.0 if slug == 'old' else 3.0))
+                           if (slug, base) != ('new', 'B')]
+                (target / f'aa-release-{slug}.html').write_text(rsc_page({'models': records}), encoding='utf-8')
+                files[f'aa-release-{slug}.html'] = {'url': 'u', 'fetched_at': '2026-11-18T00:00:00+00:00', 'status': 'ok'}
+            (target / sources.MANIFEST).write_text(json.dumps({'files': files}), encoding='utf-8')
+            records, plan, _, _ = measurements.aa_records_read(target, {'b': {}, 'b2': {}})
+        self.assertEqual(plan, {'b': ('old', 'B'), 'b2': ('new', 'B2')})
+        self.assertEqual({(r['name'], r['page']) for r in records if 'page' in r},
+                         {('B (High)', 'aa-release-old.html'), ('B2 (High)', 'aa-release-new.html')})
+
+    def test_a_planned_page_whose_file_is_gone_is_a_surfaced_missing_source(self):
+        data, _ = self.fixture(aa_deprecated=('gpt-6-astra',))
+        page = sources.AA_RELEASE_FILE.format(release_slug('gpt-6-astra'))
+        (data / page).unlink()          # the manifest row still says ok
+        built = self.build(data)
+        self.assertEqual(built['missing_sources'][page]['reason'], 'not fetched; run `agentcompass data refresh`')
+        self.assertEqual(built['missing_sources'][page]['url'], self.page_url('gpt-6-astra'))
+        self.assertNotIn('release_pages', built['sources']['aa.index'])
+
+    def test_a_full_fetch_removes_the_release_pages_it_no_longer_records(self):
+        """Rule: after `fetch` and `fetch_releases`, the release pages on disk are the ones the manifest records and the plan
+        chose; a file the manifest never recorded as a release page is not touched."""
+        old, new = (sources.AA_RELEASE_FILE.format(s) for s in ('old', 'new'))
+        listing = rsc_page([self.release('new', 'New', True, [], '2026-09-01')])
+
+        def download(jobs, files):
+            for url, path in jobs:
+                path.write_text(listing if path.name == 'aa-models.html' else 'page', encoding='utf-8')
+                files[path.name] = {'url': url, 'fetched_at': '2026-11-18T00:00:00+00:00', 'status': 'ok'}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target, refs = Path(tmp) / 'data', Path(tmp) / 'refs'
+            target.mkdir()
+            refs.mkdir()
+            (refs / 'accounts.json').write_text(json.dumps({'models': {'new': {}}}), encoding='utf-8')
+            (target / old).write_text('an earlier release page', encoding='utf-8')
+            (target / 'aa-release-notes.html').write_text('not a page the manifest records', encoding='utf-8')
+            row = {'url': 'u', 'fetched_at': '2026-11-01T00:00:00+00:00', 'status': 'ok'}
+            (target / sources.MANIFEST).write_text(json.dumps({'files': {old: row, 'imported.json': dict(row, kind='transcribed')}}),
+                                                   encoding='utf-8')
+            with patch.object(sources, '_download', download), patch('sys.stdout', io.StringIO()):
+                refresh.fetch_sources(target, refs)
+            self.assertEqual(sorted(p.name for p in target.glob('aa-release-*.html')), sorted([new, 'aa-release-notes.html']))
+            files = json.loads((target / sources.MANIFEST).read_text(encoding='utf-8'))['files']
+            self.assertNotIn(old, files)
+            self.assertIn(new, files)
+            self.assertIn('imported.json', files)
+
+    def test_a_record_with_any_one_figure_is_a_reading(self):
+        for field, value in (('intelligenceIndex', 1.0), ('intelligenceIndexCostPerTask', 0.1), ('intelligenceIndexTimePerTask', 9.0),
+                             ('outputSpeed', 60.0), ('timeToFirstAnswerToken', 2.0), ('price1mInputTokens', 1.0),
+                             ('price1mOutputTokens', 5.0), ('cacheHitPrice', 0.1)):
+            with self.subTest(field=field):
+                self.assertTrue(sources.aa_has_figure({field: value, 'scores': {}}))
+        self.assertTrue(sources.aa_has_figure({'scores': {'mmmu-pro': 0.5}}))
+        self.assertFalse(sources.aa_has_figure({'name': 'x', 'intelligenceIndex': None, 'outputSpeed': None, 'scores': {}}))
+
+    def test_a_page_with_only_a_speed_or_only_a_score_is_not_empty(self):
+        for case, change in (('speed', lambda r: r.update(**{f: None for f in ('intelligenceIndex', 'intelligenceIndexTimePerTask',
+                                                                               'price1mInputTokens', 'price1mOutputTokens',
+                                                                               'cacheHitPrice', 'terminalBench40', 'frontierCode20',
+                                                                               'mmmuPro', 'intelligenceIndexCostPerTask')},
+                                                           headline={'outputSpeed': 60.0, 'timeToFirstAnswerToken': None})),
+                             ('score', lambda r: r.update(**{f: None for f in ('intelligenceIndex', 'intelligenceIndexTimePerTask',
+                                                                               'price1mInputTokens', 'price1mOutputTokens',
+                                                                               'cacheHitPrice', 'terminalBench40', 'frontierCode20',
+                                                                               'intelligenceIndexCostPerTask', 'headline')}))):
+            with self.subTest(case=case):
+                data, _ = self.fixture(aa_deprecated=('gpt-6-astra',))
+                self.rewrite_page(data, 'gpt-6-astra', change)
+                self.assertEqual(self.build(data)['missing_sources'], {})
+
+    def test_a_page_the_manifest_does_not_list_as_fetched_is_not_read(self):
+        data, _ = self.fixture(aa_deprecated=('gpt-6-astra',))
+        page = sources.AA_RELEASE_FILE.format(release_slug('gpt-6-astra'))
+        self.assertTrue(sources.aa_release_records(data, [page])[0])
+        manifest_path = data / sources.MANIFEST
+        doc = json.loads(manifest_path.read_text(encoding='utf-8'))
+        doc['files'][page]['status'] = 'missing'        # the file is still on disk
+        manifest_path.write_text(json.dumps(doc), encoding='utf-8')
+        self.assertEqual(sources.aa_release_records(data, [page]), ([], {}))
+
+    def test_a_page_with_one_unreadable_record_returns_none_of_its_records(self):
+        data, _ = self.fixture(aa_deprecated=('gpt-6-astra',))
+        page = sources.AA_RELEASE_FILE.format(release_slug('gpt-6-astra'))
+        seen = []
+        self.rewrite_page(data, 'gpt-6-astra', lambda r: (seen.append(r), r.update(price1mInputTokens='2') if len(seen) == 2 else None))
+        self.assertGreater(len(seen), 2)
+        records, errors = sources.aa_release_records(data, [page])
+        self.assertEqual(records, [])
+        self.assertIn('price1mInputTokens', errors[page])
+
+    def test_a_deprecated_model_listed_only_on_the_index_board_gets_its_tier_from_its_page_and_cites_it(self):
+        data, refs = self.fixture(aa_only=[('grok-4.9', 'Grok 4.9', 'xAI')], aa_deprecated=('grok-4.9',))
+        catalogue = self.catalogue(data)
+        catalogue['grok-4.9'] = dict(copy.deepcopy(catalogue['grok-4.7']), listed_as={'aa': 'Grok 4.9'})
+        built = self.build_with(data, catalogue)
+        tier = built['models']['grok-4.9']['tier']
+        self.assertEqual([e['source'] for e in tier], ['tier.aa_index'])
+        self.assertEqual(tier[0]['url'], self.page_url('grok-4.9'))
+        self.assertIn(sources.AA_RELEASE_FILE.format('grok-4-9'), built['sources']['tier.aa_index']['release_pages'])
 
     def test_every_sub_benchmark_the_pipeline_reads_has_a_field_on_the_release_page(self):
         self.assertLessEqual(set(measurements.AA_SCORE.values()), set(sources.AA_RELEASE_SCORE_FIELD))

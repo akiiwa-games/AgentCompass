@@ -186,21 +186,20 @@ def aa_variants(records):
 
 
 def aa_release_plan(target, models):
-    """({model: release slug}, {model: why no release can be chosen}): the Artificial Analysis release each catalogue
-    model is read from. The leaderboard page embeds records only for releases AA does not mark deprecated, and names a
-    deprecated release without records. A catalogue model that no leaderboard record matches, but that a deprecated
-    release is listed under, is read from that release's own page: the same matcher and `listed_as` as every board,
-    over the release's listings (`modelNames`, else its name). A declared `listed_as` that is the exact name of a
-    release (or of one of its listings) chooses among those releases; otherwise, or among several, the most recently
-    released one of the base name is chosen. Releases without a `releaseDate`, or sharing the newest one, leave the
+    """({model: (release slug, base name)}, {model: why no release can be chosen}): the Artificial Analysis release each
+    catalogue model is read from. The leaderboard page embeds records only for releases AA does not mark deprecated, and
+    names a deprecated release without records. A catalogue model that no leaderboard record matches, but that a
+    deprecated release is listed under, is read from that release's own page: the same matcher and `listed_as` as every
+    board, over the base names of the release's listings (`modelNames`, else its name; a listing's variant tag, such as
+    a date, is not part of its base name, so a declared `listed_as` is a base name). When several deprecated releases
+    list a base name, the most recently released one is chosen: the choice depends on the base name alone, so every
+    model of a base name reads the same release. Releases without a `releaseDate`, or sharing the newest one, leave the
     choice ambiguous: the model is returned in the second dict and has no release."""
     on_page = Matcher(aa_variants(sources.aa_records(target)))
-    listed, names = {}, {}      # base name -> {slug: releaseDate}; slug -> keys of the release's name and listings
+    listed = {}     # base name -> {slug: releaseDate}
     for release in sources.aa_releases(target):
         if release.get('deprecated') is True:
-            listings = release.get('modelNames') or [release['name']]
-            names[release['slug']] = {key(n) for n in (release['name'], *listings)}
-            for listing in listings:
+            for listing in release.get('modelNames') or [release['name']]:
                 listed.setdefault(sources.base_name(listing), {})[release['slug']] = release.get('releaseDate')
     off_page = Matcher(listed)
     models = {m: row for m, row in models.items() if isinstance(row, dict)}     # accounts.json `models` holds notes too
@@ -213,33 +212,37 @@ def aa_release_plan(target, models):
         if not base:
             continue
         slugs = listed[base]
-        if exp:
-            slugs = {s: d for s, d in slugs.items() if key(exp) in names[s]} or slugs
         dates = {s: d for s, d in slugs.items() if isinstance(d, str) and d}
         newest = [s for s in dates if dates[s] == max(dates.values(), default=None)]
         if len(slugs) > 1 and (len(dates) < len(slugs) or len(newest) > 1):
             ambiguous[model] = (f"the releases {sorted(slugs)} are all listed under {base!r} and the newest cannot be "
                                 'told from their releaseDate (' + ', '.join(f'{s}: {slugs[s]!r}' for s in sorted(slugs)) + ')')
         else:
-            plan[model] = next(iter(slugs)) if len(slugs) == 1 else newest[0]
+            plan[model] = (next(iter(slugs)) if len(slugs) == 1 else newest[0], base)
     return plan, ambiguous
 
 
 def aa_release_files(plan):
     """{file name: url} of the release pages `aa_release_plan` chose."""
-    return {sources.AA_RELEASE_FILE.format(slug): sources.AA_RELEASE_URL.format(slug) for slug in set(plan.values())}
+    return {sources.AA_RELEASE_FILE.format(slug): sources.AA_RELEASE_URL.format(slug) for slug, _ in set(plan.values())}
 
 
 def aa_records_read(target, models):
     """(records, plan, ambiguous, errors) of the Artificial Analysis records the pipeline reads: the leaderboard page's,
     then those of the release pages `aa_release_plan` chose and the manifest lists as fetched, in every mode (a page
-    the plan does not choose is never read, whatever the data directory holds). A release page's record never stands
-    where the leaderboard has a record the pipeline reads (`aa_variants`) of the same base name. `errors` is `sources.aa_release_records`'."""
+    the plan does not choose is never read, whatever the data directory holds). Of a page only the records of the base
+    names the plan chose that release for are kept, so a base name has the records of one release; a release page's
+    record never stands where the leaderboard has a record the pipeline reads (`aa_variants`) of the same base name.
+    `errors` is `sources.aa_release_records`'."""
     plan, ambiguous = aa_release_plan(target, models)
     pages, errors = sources.aa_release_records(target, aa_release_files(plan))
+    chosen = {}
+    for slug, base in plan.values():
+        chosen.setdefault(sources.AA_RELEASE_FILE.format(slug), set()).add(base)
     board = sources.aa_records(target)
     on_board = set(aa_variants(board))        # the base names the pipeline reads from the leaderboard
-    return [*board, *(r for r in pages if sources.base_name(r['name']) not in on_board)], plan, ambiguous, errors
+    kept = (r for r in pages if (base := sources.base_name(r['name'])) in chosen[r['page']] and base not in on_board)
+    return [*board, *kept], plan, ambiguous, errors
 
 
 class Builder:
@@ -306,9 +309,10 @@ class Builder:
             self.miss(f'aa.release/{model}', 'aa-models.html', why)
         variants = aa_variants(self.aa_records)
         found, empty = Matcher(variants), {}
-        for model, slug in self.release_plan.items():
+        for model, (slug, _) in self.release_plan.items():
             name, url = sources.AA_RELEASE_FILE.format(slug), sources.AA_RELEASE_URL.format(slug)
-            if name not in self.manifest:
+            row = self.manifest.get(name)
+            if row is None or (row.get('status') == 'ok' and not (self.target / name).exists()):
                 self.miss(name, name, 'not fetched; run `agentcompass data refresh`', url)
             elif name in self.release_errors:
                 self.miss(name, name, f'unreadable: {self.release_errors[name]}', url)
@@ -318,8 +322,8 @@ class Builder:
                 if not base or not any(sources.aa_has_figure(r) for r in variants[base].values()):
                     empty.setdefault((name, url), []).append(model)
         for (name, url), models in empty.items():
-            self.miss(name, name, f'the page carries no reading of its release for {", ".join(models)} (no record the '
-                                  'matcher finds, or none with a figure)', url)
+            self.miss(name, name, f'the page carries no reading of its release for {", ".join(models)} (no record of the '
+                                  'planned base name that the matcher finds for it, or none with a figure)', url)
 
     @staticmethod
     def select_variants(items):
