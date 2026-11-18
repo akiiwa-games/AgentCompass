@@ -2439,6 +2439,65 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
                             self.fail(f'{fname}:{node.lineno} calls plan_defaults(..., "default")')
 
 
+class LevelCollapseGuardTests(unittest.TestCase):
+    """calibration/five_axis.py `guard_level_collapse` (owner rule, 2026-11-18): hand-written levels 1..3 map onto a facet's
+    targets, so a rebuild that makes the level-2 target of a facet equal its level-3 target, where the file being replaced
+    kept them apart, is refused unless accepted, and the acceptance is recorded in `anchor.level_collapse`."""
+    FACET = 'coding.faithfulness'
+    STAMP = datetime(2026, 11, 18, 9, 0, tzinfo=timezone.utc)
+
+    @staticmethod
+    def targets(t2, t3):
+        return {'coding': {'facets': {'faithfulness': {'levels': {'2': {'target': t2}, '3': {'target': t3}}}}}}
+
+    def previous(self, t2, t3, record=None):
+        return {'anchor': {'targets': self.targets(t2, t3), 'level_collapse': record}}
+
+    def new(self, t2, t3):
+        return {'targets': self.targets(t2, t3), 'sd_panel': {self.FACET: {'arena.agent_alignment': 4.2}}}
+
+    @property
+    def models(self):
+        import five_axis
+        return {five_axis.measurements.ANCHOR: {'axes': {'coding': {'facets': {
+            'faithfulness': {'value': 0.0, 'status': 'measured'}}}}}}
+
+    def guard(self, previous, new, accept=False):
+        import five_axis
+        return five_axis.guard_level_collapse(previous, new, self.models, accept, self.STAMP)
+
+    def test_a_collapse_is_refused_naming_the_facet_the_board_the_values_and_what_collapses(self):
+        import five_axis
+        with self.assertRaises(five_axis.LevelCollapseRefused) as ctx:
+            self.guard(self.previous(-0.5, 0.0), self.new(0.0, 0.0))
+        text = str(ctx.exception)
+        for part in (self.FACET, 'arena.agent_alignment', 'anchor value 0.0', 'panel median 0.0', 'levels 2 and 3',
+                     'hand-written level between 2 and 3', '--accept-level-collapse', 'nothing written'):
+            self.assertIn(part, text)
+
+    def test_an_accepted_collapse_is_recorded_and_carried_forward_while_it_lasts(self):
+        record = self.guard(self.previous(-0.5, 0.0), self.new(0.0, 0.0), accept=True)
+        self.assertEqual(record['date'], '2026-11-18')
+        self.assertEqual(set(record['facets']), {self.FACET})
+        self.assertEqual(record['facets'][self.FACET]['boards'], ['arena.agent_alignment'])
+        self.assertEqual((record['facets'][self.FACET]['previous_t2'], record['facets'][self.FACET]['previous_t3']),
+                         (-0.5, 0.0))
+        # the next run replaces the file that carries the record: the facet still coincides, so it is no new collapse
+        self.assertEqual(self.guard(self.previous(0.0, 0.0, record), self.new(0.0, 0.0)), record)
+        # once the two targets are apart again the record is dropped
+        self.assertIsNone(self.guard(self.previous(0.0, 0.0, record), self.new(-0.3, 0.0)))
+
+    def test_targets_that_already_coincided_are_not_a_collapse(self):
+        """tool_operation.responsiveness: the anchor sits below the panel median, so t3 is raised to t2 in every release."""
+        self.assertIsNone(self.guard(self.previous(0.0, 0.0), self.new(0.0, 0.0)))
+
+    def test_targets_that_stay_apart_pass(self):
+        self.assertIsNone(self.guard(self.previous(-0.5, 0.0), self.new(-0.2, 0.0)))
+
+    def test_without_a_previous_file_nothing_is_refused(self):
+        self.assertIsNone(self.guard(None, self.new(0.0, 0.0)))
+
+
 class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
     """references/five-axis-scores.json is generated (calibration/refresh.py step 3): it must be what five_axis.build makes
     from the shipped public-measurements.json, accounts.json and plan-templates.json. A hand edit, or an input changed

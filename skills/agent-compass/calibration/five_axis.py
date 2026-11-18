@@ -1,6 +1,7 @@
 """Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.
 
-`python -X utf8 five_axis.py [--distrust SOURCE ...] [--measurements PATH] [--out PATH] [--accept-panel-change]`
+`python -X utf8 five_axis.py [--distrust SOURCE ...] [--measurements PATH] [--out PATH] [--accept-panel-change]
+[--accept-level-collapse]`
 
 Writes `references/five-axis-scores.json`, the only model scoring the router reads (axis_scores.five_axis_overlay). The
 user's taxonomy (2026-11-11): four categories, each made of facets, each facet read from public boards; the router
@@ -52,6 +53,15 @@ scores on the four categories and the quota economy together. Nothing else score
   replaced. When the members differ, the run prints the added and removed models and the old and new `sd_panel` per
   board, t1, t2 and ceiling per category and facet, and writes nothing (`PanelChangeRefused`) unless the change is
   accepted (`--accept-panel-change`); an accepted change is recorded in `anchor.panel_change` and carried forward.
+- Level-collapse guard (`level_collapse`): the hand-written levels 1..3 map onto a facet's targets (t1, t2, t3), and
+  levels 2 and 3 stay distinct only while t2 < t3. A rebuild in which a facet's level-2 target equals its level-3 target
+  although the five-axis-scores.json being replaced kept them apart makes tasks of levels 2 and 3 ask the same of that
+  facet and maps every hand-written level between 2 and 3 to one value. It is refused (`LevelCollapseRefused`; the message
+  names the facet, its boards, the anchor's value and the panel median on it, and what collapses) and writes nothing
+  unless accepted (`--accept-level-collapse`); an accepted collapse is recorded in `anchor.level_collapse` next to
+  `panel_change` and carried forward while the two targets coincide. A facet whose targets already coincided in the
+  replaced file (`tool_operation.responsiveness`: the anchor sits below the panel median) is not a collapse, and with no
+  replaced file nothing is refused.
 - Checks: structural ones drop a listing (a variant tag that is not an effort, a raw value out of range, one listing
   matched to two models, a duplicate board); statistical ones only note (`checks`).
 - The tier (calibration/tiers.py) is the model's overall level at High relative to the anchor (`tier.arena_overall`,
@@ -1465,6 +1475,11 @@ class PanelChangeRefused(ValueError):
     """The panel's members changed and the change was not accepted (`--accept-panel-change`): nothing is written."""
 
 
+class LevelCollapseRefused(ValueError):
+    """A facet's level-2 target reached its level-3 target and the collapse was not accepted
+    (`--accept-level-collapse`): nothing is written."""
+
+
 def previous_doc(path):
     """The five-axis-scores.json a run is about to replace, or None when there is none yet."""
     target = Path(path)
@@ -1550,9 +1565,59 @@ def guard_panel(previous, anchor, accept, stamp):
     return {'date': stamp.date().isoformat(), **change}
 
 
-def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None, accept_panel_change=False):
+def _level_targets(targets):
+    """{'<category>.<facet>': (t2, t3)} for every facet of an `anchor.targets` block that has both targets."""
+    out = {}
+    for category, block in (targets or {}).items():
+        for facet, row in ((block or {}).get('facets') or {}).items():
+            levels = row.get('levels') or {}
+            t2, t3 = (levels.get('2') or {}).get('target'), (levels.get('3') or {}).get('target')
+            if t2 is not None and t3 is not None:
+                out[f'{category}.{facet}'] = (t2, t3)
+    return out
+
+
+def guard_level_collapse(previous, anchor, models, accept, stamp):
+    """The `anchor.level_collapse` record to write (module docstring, level-collapse guard). No previous file: None. A facet
+    whose level-2 and level-3 targets coincide now and did not in `previous` is a collapse: it is refused
+    (`LevelCollapseRefused`) unless `accept`, then printed and recorded with the date. A facet the previous record holds
+    stays in the record for as long as its two targets coincide; a facet whose targets already coincided in `previous`
+    without a record is not a collapse."""
+    if previous is None:
+        return None
+    before, now = _level_targets(previous['anchor'].get('targets')), _level_targets(anchor['targets'])
+    record = previous['anchor'].get('level_collapse') or {}
+    kept = {k: v for k, v in (record.get('facets') or {}).items() if k in now and now[k][0] == now[k][1]}
+    new = {}
+    for key, (t2, t3) in now.items():
+        if t2 != t3 or key in kept or key not in before or before[key][0] == before[key][1]:
+            continue
+        category, facet = key.split('.')
+        owner_category, owner_facet = FACET_OWNER.get(facet, (category, facet))
+        cell = ((((models.get(measurements.ANCHOR) or {}).get('axes') or {}).get(owner_category) or {}).get('facets')
+                or {}).get(owner_facet) or {}
+        new[key] = {'boards': sorted(anchor['sd_panel'].get(f'{owner_category}.{owner_facet}') or {}),
+                    'anchor_value': cell.get('value') if cell.get('status') in TARGET_STATUSES else None,
+                    'panel_median': t2, 'target': t3, 'previous_t2': before[key][0], 'previous_t3': before[key][1]}
+    if not new:
+        return {'date': record['date'], 'facets': kept} if kept else None
+    lines = [f"  {key}: board {', '.join(r['boards']) or '-'}; anchor value {r['anchor_value']}, panel median "
+             f"{r['panel_median']}; level-2 target {r['previous_t2']} -> {r['target']}, level-3 target "
+             f"{r['previous_t3']} -> {r['target']}" for key, r in new.items()]
+    text = ('level collapse: the level-2 target of a facet reaches its level-3 target\n' + '\n'.join(lines)
+            + '\n  tasks of levels 2 and 3 now ask the same of it, and every hand-written level between 2 and 3 maps to one value')
+    if not accept:
+        raise LevelCollapseRefused(f'{text}\nnothing written; rerun with --accept-level-collapse to accept it, or rebuild '
+                                   'from another state of the source')
+    print(text)
+    return {'date': stamp.date().isoformat(), 'facets': {**kept, **new}}
+
+
+def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None, accept_panel_change=False,
+          accept_level_collapse=False):
     """The five-axis-scores.json document. `previous` is the document it replaces (None when there is none): a panel whose
-    members differ from it is refused unless `accept_panel_change` (`guard_panel`)."""
+    members differ from it is refused unless `accept_panel_change` (`guard_panel`), and so is a facet whose level-2 target
+    reaches its level-3 target unless `accept_level_collapse` (`guard_level_collapse`)."""
     scorer = Scorer(meas, acc, distrust)
     rows, tier, fits, rejected, links, targets = scorer.score()
     usd = usd_community_mix(scorer, rows, meas)
@@ -1624,6 +1689,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
               'panel': (meas.get('panel') or {}).get('models') or [], 'panel_n': (meas.get('panel') or {}).get('n'),
               'targets': targets, 'sd_panel': panel_sd(meas)}
     anchor['panel_change'] = guard_panel(previous, anchor, accept_panel_change, stamp)
+    anchor['level_collapse'] = guard_level_collapse(previous, anchor, models, accept_level_collapse, stamp)
     doc = {'schema': SCHEMA, 'generated_at': stamp.isoformat(timespec='seconds'),
            'measurements_sha256': hashlib.sha256(meas_bytes).hexdigest() if meas_bytes else None,
            'distrusted_sources': sorted(distrust),
@@ -1653,12 +1719,15 @@ def main():
     ap.add_argument('--out', default=str(OUT))
     ap.add_argument('--accept-panel-change', action='store_true',
                     help='write the document although the panel members differ from the file being replaced')
+    ap.add_argument('--accept-level-collapse', action='store_true',
+                    help="write the document although a facet's level-2 target now equals its level-3 target")
     args = ap.parse_args()
     raw = Path(args.measurements).read_bytes()
     try:
         doc = build(json.loads(raw), sources.accounts(), json.loads(PLANS.read_text(encoding='utf-8')), args.distrust, raw,
-                    previous=previous_doc(args.out), accept_panel_change=args.accept_panel_change)
-    except PanelChangeRefused as exc:
+                    previous=previous_doc(args.out), accept_panel_change=args.accept_panel_change,
+                    accept_level_collapse=args.accept_level_collapse)
+    except (PanelChangeRefused, LevelCollapseRefused) as exc:
         sys.stderr.write(f'{exc}\n')
         return 2
     Path(args.out).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')

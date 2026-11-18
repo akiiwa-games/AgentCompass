@@ -470,6 +470,43 @@ class RefreshEntryTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr + stdout)
         self.assertEqual(json.loads(scores.read_text(encoding='utf-8'))['anchor']['panel_change'], record)
 
+    def test_a_level_collapse_is_refused_unless_accepted_and_then_recorded(self):
+        """Owner rule 2026-11-18: when a facet's level-2 target reaches its level-3 target and the shipped file kept them
+        apart, the refresh prints it, writes nothing and exits 3; `--accept-level-collapse` writes it and records it in
+        `anchor.level_collapse`, and a later run carries the record forward."""
+        code, stdout, stderr = self._run_refresh('--no-fetch')
+        self.assertEqual(code, 0, stderr + stdout)
+        scores = self.refs_dir / 'five-axis-scores.json'
+        doc = json.loads(scores.read_text(encoding='utf-8'))
+        self.assertIsNone(doc['anchor']['level_collapse'])
+        category, facet = 'coding', 'faithfulness'
+        levels = doc['anchor']['targets'][category]['facets'][facet]['levels']
+        self.assertLess(levels['2']['target'], levels['3']['target'], 'the shipped file keeps the two apart')
+        real_targets = five_axis.Scorer.targets
+
+        def collapsing(scorer, rows, panel):          # the rebuild's panel puts the anchor at the median
+            out = real_targets(scorer, rows, panel)
+            row = out[category]['facets'][facet]['levels']
+            row['3']['target'] = row['2']['target']
+            return out
+        before = {p.name: p.read_bytes() for p in self.refs_dir.iterdir() if p.is_file()}
+        with patch.object(five_axis.Scorer, 'targets', collapsing):
+            code, stdout, stderr = self._run_refresh('--no-fetch')
+            self.assertEqual(code, refresh.REFUSED, stderr + stdout)
+            self.assertIn(f'{category}.{facet}', stderr)
+            self.assertIn('--accept-level-collapse', stderr)
+            self.assertEqual({p.name: p.read_bytes() for p in self.refs_dir.iterdir() if p.is_file()}, before)
+
+            code, stdout, stderr = self._run_refresh('--no-fetch', '--accept-level-collapse')
+            self.assertEqual(code, 0, stderr + stdout)
+            record = json.loads(scores.read_text(encoding='utf-8'))['anchor']['level_collapse']
+            self.assertEqual(set(record['facets']), {f'{category}.{facet}'})
+            self.assertRegex(record['date'], r'^\d{4}-\d{2}-\d{2}$')
+
+            code, stdout, stderr = self._run_refresh('--no-fetch')
+            self.assertEqual(code, 0, stderr + stdout)
+            self.assertEqual(json.loads(scores.read_text(encoding='utf-8'))['anchor']['level_collapse'], record)
+
     def test_missing_source_exits_2_as_before(self):
         # Missing board source (`designarena-svg.html`) rebuilds, reports missing in source-age table, and exits 2.
         (self.data_dir / 'designarena-svg.html').unlink()

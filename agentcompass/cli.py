@@ -41,7 +41,7 @@ install and health:
   setup       first-run onboarding (--dry-run previews)
   uninstall   undo what setup changed
   doctor      read-only report of Python, CLIs, accounts, cache, plugins, ports, hooks and upgrade checks
-  data        `data refresh [--no-fetch] [--accept-panel-change] [--model ID]` rebuilds the shipped reference data in a checkout, once per release; `data --refresh` runs after an update and removes what an earlier version left
+  data        `data refresh [--no-fetch] [--accept-panel-change] [--accept-level-collapse] [--model ID]` rebuilds the shipped reference data in a checkout, once per release; `data --refresh` runs after an update and removes what an earlier version left
 
 other stages: score, scorer, delegate, select, dispatch, launch
 follow-up of a roll result (its next_argv already spells these): dot status, grok-bot status, chatgpt-web, herdr status
@@ -124,7 +124,7 @@ def usage_command(args: list[str]) -> int:
 
 
 DATA_HELP = """usage: agentcompass data refresh [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE]
-                               [--accept-panel-change] [--model ID ...]
+                               [--accept-panel-change] [--accept-level-collapse] [--model ID ...]
        agentcompass data --refresh
 
 data refresh   rebuilds the shipped reference data inside a git checkout, once per release (`agentcompass data refresh -h`).

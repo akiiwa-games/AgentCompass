@@ -1,8 +1,8 @@
 """Rebuild every shipped calibrated file and generated capability view in topological order, validate the result, and
 report each source's age. Run once per release; the result ships with the version and is fixed until the next one.
 
-`agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`
-`python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...] [--references DIR]`
+`agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--accept-level-collapse] [--model ID ...]`
+`python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--accept-level-collapse] [--model ID ...] [--references DIR]`
 
 `--model ID` (repeatable) adds or updates only those models' measurement rows, conflicts and checks: step 2 builds the
 measurements from the boards as usual, but writes to the shipped `public-measurements.json` only the named models'
@@ -27,7 +27,9 @@ Topological chain:
 2. `measurements.py` -> `references/public-measurements.json`.
 3. `five_axis.py` -> `references/five-axis-scores.json`. Both documents are built before either is written: when the
    panel's members differ from the shipped `five-axis-scores.json`, the run prints the change (`five_axis.guard_panel`),
-   writes no reference file and exits 2, unless `--accept-panel-change` records it in `anchor.panel_change`.
+   writes no reference file and exits 2, unless `--accept-panel-change` records it in `anchor.panel_change`. The same
+   holds for a facet whose level-2 target reaches its level-3 target (`five_axis.guard_level_collapse`), unless
+   `--accept-level-collapse` records it in `anchor.level_collapse`.
 4. `capability_catalog.py` -> `references/model-capabilities.json` and `references/model-capabilities.md`.
 5. Validate: provenance checks (`reference_provenance.validate_references`), `references/user-scores.json` maintainer
    schema, and generated capability views.
@@ -38,7 +40,7 @@ Topological chain:
 Exit status: 0 all fresh, 1 something stale (yellow), 2 something missing or invalid (red), so a scheduler or CI job can
 alert on it; 3 (`REFUSED`, never a staleness status) when the run refused and wrote nothing: a `--model` that is not a
 catalog row, is in the panel or is the anchor, that no board lists or whose entry cannot be merged, or a panel change
-without `--accept-panel-change`.
+without `--accept-panel-change`, or a level collapse without `--accept-level-collapse`.
 """
 import argparse
 import copy
@@ -314,7 +316,7 @@ def fetch_sources(target, references=None):
 
 
 def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, accept_panel_change=False,
-            models=()):
+            accept_level_collapse=False, models=()):
     """Steps 2..5. With `models`, step 2 merges only those rows into the shipped measurements (merge_model_rows), and
     the returned five-axis document carries `_model_merge` {left_out, blast_radius} for the caller to print."""
     target = Path(target)
@@ -337,11 +339,13 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
         merge = {'left_out': left_out, 'notes': notes, 'before': before}
     meas = _preserve_generated_at(meas_path, built)
     raw = (json.dumps(meas, indent=1, ensure_ascii=False) + '\n').encode('utf-8')
-    # Built before anything is written: a refused panel change (five_axis.PanelChangeRefused) leaves every file as it was.
+    # Built before anything is written: a refused panel change or level collapse (five_axis.PanelChangeRefused,
+    # LevelCollapseRefused) leaves every file as it was.
     doc = _preserve_generated_at(
         scores_path,
         five_axis.build(meas, acc, plans, distrust=distrust, meas_bytes=raw, now=now,
-                        previous=five_axis.previous_doc(scores_path), accept_panel_change=accept_panel_change),
+                        previous=five_axis.previous_doc(scores_path), accept_panel_change=accept_panel_change,
+                        accept_level_collapse=accept_level_collapse),
     )
     meas_path.parent.mkdir(parents=True, exist_ok=True)
     meas_path.write_bytes(raw)
@@ -409,6 +413,8 @@ def main(argv=None, prog=None):
     ap.add_argument('--references', help='references directory to rebuild and validate (default: skills/agent-compass/references)')
     ap.add_argument('--accept-panel-change', action='store_true',
                     help='write the rebuilt files although the panel members differ from the shipped five-axis-scores.json')
+    ap.add_argument('--accept-level-collapse', action='store_true',
+                    help="write the rebuilt files although a facet's level-2 target now equals its level-3 target")
     ap.add_argument('--model', action='append', default=[],
                     help="add or update only this model's measurement rows, on the shipped scale (repeatable)")
     args = ap.parse_args(argv)
@@ -423,8 +429,9 @@ def main(argv=None, prog=None):
         else:
             fetch_sources(target, args.references)
         _, doc = rebuild(target, references=args.references, distrust=args.distrust,
-                         accept_panel_change=args.accept_panel_change, models=args.model)
-    except (Refused, five_axis.PanelChangeRefused) as exc:
+                         accept_panel_change=args.accept_panel_change,
+                         accept_level_collapse=args.accept_level_collapse, models=args.model)
+    except (Refused, five_axis.PanelChangeRefused, five_axis.LevelCollapseRefused) as exc:
         sys.stderr.write(f'{exc}\n')
         return REFUSED
     except (OSError, ValueError) as exc:

@@ -71,6 +71,11 @@ exchange rate between ability and quota cost, so `agentcompass data refresh` (an
 with the shipped `five-axis-scores.json`: when the members differ it prints the added and removed models and, per category and
 facet, the old and new `sd_panel`, `t1`, `t2` and ceiling, then exits 3 (refused) and writes nothing unless `--accept-panel-change` is
 passed. An accepted change is recorded in `anchor.panel_change` (date, added, removed, shifts) and carried forward until the next.
+The same run refuses a rebuild in which a facet's level-2 target equals its level-3 target although the shipped file kept them apart
+(tasks of levels 2 and 3 would ask the same of that facet and every hand-written level between 2 and 3 would map to one value): it names
+the facet, its boards, the anchor's value and the panel median, exits 3 and writes nothing unless `--accept-level-collapse` is passed,
+which records the facets in `anchor.level_collapse` next to `panel_change`. A facet whose targets already coincided in the shipped file
+(`tool_operation.responsiveness`) is not a collapse.
 Category scores live in [`skills/agent-compass/references/five-axis-scores.json`](../skills/agent-compass/references/five-axis-scores.json),
 and plan window structure in [`skills/agent-compass/references/plan-templates.json`](../skills/agent-compass/references/plan-templates.json).
 
