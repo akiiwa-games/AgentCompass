@@ -109,12 +109,17 @@ the level's target, at level 3 it is the category's `ceiling` in `anchor.targets
 `aesthetics` and `tool_operation`), the highest measured or interpolated High value of any catalogued model, so a level-3 task can prefer a
 model above the panel's best. Level 3 of a facet's scale (`t3`) is the panel maximum of the measured or interpolated High values, level 1 the minimum and
 level 2 the median; the anchor is only the origin of `z` (definition: `docs/technical-reference.md` section 1). `five-axis-scores.json` carries
-that meaning from schema `agent-compass.five-axis-scores/6` on, and `axis_scores.require_current_schema` refuses a file of another schema; the
+that meaning from schema `agent-compass.five-axis-scores/6` on (schema /7, which this code reads, adds a value at every effort and the
+`effort_steps` table and changes no level), and `axis_scores.require_current_schema` refuses a file of another schema; the
 levels of `user-scores.json` (schema 3) are on this scale. Levels written on the earlier scale (3 = the anchor) keep their position: at or
 below 2 unchanged, above 2 `2 + (L - 2) * (A - 2)` with `A` the anchor's level on the facet as of v0.7.0, declared in
 `references/level-3-conversion.json` (`user_scores.convert_level`, applied once to the maintainer file and by `user_scores.LOCAL_UPGRADES`
 to a local file); on `tool_operation.responsiveness`, whose earlier scale had `t2 = t3`, a level in (2, 3] becomes 2 and a level above 3 becomes
 `2 + (L - 3) * s` with the declared slope `s = (t2 - t1) / (t3 - t2)` (`above_3_slopes`).
+A hand-written level sets the facet at High (or at its declared effort); efforts the model has no reading at follow from it by
+the published panel step `effort_steps.<facet>.high.<effort>`, and the curve is bounded so it never inverts along effort (ability
+never falls, responsiveness never rises as effort rises; `user_scores.bound_along_effort`, the rule the calibration applies,
+`calibration/README.md`).
 For `aesthetics`, level 1 evaluates `design` (`lmarena.webdev`, `designarena.website`, `designarena.3d`, `designarena.svg`), and
 levels 2 and 3 evaluate `min(design, image_recognition)` (sharing `tool_operation.image_recognition` so both visual creation and
 fine-grained visual perception depend on visual grounding). For `tool_operation`, level 1 imposes no ability requirement; level 2
@@ -165,14 +170,14 @@ The same rules hold in the other repositories that port this router.
 |---|---|---|
 | `exact` | the calibrated id itself | its own row |
 | `alias` | another spelling of it: prefix, date, `-latest`, `-preview`, `[1m]`, letter case, a listed alias | its own row |
-| `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | the same-series target's scores and usd_per_hour (series conversion; a small-size name on a non-small target is not in its series and gets the small row), marked estimated |
+| `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | no scores: a name without a row has none (`account_fleet.model_spec`); the calibration converts a same-series model only for a row of `accounts.json`, so a new family member is scored by adding its row |
 | `unknown` | no match | no scores: a demanded category (`>= 1`, except `tool_operation = 1`) is a data error and the model leaves automatic routing |
 
 The `family` patterns are data: `accounts.json` `families`, a dated maintainer declaration whose `rows` is an ordered list of `{pattern, models}` matched against the bare name (a catalog without it is a named error, never an empty table); the first matching pattern decides and the name resolves to the first of its models the catalogue has (none: `unknown`). A name no pattern matches falls back to the longest calibrated id it extends (`<id>-...`).
 
 A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry.
 
-`account_fleet.row_key` says which model a row runs: the key for `exact` and `alias`, the row's own name for `family` and `unknown`. A family guess folds to its target only for its estimated score. Wherever a row, a pin, a cooldown, a worker or a rival is matched, it is its own model, so naming the flagship never takes a family row. A cooldown recorded under any spelling of a model cools all its spellings. The rival for `needs_judgment` is the best row of a different model, never another effort, harness or account of the same model.
+`account_fleet.row_key` says which model a row runs: the key for `exact` and `alias`, the row's own name for `family` and `unknown`. A family guess never takes its target's scores. Wherever a row, a pin, a cooldown, a worker or a rival is matched, it is its own model, so naming the flagship never takes a family row. A cooldown recorded under any spelling of a model cools all its spellings. The rival for `needs_judgment` is the best row of a different model, never another effort, harness or account of the same model.
 
 **Pins.** `constraints.model`, `constraints.effort`, `pinned_model` and `pinned_effort` hold in every mode and through `issue` and `prepare`:
 
