@@ -23,26 +23,26 @@ The router scores a model on **four capability categories** (`creativity`, `codi
 
 | Script | What it does |
 | :--- | :--- |
-| `sources.py fetch` | Downloads LMArena (`lmarena-ai/leaderboard-dataset`), Design Arena (`website`, `3d`, `svg`), Artificial Analysis (`aa-models.html`), OpenRouter models, and the community capacity pages (`community.py`), writing `fetch-manifest.json` (url, fetch time, sha256 per file). `--only FILE` refetches single files. |
+| `sources.py fetch` | Downloads LMArena (`lmarena-ai/leaderboard-dataset`), Design Arena (`website`, `3d`, `svg`), Artificial Analysis (`aa-models.html`), OpenRouter models, and the community capacity pages (`community.py`), writing `fetch-manifest.json` (url, fetch time, sha256 per file). `--only FILE` refetches single files. The Artificial Analysis leaderboard page embeds records only for releases it does not mark deprecated; `refresh.py` also fetches (`sources.fetch_releases`), one page each as `aa-release-<slug>.html`, the release page of every catalogue model that no leaderboard record matches but a deprecated release is listed under (`measurements.aa_release_plan`, derived from the fetched page and the `listed_as` names, never a list of models; the newest release of the base name a model is listed under, so every row of a base name reads the same release; releases whose newest cannot be told from their `releaseDate` are a missing source). `sources.aa_release_record` reads such a page's records into the leaderboard's record shape; each reading made from one cites that page's url. A page is read only when the plan chooses it, in every mode, and only for the base names the plan chose it for; a row the matcher resolves to another base name is a missing source. A page that cannot be fetched, whose file is gone from the data directory, whose record has a shape the reader does not know, or that gives its model no figure is a missing source, never an older copy. |
 | `tiers.py [ids]` | Reads each model's tier off the `arena.ai` Overall board through the six anchor rows; models that board does not list get `tier.aa_index`. |
 | `series.py` | Library: same-series siblings and `same_model` links; picks the nearest base on the AA Intelligence Index, shared board readings, or tier. |
 | `measurements.py` | Writes `references/public-measurements.json`: panel standard scores (`z` and AA `z_by_effort`), structural and statistical data-hygiene checks, `usd_per_hour`, list prices, image input, and fast-mode multipliers. |
 | `five_axis.py [--distrust SOURCE] [--accept-panel-change]` | Writes `references/five-axis-scores.json`: per-effort facet curves, parallel-board link offsets, category scores, `estimate_fits` (`r`, `skill`, `loo_rmse`, `n`), `usd_per_hour`, `duration_multiplier`, community plan capacities, panel `anchor.targets` (`levels` 1..3 with the level-3 `ceiling`, `continuity = t3 - t2`), `anchor.sd_panel` and `anchor.panel_change`, and surfaced data errors. Refuses a panel change unless accepted. |
 | `arena_capture.py import CAPTURE.json ...` / `show` | Imports browser-captured `arena.ai` Agent / Code and Alignment boards and preserves their manifest entries across `sources.py fetch`. |
 | `community.py` | Reads community real-usage measurements of subscription window capacity, token mix, vendor plan multipliers (each names the windows it covers), and usd-per-hour check rows; `MAINTAINER_READINGS` holds dated maintainer measurements of windows no public source measures, and `UNMEASURED` declares the windows left without any. |
-| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`; `--model ID` merges only that model's rows on the shipped scale, see To add a model): runs fetch (unless `--no-fetch`), `measurements.py`, `five_axis.py`, `capability_catalog.py`, `public_data.py manifest --write`, validates `public-data` checks and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing or invalid, 3 refused with nothing written (a refused panel change or `--model`; the staleness report never exits 3). |
+| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`; `--model ID` merges only that model's rows on the shipped scale, see To add a model): runs fetch and the release-page fetch (unless `--no-fetch`; a cache without the release pages the plan chooses reports each as missing, exit 2, so refresh once without `--no-fetch` after the leaderboard page changes), `measurements.py`, `five_axis.py`, `capability_catalog.py`, `public_data.py manifest --write`, validates `public-data` checks and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing or invalid, 3 refused with nothing written (a refused panel change or `--model`; the staleness report never exits 3). |
 
 ## Refresh
 
 ```
 agentcompass data refresh                     # fetch, rebuild shipped data + views + manifest, validate, source-age report
-agentcompass data refresh --no-fetch          # rebuild and validate from cached downloads without fetching
+agentcompass data refresh --no-fetch          # rebuild and validate from cached downloads without fetching (the Artificial Analysis release pages must be cached too: each one missing is reported missing)
 agentcompass data refresh --no-fetch --accept-panel-change   # write a rebuild whose panel members changed (refused otherwise)
 ```
 
 Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`.
 
-One command runs the full chain in topological order: `sources.py fetch` (skipped with `--no-fetch`) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> `public_data.py manifest --write` -> validation (`public-data` checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
+One command runs the full chain in topological order: `sources.py fetch` plus the Artificial Analysis release pages (both skipped with `--no-fetch`, which reads the release pages already in the data directory that the fetched leaderboard page and the catalogue ask for) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> `public_data.py manifest --write` -> validation (`public-data` checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
 
 ## To add a model or a score
 
@@ -54,7 +54,9 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    ([fast-modes.md](../references/fast-modes.md)).
 2. **Board names.** `listed_as: {"arena": "...", "aa": "..."}` gives the name arena.ai / LMArena and Artificial Analysis list
    the model under, when the automatic matcher cannot derive it from the id (a dated listing, other wording). Leave out a
-   board that lists it under its id or does not list it.
+   board that lists it under its id or does not list it. On Artificial Analysis a name is a base name: a listing's variant tag (an effort, a date such as `(0902)`) is not part of it, so
+   `"Qwen3.8 Max"` names every release listed as `Qwen3.8 Max` or `Qwen3.8 Max (0902)`, and when it lists several deprecated
+   releases under one base name the newest release is read. On arena.ai a full listing name matches as well as its base name.
 3. **Prices (optional, cited).** `list_price` (`input`, `cache_write_5m`, `cache_write_1h`, `cache_read`, `output`, USD per
    million tokens) with `list_price_source` (`kind: "vendor"`, https `url`, `as_of`) prices local session logs in the tray;
    `vendor_fast_mode` (price and speed multipliers, fast and standard prices, `url`, `pricing_url`, `as_of`, `statement`)

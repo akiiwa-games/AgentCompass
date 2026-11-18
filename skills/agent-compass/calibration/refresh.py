@@ -20,7 +20,9 @@ effort ratios) still move for other models; the run prints how many did, by fiel
 
 Topological chain:
 1. Fetch (skipped with `--no-fetch`): `sources.fetch` downloads the benchmark boards and community pages into `DIR` and
-   writes `fetch-manifest.json` (url, fetched_at, sha256 per file). A source that fails is recorded missing and its old
+   writes `fetch-manifest.json` (url, fetched_at, sha256 per file); `sources.fetch_releases` then downloads, one page
+   each, the Artificial Analysis release pages of the catalogue models whose release the leaderboard page names as
+   deprecated without records (`measurements.aa_release_plan`). A source that fails is recorded missing and its old
    copy deleted, so a value is never carried over silently from an earlier download.
 2. `measurements.py` -> `references/public-measurements.json`.
 3. `five_axis.py` -> `references/five-axis-scores.json`. Both documents are built before either is written: when the
@@ -231,6 +233,7 @@ def merge_model_rows(shipped, fresh, names, now=None):
                 src = entry.get('source')
                 if src not in merged['sources'] and src in fresh_sources:
                     merged['sources'][src] = fresh_sources[src]
+                _cite_release_page(merged['sources'].get(src), entry, fresh_sources, src)
                 shipped_sha = (shipped_sources.get(src) or {}).get('sha256')
                 if field in DOWNLOAD_SCALE_FIELDS and shipped_sha != (fresh_sources.get(src) or {}).get('sha256'):
                     tier_boards.add(src)
@@ -246,6 +249,23 @@ def merge_model_rows(shipped, fresh, names, now=None):
                      "the other models' tiers stay on the shipped one")
     merged['generated_at'] = (now or datetime.now(timezone.utc)).isoformat(timespec='seconds')
     return merged, left_out, notes
+
+
+def _cite_release_page(row, entry, fresh_sources, src):
+    """Give the shipped source row `row` of `src` the Artificial Analysis release page `entry` cites (the entry's url is
+    one of the fetched rows' `release_pages`), so every url an entry cites has its source row: the page's row under
+    `release_pages` and, a source being as old as the oldest of its files, its date in `as_of`; a derived source row
+    takes the fresh citation of that url under `citations`."""
+    page = next(((n, p) for fresh in fresh_sources.values() for n, p in (fresh.get('release_pages') or {}).items()
+                 if p['url'] == entry.get('url')), None)
+    if page is None or row is None:
+        return
+    if 'citations' in row:
+        row['citations'] += [c for c in fresh_sources[src].get('citations') or () if c.get('url') == page[1]['url']
+                             and c not in row['citations']]
+    elif page[0] not in row.get('release_pages', {}):
+        row.setdefault('release_pages', {})[page[0]] = page[1]
+        row['as_of'] = min(row['as_of'], page[1]['fetched_at'][:10])
 
 
 def _in_build_order(kept, added, built):
@@ -291,6 +311,15 @@ def blast_radius(before, after, names):
     by_field = ', '.join(f'{field} {count}' for field, count in sorted(fields.items(), key=lambda kv: (-kv[1], kv[0])))
     return (f'{moved} values of {len(models)} other models moved, by field: {by_field} (values fitted over all measured '
             f'models); largest change {largest[0]:.4g} at {largest[1]}')
+
+
+def fetch_sources(target, references=None):
+    """Step 1: `sources.fetch`, then the Artificial Analysis release pages the fetched leaderboard page and the
+    catalogue in `references` ask for (`measurements.aa_release_plan`)."""
+    ref_dir = Path(references) if references is not None else (sources.REPO / 'references')
+    acc = json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig'))
+    sources.fetch(target)
+    sources.fetch_releases(target, measurements.aa_release_files(measurements.aa_release_plan(target, acc['models'])[0]))
 
 
 def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, accept_panel_change=False,
@@ -402,7 +431,7 @@ def main(argv=None, prog=None):
         if args.no_fetch:
             sources.manifest(target)
         else:
-            sources.fetch(target)
+            fetch_sources(target, args.references)
         _, doc = rebuild(target, references=args.references, distrust=args.distrust,
                          accept_panel_change=args.accept_panel_change, models=args.model)
     except (Refused, five_axis.PanelChangeRefused) as exc:
