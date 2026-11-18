@@ -1,5 +1,5 @@
-"""Rebuild every shipped calibrated file, generated capability view and `public-data.json` in topological order,
-validate the result, and report each source's age.
+"""Rebuild every shipped calibrated file and generated capability view in topological order, validate the result, and
+report each source's age. Run once per release; the result ships with the version and is fixed until the next one.
 
 `agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`
 `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...] [--references DIR]`
@@ -14,7 +14,7 @@ one on the unrounded scale). The `tier` is standardized over the fetched board i
 An entry is left out for two reasons only: a z-score whose source has no shipped scale, or a moved anchor reading;
 anything else that cannot be merged, or a model no board lists, stops the run before anything is written. Every other
 row, the panel and the scales stay as shipped. A panel model or the anchor is refused: it changes the scale and needs
-the full refresh. Steps 3..7 run as usual: the panel, sd_panel, targets and `anchor.panel_change` stay as shipped, a
+the full refresh. Steps 3..6 run as usual: the panel, sd_panel, targets and `anchor.panel_change` stay as shipped, a
 level-3 ceiling moves only when the added model sets it, and values fitted over all measured models (tier fits, fleet
 effort ratios) still move for other models; the run prints how many did, by field.
 
@@ -29,10 +29,9 @@ Topological chain:
    panel's members differ from the shipped `five-axis-scores.json`, the run prints the change (`five_axis.guard_panel`),
    writes no reference file and exits 2, unless `--accept-panel-change` records it in `anchor.panel_change`.
 4. `capability_catalog.py` -> `references/model-capabilities.json` and `references/model-capabilities.md`.
-5. `public_data.py manifest --write` -> `references/public-data.json` (unchanged content keeps the manifest byte-identical).
-6. Validate: `public-data` manifest and provenance checks, `references/user-scores.json` maintainer schema, and generated
-   capability views.
-7. Report: community usd-per-hour check rows against the `usd_per_hour` in use, then per source its kind, data date, age in
+5. Validate: provenance checks (`reference_provenance.validate_references`), `references/user-scores.json` maintainer
+   schema, and generated capability views.
+6. Report: community usd-per-hour check rows against the `usd_per_hour` in use, then per source its kind, data date, age in
    days and status: `ok`; `stale` (older than `five_axis.STALE_DAYS`, yellow: still used); `missing` (not fetched, or a
    community sentence no longer on the page: red, no value). Capacity windows with an empty ladder are listed as red.
 
@@ -58,7 +57,7 @@ for _folder in (str(CAL_DIR), str(SCRIPTS_DIR)):
 import capability_catalog  # noqa: E402
 import five_axis  # noqa: E402
 import measurements  # noqa: E402
-import public_data  # noqa: E402
+import reference_provenance  # noqa: E402
 import sources  # noqa: E402
 import user_scores  # noqa: E402
 
@@ -130,21 +129,13 @@ def validate_user_scores(path):
 
 
 def validate(references=None):
-    """Run public-data checks, `user-scores.json` schema validation, and generated capability-view checks."""
+    """Run the provenance checks, `user-scores.json` schema validation, and generated capability-view checks."""
     ref_dir = Path(references) if references is not None else (sources.REPO / 'references')
     validate_user_scores(ref_dir / 'user-scores.json')
-    manifest_path = ref_dir / public_data.MANIFEST
-    manifest = public_data._read_json(manifest_path)
-    state, detail = public_data.check_set(ref_dir, manifest)
-    if state != 'ok':
-        raise ValueError(f'public-data validation failed ({state}): {detail}')
-    expected = public_data.build_manifest(ref_dir, manifest)
-    if expected != manifest:
-        raise ValueError(f'{manifest_path} does not match the files in {ref_dir}')
+    reference_provenance.validate_references(ref_dir)
     stale_views = capability_catalog.check_files(references=ref_dir)
     if stale_views:
         raise ValueError('stale generated capability views: ' + ', '.join(stale_views))
-    return manifest
 
 
 # Measurement fields standardized over the downloaded board itself (tiers.py: arena.ai Overall over its own High rows,
@@ -324,7 +315,7 @@ def fetch_sources(target, references=None):
 
 def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, accept_panel_change=False,
             models=()):
-    """Steps 2..6. With `models`, step 2 merges only those rows into the shipped measurements (merge_model_rows), and
+    """Steps 2..5. With `models`, step 2 merges only those rows into the shipped measurements (merge_model_rows), and
     the returned five-axis document carries `_model_merge` {left_out, blast_radius} for the caller to print."""
     target = Path(target)
     ref_dir = Path(references) if references is not None else (sources.REPO / 'references')
@@ -333,7 +324,7 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
 
     acc = json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig'))
     plans = json.loads((ref_dir / 'plan-templates.json').read_text(encoding='utf-8-sig'))
-    public_data.validate_accounts_provenance(acc)
+    reference_provenance.validate_accounts_provenance(acc)
     validate_user_scores(ref_dir / 'user-scores.json')
 
     built = measurements.Builder(target, acc, now=now).build()
@@ -359,7 +350,6 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
 
     if scores_path.resolve() == (ref_dir / 'five-axis-scores.json').resolve():
         capability_catalog.write_default_files(accounts=acc, references=ref_dir)
-        public_data.write_manifest(ref_dir, now=now)
         validate(ref_dir)
     if merge is not None:
         doc = {**doc, '_model_merge': {'left_out': merge['left_out'], 'notes': merge['notes'],

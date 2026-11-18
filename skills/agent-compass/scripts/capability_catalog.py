@@ -1,6 +1,6 @@
 """Build capability views from the effective accounts catalogue and the public five-axis scores.
 
-accounts.json (shipped, or the newer fetched public copy) holds the routes and the model rows' routing flags;
+accounts.json (shipped) holds the routes and the model rows' routing flags;
 `five-axis-scores.json` holds the four category scores and the economy's usd (calibration/five_axis.py).
 Generated JSON/Markdown views are documentation, never another runtime authority.
 """
@@ -24,7 +24,7 @@ def markdown(accounts, five=None, references=None):
         five = json.loads((ref_dir / 'five-axis-scores.json').read_text(encoding='utf-8'))
         import axis_scores
         import user_scores
-        pub_scores = user_scores.load_public(ref_dir / 'user-scores.json', effective=False)
+        pub_scores = user_scores.load_public(ref_dir / 'user-scores.json')
         overlaid = axis_scores.five_axis_overlay(
             deepcopy(accounts), five, public_scores=pub_scores, local_scores={'scores': {}}, read_local_state=False
         )

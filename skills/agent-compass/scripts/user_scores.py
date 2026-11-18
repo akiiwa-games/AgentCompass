@@ -2,7 +2,7 @@
 
 Precedence (highest to lowest):
   1. Local user override (`<ROUTER_STATE_DIR>/user-scores.json`, `kind: "user"`, local only)
-  2. Shipped/fetched maintainer score (`references/user-scores.json`, `kind: "maintainer"`, public data, no source citation needed)
+  2. Shipped maintainer score (`references/user-scores.json`, `kind: "maintainer"`, public data, no source citation needed)
   3. Public board measurement (`measured` / `measured_partial`)
   4. Sibling or tier-fit estimate / series conversion (`estimated` / `converted`)
 
@@ -50,7 +50,7 @@ import sys
 # route_judge.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import override_store  # noqa: E402
-import public_data  # noqa: E402
+import state_upgrade  # noqa: E402
 
 SCHEMA_VERSION = 2
 FILE_NAME = 'user-scores.json'
@@ -87,18 +87,17 @@ def local_scores_path(path=None, environ=None) -> Path:
     configured = str(env.get(ENV_VAR) or '').strip()
     if configured:
         return Path(os.path.expandvars(configured)).expanduser()
-    return public_data.state_dir(environ) / FILE_NAME
+    return state_upgrade.state_dir(environ=environ) / FILE_NAME
 
 
-def public_scores_path(path=None, *, effective: bool = True, environ=None) -> Path:
-    base = Path(path) if path is not None else PUBLIC_SCORES_FILE
-    return public_data.effective(base, environ) if effective and path is None else base
+def public_scores_path(path=None) -> Path:
+    return Path(path) if path is not None else PUBLIC_SCORES_FILE
 
 
-def _public_lock_path(public_path: Path, environ=None) -> Path:
+def _public_lock_path(public_path: Path) -> Path:
     """Return a sidecar lock path inside `<ROUTER_STATE_DIR>`, never inside `references/`."""
     digest = hashlib.sha256(str(Path(public_path).resolve()).encode('utf-8')).hexdigest()[:12]
-    return public_data.state_dir(environ) / f'public-scores-{digest}.lock'
+    return state_upgrade.state_dir() / f'public-scores-{digest}.lock'
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -221,8 +220,8 @@ def load_local(path=None, environ=None) -> dict:
         )) from exc
 
 
-def load_public(path=None, *, effective: bool = True, environ=None) -> dict:
-    target = public_scores_path(path, effective=effective, environ=environ)
+def load_public(path=None) -> dict:
+    target = public_scores_path(path)
     if not target.is_file():
         return empty_document()
     raw = json.loads(target.read_text(encoding='utf-8-sig'))
@@ -343,15 +342,8 @@ def mapped_z_for_target(target: str, level: float, targets_table: dict) -> float
     return round(level_to_z(level, *target_triad(targets_table, cat, facet)), 4)
 
 
-def _write_public_and_manifest(public_path: Path, document: dict) -> None:
-    text = json.dumps(document, ensure_ascii=False, indent=2) + '\n'
-    _atomic_write_text(public_path, text)
-    manifest_path = public_path.parent / public_data.MANIFEST
-    if manifest_path.parent == REFERENCES or manifest_path.is_file():
-        previous = json.loads(manifest_path.read_text(encoding='utf-8-sig')) if manifest_path.is_file() else None
-        manifest = public_data.build_manifest(public_path.parent, previous)
-        _atomic_write_text(manifest_path, json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
-        public_data.unpin()
+def _write_public(public_path: Path, document: dict) -> None:
+    _atomic_write_text(public_path, json.dumps(document, ensure_ascii=False, indent=2) + '\n')
 
 
 def set_score(model: str, target: str, level: float, *, public: bool = False, note: str | None = None,
@@ -367,14 +359,14 @@ def set_score(model: str, target: str, level: float, *, public: bool = False, no
     if note is not None and str(note).strip():
         entry['note'] = str(note).strip()
     if public:
-        p_path = public_scores_path(public_path, effective=False)
+        p_path = public_scores_path(public_path)
         if not allow_non_repo and not is_repo_checkout(p_path.parent):
             raise ValueError('--public writes references/user-scores.json and is only supported inside a git checkout.')
         with override_store.locked(_public_lock_path(p_path)):
-            doc = load_public(p_path, effective=False)
+            doc = load_public(p_path)
             doc['scores'].setdefault(model_key, {})[target] = entry
             doc['scores'] = dict(sorted((m, dict(sorted(ts.items()))) for m, ts in doc['scores'].items() if ts))
-            _write_public_and_manifest(p_path, doc)
+            _write_public(p_path, doc)
         return {'model': model_key, 'target': target, 'entry': entry, 'scope': 'public', 'path': str(p_path)}
     l_path = local_scores_path(local_path)
     with override_store.locked(l_path):
@@ -415,13 +407,13 @@ def clear_score(model: str | None = None, target: str | None = None, *, clear_al
         return removed
 
     if public:
-        p_path = public_scores_path(public_path, effective=False)
+        p_path = public_scores_path(public_path)
         if not allow_non_repo and not is_repo_checkout(p_path.parent):
             raise ValueError('--public modifies references/user-scores.json and is only supported inside a git checkout.')
         with override_store.locked(_public_lock_path(p_path)):
-            doc = load_public(p_path, effective=False)
+            doc = load_public(p_path)
             removed = _remove(doc)
-            _write_public_and_manifest(p_path, doc)
+            _write_public(p_path, doc)
         return {'removed': removed, 'scope': 'public', 'path': str(p_path)}
     l_path = local_scores_path(local_path)
     with override_store.locked(l_path):
@@ -797,7 +789,7 @@ def suggest_scores(model: str | None = None, *, scope: str = 'all',
     )
     targets_table = (five.get('anchor') or {}).get('targets') or {}
     model_key = resolve_model_key(model, base) if model else None
-    pub_scores = load_public(public_path, effective=(public_path is None))['scores'] if scope in ('all', 'public') else {}
+    pub_scores = load_public(public_path)['scores'] if scope in ('all', 'public') else {}
     loc_scores = load_local(local_path)['scores'] if scope in ('all', 'local') else {}
     merged: dict[str, dict[str, tuple[str, dict]]] = {}
     if scope in ('all', 'public'):
@@ -880,12 +872,12 @@ def cli_main(argv: list[str] | None = None) -> int:
     p_set.add_argument('--note', help='Optional short note recorded with the manual score.')
     p_set.add_argument('--as-of', dest='as_of', help='Optional YYYY-MM-DD date (default: today UTC).')
     p_set.add_argument('--public', action='store_true',
-                       help='Write to references/user-scores.json (kind=maintainer) and refresh public-data.json (git checkout only).')
+                       help='Write to references/user-scores.json (kind=maintainer) (git checkout only).')
 
     p_list = sub.add_parser('list', help='List manual scores (both maintainer public and local user by default).')
     p_list.add_argument('model', nargs='?', help='Optional model id to filter by.')
     grp = p_list.add_mutually_exclusive_group()
-    grp.add_argument('--public', action='store_true', help='List only shipped/fetched maintainer scores.')
+    grp.add_argument('--public', action='store_true', help='List only shipped maintainer scores.')
     grp.add_argument('--local', action='store_true', help='List only local user overrides.')
 
     p_clear = sub.add_parser('clear', help='Clear manual score(s) for <model> [target], or --all.')
@@ -893,14 +885,14 @@ def cli_main(argv: list[str] | None = None) -> int:
     p_clear.add_argument('target', nargs='?', help='Optional category or category.facet to clear.')
     p_clear.add_argument('--all', dest='clear_all', action='store_true', help='Clear all manual scores in the selected store.')
     p_clear.add_argument('--public', action='store_true',
-                         help='Clear from references/user-scores.json and refresh public-data.json (git checkout only).')
+                         help='Clear from references/user-scores.json (git checkout only).')
 
     p_sug = sub.add_parser('suggest', help='Read-only review suggestions where public board data diverges from manual scores.')
     p_sug.add_argument('model', nargs='?', help='Optional model id to filter by.')
     p_sug.add_argument('--threshold', type=float, default=SUGGEST_DEFAULT_THRESHOLD,
                        help=f'Minimum |data_level - manual_level| to flag on measured boards (default: {SUGGEST_DEFAULT_THRESHOLD:g}).')
     sgrp = p_sug.add_mutually_exclusive_group()
-    sgrp.add_argument('--public', action='store_true', help='Inspect only shipped/fetched maintainer scores.')
+    sgrp.add_argument('--public', action='store_true', help='Inspect only shipped maintainer scores.')
     sgrp.add_argument('--local', action='store_true', help='Inspect only local user overrides.')
 
     args = parser.parse_args(argv)

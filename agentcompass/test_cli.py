@@ -94,21 +94,27 @@ class CliTests(unittest.TestCase):
             "five-axis-scores.json",
             "model-capabilities.json",
             "model-capabilities.md",
-            "public-data.json",
         ):
             self.assertTrue((refs_dir / name).is_file(), name)
-        before_manifest = (refs_dir / "public-data.json").read_bytes()
+        before_scores = (refs_dir / "five-axis-scores.json").read_bytes()
         done_again = self.run_cli("data", "refresh", "--no-fetch", "--data", str(data_dir), "--references", str(refs_dir))
         self.assertEqual(done_again.returncode, 0, done_again.stderr + done_again.stdout)
-        self.assertEqual((refs_dir / "public-data.json").read_bytes(), before_manifest)
+        self.assertEqual((refs_dir / "five-axis-scores.json").read_bytes(), before_scores)
 
-        # Outside a git checkout, `agentcompass data refresh` without `--references` refuses cleanly and suggests `data --refresh`.
+        # Outside a git checkout, `agentcompass data refresh` without `--references` refuses and points at updating.
         import io
         err = io.StringIO()
         with patch.object(cli.locations, "checkout_root", return_value=None), patch("sys.stderr", err):
             rc = cli.data_command(["refresh", "--no-fetch"])
         self.assertEqual(rc, 2)
-        self.assertIn("agentcompass data --refresh", err.getvalue())
+        self.assertIn("update AgentCompass", err.getvalue())
+
+        # `agentcompass data` has no other subcommand: an install reads only the data shipped with its version.
+        for argv, code, stream in ((["--refresh"], 2, "stderr"), ([], 2, "stderr"), (["-h"], 0, "stdout")):
+            out, err = io.StringIO(), io.StringIO()
+            with patch("sys.stdout", out), patch("sys.stderr", err):
+                self.assertEqual(cli.data_command(argv), code, argv)
+            self.assertIn("agentcompass data refresh", (out if stream == "stdout" else err).getvalue())
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import account_state
 import provider_inventory
-import public_data
+import reference_provenance
 import user_scores
 import account_fleet
 
@@ -70,9 +70,8 @@ def five_axis_config(policy):
     return {**FIVE_AXIS_DEFAULTS, **raw, 'weights': {**FIVE_AXIS_DEFAULTS['weights'], **(raw.get('weights') or {})}}
 
 
-def load_five_axis(path=None, *, use_effective=True):
-    default_file = account_fleet.REFERENCES / 'five-axis-scores.json'
-    target = Path(path) if path is not None else (public_data.effective(default_file) if use_effective else default_file)
+def load_five_axis(path=None):
+    target = Path(path) if path is not None else account_fleet.REFERENCES / 'five-axis-scores.json'
     return json.loads(target.read_text(encoding='utf-8'))
 
 
@@ -95,14 +94,8 @@ def require_level3_ceilings(data):
     if missing:
         raise ValueError(
             f"five-axis-scores.json (schema {data.get('schema')!r}) has no level-3 ceiling for {', '.join(missing)}; this "
-            'code reads agent-compass.five-axis-scores/5. In an install run `agentcompass data --refresh` (or update '
-            'AgentCompass); in a checkout run `python -X utf8 agentcompass data refresh --no-fetch`.')
-
-
-def load_public_user_scores(path=None, *, use_effective=True):
-    default_file = account_fleet.REFERENCES / 'user-scores.json'
-    target = Path(path) if path is not None else (public_data.effective(default_file) if use_effective else default_file)
-    return user_scores.load_public(target, effective=False)
+            'code reads agent-compass.five-axis-scores/5. In an install, update AgentCompass; in a '
+            'checkout run `python -X utf8 agentcompass data refresh --no-fetch`.')
 
 
 def validate_axis_demand(raw):
@@ -201,10 +194,10 @@ def _capacity_rules(accounts):
     """Map `(target_family, target_window) -> rule` for valid `same_model[row].capacity_rule` declarations."""
     rules = {}
     for model_key, entry in sorted((accounts.get('same_model') or {}).items()):
-        if not isinstance(entry, dict) or not public_data._valid_public_declaration(entry):
+        if not isinstance(entry, dict) or not reference_provenance.valid_public_declaration(entry):
             continue
         rule = entry.get('capacity_rule')
-        if public_data._valid_capacity_rule(rule):
+        if reference_provenance.valid_capacity_rule(rule):
             rules[(rule['target_family'].strip(), rule['target_window'].strip())] = {**rule, 'model': model_key}
     return rules
 
@@ -230,7 +223,7 @@ def _resolve_rule_capacity(accounts, community, cap_family, raw_plan, plan, src_
     if isinstance(target_price, bool) or not isinstance(target_price, (int, float)) or target_price <= 0:
         reason = f'plan {plan!r} has no paid monthly price (${target_price or 0:g}/mo)'
         return None, {'status': 'unpriced_plan', 'age_days': None, 'plan': plan, 'reason': reason}, reason
-    if not public_data._valid_vendor_price_source(target_psrc):
+    if not reference_provenance.valid_vendor_price_source(target_psrc):
         reason = f'plan {plan!r} has no cited vendor price_source'
         return None, {'status': 'uncited_plan_price', 'age_days': None, 'plan': plan, 'reason': reason}, reason
     ref_family = rule['reference_family'].strip()
@@ -247,7 +240,7 @@ def _resolve_rule_capacity(accounts, community, cap_family, raw_plan, plan, src_
         ref_row = ((community.get(ref_family) or {}).get(ref_plan) or {}).get(ref_window) or {}
         ref_cap = ref_row.get('capacity_usd')
         if (isinstance(ref_price, bool) or not isinstance(ref_price, (int, float)) or ref_price <= 0
-                or not public_data._valid_vendor_price_source(ref_psrc)
+                or not reference_provenance.valid_vendor_price_source(ref_psrc)
                 or not isinstance(ref_cap, (int, float)) or ref_cap <= 0):
             continue
         candidates.append({
@@ -321,8 +314,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     C/U/t0/T (round 11): when capacity is unreadable, they enter mode B (`capacity_unknown`), out of automatic routing."""
     explicit_data = data is not None
     cfg_path = five_axis_config(accounts.get('scoring')).get('path')
-    data = data if explicit_data else (load_five_axis(cfg_path) if read_local_state
-                                       else load_five_axis(cfg_path, use_effective=False))
+    data = data if explicit_data else load_five_axis(cfg_path)
     out = copy.deepcopy(accounts)
     rows = data.get('models') or {}
     for name, info in (out.get('models') or {}).items():
@@ -492,8 +484,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor['model'], 'targets': targets,
                          'panel_n': anchor.get('panel_n')}
     pub_manual = public_scores if public_scores is not None else (
-        None if explicit_data else (load_public_user_scores() if read_local_state
-                                    else load_public_user_scores(use_effective=False))
+        None if explicit_data else user_scores.load_public()
     )
     loc_manual = local_scores if local_scores is not None else (user_scores.load_local() if read_local_state else None)
     user_scores.apply_overlay(

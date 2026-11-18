@@ -54,7 +54,6 @@ class StateUpgradeContractTests(unittest.TestCase):
             'ROUTER_PROVIDER_HOME': str(self.home),
             'ROUTER_STATE_DIR': str(self.state),
             'PASEO_HOME': str(self.home / '.paseo'),
-            'AGENTCOMPASS_PUBLIC_DATA': 'off',
             'AGENTCOMPASS_ANTIGRAVITY_PLAN': 'off',
             'AGENTCOMPASS_LIVE_MODELS': 'off',
         }
@@ -131,6 +130,12 @@ class StateUpgradeContractTests(unittest.TestCase):
         )
         old_skill = claude_dir / 'skills' / 'route-agent-work'
         old_skill.mkdir(parents=True, exist_ok=True)
+        # 12. cache and setting of the removed between-release reference data channel
+        channel_cache = self.state / 'public-data'
+        (channel_cache / 'sets' / '0123456789ab').mkdir(parents=True, exist_ok=True)
+        (channel_cache / 'state.json').write_text('{"version": "0123456789ab"}', encoding='utf-8')
+        channel_config = self.state / 'public-data-config.json'
+        channel_config.write_text('{"enabled": false}', encoding='utf-8')
 
         before = _snapshot_tree(self.home)
         with patch.object(doctor, 'listeners', return_value={}):
@@ -140,7 +145,7 @@ class StateUpgradeContractTests(unittest.TestCase):
         self.assertEqual(before, after, 'doctor must never rewrite user files')
 
         issues = report['upgrade_issues']
-        self.assertGreaterEqual(len(issues), 14, issues)
+        self.assertGreaterEqual(len(issues), 16, issues)
         self.assertIn('Upgrade checks:', rendered)
         allowed_fixes = (
             'Fix: re-run "agentcompass setup".',
@@ -171,6 +176,9 @@ class StateUpgradeContractTests(unittest.TestCase):
             self.assertTrue(any(str(expected_file) in issue for issue in issues), f'Missing issue for {expected_file}')
         # Setup does not retire a link it never recorded, so the fix for the old skill link is to delete it.
         self.assertTrue(any(issue.endswith(f'Fix: {state_upgrade.fix_delete(old_skill)}.') for issue in issues))
+        # Nothing reads the removed channel's files any more; the user deletes them.
+        for leftover in (channel_cache, channel_config):
+            self.assertTrue(any(issue.endswith(f'Fix: {state_upgrade.fix_delete(leftover)}.') for issue in issues), leftover)
 
     def test_runtime_loaders_fail_fast_with_the_exact_same_message_as_doctor(self):
         env = self._env()

@@ -152,8 +152,8 @@ def _synthetic_doc_ctx(doc):
 
     @contextlib.contextmanager
     def _ctx():
-        with patch.object(axis_scores, 'load_five_axis', lambda path=None, use_effective=True: doc), \
-                patch.object(axis_scores, 'load_public_user_scores', lambda path=None, use_effective=True: {'schema_version': 2, 'scores': {}}):
+        with patch.object(axis_scores, 'load_five_axis', lambda path=None: doc), \
+                patch.object(axis_scores.user_scores, 'load_public', lambda path=None: {'schema_version': 2, 'scores': {}}):
             yield
     return _ctx()
 
@@ -977,7 +977,6 @@ class FiveAxisTests(unittest.TestCase):
             with patch.object(sys, 'argv', argv), \
                     patch.object(route_judge, 'plan_stage', side_effect=fake_plan_stage), \
                     patch.object(usage_reading, 'usage_snapshot', return_value=usage), \
-                    patch.object(route_judge.public_data, 'refresh_in_background'), \
                     patch.object(route_judge.antigravity_plan, 'refresh_in_background'), \
                     patch.object(roll, 'resolve_parent', return_value=('parent-1', 'cli', 'parent-1')), \
                     patch.object(roll.registry, 'pending', return_value=[]), \
@@ -2322,7 +2321,7 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
             scripts_dir / 'axis_scores.py',
             scripts_dir / 'candidate_eval.py',
             scripts_dir / 'provider_inventory.py',
-            scripts_dir / 'public_data.py',
+            scripts_dir / 'reference_provenance.py',
             cal_dir / 'five_axis.py',
         ]
         for path in target_files:

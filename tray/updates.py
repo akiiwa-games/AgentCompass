@@ -2023,11 +2023,6 @@ def _router_cli(installs: dict) -> list[str]:
     return [sys.executable, "-m", "agentcompass"]
 
 
-def _refresh_public_data_step(installs: dict, exec_run) -> str:
-    exec_run([*_router_cli(installs), "data", "--refresh"], Path(installs["tray"]["root"]))
-    return _tr("已刷新公共路由数据（agentcompass data --refresh）")
-
-
 def _reapply_setup_step(installs: dict, exec_run, state_dir: Path | None = None) -> tuple[str, str]:
     """Apply the setup of a machine that was set up before again, with the updated files.
 
@@ -2311,10 +2306,6 @@ def update_agentcompass(
                         raise RuntimeError(
                             _tr("{0} 失败（退出码 {1}）").format(installer_exe.name, rc)
                         )
-                    report("component", _tr("刷新公共路由数据"))
-                    refresh_msg = _refresh_public_data_step(installs, exec_run=exec_run)
-                    steps.append(refresh_msg)
-                    report("result", refresh_msg, status="updated")
                     msg = _tr("已完成安装包静默更新（{0}）").format(tag_label)
                     steps.append(msg)
                     report("result", msg, status="updated")
@@ -2356,11 +2347,6 @@ def update_agentcompass(
                 updated_any = True
 
         if updated_any:
-            report("component", _tr("刷新公共路由数据"))
-            refresh_msg = _refresh_public_data_step(installs, exec_run=exec_run)
-            steps.append(refresh_msg)
-            report("result", refresh_msg, status="updated")
-
             if not installer_ran:
                 setup_msg, setup_status = _reapply_setup_step(installs, exec_run=exec_run, state_dir=state_dir)
                 if setup_msg:

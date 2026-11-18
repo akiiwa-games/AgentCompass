@@ -156,7 +156,7 @@ def _accounts_fingerprint() -> tuple | None:
         return None
     paseo_home = Path(os.environ.get("PASEO_HOME") or Path.home() / ".paseo")
     files = (
-        _public_accounts(refs),
+        refs / "accounts.json",
         STATE_DIR / "accounts-override.json",
         STATE_DIR / "host-policy.json",
         STATE_DIR / "plugins.json",
@@ -470,7 +470,7 @@ def model_table() -> dict:
     modules()
     import account_fleet
     import axis_scores
-    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(_public_accounts(account_fleet.REFERENCES)))
+    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(account_fleet.REFERENCES / "accounts.json"))
     return account_fleet.models_table(accounts)
 
 
@@ -533,7 +533,7 @@ def score_overview() -> dict:
     import account_fleet
     import axis_scores
     import score_overview as overview
-    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(_public_accounts(account_fleet.REFERENCES)))
+    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(account_fleet.REFERENCES / "accounts.json"))
     data = axis_scores.load_five_axis(axis_scores.five_axis_config(accounts.get("scoring")).get("path"))
     models = account_fleet.models_table(accounts)
     meta = accounts.get("_five_axis") or {}
@@ -1403,17 +1403,10 @@ def save_host_policy(allowed: list[str], all_accounts: list[str], path: Path | N
         return _tr('已保存本机准入：{0} 个账号').format(f'{len(allowed)}')
 
 
-def _public_accounts(refs: Path) -> Path:
-    """The public accounts.json routing reads: the fetched copy when it is newer than the shipped one."""
-    import public_data
-    shipped = refs / "accounts.json"
-    return public_data.effective(shipped)
-
-
 def _accounts_path() -> Path:
     modules()
     import account_fleet
-    return _public_accounts(account_fleet.REFERENCES)
+    return account_fleet.REFERENCES / "accounts.json"
 
 
 def _user_accounts_path(create: bool = False) -> Path:

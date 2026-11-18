@@ -858,7 +858,6 @@ class StaticNoHardcodeScannerTests(unittest.TestCase):
             'skills/agent-compass/references/accounts.json',
             'skills/agent-compass/references/model-capabilities.json',
             'skills/agent-compass/references/reference-fleet.json',
-            'skills/agent-compass/references/public-data.json',
         ):
             path = REPO_ROOT / rel
             if not path.exists():

@@ -17,7 +17,7 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
 - Community real-usage measurements of subscription window capacity (wokey.ai, finopsllm.com, inventivehq.com,
   the eneasf Antigravity telemetry findings):
   `community.py`. `refresh.py` (`agentcompass data refresh`) runs fetch, `measurements.py`, `five_axis.py`,
-  `capability_catalog.py`, `public_data.py manifest --write`, validation and the source-age report in one command.
+  `capability_catalog.py`, validation and the source-age report in one command.
 
 `fetch` writes `fetch-manifest.json` beside the downloads: each file's url, fetched_at (UTC), sha256 and size, or the
 error when a source could not be fetched. A source that fails is recorded as missing, never replaced by an older copy.

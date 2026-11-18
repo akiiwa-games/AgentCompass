@@ -63,7 +63,6 @@ class NoLegacyScoringTests(unittest.TestCase):
         documents = {'accounts.json': accounts, 'reference-accounts.json': load(FIXTURES / 'reference-accounts.json'),
                      'plan-templates.json': load(REFERENCES / 'plan-templates.json'),
                      'model-capabilities.json': load(REFERENCES / 'model-capabilities.json'),
-                     'public-data.json': load(REFERENCES / 'public-data.json'),
                      'classifier-cases.json': load(REFERENCES / 'classifier-cases.json')}
         found = [f'{name}{path}' for name, doc in documents.items() for path, key in walk_keys(doc) if key in LEGACY_KEYS]
         self.assertEqual(found, [], 'legacy scoring fields in shipped data')

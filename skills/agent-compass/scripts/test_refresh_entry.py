@@ -25,7 +25,7 @@ import arena_capture  # noqa: E402
 import capability_catalog  # noqa: E402
 import five_axis  # noqa: E402
 import measurements  # noqa: E402
-import public_data  # noqa: E402
+import reference_provenance  # noqa: E402
 import refresh  # noqa: E402
 import sources  # noqa: E402
 
@@ -109,7 +109,7 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
     refs_dir.mkdir(parents=True, exist_ok=True)
 
     for name in ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'user-scores.json'):
-        shutil.copyfile(public_data.BUNDLED / name, refs_dir / name)
+        shutil.copyfile(reference_provenance.REFERENCES / name, refs_dir / name)
 
     manifest_files: dict[str, dict] = {}
 
@@ -362,8 +362,6 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
 
 class RefreshEntryTests(unittest.TestCase):
     def setUp(self):
-        public_data.unpin()
-        self.addCleanup(public_data.unpin)
         self.tmp = Path(tempfile.mkdtemp(prefix='refresh-entry-'))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.now = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
@@ -375,14 +373,19 @@ class RefreshEntryTests(unittest.TestCase):
             code = refresh.main(['--data', str(self.data_dir), '--references', str(self.refs_dir), *extra_args])
         return code, out.getvalue(), err.getvalue()
 
-    def test_no_fetch_rebuilds_every_file_validates_and_keeps_unchanged_manifest_byte_identical(self):
+    def test_no_fetch_rebuilds_every_file_validates_and_keeps_unchanged_content_byte_identical(self):
         generated = (
             'public-measurements.json',
             'five-axis-scores.json',
             'model-capabilities.json',
             'model-capabilities.md',
-            'public-data.json',
         )
+        shipped = ('accounts.json', 'plan-templates.json', 'classifier-cases.json', 'five-axis-scores.json',
+                   'user-scores.json')
+
+        def shipped_bytes():
+            return {name: (self.refs_dir / name).read_bytes() for name in shipped}
+
         for name in generated:
             self.assertFalse((self.refs_dir / name).exists(), name)
 
@@ -396,39 +399,39 @@ class RefreshEntryTests(unittest.TestCase):
         for name in generated:
             self.assertTrue((self.refs_dir / name).is_file(), f'{name} was not generated')
 
-        manifest = refresh.validate(self.refs_dir)
-        self.assertEqual(public_data.check_set(self.refs_dir, manifest), ('ok', ''))
+        refresh.validate(self.refs_dir)
+        reference_provenance.validate_references(self.refs_dir)
         self.assertEqual(capability_catalog.check_files(references=self.refs_dir), [])
 
-        manifest_bytes = (self.refs_dir / 'public-data.json').read_bytes()
+        before = shipped_bytes()
 
-        # 1. Re-running `--no-fetch` (including at a later timestamp) keeps an unchanged manifest byte-identical.
+        # 1. Re-running `--no-fetch` (including at a later timestamp) keeps unchanged reference files byte-identical.
         code2, stdout2, stderr2 = self._run_refresh('--no-fetch')
         self.assertEqual(code2, 0, stderr2 + stdout2)
-        self.assertEqual((self.refs_dir / 'public-data.json').read_bytes(), manifest_bytes)
+        self.assertEqual(shipped_bytes(), before)
 
         refresh.rebuild(self.data_dir, now=self.now + timedelta(hours=5), references=self.refs_dir)
-        self.assertEqual((self.refs_dir / 'public-data.json').read_bytes(), manifest_bytes)
+        self.assertEqual(shipped_bytes(), before)
 
-        # 2. Deleting generated capability views and re-running `--no-fetch` rebuilds them and keeps manifest byte-identical.
+        # 2. Deleting generated capability views and re-running `--no-fetch` rebuilds them; the rest stays byte-identical.
         (self.refs_dir / 'model-capabilities.json').unlink()
         (self.refs_dir / 'model-capabilities.md').unlink()
         code3, _, stderr3 = self._run_refresh('--no-fetch')
         self.assertEqual(code3, 0, stderr3)
         self.assertTrue((self.refs_dir / 'model-capabilities.json').is_file())
         self.assertTrue((self.refs_dir / 'model-capabilities.md').is_file())
-        self.assertEqual((self.refs_dir / 'public-data.json').read_bytes(), manifest_bytes)
+        self.assertEqual(shipped_bytes(), before)
 
-        # 3. Clean rebuild from scratch at fixed `now` also produces the exact same manifest bytes.
+        # 3. Clean rebuild from scratch at fixed `now` twice produces the exact same bytes.
         t_fixed = self.now - timedelta(minutes=10)
         for name in ('public-measurements.json', 'five-axis-scores.json', 'model-capabilities.json', 'model-capabilities.md'):
             (self.refs_dir / name).unlink()
         refresh.rebuild(self.data_dir, now=t_fixed, references=self.refs_dir)
-        fixed_manifest_bytes = (self.refs_dir / 'public-data.json').read_bytes()
+        fixed_bytes = shipped_bytes()
         for name in ('public-measurements.json', 'five-axis-scores.json', 'model-capabilities.json', 'model-capabilities.md'):
             (self.refs_dir / name).unlink()
         refresh.rebuild(self.data_dir, now=t_fixed, references=self.refs_dir)
-        self.assertEqual((self.refs_dir / 'public-data.json').read_bytes(), fixed_manifest_bytes)
+        self.assertEqual(shipped_bytes(), fixed_bytes)
 
     def test_a_panel_change_is_refused_unless_accepted_and_then_recorded(self):
         """Brief 2026-11-13: when the panel's members differ from the shipped five-axis-scores.json the refresh prints the
@@ -506,7 +509,7 @@ class RefreshEntryTests(unittest.TestCase):
         self.assertEqual(default_code, 2)
         self.assertIn(str(default_cache / 'fetch-manifest.json'), err2.getvalue())
 
-    def test_validation_checks_user_scores_schema_and_public_data_integrity(self):
+    def test_validation_checks_user_scores_schema_and_reference_provenance(self):
         user_scores_path = self.refs_dir / 'user-scores.json'
         good_user_scores = user_scores_path.read_text(encoding='utf-8')
 
@@ -552,7 +555,7 @@ class RefreshEntryTests(unittest.TestCase):
     def test_default_mode_fetches_before_rebuilding_in_topological_order(self):
         events = []
         orig_write_views = capability_catalog.write_default_files
-        orig_write_manifest = public_data.write_manifest
+        orig_validate = refresh.validate
 
         def fake_fetch(target):
             events.append(('fetch', Path(target)))
@@ -561,16 +564,16 @@ class RefreshEntryTests(unittest.TestCase):
             events.append(('capability_catalog',))
             return orig_write_views(*args, **kwargs)
 
-        def tracked_manifest(*args, **kwargs):
-            events.append(('manifest',))
-            return orig_write_manifest(*args, **kwargs)
+        def tracked_validate(*args, **kwargs):
+            events.append(('validate',))
+            return orig_validate(*args, **kwargs)
 
         with patch.object(sources, 'fetch', side_effect=fake_fetch), \
                 patch.object(capability_catalog, 'write_default_files', side_effect=tracked_views), \
-                patch.object(public_data, 'write_manifest', side_effect=tracked_manifest):
+                patch.object(refresh, 'validate', side_effect=tracked_validate):
             code, _, stderr = self._run_refresh()
         self.assertEqual(code, 0, stderr)
-        self.assertEqual([e[0] for e in events], ['fetch', 'capability_catalog', 'manifest'])
+        self.assertEqual([e[0] for e in events], ['fetch', 'capability_catalog', 'validate'])
         self.assertEqual(events[0][1], self.data_dir)
 
 
@@ -691,7 +694,7 @@ class ModelRowMergeTests(unittest.TestCase):
     def test_the_command_refuses_a_panel_model_before_any_download(self):
         root = Path(tempfile.mkdtemp(prefix='refresh-model-'))
         self.addCleanup(shutil.rmtree, root, True)
-        shutil.copyfile(public_data.BUNDLED / 'accounts.json', root / 'accounts.json')
+        shutil.copyfile(reference_provenance.REFERENCES / 'accounts.json', root / 'accounts.json')
         anchor = json.loads((root / 'accounts.json').read_text(encoding='utf-8'))['calibration_panel']['anchor']
         (root / 'public-measurements.json').write_text(json.dumps({'panel': {'models': []}}), encoding='utf-8')
         err = io.StringIO()
@@ -822,8 +825,6 @@ class AaReleasePageTests(unittest.TestCase):
     DEPRECATED = ('gpt-6-astra', 'gpt-6.1-sol')
 
     def setUp(self):
-        public_data.unpin()
-        self.addCleanup(public_data.unpin)
         self.now = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
 
     def fixture(self, **kwargs):

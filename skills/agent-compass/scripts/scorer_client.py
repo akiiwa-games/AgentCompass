@@ -18,7 +18,6 @@ import account_state
 import env_vars
 import host_policy
 import provider_inventory
-import public_data
 import subscription_cli
 
 
@@ -151,7 +150,7 @@ def scorer_schema(capabilities=None):
 
 def load_classifier_cases():
     try:
-        doc = json.loads(public_data.effective(CLASSIFIER_CASES_PATH).read_text(encoding='utf-8-sig'))
+        doc = json.loads(CLASSIFIER_CASES_PATH.read_text(encoding='utf-8-sig'))
         return {k: doc[k] for k in ('route_definitions', 'dimension_rubric', 'calibration_cases') if k in doc}
     except (OSError, ValueError):
         return {}

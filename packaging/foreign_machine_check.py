@@ -9,7 +9,7 @@ Designed the pstack way (behavior over implementation, prove it works from packa
   - Never touches the real user profile, real credentials, or external network (all HTTP goes through sandbox_check's
     sitecustomize netguard to local fixture servers; all CLIs are fixture executables in a throwaway PATH).
   - Covers every failure hit when syncing to a second host (LITTLESPRING / LS) and every 0.3.6 behavior:
-      F01  Stale install & public reference data channel (shipped-schema fetch, sha256 & corrupt JSON rejection, schema-1 reader sees the shipped schema, opt-out, doctor line)
+      F01  Stale install & reference data shipped with the version (no run-time request for it; leftovers of the removed channel reported by doctor)
       F02  Fleet parity on a clean install with no accounts.local.json
       F03  Classifier cascade across families and multi-home accounts (jev absent, ~/.claude signed out, ~/.claude-2 signed in)
       F04  Quota, window scope, gate parity, control-message exemption, discovered model management, no twin bundles, and agy 3p pool-prior capacity
@@ -24,7 +24,7 @@ Designed the pstack way (behavior over implementation, prove it works from packa
       F11  Oh My Pi OAuth subscription logins (agent.db): shared quota with the native account, omp-only accounts,
            metered API keys, disabled/corrupt/locked credentials; each check is also shown to fail once
       F12  Tray version display, one-click self-update (old wheel upgraded to locally built wheel in a foreign profile,
-           sha256 digest verification, dirty git refusal, data --refresh), and single-flight tray restart
+           sha256 digest verification, dirty git refusal), and single-flight tray restart
       F13  Product layout without the dev checkout: a checkout-era profile (plugin clones in the checkout, a junction
            from ~/.agent-compass/plugins) migrates to ~/.agent-compass/plugins with local changes kept; EasyTier's home
            is %ProgramData%/AgentCompass/easytier from frozen- and wheel-shaped installs (checkout node until migrated);
@@ -54,14 +54,10 @@ import zero_dispatch_check as zd  # noqa: E402
 
 ROOT = sc.ROOT
 USAGE_FLOAT_SRC = ROOT / "usage-float"
-# The data schema this checkout ships (router-internals, Public reference data); checks derive from it, never a literal.
-SHIPPED_SCHEMA = json.loads((ROOT / "skills" / "agent-compass" / "references" / "public-data.json")
-                            .read_text(encoding="utf-8"))["schema_version"]
 
 FOREIGN_ALLOWED_HOSTS = (
     "chatgpt.com",
     "api.anthropic.com",
-    "raw.githubusercontent.com",
     "magpie.fixture.local",
     "cloudcode-pa.googleapis.com",
     "daily-cloudcode-pa.googleapis.com",
@@ -69,7 +65,7 @@ FOREIGN_ALLOWED_HOSTS = (
 
 
 class ForeignFixtureServer:
-    """Local HTTP fixture serving provider quotas, GitHub raw public-data, Magpie gateway pools, and Google Cloud Code."""
+    """Local HTTP fixture serving provider quotas, Magpie gateway pools, and Google Cloud Code."""
 
     def __init__(self, shipped_references: Path):
         self.shipped_references = shipped_references
@@ -78,16 +74,10 @@ class ForeignFixtureServer:
         self.codex_used_7d = 20.0
         self.claude_used_5h = 25.0
         self.claude_used_7d = 30.0
-        # Public reference data fixture state
-        self.public_data_mode = "valid_update"  # valid_update | bad_sha | bad_json | future_schema | error
         # Bearer token -> OAuth profile organization. The Claude plan is read only from this live profile.
         self.claude_profiles: dict[str, dict] = {}
         # plan-templates.json codex.pro has only the weekly `usage` window. A five-hour reading belongs to Plus.
         self.codex_plan = "pro"
-        self.updated_accounts_bytes = b""
-        self.updated_manifest_bytes = b""
-        self.updated_version = ""
-        self._prepare_public_data()
         # Magpie gateway pool state: two pro accounts (one fresh, one stale 5h old) + one smaller free account
         now = dt.datetime.now(dt.timezone.utc)
         self.now_iso = now.isoformat()
@@ -137,8 +127,6 @@ class ForeignFixtureServer:
                         "five_hour": {"utilization": outer.claude_used_5h, "resets_at": (now + dt.timedelta(hours=2)).isoformat()},
                         "seven_day": {"utilization": outer.claude_used_7d, "resets_at": (now + dt.timedelta(days=3)).isoformat()},
                     })
-                if host == "raw.githubusercontent.com":
-                    return outer._handle_github_raw(self, path)
                 if host == "magpie.fixture.local" and path == "/v1/magpie/quotas":
                     if self.headers.get("Authorization") != "Bearer magpie-gateway-token":
                         return self._reply(401, {"error": "unauthorized"})
@@ -206,66 +194,6 @@ class ForeignFixtureServer:
                 "reset_at": int((now + dt.timedelta(hours=3)).timestamp()),
             }
         return {"plan_type": self.codex_plan, "rate_limit": rate}
-
-    def _prepare_public_data(self):
-        accounts_doc = json.loads((self.shipped_references / "accounts.json").read_text(encoding="utf-8"))
-        # Add a benign public-data note so we can prove the fetched copy is active and distinct from bundled bytes
-        accounts_doc["public_channel_verified"] = "0.3.6-fetched"
-        self.updated_accounts_bytes = (json.dumps(accounts_doc, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-        manifest = json.loads((self.shipped_references / "public-data.json").read_text(encoding="utf-8"))
-        files = dict(manifest.get("files") or {})
-        files["accounts.json"] = {
-            "sha256": hashlib.sha256(self.updated_accounts_bytes).hexdigest(),
-            "bytes": len(self.updated_accounts_bytes),
-        }
-        schema_ver = manifest["schema_version"]
-        public_files_order = tuple(files.keys())
-        lines = [f"schema {schema_ver}"] + [f"{name} {files[name]['sha256']}" for name in public_files_order]
-        self.updated_version = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:12]
-        manifest = {
-            "schema_version": schema_ver,
-            "version": self.updated_version,
-            "published_at": "2026-11-30T12:00:00Z",
-            "files": files,
-        }
-        self.updated_manifest_bytes = (json.dumps(manifest, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-
-    def _handle_github_raw(self, handler, path: str):
-        if self.public_data_mode == "error":
-            return handler._reply(503, {"error": "github unavailable"})
-        if path.endswith("/references/public-data.json"):
-            if self.public_data_mode == "future_schema":
-                manifest = json.loads(self.updated_manifest_bytes.decode("utf-8"))
-                manifest["schema_version"] = 99
-                return handler._reply(200, None, raw_bytes=json.dumps(manifest).encode("utf-8"))
-            if self.public_data_mode == "bad_json":
-                bad = b'{"not-valid-json"\n'
-                manifest = json.loads(self.updated_manifest_bytes.decode("utf-8"))
-                manifest["files"]["accounts.json"] = {
-                    "sha256": hashlib.sha256(bad).hexdigest(),
-                    "bytes": len(bad),
-                }
-                manifest["version"] = "badjson00001"
-                manifest["published_at"] = "2026-12-01T00:00:00Z"
-                return handler._reply(200, None, raw_bytes=json.dumps(manifest).encode("utf-8"))
-            if self.public_data_mode == "bad_sha":
-                manifest = json.loads(self.updated_manifest_bytes.decode("utf-8"))
-                manifest["files"]["accounts.json"]["sha256"] = "0" * 64
-                manifest["version"] = "badsha000001"
-                manifest["published_at"] = "2026-12-01T00:00:00Z"
-                return handler._reply(200, None, raw_bytes=json.dumps(manifest).encode("utf-8"))
-            return handler._reply(200, None, raw_bytes=self.updated_manifest_bytes)
-        name = path.rsplit("/references/", 1)[-1] if "/references/" in path else ""
-        if name == "accounts.json":
-            if self.public_data_mode == "bad_sha":
-                return handler._reply(200, None, raw_bytes=self.updated_accounts_bytes + b" ")
-            if self.public_data_mode == "bad_json":
-                return handler._reply(200, None, raw_bytes=b'{"not-valid-json"\n')
-            return handler._reply(200, None, raw_bytes=self.updated_accounts_bytes)
-        shipped_file = self.shipped_references / name
-        if shipped_file.is_file():
-            return handler._reply(200, None, raw_bytes=shipped_file.read_bytes())
-        return handler._reply(404, {"error": f"no such reference {name}"})
 
     def _magpie_rows(self) -> list[dict]:
         bob_read_at = self.now_iso if self.magpie_bob_fresh else self.stale_iso
@@ -430,7 +358,6 @@ def base_cli_env(box: sc.Sandbox, ctx: dict, *, include_clis=("codex", "claude")
     env: dict = {
         "PATH": os.pathsep.join(path_parts),
         "ROUTER_SCORE_CACHE": "off",
-        "AGENTCOMPASS_PUBLIC_DATA": "off",
         "AGENTCOMPASS_ANTIGRAVITY_PLAN": "off",
         "FIXTURE_SCORER": "1",
         "FIXTURE_STATE": str(state_dir),
@@ -461,124 +388,60 @@ def parse_json(text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# F01: Stale install & Public reference data channel (shipped schema; a schema-1 reader still refuses a newer set)
+# F01: Stale install & reference data shipped with the version
 
 
-def verify_f01_public_data_and_installed_copy(ctx: dict):
+def verify_f01_shipped_reference_data(ctx: dict):
     run: sc.Run = ctx["run"]
-    fx: ForeignFixtureServer = ctx["fixture"]
-    box = make_profile(ctx, "f01-public-data")
+    box = make_profile(ctx, "f01-shipped-data")
     op = run.operation(
-        "F01 stale-install & public reference data channel",
-        "Installed wheel runs from site-packages (not checkout), fetches sha256+schema verified public reference data, rejects tampered/corrupt sets, preserves bundled set when a schema-1 reader sees the shipped schema, reports in doctor, and honours AGENTCOMPASS_PUBLIC_DATA=off",
+        "F01 stale-install & reference data shipped with the version",
+        "Installed wheel runs from site-packages (not checkout) and routes on the reference files it ships: providers, "
+        "plan and doctor make no request for reference data, and the leftovers of the removed between-release channel "
+        "are reported by doctor's upgrade checks with the delete fix and left in place",
     )
-    env = base_cli_env(box, ctx, extra={"AGENTCOMPASS_PUBLIC_DATA": "1"})
+    env = base_cli_env(box, ctx)
 
-    # 1. Verify installed copy location (not repo checkout) and default bundled status.
-    # The shipped schema is the only one this install reads (router-internals, Public reference data).
-    res_status = run_in_box(box, op, [box.agentcompass, "data"], env)
-    doc_status = parse_json(res_status.stdout)
-    op.check("agentcompass data exits 0", res_status.returncode == 0, res_status.stderr)
-    op.check(f"initial reference data source is bundled schema {SHIPPED_SCHEMA}",
-             doc_status.get("source") == "bundled" and doc_status.get("schema_version") == SHIPPED_SCHEMA,
-             doc_status)
-    active_dir = Path(doc_status.get("dir") or "")
-    op.check("active bundled dir is inside the venv's site-packages, never the repo checkout",
-             "site-packages" in active_dir.parts and ROOT not in active_dir.parents, str(active_dir))
+    # 1. The installed skill, whose references routing reads, is the venv's copy, never the repo checkout.
+    res_root = run_in_box(box, op, [box.python, "-X", "utf8", "-c",
+                                    "from agentcompass import locations; print(locations.skill_root())"], env)
+    skill_root = Path(res_root.stdout.strip())
+    op.check("the installed skill (and its references/) is inside the venv's site-packages, never the repo checkout",
+             res_root.returncode == 0 and "site-packages" in skill_root.parts and ROOT not in skill_root.parents,
+             res_root.stdout + res_root.stderr)
 
-    # 2. Refresh from GitHub main fixture (valid sha256 + the shipped schema)
-    fx.public_data_mode = "valid_update"
-    res_refresh = run_in_box(box, op, [box.agentcompass, "data", "--refresh"], env)
-    doc_refresh = parse_json(res_refresh.stdout)
-    refresh_outcome = doc_refresh.get("refresh") or {}
-    op.check("data --refresh succeeds against GitHub raw fixture",
-             res_refresh.returncode == 0 and refresh_outcome.get("status") == "updated",
-             doc_refresh)
-    op.check("active source becomes fetched after refresh",
-             doc_refresh.get("source") == "fetched" and doc_refresh.get("version") == fx.updated_version,
-             doc_refresh)
-    cached_accounts_path = box.state / "public-data" / "sets" / fx.updated_version / "accounts.json"
-    op.check("accounts.json was fetched and cached under ROUTER_STATE_DIR/public-data/sets/<version>",
-             cached_accounts_path.is_file(), str(cached_accounts_path))
-    cached_accounts = json.loads(cached_accounts_path.read_text(encoding="utf-8")) if cached_accounts_path.is_file() else {}
-    op.check("fetched accounts.json carries the updated reference content",
-             cached_accounts.get("public_channel_verified") == "0.3.6-fetched",
-             cached_accounts.get("public_channel_verified"))
+    # 2. What an earlier version's channel left in the state directory.
+    leftover_dir = box.state / "public-data"
+    leftover_config = box.state / "public-data-config.json"
+    (leftover_dir / "sets" / "0123456789ab").mkdir(parents=True, exist_ok=True)
+    (leftover_dir / "state.json").write_text(json.dumps({"version": "0123456789ab"}), encoding="utf-8")
+    leftover_config.write_text(json.dumps({"enabled": True}), encoding="utf-8")
 
-    # 3. Doctor reports Reference data: fetched ... schema <shipped> (public_data.summary_line).
-    res_doc = run_in_box(box, op, [box.agentcompass, "doctor"], env)
-    op.check(f"doctor reports Reference data: fetched <version> (..., schema {SHIPPED_SCHEMA}, ...)",
-             res_doc.returncode == 0
-             and f"Reference data: fetched {fx.updated_version}" in res_doc.stdout
-             and f"schema {SHIPPED_SCHEMA}" in res_doc.stdout,
-             res_doc.stdout)
+    # 3. Routing commands read the shipped files; no request for reference data is made or attempted.
+    box.netlog.unlink(missing_ok=True)
+    before = len(box.fixture.requests)
+    results = [run_in_box(box, op, [box.agentcompass, *argv], env)
+               for argv in (["providers"], ["plan", "--demo", "--dry-run"], ["doctor"])]
+    op.check("providers, plan --demo --dry-run and doctor exit 0", all(r.returncode == 0 for r in results),
+             [r.stderr[-300:] for r in results])
+    reference_requests = [e for e in box.net_events() if "githubusercontent" in str(e.get("target"))
+                          or "public-data" in str(e.get("target"))]
+    reference_requests += [r for r in box.fixture.requests[before:] if "githubusercontent" in r.get("host", "")]
+    op.check("no request for reference data is made or attempted at run time", not reference_requests, reference_requests)
 
-    # 4. Tampered sha256 is rejected and does not overwrite active fetched version
-    fx.public_data_mode = "bad_sha"
-    res_bad_sha = run_in_box(box, op, [box.agentcompass, "data", "--refresh", "--force"], env)
-    doc_bad_sha = parse_json(res_bad_sha.stdout)
-    op.check("tampered sha256 is rejected by data --refresh",
-             (doc_bad_sha.get("refresh") or {}).get("status") == "failed"
-             and "sha256" in str((doc_bad_sha.get("refresh") or {}).get("error") or ""),
-             doc_bad_sha)
-    op.check("previously cached valid set remains active after sha256 rejection",
-             doc_bad_sha.get("source") == "fetched" and doc_bad_sha.get("version") == fx.updated_version,
-             doc_bad_sha)
+    # 4. Doctor names each leftover with the delete fix; nothing deletes them.
+    doctor_out = results[-1].stdout
+    op.check("doctor's upgrade checks name the leftover cache and setting with the delete fix",
+             all(f'delete "{path}"' in doctor_out for path in (leftover_dir, leftover_config)), doctor_out[-1500:])
+    op.check("the leftovers stay where they were", leftover_dir.is_dir() and leftover_config.is_file())
 
-    # 5. Corrupt JSON (even when sha256 matches) is rejected and keeps previous valid set
-    fx.public_data_mode = "bad_json"
-    res_bad_json = run_in_box(box, op, [box.agentcompass, "data", "--refresh", "--force"], env)
-    doc_bad_json = parse_json(res_bad_json.stdout)
-    op.check("corrupt JSON with matching sha256 is rejected by data --refresh",
-             (doc_bad_json.get("refresh") or {}).get("status") == "failed"
-             and doc_bad_json.get("version") == fx.updated_version,
-             doc_bad_json)
-
-    # 6. A schema-1 reader fetching the published set of the shipped schema keeps its bundled set without error
-    fx.public_data_mode = "valid_update"
-    scripts_dir = box.data / "skills" / "agent-compass" / "scripts"
-    compat_dir = box.root / "v035-bundled-refs"
-    compat_dir.mkdir(parents=True, exist_ok=True)
-    for f in (box.data / "skills" / "agent-compass" / "references").iterdir():
-        if f.is_file():
-            shutil.copy2(f, compat_dir / f.name)
-    v035_manifest = json.loads((compat_dir / "public-data.json").read_text(encoding="utf-8"))
-    v035_manifest["schema_version"] = 1
-    v035_manifest["version"] = "v035bundled1"
-    (compat_dir / "public-data.json").write_text(json.dumps(v035_manifest, indent=2), encoding="utf-8")
-    v035_state = box.root / "v035-state"
-    v035_probe = (
-        "import json, os, sys; from pathlib import Path; "
-        f"sys.path.insert(0, {str(scripts_dir)!r}); "
-        "import public_data as pd; "
-        "pd.SCHEMA_VERSION = 1; pd.MIN_SCHEMA_VERSION = 1; "
-        f"bdir = Path({str(compat_dir)!r}); sdir = Path({str(v035_state)!r}); "
-        "env_v = dict(os.environ, ROUTER_STATE_DIR=str(sdir)); "
-        "outcome = pd.refresh(force=True, environ=env_v, bundled=bdir); "
-        "st = pd.status(bundled=bdir, environ=env_v); "
-        "print(json.dumps({'outcome': outcome, 'status': st}))"
-    )
-    res_v035 = run_in_box(box, op, [box.python, "-X", "utf8", "-c", v035_probe], env)
-    doc_v035 = parse_json(res_v035.stdout)
-    op.check("a 0.3.5 install fetching newer-schema public data returns schema_too_new and keeps its bundled set without error",
-             res_v035.returncode == 0
-             and (doc_v035.get("outcome") or {}).get("status") == "schema_too_new"
-             and (doc_v035.get("outcome") or {}).get("remote_schema_version") == SHIPPED_SCHEMA
-             and (doc_v035.get("status") or {}).get("source") == "bundled"
-             and (doc_v035.get("status") or {}).get("version") == "v035bundled1"
-             and (doc_v035.get("status") or {}).get("last_error") is None,
-             doc_v035)
-
-    # 7. Opt-out via AGENTCOMPASS_PUBLIC_DATA=off
-    env_off = {**env, "AGENTCOMPASS_PUBLIC_DATA": "off"}
-    res_off = run_in_box(box, op, [box.agentcompass, "data"], env_off)
-    doc_off = parse_json(res_off.stdout)
-    op.check("AGENTCOMPASS_PUBLIC_DATA=off pins source to bundled and disables fetch",
-             doc_off.get("source") == "bundled" and doc_off.get("enabled") is False, doc_off)
-    res_doc_off = run_in_box(box, op, [box.agentcompass, "doctor"], env_off)
-    op.check("doctor with AGENTCOMPASS_PUBLIC_DATA=off reports Reference data: bundled ... - channel off",
-             "Reference data: bundled" in res_doc_off.stdout and "- channel off" in res_doc_off.stdout,
-             res_doc_off.stdout)
+    # 5. `agentcompass data` without `refresh` points an install at updating; `data refresh` refuses outside a checkout.
+    res_data = run_in_box(box, op, [box.agentcompass, "data"], env)
+    res_refresh = run_in_box(box, op, [box.agentcompass, "data", "refresh", "--no-fetch"], env)
+    op.check("agentcompass data exits 2 with the usage, and data refresh refuses outside a checkout",
+             res_data.returncode == 2 and "update AgentCompass" in res_data.stderr
+             and res_refresh.returncode == 2 and "git checkout" in res_refresh.stderr,
+             res_data.stderr + res_refresh.stderr)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -2086,8 +1949,8 @@ def verify_f12_self_update_and_version_display(ctx: dict):
         "In a foreign profile with an older 0.3.7 router wheel installed alongside the newer tray: inspect_installs "
         "flags the version mismatch across PATH, CODEX_HOME/skills, and gate hooks; update_agentcompass refuses a "
         "mismatched sha256 digest and refuses git pull on a dirty checkout while upgrading the installed 0.3.7 wheel "
-        "to the locally built wheel via its owning Python interpreter, running agentcompass data --refresh against the "
-        "fixture server, and recording every step; single-flight restart mutex and restart marker work end-to-end.",
+        "to the locally built wheel via its owning Python interpreter, "
+        "and recording every step; single-flight restart mutex and restart marker work end-to-end.",
     )
     old_ver = "0.3.7"
     old_repo = box.root / "repo-0.3.7"
@@ -2117,8 +1980,7 @@ def verify_f12_self_update_and_version_display(ctx: dict):
     old_sites = (old_venv / "Lib" / "site-packages") if os.name == "nt" else next((old_venv / "lib").glob("python*/site-packages"))
     write_foreign_netguard([old_sites], ctx["fixture"].url, [ctx["fixture"].port], ctx["base"] / "net-foreign.jsonl")
 
-    ctx["fixture"].public_data_mode = "valid_update"
-    env = base_cli_env(box, ctx, include_clis=(), extra={"AGENTCOMPASS_PUBLIC_DATA": "1"})
+    env = base_cli_env(box, ctx, include_clis=())
     env["PATH"] = str(old_cli.parent) + os.pathsep + env.get("PATH", "")
     env["PIP_NO_INDEX"] = "1"
 
@@ -2274,10 +2136,9 @@ out_path.write_text(json.dumps({
         data.get("bad_digest_err"),
     )
     op.check(
-        "update_agentcompass refuses git pull on dirty checkout while upgrading the 0.3.7 wheel via pip and refreshing public data",
+        "update_agentcompass refuses git pull on dirty checkout while upgrading the 0.3.7 wheel via pip",
         "有本地改动" in str(data.get("summary"))
         and "pip" in str(data.get("summary"))
-        and "data --refresh" in str(data.get("summary"))
         and data.get("restarted_count") == 1
         and data.get("status_running") is False
         and bool(data.get("status_results")),
@@ -2296,11 +2157,10 @@ out_path.write_text(json.dumps({
         and data.get("after_routers", {}).get("path") == new_ver,
         data,
     )
-    cached_accounts_path = box.state / "public-data" / "sets" / ctx["fixture"].updated_version / "accounts.json"
     op.check(
-        "agentcompass data --refresh ran during update_agentcompass and populated public-data cache from fixture",
-        cached_accounts_path.is_file(),
-        str(cached_accounts_path),
+        "update_agentcompass fetches no reference data: the update ships it and no public-data cache appears",
+        not (box.state / "public-data").exists(),
+        str(box.state / "public-data"),
     )
     op.check("single-flight restart mutex and one-shot restart marker work", bool(data.get("mutex_ok")) and bool(data.get("marker_ok")), data)
 
@@ -2382,7 +2242,7 @@ def main(argv=None) -> int:
             }
             wanted = lambda fid: not args.only or fid in args.only
             if wanted("F01"):
-                verify_f01_public_data_and_installed_copy(ctx)
+                verify_f01_shipped_reference_data(ctx)
             if wanted("F02"):
                 verify_f02_fleet_parity(ctx)
             if wanted("F03"):

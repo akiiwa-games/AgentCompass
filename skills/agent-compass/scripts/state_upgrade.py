@@ -735,6 +735,14 @@ def collect_issues(home: Path | None = None, environ: dict | None = None) -> lis
             if issue:
                 issues.append(issue)
 
+    # Reference data ships with the version; the between-release channel that wrote these was removed.
+    for leftover, detail in (
+        (sdir / 'public-data', 'older between-release reference data cache (AgentCompass reads only the shipped references)'),
+        (sdir / 'public-data-config.json', 'older between-release reference data setting (the channel was removed)'),
+    ):
+        if leftover.exists():
+            issues.append(format_issue(leftover, detail, fix_delete(leftover)))
+
     legacy_uf_off = sdir / 'usage-float-autostart-disabled'
     if legacy_uf_off.exists():
         issues.append(format_issue(

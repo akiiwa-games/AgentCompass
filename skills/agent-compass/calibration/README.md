@@ -30,12 +30,12 @@ The router scores a model on **four capability categories** (`creativity`, `codi
 | `five_axis.py [--distrust SOURCE] [--accept-panel-change]` | Writes `references/five-axis-scores.json`: per-effort facet curves, parallel-board link offsets, category scores, `estimate_fits` (`r`, `skill`, `loo_rmse`, `n`), `usd_per_hour`, `duration_multiplier`, community plan capacities, panel `anchor.targets` (`levels` 1..3 with the level-3 `ceiling`, `continuity = t3 - t2`), `anchor.sd_panel` and `anchor.panel_change`, and surfaced data errors. Refuses a panel change unless accepted. |
 | `arena_capture.py import CAPTURE.json ...` / `show` | Imports browser-captured `arena.ai` Agent / Code and Alignment boards and preserves their manifest entries across `sources.py fetch`. |
 | `community.py` | Reads community real-usage measurements of subscription window capacity, token mix, vendor plan multipliers (each names the windows it covers), and usd-per-hour check rows; `MAINTAINER_READINGS` holds dated maintainer measurements of windows no public source measures, and `UNMEASURED` declares the windows left without any. |
-| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`; `--model ID` merges only that model's rows on the shipped scale, see To add a model): runs fetch and the release-page fetch (unless `--no-fetch`; a cache without the release pages the plan chooses reports each as missing, exit 2, so refresh once without `--no-fetch` after the leaderboard page changes), `measurements.py`, `five_axis.py`, `capability_catalog.py`, `public_data.py manifest --write`, validates `public-data` checks and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing or invalid, 3 refused with nothing written (a refused panel change or `--model`; the staleness report never exits 3). |
+| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`; `--model ID` merges only that model's rows on the shipped scale, see To add a model): runs fetch and the release-page fetch (unless `--no-fetch`; a cache without the release pages the plan chooses reports each as missing, exit 2, so refresh once without `--no-fetch` after the leaderboard page changes), `measurements.py`, `five_axis.py`, `capability_catalog.py`, validates the provenance checks (`reference_provenance.py`) and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing or invalid, 3 refused with nothing written (a refused panel change or `--model`; the staleness report never exits 3). |
 
 ## Refresh
 
 ```
-agentcompass data refresh                     # fetch, rebuild shipped data + views + manifest, validate, source-age report
+agentcompass data refresh                     # fetch, rebuild shipped data + views, validate, source-age report
 agentcompass data refresh --no-fetch          # rebuild and validate from cached downloads without fetching (the Artificial Analysis release pages must be cached too: each one missing is reported missing)
 agentcompass data refresh --no-fetch --accept-panel-change   # write a rebuild whose panel members changed (refused otherwise)
 ```
@@ -44,7 +44,7 @@ The fetching refresh runs once per release, as a step of preparing it; the data 
 
 Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`.
 
-One command runs the full chain in topological order: `sources.py fetch` plus the Artificial Analysis release pages (both skipped with `--no-fetch`, which reads the release pages already in the data directory that the fetched leaderboard page and the catalogue ask for) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> `public_data.py manifest --write` -> validation (`public-data` checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
+One command runs the full chain in topological order: `sources.py fetch` plus the Artificial Analysis release pages (both skipped with `--no-fetch`, which reads the release pages already in the data directory that the fetched leaderboard page and the catalogue ask for) -> `measurements.py` -> `five_axis.py` (`--distrust <source id>` leaves a source out) -> `capability_catalog.py` -> validation (provenance checks, `user-scores.json` maintainer schema, and generated capability views) -> source-age report. When refreshing browser-captured `arena.ai` boards, run `python -X utf8 arena_capture.py import <capture>.json ...` first, then `agentcompass data refresh --no-fetch`.
 
 ## To add a model or a score
 
@@ -79,14 +79,14 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    fetch, or a z-score whose source has no shipped scale) and notes what else it did; a model no board lists, or an entry
    it cannot merge for another reason, stops the run before anything is written (exit 3; a run that writes exits with
    the staleness status 0, 1 or 2). It then validates the catalog
-   (`public_data.validate_accounts_provenance`) and rebuilds `five-axis-scores.json`, `model-capabilities.{json,md}` and
-   the `public-data.json` manifest. Values fitted over all measured models (the tier fits, the fleet effort ratios) still
+   (`reference_provenance.validate_accounts_provenance`) and rebuilds `five-axis-scores.json` and
+   `model-capabilities.{json,md}`. Values fitted over all measured models (the tier fits, the fleet effort ratios) still
    move for other models; the run prints how many moved, by field. A model in `calibration_panel` (or the anchor) is
    refused: it changes the scale, so it needs the full refresh (`agentcompass data refresh`, or `--no-fetch` from cached
    downloads), which rebuilds every row. Commit the changed files under `references/`.
 
-A **maintainer manual score** is `agentcompass score set <model> ... --public`, which writes `references/user-scores.json`
-and the manifest; then run the refresh. A **measured score** comes from the boards on the next refresh. The calibration
+A **maintainer manual score** is `agentcompass score set <model> ... --public`, which writes `references/user-scores.json`;
+then run the refresh. A **measured score** comes from the boards on the next refresh. The calibration
 scale itself (the anchor and the panel's sentinel models) is `calibration_panel` in `accounts.json`, a dated maintainer
 declaration; changing it rescales every score. Every written value names its sources and dates.
 
