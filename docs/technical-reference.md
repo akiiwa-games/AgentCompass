@@ -51,8 +51,9 @@ is the panel's best. A value above `t3` is a level above 3, extrapolated by `t3 
 (`agentcompass score set`, the Scoring page) speak this scale. `tool_operation.responsiveness` at demand level 3 asks what level 2
 asks, the panel median: a level-3 task adds image recognition, not more responsiveness. `continuity` is `t3 - t2`. A model's category scores are panel standard scores (`z`)
 from public cited boards; a facet a model lacks is estimated from its same-series sibling (same declared size) or its
-`arena.ai` Overall tier fit, and a small row's facet that has neither from its larger model of the same version, never above
-it. Every facet then has a value at every effort (own-curve interpolation, else the panel's median effort step), and no curve
+`arena.ai` Overall tier fit, and a small row's facet that has neither from its larger model (its own gap for the same
+version, else the fleet's size step; never above it, never slower, never longer). Every facet then has a value at every
+effort (own-curve interpolation, else the panel's median effort step; `minimal` from the fleet's step below Low), and no curve
 inverts along effort: High is the anchor, ability never falls and responsiveness never rises as effort rises, Time/Task never
 shortens (rules and formulas in [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). Release
 verification checks the result against saved gateway catalogs (`audit/gateway_coverage.py`): every offered (model, effort) is
