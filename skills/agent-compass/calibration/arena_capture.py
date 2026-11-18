@@ -37,10 +37,13 @@ AGENT_COLUMNS = ('net_improvement', 'confirmed_success', 'praise_vs_complaint', 
                  'tool_hallucination')
 MONTHS = {m: i for i, m in enumerate(('january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september',
                                       'october', 'november', 'december'), 1)}
-# Lab names the run-together Alignment page glues to the model name (the Agent page prints them on their own line).
+# Lab names the run-together Alignment page glues to the model name (the Agent page prints them on their own line). The
+# page text has no separator between a model name and its lab, so the labs are the only way to find the boundary;
+# compared without case (the page writes `Nvidia` and `StepFun` where the Agent page has `NVIDIA` and `Stepfun`).
 LABS = ('Anthropic', 'OpenAI', 'Google', 'Meta', 'SpaceXAI', 'xAI', 'Tencent', 'Moonshot', 'DeepSeek', 'Xiaomi', 'Alibaba',
-        'Z.ai', 'StepFun', 'Reflection AI', 'Thinking Machines', 'Thinky', 'MiniMax', 'Mistral', 'NVIDIA', 'Amazon', 'Microsoft', 'ByteDance',
-        'Baidu', 'Cohere', 'IBM', 'Meituan', 'Ant Group', 'Kuaishou', 'Prime Intellect', 'Nous Research', 'AI21')
+        'Z.ai', 'StepFun', 'Reflection AI', 'Reflection', 'Thinking Machines', 'Thinky', 'MiniMax', 'Mistral', 'NVIDIA',
+        'Amazon', 'Microsoft', 'ByteDance', 'Baidu', 'Cohere', 'IBM', 'Meituan', 'Ant Group', 'Kuaishou', 'Prime Intellect',
+        'Nous Research', 'AI21', 'Upstage', 'XHToken')
 
 
 def page_date(text):
@@ -118,9 +121,20 @@ def signed_net_improvement(rows):
 
 
 def split_name_lab(head):
-    for lab in sorted(LABS, key=len, reverse=True):
-        if head.endswith(lab) and len(head) > len(lab):
-            return head[:-len(lab)].strip(), lab
+    """(name, lab) of a run-together `[lab]name lab` cell, else (None, None). The lab ends the cell. Some rows also carry
+    the lab's text in front of the name (the logo's text: `AnthropicClaude Opus 5.5Anthropic`, `Thinking MachinesInkling
+    2 SmallThinky`); that prefix is a lab written straight against the name, with no space or punctuation between them,
+    so `Mistral Large 4Mistral` and `NVIDIA-Nemotron-3.5 (NVFP4)Nvidia` keep their names."""
+    labs = sorted(LABS, key=len, reverse=True)
+    low = head.lower()
+    for lab in labs:
+        if low.endswith(lab.lower()) and len(head) > len(lab):
+            name = head[:-len(lab)].strip()
+            for front in labs:
+                if len(name) > len(front) and name.lower().startswith(front.lower()) and name[len(front)].isalnum():
+                    name = name[len(front):].strip()
+                    break
+            return name, head[-len(lab):]
     return None, None
 
 

@@ -773,9 +773,16 @@ class FiveAxisTests(unittest.TestCase):
         shipped = axis_scores.load_five_axis()
         fable52, fable51 = shipped['models']['claude-fable-5-2'], shipped['models']['claude-fable-5-1']
         usd = fable52['usd_per_hour']
-        self.assertEqual((usd['kind'], usd['fallback'], usd['sources']['base']['model']), ('converted', False, 'claude-fable-5-1'))
-        self.assertAlmostEqual(usd['value'], round(fable51['usd_per_hour']['value'] * usd['sources']['ratio'], 3), places=2)
-        self.assertAlmostEqual(usd['sources']['ratio'], 0.8, places=4)      # $8/$40/$0.20 against $10/$50/$0.25
+        # Rule: a model arena.ai's Agent sessions list has its own community figure; one they do not list is converted from
+        # its sibling at the price ratio; neither is ever the option-B fallback.
+        self.assertFalse(usd['fallback'])
+        self.assertIn(usd['kind'], ('community', 'converted'))
+        if usd['kind'] == 'converted':
+            self.assertEqual(usd['sources']['base']['model'], 'claude-fable-5-1')
+            self.assertAlmostEqual(usd['value'], round(fable51['usd_per_hour']['value'] * usd['sources']['ratio'], 3), places=2)
+            self.assertAlmostEqual(usd['sources']['ratio'], 0.8, places=4)      # $8/$40/$0.20 against $10/$50/$0.25
+        else:
+            self.assertEqual(usd['used'], ['arena.agent_sessions'])
         self.assertEqual(fable52['fast_mode']['status'], 'ok')
         self.assertEqual((fable52['fast_mode']['price_multiplier'], fable52['fast_mode']['speed_multiplier']), (2.0, 2.5))
         self.assertEqual((fable52['image_input']['status'], fable52['image_input']['source']), ('yes', 'maintainer.image_input'))
@@ -2093,8 +2100,10 @@ class DerivedUsdTests(unittest.TestCase):
         shipped = axis_scores.load_five_axis()
         ds = shipped['models']['deepseek-v4.1-flash-free']['usd_per_hour']
         mw = shipped['models']['muse-wonder-1.0']['usd_per_hour']
-        self.assertEqual((ds['value'], ds['kind'], ds['fallback'], ds['used']), (1.084, 'community', False, ['arena.agent_sessions']))
-        self.assertEqual((mw['value'], mw['kind'], mw['fallback'], mw['used']), (21.771, 'community', False, ['arena.agent_sessions']))
+        # Rule: both resolve to their dated listing on the Agent sessions board, and the value is that board's figure.
+        for row in (ds, mw):
+            self.assertEqual((row['kind'], row['fallback'], row['used']), ('community', False, ['arena.agent_sessions']))
+            self.assertEqual(row['value'], row['sources']['arena.agent_sessions']['value'])
         # A model listed on arena.ai Agent / Overall without Cost/Task says so instead of 'not listed'.
         nem = shipped['models']['nemotron-3.5-super-vl-free']['usd_per_hour']
         self.assertIn('without Cost/Task', nem['merge'])
@@ -2166,6 +2175,32 @@ class ArenaCaptureTests(unittest.TestCase):
         self.assertEqual([(r['name'], r['lab']) for r in page['rows']], [('GPT-6.1 Sol', 'OpenAI'), ('Claude Sonnet 5.5 High', 'Anthropic')])
         self.assertEqual(page['rows'][1]['deceptive_completion'], [9.53, 8.54, 10.61])
         self.assertEqual(page['rows'][0]['alignment_index'], [87.9, 1.5])
+
+    def test_alignment_rows_of_the_2026_11_15_page_shape_split_with_lab_prefixes_and_unlisted_case(self):
+        """Row shapes of the page as of 2026-11-15: some rows carry the lab's text in front of the name, the lab at the end
+        is written in the page's own case, and a row whose lab is unknown is an error, never a partial board."""
+        rates = '66.6±2.31.00%0.50–1.50%2.00%1.00–3.00%3.00%2.00–4.00%'
+        # (rank interval, the cell as the page runs it together, expected name, expected lab); the rank precedes the interval
+        shapes = [('921', 'AnthropicClaude Opus 5.5Anthropic', 'Claude Opus 5.5', 'Anthropic'),
+                  ('747', 'Reflection AIBeam 1.0 501B A23BReflection', 'Beam 1.0 501B A23B', 'Reflection'),
+                  ('850', 'Nemotron 3 UltraNvidia', 'Nemotron 3 Ultra', 'Nvidia'),
+                  ('249', 'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)Nvidia',
+                   'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)', 'Nvidia'),
+                  ('264', 'Thinking MachinesInkling 2 SmallThinky', 'Inkling 2 Small', 'Thinky'),
+                  ('164', 'StepfunStep 5 PreviewStepFun', 'Step 5 Preview', 'StepFun'),
+                  ('555', 'Mistral Large 4Mistral', 'Mistral Large 4', 'Mistral'),
+                  ('250', 'SynlanSpark-X2.6XHToken', 'SynlanSpark-X2.6', 'XHToken'),
+                  ('155', 'Solar Pro 4Upstage', 'Solar Pro 4', 'Upstage')]
+        head = ('Agent Arena | Alignment IndexNovember 15, 2026184,539 sessions{n} modelsRankModelAlignment Index'
+                'Unauthorized actionFalse attributionDeceptive completion')
+        text = head.format(n=len(shapes)) + ''.join(f'{rank}{interval}{cell}{rates}' for rank, (interval, cell, _, _)
+                                                    in enumerate(shapes, 1)) + 'Footer'
+        page = self.ac.parse_alignment(text)
+        self.assertEqual([(r['rank'], r['name'], r['lab']) for r in page['rows']],
+                         [(rank, name, lab) for rank, (_, _, name, lab) in enumerate(shapes, 1)])
+        with self.assertRaises(ValueError) as caught:       # a lab the parser does not know is an error, not a partial board
+            self.ac.parse_alignment(head.format(n=1) + '1' + '14' + 'Some ModelUnlistedLab' + rates)
+        self.assertIn('lab not recognised', str(caught.exception))
 
     def test_the_users_mapping_of_the_agent_boards_onto_the_axes(self):
         cap = self.ms.CAPABILITY_SOURCES
