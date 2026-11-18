@@ -615,7 +615,7 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     if not host_policy.account_allowed(policy, name):
         if row.get('billing') in ('metered', 'unknown'):
             return _tr('仅手动使用'), 'idle'
-        return _tr("本机策略禁用"), "idle"
+        return _tr("不参与自动派发"), "idle"
     status = row.get("status")
     if status == 'quota_exhausted':
         return _tr('额度已耗尽，等待刷新恢复'), 'warn'
@@ -800,7 +800,7 @@ def account_cards() -> list[dict]:
     inv_accounts = inventory.get("accounts") or {}
     acc_table = accounts.get("accounts") or {}
     # An account drawing on another's quota (fleet `quota_sources`) shows as that pool's one card;
-    # dispatch exclusions (`allowed_accounts`) mark the card as not dispatched rather than hiding its usage.
+    # accounts out of automatic routing (`allowed_accounts`) mark the card rather than hiding its usage.
     members: dict[str, list[str]] = {}
     for member, source in sources.items():
         members.setdefault(source, []).append(member)
@@ -2160,7 +2160,8 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
         enable_now = bool(bundles[bundle_id].get("_model_disabled", bundles[bundle_id].get("disabled")))
         _edit_preferences(lambda doc: doc.setdefault("accounts", {}).setdefault(account, {}).setdefault(
             "bundles", {}).setdefault(bundle_id, {}).update(disabled=not enable_now))
-        return _tr('{0} · {1} 已{2}').format(account_label(account), bundle_id, _tr('启用') if enable_now else _tr('停用'))
+        return _tr('{0} · {1}：{2}').format(account_label(account), bundle_id,
+                                            _tr('参与自动派发') if enable_now else _tr('不参与自动派发'))
     target = path or _user_accounts_path(create=True)
     modules()
     import accounts_override
@@ -2181,7 +2182,8 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
     bundles[bundle_id]["disabled"] = not enable_now
     _backup(target, "accounts-json")
     _atomic_json(target, doc)
-    return _tr('{0} · {1} 已{2}').format(f'{account_label(account)}', f'{bundle_id}', f"{(_tr('启用') if enable_now else _tr('停用'))}")
+    return _tr('{0} · {1}：{2}').format(account_label(account), bundle_id,
+                                        _tr('参与自动派发') if enable_now else _tr('不参与自动派发'))
 
 
 def toggle_account_host(account: str) -> str:

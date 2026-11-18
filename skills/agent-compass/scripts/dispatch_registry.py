@@ -194,8 +194,13 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
              or next((b for b in siblings if b.get('effort') == bundle.get('effort')), None))
     if exact:
         return dict(exact, bundle_id=exact['id'], **({'fast': True} if bundle.get('fast') else {}))
-    if not siblings or bundle.get('effort') not in contract:
-        raise ValueError('Explicit override has no known provider/account/model/effort contract; refresh discovery and the local contract')
+    if not siblings:
+        raise ValueError(f"named_model_unavailable: {bundle.get('model')} has no row on "
+                         f"{bundle.get('account')}/{bundle.get('provider')}. Tell the user; do not substitute another model.")
+    if bundle.get('effort') not in contract:
+        raise ValueError(account_fleet.unaccepted_effort(
+            account_fleet.bundle_harness(siblings[0], bundle.get('account')), bundle.get('model'), bundle.get('effort'),
+            contract | {s.get('effort') for s in siblings}))
     base = next((b for b in siblings if not b.get('disabled')), siblings[0])
     identity = {k: bundle.get(k) for k in ('provider', 'account', 'effort')}
     identity['model'] = own_model
@@ -233,16 +238,47 @@ def check_launch_quota(bundle, accounts, usage, now):
             raise ValueError(f"Account {bundle['account']} {wid} is below its existing launch protection ({floor}% remaining floor); refresh quota or replan")
 
 
-def issue(result, task, now=None, path=None, allocation_task=None):
-    """Register a decision, without committing capacity. Legacy unbound decisions cannot dispatch."""
+EARLIER_VERSION = ('decision {decision_id} was recorded by an earlier version of AgentCompass ({detail}); roll or '
+                   'record it again')
+
+
+def earlier_version(task):
+    """Why a stored task is in a shape an earlier version recorded and this one does not read, or None. A decision is
+    derived state, so it is not upgraded: a task profile this version does not validate, or fields only AgentCompass
+    sets for itself (task_intake.router_fields; v0.7.0's `record --fast` wrote `force_fast` into the stored task).
+    The one owner of that refusal: dispatch_registry.prepare raises EARLIER_VERSION, and dispatch_fallback ends a
+    relaunch on it."""
+    import task_intake
+    if not isinstance(task, dict):
+        return None
+    if task.get('profile') is not None:
+        try:
+            task_intake.validate_profile(task['profile'])
+        except ValueError:
+            return 'its task profile is not one this version reads'
+    found = task_intake.router_fields(task)
+    if found:
+        return f"its task carries {', '.join(found)}, which this version sets only on the route it plans"
+    return None
+
+
+def issue(result, task, now=None, path=None, allocation_task=None, listed_rows=None, route=None):
+    """Register a decision, without committing capacity. Legacy unbound decisions cannot dispatch. `listed_rows`
+    (provider_inventory.listed_rows) are the rows of a model the user named that the shipped data has no row for and the
+    account's provider lists: the decision keeps them, and `prepare` plans with them. `route`: the route fields a record
+    decided (task_intake.ROUTE_FIELDS: `unclassified`, `force_fast`), kept beside the task and passed to `prepare`'s
+    plan; only a user_override or explicit resume record keeps them."""
     now = now or utcnow()
     bundle = dict(result.get('selected_bundle') or {})
     if not bundle or result.get('choice') in (None, 'none', 'self'):
         return {}
     bundle.setdefault('bundle_id', result.get('choice'))
     import account_fleet
-    accounts = account_fleet.load_accounts()
     explicit = result.get('stage') == 'record' and result.get('constraint') == 'user_override' and bool(result.get('basis'))
+    listed_rows = listed_rows if explicit else None
+    named = explicit or (result.get('stage') == 'record' and result.get('constraint') == 'explicit_resume')
+    route = {k: v for k, v in (route or {}).items() if v} if named else {}
+    accounts = provider_inventory.with_listed_rows(account_fleet.load_accounts(), listed_rows)
     resolved = resolve_bundle(bundle, accounts, explicit)
     if resolved:
         bundle = {**bundle, **resolved}
@@ -253,6 +289,8 @@ def issue(result, task, now=None, path=None, allocation_task=None):
            'bound': bool(isinstance(parent, str) and parent and isinstance(task_id, str) and task_id),
            'created_at': stamp(now), 'valid_until': stamp(now + timedelta(seconds=DECISION_TTL)),
            'constraint': result.get('constraint'),
+           **({'listed_rows': listed_rows} if listed_rows else {}),
+           **({'route': route} if route else {}),
            'effort_override': bool(explicit and resolved and resolved['id'].startswith('user_override_')),
            'dispatchable': not (result.get('decision') or {}).get('needs_user_decision', False)
                            and not result.get('host_policy_violation')
@@ -1163,14 +1201,10 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         decision = get(connection, 'decisions', decision_id)
         if not decision['bound'] or decision['task_hash'] != digest(task):
             raise ValueError('Decision is unbound or belongs to another task/parent/input')
-        if isinstance(decision.get('allocation_task'), dict) and decision['allocation_task'].get('profile') is not None:
-            try:
-                task_intake.validate_profile(decision['allocation_task']['profile'])
-            except ValueError as exc:
-                # Recorded by an older version: its profile is not reinterpreted, and neither a new launch nor a resume
-                # of its prepared row proceeds under it. Other decisions of the database are not affected.
-                raise ValueError(f'decision {decision_id} was recorded by an older version with a task profile this '
-                                 'version does not read; it is not resumed. Run plan and record again for the task') from exc
+        detail = earlier_version(decision.get('allocation_task'))
+        if detail:
+            # Neither a new launch nor a resume of its prepared row proceeds under it; other decisions are not affected.
+            raise ValueError(EARLIER_VERSION.format(decision_id=decision_id, detail=detail))
         if isinstance(resume_bundle, dict):
             bundle = dict(resume_bundle)
             resolved_resume = resolve_bundle(bundle, accounts, False)
@@ -1215,6 +1249,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             check_launch_quota(bundle, accounts, usage, now)
         except ValueError as exc:
             raise CapacityChanged(str(exc)) from exc
+        if resume_bundle is None and decision.get('listed_rows'):
+            accounts = provider_inventory.with_listed_rows(accounts, decision['listed_rows'])
         if resume_bundle is None and decision.get('effort_override'):
             resolved = resolve_bundle(bundle, accounts, decision.get('constraint') == 'user_override')
             if resolved is None or any(resolved.get(k) != bundle.get(k)
@@ -1239,23 +1275,38 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             cw = alloc_task['chain'].get('worker')
             if not resume_agent_id or (isinstance(cw, dict) and cw.get('read_only_review') is False):
                 alloc_task.pop('chain', None)
-        if bundle.get('fast') and (decision.get('constraint') == 'user_override' or resume_bundle is not None):
-            alloc_task['force_fast'] = True
+        # The route fields come from this decision only (task_intake.ROUTE_FIELDS): its record's own (`unclassified`),
+        # and what its constraint makes of the bundle it names. A caller's task never carries them.
+        named = decision.get('constraint') == 'user_override' or resume_bundle is not None
+        route = dict(decision.get('route') or {}) if named else {}
+        if bundle.get('fast') and named:
+            route['force_fast'] = True
         elif not bundle.get('fast'):
             alloc_task['disable_fast'] = True
+        if named:
+            route['user_named_bundle'] = bundle['bundle_id']
         if decision.get('constraint') == 'user_override' and resume_bundle is None:
-            alloc_task['pinned_bundle'] = bundle['bundle_id']
-        plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts)
-        candidate = candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))
+            route['pinned_bundle'] = bundle['bundle_id']
+        plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts,
+                              named_accounts={bundle['account']} if named else (), route=route)
+        # A fast route with no fast variant in the ranking is answered by its plain row: its exclusions (the fast-mode
+        # refusal among them) say why, not "no longer matches".
+        candidate = (candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))
+                     or (bundle.get('fast') and candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id']))
+                     or None)
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):
             raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
-        if decision.get('constraint') == 'user_override' or resume_bundle is not None:
+        if named:
+            import candidate_eval
             import provider_retry
             # A named model on a held account or model is the probe that can lift the hold (provider_retry);
             # an explicit --resume continues the worker's own bundle regardless of ability/model-latch exclusions.
-            exclusions = [e for e in exclusions if not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint',
-                                                                     provider_retry.EXCLUSION_PREFIX))]
+            # Neither is the router's choice, so an account out of automatic routing does not stop them, and an
+            # explicit resume continues a worker whose model was unchecked after its launch.
+            lifted = {candidate_eval.OUT_OF_AUTOMATIC_ROUTING, candidate_eval.UNCHECKED}
+            exclusions = [e for e in exclusions if e not in lifted and not e.startswith((
+                'ability ', 'explicit model constraint', 'explicit effort constraint', provider_retry.EXCLUSION_PREFIX))]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
         if exclusions or (resume_bundle is None and candidate.get('available_in_hours')):
@@ -1302,8 +1353,24 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         return row
 
 
+def dispatch_constraint(dispatch_id, path=None):
+    """The constraint of the decision a dispatch launches (`user_override`, `explicit_resume`, ...), else None. The spawn
+    gate reads it to admit a bound launch on an unchecked model only when the user named that route."""
+    try:
+        return decision_record(inspect(dispatch_id, path)['decision_id'], path).get('constraint')
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def named_resume(row, path=None):
+    """The dispatch continues a worker the caller named (`roll --resume`, decision constraint `explicit_resume`): it
+    never becomes a create, and a failure of it is never relaunched on another worker."""
+    return (decision_record(row['decision_id'], path) or {}).get('constraint') == 'explicit_resume'
+
+
 def fallback_to_create(dispatch_id, now=None, path=None):
-    """Switch a claimed resume dispatch to a fresh create when the previous worker cannot be resumed."""
+    """Switch a claimed resume dispatch to a fresh create when the previous worker cannot be resumed (an automatic
+    resume only: `named_resume` dispatches are released instead)."""
     now = now or utcnow()
     with transaction(path) as connection:
         row = get(connection, 'dispatches', dispatch_id)

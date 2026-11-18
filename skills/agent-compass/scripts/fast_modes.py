@@ -31,14 +31,28 @@ def supported(harness, model, model_info):
             and str(model_info.get('api_family') or '').strip().lower() == harness)
 
 
+def refusal(harness, model, model_info):
+    """Why `model` has no fast mode `harness` can launch (the one wording every stage uses), else None. A missing price
+    or speed datum is not a refusal: that is the economy's data error (candidate_eval)."""
+    if supported(harness, model, model_info):
+        return None
+    return f'{model} has no verified fast mode on {harness}; run it without --fast'
+
+
+def price_gap(model, model_info):
+    """The data error of a fast mode whose price or speed has no cited public source (the model's effective, overlaid
+    catalog row), else None. Not a refusal: a named fast route launches with it (candidate_eval)."""
+    fast_info = ((_row(model, model_info).get('five_axis') or {}).get('fast_mode')) or {}
+    if fast_info.get('status') == 'ok':
+        return None
+    return (f"fast_mode has no cited public pricing/speed for {model} "
+            f"({fast_info.get('reason') or fast_info.get('status') or 'missing'})")
+
+
 def validate(harness, model, model_info):
-    model_info = _row(model, model_info)
-    if harness not in HARNESSES:
-        raise ValueError(f'Provider {harness!r} does not support fast mode.')
-    if model_info.get('fast_capable') is not True:
-        raise ValueError(f'Model {model!r} does not declare fast_capable=true in effective policy; use normal mode.')
-    if not supported(harness, model, model_info):
-        raise ValueError(f'Model {model!r} does not support fast mode on {harness}.')
+    reason = refusal(harness, model, model_info)
+    if reason:
+        raise ValueError(reason)
 
 
 def claude_billing(account):

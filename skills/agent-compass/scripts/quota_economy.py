@@ -528,8 +528,11 @@ def five_axis_make_fast(c, fast_cand, reason):
     c['duration_hours'] = round(fast_cand['hours'], 4)
     c['expected_usd'] = round(fast_cand['step_usd'], 2)
     c['chain_usd'] = round(fast_cand['chain_usd'], 2)
-    c['notes'].append(f"fast mode ({fast_cand['price_multiplier']:g}x burn, up to {fast_cand['speed_multiplier']:g}x "
-                      f"output speed: the vendor's upper bound, applied to the whole duration)")
+    if fast_cand.get('unpriced'):
+        c['notes'].append("fast mode (its burn and speed are not published: reserved at the plain mode's spend and duration)")
+    else:
+        c['notes'].append(f"fast mode ({fast_cand['price_multiplier']:g}x burn, up to {fast_cand['speed_multiplier']:g}x "
+                          f"output speed: the vendor's upper bound, applied to the whole duration)")
 
 
 def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=None):
@@ -629,7 +632,9 @@ def apply_five_axis_economy(candidates, eligible, task, accounts, policy, pool=N
         econ_h = 0.0 if cad_instant else float(c.get('_five_econ_hours') or base_hours)
         step_usd = float(w_spend_override) if w_spend_override is not None else float(c.get('expected_usd') or 0.0)
         chain_usd = float(w_spend_override) if w_spend_override is not None else float(c.get('chain_usd') or step_usd)
-        fast_cand = c.get('_five_fast_candidate') if w_states else None
+        fast_cand = c.get('_five_fast_candidate')
+        # A forced fast route (a named one: task_intake.ROUTE_FIELDS) is that route whether or not a quota window prices
+        # it (candidate_eval builds a fast candidate without a window only for such a route, never a twin).
         if fast_cand and task.get('force_fast'):
             five_axis_make_fast(c, fast_cand, 'user_override')
             if task.get('worker') and not worker_sessions.worker_worn(task['worker'], policy):

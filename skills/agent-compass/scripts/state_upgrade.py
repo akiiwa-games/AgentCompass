@@ -240,8 +240,8 @@ def check_accounts_override(path: Path) -> str | None:
 def host_policy_fix(path: Path | str) -> str:
     return ('edit the file to a JSON object with "allowed_accounts" (a list of account names) and, if wanted, '
             '"known_accounts", "usage_providers" (lists of names) and "judges" (codex or sonnet), or '
-            + fix_delete(path, 'this discards which accounts this machine may use: every account is allowed again '
-                               'until you set them in the tray'))
+            + fix_delete(path, 'this discards which accounts take part in automatic routing on this machine; every '
+                               'account does again until you set them in the tray'))
 
 
 def validate_host_policy_doc(doc, path: Path | str) -> dict:

@@ -115,7 +115,7 @@ class FamilyRowTests(RecordCase):
     def test_a_family_level_with_no_row_and_no_table_entry_is_blocked_on_record(self):
         fleet = self.only('claude', own={'model': FAMILY, 'effort': 'high', 'provider': 'claude'},
                           top={'model': FLAGSHIP, 'effort': 'medium', 'provider': 'claude'})
-        with self.assertRaisesRegex(ValueError, 'named_model_unavailable'):
+        with self.assertRaisesRegex(ValueError, f'^medium is not an effort claude/{FAMILY} accepts [(]high[)]$'):
             self.record(accounts=fleet, model=FAMILY, effort='medium')
 
     def test_naming_the_flagship_never_takes_a_family_row(self):
@@ -180,21 +180,30 @@ class RecordPathTests(RecordCase):
         _, row = self.launched(model='gpt-6-astra-medium', account='codex', provider='codex')
         self.assertEqual((row['request']['provider'], row['bundle']['effort']), ('codex/gpt-6-astra', 'medium'))
 
-    def test_every_level_unchecked_refuses_a_level_with_no_row(self):
+    def test_every_level_unchecked_takes_the_users_naming_and_refuses_a_project_rule(self):
+        # Rule (router-internals.md, Pins): every level unchecked is the model out of automatic routing, also at a level
+        # with no row of its own. The user's naming launches it with a warning; a project rule does not override it.
         fleet = copy.deepcopy(self.accounts)
         for row in fleet['accounts']['claude']['bundles'].values():
             if row.get('model') == FLAGSHIP:
                 row['disabled'] = True
         for effort in ('high', 'low', None):
-            with self.subTest(effort=effort), self.assertRaisesRegex(ValueError, 'is disabled'):
-                self.record(accounts=fleet, effort=effort)
+            with self.subTest(effort=effort):
+                warned = self.record(accounts=fleet, effort=effort).get('warnings') or []
+                self.assertTrue(any('unchecked in model management' in w for w in warned), warned)
+                with self.assertRaisesRegex(ValueError, 'unchecked in model management'):
+                    self.record(accounts=fleet, effort=effort, constraint='hard_constraint')
 
     def test_one_level_unchecked_leaves_the_others(self):
         fleet = copy.deepcopy(self.accounts)
         fleet['accounts']['claude']['bundles']['opus55_medium']['disabled'] = True
-        self.assertEqual(self.record(accounts=fleet, effort='low')['selected_bundle']['effort'], 'low')
-        with self.assertRaisesRegex(ValueError, 'is disabled'):
-            self.record(accounts=fleet, effort='medium')
+        low = self.record(accounts=fleet, effort='low')
+        self.assertEqual(low['selected_bundle']['effort'], 'low')
+        self.assertFalse(any('unchecked in model management' in w for w in low.get('warnings') or []))
+        medium = self.record(accounts=fleet, effort='medium')
+        self.assertTrue(any('unchecked in model management' in w for w in medium.get('warnings') or []), medium.get('warnings'))
+        with self.assertRaisesRegex(ValueError, 'unchecked in model management'):
+            self.record(accounts=fleet, effort='medium', constraint='hard_constraint')
 
     def test_off_by_default_rows_stay_reachable_at_any_level(self):
         fleet = copy.deepcopy(self.accounts)
@@ -337,16 +346,19 @@ class PinIdentityTests(RecordCase):
                 _, row = self.launched(fleet, model=FAMILY_9, effort='high')
                 self.assertEqual((row['bundle']['model'], row['bundle']['effort']), (FAMILY_9, 'high'))
 
-    def test_a_level_unchecked_on_the_model_itself_is_still_refused(self):
+    def test_a_level_unchecked_on_the_model_itself_is_out_of_automatic_routing_only(self):
+        # A plan never picks the unchecked level; the user's naming reaches it with a warning, a project rule does not.
         fleet = self.only('claude', a=self.claude(FLAGSHIP, efforts=['low', 'high']), b=self.claude(FLAGSHIP, effort='high', disabled=True))
         self.assertEqual(self.plan(self.task(PROFILE, constraints={'model': f'{FLAGSHIP}:high'}), fleet)['choice'], 'none')
-        with self.assertRaisesRegex(ValueError, 'is disabled'):
-            self.record(accounts=fleet, model=FLAGSHIP, effort='high')
+        named = self.record(accounts=fleet, model=FLAGSHIP, effort='high')
+        self.assertTrue(any('unchecked in model management' in w for w in named.get('warnings') or []), named.get('warnings'))
+        with self.assertRaisesRegex(ValueError, 'unchecked in model management'):
+            self.record(accounts=fleet, model=FLAGSHIP, effort='high', constraint='hard_constraint')
 
     def test_a_family_row_offers_only_the_levels_it_lists(self):
         fleet = self.only('claude', a=self.claude(FAMILY_9, efforts=['low', 'high']))
         self.assertEqual(self.plan(self.task(PROFILE, constraints={'model': f'{FAMILY_9}:medium'}), fleet)['choice'], 'none')
-        with self.assertRaisesRegex(ValueError, 'named_model_unavailable'):
+        with self.assertRaisesRegex(ValueError, f'^medium is not an effort claude/{FAMILY_9} accepts [(]low, high[)]$'):
             self.record(accounts=fleet, model=FAMILY_9, effort='medium')
 
 

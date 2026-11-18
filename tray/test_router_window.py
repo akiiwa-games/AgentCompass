@@ -625,7 +625,7 @@ class SettingsTests(unittest.TestCase):
     def test_toggle_bundle_writes_to_override(self):
         override = self.dir / "accounts-override.json"
         b_msg = router_data.toggle_bundle("claude", "opus55_xhigh")
-        self.assertIn("已停用", b_msg)
+        self.assertIn("不参与自动派发", b_msg)
         doc2 = json.loads(override.read_text(encoding="utf-8"))
         self.assertTrue(doc2["accounts"]["claude"]["bundles"]["opus55_xhigh"].get("disabled"))
         fake_alloc = mock.Mock()
@@ -642,7 +642,7 @@ class SettingsTests(unittest.TestCase):
                 mock.patch.object(account_fleet, "load_accounts", fake_alloc.load_accounts):
             dyn_msg = router_data.toggle_bundle("claude-magpie", "claude-magpie__sonnet55_high")
             self.assertIn("Claude Magpie", dyn_msg)
-            self.assertIn("已停用", dyn_msg)
+            self.assertIn("不参与自动派发", dyn_msg)
         doc3 = json.loads(override.read_text(encoding="utf-8"))
         self.assertTrue(doc3["accounts"]["claude-magpie"]["bundles"]["claude-magpie__sonnet55_high"].get("disabled"))
 
@@ -788,7 +788,7 @@ class LanguageTests(unittest.TestCase):
         self.assertIn("省额度", router_data.STRATEGY_PRESETS)
         self.assertEqual(router_data.countdown(3600), "1h 00m")
         self.assertEqual(panel_widgets.short_badge("Paused: disabled"), "Paused")
-        self.assertEqual(panel_widgets.short_badge("Blocked by Host"), "Blocked by Host")
+        self.assertEqual(panel_widgets.short_badge("Out of auto routing"), "Out of auto routing")
         self.assertEqual(easytier.label({"state": easytier.RUNNING, "peers": [{"cost": "p2p"}, {"cost": "p2p"}]}),
                          "Running (2 peers)")
         self.assertEqual(network_status.peer_values({"cost": "Local"})[2], "Local")
@@ -1760,7 +1760,7 @@ class RotationThresholdEndToEndTests(unittest.TestCase):
 
                 with mock.patch.object(worker_sessions, "session_state", return_value=under_state):
                     self.assertIsNone(
-                        gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, caller_id="parent-e2e")
+                        gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, identities={"parent-e2e"})
                     )
                     plan_under = allocator.plan(
                         dict(task_template, chain={"id": "c-e2e", "coupling": "high", "total_hours": 3,
@@ -1774,7 +1774,7 @@ class RotationThresholdEndToEndTests(unittest.TestCase):
                     self.assertEqual(tray_workers[0]["limit"], 750_000)
 
                 with mock.patch.object(worker_sessions, "session_state", return_value=over_state):
-                    reason = gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, caller_id="parent-e2e")
+                    reason = gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, identities={"parent-e2e"})
                     self.assertIsNotNone(reason)
                     self.assertIn("historical_context_tokens=800,000/750,000", reason)
                     self.assertIn("rotate_after_carried_tokens=750,000", reason)

@@ -2,14 +2,20 @@
 
 Two readers, two contracts:
 
-- The spawn gate (`setup/router_gate_hook.py`) enforces on a new turn to an existing worker: a disabled account or
-  bundle (`host_policy.disabled_cause`), the confirmed-exhaustion latch (`latched`) and a quota window the bundle draws
-  that refuses a launch (`window_refusal`), with the worker's own reservation left out (`without_own`).
+- The spawn gate (`setup/router_gate_hook.py`) enforces on a parent's new turn to its own worker, and only there:
+  leftover meter text on the account (`host_policy.legacy_cause`), the confirmed-exhaustion latch (`latched`) and a
+  quota window the bundle draws that refuses a launch (`window_refusal`), with the worker's own reservation left out
+  (`without_own`). A message to an agent the caller does not own is communication, not dispatch, and is not checked.
 - The continuation verdict (`worker_sessions.continuation_verdict`, via `worker_refusal`) says `roll` for those same
   conditions and adds advice the gate does not enforce: the worker's last turn ended in a provider failure, the account
   is not ready (`provider_inventory.unavailable_reason`), a provider hold on its account, quota pool or model
   (`provider_retry`), or a model latch (`model_latch`). A parent that sends the follow-up anyway is admitted by the gate
   whenever the enforced conditions pass.
+
+The two preference switches are neither: an account outside host policy's `allowed_accounts` is out of automatic
+routing (`host_policy.account_allowed`), and a model unchecked in model management is out of routing, but continuing a
+worker that already exists is not the router choosing that account or model. Only `roll`'s automatic resume of an idle
+worker, which is the router's choice, reads them (`roll._auto_resumable`).
 
 The verdict's own reads are read-only and bounded: the registry on a read-only connection with a short wait, the exhaustion
 latch without clearing it, and the failed turn from the watcher's receipt, so it does not depend on the hold or the
@@ -103,13 +109,10 @@ def own_failure(row):
     return message if isinstance(message, str) and message else True
 
 
-def _disabled_refusal(account, bundle, accounts):
-    candidates = [r for r in account_fleet.bundle_rows(accounts, bundle.get('bundle_id') or bundle.get('id'))
-                  if r['account'] == account]
-    off = host_policy.disabled_cause(account, candidates, accounts, host_policy.load_policy())
-    if off:
-        return (host_policy.disabled_text(account, off, 'en')
-                + "; re-enabling is the user's choice in AgentCompass settings, so roll the follow-up instead")
+def _legacy_refusal(account, accounts):
+    found = host_policy.legacy_cause(account, accounts)
+    if found:
+        return found[1] + '; `agentcompass setup` clears the leftover meter fields, so roll the follow-up instead'
     return None
 
 
@@ -128,8 +131,8 @@ def _quota_gate_refusal(agent_id, account, bundle, dispatch_id, stored, accounts
 def gate_refusal(agent_id, now=None, home=None, usage_cache_path=None, *, bundle=None, dispatch_id=None, accounts=None):
     """Why the spawn gate refuses a new turn to this worker now, else None.
 
-    Checks only the three gate-enforced conditions: disabled account/bundle, confirmed quota exhaustion latch,
-    and refusing quota window (excluding the worker's own reservation).
+    Checks only the three gate-enforced conditions: leftover meter text on the account, confirmed quota exhaustion
+    latch, and refusing quota window (excluding the worker's own reservation).
     """
     now = now or datetime.now(timezone.utc)
     home = Path(home) if home else Path.home()
@@ -144,7 +147,7 @@ def gate_refusal(agent_id, now=None, home=None, usage_cache_path=None, *, bundle
         raise ValueError('worker_not_resolvable')
     account = bundle['account']
     accounts = accounts if accounts is not None else account_fleet.load_accounts()
-    return (_disabled_refusal(account, bundle, accounts)
+    return (_legacy_refusal(account, accounts)
             or _quota_gate_refusal(agent_id, account, bundle, dispatch_id, stored, accounts, now, home, usage_cache_path))
 
 
@@ -168,9 +171,9 @@ def worker_refusal(agent_id, now=None, home=None):
         return ('its last turn ended in a provider failure' + (f' ({failure})' if failure is not True else '')
                 + '; whether the provider holds the account is classified separately')
     accounts = account_fleet.load_accounts()
-    disabled = _disabled_refusal(account, bundle, accounts)
-    if disabled:
-        return disabled
+    legacy = _legacy_refusal(account, accounts)
+    if legacy:
+        return legacy
     unavailable = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, account, bundle.get('provider'))
     if unavailable:
         return f'account {account} is not ready ({unavailable})'

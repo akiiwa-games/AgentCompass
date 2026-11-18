@@ -48,7 +48,7 @@ def candidate_for_bundle(rows, bundle_id, fast=False):
 
 
 def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overrides=(), records=(),
-         host_policy_config=None, *, read_local_state=True):
+         host_policy_config=None, *, read_local_state=True, named_accounts=()):
     state_policy = (host_policy.load_policy() if read_local_state else {'allowed_accounts': list((accounts.get('accounts') or {}).keys())}) if host_policy_config is None else host_policy_config
     ctx = {'policy': policy, 'accounts': accounts, 'capabilities': capabilities, 'usage': usage, 'now': now,
            'unavailable': set(unavailable), 'bundles': account_fleet.bundles(accounts),
@@ -57,9 +57,12 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
            'launch_failures': launch_failures.active() if (read_local_state and launch_failures.enabled()) else {},
            'model_latches': model_latch.active(now=now) if read_local_state else {},
            'provider_retries': provider_retry.active(now=now) if read_local_state else {},
+           # A fact is read for every account a route may take: those in automatic routing and the ones a named
+           # route or an explicit resume names, whose live list is otherwise never fetched.
            'live_models': live_models.load_or_refresh(
                accounts=accounts,
-               allowed=lambda name: host_policy.account_allowed(state_policy, name),
+               allowed=lambda name: host_policy.account_allowed(state_policy, name) or name in named_accounts,
+               named=named_accounts,
                now=now,
            ) if read_local_state else {'accounts': {}}}
     pool_bundles = dict(ctx['bundles'])         # the catalog, before a task-named effort adds bundles to it
@@ -96,7 +99,7 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     eligible = [c for c in candidates if not c['excluded']]
     pool_task = {**task, 'local_only': False, 'outbound_ok': None, 'file_transfer': False,
                  'needs_visual': False, 'needs_gui': False, 'wants_fast': False,
-                 'read_only_review': False, 'constraint_model': None, 'constraint_effort': None, 'pinned_bundle': None,
+                 'read_only_review': False, 'constraint_model': None, 'constraint_effort': None, 'pinned_bundle': None, 'user_named_bundle': None,
                  'metered_ok': True, 'metered_fallback': False, 'disable_fast': False, 'force_fast': False,
                  '_economy_pool': True}
     pool = [c for c in (candidate_eval.evaluate_bundle(b, pool_task, ctx) for b in pool_bundles.values()) if not c['excluded']]

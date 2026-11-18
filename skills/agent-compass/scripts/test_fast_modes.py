@@ -40,7 +40,7 @@ class FastModesTests(unittest.TestCase):
                     else:
                         info['fast_capable'] = policy
                     for forced in (False, True):
-                        ranking = allocator.plan(dict(task, force_fast=forced), usage, now, accounts=accounts)['ranking']
+                        ranking = allocator.plan(task, usage, now, accounts=accounts, route={'force_fast': forced})['ranking']
                         plain = candidate_ranking.candidate_for_bundle(ranking, bid, False)
                         self.assertFalse(plain['bundle'].get('fast') if plain else False)
                         if forced:
@@ -55,13 +55,13 @@ class FastModesTests(unittest.TestCase):
                     with patch.object(account_fleet, 'load_accounts', return_value=accounts), \
                             patch.object(usage_reading, 'usage_snapshot', return_value=usage):
                         if policy is not True:
-                            with self.assertRaisesRegex(ValueError, 'fast_capable'):
+                            with self.assertRaisesRegex(ValueError, 'has no verified fast mode on .*; run it without --fast'):
                                 route_judge.record_constraint(args)
-                            with self.assertRaisesRegex(ValueError, 'fast_capable'):
+                            with self.assertRaisesRegex(ValueError, 'has no verified fast mode on .*; run it without --fast'):
                                 registry.resolve_bundle(bundle, accounts)
                             with patch.object(roll, 'provider_definition', return_value=(provider, {})), \
                                     patch.object(roll.subprocess, 'Popen') as spawn:
-                                with self.assertRaisesRegex(ValueError, 'fast_capable'):
+                                with self.assertRaisesRegex(ValueError, 'has no verified fast mode on .*; run it without --fast'):
                                     roll.cli(SimpleNamespace(wait=0), {}, bundle, 'fixture')
                                 spawn.assert_not_called()
                         else:
@@ -131,7 +131,8 @@ class FastModesTests(unittest.TestCase):
                     needs={'local_only': True, 'fast': True})
         shipped = axis_scores.load_five_axis()['models']['claude-opus-5-5']['fast_mode']
         def rows(t, load=accounts):
-            return allocator.plan(t, usage, now, accounts=load)['ranking']
+            route = {k: t.pop(k) for k in ('force_fast',) if k in t}      # a route field, never a task field
+            return allocator.plan(t, usage, now, accounts=load, route=route)['ranking']
         plain = candidate_ranking.candidate_for_bundle(rows(task), 'opus55_high', False)
         self.assertFalse(plain['bundle'].get('fast'))
         paid = candidate_ranking.candidate_for_bundle(rows(dict(task, force_fast=True)), 'opus55_high', True)

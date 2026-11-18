@@ -121,19 +121,25 @@ class ContinuationVerdictTests(VerdictTestCase):
         self.fleet['_discovery']['accounts']['acme'] = {'status': 'auth_failed', 'reason': 'credentials_rejected'}
         self.assertRoll(self.verdict(), 'not ready', 'credentials_rejected')
 
-    def test_a_disabled_account_or_unchecked_bundle_rolls_and_leaves_re_enabling_to_the_user(self):
-        for name, change in (
-                ('host_policy', lambda: setattr(self, 'policy', {'allowed_accounts': ['other']})),
-                ('unchecked', lambda: self.fleet['accounts']['acme']['bundles']['quartz_high'].update(disabled=True)),
-                ('legacy', lambda: self.fleet['accounts']['acme'].update(legacy_meter='retired meter'))):
+    def test_preference_switches_do_not_refuse_a_turn_and_leftover_meter_fields_do(self):
+        # Continuing a worker is not choosing its account or model: an account out of automatic routing and a model
+        # unchecked since the launch neither roll the verdict nor refuse the gate's turn; leftover meter fields are a
+        # fact and do both, so the verdict and the gate agree (turn_refusal.py docstring).
+        for name, change, refused in (
+                ('out of automatic routing', lambda: setattr(self, 'policy', {'allowed_accounts': ['other']}), False),
+                ('unchecked', lambda: [b.update(disabled=True) for b in self.fleet['accounts']['acme']['bundles'].values()],
+                 False),
+                ('legacy', lambda: self.fleet['accounts']['acme'].update(legacy_meter='retired meter'), True)):
             with self.subTest(name=name):
                 self.setUp()
                 change()
-                self.assertRoll(self.verdict(), 'roll the follow-up', "user's choice", 'AgentCompass settings')
-
-    def test_one_unchecked_bundle_does_not_switch_off_its_siblings(self):
-        self.fleet['accounts']['acme']['bundles']['onyx_high']['disabled'] = True
-        self.assertSame(self.verdict())
+                gate = turn_refusal.gate_refusal('worker', now=NOW)
+                if refused:
+                    self.assertRoll(self.verdict(), 'retired meter', 'agentcompass setup', 'roll the follow-up')
+                    self.assertIn('retired meter', gate)
+                else:
+                    self.assertSame(self.verdict())
+                    self.assertIsNone(gate)
 
     def test_over_the_threshold_stays_a_rotate_verdict_whatever_the_account_state(self):
         for state in ('ready', 'exhausted', 'held', 'not_ready'):
