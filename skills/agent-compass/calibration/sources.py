@@ -9,7 +9,7 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
   the page's embedded model records (cost and time per task, time to first answer token, prices, sub-benchmarks).
   The page embeds records only for releases Artificial Analysis does not mark deprecated; a deprecated release is named
   without records. Its own page (`https://artificialanalysis.ai/models/<slug>`, one per release a catalogue model is
-  listed under, chosen by `measurements.aa_release_pages`, fetched by `fetch_releases`) embeds the same figures in
+  listed under, chosen by `measurements.aa_release_plan`, fetched by `fetch_releases`) embeds the same figures in
   another shape, which `aa_release_records` reads into the leaderboard's record shape.
 - Design Arena leaderboards (designarena.ai; blind human votes, Bradley-Terry ratings): Website, 3D Design and SVG.
   The page embeds each board's rows (`modelId`, wins, losses, battles, rating) and the model list (id, display name).
@@ -110,18 +110,15 @@ def fetch(target, only=None):
 
 
 def fetch_releases(target, pages):
-    """Download the Artificial Analysis release pages `pages` ({file name: url}, from `measurements.aa_release_pages`)
-    beside the other sources, keeping every other manifest row. A release page the manifest or the directory holds
-    that is not in `pages` is removed: the pages read are exactly the ones just fetched."""
+    """Download the Artificial Analysis release pages `pages` ({file name: url}, from `measurements.aa_release_files`)
+    beside the other sources, keeping every other manifest row. A release page the manifest records that is not in
+    `pages` is removed, file and row: a file the manifest does not record as a release page is never touched."""
     files = dict(manifest(target))
-    stale = {n for n in {p.name for p in target.glob(AA_RELEASE_FILE.format('*'))} | set(files)
-             if AA_RELEASE_NAME.fullmatch(n) and n not in pages}
-    for name in stale:
+    for name in [n for n in files if AA_RELEASE_NAME.fullmatch(n) and n not in pages]:
         (target / name).unlink(missing_ok=True)
-        files.pop(name, None)
+        del files[name]
     _download([(url, target / name) for name, url in pages.items()], files)
     (target / MANIFEST).write_text(json.dumps({'files': files}, indent=1), encoding='utf-8')
-
 
 
 def manifest(target):
@@ -234,48 +231,80 @@ def aa_releases(target):
     return out
 
 
+AA_FIGURES = ('intelligenceIndex', 'intelligenceIndexCostPerTask', 'intelligenceIndexTimePerTask', 'outputSpeed',
+              'timeToFirstAnswerToken', 'price1mInputTokens', 'price1mOutputTokens', 'cacheHitPrice')    # a record's figures
+
+
 def _aa_number(value):
     return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _aa_figure(value, where):
+    """A figure a release page serves: a number, or null (absent) for one AA has not measured, which is how the page
+    writes it for a record without an index. Any other value is a shape the reader does not know."""
+    if value is not None and _aa_number(value) is None:
+        raise ValueError(f'{where} is {type(value).__name__}, not a number or null')
+    return value
+
+
+def _aa_object(value, where):
+    """A nested object a release page serves, or {} when it is null (absent); any other value is an unknown shape."""
+    if value is not None and not isinstance(value, dict):
+        raise ValueError(f'{where} is {type(value).__name__}, not an object or null')
+    return value or {}
+
+
+def aa_has_figure(rec):
+    """Whether a record carries any figure the pipeline reads (the index, a time, a speed, a price, a sub-benchmark)."""
+    return any(_aa_number(rec.get(f)) is not None for f in AA_FIGURES) or bool(rec.get('scores'))
 
 
 def aa_release_record(obj, page):
     """One record of a release page as a leaderboard record. The page holds the same figures under other fields: the
     sub-benchmarks flat (`AA_RELEASE_SCORE_FIELD`), the cost per task as `{cost: {total}}`, output speed and time to
-    first answer token under `headline`. `page` is the file the record was read from."""
-    head, cost = obj.get('headline'), obj.get('intelligenceIndexCostPerTask')
-    head = head if isinstance(head, dict) else {}
-    cost = (cost.get('cost') or {}).get('total') if isinstance(cost, dict) else cost
-    return {'name': obj['name'], 'page': page, 'intelligenceIndex': obj.get('intelligenceIndex'),
-            'intelligenceIndexCostPerTask': cost, 'intelligenceIndexTimePerTask': obj.get('intelligenceIndexTimePerTask'),
-            'outputSpeed': head.get('outputSpeed'), 'timeToFirstAnswerToken': head.get('timeToFirstAnswerToken'),
-            'price1mInputTokens': obj.get('price1mInputTokens'), 'price1mOutputTokens': obj.get('price1mOutputTokens'),
-            'cacheHitPrice': obj.get('cacheHitPrice'),
-            'scores': {sid: v for sid, field in AA_RELEASE_SCORE_FIELD.items() if (v := _aa_number(obj.get(field))) is not None}}
+    first answer token under `headline`. `page` is the file the record was read from. A value of a shape other than
+    the one named here raises ValueError, naming the page, the record and the field."""
+    where = f"{page}: record {obj['name']!r}"
+    head = _aa_object(obj.get('headline'), f'{where}: headline')
+    cost = _aa_object(_aa_object(obj.get('intelligenceIndexCostPerTask'), f'{where}: intelligenceIndexCostPerTask')
+                      .get('cost'), f'{where}: intelligenceIndexCostPerTask.cost')
+
+    def figure(source, field, path=None):
+        return _aa_figure(source.get(field), f'{where}: {path or field}')
+
+    return {'name': obj['name'], 'page': page, 'intelligenceIndex': figure(obj, 'intelligenceIndex'),
+            'intelligenceIndexCostPerTask': figure(cost, 'total', 'intelligenceIndexCostPerTask.cost.total'),
+            'intelligenceIndexTimePerTask': figure(obj, 'intelligenceIndexTimePerTask'),
+            'outputSpeed': figure(head, 'outputSpeed', 'headline.outputSpeed'),
+            'timeToFirstAnswerToken': figure(head, 'timeToFirstAnswerToken', 'headline.timeToFirstAnswerToken'),
+            'price1mInputTokens': figure(obj, 'price1mInputTokens'), 'price1mOutputTokens': figure(obj, 'price1mOutputTokens'),
+            'cacheHitPrice': figure(obj, 'cacheHitPrice'),
+            'scores': {sid: v for sid, field in AA_RELEASE_SCORE_FIELD.items() if (v := figure(obj, field)) is not None}}
 
 
-def aa_release_records(target):
-    """The records of every release page the manifest lists as fetched, in the leaderboard's record shape plus `page`
-    (the file name). A release page also embeds other releases' records for comparison; only the records of the
-    page's own release (`release.slug` the page's slug) are read."""
-    out = []
-    for name, row in sorted(manifest(target).items()):
-        match = AA_RELEASE_NAME.fullmatch(name)
-        if not match or row.get('status') != 'ok' or not (target / name).exists():
+def aa_release_records(target, names):
+    """(records, errors): the records of the release pages `names` (file names, from `measurements.aa_release_plan`),
+    in the leaderboard's record shape plus `page` (the file name), and {file name: why it cannot be read} for a page
+    whose record has a shape `aa_release_record` does not know (none of that page's records is returned). A release
+    page also embeds other releases' records for comparison; only the records of the page's own release
+    (`release.slug` the page's slug) are read. A page the manifest does not list as fetched is not read."""
+    out, errors, files = [], {}, manifest(target)
+    for name in sorted(names):
+        if (files.get(name) or {}).get('status') != 'ok' or not (target / name).exists():
             continue
-        slug, seen = match['slug'], set()
-        for obj in _aa_owners(_aa_stream(target / name), r'"release"\s*:\s*\{'):
-            release = obj.get('release')
-            if (isinstance(release, dict) and release.get('slug') == slug and 'intelligenceIndex' in obj
-                    and isinstance(obj.get('name'), str) and obj['name'] not in seen):
-                seen.add(obj['name'])
-                out.append(aa_release_record(obj, name))
-    return out
-
-
-def aa_all_records(target):
-    """Every AA record the pipeline reads: the leaderboard page's, then those of each release page fetched."""
-    return [*aa_records(target), *aa_release_records(target)]
-
+        slug, seen, page = AA_RELEASE_NAME.fullmatch(name)['slug'], set(), []
+        try:
+            for obj in _aa_owners(_aa_stream(target / name), r'"release"\s*:\s*\{'):
+                release = obj.get('release')
+                if (isinstance(release, dict) and release.get('slug') == slug and 'intelligenceIndex' in obj
+                        and isinstance(obj.get('name'), str) and obj['name'] not in seen):
+                    seen.add(obj['name'])
+                    page.append(aa_release_record(obj, name))
+        except ValueError as exc:
+            errors[name] = str(exc)
+        else:
+            out += page
+    return out, errors
 
 
 def aa_effort(name):

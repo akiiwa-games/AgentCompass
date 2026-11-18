@@ -195,14 +195,14 @@ class Interpolation:
 
 
 class Fitter:
-    def __init__(self, target, anchor_name):
+    def __init__(self, target, anchor_name, aa_records):
         self.anchor_name = anchor_name
         read = datetime.fromtimestamp((target / 'aa-models.html').stat().st_mtime, timezone.utc).date().isoformat() \
             if (target / 'aa-models.html').exists() else None
         self.aa_read = read
         self.overall = arena_high_rows(sources.arena_rows(target, 'text_style_control', 'overall'))
         self.anchor_raw, self.sd = self.overall_scale(self.overall, anchor_name)
-        self.aa = aa_high_index(sources.aa_all_records(target))
+        self.aa = aa_high_index(aa_records)
         self.maps = {'aa.index': self.board_map(self.aa)}
 
     @staticmethod
@@ -262,7 +262,9 @@ def main():
     args = ap.parse_args()
     acc = sources.accounts()
     models = acc['models']
-    fitter = Fitter(sources.data_dir(args.data), panel(acc)[2])
+    import measurements     # measurements imports this module: the records it reads (release pages included) are its to choose
+    data = sources.data_dir(args.data)
+    fitter = Fitter(data, panel(acc)[2], measurements.aa_records_read(data, models)[0])
     for board, mapping in fitter.maps.items():
         print(f'{board}: {mapping.n if mapping else 0} models common with arena Overall at High')
     result = {}
