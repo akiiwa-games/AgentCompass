@@ -223,8 +223,10 @@ def aa_release_plan(target, models):
 
 
 def aa_release_files(plan):
-    """{file name: url} of the release pages `aa_release_plan` chose."""
-    return {sources.AA_RELEASE_FILE.format(slug): sources.AA_RELEASE_URL.format(slug) for slug, _ in set(plan.values())}
+    """{file name: url} of the release pages `aa_release_plan` chose, in slug order (the written files do not depend on
+    the order a set iterates in)."""
+    return {sources.AA_RELEASE_FILE.format(slug): sources.AA_RELEASE_URL.format(slug)
+            for slug in sorted({slug for slug, _ in plan.values()})}
 
 
 def aa_records_read(target, models):

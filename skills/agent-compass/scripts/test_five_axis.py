@@ -764,12 +764,13 @@ class FiveAxisTests(unittest.TestCase):
                 self.assertIsNone(usd.get('value'), name)
                 self.assertIn('no_cited_source', {e['reason'] for e in row['data_errors']}, name)
 
-    def test_fable_5_2_is_converted_from_fable_5_1(self):
+    def test_fable_5_2_reads_its_own_sessions_figure_and_converts_the_rest_from_fable_5_1(self):
         """User 2026-11-10 ("后续同系列新出，缺少实测数据的情况下，先按照同系列的全分数进行折算，不要留下任何一个默认值或者
         fallback"): every type score claude-fable-5-2 does not measure is claude-fable-5-1's (its same-series sibling) moved along
-        the type score's fit on tier by the two tiers' difference, and its usd_per_hour is 5.1's times the API list price
-        ratio over the community token mix. No pessimistic 0, no option-B fallback. Fast-mode pricing ($16/$80 = 2x, 2.5x
-        speed) and its maintainer image-input declaration (2026-11-12) stay its own."""
+        the type score's fit on tier by the two tiers' difference. Its usd_per_hour is the figure of arena.ai's Agent sessions
+        when that board lists it, else 5.1's times the declared API list price ratio over the community token mix. No
+        pessimistic 0, no option-B fallback. Fast-mode pricing ($16/$80 = 2x, 2.5x speed) and its maintainer image-input
+        declaration (2026-11-12) stay its own."""
         shipped = axis_scores.load_five_axis()
         fable52, fable51 = shipped['models']['claude-fable-5-2'], shipped['models']['claude-fable-5-1']
         usd = fable52['usd_per_hour']
@@ -783,6 +784,7 @@ class FiveAxisTests(unittest.TestCase):
             self.assertAlmostEqual(usd['sources']['ratio'], 0.8, places=4)      # $8/$40/$0.20 against $10/$50/$0.25
         else:
             self.assertEqual(usd['used'], ['arena.agent_sessions'])
+            self.assertEqual(usd['value'], usd['sources']['arena.agent_sessions']['value'])      # the cited reading, nothing else
         self.assertEqual(fable52['fast_mode']['status'], 'ok')
         self.assertEqual((fable52['fast_mode']['price_multiplier'], fable52['fast_mode']['speed_multiplier']), (2.0, 2.5))
         self.assertEqual((fable52['image_input']['status'], fable52['image_input']['source']), ('yes', 'maintainer.image_input'))
@@ -1141,12 +1143,19 @@ class HighFillTests(unittest.TestCase):
         models = axis_scores.load_five_axis()['models']
         glm = models['glm-5.3']['axes']
         self.assertEqual(glm['creativity']['facets']['creative_writing']['status'], 'interpolated')
-        # Rule (fill_high): High interpolated between the model's bracketing efforts is their weighted mean.
+        # Rule (fill_high): High between the bracketing efforts is linear in effort rank on the model's ladder (an ordered
+        # subset of EFFORTS that holds both efforts and High, else EFFORTS), so the weight is the rank distance of High
+        # from the lower effort over that of the upper effort, computed here, not read back from the data.
+        import five_axis
         fill = glm['creativity']['facets']['creative_writing']['interpolation']
         (low_effort, low), = fill['from'].items()
         (high_effort, high), = fill['to'].items()
-        self.assertEqual(glm['creativity']['by_effort']['high'],
-                         round(low + fill['weight'] * (high - low), 4))
+        ladder = fill['ladder']
+        self.assertEqual(ladder, [e for e in five_axis.EFFORTS if e in ladder])
+        self.assertTrue({low_effort, 'high', high_effort} <= set(ladder) or ladder == list(five_axis.EFFORTS))
+        weight = (ladder.index('high') - ladder.index(low_effort)) / (ladder.index(high_effort) - ladder.index(low_effort))
+        self.assertEqual(fill['weight'], round(weight, 4))
+        self.assertEqual(glm['creativity']['by_effort']['high'], round(low + weight * (high - low), 4))
         ds = models['deepseek-v4-pro']['axes']['tool_operation']['facets']['responsiveness']
         self.assertEqual((ds['status'], ds['estimate']['method']), ('estimated', 'panel_effort_step'))
         self.assertGreater(ds['by_effort']['high'], ds['by_effort']['max'])
@@ -2189,7 +2198,7 @@ class ArenaCaptureTests(unittest.TestCase):
                   ('264', 'Thinking MachinesInkling 2 SmallThinky', 'Inkling 2 Small', 'Thinky'),
                   ('164', 'StepfunStep 5 PreviewStepFun', 'Step 5 Preview', 'StepFun'),
                   ('555', 'Mistral Large 4Mistral', 'Mistral Large 4', 'Mistral'),
-                  ('250', 'SynlanSpark-X2.6XHToken', 'SynlanSpark-X2.6', 'XHToken'),
+                  ('250', 'SynlanSpark-X2.6XHToken', 'Spark-X2.6', 'XHToken'),     # the Agent page: Spark-X2.6, lab XHToken
                   ('155', 'Solar Pro 4Upstage', 'Solar Pro 4', 'Upstage')]
         head = ('Agent Arena | Alignment IndexNovember 15, 2026184,539 sessions{n} modelsRankModelAlignment Index'
                 'Unauthorized actionFalse attributionDeceptive completion')

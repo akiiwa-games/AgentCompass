@@ -977,6 +977,16 @@ class AaReleasePageTests(unittest.TestCase):
         self.assertEqual(measurements.aa_release_files(plan),
                          {f'aa-release-{s}.html': sources.AA_RELEASE_URL.format(s) for s in ('model-b', 'model-c-new', 'model-f-new')})
 
+    def test_the_release_pages_are_listed_in_slug_order_whatever_the_hash_seed(self):
+        """The file written from the plan (`release_pages` in public-measurements.json) must not depend on the order a set
+        iterates in, which follows PYTHONHASHSEED: the files are listed in slug order. Forty slugs make an accidentally
+        sorted set order practically impossible."""
+        plan = {f'model-{i}': (f'release-{(i * 7) % 40:02d}', 'Base') for i in range(40)}
+        slugs = [f'release-{i:02d}' for i in range(40)]
+        files = measurements.aa_release_files(plan)
+        self.assertEqual(list(files), [sources.AA_RELEASE_FILE.format(s) for s in slugs])
+        self.assertEqual(list(files.values()), [sources.AA_RELEASE_URL.format(s) for s in slugs])
+
     def test_a_slug_that_cannot_be_a_url_and_a_file_name_names_no_release(self):
         hostile = ('../escape', 'a/b', 'ok/../x', 'x y', 'a%2fb', 'a?b=1', '..', '.hidden', 'é')
         releases = [self.release(slug, f'Hostile {i}', True, [f'Hostile {i} (High)'], '2025-01-01') for i, slug in enumerate(hostile)]

@@ -61,7 +61,7 @@ def _model_api_family(model, accounts=None):
 def split_effort(raw, accounts=None):
     """('claude-opus-5-5', 'high') for 'claude-opus-5-5-high'; (raw, None) without an effort suffix.
 
-    '-max' is also a size name (qwen3-max), so with `accounts` it splits only when the base is calibrated.
+    '-max' is also a size name (qwen3.7-max), so with `accounts` it splits only when the base is calibrated.
     """
     name = str(raw or '').strip()
     match = EFFORT_SUFFIX.match(name)

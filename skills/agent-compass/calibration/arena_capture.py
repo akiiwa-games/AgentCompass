@@ -39,11 +39,13 @@ MONTHS = {m: i for i, m in enumerate(('january', 'february', 'march', 'april', '
                                       'october', 'november', 'december'), 1)}
 # Lab names the run-together Alignment page glues to the model name (the Agent page prints them on their own line). The
 # page text has no separator between a model name and its lab, so the labs are the only way to find the boundary;
-# compared without case (the page writes `Nvidia` and `StepFun` where the Agent page has `NVIDIA` and `Stepfun`).
+# compared without case (the page writes `Nvidia` and `StepFun` where the Agent page has `NVIDIA` and `Stepfun`). A row's
+# front label can differ from its closing lab (`Synlan` in front of `Spark-X2.6`, closed by `XHToken`), so every label
+# that can stand in front is listed here too.
 LABS = ('Anthropic', 'OpenAI', 'Google', 'Meta', 'SpaceXAI', 'xAI', 'Tencent', 'Moonshot', 'DeepSeek', 'Xiaomi', 'Alibaba',
         'Z.ai', 'StepFun', 'Reflection AI', 'Reflection', 'Thinking Machines', 'Thinky', 'MiniMax', 'Mistral', 'NVIDIA',
         'Amazon', 'Microsoft', 'ByteDance', 'Baidu', 'Cohere', 'IBM', 'Meituan', 'Ant Group', 'Kuaishou', 'Prime Intellect',
-        'Nous Research', 'AI21', 'Upstage', 'XHToken')
+        'Nous Research', 'AI21', 'Upstage', 'XHToken', 'Synlan')
 
 
 def page_date(text):
