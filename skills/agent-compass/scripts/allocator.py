@@ -4,7 +4,7 @@ and the opportunity cost of the quota the work would use.
 
 Scores are panel standard deviations (`z = (x - x_anchor) / sd_panel`, the accounts.json `calibration_panel` anchor at High = 0) from
 `references/five-axis-scores.json`. In `five_axis_fit`, each demanded category's zero point is its level-1 target `t1`
-(the panel's weakest model), level 2 targets the panel median `t2`, and level 3 targets the anchor `t3`:
+(the panel's weakest model), level 2 targets the panel median `t2`, and level 3 targets the panel's best `t3`:
 `fit = sum_a w_a * (min(z_a, c_a) - t1_a) / sum_a w_a`, the cap `c_a` being the target at levels 1 and 2 and the
 category's ceiling (the best measured model) at level 3 (scores below `t1_a` may go below zero, and economy outside
 alternatives require positive fit above zero). The formula is defined in `docs/technical-reference.md` section 1. Every number that drives a choice

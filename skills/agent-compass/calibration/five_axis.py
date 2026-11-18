@@ -1,7 +1,6 @@
 """Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.
 
-`python -X utf8 five_axis.py [--distrust SOURCE ...] [--measurements PATH] [--out PATH] [--accept-panel-change]
-[--accept-level-collapse]`
+`python -X utf8 five_axis.py [--distrust SOURCE ...] [--measurements PATH] [--out PATH] [--accept-panel-change]`
 
 Writes `references/five-axis-scores.json`, the only model scoring the router reads (axis_scores.five_axis_overlay). The
 user's taxonomy (2026-11-11): four categories, each made of facets, each facet read from public boards; the router
@@ -41,27 +40,24 @@ scores on the four categories and the quota economy together. Nothing else score
   the tier difference (calibration/series.py), else the fit at the model's tier. An estimate fit is accepted only when
   its slope is positive (`b > 0`) and its leave-one-out skill beats the panel mean (`skill > 0`); failing fits go to
   `rejected_fits`, leaving models without a measured sibling `missing` (mode B) and setting sibling shift to `0`.
-- Targets (`anchor.targets`, `targets`): per category and level, level 1 the panel's weakest value at High, level 2 the
-  panel median, level 3 the anchor; `zero` is the level-1 target, the fit's zero point. `aesthetics` and `tool_operation`
-  ask per facet (`by_facet`), and a level never asks less of a facet than the level below (the anchor's responsiveness, 0,
-  is below the panel median, so levels 2 and 3 both ask the panel median). `continuity` is t3 - t2 (per-facet categories:
-  the largest positive t3 - t2 across level-3 facets). Each level-3 row (category, facet, and `by_facet` entries) carries
-  its `ceiling`: the highest measured or interpolated High value among the catalogued models, with the model that sets it
-  and its status (owner, 2026-11-13). A level-3 demand is capped there instead of at t3; levels 1 and 2 stay capped at
-  their target.
+- Level scale and targets (`anchor.targets`, `targets`; owner 2026-11-18): a facet's three reference points all come from
+  the panel's measured and interpolated High values: level 1 `t1` the panel's weakest, level 2 `t2` its median, level 3
+  `t3` its maximum (the row names the panel member that holds it). The anchor is the origin of `z` (0) and is level 3 only
+  where it is the panel's best; it is not part of the definition. A model above the panel maximum has a level above 3
+  (user_scores.level_to_z extrapolates by `t3 - t2`). A category value (creativity, coding) has its own triad on the same
+  definition. `zero` is the level-1 target, the fit's zero point. A scale needs `t1 < t2 < t3`: a facet whose panel gives
+  none is a build error (`check_scales`: `degenerate level scale`), not something to accept. `aesthetics` and `tool_operation` ask per
+  facet (`by_facet`): their rows carry the same targets, except that `tool_operation.responsiveness` at level 3 asks what it
+  asks at level 2, the panel median, because a level-3 task adds the image-recognition requirement to the responsiveness
+  one (`LEVEL3_ASKS_LEVEL2`; a statement about what tasks demand, so the facet's own scale still ends at its panel
+  maximum). `continuity` is t3 - t2 (per-facet categories: the largest positive t3 - t2 across level-3 facets). Each
+  level-3 row (category, facet, and `by_facet` entries) carries its `ceiling`: the highest measured or interpolated High
+  value among the catalogued models, with the model that sets it and its status (owner, 2026-11-13). A level-3 demand is
+  capped there instead of at t3; levels 1 and 2 stay capped at their target.
 - Panel guard (`panel_change`): the panel this run computed is compared with the panel of the five-axis-scores.json being
   replaced. When the members differ, the run prints the added and removed models and the old and new `sd_panel` per
-  board, t1, t2 and ceiling per category and facet, and writes nothing (`PanelChangeRefused`) unless the change is
+  board, t1, t2, t3 and ceiling per category and facet, and writes nothing (`PanelChangeRefused`) unless the change is
   accepted (`--accept-panel-change`); an accepted change is recorded in `anchor.panel_change` and carried forward.
-- Level-collapse guard (`level_collapse`): the hand-written levels 1..3 map onto a facet's targets (t1, t2, t3), and
-  levels 2 and 3 stay distinct only while t2 < t3. A rebuild in which a facet's level-2 target equals its level-3 target
-  although the five-axis-scores.json being replaced kept them apart makes tasks of levels 2 and 3 ask the same of that
-  facet and maps every hand-written level between 2 and 3 to one value. It is refused (`LevelCollapseRefused`; the message
-  names the facet, its boards, the anchor's value and the panel median on it, and what collapses) and writes nothing
-  unless accepted (`--accept-level-collapse`); an accepted collapse is recorded in `anchor.level_collapse` next to
-  `panel_change` and carried forward while the two targets coincide. A facet whose targets already coincided in the
-  replaced file (`tool_operation.responsiveness`: the anchor sits below the panel median) is not a collapse, and with no
-  replaced file nothing is refused.
 - Checks: structural ones drop a listing (a variant tag that is not an effort, a raw value out of range, one listing
   matched to two models, a duplicate board); statistical ones only note (`checks`).
 - The tier (calibration/tiers.py) is the model's overall level at High relative to the anchor (`tier.arena_overall`,
@@ -102,7 +98,9 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # /3 (2026-11-13): every level-3 row carries `ceiling`, the anchor block `sd_panel` and `panel_change`.
 # /4 (2026-11-17): `aesthetics` evaluates per-level facets (`design` at L1; `min(design, image_recognition)` at L2/L3).
 # /5 (2026-11-17): renames the creative category from `divergence` to `creativity`.
-SCHEMA = 'agent-compass.five-axis-scores/5'
+# /6 (2026-11-18): level 3 of every scale is the panel maximum, no longer the anchor (`statistic`, `model` of a level-3
+# row; no `raised_to_level_below`), so a hand-written level means another value than under /5.
+SCHEMA = 'agent-compass.five-axis-scores/6'
 AXES = measurements.AXES
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
@@ -111,6 +109,10 @@ AESTHETICS_LEVEL_FACETS = {1: ('design',), 2: ('design', 'image_recognition'), 3
 # level 3, level 2 responsiveness, level 3 responsiveness and image recognition; their `min`.
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
 LEVEL_FACETS = {'aesthetics': AESTHETICS_LEVEL_FACETS, 'tool_operation': TOOL_LEVEL_FACETS}
+# Facets whose level-3 task demand is the level-2 one (owner 2026-11-18): a tool_operation level-3 task adds image
+# recognition to the responsiveness a level-2 task asks, not more responsiveness. A statement about demand; the facet's
+# own level scale (`anchor.targets.<category>.facets`) is the panel's (min, median, maximum) like every other.
+LEVEL3_ASKS_LEVEL2 = (('tool_operation', 'responsiveness'),)
 FACET_OWNER = {
     'design': ('aesthetics', 'design'),
     'responsiveness': ('tool_operation', 'responsiveness'),
@@ -914,30 +916,28 @@ class Scorer:
 
     def targets(self, rows, panel):
         """{category: {'levels': {level: ...}, 'continuity'}} from the panel's values at High (module docstring): level 1
-        the panel's weakest, level 2 its median, level 3 the anchor; the fit's zero is the panel weakest. creativity and coding
-        read the category value. aesthetics and tool_operation read their facets one by one (`by_facet`): each level asks
-        for the facets LEVEL_FACETS selects, tool_operation level 1 for nothing, and a level never asks less of a facet than the
-        level below it (the anchor's responsiveness at High, 0, is below the panel median, so level 3 asks max(level 2,
-        anchor) of it). `continuity` is t3 - t2 (tool_operation: the largest positive t3 - t2 across its level-3 facets).
+        the panel's weakest, level 2 its median, level 3 its maximum (the anchor is the origin of z, not a level); the fit's
+        zero is the panel weakest. creativity and coding read the category value. aesthetics and tool_operation read their
+        facets one by one (`by_facet`): each level asks for the facets LEVEL_FACETS selects, tool_operation level 1 for
+        nothing, and a level-3 task asks of `LEVEL3_ASKS_LEVEL2` facets what a level-2 task asks. `continuity` is t3 - t2
+        (tool_operation: the largest positive t3 - t2 across its level-3 facets).
         Only measured High values enter (user 2026-11-12, `TARGET_STATUSES`): an own-curve interpolation lies between two
         of the model's measurements and counts; an estimate (panel effort step, sibling, tier fit, same_model) is derived
         from the panel and would move it, so it never does. Every level-3 row also carries its `ceiling` (owner,
         2026-11-13): the highest such High value among all catalogued models, the cap a level-3 demand reads instead of
         t3; it is not a panel statistic, so a model outside the panel can raise it."""
-        anchor = rows.get(measurements.ANCHOR, {}).get('axes') or {}
-
         def measured(cell):
             cell = cell or {}
             return cell.get('value') if cell.get('status') in TARGET_STATUSES else None
 
         def stats(pick):
-            vals = [v for m in panel if (v := measured(pick(rows[m]['axes']))) is not None]
-            if not vals:
+            found = [(v, m) for m in panel if (v := measured(pick(rows[m]['axes']))) is not None]
+            if not found:
                 return None
-            at_anchor = measured(pick(anchor))
+            vals = [v for v, _ in found]
+            top_value, top_model = max(found, key=lambda t: (t[0], t[1]))
             return {'min': round(float(min(vals)), 4), 'median': round(float(np.median(vals)), 4),
-                    'anchor': None if at_anchor is None else round(float(at_anchor), 4), 'n': len(vals),
-                    'ceiling': ceiling(pick)}
+                    'max': round(float(top_value), 4), 'max_model': top_model, 'n': len(vals), 'ceiling': ceiling(pick)}
 
         def ceiling(pick):
             """The level-3 cap: the highest measured High value among every catalogued model (not only the panel), the
@@ -957,21 +957,18 @@ class Scorer:
                 own_a, own_f = FACET_OWNER.get(f, (a, f))
                 fst = stats(lambda ax, oa=own_a, of=own_f: (ax[oa].get('facets') or {}).get(of))
                 if fst is not None:
-                    t1_f, t2_f = fst['min'], max(fst['min'], fst['median'])
-                    raw_t3 = fst['anchor'] if fst['anchor'] is not None else t2_f
-                    t3_f = max(t2_f, raw_t3)
+                    t1_f, t2_f, t3_f = fst['min'], fst['median'], fst['max']
                     facet_targets[f] = {'levels': {'1': {'target': t1_f, 'zero': t1_f, 'statistic': 'panel minimum', 'n': fst['n']},
                                                    '2': {'target': t2_f, 'zero': t1_f, 'statistic': 'panel median', 'n': fst['n']},
-                                                   '3': {'target': t3_f, 'zero': t1_f, 'statistic': f'anchor {measurements.ANCHOR}', 'n': fst['n'],
-                                                         **({'raised_to_level_below': t2_f} if t2_f > raw_t3 else {}),
-                                                         'ceiling': fst['ceiling']}}}
+                                                   '3': {'target': t3_f, 'zero': t1_f, 'statistic': 'panel maximum', 'n': fst['n'],
+                                                         'model': fst['max_model'], 'ceiling': fst['ceiling']}}}
             if a not in LEVEL_FACETS:
                 st = stats(lambda ax, a=a: ax[a])
                 levels = {str(level): ({'target': st[key], 'zero': st['min'], 'statistic': name, 'n': st['n'],
-                                        **({'ceiling': st['ceiling']} if level == 3 else {})} if st else
+                                        **({'model': st['max_model'], 'ceiling': st['ceiling']} if level == 3 else {})} if st else
                                        {'target': None, 'zero': None, 'reason': 'no panel model has a value'})
                           for level, key, name in ((1, 'min', 'panel minimum'), (2, 'median', 'panel median'),
-                                                   (3, 'anchor', f'anchor {measurements.ANCHOR}'))}
+                                                   (3, 'max', 'panel maximum'))}
                 gap = (levels['3']['target'] - levels['2']['target']) if (
                     st and levels['3']['target'] is not None and levels['2']['target'] is not None
                 ) else None
@@ -982,8 +979,7 @@ class Scorer:
                 own_a, own_f = FACET_OWNER.get(f, (a, f))
                 per[f] = stats(lambda ax, oa=own_a, of=own_f: (ax[oa].get('facets') or {}).get(of))
             levels, prev = {}, {}
-            level_spec = {1: ('min', 'panel minimum'), 2: ('median', 'panel median'),
-                          3: ('anchor', f'anchor {measurements.ANCHOR}')}
+            level_spec = {1: ('min', 'panel minimum'), 2: ('median', 'panel median'), 3: ('max', 'panel maximum')}
             for level in (1, 2, 3):
                 chosen = LEVEL_FACETS[a][level]
                 if not chosen:
@@ -995,11 +991,9 @@ class Scorer:
                     st = per[f]
                     if st is None:
                         continue
-                    own = st[stat_key]
-                    target = max(own, prev[f]) if f in prev and own is not None else own
-                    by[f] = {'target': target, 'zero': st['min'], 'n': st['n'],
-                             'statistic': stat_name,
-                             **({'raised_to_level_below': prev[f]} if f in prev and own is not None and prev[f] > own else {}),
+                    same = level == 3 and (a, f) in LEVEL3_ASKS_LEVEL2 and f in prev
+                    by[f] = {'target': prev[f] if same else st[stat_key], 'zero': st['min'], 'n': st['n'],
+                             'statistic': 'panel median (levels 2 and 3 ask the same of it)' if same else stat_name,
                              **({'ceiling': st['ceiling']} if level == 3 else {})}
                 levels[str(level)] = {'by_facet': by}
                 prev = {f: r['target'] for f, r in by.items() if r.get('target') is not None}
@@ -1475,11 +1469,6 @@ class PanelChangeRefused(ValueError):
     """The panel's members changed and the change was not accepted (`--accept-panel-change`): nothing is written."""
 
 
-class LevelCollapseRefused(ValueError):
-    """A facet's level-2 target reached its level-3 target and the collapse was not accepted
-    (`--accept-level-collapse`): nothing is written."""
-
-
 def previous_doc(path):
     """The five-axis-scores.json a run is about to replace, or None when there is none yet."""
     target = Path(path)
@@ -1498,15 +1487,16 @@ def panel_sd(meas):
 
 
 def _level_points(levels):
-    """t1, t2 and the level-3 ceiling of one `levels` map (a category's or a facet's)."""
+    """t1, t2, t3 and the level-3 ceiling of one `levels` map (a category's or a facet's)."""
     levels = levels or {}
     return {'t1': (levels.get('1') or {}).get('target'), 't2': (levels.get('2') or {}).get('target'),
+            't3': (levels.get('3') or {}).get('target'),
             'ceiling': ((levels.get('3') or {}).get('ceiling') or {}).get('value')}
 
 
 def panel_change(previous, anchor):
     """None when this run's `anchor` block has the same panel members as `previous` (the anchor block it replaces); else
-    {'added', 'removed', 'shifts'}, `shifts` holding per category (and per facet) the old and new t1, t2 and ceiling, and
+    {'added', 'removed', 'shifts'}, `shifts` holding per category (and per facet) the old and new t1, t2, t3 and ceiling, and
     per facet the old and new sd_panel of each board."""
     old_members, new_members = set(previous['panel']), set(anchor['panel'])
     if old_members == new_members:
@@ -1540,10 +1530,10 @@ def panel_change_text(change):
     lines = [f"panel membership changed: added {', '.join(change['added']) or 'none'}; "
              f"removed {', '.join(change['removed']) or 'none'}"]
     for a, row in change['shifts'].items():
-        cat = moved(row, ('t1', 't2', 'ceiling'))
+        cat = moved(row, ('t1', 't2', 't3', 'ceiling'))
         lines.append(f'  {a}' + (f': {cat}' if cat else ''))
         for f, rec in row['facets'].items():
-            lines.append(f"    {a}.{f}: {moved(rec, ('t1', 't2', 'ceiling'))}; "
+            lines.append(f"    {a}.{f}: {moved(rec, ('t1', 't2', 't3', 'ceiling'))}; "
                          f"sd_panel {moved(rec['sd_panel'], rec['sd_panel']) or '-'}")
     return '\n'.join(lines)
 
@@ -1559,67 +1549,33 @@ def guard_panel(previous, anchor, accept, stamp):
         return previous['anchor'].get('panel_change')
     text = panel_change_text(change)
     if not accept:
-        raise PanelChangeRefused(f'{text}\nnothing written: a panel change moves sd_panel, t1, t2 and the exchange rate '
+        raise PanelChangeRefused(f'{text}\nnothing written: a panel change moves sd_panel, t1, t2, t3 and the exchange rate '
                                  'between ability and quota cost; rerun with --accept-panel-change to accept it')
     print(text)
     return {'date': stamp.date().isoformat(), **change}
 
 
-def _level_targets(targets):
-    """{'<category>.<facet>': (t2, t3)} for every facet of an `anchor.targets` block that has both targets."""
-    out = {}
-    for category, block in (targets or {}).items():
-        for facet, row in ((block or {}).get('facets') or {}).items():
-            levels = row.get('levels') or {}
-            t2, t3 = (levels.get('2') or {}).get('target'), (levels.get('3') or {}).get('target')
-            if t2 is not None and t3 is not None:
-                out[f'{category}.{facet}'] = (t2, t3)
-    return out
+def check_scales(targets):
+    """ValueError naming the first category or facet whose panel does not give three different level targets. A scale of
+    `t1 == t2` or `t2 == t3` makes two levels the same (tasks of both ask the same and every hand-written level between them
+    maps to one value); the document is not written. Nothing to accept: the data (another source state) is what changes."""
+    for category, block in targets.items():
+        scales = {f'{category}.{f}': row.get('levels') for f, row in (block.get('facets') or {}).items()}
+        if category not in LEVEL_FACETS:
+            scales[category] = block.get('levels')
+        for name, levels in scales.items():
+            t = [((levels or {}).get(k) or {}).get('target') for k in '123']
+            if None not in t and not t[0] < t[1] < t[2]:
+                raise ValueError(f'degenerate level scale on {name}: panel minimum {t[0]}, median {t[1]}, maximum {t[2]} '
+                                 '(levels 1, 2 and 3 need three different values; the panel does not give them)')
 
 
-def guard_level_collapse(previous, anchor, models, accept, stamp):
-    """The `anchor.level_collapse` record to write (module docstring, level-collapse guard). No previous file: None. A facet
-    whose level-2 and level-3 targets coincide now and did not in `previous` is a collapse: it is refused
-    (`LevelCollapseRefused`) unless `accept`, then printed and recorded with the date. A facet the previous record holds
-    stays in the record for as long as its two targets coincide; a facet whose targets already coincided in `previous`
-    without a record is not a collapse."""
-    if previous is None:
-        return None
-    before, now = _level_targets(previous['anchor'].get('targets')), _level_targets(anchor['targets'])
-    record = previous['anchor'].get('level_collapse') or {}
-    kept = {k: v for k, v in (record.get('facets') or {}).items() if k in now and now[k][0] == now[k][1]}
-    new = {}
-    for key, (t2, t3) in now.items():
-        if t2 != t3 or key in kept or key not in before or before[key][0] == before[key][1]:
-            continue
-        category, facet = key.split('.')
-        owner_category, owner_facet = FACET_OWNER.get(facet, (category, facet))
-        cell = ((((models.get(measurements.ANCHOR) or {}).get('axes') or {}).get(owner_category) or {}).get('facets')
-                or {}).get(owner_facet) or {}
-        new[key] = {'boards': sorted(anchor['sd_panel'].get(f'{owner_category}.{owner_facet}') or {}),
-                    'anchor_value': cell.get('value') if cell.get('status') in TARGET_STATUSES else None,
-                    'panel_median': t2, 'target': t3, 'previous_t2': before[key][0], 'previous_t3': before[key][1]}
-    if not new:
-        return {'date': record['date'], 'facets': kept} if kept else None
-    lines = [f"  {key}: board {', '.join(r['boards']) or '-'}; anchor value {r['anchor_value']}, panel median "
-             f"{r['panel_median']}; level-2 target {r['previous_t2']} -> {r['target']}, level-3 target "
-             f"{r['previous_t3']} -> {r['target']}" for key, r in new.items()]
-    text = ('level collapse: the level-2 target of a facet reaches its level-3 target\n' + '\n'.join(lines)
-            + '\n  tasks of levels 2 and 3 now ask the same of it, and every hand-written level between 2 and 3 maps to one value')
-    if not accept:
-        raise LevelCollapseRefused(f'{text}\nnothing written; rerun with --accept-level-collapse to accept it, or rebuild '
-                                   'from another state of the source')
-    print(text)
-    return {'date': stamp.date().isoformat(), 'facets': {**kept, **new}}
-
-
-def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None, accept_panel_change=False,
-          accept_level_collapse=False):
+def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None, accept_panel_change=False):
     """The five-axis-scores.json document. `previous` is the document it replaces (None when there is none): a panel whose
-    members differ from it is refused unless `accept_panel_change` (`guard_panel`), and so is a facet whose level-2 target
-    reaches its level-3 target unless `accept_level_collapse` (`guard_level_collapse`)."""
+    members differ from it is refused unless `accept_panel_change` (`guard_panel`)."""
     scorer = Scorer(meas, acc, distrust)
     rows, tier, fits, rejected, links, targets = scorer.score()
+    check_scales(targets)
     usd = usd_community_mix(scorer, rows, meas)
     convert_usd(usd, rows, scorer, meas, acc, tier)
     caps, cap_errors = capacity(meas, plans, usd, now)
@@ -1689,7 +1645,6 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
               'panel': (meas.get('panel') or {}).get('models') or [], 'panel_n': (meas.get('panel') or {}).get('n'),
               'targets': targets, 'sd_panel': panel_sd(meas)}
     anchor['panel_change'] = guard_panel(previous, anchor, accept_panel_change, stamp)
-    anchor['level_collapse'] = guard_level_collapse(previous, anchor, models, accept_level_collapse, stamp)
     doc = {'schema': SCHEMA, 'generated_at': stamp.isoformat(timespec='seconds'),
            'measurements_sha256': hashlib.sha256(meas_bytes).hexdigest() if meas_bytes else None,
            'distrusted_sources': sorted(distrust),
@@ -1719,15 +1674,12 @@ def main():
     ap.add_argument('--out', default=str(OUT))
     ap.add_argument('--accept-panel-change', action='store_true',
                     help='write the document although the panel members differ from the file being replaced')
-    ap.add_argument('--accept-level-collapse', action='store_true',
-                    help="write the document although a facet's level-2 target now equals its level-3 target")
     args = ap.parse_args()
     raw = Path(args.measurements).read_bytes()
     try:
         doc = build(json.loads(raw), sources.accounts(), json.loads(PLANS.read_text(encoding='utf-8')), args.distrust, raw,
-                    previous=previous_doc(args.out), accept_panel_change=args.accept_panel_change,
-                    accept_level_collapse=args.accept_level_collapse)
-    except (PanelChangeRefused, LevelCollapseRefused) as exc:
+                    previous=previous_doc(args.out), accept_panel_change=args.accept_panel_change)
+    except PanelChangeRefused as exc:
         sys.stderr.write(f'{exc}\n')
         return 2
     Path(args.out).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')

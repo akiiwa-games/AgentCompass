@@ -44,6 +44,25 @@ def _load_calibration_modules():
     return out
 
 
+def drop_facet(five, model, category, facet):
+    """`five` (a five-axis-scores document) with `model` having no reading at all on `category.facet`: the category cell is the
+    partial one the builder writes for a missing facet."""
+    cell = five['models'][model]['axes'][category]
+    del cell['facets'][facet]
+    five['models'][model]['axes'][category] = {
+        'facets': cell['facets'], 'missing_facets': [*cell.get('missing_facets', []), facet], 'value': None, 'by_effort': {},
+        'status': 'partial', 'flag': 'partial'}
+    return five
+
+
+def keep_efforts(five, model, category, facet, keep):
+    """`five` with `model`'s `category.facet` and its category holding only the efforts in `keep`."""
+    axis = five['models'][model]['axes'][category]
+    for cell in (axis['facets'][facet], axis):
+        cell['by_effort'] = {e: v for e, v in cell['by_effort'].items() if e in keep}
+    return five
+
+
 class ManualScoreLayerTests(unittest.TestCase):
     def setUp(self):
         isolated_router_state(self.addCleanup)
@@ -71,18 +90,30 @@ class ManualScoreLayerTests(unittest.TestCase):
         self.assertAlmostEqual(user_scores.level_to_z(3.5, t1, t2, t3), t3 + 0.5 * (t3 - t2), places=6)
         self.assertAlmostEqual(user_scores.level_to_z(0.5, t1, t2, t3), t1 - 0.5 * (t2 - t1), places=6)
 
-        # On tool_operation.responsiveness, t3 is raised to t2; > 3 falls back to (t2 - t1) so > 3 still increases strictly.
-        r1, r2, r3 = user_scores.target_triad(targets, 'tool_operation', 'responsiveness')
-        self.assertEqual(r2, r3)
-        self.assertAlmostEqual(
-            user_scores.level_to_z(3.5, r1, r2, r3),
-            r3 + 0.5 * (r2 - r1),
-            places=6,
-        )
+        # Every shipped scale (facets and the two category triads) has t1 < t2 < t3, so the two maps are strictly increasing
+        # and inverse to each other on the whole line, above 3 and below 1 included (extrapolated, no clamp).
+        for category, facets in user_scores.CATEGORY_FACETS.items():
+            for facet in (None, *facets):
+                if facet is None and category in ('tool_operation',):
+                    continue
+                triad = user_scores.target_triad(targets, category, facet)
+                self.assertLess(triad[0], triad[1], (category, facet))
+                self.assertLess(triad[1], triad[2], (category, facet))
+                previous = None
+                for lvl in (-1.0, 0.5, 1.0, 1.4, 2.0, 2.6, 3.0, 3.5, 4.2, 6.0):
+                    z = user_scores.level_to_z(lvl, *triad)
+                    self.assertAlmostEqual(user_scores.z_to_level(z, *triad), lvl, places=3, msg=(category, facet, lvl))
+                    self.assertTrue(previous is None or z > previous)
+                    previous = z
+                self.assertAlmostEqual(user_scores.level_to_z(4.0, *triad), triad[2] + (triad[2] - triad[1]), places=6)
+        with self.assertRaisesRegex(ValueError, 't1 < t2 < t3'):
+            user_scores.level_to_z(2.5, -1.0, 0.0, 0.0)           # a scale whose levels 2 and 3 coincide is refused
+        with self.assertRaisesRegex(ValueError, 't1 < t2 < t3'):
+            user_scores.z_to_level(0.1, -1.0, 0.0, 0.0)
 
     def test_maintainer_score_wins_over_measured_and_local_user_beats_maintainer(self):
         maintainer_doc = {
-            'schema_version': 2,
+            'schema_version': user_scores.SCHEMA_VERSION,
             'scores': {
                 'gpt-6.1-sol': {
                     'creativity': {'level': 3.2, 'as_of': '2026-11-11', 'kind': 'maintainer'},
@@ -90,7 +121,7 @@ class ManualScoreLayerTests(unittest.TestCase):
             },
         }
         local_doc = {
-            'schema_version': 2,
+            'schema_version': user_scores.SCHEMA_VERSION,
             'scores': {
                 'gpt-6.1-sol': {
                     'creativity': {'level': 1.2, 'as_of': '2026-11-11', 'kind': 'user'},
@@ -132,7 +163,7 @@ class ManualScoreLayerTests(unittest.TestCase):
             pub_file = Path(tmp) / 'public-scores.json'
             loc_file = Path(tmp) / 'local-scores.json'
             pub_doc = {
-                'schema_version': 2,
+                'schema_version': user_scores.SCHEMA_VERSION,
                 'scores': {
                     # gpt-6.1-sol creativity is measured near level ~2.00; manual 3.2 drifts by > 0.4
                     'gpt-6.1-sol': {'creativity': {'level': 3.2, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
@@ -172,7 +203,7 @@ class ManualScoreLayerTests(unittest.TestCase):
                 'axis_demand': {'creativity': 0, 'coding': 1, 'aesthetics': 0, 'tool_operation': 2},
             },
         }
-        empty_pub = {'schema_version': 2, 'scores': {}}
+        empty_pub = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {}}
         with patch.object(user_scores, 'load_public', return_value=empty_pub):
             before = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts))
         gb_before = next(c for c in before['ranking'] if c['id'] == 'grok_bot')
@@ -185,7 +216,7 @@ class ManualScoreLayerTests(unittest.TestCase):
 
         # Filling a maintainer score lifts Mode B; read_local_state=False honors maintainer scores while ignoring local user scores.
         pub_doc = {
-            'schema_version': 2,
+            'schema_version': user_scores.SCHEMA_VERSION,
             'scores': {
                 'grok-bot': {
                     'tool_operation.responsiveness': {'level': 2.5, 'as_of': '2026-11-11', 'kind': 'maintainer'},
@@ -236,7 +267,7 @@ class ManualScoreLayerTests(unittest.TestCase):
             reference_provenance.validate_references(refs)
 
             # Writing kind='user' into the public file is rejected by the provenance checks.
-            bad = {'schema_version': 2, 'scores': {'gpt-6.1-sol': {'creativity': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'user'}}}}
+            bad = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {'gpt-6.1-sol': {'creativity': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'user'}}}}
             (refs / 'user-scores.json').write_text(json.dumps(bad), encoding='utf-8')
             with self.assertRaisesRegex(ValueError, 'kind'):
                 reference_provenance.validate_references(refs)
@@ -494,7 +525,7 @@ class FixRoundRegressionTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, 'as_of'):
             user_scores.validate_document(
-                {'schema_version': 2, 'scores': {'grok-bot': {'tool_operation.responsiveness': {'level': 2.5, 'date': '2026-11-10', 'kind': 'maintainer'}}}},
+                {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {'grok-bot': {'tool_operation.responsiveness': {'level': 2.5, 'date': '2026-11-10', 'kind': 'maintainer'}}}},
                 expected_kind='maintainer',
             )
         with self.assertRaisesRegex(ValueError, 'schema_version'):
@@ -504,7 +535,7 @@ class FixRoundRegressionTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, 'Unknown score target'):
             user_scores.validate_document(
-                {'schema_version': 2, 'scores': {'grok-bot': {'divergence': {'level': 2.5, 'as_of': '2026-11-10', 'kind': 'maintainer'}}}},
+                {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {'grok-bot': {'divergence': {'level': 2.5, 'as_of': '2026-11-10', 'kind': 'maintainer'}}}},
                 expected_kind='maintainer',
             )
 
@@ -521,7 +552,37 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         with self.local.open('w', encoding='utf-8', newline='\n') as handle:
             json.dump(doc, handle)
 
-    def test_a_schema_1_file_is_read_with_its_entries_under_the_renamed_category(self):
+    @staticmethod
+    def stood_for(level, target):
+        """The value (z) a schema-2 `level` on `target` stood for: read from the declared legacy scale, independently of
+        `convert_scores` (level 3 = the anchor; where the anchor sat at the median every level in [2, 3] was the median)."""
+        t1, t2, t3 = user_scores.legacy_triads(2)[target]
+        if level <= 2.0:
+            return t1 + (level - 1.0) * (t2 - t1)
+        if level <= 3.0:
+            return t2 + (level - 2.0) * (t3 - t2)
+        return t3 + (level - 3.0) * ((t3 - t2) if t3 > t2 else (t2 - t1))
+
+    def assert_values_kept(self, old_scores, new_scores):
+        """Every old entry maps to the value it stood for on the shipped scale, to the rounding of the written level; an entry
+        of a category of several facets is written per facet."""
+        targets = json.loads((REFERENCES_DIR / 'five-axis-scores.json').read_text(encoding='utf-8'))['anchor']['targets']
+        for model, entries in old_scores.items():
+            for target, entry in entries.items():
+                cat, facet = user_scores.parse_target(target)
+                facets = [facet] if facet else list(user_scores.CATEGORY_FACETS[cat])
+                for f in facets:
+                    key = target if facet or len(user_scores.CATEGORY_FACETS[cat]) == 1 else f'{cat}.{f}'
+                    new = new_scores[model][key]
+                    triad = user_scores.target_triad(targets, cat, f)
+                    step = max(triad[1] - triad[0], triad[2] - triad[1])
+                    self.assertAlmostEqual(user_scores.level_to_z(new['level'], *triad),
+                                           self.stood_for(entry['level'], f'{cat}.{f}'), delta=0.005 * step + 1e-9, msg=(model, key))
+                    self.assertEqual({k: v for k, v in new.items() if k != 'level'}, {k: v for k, v in entry.items() if k != 'level'})
+                if not facet and len(user_scores.CATEGORY_FACETS[cat]) > 1:
+                    self.assertNotIn(target, new_scores[model])       # written per facet, not as the category
+
+    def test_a_schema_1_file_is_read_with_its_entries_under_the_renamed_category_on_the_current_scale(self):
         entry = {'level': 2.6, 'as_of': '2026-11-12', 'kind': 'user', 'note': 'mine'}
         facet = {'level': 1.5, 'as_of': '2026-11-13', 'kind': 'user'}
         coding = {'level': 3.0, 'as_of': '2026-11-14', 'kind': 'user'}
@@ -530,9 +591,39 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         before = self.local.read_bytes()
         loaded = user_scores.load_local(self.local)
         self.assertEqual(loaded['schema_version'], user_scores.SCHEMA_VERSION)
-        self.assertEqual(loaded['scores'], {
-            'model-a': {'creativity': entry, 'coding': coding}, 'model-b': {'creativity.creative_writing': facet}})
+        self.assert_values_kept({'model-a': {'creativity': entry, 'coding': coding},
+                                 'model-b': {'creativity.creative_writing': facet}}, loaded['scores'])
         self.assertEqual(self.local.read_bytes(), before)  # a read never writes
+
+    def test_a_schema_2_file_keeps_the_value_of_every_entry_and_the_next_save_writes_schema_3(self):
+        """Owner 2026-11-18: level 3 moved from the anchor to the panel maximum; an entry keeps the value it stood for
+        (`LOCAL_UPGRADES[2]`, `legacy-level-scales.json`), a facet entry beats a category entry, and nothing is written by a read."""
+        old = {
+            'model-a': {'creativity': {'level': 3.1, 'as_of': '2026-11-12', 'kind': 'user', 'note': 'mine'},
+                        'coding': {'level': 2.4, 'as_of': '2026-11-12', 'kind': 'user'},
+                        'tool_operation.responsiveness': {'level': 2.5, 'as_of': '2026-11-12', 'kind': 'user'}},
+            'model-b': {'aesthetics': {'level': 0.5, 'as_of': '2026-11-12', 'kind': 'user'},
+                        'coding': {'level': 3.0, 'as_of': '2026-11-12', 'kind': 'user'},
+                        'coding.faithfulness': {'level': 1.7, 'as_of': '2026-11-13', 'kind': 'user'}},
+        }
+        self.write({'schema_version': 2, 'scores': old})
+        before = self.local.read_bytes()
+        loaded = user_scores.load_local(self.local)
+        self.assertEqual(loaded['schema_version'], 3)
+        self.assert_values_kept({'model-a': {k: v for k, v in old['model-a'].items()},
+                                 'model-b': {'aesthetics': old['model-b']['aesthetics'],
+                                             'coding.faithfulness': old['model-b']['coding.faithfulness']}},
+                                loaded['scores'])
+        # model-b's category entry fills only the facet without an entry of its own
+        self.assert_values_kept({'model-b': {'coding.execution': old['model-b']['coding']}},
+                                {'model-b': {'coding.execution': loaded['scores']['model-b']['coding.execution']}})
+        self.assertNotIn('coding', loaded['scores']['model-b'])
+        self.assertEqual(self.local.read_bytes(), before)
+        user_scores.set_score('model-c', 'coding', 2.0, local_path=self.local, as_of='2026-11-18')
+        saved = json.loads(self.local.read_text(encoding='utf-8'))
+        self.assertEqual(saved['schema_version'], 3)
+        self.assertEqual(saved['scores']['model-a'], loaded['scores']['model-a'])          # converted once, kept as written
+        self.assertEqual(user_scores.load_local(self.local)['scores']['model-a'], saved['scores']['model-a'])   # no second conversion
 
     def test_the_next_save_writes_the_current_schema_and_keeps_the_earlier_entries(self):
         entry = {'level': 2.6, 'as_of': '2026-11-12', 'kind': 'user'}
@@ -540,8 +631,25 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         user_scores.set_score('model-b', 'coding', 2.0, local_path=self.local, as_of='2026-11-18')
         saved = json.loads(self.local.read_text(encoding='utf-8'))
         self.assertEqual(saved['schema_version'], user_scores.SCHEMA_VERSION)
-        self.assertEqual(saved['scores']['model-a'], {'creativity': entry})
+        self.assert_values_kept({'model-a': {'creativity': entry}}, saved['scores'])
         self.assertEqual(saved['scores']['model-b']['coding']['level'], 2.0)
+
+    def test_convert_scores_keeps_values_for_any_old_and_new_scale(self):
+        """The conversion's own rule, on scales the test makes up: value before = value after (to the rounding), for levels
+        below 1, inside the scale and above 3, and on a facet whose old levels 2 and 3 were one value."""
+        old = {'creativity.creative_writing': (-3.0, -2.0, 0.0), 'tool_operation.responsiveness': (-1.7, 0.1, 0.1)}
+        new = {'creativity.creative_writing': (-3.2, -2.2, 1.3), 'tool_operation.responsiveness': (-1.9, 0.0, 1.6)}
+        scores = {'m': {'creativity': {'level': 0.4, 'as_of': '2026-11-11', 'kind': 'maintainer'},
+                        'tool_operation.responsiveness': {'level': 2.5, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
+                  'n': {'creativity': {'level': 3.6, 'as_of': '2026-11-11', 'kind': 'maintainer'}}}
+        out = user_scores.convert_scores(scores, old, lambda cat, facet: new[f'{cat}.{facet}'])
+        for model, entries in scores.items():
+            for target, entry in entries.items():
+                key = 'creativity.creative_writing' if target == 'creativity' else target
+                z = user_scores._legacy_level_to_z(entry['level'], *old[key])
+                step = max(new[key][1] - new[key][0], new[key][2] - new[key][1])
+                self.assertAlmostEqual(user_scores.level_to_z(out[model][target]['level'], *new[key]), z, delta=0.005 * step)
+                self.assertEqual(out[model][target]['kind'], 'maintainer')
 
     def test_every_schema_below_the_current_one_has_an_upgrade_step(self):
         self.assertEqual(sorted(user_scores.LOCAL_UPGRADES), list(range(1, user_scores.SCHEMA_VERSION)))
@@ -653,10 +761,17 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
                 'axis_demand': {'creativity': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0},
             },
         }
-        empty_pub = {'schema_version': 2, 'scores': {}}
+        empty_pub = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {}}
+
+        # The precondition is set here, not read from the shipped coverage: gpt-6-sol has no faithfulness at Max and
+        # deepseek-v4-pro none at all.
+        five = keep_efforts(copy.deepcopy(axis_scores.load_five_axis()), 'gpt-6-sol', 'coding', 'faithfulness',
+                            ('low', 'medium', 'high', 'xhigh'))
+        five = drop_facet(five, 'deepseek-v4-pro', 'coding', 'faithfulness')
 
         def excluded():
-            with patch.object(user_scores, 'load_public', return_value=empty_pub):
+            with patch.object(user_scores, 'load_public', return_value=empty_pub), \
+                    patch.object(axis_scores, 'load_five_axis', return_value=copy.deepcopy(five)):
                 d = allocator.plan(code_task, usage, self.now, accounts=copy.deepcopy(accounts),
                                    host_policy_config={'allowed_accounts': ['codex']})
             return {c['id']: c['excluded'] for c in d['ranking']}
@@ -716,8 +831,8 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         cx['luna56_high'] = {**cx['sol_high'], 'model': 'gpt-5.6-luna', 'effort': 'high'}
         cx['unscored_high'] = {**cx['sol_high'], 'model': 'gpt-oss-120b', 'effort': 'high'}
         usage = usage_windows(self.now, {'codex': [('usage', 90, 84)]})
-        empty_pub = {'schema_version': 2, 'scores': {}}
-        # On aesthetics, gpt-5.6-luna has High = -3.0273 < t1 = -2.8934 (negative fit term) and no Medium score:
+        empty_pub = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {}}
+        # On aesthetics, gpt-5.6-luna has a High reading below t1 (negative fit term) and no Medium score:
         # unscored Medium must be excluded rather than standing at 0.0 and beating scored High!
         task = {
             'objective': 'Named model without effort',
@@ -731,7 +846,10 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
                 'axis_demand': {'creativity': 0, 'coding': 0, 'aesthetics': 2, 'tool_operation': 0},
             },
         }
-        with patch.object(user_scores, 'load_public', return_value=empty_pub):
+        # The precondition is set here: gpt-5.6-luna has a design reading at High and none at Medium.
+        five = keep_efforts(copy.deepcopy(axis_scores.load_five_axis()), 'gpt-5.6-luna', 'aesthetics', 'design', ('high',))
+        with patch.object(user_scores, 'load_public', return_value=empty_pub), \
+                patch.object(axis_scores, 'load_five_axis', return_value=five):
             d = allocator.plan(task, usage, self.now, accounts=copy.deepcopy(accounts),
                                host_policy_config={'allowed_accounts': ['codex']})
         self.assertEqual(d['choice'], 'luna56_high')
@@ -744,7 +862,10 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             **task, 'constraints': {'model': 'gpt-oss-120b'},
             'profile': {**task['profile'], 'axis_demand': {'creativity': 0, 'coding': 2, 'aesthetics': 0, 'tool_operation': 0}},
         }
-        with patch.object(user_scores, 'load_public', return_value=empty_pub):
+        # gpt-oss-120b has coding readings in the shipped data; the precondition (no reading at any effort) is set here.
+        five_un = drop_facet(drop_facet(copy.deepcopy(axis_scores.load_five_axis()), 'gpt-oss-120b', 'coding', 'execution'),
+                             'gpt-oss-120b', 'coding', 'faithfulness')
+        with patch.object(user_scores, 'load_public', return_value=empty_pub),                 patch.object(axis_scores, 'load_five_axis', return_value=five_un):
             d_un = allocator.plan(task_unscored, usage, self.now, accounts=copy.deepcopy(accounts),
                                   host_policy_config={'allowed_accounts': ['codex']})
         self.assertEqual(d_un['choice'], 'unscored_high')
@@ -756,7 +877,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         targets = self.five['anchor']['targets']
         # 1) Manual tool_operation score never overwrites text_only / missing image_input modality to 'yes'.
         pub_doc = {
-            'schema_version': 2,
+            'schema_version': user_scores.SCHEMA_VERSION,
             'scores': {
                 'gpt-oss-120b': {
                     'tool_operation': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'},
@@ -774,7 +895,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
 
         # 2) Whole-category coding maps per facet through each facet's own triad.
         code_doc = {
-            'schema_version': 2,
+            'schema_version': user_scores.SCHEMA_VERSION,
             'scores': {
                 'gpt-oss-120b': {
                     'coding': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'maintainer'},
@@ -810,9 +931,9 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             z = user_scores.level_to_z(lvl, t1, t2, t3)
             self.assertAlmostEqual(user_scores.z_to_level(z, t1, t2, t3), lvl, places=6)
         r1, r2, r3 = user_scores.target_triad(targets, 'tool_operation', 'responsiveness')
-        self.assertEqual(r2, r3)
+        self.assertLess(r2, r3)                                  # responsiveness has a scale like every facet
         self.assertEqual(user_scores.z_to_level(r2, r1, r2, r3), 2.0)
-        self.assertGreater(user_scores.z_to_level(r2 + 0.2, r1, r2, r3), 3.0)
+        self.assertAlmostEqual(user_scores.z_to_level(r3 + (r3 - r2), r1, r2, r3), 4.0, places=3)
 
         # 6) R2-F9: --public writes atomically with zero .lock files inside references/.
         with tempfile.TemporaryDirectory() as tmp:
@@ -838,7 +959,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         }
         user_scores.apply_overlay(
             minimal_models, targets,
-            public_scores={'schema_version': 2, 'scores': {
+            public_scores={'schema_version': user_scores.SCHEMA_VERSION, 'scores': {
                 'm-whole': {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
                 'm-missing': {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
             }},

@@ -2,7 +2,7 @@
 
 Plain Python over the router's own data (five-axis-scores.json and the model rows of axis_scores.five_axis_overlay), so it is
 unit-tested without a display. Levels are on the classifier's demand scale through user_scores.z_to_level (1 = the panel's
-weakest, 2 = the panel median, 3 = the anchor); the manual-score writer is user_scores, the same code path as
+weakest, 2 = the panel median, 3 = the panel's best; above 3 is shown as the number it is); the manual-score writer is user_scores, the same code path as
 `agentcompass score set|clear` (local file only).
 """
 from __future__ import annotations
@@ -38,10 +38,10 @@ def demand_grid_n() -> int:
 
 
 def level_text(level) -> str:
-    """A level on the 1..3 scale for display: clamped at 3 and badged "3.0+" above it (extrapolation there is narrow)."""
+    """A level on the demand scale for display: one decimal, never below 0; above 3 it is the extrapolated number."""
     if not _number(level):
         return "—"
-    return "3.0+" if level > 3.0 else f"{max(level, 0.0):.1f}"
+    return f"{max(level, 0.0):.1f}"
 
 
 def category_label(key: str) -> str:
@@ -97,12 +97,14 @@ def level3_cap(targets: dict, category: str, facet: str) -> dict | None:
 
 
 def continuity_derivation(targets: dict, category: str) -> tuple[float | None, str]:
-    """(the category's continuity value, how it is derived): the largest t3 − t2 over its facets, as the data computed it."""
+    """(the category's continuity value, how it is derived): the largest t3 − t2 over its facets, as the data computed it
+    (a per-facet category reads the level-3 task's target of each facet)."""
     value = (targets.get(category) or {}).get("continuity")
+    by_facet = ((((targets.get(category) or {}).get("levels") or {}).get("3")) or {}).get("by_facet") or {}
     gaps = []
     for facet in display_facets_of(category):
         lv = _levels(targets, category, facet)
-        t2, t3 = (lv.get("2") or {}).get("target"), (lv.get("3") or {}).get("target")
+        t2, t3 = (lv.get("2") or {}).get("target"), ((by_facet.get(facet) or lv.get("3")) or {}).get("target")
         if _number(t2) and _number(t3):
             gaps.append((t3 - t2, facet, t2, t3))
     if not gaps:
@@ -222,14 +224,10 @@ def facet_cell(targets: dict, category: str, facet: str, cell: dict | None) -> d
     """One facet of one model: its z at the overview effort, the level, the status and the evidence for the hover."""
     cell = cell if isinstance(cell, dict) else {}
     z = _at(cell)
-    lv_map = _levels(targets, category, facet)
-    t2 = (lv_map.get("2") or {}).get("target")
-    t3 = (lv_map.get("3") or {}).get("target")
-    collapsed = _number(z) and _number(t2) and _number(t3) and t3 <= t2 and z > t3 + 1e-6
     status = cell.get("status", "missing") if cell else "missing"
     owner = _facet_owner(category, facet)
     return {"z": z, "level": _level(targets, f"{owner}.{facet}", z), "status": status,
-            "collapsed": collapsed, "manual": cell.get("manual"), "evidence": evidence_lines(cell)}
+            "manual": cell.get("manual"), "evidence": evidence_lines(cell)}
 
 
 def evidence_lines(cell: dict) -> list[str]:
@@ -337,8 +335,8 @@ def cell_tip(model_label: str, category: str, cell: dict, model_key: str | None 
     if category == "aesthetics":
         lines.append(_tr("等级 1 仅看设计；等级 2、3 取设计与图像识别（与工具操作共用）中较弱者。"))
     if category == "tool_operation":
-        lines.append(_tr("响应速度的等级 ≥ 2 表示「至少达到面板中位数」：t2 与 t3 相同。"))
-    lines.append(_tr("高于 3 的等级按 t3 − t2 外推，区间很窄，显示为 3.0+。"))
+        lines.append(_tr("工具操作等级 3 的任务对响应速度的要求与等级 2 相同（面板中位数），另加图像识别。"))
+    lines.append(_tr("等级 3 = 面板最强；高于 3 的等级按 t3 − t2 外推，照实显示。"))
     return "\n".join(lines)
 
 
@@ -381,7 +379,7 @@ def editor_current_text(row: dict, target: str) -> str:
 
 def prefill_level(row: dict, target: str) -> float | None:
     """Exact level to prefill in the editor, or None when prefilling would lose information (multi-facet aggregation,
-    clamped 3.0+ extrapolation, or collapsed t2 == t3 above median)."""
+    or a level below 1)."""
     category, _, facet = target.partition(".")
     cell = row["cells"][category]
     if facet:
@@ -390,7 +388,7 @@ def prefill_level(row: dict, target: str) -> float | None:
         if isinstance(manual, dict) and manual.get("target") == target and _number(manual.get("level")):
             return float(manual["level"])
         level = fc.get("level")
-        if _number(level) and 1.0 <= level <= 3.0 and not fc.get("collapsed"):
+        if _number(level) and level >= 1.0:
             return round(float(level), 1)
         return None
     manual = cell.get("manual")
@@ -399,6 +397,6 @@ def prefill_level(row: dict, target: str) -> float | None:
     if len(cell.get("facets") or {}) == 1:
         only = next(iter(cell["facets"].values()))
         level = only.get("level")
-        if _number(level) and 1.0 <= level <= 3.0 and not only.get("collapsed"):
+        if _number(level) and level >= 1.0:
             return round(float(level), 1)
     return None

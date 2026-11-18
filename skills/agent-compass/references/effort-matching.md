@@ -16,7 +16,7 @@ Per-effort capability and duration live in `references/five-axis-scores.json` (`
 
 ## The match
 
-- Targets come from the panel (the fleet models of `anchor.panel`, counted by `anchor.panel_n`): level 1 (`t1`) is the panel's weakest (and the zero point of `five_axis_fit`), level 2 (`t2`) is the panel median, and level 3 (`t3`) is the anchor (`0.0`, monotone-raised to `t2` if `t3 < t2`).
+- Targets come from the panel (the fleet models of `anchor.panel`, counted by `anchor.panel_n`): level 1 (`t1`) is the panel's weakest (and the zero point of `five_axis_fit`), level 2 (`t2`) is the panel median, and level 3 (`t3`) is the panel's best (see `docs/technical-reference.md`).
 - A routine task (`demand = 1`) is met by lower efforts (`responsiveness` is also higher at lower efforts when `tool_operation >= 2`) and pays less quota; a demanding task (`demand = 2..3`) climbs to higher efforts when the extra fit (`min(z, t) - t1`) outweighs the quota cost.
 - Expiring quota makes the extra spend cheap (the economy prices it near zero under the window's recovery line), so effort rises.
 - `decision.task.max_recommended_effort` is the effort of the chosen bundle.

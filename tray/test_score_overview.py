@@ -1,4 +1,4 @@
-"""The scoring page's data: the four categories, model levels on the 1..3 scale and the manual-score path (hermetic)."""
+"""The scoring page's data: the four categories, model levels on the panel scale (1 weakest, 2 median, 3 best, above 3 extrapolated) and the manual-score path (hermetic)."""
 import json
 import sys
 from datetime import datetime, timezone
@@ -23,7 +23,7 @@ TARGETS = {
     'creativity': {'levels': {}, 'continuity': 2.0,
                    'facets': {'creative_writing': {'levels': {'1': {'target': -3.0, 'statistic': 'panel minimum'},
                                                               '2': {'target': -2.0, 'statistic': 'panel median'},
-                                                              '3': {'target': 0.0, 'statistic': 'anchor'}}}}},
+                                                              '3': {'target': 0.0, 'statistic': 'panel maximum'}}}}},
     'coding': {'continuity': 1.5, 'facets': {
         'execution': {'levels': {'1': {'target': -3.0}, '2': {'target': -1.5},
                                  '3': {'target': 0.0, 'ceiling': {'value': 0.42, 'model': 'facet-best', 'status': 'measured'}}}},
@@ -31,7 +31,7 @@ TARGETS = {
     'aesthetics': {'continuity': 1.0, 'facets': {
         'design': {'levels': {'1': {'target': -2.0}, '2': {'target': -1.0}, '3': {'target': 0.0}}}}},
     'tool_operation': {'continuity': 0.7, 'facets': {
-        'responsiveness': {'levels': {'1': {'target': -1.6}, '2': {'target': 0.1}, '3': {'target': 0.1}}},
+        'responsiveness': {'levels': {'1': {'target': -1.6}, '2': {'target': 0.1}, '3': {'target': 1.5}}},
         'image_recognition': {'levels': {'1': {'target': -2.8}, '2': {'target': -0.7}, '3': {'target': 0.0}}}}},
 }
 for _cat in TARGETS.values():
@@ -49,6 +49,10 @@ TARGETS['aesthetics']['levels'] = {
 }
 
 
+def _number_like(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def cell(value, status='measured', **extra):
     return {'value': value, 'by_effort': {'high': value}, 'status': status, **extra}
 
@@ -64,11 +68,12 @@ def model(z, status='measured'):
         'axis_status': {'creativity': status, 'coding': 'measured', 'aesthetics': 'measured', 'tool_operation': 'measured'}}}
 
 
-def test_level_text_clamps_above_three():
+def test_level_text_shows_a_level_above_three_as_the_number_it_is():
     assert so.level_text(None) == '—'
     assert so.level_text(2.04) == '2.0'
     assert so.level_text(3.0) == '3.0'
-    assert so.level_text(3.4) == '3.0+'
+    assert so.level_text(3.4) == '3.4'          # owner 2026-11-18: 3 is not a top, no "3.0+" clamp
+    assert so.level_text(-0.4) == '0.0'
 
 
 def test_category_names_are_the_current_four_and_creativity_is_chuangyi():
@@ -97,16 +102,19 @@ def test_model_rows_read_levels_through_z_to_level():
     rows = so.model_rows({'m': model(-2.0), 'top': model(0.5)}, TARGETS)
     by = {r['model']: r for r in rows}
     assert by['m']['cells']['creativity']['level'] == pytest.approx(2.0)
-    assert so.cell_text(by['top']['cells']['creativity']) == '3.0+'
-    # aesthetics and tool_operation: the weakest of their existing facets; responsiveness above t3 is at least the median
+    # above the panel's best: t3 + (z - t3) / (t3 - t2) extrapolated by user_scores.z_to_level, shown as that number
+    assert by['top']['cells']['creativity']['level'] == pytest.approx(user_scores.z_to_level(0.5, -3.0, -2.0, 0.0))
+    assert by['top']['cells']['creativity']['level'] > 3.0
+    assert so.cell_text(by['top']['cells']['creativity']) == so.level_text(by['top']['cells']['creativity']['level'])
+    # aesthetics and tool_operation: the weakest of their existing facets
     assert by['m']['cells']['aesthetics']['level'] == pytest.approx(
         min(user_scores.z_to_level(-2.0, -2.0, -1.0, 0.0), user_scores.z_to_level(-2.0, -2.8, -0.7, 0.0)))
     assert by['m']['cells']['tool_operation']['level'] == pytest.approx(
-        min(user_scores.z_to_level(-2.0, -2.8, -0.7, 0.0), user_scores.z_to_level(0.5, -1.6, 0.1, 0.1)))
+        min(user_scores.z_to_level(-2.0, -2.8, -0.7, 0.0), user_scores.z_to_level(0.5, -1.6, 0.1, 1.5)))
     tip = so.cell_tip('M', 'creativity', by['m']['cells']['creativity'], model_key='m-raw')
     assert 'M (m-raw) · 创意' in tip
     assert 'lmarena.creative_writing — Model X (High)' in tip
-    assert '3.0+' in tip
+    assert '等级 3 = 面板最强' in tip
 
 
 def test_cells_show_only_levels_while_hover_and_editor_show_deciding_source():
@@ -179,9 +187,12 @@ def test_partial_category_shows_existing_facet_level_and_marks_missing_facet_in_
 
     monkeypatch.setenv(user_scores.ENV_VAR, str(tmp_path / 'none.json'))
     shipped = {r['model']: r for r in router_data.score_overview()['models']}
-    assert so.cell_text(shipped['glm-5.3']['cells']['tool_operation']) != '—'
-    assert so.cell_text(shipped['beam-free']['cells']['tool_operation']) != '—'
-    assert so.cell_text(shipped['glm-5.2']['cells']['tool_operation']) == '—'
+    # on the shipped data the cell is "—" exactly when none of the category's facets has a level (rule, not a coverage pin)
+    for name, row in shipped.items():
+        facets = row['cells']['tool_operation']['facets']
+        has_level = any(_number_like(f.get('level')) for f in facets.values())
+        assert (so.cell_text(row['cells']['tool_operation']) != '—') == has_level, name
+    assert any(so.cell_text(r['cells']['tool_operation']) != '—' for r in shipped.values())
 
 
 def test_category_overview_lists_boards_dates_targets_and_continuity():
@@ -242,10 +253,15 @@ def test_editor_prefill_is_never_lossy_and_category_clear_warns_when_facet_overr
     initial = {r['model']: r for r in router_data.score_overview()['models']}['gpt-6.1-sol']
     assert so.prefill_level(initial, 'coding') is None
     assert so.prefill_level(initial, 'tool_operation') is None
-    # Clamped 3.0+ and collapsed responsiveness > t3 also do not prefill lossy numbers.
+    # A level above 3 is a real number now and prefills as it is; a level below 1 (extrapolated downwards) does not.
     top_row = so.model_rows({'top': model(0.5)}, TARGETS)[0]
-    assert so.prefill_level(top_row, 'creativity') is None
-    assert so.prefill_level(top_row, 'tool_operation.responsiveness') is None
+    assert so.prefill_level(top_row, 'creativity') == pytest.approx(user_scores.z_to_level(0.5, -3.0, -2.0, 0.0), abs=0.05)
+    assert so.prefill_level(top_row, 'creativity') > 3.0
+    assert so.prefill_level(top_row, 'tool_operation.responsiveness') == pytest.approx(
+        user_scores.z_to_level(0.5, -1.6, 0.1, 1.5), abs=0.05)
+    low_row = so.model_rows({'low': model(-3.4)}, TARGETS)[0]
+    assert low_row['cells']['creativity']['level'] < 1.0
+    assert so.prefill_level(low_row, 'creativity') is None
 
     # Manual score tooltip displays read-only public data reference (`公开数据对照` / `Public data reference`) without overwriting manual level.
     router_data.set_manual_score('gpt-6.1-sol', 'creativity', 2.4)

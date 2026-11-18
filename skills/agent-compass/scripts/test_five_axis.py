@@ -48,12 +48,12 @@ def ceiling_row(value):
 
 def level_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
     """One category's panel targets as five-axis-scores.json writes them (level 1 the panel's weakest, 2 the median, 3
-    the anchor; `zero` is the level-1 target; the level-3 row carries the `ceiling`, the best measured model, t3 unless
+    the panel's best; `zero` is the level-1 target; the level-3 row carries the `ceiling`, the best measured model, t3 unless
     given). tool_operation asks per facet."""
     def lv(t, name):
         return {'target': t, 'zero': t1, 'statistic': name, 'n': 12}
     return {'levels': {'1': lv(t1, 'panel minimum'), '2': lv(t2, 'panel median'),
-                       '3': {**lv(t3, 'anchor'), 'ceiling': ceiling_row(t3 if ceiling is None else ceiling)}},
+                       '3': {**lv(t3, 'panel maximum'), 'ceiling': ceiling_row(t3 if ceiling is None else ceiling)}},
             'continuity': round(t3 - t2, 4)}
 
 
@@ -68,11 +68,11 @@ def aesthetics_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
 
 def tool_targets(t1=-1.0, t2=-0.5, t3=0.0, ceiling=None):
     facet = lambda t: {'target': t, 'zero': t1, 'n': 12}
-    top = lambda t: {**facet(t), 'ceiling': ceiling_row(t if ceiling is None else max(t, ceiling))}
+    top = lambda t: {**facet(t), 'ceiling': ceiling_row(t3 if ceiling is None else max(t3, ceiling))}
     return {'levels': {'1': {'by_facet': {}, 'reason': 'no ability requirement'},
                        '2': {'by_facet': {'responsiveness': facet(t2)}},
-                       '3': {'by_facet': {'responsiveness': top(max(t2, t3)), 'image_recognition': top(t3)}}},
-            'continuity': round(max(t2, t3) - t2, 4)}
+                       '3': {'by_facet': {'responsiveness': top(t2), 'image_recognition': top(t3)}}},
+            'continuity': round(max(t3 - t2, 0.0), 4)}
 
 
 TARGETS = {'creativity': level_targets(), 'coding': level_targets(), 'aesthetics': aesthetics_targets(),
@@ -133,7 +133,7 @@ def document(models, **override):
     rows = {name: row() for name, info in models.items() if isinstance(info, dict)}
     rows['claude-opus-5-5'] = row(1.0, 15.0)
     rows.update(override)
-    return {'models': rows, 'anchor': ANCHOR, 'capacity': CAPACITY}
+    return {'schema': axis_scores.FIVE_AXIS_SCHEMA, 'models': rows, 'anchor': ANCHOR, 'capacity': CAPACITY}
 
 
 def window(usd, age=3, ref=None):
@@ -213,9 +213,10 @@ class FiveAxisTests(unittest.TestCase):
         self.assertAlmostEqual(below, (3 * -1.0 + 0 + 2 * 0.2) / 6, places=4)       # below the weakest: negative term
         # tool_operation level 1: no requirement, so it is not part of the fit at all
         self.assertEqual(axis_scores.five_axis_targets(demand(0, 0, 0, 1), TARGETS), {})
-        # level 3: the weaker facet decides; a level never asks less of a facet than the level below
+        # level 3: the weaker facet decides; a level-3 task asks of responsiveness what a level-2 task asks (declared rule)
         t3 = axis_scores.five_axis_targets(demand(0, 0, 0, 3), TARGETS)['tool_operation']['by_facet']
-        self.assertEqual(t3['responsiveness']['target'], 0.0)
+        t2 = axis_scores.five_axis_targets(demand(0, 0, 0, 2), TARGETS)['tool_operation']['by_facet']
+        self.assertEqual(t3['responsiveness']['target'], t2['responsiveness']['target'])
         mono = axis_scores.five_axis_targets(demand(0, 0, 0, 3), {'tool_operation': tool_targets(-1.7, 0.14, 0.0)})
         self.assertEqual(mono['tool_operation']['by_facet']['responsiveness']['target'], 0.14)
         fit3, rows3 = axis_scores.five_axis_fit(values, demand(0, 0, 0, 3), {'tool_operation': {'by_facet': t3}})
@@ -352,20 +353,19 @@ class FiveAxisTests(unittest.TestCase):
             rows_z = axis_scores.five_axis_fit({**values, 'creativity': z}, d, t)[1]
             self.assertEqual(axis_scores.five_axis_headroom(rows_z, targets)['creativity']['above_anchor'], shown)
 
-    def test_a_five_axis_file_without_level_three_ceilings_is_named_with_what_to_run(self):
-        """A file written before schema /3 fails with a message naming the missing rows and the command, never a KeyError."""
-        old = copy.deepcopy(TARGETS)
-        del old['coding']['levels']['3']['ceiling']
-        del old['tool_operation']['levels']['3']['by_facet']['image_recognition']['ceiling']
-        doc = {'schema': 'agent-compass.five-axis-scores/2', 'anchor': {**ANCHOR, 'targets': old}}
-        with self.assertRaises(ValueError) as caught:
-            axis_scores.require_level3_ceilings(doc)
-        text = str(caught.exception)
-        for part in ('coding', 'tool_operation.image_recognition', 'five-axis-scores/2', 'agentcompass data'):
-            self.assertIn(part, text)
-        self.assertNotIn('creativity', text)
-        axis_scores.require_level3_ceilings({'anchor': ANCHOR})                    # the current shape passes
-        axis_scores.require_level3_ceilings(axis_scores.load_five_axis())           # and so does the shipped file
+    def test_a_five_axis_file_of_another_schema_is_refused_with_what_to_run(self):
+        """Schema /6 changed what level 3 means (the panel maximum, not the anchor): a file of any other schema fails fast with
+        the schema it has and the command to run, never read with the wrong scale."""
+        for schema in ('agent-compass.five-axis-scores/5', 'agent-compass.five-axis-scores/2', None):
+            with self.assertRaises(ValueError) as caught:
+                axis_scores.require_current_schema({'schema': schema, 'anchor': ANCHOR})
+            text = str(caught.exception)
+            for part in (repr(schema), axis_scores.FIVE_AXIS_SCHEMA, 'agentcompass data'):
+                self.assertIn(part, text)
+        axis_scores.require_current_schema({'schema': axis_scores.FIVE_AXIS_SCHEMA})        # the current one passes
+        axis_scores.require_current_schema(axis_scores.load_five_axis())                    # and so does the shipped file
+        import five_axis
+        self.assertEqual(five_axis.SCHEMA, axis_scores.FIVE_AXIS_SCHEMA)                    # the builder writes what the reader reads
 
     def test_continuity_is_one_demand_level_of_the_highest_demanded_categories(self):
         targets = {**TARGETS, 'coding': level_targets(-2.0, -1.4, 0.0), 'tool_operation': tool_targets(-1.7, 0.14, 0.0)}
@@ -1093,7 +1093,7 @@ class HighFillTests(unittest.TestCase):
 
     def test_the_level_three_ceiling_is_the_best_measured_high_value_of_any_catalogued_model(self):
         """Owner 2026-11-13: the ceiling is computed from the data: the highest measured or interpolated High value among
-        all catalogued models (a model outside the panel included), never an estimate; t3 itself stays the anchor."""
+        all catalogued models (a model outside the panel included), never an estimate; t3 is the panel's own maximum."""
         import five_axis
         import measurements
 
@@ -1120,9 +1120,94 @@ class HighFillTests(unittest.TestCase):
             self.assertEqual((lv['ceiling']['value'], lv['ceiling']['model']), (round(best[0], 4), best[1]))
             self.assertEqual(lv['ceiling']['status'], 'interpolated')
             self.assertGreaterEqual(lv['ceiling']['value'], lv['target'])
-        self.assertEqual(targets['creativity']['levels']['3']['target'], 0.0)        # t3 stays the anchor
+        panel_best = max(float(v) for v in (0.0, *panel_vals))          # the panel's own maximum, not the outside model's
+        self.assertEqual(targets['creativity']['levels']['3']['target'], round(panel_best, 4))
+        self.assertLess(targets['creativity']['levels']['3']['target'], targets['creativity']['levels']['3']['ceiling']['value'])
         for level in ('1', '2'):
             self.assertNotIn('ceiling', targets['creativity']['levels'][level])
+
+    @staticmethod
+    def _level_rows(values):
+        """{model: row} of creativity and tool_operation High values, each facet of a model at the model's value."""
+        import five_axis
+
+        def row(value, status='measured'):
+            facet = {'value': value, 'by_effort': {'high': value}, 'status': status}
+            axes = {a: {} for a in five_axis.AXES}
+            axes['creativity'] = {'value': value, 'status': status, 'facets': {'creative_writing': dict(facet)}}
+            axes['tool_operation'] = {'facets': {f: dict(facet) for f in five_axis.AXES['tool_operation']}}
+            return {'axes': axes}
+        return {m: row(v) for m, v in values.items()}
+
+    def test_level_3_is_the_panel_maximum_not_the_anchor(self):
+        """Owner 2026-11-18 (five_axis.targets): a facet's level scale is the panel's minimum, median and maximum of the measured
+        High values; the anchor is the origin of z and is level 3 only where it is the panel's best. Computed here from the
+        panel the test builds, so no output is pinned."""
+        import measurements
+        import user_scores
+        rng = np.random.default_rng(11)
+        values = {f'p{i}': float(v) for i, v in enumerate(rng.uniform(-2.0, 1.5, 7).round(4))}
+        values[measurements.ANCHOR] = -0.3                    # below the panel's best on purpose
+        values['outside'] = max(values.values()) + 1.0        # catalogued, not in the panel: raises the ceiling only
+        panel = [m for m in values if m != 'outside']
+        rows = self._level_rows(values)
+        targets = self.scorer().targets(rows, panel)
+        in_panel = [values[m] for m in panel]
+        best_model = max(panel, key=lambda m: (values[m], m))
+        for name, levels in (('creativity', targets['creativity']['levels']),
+                             ('creative_writing', targets['creativity']['facets']['creative_writing']['levels']),
+                             ('image_recognition', targets['tool_operation']['facets']['image_recognition']['levels'])):
+            self.assertEqual((levels['1']['target'], levels['2']['target'], levels['3']['target']),
+                             (round(min(in_panel), 4), round(float(np.median(in_panel)), 4), round(max(in_panel), 4)), name)
+            self.assertEqual(levels['3']['statistic'], 'panel maximum')
+            self.assertEqual(levels['3']['model'], best_model)
+            self.assertGreater(levels['3']['ceiling']['value'], levels['3']['target'])   # the outside model raises the cap only
+            triad = tuple(levels[k]['target'] for k in '123')
+            self.assertLess(user_scores.z_to_level(-0.3, *triad), 3.0)       # the anchor is not level 3 here
+            self.assertGreater(user_scores.z_to_level(values['outside'], *triad), 3.0)   # a level above 3, not clamped
+        # continuity is t3 - t2 of the category
+        self.assertEqual(targets['creativity']['continuity'],
+                         round(targets['creativity']['levels']['3']['target'] - targets['creativity']['levels']['2']['target'], 4))
+
+    def test_responsiveness_level_3_task_asks_what_level_2_asks_but_its_scale_ends_at_the_panel_maximum(self):
+        """Owner 2026-11-18 (LEVEL3_ASKS_LEVEL2): a tool_operation level-3 task adds image recognition to the responsiveness a
+        level-2 task asks; the facet's own scale is (min, median, maximum) like every other."""
+        import measurements
+        rng = np.random.default_rng(5)
+        values = {f'p{i}': float(v) for i, v in enumerate(rng.uniform(-2.0, 1.5, 6).round(4))}
+        values[measurements.ANCHOR] = 0.0
+        targets = self.scorer().targets(self._level_rows(values), list(values))['tool_operation']
+        asks = lambda level: targets['levels'][level]['by_facet']
+        self.assertEqual(asks('3')['responsiveness']['target'], asks('2')['responsiveness']['target'])
+        scale = targets['facets']['responsiveness']['levels']
+        self.assertGreater(scale['3']['target'], scale['2']['target'])
+        self.assertEqual(scale['3']['target'], round(max(values.values()), 4))
+        self.assertEqual(asks('3')['image_recognition']['target'], targets['facets']['image_recognition']['levels']['3']['target'])
+        # continuity reads what the level-3 task asks of each facet: image recognition only
+        image = targets['facets']['image_recognition']['levels']
+        self.assertEqual(targets['continuity'], round(image['3']['target'] - image['2']['target'], 4))
+
+    def test_a_panel_without_three_different_level_targets_is_a_build_error_naming_the_facet(self):
+        """Owner 2026-11-18: levels 2 and 3 coincide only when the panel's median is its maximum; nothing is written then
+        and there is nothing to accept (five_axis.check_scales)."""
+        import five_axis
+        import measurements
+        flat = {f'p{i}': 0.5 for i in range(5)}
+        flat[measurements.ANCHOR] = 0.5
+        targets = self.scorer().targets(self._level_rows(flat), list(flat))
+        with self.assertRaises(ValueError) as caught:
+            five_axis.check_scales(targets)
+        self.assertIn('degenerate level scale on creativity', str(caught.exception))
+        # median equal to the maximum: more than half of the panel at the top
+        top = {f'p{i}': 1.0 for i in range(4)}
+        top.update({'low1': -1.0, measurements.ANCHOR: 1.0, 'low2': -2.0})
+        targets = self.scorer().targets(self._level_rows(top), list(top))
+        with self.assertRaises(ValueError) as caught:
+            five_axis.check_scales(targets)
+        self.assertIn('degenerate level scale', str(caught.exception))
+        spread = {f'p{i}': float(i) for i in range(6)}
+        spread[measurements.ANCHOR] = 2.5
+        five_axis.check_scales(self.scorer().targets(self._level_rows(spread), list(spread)))      # a proper panel passes
 
     def test_shipped_targets_ignore_the_estimated_grok_4_7_image_recognition(self):
         shipped = axis_scores.load_five_axis()
@@ -1389,7 +1474,7 @@ class AnchorRelativeTests(unittest.TestCase):
             for name, facet in row['facets'].items():
                 if facet['status'].startswith('measured'):
                     self.assertEqual(facet['value'], 0.0, f'{axis}.{name}')
-        # targets are non-decreasing from L1 -> L2 -> L3, including tool_operation.responsiveness (raised_to_level_below)
+        # targets are non-decreasing from L1 -> L2 -> L3, including tool_operation.responsiveness (a level-3 task asks what level 2 asks)
         targets = scores['anchor']['targets']
         for axis in ('creativity', 'coding'):
             lv = targets[axis]['levels']
@@ -2437,65 +2522,6 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
                     for arg in node.args:
                         if isinstance(arg, ast.Constant) and arg.value == 'default':
                             self.fail(f'{fname}:{node.lineno} calls plan_defaults(..., "default")')
-
-
-class LevelCollapseGuardTests(unittest.TestCase):
-    """calibration/five_axis.py `guard_level_collapse` (owner rule, 2026-11-18): hand-written levels 1..3 map onto a facet's
-    targets, so a rebuild that makes the level-2 target of a facet equal its level-3 target, where the file being replaced
-    kept them apart, is refused unless accepted, and the acceptance is recorded in `anchor.level_collapse`."""
-    FACET = 'coding.faithfulness'
-    STAMP = datetime(2026, 11, 18, 9, 0, tzinfo=timezone.utc)
-
-    @staticmethod
-    def targets(t2, t3):
-        return {'coding': {'facets': {'faithfulness': {'levels': {'2': {'target': t2}, '3': {'target': t3}}}}}}
-
-    def previous(self, t2, t3, record=None):
-        return {'anchor': {'targets': self.targets(t2, t3), 'level_collapse': record}}
-
-    def new(self, t2, t3):
-        return {'targets': self.targets(t2, t3), 'sd_panel': {self.FACET: {'arena.agent_alignment': 4.2}}}
-
-    @property
-    def models(self):
-        import five_axis
-        return {five_axis.measurements.ANCHOR: {'axes': {'coding': {'facets': {
-            'faithfulness': {'value': 0.0, 'status': 'measured'}}}}}}
-
-    def guard(self, previous, new, accept=False):
-        import five_axis
-        return five_axis.guard_level_collapse(previous, new, self.models, accept, self.STAMP)
-
-    def test_a_collapse_is_refused_naming_the_facet_the_board_the_values_and_what_collapses(self):
-        import five_axis
-        with self.assertRaises(five_axis.LevelCollapseRefused) as ctx:
-            self.guard(self.previous(-0.5, 0.0), self.new(0.0, 0.0))
-        text = str(ctx.exception)
-        for part in (self.FACET, 'arena.agent_alignment', 'anchor value 0.0', 'panel median 0.0', 'levels 2 and 3',
-                     'hand-written level between 2 and 3', '--accept-level-collapse', 'nothing written'):
-            self.assertIn(part, text)
-
-    def test_an_accepted_collapse_is_recorded_and_carried_forward_while_it_lasts(self):
-        record = self.guard(self.previous(-0.5, 0.0), self.new(0.0, 0.0), accept=True)
-        self.assertEqual(record['date'], '2026-11-18')
-        self.assertEqual(set(record['facets']), {self.FACET})
-        self.assertEqual(record['facets'][self.FACET]['boards'], ['arena.agent_alignment'])
-        self.assertEqual((record['facets'][self.FACET]['previous_t2'], record['facets'][self.FACET]['previous_t3']),
-                         (-0.5, 0.0))
-        # the next run replaces the file that carries the record: the facet still coincides, so it is no new collapse
-        self.assertEqual(self.guard(self.previous(0.0, 0.0, record), self.new(0.0, 0.0)), record)
-        # once the two targets are apart again the record is dropped
-        self.assertIsNone(self.guard(self.previous(0.0, 0.0, record), self.new(-0.3, 0.0)))
-
-    def test_targets_that_already_coincided_are_not_a_collapse(self):
-        """tool_operation.responsiveness: the anchor sits below the panel median, so t3 is raised to t2 in every release."""
-        self.assertIsNone(self.guard(self.previous(0.0, 0.0), self.new(0.0, 0.0)))
-
-    def test_targets_that_stay_apart_pass(self):
-        self.assertIsNone(self.guard(self.previous(-0.5, 0.0), self.new(-0.2, 0.0)))
-
-    def test_without_a_previous_file_nothing_is_refused(self):
-        self.assertIsNone(self.guard(None, self.new(0.0, 0.0)))
 
 
 class ShippedScoresMatchTheirInputsTests(unittest.TestCase):

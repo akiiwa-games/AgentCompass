@@ -1,7 +1,7 @@
 """One five-axis radar: four capability categories and quota economy, from decisions or model settings.
 
 A category's spoke is its share (axis_scores.five_axis_shares): 0 at the panel's weakest model, 1 at the level-3 target
-(the anchor), from the panel standard scores of five-axis-scores.json.
+(the panel's best), from the panel standard scores of five-axis-scores.json.
 
 The maths (dimension values, polygon geometry) is plain Python so it is unit-tested without a display;
 RadarChartCanvas draws it on a tk.Canvas.
@@ -68,7 +68,7 @@ def score_dimensions(components: dict) -> dict:
 def score_raw(components: dict, headroom: dict | None = None) -> dict:
     """The raw component values each score axis is built from, for the hover text. A category the task demands at level 3
     also names the score above the anchor the fit counts (capped at the ceiling) and the level-3 cap, the ceiling with
-    the model that sets it (`five_axis_headroom`); the spoke itself stops at the anchor."""
+    the model that sets it (`five_axis_headroom`); the spoke itself stops at the panel's best."""
     c = components or {}
     out = {**{key: {k: c[k] for k in (key, f"share_{key}") if k in c} for key in ABILITY_AXES},
            "economy": {k: c[k] for k in ("opportunity_cost", "boost") if k in c}}

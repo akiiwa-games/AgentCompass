@@ -23,7 +23,7 @@ import account_fleet
 #   quality: no scalar tier, no route preference or restriction lists, no harness quality factors, no difficulty floors, no
 #   free-usage bonus.
 # - Targets come from the panel (five-axis-scores.json `anchor.targets`): level 1 the panel's weakest, level 2 its median,
-#   level 3 the anchor. `aesthetics` and `tool_operation` ask per facet (`LEVEL_FACETS`): `aesthetics` asks `design` at
+#   level 3 its maximum (owner 2026-11-18; the anchor is the origin of z, not a level). `aesthetics` and `tool_operation` ask per facet (`LEVEL_FACETS`): `aesthetics` asks `design` at
 #   level 1 and `min(design, image_recognition)` at levels 2 and 3 (sharing `tool_operation.image_recognition`);
 #   `tool_operation` asks nothing at level 1, `responsiveness` at level 2, and `min(responsiveness, image_recognition)` at
 #   level 3, never less of a facet than the level below. Each level-3 row also carries its `ceiling`, the best measured
@@ -75,27 +75,18 @@ def load_five_axis(path=None):
     return json.loads(target.read_text(encoding='utf-8'))
 
 
-def require_level3_ceilings(data):
-    """Fail fast on a five-axis-scores.json written before schema agent-compass.five-axis-scores/5: the fit reads `ceiling`
-    on every level-3 row that has a target (per facet for `aesthetics` and `tool_operation`), so an older file is named
-    with what to run instead of failing later with a KeyError."""
-    targets = (data.get('anchor') or {}).get('targets') or {}
-    missing = []
-    for a in FIVE_AXES:
-        level3 = ((targets.get(a) or {}).get('levels') or {}).get('3') or {}
-        if a in LEVEL_FACETS:
-            by = level3.get('by_facet') or {}
-            for f in LEVEL_FACETS[a][3]:
-                r = by.get(f) or {}
-                if not isinstance((r.get('ceiling') or {}).get('value'), (int, float)):
-                    missing.append(f'{a}.{f}')
-        elif level3.get('target') is not None and not isinstance((level3.get('ceiling') or {}).get('value'), (int, float)):
-            missing.append(a)
-    if missing:
+FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/6'
+
+
+def require_current_schema(data):
+    """Fail fast on a five-axis-scores.json of another schema than the one this code reads. Schema /6 changed what level 3
+    means (the panel maximum, no longer the anchor), so an older file would be read with the wrong scale; a shipped file
+    always matches its code, so there is no reader for the older one."""
+    schema = data.get('schema')
+    if schema != FIVE_AXIS_SCHEMA:
         raise ValueError(
-            f"five-axis-scores.json (schema {data.get('schema')!r}) has no level-3 ceiling for {', '.join(missing)}; this "
-            'code reads agent-compass.five-axis-scores/5. In an install, update AgentCompass; in a '
-            'checkout run `python -X utf8 agentcompass data refresh --no-fetch`.')
+            f'five-axis-scores.json has schema {schema!r}; this code reads {FIVE_AXIS_SCHEMA} (level 3 is the panel maximum '
+            'there). In an install, update AgentCompass; in a checkout run `python -X utf8 agentcompass data refresh --no-fetch`.')
 
 
 def validate_axis_demand(raw):
@@ -480,7 +471,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     if not anchor.get('model') or set(targets) != set(FIVE_AXES):
         raise ValueError('five-axis-scores.json names no anchor model or no panel targets for the four categories: the fit '
                          'has nothing to stand on')
-    require_level3_ceilings(data)
+    require_current_schema(data)
     out['_five_axis'] = {'generated_at': data.get('generated_at'), 'anchor': anchor['model'], 'targets': targets,
                          'panel_n': anchor.get('panel_n')}
     pub_manual = public_scores if public_scores is not None else (
@@ -622,8 +613,8 @@ def five_axis_headroom(rows, targets):
 
 def five_axis_shares(values, targets):
     """{category: 0..1} for display (the tray radar): (min(z, t3) - t1) / (t3 - t1), where t1 is the level-1 target (the
-    panel's weakest) and t3 the level-3 target (the anchor): 0 at the panel's weakest, 1 at the anchor, never more; a
-    level-3 demand's credit above the anchor up to the ceiling is shown in the decision hover (five_axis_headroom).
+    panel's weakest) and t3 the level-3 target (the panel's maximum): 0 at the panel's weakest, 1 at the panel's best, never
+    more; a level-3 demand's credit above that up to the ceiling is shown in the decision hover (five_axis_headroom).
     tool_operation takes the weakest of its level-3 facets when all required level-3 facets have a value; None where any
     required facet has no value."""
     def share(z, row):
