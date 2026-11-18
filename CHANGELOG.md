@@ -2,6 +2,11 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.6.8 - 2026-11-18
+
+- GPT-6.2 Astra and GPT-6.2 Sol (`gpt-6.2-astra`, `gpt-6.2-sol`, released 2026-11-17) are in the shipped model data beside GPT-6 Astra and GPT-6.1 Sol, with their list prices, their Artificial Analysis readings and Codex and Pi bundles.
+- The Artificial Analysis source reads the page's current record shape; it read no record after the page changed.
+
 ## v0.6.7 - 2026-11-17
 
 - The classifier answers one of 11 work kinds with a depth (and an optional second kind); the four category demands are projected from a declared signature table instead of being asked one by one. The `divergence` category is renamed `creativity`.
