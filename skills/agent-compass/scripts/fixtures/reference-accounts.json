@@ -124,10 +124,6 @@
       "by": "kimi-k3",
       "basis": "Kimi K3 is the newer Kimi generation."
     },
-    "qwen3-max": {
-      "by": "qwen3.8-max",
-      "basis": "Qwen3.8-Max is the newer Qwen Max release."
-    },
     "qwen3.7-max": {
       "by": "qwen3.8-max",
       "basis": "Qwen3.8-Max is the newer Qwen Max release."
@@ -305,7 +301,6 @@
     "gemini-3.1-pro-preview": {},
     "gemini-3.7-flash": {},
     "kimi-k2.6": {},
-    "qwen3-max": {},
     "qwen3.7-max": {},
     "qwen3-flash-2025-07-28": {
       "context_window": 1000000
