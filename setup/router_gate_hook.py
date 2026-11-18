@@ -1171,8 +1171,9 @@ def native_unchecked_text(account: str, model: str, row: dict) -> str:
     """The unchecked-model refusal of a native launch: the model the launch asked for, the account it runs on, and the
     route record it was matched against."""
     bundle = row.get("bundle") if isinstance(row.get("bundle"), dict) else {}
-    matched = bundle.get("id") or row.get("choice") or "?"
-    kind = row.get("constraint") or row.get("stage") or "?"
+    # The shape decision_ledger writes: the bundle carries `bundle_id`; a row for a model without a data row has none.
+    matched = bundle.get("bundle_id") or bundle.get("model")
+    kind = row.get("constraint") or row.get("stage")
     return (f"[Router Gate] 拦截：原生子 agent 请求的模型 {model} 在本会话账号 {account} 上的档位都在模型管理中未勾选"
             f"（不参与自动派发）；匹配到的路由记录是 {matched}（{kind}），不是用户点名的路由。"
             "只有用户在本次请求中点名的路由（user_override 记录）可以启动它。" + DISABLED_RECOVERY)

@@ -852,7 +852,7 @@ class RouterGateHookTests(unittest.TestCase):
         )
         def opus_row(constraint):
             row = self.route("claude", "claude-opus-5-5", "high")
-            row["bundle"]["id"] = "opus55_high"
+            row["bundle"]["bundle_id"] = "opus55_high"     # the shape decision_ledger writes
             return dict(row, **({"stage": "record", "constraint": constraint} if constraint else {}))
 
         with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(own_home)}):
