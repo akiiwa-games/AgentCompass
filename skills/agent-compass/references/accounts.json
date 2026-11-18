@@ -61,7 +61,25 @@
     "venice-api/zai-org-glm-5-2": "glm-5.2",
     "deepseek-flash": "deepseek-v4.1-flash-free",
     "deepseek-v4-flash": "deepseek-v4.1-flash-free",
-    "qwen-flash": "qwen3-flash-2025-07-28"
+    "qwen-flash": "qwen3-flash-2025-07-28",
+    "deepseek-v4-flash-vision-exp": "deepseek-v4.1-flash-free"
+  },
+  "alias_sources": {
+    "statement": "the public vendor statement behind an alias, where one is cited (scripts/reference_provenance.py)",
+    "rows": {
+      "deepseek-v4-flash": {
+        "kind": "vendor",
+        "url": "https://api-docs.deepseek.com/quick_start/pricing",
+        "as_of": "2026-11-18",
+        "statement": "DeepSeek pricing page: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp are still accepted, but the corresponding models have been retired; their requests are served by the DeepSeek-V4.1-Flash-1017 model and billed at the Flash price (changelog 2026-09-10)"
+      },
+      "deepseek-v4-flash-vision-exp": {
+        "kind": "vendor",
+        "url": "https://api-docs.deepseek.com/quick_start/pricing",
+        "as_of": "2026-11-18",
+        "statement": "DeepSeek pricing page: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp are still accepted, but the corresponding models have been retired; their requests are served by the DeepSeek-V4.1-Flash-1017 model and billed at the Flash price (changelog 2026-09-10)"
+      }
+    }
   },
   "superseded": {
     "claude-opus-4-6": {
@@ -193,48 +211,56 @@
   "families": {
     "kind": "maintainer",
     "as_of": "2026-11-18",
-    "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py)",
+    "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). `size` is the size class of the names a row decides: `small` names are never in the series of a `full` one (calibration/series.py). `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down)",
     "rows": [
       {
         "pattern": "^grok-bot$",
-        "models": []
+        "models": [],
+        "size": "full"
       },
       {
         "pattern": "^claude-opus",
         "models": [
           "claude-opus-5-5"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^claude-sonnet",
         "models": [
           "claude-sonnet-5-5"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^claude-fable",
         "models": [
           "claude-fable-5-2"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^claude-haiku",
         "models": [
           "claude-haiku-5-5"
-        ]
+        ],
+        "size": "small",
+        "tier_up": "^claude-sonnet"
       },
       {
         "pattern": "^gpt-6.*luna",
         "models": [
           "gpt-6-luna"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^gpt-6.*terra",
         "models": [
           "gpt-6.1-terra",
           "gpt-6-astra"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^gpt-6.*sol",
@@ -242,168 +268,221 @@
           "gpt-6.2-sol",
           "gpt-6.1-sol",
           "gpt-6-astra"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^gpt-6.*pro",
         "models": [
           "gpt-6-pro",
           "gpt-6-astra"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^gpt-6",
         "models": [
           "gpt-6.2-astra",
           "gpt-6-astra"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^gemini.*hydrogen",
         "models": [
           "gemini-4-hydrogen-high",
           "gemini-3.8-flash-high"
-        ]
+        ],
+        "size": "small"
       },
       {
         "pattern": "^gemini.*flash",
         "models": [
           "gemini-3.8-flash-high"
-        ]
+        ],
+        "size": "small"
       },
       {
         "pattern": "^gemini",
         "models": [
           "gemini-4-argon-high"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^grok.*(?:mini|fast)|^grok-code",
         "models": [
           "grok-4.7-build-fast",
           "grok-4.7"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^grok",
         "models": [
           "grok-4.7"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^deepseek.*flash",
         "models": [
           "deepseek-v4.1-flash-free"
-        ]
+        ],
+        "size": "small"
       },
       {
         "pattern": "^deepseek",
         "models": [
           "deepseek-v4-pro"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^qwen.*flash",
         "models": [
           "qwen3-flash-2025-07-28"
-        ]
+        ],
+        "size": "small"
       },
       {
         "pattern": "^qwen.*coder",
         "models": [
           "qwen3-coder-next",
           "qwen3.8-max"
-        ]
+        ],
+        "size": "full"
+      },
+      {
+        "pattern": "^qwen[\\d.]+-\\d+b",
+        "models": [
+          "qwen3.8-27b"
+        ],
+        "size": "small"
       },
       {
         "pattern": "^qwen",
         "models": [
           "qwen3.8-max"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^kimi|^moonshot",
         "models": [
           "kimi-k3.1-pro"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^glm.*flash",
         "models": [
-          "glm-5.3-flash-free"
-        ]
+          "glm-5.3-flash-free",
+          "glm-5.3-flashx"
+        ],
+        "size": "small",
+        "tier_up": "^glm"
       },
       {
         "pattern": "^glm",
         "models": [
           "glm-5.3"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^minimax.*flash",
         "models": [
           "minimax-m3.1-flash"
-        ]
+        ],
+        "size": "small",
+        "tier_up": "^minimax|^abab"
       },
       {
         "pattern": "^minimax|^abab",
         "models": [
           "minimax-m3"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^doubao",
         "models": [
           "doubao-seed-2-1-pro-260628"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^mimo.*flash",
         "models": [
           "mimo-v2.6-flash-free"
-        ]
+        ],
+        "size": "small",
+        "tier_up": "^mimo"
       },
       {
         "pattern": "^mimo",
         "models": [
           "mimo-v2.6-pro"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^nemotron.*lightning",
         "models": [
           "nemotron-3.5-lightning-free",
           "nemotron-3-ultra-free"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^nemotron.*(?:super|vl)",
         "models": [
           "nemotron-3.5-super-vl-free",
           "nemotron-3-ultra-free"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^nemotron",
         "models": [
           "nemotron-3-ultra-free"
-        ]
+        ],
+        "size": "full"
+      },
+      {
+        "pattern": "^hy\\d.*flash",
+        "models": [
+          "hy4-flash"
+        ],
+        "size": "small",
+        "tier_up": "^hy\\d"
+      },
+      {
+        "pattern": "^hy\\d",
+        "models": [
+          "hy4"
+        ],
+        "size": "full"
       },
       {
         "pattern": "^muse",
         "models": [
           "muse-wonder-1.0"
-        ]
+        ],
+        "size": "full"
       },
       {
         "pattern": "^llama",
-        "models": []
+        "models": [],
+        "size": "full"
       },
       {
         "pattern": "^mistral|^codestral|^devstral",
         "models": [
           "mistral-large-4"
-        ]
+        ],
+        "size": "full"
       }
     ]
   },
@@ -962,6 +1041,66 @@
         "arena": "Gemini 4 Carbon",
         "aa": "Gemini 4 Carbon"
       }
+    },
+    "step-5-preview": {
+      "label": "Step 5 Preview"
+    },
+    "hy3": {
+      "label": "Hy3"
+    },
+    "hy4": {
+      "label": "Hy4",
+      "listed_as": {
+        "aa": "Tencent Hy4"
+      }
+    },
+    "hy4-flash": {
+      "label": "Hy4 Flash"
+    },
+    "hy4-preview": {
+      "label": "Hy4 Preview"
+    },
+    "muse-ember": {
+      "label": "Muse Ember"
+    },
+    "muse-spark-1.3": {
+      "label": "Muse Spark 1.3"
+    },
+    "muse-spark-open": {
+      "label": "Muse Spark Open"
+    },
+    "qwen3.8-omni-flash": {
+      "label": "Qwen3.8 Omni Flash"
+    },
+    "qwen3.8-flash": {
+      "label": "Qwen3.8 Flash"
+    },
+    "qwen3.8-27b": {
+      "label": "Qwen3.8 27B"
+    },
+    "qwen4-max": {
+      "label": "Qwen4 Max"
+    },
+    "deepseek-v4-flash-promo": {
+      "label": "DeepSeek V4 Flash Promo"
+    },
+    "deepseek-v4.1-flash-promo": {
+      "label": "DeepSeek V4.1 Flash Promo"
+    },
+    "kimi-k2.8-preview": {
+      "label": "Kimi K2.8 Preview"
+    },
+    "glm-5.3-flashx": {
+      "label": "GLM 5.3 FlashX",
+      "model_source": {
+        "kind": "vendor",
+        "url": "https://docs.z.ai/guides/vlm/glm-5.3-flash",
+        "as_of": "2026-11-18",
+        "statement": "Z.ai lists glm-5.3-flashx as a model code of its own beside glm-5.3-flash (GLM-5.3-FlashX: 200 tokens/s, not yet on the plan); no statement that it is the same model"
+      }
+    },
+    "gemini-3.6-flash": {
+      "label": "Gemini 3.6 Flash"
     }
   },
   "dispatch_efforts": {
@@ -1014,7 +1153,11 @@
         "max"
       ],
       "claude-haiku-5-5": [
-        "high"
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
       ]
     },
     "codex": {
@@ -1054,13 +1197,21 @@
         "ultra"
       ],
       "gpt-6.1-terra": [
-        "high"
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
       ],
       "gpt-6-sol": [
         "high"
       ],
       "gpt-6-luna": [
-        "high"
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
       ],
       "gpt-5.6-sol": [
         "high"
@@ -1069,7 +1220,11 @@
         "high"
       ],
       "gpt-5.6-luna": [
-        "high"
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
       ]
     },
     "opencode": {
@@ -1131,13 +1286,21 @@
         "max"
       ],
       "gpt-6.1-terra": [
-        "high"
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
       ],
       "gpt-6-sol": [
         "high"
       ],
       "gpt-6-luna": [
-        "high"
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
       ],
       "gpt-5.6-sol": [
         "high"
@@ -1146,8 +1309,65 @@
         "high"
       ],
       "gpt-5.6-luna": [
-        "high"
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
       ]
+    }
+  },
+  "dispatch_efforts_sources": {
+    "statement": "the public vendor statement behind a dispatch_efforts row, where one is cited (scripts/reference_provenance.py)",
+    "rows": {
+      "codex": {
+        "gpt-5.6-luna": {
+          "kind": "vendor",
+          "url": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+          "as_of": "2026-11-18",
+          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
+        },
+        "gpt-6-luna": {
+          "kind": "vendor",
+          "url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+          "as_of": "2026-11-18",
+          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
+        },
+        "gpt-6.1-terra": {
+          "kind": "vendor",
+          "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+          "as_of": "2026-11-18",
+          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
+        }
+      },
+      "pi": {
+        "gpt-5.6-luna": {
+          "kind": "vendor",
+          "url": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+          "as_of": "2026-11-18",
+          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
+        },
+        "gpt-6-luna": {
+          "kind": "vendor",
+          "url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+          "as_of": "2026-11-18",
+          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
+        },
+        "gpt-6.1-terra": {
+          "kind": "vendor",
+          "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+          "as_of": "2026-11-18",
+          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
+        }
+      },
+      "claude": {
+        "claude-haiku-5-5": {
+          "kind": "vendor",
+          "url": "https://platform.claude.com/docs/en/build-with-claude/effort",
+          "as_of": "2026-11-18",
+          "statement": "Anthropic effort documentation: Claude Haiku 5.5 supports all five effort levels (low, medium, high, xhigh, max), medium the default"
+        }
+      }
     }
   },
   "accounts": {
