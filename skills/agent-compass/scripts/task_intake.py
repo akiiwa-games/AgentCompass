@@ -403,11 +403,45 @@ def named_pin(constraints, task, accounts):
     return name, effort or resolved['effort']
 
 
+# Route fields: what AgentCompass sets for itself on the task it plans, from a decision it recorded. They reach
+# `normalize_task` only through its `route` argument (allocator.plan(route=...)), never from a caller's task, since each
+# changes what may launch without the decision that authorizes it:
+# - pinned_bundle: the bundle a recorded user_override launches (dispatch_registry.prepare);
+# - user_named_bundle: the bundle the user's naming or an explicit resume launches, which the two routing preferences do
+#   not govern (candidate_eval: OUT_OF_AUTOMATIC_ROUTING, UNCHECKED);
+# - unclassified: a named launch with no classifier answer, planned from --hours (route_judge.classify_pinned);
+# - force_fast: a named fast route (route_judge.record_constraint, prepare).
+ROUTE_FIELDS = ('pinned_bundle', 'user_named_bundle', 'unclassified', 'force_fast')
+# Keys a caller's task may not carry at all: the route fields, the state the allocator itself derives on the planned task
+# (`metered_fallback`, `worker`; a caller names its worker in chain.worker), the rows a record keeps for a listed model,
+# and `include_unverified`, which would lift the launch-evidence check (`verified` is discovery's fact).
+NOT_CALLER_INPUT = (*ROUTE_FIELDS, 'metered_fallback', 'worker', 'listed_rows', 'include_unverified')
+
+
+def check_caller_task(task):
+    """Refuse a caller's task that carries a field only AgentCompass sets (NOT_CALLER_INPUT), by name; never drop it."""
+    task = task if isinstance(task, dict) else {}
+    needs = task.get('needs') if isinstance(task.get('needs'), dict) else {}
+    found = [k for k in NOT_CALLER_INPUT if k in task] + [f'needs.{k}' for k in ('force_fast',) if k in needs]
+    if found:
+        raise ValueError(
+            f"invalid_task_input: {', '.join(found)} {'is' if len(found) == 1 else 'are'} set by AgentCompass itself, "
+            "never by the caller's task. Remove it; to launch a route the user named, use --provider/--account/--model "
+            "with the user's words in --basis.")
+    return task
+
+
 COUPLINGS = ('low', 'medium', 'high')       # chain.coupling; high is a related task that continues its worker
 
 
-def normalize_task(raw, policy, capabilities, accounts):
-    task = dict(raw or {})
+def normalize_task(raw, policy, capabilities, accounts, route=None):
+    """`raw` is the caller's task (check_caller_task); `route` the route fields AgentCompass passes for a decision it
+    recorded (ROUTE_FIELDS)."""
+    task = dict(check_caller_task(raw or {}))
+    route = dict(route or {})
+    unknown = sorted(set(route) - set(ROUTE_FIELDS))
+    if unknown:
+        raise ValueError(f"route fields must be among {', '.join(ROUTE_FIELDS)}, not {', '.join(unknown)}")
     profile = validate_caller_profile(task['profile']) if task.get('profile') is not None else None
     needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
     if not _flag_present(needs, 'gui') and _flag_present(task, 'needs_gui'):
@@ -442,7 +476,7 @@ def normalize_task(raw, policy, capabilities, accounts):
         }
     # A named route launched without a classifier answer (route_judge.classify_pinned, only with --hours) carries the
     # reason instead of a profile: no work kind, no difficulty and no category demand are known, and none is made up.
-    unclassified = task.get('unclassified') if profile is None and isinstance(task.get('unclassified'), str) else None
+    unclassified = route.get('unclassified') if profile is None and isinstance(route.get('unclassified'), str) else None
     if profile is None and not unclassified:
         raise ValueError('task.profile is required: the classifier always produces it, with its axis_demand')
     if unclassified:
@@ -488,15 +522,15 @@ def normalize_task(raw, policy, capabilities, accounts):
             'needs_gui': needs_gui,
             'wants_fast': wants_fast,
             'read_only_review': read_only_review,
-            'force_fast': bool(task.get('force_fast') or needs.get('force_fast')),
+            'force_fast': bool(route.get('force_fast')),
             'disable_fast': bool(task.get('disable_fast') or needs.get('disable_fast')),
-            'pinned_bundle': task.get('pinned_bundle'),
+            'pinned_bundle': route.get('pinned_bundle'), 'user_named_bundle': route.get('user_named_bundle'),
             'chain_hours': float(chain.get('total_hours') or hours), 'coupling': coupling, 'worker': worker,
             'handoff_ready': bool(chain.get('handoff_ready')), 'needs_visual': needs['visual'],
             'local_only': bool(needs.get('local_only')),
             'file_transfer': bool(needs.get('file_transfer')), 'outbound_ok': needs.get('outbound_ok'),
             'constraint_bundle': constraints.get('bundle') if isinstance(constraints.get('bundle'), str) else None,
             'constraint_model': constraint_model, 'constraint_effort': constraint_effort,
-            'metered_ok': bool(task.get('metered_ok')), 'include_unverified': bool(task.get('include_unverified')),
+            'metered_ok': bool(task.get('metered_ok')),
             'can_wait_hours': float(task.get('can_wait_hours') or 0), 'chain_id': chain.get('id'),
             'cwd': task.get('cwd')}

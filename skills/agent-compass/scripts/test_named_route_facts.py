@@ -8,14 +8,18 @@ import tempfile
 from unittest.mock import patch
 
 import account_fleet
+import allocator
 import auto_bundles
 import axis_scores
 import decision_ledger
 import dispatch_registry
+import candidate_eval
 import fast_modes
+import launch_failures
 import live_models
 import route_judge
 import scorer_client
+import task_intake
 from test_routing_parity import NOW
 from test_routing_review import RecordCase
 
@@ -112,6 +116,51 @@ class FastModeFactTests(NamedRouteCase):
         self.assertTrue(launched['bundle'].get('fast'))
         self.assertTrue(any('unchecked in model management' in w for w in result.get('warnings') or ()), result.get('warnings'))
 
+    def priced_contract(self):
+        for bundle in account_fleet.bundles(self.accounts).values():
+            if bundle.get('effort') and fast_modes.supported(account_fleet.bundle_harness(bundle, bundle['account']),
+                                                             bundle['model'], account_fleet.model_spec(self.accounts, bundle['model'])):
+                return bundle
+        self.skipTest('the reference fleet has no row with a verified fast contract')
+
+    def test_the_economy_refuses_a_forced_fast_route_with_the_same_wording(self):
+        """The third stage of the one answer: candidate_eval, for the bundle a named fast route launches."""
+        bundle, harness = self.uncontracted()
+        model = account_fleet.canonical(bundle['model'], self.accounts)
+        fact = fast_modes.refusal(harness, model, account_fleet.model_spec(self.accounts, model))
+        plan = self.plan(self.task(disable_fast=False), route={
+            'force_fast': True, 'pinned_bundle': bundle['id'], 'user_named_bundle': bundle['id']})
+        self.assertIn(fact, self.row(plan, bundle['id'])['excluded'])
+
+    def test_an_unpriced_fast_launch_reserves_the_plain_modes_spend(self):
+        """fast-modes.md: a named fast route whose multipliers are not cited is reserved at the plain mode's spend."""
+        fleet, bundle = self.contracted()
+        named = dict(account=bundle['account'], provider=bundle['provider'], model=bundle['model'], effort=bundle['effort'])
+        _, plain = self.launched(fleet, **named)
+        _, fast = self.launched(fleet, fast=True, **named)
+        self.assertTrue(fast['bundle'].get('fast'))
+        self.assertFalse(plain['bundle'].get('fast'))
+        self.assertEqual(fast['expected_usd'], plain['expected_usd'])
+
+    def test_a_named_fast_route_on_an_account_without_quota_windows_launches_fast(self):
+        """No window prices it (a metered account without a budget: quota_pools.metered_usd_uncapped): the route the
+        user named is still that route, and automatic routing offers no fast twin there."""
+        bundle = self.priced_contract()
+        fleet = copy.deepcopy(self.accounts)
+        fleet['accounts'][bundle['account']].update(backend_kind='metered_usd', billing='metered')
+        fleet['accounts'][bundle['account']]['bundles'][bundle['id']].update(disabled=False, enabled=True)
+        self.usage = copy.deepcopy(self.usage)
+        self.usage.get('accounts', {}).pop(bundle['account'], None)     # no window reading either
+        probe = self.plan(self.task(disable_fast=False), fleet, route={
+            'force_fast': True, 'pinned_bundle': bundle['id'], 'user_named_bundle': bundle['id']})
+        self.assertEqual(self.row(probe, bundle['id'] + '+fast').get('economy', {}).get('windows'), [])
+        _, row = self.launched(fleet, account=bundle['account'], provider=bundle['provider'], model=bundle['model'],
+                               effort=bundle['effort'], fast=True)
+        self.assertTrue(row['bundle'].get('fast'))
+        plan = self.plan(self.task(disable_fast=False, metered_ok=True), fleet)
+        self.assertFalse([c for c in plan['ranking'] if c['bundle']['account'] == bundle['account']
+                          and c['bundle'].get('fast')])
+
 class EffortFactTests(NamedRouteCase):
     """Item 4: an effort outside the launch contract is refused, naming the efforts the harness does accept."""
 
@@ -176,6 +225,13 @@ class ProviderListFactTests(NamedRouteCase):
 class UnclassifiedFactTests(NamedRouteCase):
     """Item 1: no classifier answer is a data gap a named route crosses with --hours, never an invented estimate."""
 
+    def setUp(self):
+        super().setUp()
+        # The real planning of a task without a profile, not conftest's fixture profile for bare tasks.
+        unwrapped = patch.object(task_intake, 'normalize_task', task_intake.normalize_task.__wrapped__)
+        unwrapped.start()
+        self.addCleanup(unwrapped.stop)
+
     def pinned(self, task):
         args = argparse.Namespace(basis='User asked', provider='codex', account='codex', model='gpt-6-astra',
                                   effort='high', input=None, usage_cache=None, accounts=None, constraint='user_override',
@@ -206,3 +262,86 @@ class UnclassifiedFactTests(NamedRouteCase):
         self.assertIn('--hours', classified['result'].get('next') or '')
         self.assertIn('--hours was not given', classified['result'].get('reason') or '')
 
+
+
+class CallerTaskBoundaryTests(NamedRouteCase):
+    """Finding 1 (round 5): a field AgentCompass sets for itself is never settable from a caller's task. It is refused by
+    name at every reader of caller input, and router code passes it only as a route field (allocator.plan(route=...))."""
+
+    KEYS = (*task_intake.NOT_CALLER_INPUT, 'needs.force_fast')
+
+    @staticmethod
+    def carrying(key, task):
+        if key.startswith('needs.'):
+            return dict(task, needs={**(task.get('needs') or {}), key.split('.', 1)[1]: True})
+        return dict(task, **{key: 'opus55_high' if key.endswith('bundle') else True})
+
+    def test_every_router_field_in_a_callers_task_is_refused_by_name_at_every_reader(self):
+        self.assertTrue(set(task_intake.ROUTE_FIELDS) <= set(task_intake.NOT_CALLER_INPUT))
+        path = os.path.join(self.root, 'in.json')
+        for key in self.KEYS:
+            task = self.carrying(key, self.task())
+            text = f'^invalid_task_input: {key} is set by AgentCompass itself'
+            with self.subTest(key=key, reader='allocator.plan'), self.assertRaisesRegex(ValueError, text):
+                self.plan(task)
+            with self.subTest(key=key, reader='plan --input'), self.assertRaisesRegex(ValueError, text):
+                route_judge._plan_input_task({'task': task}, argparse.Namespace(hours=None, can_wait_hours=None))
+            with open(path, 'w', encoding='utf-8') as handle:
+                handle.write(__import__('json').dumps({'task': task}))
+            with self.subTest(key=key, reader='record --input'), self.assertRaisesRegex(ValueError, text):
+                route_judge._record_task(argparse.Namespace(input=__import__('pathlib').Path(path), parent_id='p-1'), None)
+
+    def test_the_two_preferences_lift_only_for_the_bundle_a_named_decision_passes(self):
+        """The lift follows from a user_override or explicit-resume decision (prepare passes user_named_bundle), never
+        from pinning alone and never from a task field."""
+        bundle = next(b for b in account_fleet.bundles(self.accounts).values() if b['account'] == 'claude')
+        off = {'allowed_accounts': [a for a in self.accounts['accounts'] if a != 'claude']}
+        for route, lifted in (({'pinned_bundle': bundle['id']}, False), (None, False),
+                              ({'pinned_bundle': bundle['id'], 'user_named_bundle': bundle['id']}, True)):
+            with self.subTest(route=route):
+                plan = self.plan(self.task(), host_policy_config=off, route=route)
+                self.assertEqual(candidate_eval.OUT_OF_AUTOMATIC_ROUTING not in self.row(plan, bundle['id'])['excluded'],
+                                 lifted)
+
+    def test_only_a_named_decision_keeps_route_fields(self):
+        route = {'unclassified': 'fixture', 'force_fast': True}
+        task = self.task(parent_agent_id='parent-1', task_id='t-' + os.urandom(4).hex())
+        bundle = dict(next(iter(account_fleet.bundles(self.accounts).values())))
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory, \
+                patch.dict(os.environ, {'ROUTER_DISPATCH_DB': os.path.join(directory, 'db.sqlite3')}):
+            for result, kept in (
+                ({'stage': 'plan', 'choice': bundle['id']}, False),
+                ({'stage': 'record', 'choice': 'constraint', 'constraint': 'hard_constraint', 'basis': 'rule'}, False),
+                ({'stage': 'record', 'choice': 'constraint', 'constraint': 'user_override', 'basis': 'User asked'}, True),
+            ):
+                with self.subTest(stage=result['stage'], constraint=result.get('constraint')), \
+                        patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(self.accounts)):
+                    issued = dispatch_registry.issue(dict(result, selected_bundle=dict(bundle, bundle_id=bundle['id'])),
+                                                     task, route=route)
+                    self.assertEqual('route' in dispatch_registry.decision_record(issued['decision_id']), kept)
+
+    def test_planning_without_a_profile_is_never_reached_by_an_automatic_plan(self):
+        """unclassified is a route field only a named record passes: an automatic plan of a task with no profile is
+        refused, and a caller cannot ask for it."""
+        task = {k: v for k, v in self.task().items() if k != 'profile'}
+        unwrapped = patch.object(task_intake, 'normalize_task', task_intake.normalize_task.__wrapped__)
+        with unwrapped, self.assertRaisesRegex(ValueError, 'task.profile is required'):
+            self.plan(task)
+        with self.assertRaisesRegex(ValueError, '^invalid_task_input: unclassified'):
+            self.plan(dict(task, unclassified='no classifier'))
+
+
+class ListedModelRefusalTests(NamedRouteCase):
+    """A provider's refusal of a listed-only model (an effort it does not take, for one) is about that model: it never
+    takes the account out of automatic routing (launch_failures: account-wide only when the provider never came up)."""
+
+    def test_a_refusal_about_a_listed_model_cools_only_that_model(self):
+        listed = {'account': 'codex', 'provider': 'codex', 'model': 'gpt-6.2-nova', 'effort': 'turbo'}
+        self.assertIsNone(launch_failures.candidate_failure_class('request_invalid', 'invalid_argument'))
+        self.assertIsNone(launch_failures.record(listed, 'request_invalid', failure_code='invalid_argument'))
+        launch_failures.record(listed, 'model_unavailable', failure_code='unsupported_model')
+        self.assertEqual(set(launch_failures.active()), {launch_failures.key('codex', 'gpt-6.2-nova')})
+        plan = self.plan(self.task())
+        cooled = [c['id'] for c in plan['ranking'] if c['bundle']['account'] == 'codex'
+                  and any('host refused to create a worker' in e for e in c['excluded'])]
+        self.assertEqual(cooled, [])

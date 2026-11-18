@@ -265,8 +265,10 @@ def finalize(result, payload, requested, started, task=None, records=None):
         bundle.setdefault('expected_usd', expected_usd)
         result.setdefault('expected_usd', expected_usd)
     listed_rows = result.pop('_listed_rows', None)
+    route = result.pop('_route', None)
     if LEDGER_WRITES and result.get('stage') in ('plan', 'select', 'record'):
-        result.update(dispatch_registry.issue(result, task, now, allocation_task=allocation_task, listed_rows=listed_rows))
+        result.update(dispatch_registry.issue(result, task, now, allocation_task=allocation_task, listed_rows=listed_rows,
+                                              route=route))
     append_ledger({
         'v': 1, 'at': now.isoformat(), 'stage': result.get('stage'), 'source': result.get('source'),
         'choice': result.get('choice'), 'specialty': result.get('specialty'),

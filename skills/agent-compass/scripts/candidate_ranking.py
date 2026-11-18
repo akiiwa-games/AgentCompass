@@ -99,7 +99,7 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     eligible = [c for c in candidates if not c['excluded']]
     pool_task = {**task, 'local_only': False, 'outbound_ok': None, 'file_transfer': False,
                  'needs_visual': False, 'needs_gui': False, 'wants_fast': False,
-                 'read_only_review': False, 'constraint_model': None, 'constraint_effort': None, 'pinned_bundle': None,
+                 'read_only_review': False, 'constraint_model': None, 'constraint_effort': None, 'pinned_bundle': None, 'user_named_bundle': None,
                  'metered_ok': True, 'metered_fallback': False, 'disable_fast': False, 'force_fast': False,
                  '_economy_pool': True}
     pool = [c for c in (candidate_eval.evaluate_bundle(b, pool_task, ctx) for b in pool_bundles.values()) if not c['excluded']]

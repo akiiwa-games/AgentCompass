@@ -42,11 +42,14 @@ class RouterCase(unittest.TestCase):
     def setUp(self):
         self.root = isolated_router_state(self.addCleanup)
         self.accounts = account_fleet.load_accounts()
+        for spec in self.accounts['accounts'].values():     # launch evidence is discovery's fact: the fixture states it
+            if isinstance(spec, dict):
+                spec['verified'] = True
         self.usage = usage_windows(NOW, FULL_QUOTA)
 
     def task(self, profile=PROFILE, **extra):
         return {'objective': 'routing contract', 'profile': profile, 'expected_hours': 1, 'disable_fast': True,
-                'include_unverified': True, **extra}
+                **extra}
 
     def plan(self, task, accounts=None, usage=None, **kw):
         return allocator.plan(task, self.usage if usage is None else usage, NOW,

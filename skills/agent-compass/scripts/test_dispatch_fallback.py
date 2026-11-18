@@ -126,7 +126,8 @@ class FallbackTests(unittest.TestCase):
         """The parent's dispatch: planned, prepared and launched as roll does."""
         task = task or self.task
         if decision is None:
-            planned = allocator.plan(dict(task, pinned_bundle='lab_sonnet55_high'), self.usage, self.now, accounts=self.accounts)
+            planned = allocator.plan(task, self.usage, self.now, accounts=self.accounts,
+                                     route={'pinned_bundle': 'lab_sonnet55_high'})
             decision = dict(planned, **registry.issue(planned, task, self.now))
         row = registry.prepare(decision['decision_id'], task, self.launch, self.usage, accounts=self.accounts)
         flow.launch(row['dispatch_id'], 'parent-a', host=self.host, watch_seconds=0)
@@ -532,6 +533,21 @@ class FallbackTests(unittest.TestCase):
         routed = [e for e in self.ledger if e.get('stage') in ('plan', 'select', 'record')]
         self.assertEqual([(e['stage'], e['constraint']) for e in routed], [('record', 'user_override')])
 
+    def test_an_owner_named_retry_keeps_what_its_record_decided(self):
+        # Rule (task_intake.ROUTE_FIELDS): a named record's route fields (here: launched unclassified, priced from its
+        # hours) stay with its transient retry, which is the same named route.
+        task = dict(self.task, can_wait_hours=1)
+        result = {'stage': 'record', 'choice': 'constraint', 'constraint': 'user_override', 'basis': 'use sonnet',
+                  'selected_bundle': dict(self.bundle), 'decision': {'action': 'start'}}
+        decision = dict(result, **registry.issue(result, task, self.now, route={'unclassified': 'fixture'}))
+        root = self.transient_root(task=task, decision=decision)
+        self.assertEqual(self.handle(root['dispatch_id'])['action'], 'scheduled')
+        with self.at(minutes=3):
+            self.assertEqual(self.handle(root['dispatch_id'])['action'], 'relaunched')
+        retried = [e['decision_id'] for e in self.ledger if e.get('source') == 'fallback_retry']
+        self.assertEqual(len(retried), 1)
+        self.assertEqual(registry.decision_record(retried[0]).get('route'), {'unclassified': 'fixture'})
+
     def test_an_owner_named_model_waits_only_what_the_task_allows(self):
         """Review F2: the owner's model follows can_wait_hours too; a backoff past it reports to the parent."""
         for name, task, minutes in (('no wait given', dict(self.task, task_id='owner-a'), None),
@@ -738,9 +754,9 @@ class RollFallbackTests(unittest.TestCase):
 
         def plan_stage(document, _):
             first = not document.get('unavailable')
-            planned = allocator.plan(dict(document['task'], **({'pinned_bundle': 'lab_sonnet55_high'} if first else {})),
-                                     test.usage, registry.utcnow(),
-                                     unavailable=document.get('unavailable') or (), accounts=test.accounts)
+            planned = allocator.plan(document['task'], test.usage, registry.utcnow(),
+                                     unavailable=document.get('unavailable') or (), accounts=test.accounts,
+                                     route={'pinned_bundle': 'lab_sonnet55_high'} if first else None)
             return dict(planned, **registry.issue(planned, document['task'])), 0
         judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage)})
         self.enterContext(test_dispatch.fake_owners(self))
@@ -794,9 +810,9 @@ class RollFallbackTests(unittest.TestCase):
                 test = self
 
                 def plan_stage(document, _):
-                    planned = allocator.plan(dict(document['task'], pinned_bundle='lab_sonnet55_high'),
-                                             test.usage, registry.utcnow(),
-                                             unavailable=document.get('unavailable') or (), accounts=test.accounts)
+                    planned = allocator.plan(document['task'], test.usage, registry.utcnow(),
+                                             unavailable=document.get('unavailable') or (), accounts=test.accounts,
+                                             route={'pinned_bundle': 'lab_sonnet55_high'})
                     return dict(planned, **registry.issue(planned, document['task'])), 0
                 judge = type('Judge', (), {'plan_stage': staticmethod(plan_stage)})
                 self.enterContext(test_dispatch.fake_owners(self))

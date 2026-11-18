@@ -165,10 +165,11 @@ def evaluate_bundle(bundle, task, ctx):
     if not account_fleet.account_cwd_allowed(cwd_spec, task.get('cwd')):
         exclude(f"outside account cwd restriction ({cwd_spec['cwd_regex']})")
 
-    # The bundle a recorded user_override launches (dispatch_registry.prepare pins it) is the user's naming, which the two
-    # routing preferences do not govern: left in, they kept it out of the economy, so a named fast route had no fast
-    # variant to launch (record accepted it, prepare refused it).
-    user_named = task.get('pinned_bundle') == bundle['id']
+    # The bundle a recorded user_override or an explicit resume launches is the user's naming, which the two routing
+    # preferences do not govern. Only dispatch_registry.prepare passes it, as a route field from the decision's own
+    # constraint (task_intake.ROUTE_FIELDS); a caller's task cannot. Left in, the preferences kept it out of the
+    # economy, so a named fast route had no fast variant to launch.
+    user_named = bool(task.get('user_named_bundle')) and task['user_named_bundle'] == bundle['id']
     if not user_named and not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
         exclude(OUT_OF_AUTOMATIC_ROUTING)
     # Off by default (superseded in public data) is not the user's checkbox: naming the model still reaches it.
@@ -201,7 +202,7 @@ def evaluate_bundle(bundle, task, ctx):
                 and not any(o.get('account') == bundle['account'] for o in ctx['overrides'])):
             exclude(METERED_LAST_RESORT if billing == 'metered'
                     else f'{billing} billing: explicit selection only')
-    if not spec.get('verified', True) and not task['include_unverified']:
+    if not spec.get('verified', True):
         exclude('account not verified as launchable')
     if info.get('advisor_only') and (
         kind not in info.get('advisor_for', ())
@@ -575,7 +576,9 @@ def evaluate_bundle(bundle, task, ctx):
             f_hours = hours / f_speed if f_speed > 0 else hours
             f_step_usd = step_usd * f_price
             f_chain_usd = chain_usd * f_price
-            fast_ok = bool(five_window_states)
+            # No window to check (a metered account without a budget, an unlimited one): fast is offered only to a
+            # route that names it, which is that route whatever prices it.
+            fast_ok = bool(five_window_states) or bool(named and task.get('force_fast'))
             for wid, (wspec, st, cap_usd_w, unit) in five_window_states.items():
                 if pool and st.get('short'):
                     continue
@@ -621,7 +624,7 @@ def evaluate_bundle(bundle, task, ctx):
             exclude(fast_modes.refusal(harness, model, info))
         elif task.get('force_fast'):
             err = fast_modes.price_gap(model, info)
-            if named and five_window_states:
+            if named:
                 # The contract exists and only a price datum is missing: a named fast route launches, like any other
                 # unpriced named route, reserved at the plain mode's spend (the fast burn is not published).
                 result['notes'].append(f'data error: {err}; dispatched because it was named, its fast-mode cost is not '

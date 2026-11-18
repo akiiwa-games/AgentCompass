@@ -51,9 +51,10 @@ def named_pin_block(task, candidates):
 
 
 def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None, capabilities=None, overrides=None,
-         host_policy_config=None, *, read_local_state=True, named_accounts=()):
+         host_policy_config=None, *, read_local_state=True, named_accounts=(), route=None):
     """`named_accounts`: accounts a named route or an explicit resume names (dispatch_registry.prepare). Their facts are
-    read whether or not they take part in automatic routing (candidate_ranking.rank)."""
+    read whether or not they take part in automatic routing (candidate_ranking.rank). `route`: the route fields of a
+    decision AgentCompass recorded (task_intake.ROUTE_FIELDS); a caller's task never carries them."""
     accounts = accounts_override.normalize(accounts or account_fleet.load_accounts())
     capabilities = capabilities or account_fleet.load_capabilities(accounts=accounts)
     now = now or datetime.now(timezone.utc)
@@ -62,7 +63,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     usage, accounts, applied = quota_overrides.apply_overrides(active_overrides, usage, accounts, now)
     accounts = axis_scores.five_axis_overlay(accounts, read_local_state=read_local_state)
     policy = accounts['scoring']
-    task = task_intake.normalize_task(raw_task, policy, capabilities, accounts)
+    task = task_intake.normalize_task(raw_task, policy, capabilities, accounts, route=route)
     if task['worker'] is None and task['chain_id'] and records:
         for record in reversed(records):
             if record.get('chain') == task['chain_id'] and (record.get('bundle') or {}).get('bundle_id'):

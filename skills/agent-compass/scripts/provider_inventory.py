@@ -1896,6 +1896,27 @@ ACCOUNT_DIR_VARIABLES = (('CLAUDE_CONFIG_DIR', '.claude'), ('CLAUDE_SECURESTORAG
                          ('CODEX_HOME', '.codex'), ('PI_CODING_AGENT_DIR', '.pi/agent'))
 
 
+# The harnesses whose native sub-agents run inside the calling session, on its own account, with the variable that
+# names that account's directory and its default under the home.
+SESSION_ACCOUNT_DIRS = {'claude': ('CLAUDE_CONFIG_DIR', '.claude'), 'codex': ('CODEX_HOME', '.codex')}
+
+
+def session_account(family, inventory, environ=None, home=None):
+    """The account a session of `family` runs on: the one discovered account of that family whose home is the directory
+    the session's environment names (SESSION_ACCOUNT_DIRS). None when that is not recorded (another family, no such
+    row, or more than one): never guessed. Read-only."""
+    if family not in SESSION_ACCOUNT_DIRS:
+        return None
+    environ = os.environ if environ is None else environ
+    home = Path(home or environ.get('ROUTER_PROVIDER_HOME') or Path.home())
+    key, default = SESSION_ACCOUNT_DIRS[family]
+    own = _expand_home(environ.get(key) or str(home / default), home).resolve()
+    rows = obj((inventory or {}).get('accounts'))
+    found = [name for name, row in rows.items() if isinstance(row, dict) and row.get('family') == family
+             and row.get('home') and _expand_home(row['home'], home).resolve() == own]
+    return found[0] if len(found) == 1 else None
+
+
 def environment_rewrites_accounts(home, environ=None):
     """True when this process's environment points an account directory somewhere else (a worker started on another
     account). Discovery ignores those variables, but such a process does not speak for the machine's shared files."""

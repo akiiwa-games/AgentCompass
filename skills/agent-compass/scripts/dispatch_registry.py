@@ -230,10 +230,12 @@ def check_launch_quota(bundle, accounts, usage, now):
             raise ValueError(f"Account {bundle['account']} {wid} is below its existing launch protection ({floor}% remaining floor); refresh quota or replan")
 
 
-def issue(result, task, now=None, path=None, allocation_task=None, listed_rows=None):
+def issue(result, task, now=None, path=None, allocation_task=None, listed_rows=None, route=None):
     """Register a decision, without committing capacity. Legacy unbound decisions cannot dispatch. `listed_rows`
     (provider_inventory.listed_rows) are the rows of a model the user named that the shipped data has no row for and the
-    account's provider lists: the decision keeps them, and `prepare` plans with them."""
+    account's provider lists: the decision keeps them, and `prepare` plans with them. `route`: the route fields a record
+    decided (task_intake.ROUTE_FIELDS: `unclassified`, `force_fast`), kept beside the task and passed to `prepare`'s
+    plan; only a user_override or explicit resume record keeps them."""
     now = now or utcnow()
     bundle = dict(result.get('selected_bundle') or {})
     if not bundle or result.get('choice') in (None, 'none', 'self'):
@@ -242,6 +244,8 @@ def issue(result, task, now=None, path=None, allocation_task=None, listed_rows=N
     import account_fleet
     explicit = result.get('stage') == 'record' and result.get('constraint') == 'user_override' and bool(result.get('basis'))
     listed_rows = listed_rows if explicit else None
+    named = explicit or (result.get('stage') == 'record' and result.get('constraint') == 'explicit_resume')
+    route = {k: v for k, v in (route or {}).items() if v} if named else {}
     accounts = provider_inventory.with_listed_rows(account_fleet.load_accounts(), listed_rows)
     resolved = resolve_bundle(bundle, accounts, explicit)
     if resolved:
@@ -254,6 +258,7 @@ def issue(result, task, now=None, path=None, allocation_task=None, listed_rows=N
            'created_at': stamp(now), 'valid_until': stamp(now + timedelta(seconds=DECISION_TTL)),
            'constraint': result.get('constraint'),
            **({'listed_rows': listed_rows} if listed_rows else {}),
+           **({'route': route} if route else {}),
            'effort_override': bool(explicit and resolved and resolved['id'].startswith('user_override_')),
            'dispatchable': not (result.get('decision') or {}).get('needs_user_decision', False)
                            and not result.get('host_policy_violation')
@@ -1242,15 +1247,20 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             cw = alloc_task['chain'].get('worker')
             if not resume_agent_id or (isinstance(cw, dict) and cw.get('read_only_review') is False):
                 alloc_task.pop('chain', None)
-        if bundle.get('fast') and (decision.get('constraint') == 'user_override' or resume_bundle is not None):
-            alloc_task['force_fast'] = True
+        # The route fields come from this decision only (task_intake.ROUTE_FIELDS): its record's own (`unclassified`),
+        # and what its constraint makes of the bundle it names. A caller's task never carries them.
+        named = decision.get('constraint') == 'user_override' or resume_bundle is not None
+        route = dict(decision.get('route') or {}) if named else {}
+        if bundle.get('fast') and named:
+            route['force_fast'] = True
         elif not bundle.get('fast'):
             alloc_task['disable_fast'] = True
+        if named:
+            route['user_named_bundle'] = bundle['bundle_id']
         if decision.get('constraint') == 'user_override' and resume_bundle is None:
-            alloc_task['pinned_bundle'] = bundle['bundle_id']
-        named = decision.get('constraint') == 'user_override' or resume_bundle is not None
+            route['pinned_bundle'] = bundle['bundle_id']
         plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts,
-                              named_accounts={bundle['account']} if named else ())
+                              named_accounts={bundle['account']} if named else (), route=route)
         # A fast route with no fast variant in the ranking is answered by its plain row: its exclusions (the fast-mode
         # refusal among them) say why, not "no longer matches".
         candidate = (candidate_ranking.candidate_for_bundle(plan['ranking'], bundle['bundle_id'], bundle.get('fast'))

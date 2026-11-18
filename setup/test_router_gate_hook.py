@@ -819,6 +819,46 @@ class RouterGateHookTests(unittest.TestCase):
                     if refused:
                         self.assertIn("在模型管理中未勾选", result["reason"])
 
+    def test_a_native_launch_resolves_to_the_sessions_own_account_only_when_discovery_records_it(self):
+        # Gate contract (parent-address-gate.md): a native sub-agent runs on the calling session's own account. When
+        # discovery records which account that is (one account of the family whose home is the session's directory),
+        # a launch naming only a model resolves to it and the checkbox rule applies as to a bound launch: only a
+        # user_override row passes an unchecked model. When it is not recorded, nothing is guessed.
+        native = {"tool_name": "Agent", "tool_input": {"subagent_type": "general-purpose", "prompt": "work",
+                                                         "model": "opus"}}
+        own_home, lab_home = self.state / ".claude-own", self.state / ".claude-lab"
+        real_accounts = gate.load_dispatch_accounts
+
+        def discovered(rows):
+            def load():
+                accounts = real_accounts()
+                accounts["_discovery"] = {"accounts": rows}
+                return accounts
+            return load
+        opus = [b for b, row in real_accounts()["accounts"]["claude"]["bundles"].items()
+                if str(row.get("model")).startswith("claude-opus-")]
+        self.write_settings(accounts={"claude": {"bundles": {b: {"disabled": True} for b in opus}}})
+        recorded = {"claude": {"family": "claude", "home": str(own_home)},
+                    "claude-lab": {"family": "claude", "home": str(lab_home)}}
+        ambiguous = {"claude": {"family": "claude", "home": str(own_home)},
+                     "claude-lab": {"family": "claude", "home": str(own_home)}}
+        cases = (   # (discovery rows, row constraint, refused)
+            (recorded, "user_override", False), (recorded, "hard_constraint", True), (recorded, "dot_closed_loop", True),
+            (recorded, None, True),
+            ({}, None, False), (ambiguous, None, False),    # not recorded / not one account: unresolved, as before
+        )
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(own_home)}):
+            for rows, constraint, refused in cases:
+                row = dict(self.route("claude", "claude-opus-5-5", "high"),
+                           **({"stage": "record", "constraint": constraint} if constraint else {}))
+                ledger = self.write_ledger(str(self.state), [row])
+                with self.subTest(rows=sorted(rows), ambiguous=rows is ambiguous, constraint=constraint), \
+                        mock.patch.object(gate, "load_dispatch_accounts", side_effect=discovered(rows)):
+                    result = gate.evaluate_payload(native, ledger_path=ledger, now=T0)
+                    self.assertEqual("reason" in result, refused, result)
+                    if refused:
+                        self.assertIn("在模型管理中未勾选", result["reason"])
+
     def test_a_caller_known_only_by_its_host_session_owns_the_worker_whose_parent_record_runs_that_session(self):
         # Gate contract (parent-address-gate.md): ownership is proven when every parent label names the caller, by its
         # Paseo agent ID, by the host session ID its hook payload carries, or as a Paseo agent whose record runs that

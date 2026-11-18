@@ -1155,6 +1155,18 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
     return account, [c for c in candidates if c["account"] == account]
 
 
+def native_own_account(name: str, target: dict, accounts: dict | None) -> dict:
+    """A native sub-agent (Claude Code `Agent`/`Task`, Codex `spawn_agent`) runs on the calling session's own account.
+    A launch that names no provider or account resolves to it when discovery records it
+    (provider_inventory.session_account), so the checkbox rule applies as to a bound launch; otherwise it is left
+    unresolved (parent-address-gate.md states that limit)."""
+    family = "claude" if name in CLAUDE_AGENT_TOOLS else "codex" if name == "spawn_agent" else None
+    if not family or any(target.get(k) for k in ("provider", "account", "bundle_id")):
+        return target
+    own = router_owner("provider_inventory", "session_account")(family, (accounts or {}).get("_discovery") or {})
+    return dict(target, account=own) if own else target
+
+
 DISABLED_RECOVERY = (
     f"请把任务写进 <task.md>，运行 {ROUTER_CMD} roll --brief <task.md> 由路由在参与自动派发的模型中选择；"
     "用户在本次请求中点名了该模型时，用 --provider/--account/--model --basis \"<用户原话>\" 记录后启动"
@@ -1629,6 +1641,7 @@ def evaluate_payload(
         unchecked = None    # an unchecked model: refused below unless the launch's authority is the user's naming
         for target in targets:
             try:
+                target = native_own_account(name, target, accounts)
                 account, candidates = resolve_target(target, accounts)
                 disabled = check_target_disabled(target, account, candidates, accounts) if trigger else None
                 if disabled and disabled[0] == "bundles":

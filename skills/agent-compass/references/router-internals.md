@@ -52,6 +52,7 @@ Standard `task.json`:
   - `needs` (optional): `{ "local_only": bool, "local_only_reason": "<concrete local dependency: ssh/vps/pytest/daemon/gui/credentials>", "outbound_ok": bool, "fast": bool }`.
   - `chain` (optional): `{ "id": "<chain-id>", "coupling": "low|medium|high", "total_hours": 4, "worker": { "agent_id": "<paseo-id>", "bundle": "sol_high" } }`. A quota window must cover the whole chain (`total_hours`, scaled by the bundle's duration) when `coupling` is `high`, only the step (`expected_hours`) otherwise; a window left short of that spend plus the safety margin excludes the bundle.
   - `can_wait_hours` (optional): Hours the task can wait for a short window reset before asking the user.
+- Fields only AgentCompass sets (`task_intake.NOT_CALLER_INPUT`) are refused by name in a caller's task (`invalid_task_input: <field> is set by AgentCompass itself, never by the caller's task`), never dropped: `pinned_bundle`, `user_named_bundle`, `unclassified`, `force_fast` (also as `needs.force_fast`) are the route fields a recorded decision passes to its plan (`allocator.plan(route=...)`); `metered_fallback` and `worker` are state the allocator derives (a caller names its worker in `chain.worker`); `listed_rows` are kept on a record; `include_unverified` would lift the launch-evidence check. Lifting the two routing preferences for a bundle follows only from a `user_override` or explicit-resume decision naming it.
 
 ### B. Record an Explicit User Model/Effort Override
 

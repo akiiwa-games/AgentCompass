@@ -480,8 +480,10 @@ class Chain:
         # A transient failure is a provider's, so it always has the row whose bundle it was.
         failed_row = registry.inspect(attempt['dispatch_id'])
         bundle = dict(failed_row['bundle'])
-        # A named model the shipped data has no row for keeps the rows its provider listed (provider_inventory).
-        listed = registry.decision_record(failed_row['decision_id']).get('listed_rows') if self.owner_named else None
+        # A named route keeps what its record decided: the rows a provider listed for a model the shipped data has no row
+        # for (provider_inventory), and its route fields (an unclassified launch stays priced from its hours).
+        failed_decision = registry.decision_record(failed_row['decision_id']) if self.owner_named else {}
+        listed = failed_decision.get('listed_rows')
         result = {'stage': 'record' if self.owner_named else 'plan', 'source': 'fallback_retry',
                   'choice': bundle.get('bundle_id'), 'selected_bundle': bundle, 'decision': {'action': 'start'},
                   'parent_id': self.parent,
@@ -489,7 +491,8 @@ class Chain:
                       'basis': f'AgentCompass transient retry of dispatch {self.root_id} on the owner-named model'}
                      if self.owner_named else
                      {'basis': f'AgentCompass transient retry of dispatch {self.root_id} on its routed bundle'})}
-        issued = registry.issue(result, self.task, allocation_task=self.task, listed_rows=listed)
+        issued = registry.issue(result, self.task, allocation_task=failed_decision.get('allocation_task') or self.task,
+                                listed_rows=listed, route=failed_decision.get('route'))
         decision = {**result, **issued}
         try:
             decision_ledger.append_ledger({

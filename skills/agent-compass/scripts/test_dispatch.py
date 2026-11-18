@@ -2106,15 +2106,17 @@ class RollTests(unittest.TestCase):
         self.accounts['accounts']['claude-lab']['bundles']['lab_opus55_high']['disabled'] = False
         task = {**self.task, 'task_id': 'task-normal-1', 'work_kind': 'code_implementation'}
         task['profile'] = profile_for(task)
-        normal_task = {**task, 'pinned_bundle': 'lab_opus55_high', 'disable_fast': True}
-        normal_plan = allocator.plan(normal_task, self.usage, self.now, accounts=self.accounts)
+        normal_task = {**task, 'disable_fast': True}
+        normal_plan = allocator.plan(normal_task, self.usage, self.now, accounts=self.accounts,
+                                     route={'pinned_bundle': 'lab_opus55_high'})
         self.assertEqual(normal_plan['choice'], 'lab_opus55_high')
         normal_dec = registry.issue(dict(normal_plan, stage='plan'), task, self.now)
         normal_row = registry.prepare(normal_dec['decision_id'], task, self.launch, self.usage, self.accounts, self.now)
         self.assertEqual(normal_row['request']['settings']['features'], {'fast_mode': False})
 
-        fast_task = {**task, 'task_id': 'task-fast-1', 'pinned_bundle': 'lab_opus55_high', 'force_fast': True}
-        fast_plan = allocator.plan(fast_task, self.usage, self.now, accounts=self.accounts)
+        fast_task = {**task, 'task_id': 'task-fast-1'}
+        fast_plan = allocator.plan(fast_task, self.usage, self.now, accounts=self.accounts,
+                                   route={'pinned_bundle': 'lab_opus55_high', 'force_fast': True})
         self.assertTrue(fast_plan['selected_bundle'].get('fast'))
         fast_dec = registry.issue(dict(fast_plan, stage='plan'), fast_task, self.now)
         fast_row = registry.prepare(fast_dec['decision_id'], fast_task, self.launch, self.usage, self.accounts, self.now)
@@ -4983,15 +4985,20 @@ class ContinuationRollTests(unittest.TestCase):
         import decision_ledger
         import roll
         bundle = dict(self.bundle, bundle_id='lab_sonnet55_high')
-        cases = (   # (provider, account, model, effort, conflict)
-            ('claude-lab', 'claude-lab', 'claude-opus-5-5', 'high', True),
-            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'medium', True),
-            ('codex', 'codex', 'gpt-6.1-sol', 'high', True),
-            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'high', False),
-            (None, None, 'claude-sonnet-5-5:high', None, False),
-            (None, None, 'claude-sonnet-5-5', None, False),
+        cases = (   # (provider, account, model, effort, fast, conflict); fast mode is part of the route
+            ('claude-lab', 'claude-lab', 'claude-opus-5-5', 'high', False, True),
+            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'medium', False, True),
+            ('codex', 'codex', 'gpt-6.1-sol', 'high', False, True),
+            (None, None, None, None, True, True),
+            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'high', True, True),
+            ('claude-lab', 'claude-lab', 'claude-sonnet-5-5', 'high', False, False),
+            (None, None, 'claude-sonnet-5-5:high', None, False, False),
+            (None, None, 'claude-sonnet-5-5', None, False, False),
         )
-        for n, (provider, account, model, effort, conflict) in enumerate(cases):
+        # --fast on a worker that runs fast names its own route: it adds nothing.
+        own_fast = argparse.Namespace(provider=None, account=None, model=None, effort=None, fast=True)
+        self.assertIsNone(roll.named_route_conflict(own_fast, dict(bundle, fast=True), self.accounts))
+        for n, (provider, account, model, effort, fast, conflict) in enumerate(cases):
             with self.subTest(model=model, effort=effort, account=account):
                 operations, host, judge, _ = self._setup_paseo_env()
                 task_id = f't-flags-{n}'
@@ -5004,7 +5011,7 @@ class ContinuationRollTests(unittest.TestCase):
                 args = dict(task=None, file=[], apply_to=None, local_only='local', keep_whole=None, hours=0.5,
                             title=None, workspace=None, task_id=task_id, wait=0, parent_id=None, parent_host=None,
                             parent_address=None, provider=provider, account=account, model=model, effort=effort,
-                            basis='User: run it there', usage_cache=None, dry_run=False, verbose=False, fast=False,
+                            basis='User: run it there', usage_cache=None, dry_run=False, verbose=False, fast=fast,
                             resume='agent-idle', new_worker=False)
                 rows_before = len(decision_ledger.read_ledger())
                 with fake_owners(self), patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
@@ -5016,7 +5023,8 @@ class ContinuationRollTests(unittest.TestCase):
                         patch.object(flow, 'host_call', host):
                     if conflict:
                         with self.assertRaisesRegex(ValueError, r"--resume names the worker and its route is the "
-                                                                r"worker's own \(claude-lab/claude-sonnet-5-5:high\)"):
+                                                                r"worker's own \(claude-lab/claude-sonnet-5-5:high\); drop "
+                                                                + ('the model flags and --fast' if fast else 'the model flags')):
                             roll.run(argparse.Namespace(brief=brief, **args), judge)
                         self.assertEqual(len(decision_ledger.read_ledger()), rows_before)     # nothing recorded
                         self.assertEqual(operations, [])

@@ -654,7 +654,9 @@ class DiscoveryTests(unittest.TestCase):
         bundles = account_fleet.bundles(accounts)
         self.assertIn('disabled', bundles['lab_sonnet55_high']['discovery_unavailable'])
         self.assertIn('disabled', bundles['lab_opus55_high'])
-        task = {'objective': 'Fixture', 'expected_hours': 0.1, 'needs': {'local_only': True}, 'include_unverified': True}
+        for spec in accounts['accounts'].values():      # launch evidence is discovery's fact: the fixture states it
+            spec['verified'] = True
+        task = {'objective': 'Fixture', 'expected_hours': 0.1, 'needs': {'local_only': True}}
         with patch.object(host_policy, 'load_policy', return_value=None):
             plan = allocator.plan(task, {'accounts': {}}, self.now, accounts=accounts, overrides=[])
         row = next(r for r in plan['ranking'] if r['id'] == 'lab_sonnet55_high')

@@ -256,14 +256,19 @@ def record_constraint(args, task=None, classified=None):
         result['_allocation_task'] = task
         if classified.get('scorer') is not None:
             result.update(scorer=classified['scorer'], task_profile=task.get('profile'))
-        if task.get('unclassified'):
-            unclassified_data_error(result, task)
+        if classified.get('unclassified'):
+            unclassified_data_error(result, classified['unclassified'], task['expected_hours'])
         if classified.get('hours_estimate'):
             result['hours_estimate'] = classified['hours_estimate']
         if classified.get('alerts'):
             result['alerts'] = list(classified['alerts'])
+    # What this record decides beyond the task: kept on the decision, passed to the plan as route fields
+    # (task_intake.ROUTE_FIELDS), never written into a task.
+    route = {**({'unclassified': classified['unclassified']} if (classified or {}).get('unclassified') else {}),
+             **({'force_fast': True} if fast_requested else {})}
+    if route:
+        result['_route'] = route
     if fast_requested:
-        result['_allocation_task'] = {**(task or {}), 'force_fast': True}
         # A verified fast contract with no cited price launches (candidate_eval), carrying that data error.
         fast_gap = fast_modes.price_gap(c_model, account_fleet.model_spec(overlaid_accounts, pin.model))
         if fast_gap:
@@ -301,8 +306,9 @@ def record_resume(args, task, classified, bundle, agent_id):
               'observed_at': now.isoformat(), 'usage': usage, '_allocation_task': plan_task}
     if classified.get('scorer') is not None:
         result.update(scorer=classified['scorer'], task_profile=plan_task.get('profile'))
-    if plan_task.get('unclassified'):
-        unclassified_data_error(result, plan_task)
+    if classified.get('unclassified'):
+        unclassified_data_error(result, classified['unclassified'], plan_task['expected_hours'])
+        result['_route'] = {'unclassified': classified['unclassified']}
     if classified.get('hours_estimate'):
         result['hours_estimate'] = classified['hours_estimate']
     if classified.get('alerts'):
@@ -318,10 +324,10 @@ def record_resume(args, task, classified, bundle, agent_id):
     return decision_ledger.finalize(result, None, 'auto', started, task)
 
 
-def unclassified_data_error(result, task):
+def unclassified_data_error(result, reason, hours):
     """The data error of a named launch without a classifier profile, in the result and its ledger row."""
-    error = (f"unclassified ({task['unclassified']}): no task profile; priced and reserved from --hours "
-             f"{float(task['expected_hours']):g} at the named effort")
+    error = (f"unclassified ({reason}): no task profile; priced and reserved from --hours "
+             f"{float(hours):g} at the named effort")
     result['data_errors'] = [*result.get('data_errors', []), error]
     result['warnings'] = [*result.get('warnings', []), f'data error: {error}']
 
@@ -339,6 +345,8 @@ def _record_task(args, task):
     if not task and args.input is not None:
         loaded = json.loads(args.input.read_text(encoding='utf-8-sig'))
         task = loaded.get('task') if isinstance(loaded, dict) and isinstance(loaded.get('task'), dict) else {}
+    import task_intake
+    task_intake.check_caller_task(task)
     if not task.get('parent_agent_id'):
         # The gate matches same-session rows first; a record without the session ID loses to any
         # roll this session made inside the window. Only real host IDs, never the ppid fallback.
@@ -388,7 +396,6 @@ def _compare_with_router(result, task, usage, now, chosen, fast_requested, class
         result.update({'router_choice': None, 'agrees': None, 'classifier_skipped': True})
     elif task:
         try:
-            plan_task = {**task, 'force_fast': True} if fast_requested else task
             has_cadence = any(
                 isinstance((spec or {}).get('cadence'), dict)
                 for spec in (account_fleet.load_accounts().get('accounts') or {}).values()
@@ -396,7 +403,8 @@ def _compare_with_router(result, task, usage, now, chosen, fast_requested, class
             plan_records = (dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
                             if not ((task.get('chain') or {}).get('id') or has_cadence) else
                             decision_ledger.read_ledger() + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES))
-            plan = allocator.plan(plan_task, usage, now, records=plan_records)
+            plan = allocator.plan(task, usage, now, records=plan_records,
+                                  route={'force_fast': True} if fast_requested else None)
         except (ValueError, KeyError, TypeError) as exc:
             result['router_error'] = f'{type(exc).__name__}: {exc}'
         else:
@@ -598,7 +606,7 @@ def _unclassified(task, scorer, hours, started):
     --hours it stops (pinned_unclassified_result)."""
     if hours is None:
         return {'result': pinned_unclassified_result(task, scorer, started)}
-    return {'task': {**task, 'unclassified': unclassified_reason(scorer)}, 'scorer': scorer, 'hours_estimate': None,
+    return {'task': task, 'unclassified': unclassified_reason(scorer), 'scorer': scorer, 'hours_estimate': None,
             'alerts': []}
 
 
@@ -606,8 +614,8 @@ def classify_pinned(task, args):
     """`roll --provider/--account/--model`: only the model choice is pinned. The task gets the same System-One profile
     and hours estimate as an automatic roll, so the pinned bundle is priced and reserved like any other launch.
 
-    Returns {'task', 'scorer', 'hours_estimate', 'alerts'}; or {'result': ...} when the roll stops here (split, or no
-    profile to price with)."""
+    Returns {'task', 'scorer', 'hours_estimate', 'alerts'} (and 'unclassified', the reason, when no classifier answered
+    and --hours was given); or {'result': ...} when the roll stops here (split, or no profile to price with)."""
     started = time.monotonic()
     hours = task.get('expected_hours')
     if isinstance(task.get('profile'), dict):
@@ -773,6 +781,8 @@ def _plan_input_task(document, args):
     task = document.get('task')
     if not isinstance(task, dict) or not task:
         raise ValueError('Input requires task.')
+    import task_intake
+    task_intake.check_caller_task(task)
     if getattr(args, 'hours', None) is not None and task.get('expected_hours') is None:
         task = {**task, 'expected_hours': args.hours}
     if getattr(args, 'can_wait_hours', None) is not None and task.get('can_wait_hours') is None:

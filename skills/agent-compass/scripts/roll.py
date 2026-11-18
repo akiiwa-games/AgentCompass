@@ -197,7 +197,9 @@ def _resolve_worker_bundle(worker, accounts=None):
 def named_route_conflict(args, bundle, accounts=None):
     """`roll --resume <id>` with model flags: None when every flag given names the worker's own route (they add nothing:
     the turn is the explicit resume), else the error text. --resume names the worker, and its route is the worker's
-    own; a different named route contradicts it, so neither is chosen for the caller."""
+    own; a different named route contradicts it, so neither is chosen for the caller. Fast mode is part of the route:
+    --fast on a worker that runs without it is such a contradiction (the entry cannot tell an absent --fast from a plain
+    mode asked for, so only a given --fast is compared)."""
     import account_fleet
     import model_resolution
     if accounts is None:
@@ -207,11 +209,13 @@ def named_route_conflict(args, bundle, accounts=None):
     same = ((not args.provider or args.provider == bundle.get('provider'))
             and (not args.account or args.account == bundle.get('account'))
             and (not model or account_fleet.row_key(model, accounts) == account_fleet.row_key(bundle.get('model') or '', accounts))
-            and (not effort or effort == bundle.get('effort')))
+            and (not effort or effort == bundle.get('effort'))
+            and (not getattr(args, 'fast', False) or bool(bundle.get('fast'))))
     if same:
         return None
-    own = f"{bundle.get('account')}/{bundle.get('model')}:{bundle.get('effort')}"
-    return (f'--resume names the worker and its route is the worker\'s own ({own}); drop the model flags, or roll '
+    own = f"{bundle.get('account')}/{bundle.get('model')}:{bundle.get('effort')}{', fast' if bundle.get('fast') else ''}"
+    flags = 'the model flags and --fast' if getattr(args, 'fast', False) and not bundle.get('fast') else 'the model flags'
+    return (f"--resume names the worker and its route is the worker's own ({own}); drop {flags}, or roll "
             'without --resume to launch the named route.')
 
 
@@ -1285,7 +1289,7 @@ def _run(args, judge):
                 # `worker_workspace_mismatch`), and a new worker in --workspace would not hold its context.
                 return _resume_refusal(base_out, explicit_id, 'resume_workspace_mismatch', workspace_mismatch_text(
                     explicit_id, own_dir, canonical_ws))
-            if args.provider or args.model or args.effort:
+            if args.provider or args.model or args.effort or getattr(args, 'fast', False):
                 conflict = named_route_conflict(args, _resolve_worker_bundle(explicit_worker) or {})
                 if conflict:
                     raise ValueError(conflict)
