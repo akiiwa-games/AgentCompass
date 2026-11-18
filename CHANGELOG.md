@@ -2,6 +2,14 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.7.0 - 2026-11-18
+
+- Level 3 of each facet's score scale is the calibration panel's best measured value instead of the anchor model; a level above 3 is shown as its number. Manual scores move to schema 3: the shipped ones and your own are converted by a declared rule so that each stands for the same value as before.
+- Reference data ships with the version: the between-release public data channel is removed and nothing is fetched at run time.
+- Settings written by earlier releases (account choices, host-rules overlays, removed providers, Usage Float autostart, manual scores) are carried into the current shape when read instead of being refused; `agentcompass doctor` lists only what needs you.
+- Reference data rebuilt on 2026-11-18: the calibration panel adds `gpt-6-sol` and `grok-4.6` and drops `mimo-v2.6-pro` and `qwen3.8-max`; `qwen3-max` is removed.
+- A manual responsiveness level bounds the other efforts, as a manual ability level already did.
+
 ## v0.6.8 - 2026-11-18
 
 - GPT-6.2 Astra and GPT-6.2 Sol (`gpt-6.2-astra`, `gpt-6.2-sol`, released 2026-11-17) are in the shipped model data beside GPT-6 Astra and GPT-6.1 Sol, with their list prices, their Artificial Analysis readings and Codex and Pi bundles.
