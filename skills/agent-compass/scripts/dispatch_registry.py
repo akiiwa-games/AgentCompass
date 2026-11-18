@@ -1146,7 +1146,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
     import account_fleet
     import candidate_ranking
     import dispatch_ground_truth
-    import state_upgrade
+    import task_intake
     now = now or utcnow()
     accounts = accounts or account_fleet.load_accounts()
     launch_git = dispatch_ground_truth.capture_launch_git(cwd or (launch.get('cwd') if isinstance(launch, dict) else None))
@@ -1155,6 +1155,14 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         decision = get(connection, 'decisions', decision_id)
         if not decision['bound'] or decision['task_hash'] != digest(task):
             raise ValueError('Decision is unbound or belongs to another task/parent/input')
+        if isinstance(decision.get('allocation_task'), dict) and decision['allocation_task'].get('profile') is not None:
+            try:
+                task_intake.validate_profile(decision['allocation_task']['profile'])
+            except ValueError as exc:
+                # Recorded by an older version: its profile is not reinterpreted, and neither a new launch nor a resume
+                # of its prepared row proceeds under it. Other decisions of the database are not affected.
+                raise ValueError(f'decision {decision_id} was recorded by an older version with a task profile this '
+                                 'version does not read; it is not resumed. Run plan and record again for the task') from exc
         if isinstance(resume_bundle, dict):
             bundle = dict(resume_bundle)
             resolved_resume = resolve_bundle(bundle, accounts, False)
@@ -1209,19 +1217,6 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             accounts['accounts'][bundle['account']]['bundles'][bundle['bundle_id']] = resolved
         # Capacity check and insertion share the same transaction across concurrent parents.
         alloc_task = dict(decision['allocation_task'])
-        if alloc_task.get('profile') is not None:
-            import state_upgrade
-            import task_intake
-            try:
-                task_intake.validate_profile(alloc_task['profile'])
-            except ValueError as exc:
-                target_db = Path(path) if path is not None else db_path()
-                old_rows = max(1, state_upgrade.count_old_decision_rows(connection))
-                raise ValueError(state_upgrade.format_issue(
-                    target_db,
-                    f'dispatch database contains {old_rows} older-format decision row(s)',
-                    state_upgrade.fix_delete(target_db),
-                )) from exc
         profile = (
             alloc_task.get('profile')
             if isinstance(alloc_task.get('profile'), dict)

@@ -229,6 +229,13 @@ def upgrade_local_document(doc):
     return doc
 
 
+def _fix(target) -> str:
+    import state_upgrade
+    return ('edit the file: correct or remove the entry the message names, or '
+            + state_upgrade.fix_delete(target, 'this discards every score you set yourself; set them again with '
+                                              '`agentcompass score set`'))
+
+
 def load_local(path=None, environ=None) -> dict:
     """Load and validate `<ROUTER_STATE_DIR>/user-scores.json`, carrying a file an earlier release wrote into the current
     schema (`upgrade_local_document`); raises `ValueError` if an existing file is corrupt or of an unknown shape."""
@@ -240,13 +247,13 @@ def load_local(path=None, environ=None) -> dict:
         raw = json.loads(target.read_text(encoding='utf-8-sig'))
     except (OSError, UnicodeError, ValueError) as exc:
         raise ValueError(state_upgrade.format_issue(
-            target, f'corrupt local user-scores file ({exc})', state_upgrade.FIX_TRAY,
+            target, f'corrupt local user-scores file ({exc})', _fix(target),
         )) from exc
     try:
         return validate_document(upgrade_local_document(raw), expected_kind='user')
     except ValueError as exc:
         raise ValueError(state_upgrade.format_issue(
-            target, f'invalid local user-scores file ({exc})', state_upgrade.FIX_TRAY,
+            target, f'invalid local user-scores file ({exc})', _fix(target),
         )) from exc
 
 

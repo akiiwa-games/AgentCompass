@@ -1575,7 +1575,8 @@ def _edit_preferences(change) -> None:
     target = _user_accounts_path(create=True)
     import override_store
     with override_store.locked(target):
-        document = json.loads(target.read_text(encoding="utf-8-sig"))
+        import accounts_override
+        document = accounts_override.load_override(target)  # an earlier release's file, carried into the current shape
         change(document)
         _backup(target, "accounts-json")
         _atomic_json(target, document)
@@ -2127,7 +2128,7 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
     target = path or _user_accounts_path(create=True)
     modules()
     import accounts_override
-    doc = accounts_override.normalize(json.loads(target.read_text(encoding="utf-8-sig")))
+    doc = accounts_override.normalize(accounts_override.upgrade_document(json.loads(target.read_text(encoding="utf-8-sig"))))
     bundles = ((doc.get("accounts") or {}).get(account) or {}).get("bundles") or {}
     if bundle_id not in bundles:
         modules()

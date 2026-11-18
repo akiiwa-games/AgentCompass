@@ -29,19 +29,6 @@ class HostRulesTests(unittest.TestCase):
         self.assertEqual(host_rules.agentcompass_command(), f'python -X utf8 {(host_rules.REPO / "agentcompass").as_posix()}')
         self.assertTrue((host_rules.REPO / 'agentcompass' / '__main__.py').is_file())
 
-    def test_an_overlay_with_old_placeholder_or_worker_env_fails_fast(self):
-        directory = host_rules.overlay_dir(self.home)
-        directory.mkdir(parents=True)
-        for bad in (
-            b'run `python -X utf8 @@ROUTE_JUDGE@@ roll --task "x"`\n',
-            b'worker (`ROUTER_WORKER=1`) runs assignment\n',
-        ):
-            (directory / 'shared.md').write_bytes(bad)
-            with self.assertRaises(ValueError) as ctx:
-                host_rules.load('shared', self.home)
-            self.assertIn('shared.md', str(ctx.exception))
-            self.assertIn('delete', str(ctx.exception))
-
     def test_codex_and_daemon_overlays_include_the_shared_rules_instead_of_copying_them(self):
         directory = host_rules.overlay_dir(self.home)
         directory.mkdir(parents=True)
@@ -69,8 +56,14 @@ class HostRulesTests(unittest.TestCase):
             # The dispatch procedure is not copied into every session any more.
             for detail in ('bypassPermissions', 'notifyOnFinish', '2M', 'rotate_after_carried_tokens', 'gate-hook', 'record --'):
                 self.assertNotIn(detail, text, kind)
-        self.assertLess(len(host_rules.load('shared', self.home)[0]), 2600)
-        self.assertLess(len(host_rules.load('daemon-append', self.home)[0]), 1000)
+        # The default stays a short pointer. Its length is the text's, not the length of the path the checkout lives in.
+        def text_length(kind):
+            text = host_rules.load(kind, self.home)[0]
+            for machine_path in (host_rules.DISPATCH_RULES, host_rules.SKILL_DIR, host_rules.agentcompass_command()):
+                text = text.replace(machine_path, '@')
+            return len(text)
+        self.assertLess(text_length('shared'), 2600)
+        self.assertLess(text_length('daemon-append'), 1000)
 
     def test_a_personal_dispatch_file_is_named_not_copied(self):
         personal = host_rules.personal_dispatch_path(self.home)
@@ -95,6 +88,67 @@ class HostRulesTests(unittest.TestCase):
         self.assertEqual(source, 'overlay')
         self.assertEqual(text, f'read {host_rules.DISPATCH_RULES} then '
                                f'{host_rules.personal_dispatch_path(self.home).as_posix()} ({host_rules.SKILL_DIR})\r\n')
+
+
+class HostRulesKeptAcrossUpdatesTests(unittest.TestCase):
+    """The user's own overlay of an earlier release is read in today's names; the file is never rewritten."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name)
+        self.directory = host_rules.overlay_dir(self.home)
+        self.directory.mkdir(parents=True)
+        self.overlay = self.directory / 'shared.md'
+
+    def test_an_overlay_written_for_an_earlier_release_keeps_its_words_and_takes_the_current_names(self):
+        old = ('# My rules\n\nrun `python -X utf8 @@ROUTE_JUDGE@@ roll --task "x"`\n'
+               'a worker (`ROUTER_WORKER=1`) with ROUTER_ACCOUNTS_OVERRIDE and ROUTER_LIVE_MODELS set\n'
+               'load the route-agent-work skill\n')
+        self.overlay.write_bytes(old.encode('utf-8'))
+        text, source = host_rules.load('shared', self.home)
+        self.assertEqual(source, 'overlay')
+        command = host_rules.agentcompass_command()
+        self.assertEqual(text, ('# My rules\n\nrun `' + command + ' roll --task "x"`\n'
+                                'a worker (`AGENTCOMPASS_WORKER=1`) with AGENTCOMPASS_ACCOUNTS_OVERRIDE and '
+                                'AGENTCOMPASS_LIVE_MODELS set\nload the agent-compass skill\n'))
+        self.assertEqual(self.overlay.read_bytes(), old.encode('utf-8'))   # a read never writes
+
+    def test_every_pair_renames_a_token_and_leaves_nothing_the_check_still_refuses(self):
+        import state_upgrade
+        for old, new in state_upgrade.HOST_RULE_UPGRADES.items():
+            with self.subTest(old=old):
+                self.assertNotEqual(old, new)
+                self.assertNotIn(old, new)
+                self.assertEqual(state_upgrade.upgrade_host_rule_text(f'a {old} b'), f'a {new} b')
+
+    def test_a_name_in_the_users_prose_is_rendered_as_written_and_only_the_retired_placeholder_is_refused(self):
+        # An overlay is the user's own text: only what cannot be rendered is refused (a placeholder with no meaning).
+        prose = b'The allocator lives in route_judge.py; export ROUTE_MANAGER_HOME=1 once.\n'
+        self.overlay.write_bytes(prose)
+        self.assertEqual(host_rules.load('shared', self.home), (prose.decode('utf-8'), 'overlay'))
+        self.overlay.write_bytes(b'path `@@ROUTE_JUDGE@@` here\n')
+        with self.assertRaises(ValueError) as ctx:
+            host_rules.load('shared', self.home)
+        self.assertIn('shared.md', str(ctx.exception))
+        self.assertIn('@@AGENTCOMPASS@@', str(ctx.exception))   # the fix names what to write instead
+        self.assertIn('delete', str(ctx.exception))
+
+    def test_the_overlay_files_doctor_checks_are_the_ones_load_reads(self):
+        import state_upgrade
+        self.assertEqual(sorted(host_rules.OVERLAY_FILES.values()), sorted(state_upgrade.HOST_RULE_OVERLAYS))
+
+    def test_a_managed_rule_block_holding_a_name_from_the_users_prose_is_not_stale(self):
+        import state_upgrade
+        block = f'{state_upgrade.RULE_BEGIN}\nsee route_judge.py and ROUTE_MANAGER_HOME\n{state_upgrade.RULE_END}\n'
+        self.assertIsNone(state_upgrade._check_global_rule_text('CLAUDE.md', block))
+        stale = f'{state_upgrade.RULE_BEGIN}\nrun ROUTER_WORKER=1\n{state_upgrade.RULE_END}\n'
+        self.assertIn('ROUTER_WORKER', state_upgrade._check_global_rule_text('CLAUDE.md', stale))
+
+    def test_doctor_names_nothing_for_an_overlay_that_has_a_step(self):
+        import state_upgrade
+        self.overlay.write_bytes(b'worker (`ROUTER_WORKER=1`) runs `python -X utf8 @@ROUTE_JUDGE@@ plan`\n')
+        self.assertIsNone(state_upgrade.check_host_rule_file(self.overlay))
 
 
 if __name__ == '__main__':
