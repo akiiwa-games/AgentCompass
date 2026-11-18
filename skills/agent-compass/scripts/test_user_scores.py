@@ -559,7 +559,7 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         # It ships with the version, so it is always in the current schema; an older one is a packaging error.
         self.write({'schema_version': 1, 'scores': {}})
         with self.assertRaisesRegex(ValueError, 'schema_version'):
-            user_scores.load_public(self.local, effective=False)
+            user_scores.load_public(self.local)
 
 
 class TaxonomyR2Round2FixTests(unittest.TestCase):
