@@ -29,7 +29,7 @@ flowchart LR
 
 ```text
 fit        = sum_a w_a * (min(z_a, c_a) - t1_a) / sum_a w_a   (in panel standard deviations; zero point t1_a = panel weakest)
-targets    = t1: panel minimum, t2: panel median, t3: panel maximum (measured High values of the panel's members; the anchor claude-opus-5-5 at High is z = 0.0, the origin)
+targets    = t1: panel minimum, t2: panel median, t3: panel maximum (measured or interpolated High values of the panel's members; the anchor claude-opus-5-5 at High is z = 0.0, the origin)
 cap c_a    = t_a at demand levels 1 and 2; ceiling_a at level 3 (the highest measured or interpolated High value of any
              catalogued model, never an estimate, converted or manual value)
 continuity = max positive (t3 - t2) among highest-demand categories when coupling in ("medium", "high") and resuming its worker, else 0
@@ -45,7 +45,7 @@ level 1 evaluates `design` only, while levels 2 and 3 evaluate `min(design, imag
 per facet). A task the classifier marks `needs_visual` or `needs_gui` requires image input at every level: a model whose public data says it takes none leaves the task, and one with no cited modality leaves automatic routing. Routine levels pay nothing
 for ability above their target; a level-3 demand keeps crediting ability up to the category's ceiling, so the hardest tasks
 can prefer a model measured above the panel's best. The level scale of a facet is `(t1, t2, t3)`, the panel's minimum, median and
-maximum measured High value (owner, 2026-11-18; a category value such as `coding` has its own triad on the same definition, and a panel
+maximum measured or interpolated High value (owner, 2026-11-18; a category value such as `coding` has its own triad on the same definition, and a panel
 that does not give `t1 < t2 < t3` is a build error). The anchor is the origin of `z`, not a level: it is level 3 only on a facet where it
 is the panel's best. A value above `t3` is a level above 3, extrapolated by `t3 - t2` and shown as that number; the manual scores
 (`agentcompass score set`, the Scoring page) speak this scale. `tool_operation.responsiveness` at demand level 3 asks what level 2

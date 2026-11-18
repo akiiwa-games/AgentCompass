@@ -8,7 +8,7 @@ Precedence (highest to lowest):
 
 Scale (demand-level scale, mapped dynamically to panel z-scores from `anchor.targets`; schema 3, owner 2026-11-18):
   - `1` = the panel's weakest (`t1`), `2` = the panel median (`t2`), `3` = the panel's best (`t3`, the maximum of the
-    panel's measured High values on the facet). The anchor `claude-opus-5-5` is the origin of `z` (`z = 0`), not a level:
+    panel's measured or interpolated High values on the facet). The anchor `claude-opus-5-5` is the origin of `z` (`z = 0`), not a level:
     it is level 3 only on a facet where it is the panel's best.
   - Decimals in `[1, 3]` interpolate piecewise linearly through `(1, t1), (2, t2), (3, t3)`.
   - `3` is not a top: a value above `t3` is a level above 3, extrapolated with the step from level 2 to 3 (`t3 - t2`), and a
@@ -226,14 +226,25 @@ def anchor_levels(schema: int) -> dict:
     return {target: float(level) for target, level in doc['conversions'][str(schema)]['anchor_levels'].items()}
 
 
-def convert_level(level: float, anchor_level: float, *, ndigits: int = ROUND_LEVELS) -> float:
+def above_3_slopes(schema: int) -> dict:
+    """{'<category>.<facet>': s} for user-scores schema `schema`: on a facet whose old scale was a plateau (`t2 == t3`, level 3 =
+    the panel median) the new levels per old level above 3 (`references/level-3-conversion.json`, declared and frozen)."""
+    doc = json.loads(LEVEL3_CONVERSION_FILE.read_text(encoding='utf-8'))
+    return {target: float(slope) for target, slope in doc['conversions'][str(schema)]['above_3_slopes'].items()}
+
+
+def convert_level(level: float, anchor_level: float, *, above_3_slope: float | None = None, ndigits: int = ROUND_LEVELS) -> float:
     """A level written with level 3 = the anchor, carried onto the scale whose level 3 is the panel maximum. Levels 1 and 2 are
     the panel minimum and median on both scales, so a level at or below 2 stays; above 2 the position between the median and
     the old level 3 is kept: `2 + (L - 2) * (A - 2)`, A = the anchor's level on the facet (the segment above 3 continues with the
-    same slope). Against the panel the old scale was read with, the value is the same."""
+    same slope). A facet whose old scale was a plateau (A = 2: every level in (2, 3] meant the median) gives 2 up to level 3 and,
+    above it, `2 + (L - 3) * s`, `s` = the declared `above_3_slope`. Against the panel the old scale was read with, the value is
+    the same."""
     lv = normalize_level(level)
     if lv <= 2.0:
         return lv
+    if above_3_slope is not None:
+        return round(2.0 + max(lv - 3.0, 0.0) * above_3_slope, ndigits)
     return round(2.0 + (lv - 2.0) * (anchor_level - 2.0), ndigits)
 
 
@@ -245,9 +256,9 @@ def _facet_of(target: str) -> tuple[str, str | None]:
     return cat, facet
 
 
-def convert_scores(scores: dict, anchor_level: dict, *, ndigits: int = ROUND_LEVELS) -> dict:
+def convert_scores(scores: dict, anchor_level: dict, above_3_slope: dict, *, ndigits: int = ROUND_LEVELS) -> dict:
     """`scores` ({model: {target: entry}}, levels with level 3 = the anchor) converted by `convert_level` with the facet's
-    `anchor_level` ({'<category>.<facet>': A}). An entry for a category of several facets (`coding`, `tool_operation`) above
+    `anchor_level` ({'<category>.<facet>': A}) and, on a plateau facet, its `above_3_slope`. An entry for a category of several facets (`coding`, `tool_operation`) above
     level 2 is written per facet (their anchor levels differ), except for a facet the model has an entry of its own for, which
     stands; at or below 2 it stays one entry. Everything but `level` is kept."""
     out = {}
@@ -262,22 +273,24 @@ def convert_scores(scores: dict, anchor_level: dict, *, ndigits: int = ROUND_LEV
                     continue
                 for f in CATEGORY_FACETS[cat]:
                     if f'{cat}.{f}' not in explicit:
-                        converted[f'{cat}.{f}'] = {**entry, 'level': convert_level(entry['level'], anchor_level[f'{cat}.{f}'], ndigits=ndigits)}
+                        key = f'{cat}.{f}'
+                        converted[key] = {**entry, 'level': convert_level(entry['level'], anchor_level[key], above_3_slope=above_3_slope.get(key), ndigits=ndigits)}
                 continue
             cat, facet = _facet_of(target)
-            converted[target] = {**entry, 'level': convert_level(entry['level'], anchor_level[f'{cat}.{facet}'], ndigits=ndigits)}
+            key = f'{cat}.{facet}'
+            converted[target] = {**entry, 'level': convert_level(entry['level'], anchor_level[key], above_3_slope=above_3_slope.get(key), ndigits=ndigits)}
         out[model] = dict(sorted(converted.items()))
     return out
 
 
 def _local_schema_2_to_3(doc: dict) -> dict:
     """Schema 2 (v0.6.7 and v0.6.8) levels were written with level 3 = the anchor; schema 3 levels have level 3 = the panel
-    maximum. Each entry is converted by `convert_scores` with the declared anchor levels of `references/level-3-conversion.json`,
+    maximum. Each entry is converted by `convert_scores` with the declared anchor levels and slopes of `references/level-3-conversion.json`,
     the same data and function that converted the maintainer file."""
     scores = doc.get('scores')
     if not isinstance(scores, dict):
         return {**doc, 'schema_version': 3}
-    converted = convert_scores({m: t for m, t in scores.items() if isinstance(t, dict)}, anchor_levels(2))
+    converted = convert_scores({m: t for m, t in scores.items() if isinstance(t, dict)}, anchor_levels(2), above_3_slopes(2))
     return {**doc, 'schema_version': 3, 'scores': {**scores, **converted}}
 
 
@@ -392,7 +405,8 @@ def z_to_level(z: float, t1: float, t2: float, t3: float) -> float:
 
 
 def level_for_target_z(target: str, z: float | None, targets_table: dict) -> float | None:
-    """Convert a panel `z` score on `target` (`<category>` or `<category>.<facet>`) onto the `1..3` scale, or None."""
+    """Convert a panel `z` score on `target` (`<category>` or `<category>.<facet>`) onto the facet's level scale (1 = panel
+    minimum, 2 = median, 3 = maximum, unclamped above and below), or None."""
     if z is None:
         return None
     cat, facet = parse_target(target)

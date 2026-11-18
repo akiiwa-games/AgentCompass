@@ -557,43 +557,63 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
     def conversion():
         return json.loads(user_scores.LEVEL3_CONVERSION_FILE.read_text(encoding='utf-8'))['conversions']['2']
 
-    def assert_position_kept(self, old_level, new_level, triad, msg=None):
+    def assert_position_kept(self, old_level, new_level, triad, msg=None, *, plateau=False):
         """Owner 2026-11-18: the definition change by itself moves no hand-written value. The value the old level had under the
         old definition on this panel (t3 = the anchor, z = 0: levels 1 and 2 as before, above 2 the same slope towards 0 and
-        beyond) equals the value the new level has under the new definition, to the rounding of the written level."""
+        beyond; on `tool_operation.responsiveness` t3 = t2, a plateau: the median up to level 3, above it `t2 + (L - 3) * (t2 - t1)`)
+        equals the value the new level has under the new definition, to the rounding of the written level."""
         t1, t2, t3 = triad
-        old_value = t1 + (old_level - 1.0) * (t2 - t1) if old_level <= 2.0 else t2 + (old_level - 2.0) * (0.0 - t2)
+        if old_level <= 2.0:
+            old_value = t1 + (old_level - 1.0) * (t2 - t1)
+        elif plateau:
+            old_value = t2 + max(old_level - 3.0, 0.0) * (t2 - t1)
+        else:
+            old_value = t2 + (old_level - 2.0) * (0.0 - t2)
         self.assertAlmostEqual(user_scores.level_to_z(new_level, t1, t2, t3), old_value, delta=0.0051 * (t3 - t2), msg=msg)
 
     def test_levels_1_and_2_stay_and_the_position_above_2_is_kept_on_any_panel(self):
-        """Property of `convert_level`: on the shipped panels (anchor level read from the shipped data) and on made-up ones
-        (any t1 < t2 < 0 <= t3), for levels below 1, inside the scale and above 3."""
+        """Property of `convert_level`: on the shipped panels (anchor level read from the shipped data, the declared slope on the
+        plateau facet) and on made-up ones (any t1 < t2 < 0 <= t3; a made-up plateau panel t1 < t2 = t3's old scale), for levels
+        below 1, inside the scale and above 3, grid 0.5..4 and beyond."""
         targets = json.loads((REFERENCES_DIR / 'five-axis-scores.json').read_text(encoding='utf-8'))['anchor']['targets']
-        triads = {f'{c}.{f}': user_scores.target_triad(targets, c, f) for c, fs in user_scores.CATEGORY_FACETS.items() for f in fs
-                  if f != 'responsiveness'}
+        triads = {f'{c}.{f}': user_scores.target_triad(targets, c, f) for c, fs in user_scores.CATEGORY_FACETS.items() for f in fs}
         rng = random.Random(7)
         for i in range(40):
             t1 = -rng.uniform(1.0, 3.5)
             t2 = rng.uniform(t1 + 0.2, -0.05)
             triads[f'made-up-{i}'] = (t1, t2, rng.choice([0.0, rng.uniform(0.02, 1.8)]))
+        for i in range(10):
+            t1 = -rng.uniform(1.0, 3.5)
+            t2 = rng.uniform(t1 + 0.2, 0.3)
+            triads[f'plateau-made-up-{i}'] = (t1, t2, t2 + rng.uniform(0.2, 2.0))
+        grid = [0.5 + 0.1 * n for n in range(36)] + [4.2, 6.0]
         for name, triad in triads.items():
-            anchor_level = user_scores.z_to_level(0.0, *triad)
-            for level in (0.4, 1.0, 1.4, 2.0, 2.3, 2.6, 3.0, 3.5, 4.2, 6.0):
-                new = user_scores.convert_level(level, anchor_level)
+            plateau = name == 'tool_operation.responsiveness' or name.startswith('plateau-')
+            t1, t2, t3 = triad
+            anchor_level = 2.0 if plateau else user_scores.z_to_level(0.0, *triad)
+            slope = (t2 - t1) / (t3 - t2) if plateau else None
+            for level in grid:
+                new = user_scores.convert_level(level, anchor_level, above_3_slope=slope)
                 if level <= 2.0:
-                    self.assertEqual(new, level, (name, level))
-                self.assert_position_kept(level, new, triad, (name, level))
+                    self.assertEqual(new, round(level, 2), (name, level))
+                self.assert_position_kept(level, new, triad, (name, level), plateau=plateau)
                 self.assertEqual(new, round(new, 2))
 
-    def test_the_declared_anchor_levels_follow_from_their_declared_scale(self):
+    def test_the_declared_conversion_data_follows_from_its_declared_scale(self):
         conversion = self.conversion()
         self.assertEqual(set(conversion['anchor_levels']), set(conversion['scale']))
+        self.assertEqual(set(conversion['above_3_slopes']), {'tool_operation.responsiveness'})
         for target, level in conversion['anchor_levels'].items():
-            if target.endswith('.responsiveness'):
-                # the old scale had t2 = t3: every level above 2 meant the panel median, which is level 2 on any scale
+            if target in conversion['above_3_slopes']:
+                # the old scale had t2 = t3: every level in (2, 3] meant the panel median, which is level 2 on any scale
                 self.assertEqual(level, 2.0)
-                for written in (2.5, 3.0, 4.0):
-                    self.assertEqual(user_scores.convert_level(written, level), 2.0)
+                t1, t2, t3 = conversion['scale'][target]
+                slope = conversion['above_3_slopes'][target]
+                self.assertAlmostEqual(slope, (t2 - t1) / (t3 - t2), places=3, msg=target)
+                for written in (2.5, 3.0):
+                    self.assertEqual(user_scores.convert_level(written, level, above_3_slope=slope), 2.0)
+                # above 3 the old scale went above the median by (L - 3) * (t2 - t1)
+                self.assertAlmostEqual(user_scores.convert_level(4.0, level, above_3_slope=slope), 2.0 + slope, places=2)
                 continue
             self.assertAlmostEqual(level, user_scores.z_to_level(0.0, *conversion['scale'][target]), places=4, msg=target)
             self.assertTrue(2.0 <= level <= 3.0, target)       # the anchor lies between the panel median and its best
@@ -606,7 +626,7 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
             'a': {'coding': entry(2.0), 'tool_operation': entry(1.5), 'aesthetics': entry(2.6)},
             'b': {'coding': entry(3.0, 'n'), 'coding.faithfulness': entry(2.5)},
             'c': {'tool_operation': entry(3.0)},
-        }, anchor)
+        }, anchor, {})
         self.assertEqual(out['a'], {'aesthetics': entry(2.54), 'coding': entry(2.0), 'tool_operation': entry(1.5)})
         self.assertEqual(out['b'], {'coding.execution': entry(3.0, 'n'), 'coding.faithfulness': entry(2.12)})
         self.assertEqual(out['c'], {'tool_operation.image_recognition': entry(2.9), 'tool_operation.responsiveness': entry(2.0)})
@@ -627,10 +647,8 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
                 for key, f in keys:
                     new = new_scores[model][key]
                     self.assertEqual({k: v for k, v in new.items() if k != 'level'}, {k: v for k, v in entry.items() if k != 'level'})
-                    if f == 'responsiveness':
-                        self.assertEqual(new['level'], min(entry['level'], 2.0))
-                    else:
-                        self.assert_position_kept(entry['level'], new['level'], conversion['scale'][f'{cat}.{f}'], (model, key))
+                    self.assert_position_kept(entry['level'], new['level'], conversion['scale'][f'{cat}.{f}'], (model, key),
+                                              plateau=f == 'responsiveness')
 
     def test_a_schema_1_file_is_read_with_its_entries_under_the_renamed_category_on_the_current_scale(self):
         entry = {'level': 2.6, 'as_of': '2026-11-12', 'kind': 'user', 'note': 'mine'}
@@ -653,6 +671,8 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
             'model-a': {'creativity': {'level': 3.1, 'as_of': '2026-11-12', 'kind': 'user', 'note': 'mine'},
                         'coding': {'level': 2.4, 'as_of': '2026-11-12', 'kind': 'user'},
                         'tool_operation.responsiveness': {'level': 2.5, 'as_of': '2026-11-12', 'kind': 'user'}},
+            'model-e': {'tool_operation.responsiveness': {'level': 3.5, 'as_of': '2026-11-12', 'kind': 'user'},
+                        'tool_operation': {'level': 4.0, 'as_of': '2026-11-12', 'kind': 'user'}},
             'model-b': {'aesthetics': {'level': 0.5, 'as_of': '2026-11-12', 'kind': 'user'},
                         'coding': {'level': 3.0, 'as_of': '2026-11-12', 'kind': 'user'},
                         'coding.faithfulness': {'level': 1.7, 'as_of': '2026-11-13', 'kind': 'user'}},

@@ -166,7 +166,7 @@ def targets_text(facet: dict) -> str:
 
 
 def z_targets_note() -> str:
-    return _tr("面板标准分 z：以锚点模型 High 档为 0.000，1 个单位为 1 个面板标准差（L1 面板最弱、L2 面板中位数、L3 锚点）。")
+    return _tr("面板标准分 z：以锚点模型 High 档为 0.000，1 个单位为 1 个面板标准差（L1 面板最弱、L2 面板中位数、L3 面板最强）。")
 
 
 def targets_tip(facet: dict) -> str:

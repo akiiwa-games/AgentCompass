@@ -921,7 +921,7 @@ class Scorer:
         facets one by one (`by_facet`): each level asks for the facets LEVEL_FACETS selects, tool_operation level 1 for
         nothing, and a level-3 task asks of `LEVEL3_ASKS_LEVEL2` facets what a level-2 task asks. `continuity` is t3 - t2
         (tool_operation: the largest positive t3 - t2 across its level-3 facets).
-        Only measured High values enter (user 2026-11-12, `TARGET_STATUSES`): an own-curve interpolation lies between two
+        Only measured or own-curve interpolated High values enter (user 2026-11-12, `TARGET_STATUSES`): an own-curve interpolation lies between two
         of the model's measurements and counts; an estimate (panel effort step, sibling, tier fit, same_model) is derived
         from the panel and would move it, so it never does. Every level-3 row also carries its `ceiling` (owner,
         2026-11-13): the highest such High value among all catalogued models, the cap a level-3 demand reads instead of

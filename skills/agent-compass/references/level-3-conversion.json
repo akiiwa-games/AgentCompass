@@ -3,12 +3,12 @@
  "conversions": {
   "2": {
    "applies_to": "user-scores.json schema_version 2 (v0.6.7 and v0.6.8), carried to schema 3",
-   "rule": "A level L at or below 2 is unchanged (levels 1 and 2 are the panel minimum and median, as before). A level above 2 becomes 2 + (L - 2) * (A - 2), A being the level the old level 3 (the anchor claude-opus-5-5) has on the facet scale of the version named in `source`; the segment above 3 continues with the same slope. A category entry of several facets (coding, tool_operation) above 2 is written per facet. Converted levels are written to 2 decimals.",
+   "rule": "A level L at or below 2 is unchanged (levels 1 and 2 are the panel minimum and median, as before). A level above 2 becomes 2 + (L - 2) * (A - 2), A being the level the old level 3 (the anchor claude-opus-5-5) has on the facet scale of the version named in `source`; the segment above 3 continues with the same slope. A category entry of several facets (coding, tool_operation) above 2 is written per facet. Converted levels are written to 2 decimals. A facet whose old scale was a plateau (`above_3_slopes`) gives 2 for every level in (2, 3] and, above 3, 2 + (L - 3) * s: the old scale put level L above 3 at t2 + (L - 3) * (t2 - t1), which is level 2 + (L - 3) * (t2 - t1) / (t3 - t2) on the scale of `scale`.",
    "source": {
     "kind": "maintainer",
     "as_of": "2026-11-18",
     "statement": "v0.7.0 references/five-axis-scores.json (schema agent-compass.five-axis-scores/6): `anchor_levels` is the level of z = 0 on each facet scale (t1, t2, t3 = panel minimum, median, maximum, listed under `scale`). They are frozen here so that a local file upgraded on any later version gets the same levels.",
-    "note": "tool_operation.responsiveness: the scale of schema 2 had t2 = t3 (the anchor sat at or below the panel median), so every level above 2 meant the panel median; its anchor level is 2.0 by that definition, not read from the scale."
+    "note": "tool_operation.responsiveness: the scale of schema 2 had t2 = t3 (the anchor sat at or below the panel median), so every level in (2, 3] meant the panel median and a level above 3 went above it by (L - 3) * (t2 - t1); its anchor level is 2.0 by that definition, not read from the scale, and its slope above 3 is (t2 - t1) / (t3 - t2) of the declared scale."
    },
    "anchor_levels": {
     "creativity.creative_writing": 3.0,
@@ -17,6 +17,9 @@
     "aesthetics.design": 2.9175,
     "tool_operation.responsiveness": 2.0,
     "tool_operation.image_recognition": 2.9266
+   },
+   "above_3_slopes": {
+    "tool_operation.responsiveness": 1.1018
    },
    "scale": {
     "creativity.creative_writing": [
