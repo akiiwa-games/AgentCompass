@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-18T15:22:28+00:00",
+ "generated_at": "2026-11-18T16:08:05+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [
@@ -76,6 +76,13 @@
    "check": "variant_not_effort",
    "level": "structural",
    "evidence": "listed as 'NVIDIA-Nemotron-3.5-Super-VL-120B-A12B (NVFP4)': the tag names nvfp4, not an effort"
+  },
+  {
+   "model": "gpt-5.5",
+   "source": "lmarena.webdev",
+   "check": "variant_not_effort",
+   "level": "structural",
+   "evidence": "listed as 'GPT-5.5 (xHigh, Codex Harness)': the tag names codex harness, not an effort"
   },
   {
    "model": "nemotron-3.5-super-vl-free",
@@ -1818,7 +1825,148 @@
    ]
   }
  },
- "missing_sources": {},
+ "missing_sources": {
+  "aa-release-gpt-5-2.html": {
+   "file": "aa-release-gpt-5-2.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/gpt-5-2"
+  },
+  "aa-release-gpt-5-4.html": {
+   "file": "aa-release-gpt-5-4.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/gpt-5-4"
+  },
+  "aa-release-gpt-5-4-mini.html": {
+   "file": "aa-release-gpt-5-4-mini.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/gpt-5-4-mini"
+  },
+  "aa-release-gpt-5-4-pro.html": {
+   "file": "aa-release-gpt-5-4-pro.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/gpt-5-4-pro"
+  },
+  "aa-release-gpt-5-5.html": {
+   "file": "aa-release-gpt-5-5.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/gpt-5-5"
+  },
+  "aa-release-claude-opus-4-5.html": {
+   "file": "aa-release-claude-opus-4-5.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/claude-opus-4-5"
+  },
+  "aa-release-gemini-2-5-flash-lite.html": {
+   "file": "aa-release-gemini-2-5-flash-lite.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/gemini-2-5-flash-lite"
+  },
+  "aa-release-gemini-3-flash-preview.html": {
+   "file": "aa-release-gemini-3-flash-preview.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/gemini-3-flash-preview"
+  },
+  "aa-release-glm-4-5.html": {
+   "file": "aa-release-glm-4-5.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-4-5"
+  },
+  "aa-release-glm-4-5-air.html": {
+   "file": "aa-release-glm-4-5-air.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-4-5-air"
+  },
+  "aa-release-glm-4-5v.html": {
+   "file": "aa-release-glm-4-5v.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-4-5v"
+  },
+  "aa-release-glm-4-6.html": {
+   "file": "aa-release-glm-4-6.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-4-6"
+  },
+  "aa-release-glm-4-6v.html": {
+   "file": "aa-release-glm-4-6v.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-4-6v"
+  },
+  "aa-release-glm-4-7.html": {
+   "file": "aa-release-glm-4-7.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-4-7"
+  },
+  "aa-release-glm-4-7-flash.html": {
+   "file": "aa-release-glm-4-7-flash.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-4-7-flash"
+  },
+  "aa-release-glm-5.html": {
+   "file": "aa-release-glm-5.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-5"
+  },
+  "aa-release-glm-5-1.html": {
+   "file": "aa-release-glm-5-1.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-5-1"
+  },
+  "aa-release-glm-5v-turbo.html": {
+   "file": "aa-release-glm-5v-turbo.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/glm-5v-turbo"
+  },
+  "aa-release-qwen3-5-27b.html": {
+   "file": "aa-release-qwen3-5-27b.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/qwen3-5-27b"
+  },
+  "aa-release-qwen3-5-35b-a3b.html": {
+   "file": "aa-release-qwen3-5-35b-a3b.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/qwen3-5-35b-a3b"
+  },
+  "aa-release-qwen3-6-27b.html": {
+   "file": "aa-release-qwen3-6-27b.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/qwen3-6-27b"
+  },
+  "aa-release-grok-4-3.html": {
+   "file": "aa-release-grok-4-3.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/grok-4-3"
+  },
+  "aa-release-grok-build-0-1-0616.html": {
+   "file": "aa-release-grok-build-0-1-0616.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/grok-build-0-1-0616"
+  },
+  "aa-release-step-3-5-flash-0202.html": {
+   "file": "aa-release-step-3-5-flash-0202.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/step-3-5-flash-0202"
+  },
+  "aa-release-step-3-5-flash.html": {
+   "file": "aa-release-step-3-5-flash.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/step-3-5-flash"
+  },
+  "aa-release-step-3-7-flash.html": {
+   "file": "aa-release-step-3-7-flash.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/step-3-7-flash"
+  },
+  "aa-release-mimo-v2-5-0424.html": {
+   "file": "aa-release-mimo-v2-5-0424.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/mimo-v2-5-0424"
+  },
+  "aa-release-mimo-v2-5-pro.html": {
+   "file": "aa-release-mimo-v2-5-pro.html",
+   "reason": "not fetched; run `agentcompass data refresh`",
+   "url": "https://artificialanalysis.ai/models/mimo-v2-5-pro"
+  }
+ },
  "conflicts": [],
  "axes": {
   "creativity": [
@@ -25156,6 +25304,5366 @@
      "mix_as_of": "2026-11-16"
     }
    ]
-  }
+  },
+  "gpt-5.2": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.5596,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GPT-5.2 (High) 1437.2 [1433.7,1440.8] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.5596",
+     "listed_as": "GPT-5.2 (High)",
+     "arena_value": 1437.2
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -3.6881,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GPT-5.2 (High)",
+     "raw": 1386.034993,
+     "ci": [
+      1378.6,
+      1393.5
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.2246,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.2",
+     "raw": 1418.950454,
+     "ci": [
+      1396.2,
+      1441.7
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -4.3355,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.2 (High)",
+     "raw": 1027.0,
+     "battles": 342,
+     "designarena_id": "honeycomb",
+     "z_by_effort": {
+      "low": -4.194,
+      "medium": -4.0727,
+      "high": -4.3355
+     },
+     "raw_by_effort": {
+      "low": 1041.0,
+      "medium": 1053.0,
+      "high": 1027.0
+     },
+     "listed_effort": "high"
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -2.8341,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.2 (Medium)",
+     "raw": 1129.0,
+     "battles": 5056,
+     "designarena_id": "rockhopper",
+     "z_by_effort": {
+      "low": -2.8932,
+      "medium": -2.8341
+     },
+     "raw_by_effort": {
+      "low": 1125.0,
+      "medium": 1129.0
+     },
+     "listed_effort": "medium"
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -2.1096,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "GPT-5.2 (High)",
+     "raw": 1245.457167,
+     "ci": [
+      1239.5,
+      1251.5
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "GPT-5.2 (High)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-5.2",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 1.75,
+      "output": 14.0,
+      "cache_read": 0.175
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "openai/gpt-5.2"
+    }
+   ]
+  },
+  "gpt-5.2-pro": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (image, text, file)",
+     "listed_as": "openai/gpt-5.2-pro",
+     "input_modalities": [
+      "image",
+      "text",
+      "file"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 21.0,
+      "output": 168.0
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "openai/gpt-5.2-pro"
+    }
+   ]
+  },
+  "gpt-5.4": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.2548,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GPT-5.4 (High) 1475.1 [1471.3,1478.9] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.2548",
+     "listed_as": "GPT-5.4 (High)",
+     "arena_value": 1475.1
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -2.1557,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GPT-5.4 (High)",
+     "raw": 1440.480193,
+     "ci": [
+      1433.5,
+      1447.4
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.4281,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.4",
+     "raw": 1399.848464,
+     "ci": [
+      1390.0,
+      1409.7
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -3.8403,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.4 (Medium)",
+     "raw": 1076.0,
+     "battles": 2925,
+     "designarena_id": "galapagos",
+     "z_by_effort": {
+      "low": -4.2142,
+      "medium": -3.8403
+     },
+     "raw_by_effort": {
+      "low": 1039.0,
+      "medium": 1076.0
+     },
+     "listed_effort": "medium"
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -2.0223,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.4 (Medium)",
+     "raw": 1184.0,
+     "battles": 3398,
+     "designarena_id": "galapagos",
+     "z_by_effort": {
+      "low": -2.7899,
+      "medium": -2.0223
+     },
+     "raw_by_effort": {
+      "low": 1132.0,
+      "medium": 1184.0
+     },
+     "listed_effort": "medium"
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -0.6205,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "GPT-5.4 (High)",
+     "raw": 1300.757988,
+     "ci": [
+      1295.2,
+      1306.3
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "GPT-5.4 (High)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "openai/gpt-5.4",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 2.5,
+      "output": 15.0,
+      "cache_read": 0.25
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "openai/gpt-5.4"
+    }
+   ]
+  },
+  "gpt-5.4-mini": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.4784,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GPT-5.4 mini (High) 1447.3 [1443.6,1451.1] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.4784",
+     "listed_as": "GPT-5.4 mini (High)",
+     "arena_value": 1447.3
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -3.2606,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GPT-5.4 mini (High)",
+     "raw": 1401.221845,
+     "ci": [
+      1394.1,
+      1408.3
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.4501,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.4 mini (High)",
+     "raw": 1397.779557,
+     "ci": [
+      1391.2,
+      1404.3
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -2.1375,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "GPT-5.4 mini (High)",
+     "raw": 1244.420316,
+     "ci": [
+      1238.3,
+      1250.5
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "GPT-5.4 mini (High)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-5.4-mini",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.75,
+      "output": 4.5,
+      "cache_read": 0.075
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "openai/gpt-5.4-mini"
+    }
+   ]
+  },
+  "gpt-5.4-pro": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "openai/gpt-5.4-pro",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 30.0,
+      "output": 180.0
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "openai/gpt-5.4-pro"
+    }
+   ]
+  },
+  "gpt-5.5": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.2052,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GPT-5.5 (High) 1481.3 [1477.5,1485.0] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.2052",
+     "listed_as": "GPT-5.5 (High)",
+     "arena_value": 1481.3
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -1.87,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GPT-5.5 (High)",
+     "raw": 1450.633572,
+     "ci": [
+      1444.1,
+      1457.2
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -0.788,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "GPT-5.5 (High)",
+     "raw": 1294.536279,
+     "ci": [
+      1288.8,
+      1300.2
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "GPT-5.5 (High)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-5.5",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "designarena.website",
+     "kind": "benchmark",
+     "value": -2.5129,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:50+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=website&board=website",
+     "method": "Design Arena website board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1325 (claude-opus-5-5), sd_panel 29.4478 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.5",
+     "raw": 1251.0,
+     "battles": 21936,
+     "designarena_id": "gpt-5.5",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -2.9004,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.5",
+     "raw": 1169.0,
+     "battles": 5803,
+     "designarena_id": "gpt-5.5",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -1.4023,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GPT-5.5",
+     "raw": 1226.0,
+     "battles": 3488,
+     "designarena_id": "gpt-5.5",
+     "listed_effort": null
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 5.0,
+      "output": 30.0,
+      "cache_read": 0.5
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "openai/gpt-5.5"
+    }
+   ]
+  },
+  "gpt-5.5-pro": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "openai/gpt-5.5-pro",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 30.0,
+      "output": 180.0
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "openai/gpt-5.5-pro"
+    }
+   ]
+  },
+  "gpt-oss-20b": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -1.5229,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 gpt-oss-20b 1317.5 [1311.1,1323.9] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -1.5229",
+     "listed_as": "gpt-oss-20b",
+     "arena_value": 1317.5
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -7.7707,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "gpt-oss-20b",
+     "raw": 1240.979221,
+     "ci": [
+      1222.6,
+      1259.4
+     ],
+     "listed_effort": null
+    }
+   ],
+   "coding": [
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": -2.9555,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.565657 (claude-opus-5-5), sd_panel 0.191392 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "gpt-oss-20b (High)",
+     "raw": 0.0,
+     "z_by_effort": {
+      "high": -2.9555
+     },
+     "raw_by_effort": {
+      "high": 0.0
+     }
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": -0.8887,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "gpt-oss-20b (High)",
+     "raw": -3.673523,
+     "z_by_effort": {
+      "low": 3.732,
+      "high": -0.8887
+     },
+     "raw_by_effort": {
+      "low": -0.259049,
+      "high": -3.673523
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "openai/gpt-oss-20b",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "gpt-oss-20b (High)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 146.76
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "gpt-oss-20b (Low)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 142.14
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.05,
+      "output": 0.22
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "gpt-oss-20b (High)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.018,
+      "output": 0.09,
+      "cache_read": 0.009
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "openai/gpt-oss-20b"
+    }
+   ]
+  },
+  "claude-opus-4-5": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.2666,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Claude Opus 4.5 (High, 32K, 20251101) 1473.7 [1469.8,1477.5] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.2666",
+     "listed_as": "Claude Opus 4.5 (High, 32K, 20251101)",
+     "arena_value": 1473.7
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -1.3559,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Claude Opus 4.5 (High, 32K, 20251101)",
+     "raw": 1468.897887,
+     "ci": [
+      1460.6,
+      1477.2
+     ],
+     "listed_effort": "high"
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -3.431,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Claude Opus 4.5 (High, 32K, 20251101)",
+     "raw": 1493.451277,
+     "ci": [
+      1485.1,
+      1501.8
+     ],
+     "listed_effort": "high"
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -2.7084,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Claude Opus 4.5",
+     "raw": 1188.0,
+     "battles": 6015,
+     "designarena_id": "claude-opus-4-5",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -2.2289,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Claude Opus 4.5",
+     "raw": 1170.0,
+     "battles": 4787,
+     "designarena_id": "claude-opus-4-5",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (file, image, text)",
+     "listed_as": "anthropic/claude-opus-4.5",
+     "input_modalities": [
+      "file",
+      "image",
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 5.0,
+      "output": 25.0,
+      "cache_read": 0.5
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "anthropic/claude-opus-4.5"
+    }
+   ]
+  },
+  "gemini-2.5-flash-lite": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file, audio, video)",
+     "listed_as": "google/gemini-2.5-flash-lite",
+     "input_modalities": [
+      "text",
+      "image",
+      "file",
+      "audio",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.1,
+      "output": 0.4,
+      "cache_read": 0.01
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "google/gemini-2.5-flash-lite"
+    }
+   ]
+  },
+  "gemini-3-flash-preview": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.2717,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Gemini 3 Flash 1473.0 [1468.7,1477.4] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.2717",
+     "listed_as": "Gemini 3 Flash",
+     "arena_value": 1473.0
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -1.7117,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Gemini 3 Flash",
+     "raw": 1456.254782,
+     "ci": [
+      1446.9,
+      1465.6
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.0015,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Gemini 3 Flash",
+     "raw": 1439.89089,
+     "ci": [
+      1431.2,
+      1448.6
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -3.0116,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Gemini 3 Flash Preview",
+     "raw": 1158.0,
+     "battles": 467,
+     "designarena_id": "gemini-3-flash-preview",
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -1.0544,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Gemini 3 Flash",
+     "raw": 1284.642621,
+     "ci": [
+      1279.5,
+      1289.8
+     ],
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "Gemini 3 Flash"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file, audio, video)",
+     "listed_as": "google/gemini-3-flash-preview",
+     "input_modalities": [
+      "text",
+      "image",
+      "file",
+      "audio",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.5,
+      "output": 3.0,
+      "cache_read": 0.05
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "google/gemini-3-flash-preview"
+    }
+   ]
+  },
+  "gemini-3.5-flash-lite": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.4176,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Gemini 3.5 Flash-Lite 1454.9 [1450.4,1459.4] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.4176",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "arena_value": 1454.9
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -2.2834,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "raw": 1435.942692,
+     "ci": [
+      1427.9,
+      1444.0
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.0849,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "raw": 1432.061061,
+     "ci": [
+      1390.7,
+      1473.4
+     ],
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -1.503,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "raw": 1267.982981,
+     "ci": [
+      1260.5,
+      1275.4
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -1.8587,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "raw": 0.790173,
+     "z_by_effort": {
+      "default": -1.8587
+     },
+     "raw_by_effort": {
+      "default": 0.790173
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": 1.9665,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "raw": -1.563685,
+     "z_by_effort": {
+      "default": 1.9665
+     },
+     "raw_by_effort": {
+      "default": -1.563685
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "Gemini 3.5 Flash-Lite"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Gemini 3.5 Flash-Lite"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video, file, audio)",
+     "listed_as": "google/gemini-3.5-flash-lite",
+     "input_modalities": [
+      "text",
+      "image",
+      "video",
+      "file",
+      "audio"
+     ]
+    }
+   ],
+   "coding": [
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": -2.9027,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.565657 (claude-opus-5-5), sd_panel 0.191392 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "raw": 0.010101,
+     "z_by_effort": {
+      "default": -2.9027
+     },
+     "raw_by_effort": {
+      "default": 0.010101
+     }
+    },
+    {
+     "source": "aa.frontiercode_2",
+     "kind": "benchmark",
+     "value": -3.6144,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `frontiercode-2-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.359279 (claude-opus-5-5), sd_panel 0.0827194 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "raw": 0.060298,
+     "z_by_effort": {
+      "default": -3.6144
+     },
+     "raw_by_effort": {
+      "default": 0.060298
+     }
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 1.545,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "time_per_task_s": 92.7,
+     "time_per_task_min": 1.545,
+     "output_tps": 326.85
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.3,
+      "output": 2.5,
+      "cache_read": 0.03
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Gemini 3.5 Flash-Lite"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.3,
+      "output": 2.5,
+      "cache_read": 0.03
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "google/gemini-3.5-flash-lite"
+    }
+   ],
+   "intelligence_index": [
+    {
+     "source": "aa.index",
+     "kind": "benchmark",
+     "value": 11.66,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index, every listed effort",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "raw_by_effort": {
+      "default": 11.6563
+     },
+     "z_by_effort": {
+      "default": -3.3346
+     },
+     "z": -3.3346
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 12.061,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Gemini 3.5 Flash-Lite",
+     "output_tokens_per_hour": 1176676,
+     "usd_per_million_output_at_mix": 10.25,
+     "prices": {
+      "output": 2.5,
+      "input": 0.3,
+      "cache_read": 0.03
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    }
+   ]
+  },
+  "gemma-4-26b-a4b-it": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.558,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Gemma 4 26B A4B 1437.4 [1430.0,1444.9] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.5580",
+     "listed_as": "Gemma 4 26B A4B",
+     "arena_value": 1437.4
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -3.3068,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Gemma 4 26B A4B",
+     "raw": 1399.581821,
+     "ci": [
+      1381.2,
+      1417.9
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.8725,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Gemma 4 26B A4B",
+     "raw": 1358.123533,
+     "ci": [
+      1341.1,
+      1375.1
+     ],
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -1.7259,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Gemma 4 26B A4B",
+     "raw": 1259.707838,
+     "ci": [
+      1253.3,
+      1266.1
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -5.2138,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Gemma 4 26B A4B (Non-reasoning)",
+     "raw": 0.667052,
+     "z_by_effort": {
+      "none": -5.2138
+     },
+     "raw_by_effort": {
+      "none": 0.667052
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": 3.3817,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Gemma 4 26B A4B (Non-reasoning)",
+     "raw": -0.517946,
+     "z_by_effort": {
+      "none": 3.3817
+     },
+     "raw_by_effort": {
+      "none": -0.517946
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "Gemma 4 26B A4B"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Gemma 4 26B A4B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (image, text, video)",
+     "listed_as": "google/gemma-4-26b-a4b-it",
+     "input_modalities": [
+      "image",
+      "text",
+      "video"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "none",
+     "listed_as": "Gemma 4 26B A4B (Non-reasoning)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 72.37
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.13,
+      "output": 0.4,
+      "cache_read": 0.07
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Gemma 4 26B A4B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.09,
+      "output": 0.3,
+      "cache_read": 0.05
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "google/gemma-4-26b-a4b-it"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.111,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "none",
+     "listed_as": "Gemma 4 26B A4B (Non-reasoning)",
+     "output_tokens_per_hour": 260546,
+     "usd_per_million_output_at_mix": 11.939,
+     "prices": {
+      "output": 0.4,
+      "input": 0.13,
+      "cache_read": 0.07
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    }
+   ]
+  },
+  "gemma-4-31b-it": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.4422,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Gemma 4 31B 1451.8 [1444.4,1459.3] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.4422",
+     "listed_as": "Gemma 4 31B",
+     "arena_value": 1451.8
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -2.7786,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Gemma 4 31B",
+     "raw": 1418.347817,
+     "ci": [
+      1399.6,
+      1437.1
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.7432,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Gemma 4 31B",
+     "raw": 1370.266127,
+     "ci": [
+      1364.3,
+      1376.3
+     ],
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -1.1959,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Gemma 4 31B",
+     "raw": 1279.387936,
+     "ci": [
+      1273.9,
+      1284.9
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -4.2215,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Gemma 4 31B (Non-reasoning)",
+     "raw": 0.703468,
+     "z_by_effort": {
+      "none": -4.2215
+     },
+     "raw_by_effort": {
+      "none": 0.703468
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": 2.2503,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Gemma 4 31B (Non-reasoning)",
+     "raw": -1.354005,
+     "z_by_effort": {
+      "none": 2.2503
+     },
+     "raw_by_effort": {
+      "none": -1.354005
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "Gemma 4 31B"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Gemma 4 31B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (image, text, video)",
+     "listed_as": "google/gemma-4-31b-it",
+     "input_modalities": [
+      "image",
+      "text",
+      "video"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "none",
+     "listed_as": "Gemma 4 31B (Non-reasoning)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 42.8
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.15,
+      "output": 0.4,
+      "cache_read": 0.14
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Gemma 4 31B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.2,
+      "output": 0.4
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "google/gemma-4-31b-it"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.423,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "none",
+     "listed_as": "Gemma 4 31B (Non-reasoning)",
+     "output_tokens_per_hour": 154072,
+     "usd_per_million_output_at_mix": 22.216,
+     "prices": {
+      "output": 0.4,
+      "input": 0.15,
+      "cache_read": 0.14
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    }
+   ]
+  },
+  "glm-4.5": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.771,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.5 1411.0 [1406.0,1415.9] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.7710",
+     "listed_as": "GLM-4.5",
+     "arena_value": 1411.0
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -4.086,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GLM-4.5",
+     "raw": 1371.897426,
+     "ci": [
+      1361.0,
+      1382.8
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -3.143,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.5",
+     "raw": 1145.0,
+     "battles": 1878,
+     "designarena_id": "glm-4.5",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -3.4689,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.5",
+     "raw": 1086.0,
+     "battles": 1961,
+     "designarena_id": "glm-4.5",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "z-ai/glm-4.5",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.6,
+      "output": 2.2,
+      "cache_read": 0.11
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-4.5"
+    }
+   ]
+  },
+  "glm-4.5-air": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -1.0765,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.5-Air 1373.0 [1368.7,1377.3] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -1.0765",
+     "listed_as": "GLM-4.5-Air",
+     "arena_value": 1373.0
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -5.3404,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GLM-4.5-Air",
+     "raw": 1327.326707,
+     "ci": [
+      1317.7,
+      1336.9
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -3.628,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.5 Air",
+     "raw": 1097.0,
+     "battles": 1475,
+     "designarena_id": "glm-4.5-air",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -3.8379,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.5 Air",
+     "raw": 1061.0,
+     "battles": 1639,
+     "designarena_id": "glm-4.5-air",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "z-ai/glm-4.5-air",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.13,
+      "output": 0.85,
+      "cache_read": 0.025
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-4.5-air"
+    }
+   ]
+  },
+  "glm-4.5-flash": {},
+  "glm-4.5v": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -1.2436,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.5V 1352.2 [1343.8,1360.7] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -1.2436",
+     "listed_as": "GLM-4.5V",
+     "arena_value": 1352.2
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -5.8474,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GLM-4.5V",
+     "raw": 1309.313363,
+     "ci": [
+      1286.2,
+      1332.4
+     ],
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -4.5694,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "GLM-4.5V",
+     "raw": 1154.110044,
+     "ci": [
+      1142.5,
+      1165.7
+     ],
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "GLM-4.5V"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image)",
+     "listed_as": "z-ai/glm-4.5v",
+     "input_modalities": [
+      "text",
+      "image"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.6,
+      "output": 1.8,
+      "cache_read": 0.11
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-4.5v"
+    }
+   ]
+  },
+  "glm-4.6": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.6623,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.6 1424.5 [1420.6,1428.4] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.6623",
+     "listed_as": "GLM-4.6",
+     "arena_value": 1424.5
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -3.2645,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GLM-4.6",
+     "raw": 1401.084088,
+     "ci": [
+      1392.5,
+      1409.6
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -5.0457,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM-4.6",
+     "raw": 1341.862857,
+     "ci": [
+      1331.0,
+      1352.7
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -3.5674,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.6",
+     "raw": 1103.0,
+     "battles": 1671,
+     "designarena_id": "glm-4.6",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -3.2917,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.6",
+     "raw": 1098.0,
+     "battles": 1920,
+     "designarena_id": "glm-4.6",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "z-ai/glm-4.6",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.5,
+      "output": 2.0,
+      "cache_read": 0.1
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-4.6"
+    }
+   ]
+  },
+  "glm-4.6v": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -1.0335,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.6V 1378.3 [1367.1,1389.6] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -1.0335",
+     "listed_as": "GLM-4.6V",
+     "arena_value": 1378.3
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -4.7226,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GLM-4.6V",
+     "raw": 1349.276894,
+     "ci": [
+      1321.0,
+      1377.5
+     ],
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -4.3271,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "GLM-4.6V",
+     "raw": 1163.10682,
+     "ci": [
+      1149.4,
+      1176.8
+     ],
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "GLM-4.6V"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (image, text, video)",
+     "listed_as": "z-ai/glm-4.6v",
+     "input_modalities": [
+      "image",
+      "text",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.3,
+      "output": 0.9,
+      "cache_read": 0.05
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-4.6v"
+    }
+   ]
+  },
+  "glm-4.6v-flash": {},
+  "glm-4.7": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.5265,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.7 1441.4 [1435.3,1447.4] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.5265",
+     "listed_as": "GLM-4.7",
+     "arena_value": 1441.4
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -3.1402,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GLM-4.7",
+     "raw": 1405.500516,
+     "ci": [
+      1392.2,
+      1418.8
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.0454,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM-4.7",
+     "raw": 1435.778412,
+     "ci": [
+      1423.7,
+      1447.8
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -2.9408,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.7",
+     "raw": 1165.0,
+     "battles": 7013,
+     "designarena_id": "glm-4.7",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -2.7751,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.7",
+     "raw": 1133.0,
+     "battles": 7652,
+     "designarena_id": "glm-4.7",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "z-ai/glm-4.7",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.4,
+      "output": 1.75,
+      "cache_read": 0.08
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-4.7"
+    }
+   ]
+  },
+  "glm-4.7-flash": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -1.1446,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.7-Flash 1364.5 [1358.8,1370.3] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -1.1446",
+     "listed_as": "GLM-4.7-Flash",
+     "arena_value": 1364.5
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -5.9755,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GLM-4.7-Flash",
+     "raw": 1304.762502,
+     "ci": [
+      1291.0,
+      1318.6
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -3.6483,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.7 Flash",
+     "raw": 1095.0,
+     "battles": 1460,
+     "designarena_id": "glm-4.7-flash",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -4.3398,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 4.7 Flash",
+     "raw": 1027.0,
+     "battles": 1587,
+     "designarena_id": "glm-4.7-flash",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "z-ai/glm-4.7-flash",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.0605,
+      "output": 0.4
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-4.7-flash"
+    }
+   ]
+  },
+  "glm-4.7-flashx": {},
+  "glm-5": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.3978,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GLM-5 1457.3 [1453.1,1461.6] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.3978",
+     "listed_as": "GLM-5",
+     "arena_value": 1457.3
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -1.9778,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GLM-5",
+     "raw": 1446.80279,
+     "ci": [
+      1437.8,
+      1455.8
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.0533,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM-5",
+     "raw": 1435.035936,
+     "ci": [
+      1426.8,
+      1443.2
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -2.5568,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 5",
+     "raw": 1203.0,
+     "battles": 9258,
+     "designarena_id": "glm-5",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -2.4061,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 5",
+     "raw": 1158.0,
+     "battles": 7458,
+     "designarena_id": "glm-5",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "z-ai/glm-5",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 1.0,
+      "output": 3.2,
+      "cache_read": 0.2
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-5"
+    }
+   ]
+  },
+  "glm-5.1": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.3365,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 GLM-5.1 1465.0 [1461.4,1468.5] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.3365",
+     "listed_as": "GLM-5.1",
+     "arena_value": 1465.0
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -1.9952,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "GLM-5.1",
+     "raw": 1446.182664,
+     "ci": [
+      1439.9,
+      1452.4
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -3.276,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM-5.1",
+     "raw": 1508.007781,
+     "ci": [
+      1501.2,
+      1514.8
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -2.3345,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 5.1",
+     "raw": 1225.0,
+     "battles": 6173,
+     "designarena_id": "coconut",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -1.6828,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 5.1",
+     "raw": 1207.0,
+     "battles": 4086,
+     "designarena_id": "coconut",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "z-ai/glm-5.1",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 1.4,
+      "output": 4.4,
+      "cache_read": 0.26
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-5.1"
+    }
+   ]
+  },
+  "glm-5v-turbo": {
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -1.5652,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "GLM-5V-Turbo",
+     "raw": 1265.67597,
+     "ci": [
+      1260.4,
+      1271.0
+     ],
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "GLM-5V-Turbo"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (image, text, video)",
+     "listed_as": "z-ai/glm-5v-turbo",
+     "input_modalities": [
+      "image",
+      "text",
+      "video"
+     ]
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "designarena.website",
+     "kind": "benchmark",
+     "value": -3.7354,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:50+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=website&board=website",
+     "method": "Design Arena website board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1325 (claude-opus-5-5), sd_panel 29.4478 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 5V Turbo",
+     "raw": 1215.0,
+     "battles": 33850,
+     "designarena_id": "glm-5v-turbo",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -2.7589,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 5V Turbo",
+     "raw": 1183.0,
+     "battles": 13472,
+     "designarena_id": "glm-5v-turbo",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -2.6865,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "GLM 5V Turbo",
+     "raw": 1139.0,
+     "battles": 5229,
+     "designarena_id": "glm-5v-turbo",
+     "listed_effort": null
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 1.2,
+      "output": 4.0,
+      "cache_read": 0.24
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "z-ai/glm-5v-turbo"
+    }
+   ]
+  },
+  "k3.1-pro-highspeed": {},
+  "kimi-for-coding-highspeed": {},
+  "qwen-max": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -1.5177,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Qwen-Max (0919) 1318.2 [1312.5,1323.9] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -1.5177",
+     "listed_as": "Qwen-Max (0919)",
+     "arena_value": 1318.2
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -6.5384,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Qwen-Max (0919)",
+     "raw": 1284.761395,
+     "ci": [
+      1272.7,
+      1296.8
+     ],
+     "listed_effort": null
+    }
+   ]
+  },
+  "qwen-plus": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -1.2944,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Qwen-Plus (0125) 1345.9 [1337.6,1354.2] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -1.2944",
+     "listed_as": "Qwen-Plus (0125)",
+     "arena_value": 1345.9
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -5.6521,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Qwen-Plus (0125)",
+     "raw": 1316.254198,
+     "ci": [
+      1298.1,
+      1334.4
+     ],
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "qwen/qwen-plus",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.26,
+      "output": 0.78,
+      "cache_read": 0.052
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen-plus"
+    }
+   ]
+  },
+  "qwen3-coder-flash": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "qwen/qwen3-coder-flash",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.195,
+      "output": 0.975,
+      "cache_read": 0.039
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3-coder-flash"
+    }
+   ]
+  },
+  "qwen3-vl-plus": {},
+  "qwen3-omni-flash": {},
+  "qwen3.5-122b-a10b": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.7272,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-122B-A10B 1416.4 [1412.1,1420.7] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.7272",
+     "listed_as": "Qwen3.5-122B-A10B",
+     "arena_value": 1416.4
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -4.2702,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Qwen3.5-122B-A10B",
+     "raw": 1365.350474,
+     "ci": [
+      1356.0,
+      1374.7
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.8507,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.5-122B-A10B",
+     "raw": 1360.174366,
+     "ci": [
+      1352.5,
+      1367.9
+     ],
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -2.1429,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Qwen3.5-122B-A10B",
+     "raw": 1244.220136,
+     "ci": [
+      1237.5,
+      1250.9
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -4.2372,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Qwen3.5 122B A10B (Non-reasoning)",
+     "raw": 0.70289,
+     "z_by_effort": {
+      "none": -4.2372
+     },
+     "raw_by_effort": {
+      "none": 0.70289
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": 2.045,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Qwen3.5 122B A10B (Non-reasoning)",
+     "raw": -1.505703,
+     "z_by_effort": {
+      "none": 2.045
+     },
+     "raw_by_effort": {
+      "none": -1.505703
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "Qwen3.5-122B-A10B"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Qwen3.5 122B A10B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.5-122b-a10b",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "none",
+     "listed_as": "Qwen3.5 122B A10B (Non-reasoning)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 92.43
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.4,
+      "output": 3.2
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Qwen3.5 122B A10B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.26,
+      "output": 2.08
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.5-122b-a10b"
+    }
+   ]
+  },
+  "qwen3.5-27b": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.7912,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-27B 1408.5 [1404.1,1412.8] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.7912",
+     "listed_as": "Qwen3.5-27B",
+     "arena_value": 1408.5
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -4.4873,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Qwen3.5-27B",
+     "raw": 1357.640044,
+     "ci": [
+      1348.2,
+      1367.1
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.8801,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.5-27B",
+     "raw": 1357.413924,
+     "ci": [
+      1349.3,
+      1365.5
+     ],
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -2.2663,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Qwen3.5-27B",
+     "raw": 1239.637512,
+     "ci": [
+      1234.3,
+      1245.0
+     ],
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "Qwen3.5-27B"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.5-27b",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.3,
+      "output": 2.4
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.5-27b"
+    }
+   ]
+  },
+  "qwen3.5-35b-a3b": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.908,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-35B-A3B 1393.9 [1389.7,1398.2] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.9080",
+     "listed_as": "Qwen3.5-35B-A3B",
+     "arena_value": 1393.9
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -4.9228,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Qwen3.5-35B-A3B",
+     "raw": 1342.164579,
+     "ci": [
+      1333.1,
+      1351.2
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -5.9926,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.5-35B-A3B",
+     "raw": 1252.967121,
+     "ci": [
+      1235.5,
+      1270.5
+     ],
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.5-35b-a3b",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.14,
+      "output": 1.0,
+      "cache_read": 0.05
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.5-35b-a3b"
+    }
+   ]
+  },
+  "qwen3.5-397b-a17b": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.5262,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-397B-A17B 1441.4 [1438.3,1444.4] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.5262",
+     "listed_as": "Qwen3.5-397B-A17B",
+     "arena_value": 1441.4
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -3.124,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Qwen3.5-397B-A17B",
+     "raw": 1406.077825,
+     "ci": [
+      1400.5,
+      1411.6
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.4251,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.5-397B-A17B",
+     "raw": 1400.128846,
+     "ci": [
+      1395.0,
+      1405.3
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -3.244,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.5 397B A17B",
+     "raw": 1135.0,
+     "battles": 960,
+     "designarena_id": "qwen3.5-397b-a17b",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -2.8341,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.5 397B A17B",
+     "raw": 1129.0,
+     "battles": 969,
+     "designarena_id": "qwen3.5-397b-a17b",
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -1.6541,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Qwen3.5-397B-A17B",
+     "raw": 1262.371842,
+     "ci": [
+      1257.2,
+      1267.6
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -9.0415,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Qwen3.5 397B A17B (Non-reasoning)",
+     "raw": 0.52659,
+     "z_by_effort": {
+      "none": -9.0415
+     },
+     "raw_by_effort": {
+      "none": 0.52659
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": 2.8682,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Qwen3.5 397B A17B (Non-reasoning)",
+     "raw": -0.897372,
+     "z_by_effort": {
+      "none": 2.8682
+     },
+     "raw_by_effort": {
+      "none": -0.897372
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "Qwen3.5-397B-A17B"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Qwen3.5 397B A17B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.5-397b-a17b",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "none",
+     "listed_as": "Qwen3.5 397B A17B (Non-reasoning)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 48.83
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.6,
+      "output": 3.6
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Qwen3.5 397B A17B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.45,
+      "output": 3.0,
+      "cache_read": 0.22
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.5-397b-a17b"
+    }
+   ]
+  },
+  "qwen3.5-flash": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.8917,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-Flash 1396.0 [1392.3,1399.6] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.8917",
+     "listed_as": "Qwen3.5-Flash",
+     "arena_value": 1396.0
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -5.0498,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Qwen3.5-Flash",
+     "raw": 1337.6523,
+     "ci": [
+      1330.7,
+      1344.6
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -6.0914,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.5-Flash",
+     "raw": 1243.690003,
+     "ci": [
+      1224.0,
+      1263.4
+     ],
+     "listed_effort": null
+    }
+   ]
+  },
+  "qwen3.5-plus": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.5-plus-20260420",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.3,
+      "output": 1.8
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.5-plus-20260420"
+    }
+   ]
+  },
+  "qwen3.6-27b": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.6-27b",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.32,
+      "output": 3.2
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.6-27b"
+    }
+   ]
+  },
+  "qwen3.6-35b-a3b": {
+   "tool_operation": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -4.0324,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Qwen3.6 35B A3B (Non-reasoning)",
+     "raw": 0.710405,
+     "z_by_effort": {
+      "none": -4.0324
+     },
+     "raw_by_effort": {
+      "none": 0.710405
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": 2.5087,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Qwen3.6 35B A3B (Non-reasoning)",
+     "raw": -1.163035,
+     "z_by_effort": {
+      "none": 2.5087
+     },
+     "raw_by_effort": {
+      "none": -1.163035
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Qwen3.6 35B A3B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.6-35b-a3b",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "none",
+     "listed_as": "Qwen3.6 35B A3B (Non-reasoning)",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 96.7
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.375,
+      "output": 2.25
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Qwen3.6 35B A3B (Non-reasoning)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.1,
+      "output": 0.9,
+      "cache_read": 0.025
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.6-35b-a3b"
+    }
+   ]
+  },
+  "qwen3.6-flash": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.6-flash",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.1875,
+      "output": 1.125
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.6-flash"
+    }
+   ]
+  },
+  "qwen3.7-flash": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "qwen/qwen3.7-flash",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.03,
+      "output": 0.13,
+      "cache_read": 0.006
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.7-flash"
+    }
+   ]
+  },
+  "qwen3.7-plus": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.414,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.7-Plus 1455.3 [1451.0,1459.7] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.4140",
+     "listed_as": "Qwen3.7-Plus",
+     "arena_value": 1455.3
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -2.4218,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Qwen3.7-Plus",
+     "raw": 1431.02483,
+     "ci": [
+      1423.4,
+      1438.7
+     ],
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -1.2534,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Qwen3.7-Plus",
+     "raw": 1277.254637,
+     "ci": [
+      1270.7,
+      1283.8
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -1.4649,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Qwen3.7 Plus",
+     "raw": 0.804624,
+     "z_by_effort": {
+      "default": -1.4649
+     },
+     "raw_by_effort": {
+      "default": 0.804624
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": -1.0858,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Qwen3.7 Plus",
+     "raw": -3.819226,
+     "z_by_effort": {
+      "default": -1.0858
+     },
+     "raw_by_effort": {
+      "default": -3.819226
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "Qwen3.7-Plus"
+    },
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Qwen3.7 Plus"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image)",
+     "listed_as": "qwen/qwen3.7-plus",
+     "input_modalities": [
+      "text",
+      "image"
+     ]
+    }
+   ],
+   "coding": [
+    {
+     "source": "arena.agent_code",
+     "kind": "benchmark",
+     "value": -3.4136,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-18T04:25:32+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Code (Best Coding Agents), Net Improvement %, High row (else nearest effort); transcribed 2026-11-18 by user (browser capture); Net Improvement signs rebuilt from the rank order: rows 35..65 negative, row 34 ambiguous (kept positive); z = (x - x_anchor) / sd_panel; x_anchor 15.54 (claude-opus-5-5), sd_panel 8.02389 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Qwen3.7-Plus",
+     "raw": -11.85,
+     "listed_effort": null
+    },
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": -2.9027,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.565657 (claude-opus-5-5), sd_panel 0.191392 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Qwen3.7 Plus",
+     "raw": 0.010101,
+     "z_by_effort": {
+      "default": -2.9027
+     },
+     "raw_by_effort": {
+      "default": 0.010101
+     }
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "designarena.website",
+     "kind": "benchmark",
+     "value": -2.411,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:50+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=website&board=website",
+     "method": "Design Arena website board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1325 (claude-opus-5-5), sd_panel 29.4478 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.7 Plus",
+     "raw": 1254.0,
+     "battles": 14925,
+     "designarena_id": "qwen3.7-plus",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -2.4659,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.7 Plus",
+     "raw": 1212.0,
+     "battles": 5284,
+     "designarena_id": "qwen3.7-plus",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -1.7861,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Qwen3.7 Plus",
+     "raw": 1200.0,
+     "battles": 1600,
+     "designarena_id": "qwen3.7-plus",
+     "listed_effort": null
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Qwen3.7 Plus",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 56.13
+    },
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 4.9,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-18T04:25:32+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)",
+     "effort": "default",
+     "listed_as": "Qwen3.7-Plus",
+     "time_per_task_min": 4.9,
+     "output_tokens_per_task": 18100,
+     "output_tokens_per_min": 3693.9,
+     "sessions": 24646
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.4,
+      "output": 1.6,
+      "cache_read": 0.08
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Qwen3.7 Plus"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.32,
+      "output": 1.28,
+      "cache_read": 0.064
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "qwen/qwen3.7-plus"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "arena.agent_sessions",
+     "kind": "community",
+     "value": 2.204,
+     "as_of": "2026-11-13",
+     "fetched_at": "2026-11-18T04:25:32+00:00",
+     "url": "https://arena.ai/leaderboard/agent",
+     "method": "arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60",
+     "effort": "default",
+     "listed_as": "Qwen3.7-Plus",
+     "cost_per_task_usd": 0.18,
+     "time_per_task_min": 4.9,
+     "output_tokens_per_task": 18100,
+     "sessions": 24646
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 3.571,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Qwen3.7 Plus",
+     "output_tokens_per_hour": 202058,
+     "usd_per_million_output_at_mix": 17.674,
+     "prices": {
+      "output": 1.6,
+      "input": 0.4,
+      "cache_read": 0.08
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    }
+   ]
+  },
+  "codestral-2508": {
+   "aesthetics": [
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -4.669,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Codestral 2508",
+     "raw": 994.0,
+     "battles": 445,
+     "designarena_id": "codestral-2508",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, file)",
+     "listed_as": "mistralai/codestral-2508",
+     "input_modalities": [
+      "text",
+      "file"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.3,
+      "output": 0.9,
+      "cache_read": 0.03
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "mistralai/codestral-2508"
+    }
+   ]
+  },
+  "ministral-14b-2512": {
+   "coding": [
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": -2.9555,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.565657 (claude-opus-5-5), sd_panel 0.191392 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Ministral 3 14B",
+     "raw": 0.0,
+     "z_by_effort": {
+      "default": -2.9555
+     },
+     "raw_by_effort": {
+      "default": 0.0
+     }
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -9.8133,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Ministral 3 14B",
+     "raw": 0.498266,
+     "z_by_effort": {
+      "default": -9.8133
+     },
+     "raw_by_effort": {
+      "default": 0.498266
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": 2.9159,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Ministral 3 14B",
+     "raw": -0.862173,
+     "z_by_effort": {
+      "default": 2.9159
+     },
+     "raw_by_effort": {
+      "default": -0.862173
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Ministral 3 14B"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image)",
+     "listed_as": "mistralai/ministral-14b-2512",
+     "input_modalities": [
+      "text",
+      "image"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Ministral 3 14B",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 79.55
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.2,
+      "output": 0.2,
+      "cache_read": 0.02
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Ministral 3 14B"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.2,
+      "output": 0.2,
+      "cache_read": 0.02
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "mistralai/ministral-14b-2512"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.537,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Ministral 3 14B",
+     "output_tokens_per_hour": 286395,
+     "usd_per_million_output_at_mix": 5.367,
+     "prices": {
+      "output": 0.2,
+      "input": 0.2,
+      "cache_read": 0.02
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    }
+   ]
+  },
+  "ministral-3b-2512": {
+   "coding": [
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": -2.9555,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.565657 (claude-opus-5-5), sd_panel 0.191392 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Ministral 3 3B",
+     "raw": 0.0,
+     "z_by_effort": {
+      "default": -2.9555
+     },
+     "raw_by_effort": {
+      "default": 0.0
+     }
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -13.0109,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Ministral 3 3B",
+     "raw": 0.380925,
+     "z_by_effort": {
+      "default": -13.0109
+     },
+     "raw_by_effort": {
+      "default": 0.380925
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": 3.3336,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Ministral 3 3B",
+     "raw": -0.553503,
+     "z_by_effort": {
+      "default": 3.3336
+     },
+     "raw_by_effort": {
+      "default": -0.553503
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Ministral 3 3B"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image)",
+     "listed_as": "mistralai/ministral-3b-2512",
+     "input_modalities": [
+      "text",
+      "image"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Ministral 3 3B",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 150.42
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.1,
+      "output": 0.1,
+      "cache_read": 0.01
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Ministral 3 3B"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.1,
+      "output": 0.1,
+      "cache_read": 0.01
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "mistralai/ministral-3b-2512"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.453,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Ministral 3 3B",
+     "output_tokens_per_hour": 541520,
+     "usd_per_million_output_at_mix": 2.683,
+     "prices": {
+      "output": 0.1,
+      "input": 0.1,
+      "cache_read": 0.01
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    }
+   ]
+  },
+  "ministral-8b-2512": {
+   "coding": [
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": -2.9555,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.565657 (claude-opus-5-5), sd_panel 0.191392 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Ministral 3 8B",
+     "raw": 0.0,
+     "z_by_effort": {
+      "default": -2.9555
+     },
+     "raw_by_effort": {
+      "default": 0.0
+     }
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": -10.8687,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.858382 (claude-opus-5-5), sd_panel 0.0366966 over 9 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Ministral 3 8B",
+     "raw": 0.459538,
+     "z_by_effort": {
+      "default": -10.8687
+     },
+     "raw_by_effort": {
+      "default": 0.459538
+     }
+    },
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": 3.1984,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.738952 over 12 panel models",
+     "facet": "responsiveness",
+     "listed_as": "Ministral 3 8B",
+     "raw": -0.653348,
+     "z_by_effort": {
+      "default": 3.1984
+     },
+     "raw_by_effort": {
+      "default": -0.653348
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "aa.mmmu_pro",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `mmmu-pro`, every listed effort; the score is the High row (else the only listing): measured on image input",
+     "listed_as": "Ministral 3 8B"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image)",
+     "listed_as": "mistralai/ministral-8b-2512",
+     "input_modalities": [
+      "text",
+      "image"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": null,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "default",
+     "listed_as": "Ministral 3 8B",
+     "time_per_task_s": null,
+     "time_per_task_min": null,
+     "output_tps": 85.59
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.15,
+      "output": 0.15,
+      "cache_read": 0.015
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Ministral 3 8B"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.15,
+      "output": 0.15,
+      "cache_read": 0.015
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "mistralai/ministral-8b-2512"
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 1.24,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "default",
+     "listed_as": "Ministral 3 8B",
+     "output_tokens_per_hour": 308110,
+     "usd_per_million_output_at_mix": 4.025,
+     "prices": {
+      "output": 0.15,
+      "input": 0.15,
+      "cache_read": 0.015
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    }
+   ]
+  },
+  "mistral-small-2603": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image)",
+     "listed_as": "mistralai/mistral-small-2603",
+     "input_modalities": [
+      "text",
+      "image"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.15,
+      "output": 0.6,
+      "cache_read": 0.015
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "mistralai/mistral-small-2603"
+    }
+   ]
+  },
+  "voxtral-small-2507": {},
+  "grok-4.20-0309-reasoning": {},
+  "grok-4.20-0309-non-reasoning": {},
+  "grok-4.20-multi-agent-0309": {},
+  "grok-4.3": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.524,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Grok 4.3 1441.7 [1438.0,1445.3] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.5240",
+     "listed_as": "Grok 4.3",
+     "arena_value": 1441.7
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -2.6806,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Grok 4.3",
+     "raw": 1421.830577,
+     "ci": [
+      1415.3,
+      1428.4
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.88,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Grok 4.3",
+     "raw": 1357.42241,
+     "ci": [
+      1351.1,
+      1363.7
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.website",
+     "kind": "benchmark",
+     "value": -5.0258,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:50+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=website&board=website",
+     "method": "Design Arena website board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1325 (claude-opus-5-5), sd_panel 29.4478 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Grok 4.3",
+     "raw": 1177.0,
+     "battles": 25983,
+     "designarena_id": "grok-4.3",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -3.6078,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Grok 4.3",
+     "raw": 1099.0,
+     "battles": 11850,
+     "designarena_id": "grok-4.3",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -3.7051,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Grok 4.3",
+     "raw": 1070.0,
+     "battles": 3655,
+     "designarena_id": "grok-4.3",
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -2.5627,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "Grok 4.3",
+     "raw": 1228.632092,
+     "ci": [
+      1222.9,
+      1234.3
+     ],
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "Grok 4.3"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "x-ai/grok-4.3",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 1.25,
+      "output": 2.5,
+      "cache_read": 0.2
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "x-ai/grok-4.3"
+    }
+   ]
+  },
+  "grok-build-0.1": {
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, file)",
+     "listed_as": "x-ai/grok-build-0.1",
+     "input_modalities": [
+      "text",
+      "image",
+      "file"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 1.0,
+      "output": 2.0,
+      "cache_read": 0.2
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "x-ai/grok-build-0.1"
+    }
+   ]
+  },
+  "step-3.5-flash": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.9189,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 Step-3.5-Flash 1392.6 [1389.0,1396.1] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.9189",
+     "listed_as": "Step-3.5-Flash",
+     "arena_value": 1392.6
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -4.8595,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "Step-3.5-Flash",
+     "raw": 1344.41394,
+     "ci": [
+      1337.6,
+      1351.2
+     ],
+     "listed_effort": null
+    }
+   ]
+  },
+  "step-3.5-flash-2603": {},
+  "step-3.7-flash": {
+   "aesthetics": [
+    {
+     "source": "designarena.website",
+     "kind": "benchmark",
+     "value": -4.7881,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:50+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=website&board=website",
+     "method": "Design Arena website board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1325 (claude-opus-5-5), sd_panel 29.4478 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Step 3.7 Flash",
+     "raw": 1184.0,
+     "battles": 20530,
+     "designarena_id": "step-3.7-flash",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -3.5674,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Step 3.7 Flash",
+     "raw": 1103.0,
+     "battles": 7275,
+     "designarena_id": "step-3.7-flash",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -3.646,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "Step 3.7 Flash",
+     "raw": 1074.0,
+     "battles": 2406,
+     "designarena_id": "step-3.7-flash",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, image, video)",
+     "listed_as": "stepfun/step-3.7-flash",
+     "input_modalities": [
+      "text",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.2,
+      "output": 1.15,
+      "cache_read": 0.04
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "stepfun/step-3.7-flash"
+    }
+   ]
+  },
+  "mimo-v2.5": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.5893,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 MiMo-V2.5 1433.6 [1429.3,1437.8] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.5893",
+     "listed_as": "MiMo-V2.5",
+     "arena_value": 1433.6
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -3.4902,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "MiMo-V2.5",
+     "raw": 1393.064578,
+     "ci": [
+      1385.3,
+      1400.9
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -4.0224,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "MiMo-V2.5",
+     "raw": 1437.933449,
+     "ci": [
+      1431.9,
+      1444.0
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.website",
+     "kind": "benchmark",
+     "value": -2.5469,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:50+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=website&board=website",
+     "method": "Design Arena website board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1325 (claude-opus-5-5), sd_panel 29.4478 over 12 panel models",
+     "facet": "design",
+     "listed_as": "MiMo-V2.5",
+     "raw": 1250.0,
+     "battles": 28491,
+     "designarena_id": "mimo-v2.5",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -2.668,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "MiMo-V2.5",
+     "raw": 1192.0,
+     "battles": 11057,
+     "designarena_id": "mimo-v2.5",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -2.1256,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "MiMo-V2.5",
+     "raw": 1177.0,
+     "battles": 2592,
+     "designarena_id": "mimo-v2.5",
+     "listed_effort": null
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": -2.0542,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1323.8 (claude-opus-5-5), sd_panel 37.1364 over 12 panel models",
+     "facet": "image_recognition",
+     "listed_as": "MiMo-V2.5",
+     "raw": 1247.513078,
+     "ci": [
+      1241.7,
+      1253.3
+     ],
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "lmarena.vision",
+     "kind": "benchmark",
+     "value": true,
+     "as_of": "2026-11-09",
+     "fetched_at": "2026-11-18T12:37:48+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/vision/latest-00000-of-00001.parquet",
+     "method": "LMArena vision/overall rating, High row (else effort-less or nearest effort): measured on image input",
+     "listed_as": "MiMo-V2.5"
+    },
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text, audio, image, video)",
+     "listed_as": "xiaomi/mimo-v2.5",
+     "input_modalities": [
+      "text",
+      "audio",
+      "image",
+      "video"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.4,
+      "output": 2.0,
+      "cache_read": 0.08
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "xiaomi/mimo-v2.5"
+    }
+   ]
+  },
+  "mimo-v2.5-pro": {
+   "tier": [
+    {
+     "source": "tier.arena_overall",
+     "kind": "benchmark",
+     "value": -0.3252,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "arena.ai Overall 2026-11-11 MiMo-V2.5-Pro 1466.4 [1462.9,1469.9] at High standardized against Claude Opus 5.5 (1506.8, sd 124.28): tier -0.3252",
+     "listed_as": "MiMo-V2.5-Pro",
+     "arena_value": 1466.4
+    }
+   ],
+   "creativity": [
+    {
+     "source": "lmarena.creative_writing",
+     "kind": "benchmark",
+     "value": -2.3744,
+     "as_of": "2026-11-11",
+     "fetched_at": "2026-11-18T12:37:47+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
+     "method": "LMArena text_style_control/creative_writing rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1517.07 (claude-opus-5-5), sd_panel 35.5303 over 12 panel models",
+     "facet": "creative_writing",
+     "listed_as": "MiMo-V2.5-Pro",
+     "raw": 1432.712012,
+     "ci": [
+      1426.6,
+      1438.8
+     ],
+     "listed_effort": null
+    }
+   ],
+   "aesthetics": [
+    {
+     "source": "lmarena.webdev",
+     "kind": "benchmark",
+     "value": -3.583,
+     "as_of": "2026-11-15",
+     "fetched_at": "2026-11-18T12:37:43+00:00",
+     "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/webdev/latest-00000-of-00001.parquet",
+     "method": "LMArena webdev/overall rating, High row (else effort-less or nearest effort); z = (x - x_anchor) / sd_panel; x_anchor 1815.57 (claude-opus-5-5), sd_panel 93.8828 over 12 panel models",
+     "facet": "design",
+     "listed_as": "MiMo-V2.5-Pro",
+     "raw": 1479.189182,
+     "ci": [
+      1473.9,
+      1484.5
+     ],
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.3d",
+     "kind": "benchmark",
+     "value": -2.3042,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:51+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=3d&board=3d-design",
+     "method": "Design Arena 3d board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1456 (claude-opus-5-5), sd_panel 98.9513 over 12 panel models",
+     "facet": "design",
+     "listed_as": "MiMo-V2.5-Pro",
+     "raw": 1228.0,
+     "battles": 4435,
+     "designarena_id": "mimo-v2.5-pro",
+     "listed_effort": null
+    },
+    {
+     "source": "designarena.svg",
+     "kind": "benchmark",
+     "value": -2.0075,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:53+00:00",
+     "url": "https://www.designarena.ai/leaderboard?section=art&board=svgs",
+     "method": "Design Arena svg board (main public board): Bradley-Terry rating of blind human pairwise votes, High row (else nearest effort); no standard error published; z = (x - x_anchor) / sd_panel; x_anchor 1321 (claude-opus-5-5), sd_panel 67.7453 over 12 panel models",
+     "facet": "design",
+     "listed_as": "MiMo-V2.5-Pro",
+     "raw": 1185.0,
+     "battles": 1953,
+     "designarena_id": "mimo-v2.5-pro",
+     "listed_effort": null
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": false,
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (text)",
+     "listed_as": "xiaomi/mimo-v2.5-pro",
+     "input_modalities": [
+      "text"
+     ]
+    }
+   ],
+   "price": [
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 0.48,
+      "output": 1.8,
+      "cache_read": 0.096
+     },
+     "as_of": "2026-11-18",
+     "fetched_at": "2026-11-18T12:37:49+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "xiaomi/mimo-v2.5-pro"
+    }
+   ]
+  },
+  "doubao-seed-2.0-mini": {},
+  "doubao-seed-2.1-lite": {},
+  "doubao-seed-2.1-pro": {},
+  "doubao-seed-evolving": {},
+  "deepseek-v4.1-flash-economy": {}
  }
 }

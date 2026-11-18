@@ -1,1953 +1,3121 @@
 {
-  "reviewed_at": "2026-11-18",
-  "scoring": {
-    "small_short_capacity_usd": 50,
-    "small_short_window_floor_pct": 25,
-    "small_short_safety_margin_pct": 12,
-    "safety_margin_pct": 5,
-    "short_window_floor_pct": 10,
-    "short_window_hours": 24,
-    "defer_if_reset_within_hours": 6,
-    "rotate_after_carried_tokens": 4000000,
-    "context_burn_extra_at_250k": 0.5,
-    "needs_judgment_margin": 0.02,
-    "harness_order": [
-      "codex",
-      "pi"
-    ],
-    "profile": {
-      "difficulty_by_level": {
-        "1": "routine",
-        "2": "hard",
-        "3": "coupled"
-      }
-    }
+ "reviewed_at": "2026-11-18",
+ "scoring": {
+  "small_short_capacity_usd": 50,
+  "small_short_window_floor_pct": 25,
+  "small_short_safety_margin_pct": 12,
+  "safety_margin_pct": 5,
+  "short_window_floor_pct": 10,
+  "short_window_hours": 24,
+  "defer_if_reset_within_hours": 6,
+  "rotate_after_carried_tokens": 4000000,
+  "context_burn_extra_at_250k": 0.5,
+  "needs_judgment_margin": 0.02,
+  "harness_order": [
+   "codex",
+   "pi"
+  ],
+  "profile": {
+   "difficulty_by_level": {
+    "1": "routine",
+    "2": "hard",
+    "3": "coupled"
+   }
+  }
+ },
+ "aliases": {
+  "claude-haiku-4-5@20251001": "claude-haiku-4-5",
+  "claude-opus-5": "claude-opus-5-5",
+  "claude-sonnet-5": "claude-sonnet-5-5",
+  "claude-fable-5": "claude-fable-5-2",
+  "fable": "claude-fable-5-2",
+  "gemini-3.8-flash": "gemini-3.8-flash-high",
+  "gemini-4-argon": "gemini-4-argon-high",
+  "gemini-4-hydrogen": "gemini-4-hydrogen-high",
+  "gemini-4-pro": "gemini-4-argon-high",
+  "gemini-4-ultra": "gemini-4-argon-high",
+  "argon": "gemini-4-argon-high",
+  "ChatGPT Pro via chatgpt-pro-consult": "gpt-6-pro",
+  "grok-4.7-latest": "grok-4.7",
+  "grok-4": "grok-4.7",
+  "opencode/deepseek-v4.1-flash-free": "deepseek-v4.1-flash-free",
+  "deepseek-v4.1-flash": "deepseek-v4.1-flash-free",
+  "deepseek": "deepseek-v4.1-flash-free",
+  "glm-5.3-flash": "glm-5.3-flash-free",
+  "opencode/glm-5.3-flash-free": "glm-5.3-flash-free",
+  "MiniMax-M3": "minimax-m3",
+  "MiniMax-M3.1-Flash": "minimax-m3.1-flash",
+  "mimo-v2.6-flash": "mimo-v2.6-flash-free",
+  "mimo-v2.6-pro-ultraspeed": "mimo-v2.6-pro",
+  "kimi-k3.1-pro-highspeed": "kimi-k3.1-pro",
+  "nemotron-3-ultra-550b-a55b": "nemotron-3-ultra-free",
+  "nemotron-3.5-super-vl-120b-a12b": "nemotron-3.5-super-vl-free",
+  "nemotron-3.5-lightning-30b-a3b": "nemotron-3.5-lightning-free",
+  "opencode/mimo-v2.6-flash-free": "mimo-v2.6-flash-free",
+  "opencode/nemotron-3-ultra-free": "nemotron-3-ultra-free",
+  "opencode/nemotron-3.5-super-vl-free": "nemotron-3.5-super-vl-free",
+  "opencode/nemotron-3.5-lightning-free": "nemotron-3.5-lightning-free",
+  "opencode/beam-free": "beam-free",
+  "opencode/flint-40b-free": "flint-40b-free",
+  "zai-org-glm-5-2": "glm-5.2",
+  "venice-api/zai-org-glm-5-2": "glm-5.2",
+  "deepseek-flash": "deepseek-v4.1-flash-free",
+  "deepseek-v4-flash": "deepseek-v4.1-flash-free",
+  "qwen-flash": "qwen3-flash-2025-07-28",
+  "deepseek-v4-flash-vision-exp": "deepseek-v4.1-flash-free",
+  "gpt-5.6": "gpt-5.6-sol",
+  "gpt-daybreak-blue-latest": "gpt-5.6-sol",
+  "gemini-pro-latest": "gemini-3.1-pro-preview",
+  "gemini-3-flash": "gemini-3-flash-preview",
+  "gemini-3.5-flash": "gemini-3.6-flash",
+  "k3": "kimi-k3",
+  "k3-256k": "kimi-k3",
+  "k3.1-pro": "kimi-k3.1-pro",
+  "kimi-for-coding": "kimi-k2.8-preview",
+  "zai-glm-5-3": "glm-5.3",
+  "zai-glm-5-3-flash": "glm-5.3-flash-free",
+  "glm-5-2": "glm-5.2",
+  "zai-glm-5-2": "glm-5.2",
+  "zai-org/glm-5.2-maas": "glm-5.2",
+  "zai.glm-5": "glm-5",
+  "mistral-large-4-0-8": "mistral-large-4",
+  "deepseek-v4.1-flash-1017": "deepseek-v4.1-flash-free",
+  "deepseek-v4-1-flash-1017": "deepseek-v4.1-flash-free",
+  "deepseek-v4-pro-0813": "deepseek-v4-pro",
+  "claude-opus-4-5-20251101": "claude-opus-4-5",
+  "global.anthropic.claude-fable-5-1": "claude-fable-5-1",
+  "global.anthropic.claude-fable-5-2": "claude-fable-5-2",
+  "global.anthropic.claude-haiku-4-5-20251001-v1:0": "claude-haiku-4-5",
+  "global.anthropic.claude-opus-4-7": "claude-opus-4-7",
+  "global.anthropic.claude-opus-4-8": "claude-opus-4-8",
+  "global.anthropic.claude-opus-5": "claude-opus-5-5",
+  "global.anthropic.claude-opus-5-5": "claude-opus-5-5",
+  "global.anthropic.claude-sonnet-5": "claude-sonnet-5-5",
+  "global.anthropic.claude-sonnet-5-5": "claude-sonnet-5-5",
+  "global.openai.gpt-6-astra": "gpt-6-astra",
+  "global.openai.gpt-6-luna": "gpt-6-luna",
+  "global.openai.gpt-6-sol": "gpt-6-sol",
+  "openai.gpt-oss-120b-1:0": "gpt-oss-120b",
+  "openai.gpt-oss-20b-1:0": "gpt-oss-20b",
+  "openai/gpt-oss-120b-maas": "gpt-oss-120b",
+  "gemini-pro-agent": "gemini-3.1-pro-preview",
+  "gemini-3.1-pro-low": "gemini-3.1-pro-preview",
+  "claude-opus-4-6-thinking": "claude-opus-4-6",
+  "gpt-oss-120b-medium": "gpt-oss-120b"
+ },
+ "alias_sources": {
+  "statement": "the public statement behind each alias (scripts/reference_provenance.py): the maker's statement, models.dev's canonical_model_id or Magpie's source with its date, or the dated maintainer declaration that added it",
+  "rows": {
+   "ChatGPT Pro via chatgpt-pro-consult": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: ChatGPT Pro via chatgpt-pro-consult names gpt-6-pro (declared in accounts.json since commit a89d697)"
+   },
+   "MiniMax-M3": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: MiniMax-M3 names minimax-m3 (declared in accounts.json since commit a89d697)"
+   },
+   "MiniMax-M3.1-Flash": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: MiniMax-M3.1-Flash names minimax-m3.1-flash (declared in accounts.json since commit a89d697)"
+   },
+   "argon": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: argon names gemini-4-argon-high (declared in accounts.json since commit a89d697)"
+   },
+   "claude-fable-5": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: claude-fable-5 names claude-fable-5-2 (declared in accounts.json since commit a89d697)"
+   },
+   "claude-haiku-4-5@20251001": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: claude-haiku-4-5@20251001 names claude-haiku-4-5 (declared in accounts.json since commit a89d697)"
+   },
+   "claude-opus-4-5-20251101": {
+    "kind": "vendor",
+    "url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+    "as_of": "2026-11-18",
+    "statement": "Anthropic: for models before 4.6, \"the alias is a convenience pointer that resolves to the dated ID\" (claude-opus-4-5 -> claude-opus-4-5-20251101)"
+   },
+   "claude-opus-4-6-thinking": {
+    "kind": "community",
+    "url": "https://github.com/yetone/magpie/blob/v0.1.4470/internal/provider/google.go#L1020",
+    "as_of": "2026-11-18",
+    "statement": "Magpie's Antigravity fallback list names claude-opus-4-6-thinking \"Claude Opus 4.6 (Thinking)\"; catalog.go variantSuffix: \"a proxy's variant of a known model, named for the level or speed it is served at\""
+   },
+   "claude-opus-5": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: claude-opus-5 names claude-opus-5-5 (declared in accounts.json since commit a89d697)"
+   },
+   "claude-sonnet-5": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: claude-sonnet-5 names claude-sonnet-5-5 (declared in accounts.json since commit a89d697)"
+   },
+   "deepseek": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: deepseek names deepseek-v4.1-flash-free (declared in accounts.json since commit a89d697)"
+   },
+   "deepseek-flash": {
+    "kind": "maintainer",
+    "as_of": "2026-11-04",
+    "statement": "maintainer: deepseek-flash names deepseek-v4.1-flash-free (declared in accounts.json since commit a02a2b2)"
+   },
+   "deepseek-v4-1-flash-1017": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists mistral/deepseek-v4-1-flash-1017 (\"DeepSeek V4.1 Flash 1017\") with canonical_model_id deepseek/deepseek-v4.1-flash-1017 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "deepseek-v4-flash": {
+    "kind": "vendor",
+    "url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "as_of": "2026-11-18",
+    "statement": "DeepSeek pricing page, footnote 1 of the deepseek-flash column: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp \"are still accepted\", \"the corresponding models have been retired\", \"their requests are served by the DeepSeek-V4.1-Flash-1017 model\" and are \"billed at the Flash price\"; the page gives no date for the change"
+   },
+   "deepseek-v4-flash-vision-exp": {
+    "kind": "vendor",
+    "url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "as_of": "2026-11-18",
+    "statement": "DeepSeek pricing page, footnote 1 of the deepseek-flash column: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp \"are still accepted\", \"the corresponding models have been retired\", \"their requests are served by the DeepSeek-V4.1-Flash-1017 model\" and are \"billed at the Flash price\"; the page gives no date for the change"
+   },
+   "deepseek-v4-pro-0813": {
+    "kind": "vendor",
+    "url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "as_of": "2026-11-18",
+    "statement": "DeepSeek pricing: the model deepseek-v4-pro is version DeepSeek-V4-Pro-0813"
+   },
+   "deepseek-v4.1-flash": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: deepseek-v4.1-flash names deepseek-v4.1-flash-free (declared in accounts.json since commit a89d697)"
+   },
+   "deepseek-v4.1-flash-1017": {
+    "kind": "vendor",
+    "url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "as_of": "2026-11-18",
+    "statement": "DeepSeek pricing: the model deepseek-flash is version DeepSeek-V4.1-Flash-1017 (deepseek-flash is an alias of this row)"
+   },
+   "fable": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: fable names claude-fable-5-2 (declared in accounts.json since commit a89d697)"
+   },
+   "gemini-3-flash": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists opencode/gemini-3-flash (\"Gemini 3 Flash\") with canonical_model_id google/gemini-3-flash-preview (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "gemini-3.1-pro-low": {
+    "kind": "community",
+    "url": "https://github.com/yetone/magpie/blob/v0.1.4470/internal/provider/google.go#L1017",
+    "as_of": "2026-11-18",
+    "statement": "Magpie's Antigravity fallback list names gemini-3.1-pro-low \"Gemini 3.1 Pro (Low)\": Gemini 3.1 Pro at the low level"
+   },
+   "gemini-3.5-flash": {
+    "kind": "vendor",
+    "url": "https://aistudio.google.com/docs/deprecations",
+    "as_of": "2026-11-18",
+    "statement": "Google: gemini-3.5-flash is removed from AI Studio and \"the endpoint is not shutting down and automatically routes API requests to\" gemini-3.6-flash"
+   },
+   "gemini-3.8-flash": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: gemini-3.8-flash names gemini-3.8-flash-high (declared in accounts.json since commit a89d697)"
+   },
+   "gemini-4-argon": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: gemini-4-argon names gemini-4-argon-high (declared in accounts.json since commit a89d697)"
+   },
+   "gemini-4-hydrogen": {
+    "kind": "maintainer",
+    "as_of": "2026-11-13",
+    "statement": "maintainer: gemini-4-hydrogen names gemini-4-hydrogen-high (declared in accounts.json since commit fc80996)"
+   },
+   "gemini-4-pro": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: gemini-4-pro names gemini-4-argon-high (declared in accounts.json since commit a89d697)"
+   },
+   "gemini-4-ultra": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: gemini-4-ultra names gemini-4-argon-high (declared in accounts.json since commit a89d697)"
+   },
+   "gemini-pro-agent": {
+    "kind": "community",
+    "url": "https://github.com/yetone/magpie/blob/v0.1.4470/internal/provider/google.go#L1016",
+    "as_of": "2026-11-18",
+    "statement": "Magpie's Antigravity fallback list names gemini-pro-agent \"Gemini 3.1 Pro (High)\": Gemini 3.1 Pro at the high level (Google's API id gemini-3.1-pro-preview)"
+   },
+   "gemini-pro-latest": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists google/gemini-pro-latest (\"Gemini Pro Latest\") with canonical_model_id google/gemini-3.1-pro-preview (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "glm-5-2": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists mistral/glm-5-2 with canonical_model_id zhipuai/glm-5.2 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "glm-5.3-flash": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: glm-5.3-flash names glm-5.3-flash-free (declared in accounts.json since commit a89d697)"
+   },
+   "global.anthropic.claude-fable-5-1": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.anthropic.claude-fable-5-1 with canonical_model_id anthropic/claude-fable-5-1 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.anthropic.claude-fable-5-2": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.anthropic.claude-fable-5-2 with canonical_model_id anthropic/claude-fable-5-2 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.anthropic.claude-haiku-4-5-20251001-v1:0": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0 (\"Claude Haiku 4.5 (Global)\") with canonical_model_id anthropic/claude-haiku-4-5-20251001 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.anthropic.claude-opus-4-7": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.anthropic.claude-opus-4-7 with canonical_model_id anthropic/claude-opus-4-7 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.anthropic.claude-opus-4-8": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.anthropic.claude-opus-4-8 with canonical_model_id anthropic/claude-opus-4-8 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.anthropic.claude-opus-5": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.anthropic.claude-opus-5 (\"Claude Opus 5 (Global)\") with canonical_model_id anthropic/claude-opus-5 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.anthropic.claude-opus-5-5": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.anthropic.claude-opus-5-5 with canonical_model_id anthropic/claude-opus-5-5 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.anthropic.claude-sonnet-5": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.anthropic.claude-sonnet-5 (\"Claude Sonnet 5 (Global)\") with canonical_model_id anthropic/claude-sonnet-5 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.anthropic.claude-sonnet-5-5": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.anthropic.claude-sonnet-5-5 with canonical_model_id anthropic/claude-sonnet-5-5 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.openai.gpt-6-astra": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.openai.gpt-6-astra with canonical_model_id openai/gpt-6-astra (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.openai.gpt-6-luna": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.openai.gpt-6-luna with canonical_model_id openai/gpt-6-luna (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "global.openai.gpt-6-sol": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/global.openai.gpt-6-sol with canonical_model_id openai/gpt-6-sol (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "gpt-5.6": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists openai/gpt-5.6 (\"GPT-5.6\") with canonical_model_id openai/gpt-5.6-sol (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "gpt-daybreak-blue-latest": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists openai/gpt-daybreak-blue-latest (\"Daybreak Blue\") with canonical_model_id openai/gpt-5.6-sol (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "gpt-oss-120b-medium": {
+    "kind": "community",
+    "url": "https://github.com/yetone/magpie/blob/v0.1.4470/internal/provider/google.go#L1022",
+    "as_of": "2026-11-18",
+    "statement": "Magpie's Antigravity fallback list names gpt-oss-120b-medium \"GPT-OSS 120B (Medium)\": gpt-oss-120b at the medium level"
+   },
+   "grok-4": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: grok-4 names grok-4.7 (declared in accounts.json since commit a89d697)"
+   },
+   "grok-4.7-latest": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: grok-4.7-latest names grok-4.7 (declared in accounts.json since commit a89d697)"
+   },
+   "k3": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists kimi-code-plan-global/k3 with canonical_model_id moonshotai/kimi-k3 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "k3-256k": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists kimi-code-plan-global/k3-256k (\"Kimi K3-256K\") with canonical_model_id moonshotai/kimi-k3 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "k3.1-pro": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists kimi-code-plan-global/k3.1-pro with canonical_model_id moonshotai/kimi-k3.1-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "kimi-for-coding": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists kimi-code-plan-global/kimi-for-coding with canonical_model_id moonshotai/kimi-k2.8-preview (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "kimi-k3.1-pro-highspeed": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: kimi-k3.1-pro-highspeed names kimi-k3.1-pro (declared in accounts.json since commit a89d697)"
+   },
+   "mimo-v2.6-flash": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: mimo-v2.6-flash names mimo-v2.6-flash-free (declared in accounts.json since commit a89d697)"
+   },
+   "mimo-v2.6-pro-ultraspeed": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: mimo-v2.6-pro-ultraspeed names mimo-v2.6-pro (declared in accounts.json since commit a89d697)"
+   },
+   "mistral-large-4-0-8": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists mistral/mistral-large-4-0-8 (\"Mistral Large 4.0.8\") with canonical_model_id mistral/mistral-large-4 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "nemotron-3-ultra-550b-a55b": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: nemotron-3-ultra-550b-a55b names nemotron-3-ultra-free (declared in accounts.json since commit a89d697)"
+   },
+   "nemotron-3.5-lightning-30b-a3b": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: nemotron-3.5-lightning-30b-a3b names nemotron-3.5-lightning-free (declared in accounts.json since commit a89d697)"
+   },
+   "nemotron-3.5-super-vl-120b-a12b": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: nemotron-3.5-super-vl-120b-a12b names nemotron-3.5-super-vl-free (declared in accounts.json since commit a89d697)"
+   },
+   "openai.gpt-oss-120b-1:0": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/openai.gpt-oss-120b-1:0 with canonical_model_id openai/gpt-oss-120b (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "openai.gpt-oss-20b-1:0": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/openai.gpt-oss-20b-1:0 with canonical_model_id openai/gpt-oss-20b (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "openai/gpt-oss-120b-maas": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists google-vertex/openai/gpt-oss-120b-maas (\"GPT OSS 120B\") with canonical_model_id openai/gpt-oss-120b (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "opencode/beam-free": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: opencode/beam-free names beam-free (declared in accounts.json since commit a89d697)"
+   },
+   "opencode/deepseek-v4.1-flash-free": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: opencode/deepseek-v4.1-flash-free names deepseek-v4.1-flash-free (declared in accounts.json since commit a89d697)"
+   },
+   "opencode/flint-40b-free": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: opencode/flint-40b-free names flint-40b-free (declared in accounts.json since commit a89d697)"
+   },
+   "opencode/glm-5.3-flash-free": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: opencode/glm-5.3-flash-free names glm-5.3-flash-free (declared in accounts.json since commit a89d697)"
+   },
+   "opencode/mimo-v2.6-flash-free": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: opencode/mimo-v2.6-flash-free names mimo-v2.6-flash-free (declared in accounts.json since commit a89d697)"
+   },
+   "opencode/nemotron-3-ultra-free": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: opencode/nemotron-3-ultra-free names nemotron-3-ultra-free (declared in accounts.json since commit a89d697)"
+   },
+   "opencode/nemotron-3.5-lightning-free": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: opencode/nemotron-3.5-lightning-free names nemotron-3.5-lightning-free (declared in accounts.json since commit a89d697)"
+   },
+   "opencode/nemotron-3.5-super-vl-free": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: opencode/nemotron-3.5-super-vl-free names nemotron-3.5-super-vl-free (declared in accounts.json since commit a89d697)"
+   },
+   "qwen-flash": {
+    "kind": "maintainer",
+    "as_of": "2026-11-04",
+    "statement": "maintainer: qwen-flash names qwen3-flash-2025-07-28 (declared in accounts.json since commit a02a2b2)"
+   },
+   "venice-api/zai-org-glm-5-2": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: venice-api/zai-org-glm-5-2 names glm-5.2 (declared in accounts.json since commit e33090f)"
+   },
+   "zai-glm-5-2": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists mistral/zai-glm-5-2 with canonical_model_id zhipuai/glm-5.2 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "zai-glm-5-3": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists mistral/zai-glm-5-3 with canonical_model_id zhipuai/glm-5.3 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "zai-glm-5-3-flash": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists mistral/zai-glm-5-3-flash (\"GLM-5.3-Flash\") with canonical_model_id zhipuai/glm-5.3-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "zai-org-glm-5-2": {
+    "kind": "maintainer",
+    "as_of": "2026-10-30",
+    "statement": "maintainer: zai-org-glm-5-2 names glm-5.2 (declared in accounts.json since commit e33090f)"
+   },
+   "zai-org/glm-5.2-maas": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists google-vertex/zai-org/glm-5.2-maas (\"GLM-5.2\") with canonical_model_id zhipuai/glm-5.2 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "zai.glm-5": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists amazon-bedrock/zai.glm-5 with canonical_model_id zhipuai/glm-5 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   }
+  }
+ },
+ "superseded": {
+  "claude-opus-4-6": {
+   "by": "claude-opus-5-5",
+   "basis": "Claude Opus 5.5 is the current Opus generation; 4.6 is the 4.x line."
   },
-  "aliases": {
-    "claude-haiku-4-5@20251001": "claude-haiku-4-5",
-    "claude-opus-5": "claude-opus-5-5",
-    "claude-sonnet-5": "claude-sonnet-5-5",
-    "claude-fable-5": "claude-fable-5-2",
-    "fable": "claude-fable-5-2",
-    "gemini-3.8-flash": "gemini-3.8-flash-high",
-    "gemini-4-argon": "gemini-4-argon-high",
-    "gemini-4-hydrogen": "gemini-4-hydrogen-high",
-    "gemini-4-pro": "gemini-4-argon-high",
-    "gemini-4-ultra": "gemini-4-argon-high",
-    "argon": "gemini-4-argon-high",
-    "ChatGPT Pro via chatgpt-pro-consult": "gpt-6-pro",
-    "grok-4.7-latest": "grok-4.7",
-    "grok-4": "grok-4.7",
-    "opencode/deepseek-v4.1-flash-free": "deepseek-v4.1-flash-free",
-    "deepseek-v4.1-flash": "deepseek-v4.1-flash-free",
-    "deepseek": "deepseek-v4.1-flash-free",
-    "glm-5.3-flash": "glm-5.3-flash-free",
-    "opencode/glm-5.3-flash-free": "glm-5.3-flash-free",
-    "MiniMax-M3": "minimax-m3",
-    "MiniMax-M3.1-Flash": "minimax-m3.1-flash",
-    "mimo-v2.6-flash": "mimo-v2.6-flash-free",
-    "mimo-v2.6-pro-ultraspeed": "mimo-v2.6-pro",
-    "kimi-k3.1-pro-highspeed": "kimi-k3.1-pro",
-    "nemotron-3-ultra-550b-a55b": "nemotron-3-ultra-free",
-    "nemotron-3.5-super-vl-120b-a12b": "nemotron-3.5-super-vl-free",
-    "nemotron-3.5-lightning-30b-a3b": "nemotron-3.5-lightning-free",
-    "opencode/mimo-v2.6-flash-free": "mimo-v2.6-flash-free",
-    "opencode/nemotron-3-ultra-free": "nemotron-3-ultra-free",
-    "opencode/nemotron-3.5-super-vl-free": "nemotron-3.5-super-vl-free",
-    "opencode/nemotron-3.5-lightning-free": "nemotron-3.5-lightning-free",
-    "opencode/beam-free": "beam-free",
-    "opencode/flint-40b-free": "flint-40b-free",
-    "zai-org-glm-5-2": "glm-5.2",
-    "venice-api/zai-org-glm-5-2": "glm-5.2",
-    "deepseek-flash": "deepseek-v4.1-flash-free",
-    "deepseek-v4-flash": "deepseek-v4.1-flash-free",
-    "qwen-flash": "qwen3-flash-2025-07-28",
-    "deepseek-v4-flash-vision-exp": "deepseek-v4.1-flash-free"
+  "claude-opus-4-7": {
+   "by": "claude-opus-5-5",
+   "basis": "Claude Opus 5.5 is the current Opus generation; 4.7 is the 4.x line."
   },
-  "alias_sources": {
-    "statement": "the public vendor statement behind an alias, where one is cited (scripts/reference_provenance.py)",
-    "rows": {
-      "deepseek-v4-flash": {
-        "kind": "vendor",
-        "url": "https://api-docs.deepseek.com/quick_start/pricing",
-        "as_of": "2026-11-18",
-        "statement": "DeepSeek pricing page, footnote 1 of the deepseek-flash column: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp \"are still accepted\", \"the corresponding models have been retired\", \"their requests are served by the DeepSeek-V4.1-Flash-1017 model\" and are \"billed at the Flash price\"; the page gives no date for the change"
-      },
-      "deepseek-v4-flash-vision-exp": {
-        "kind": "vendor",
-        "url": "https://api-docs.deepseek.com/quick_start/pricing",
-        "as_of": "2026-11-18",
-        "statement": "DeepSeek pricing page, footnote 1 of the deepseek-flash column: the legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp \"are still accepted\", \"the corresponding models have been retired\", \"their requests are served by the DeepSeek-V4.1-Flash-1017 model\" and are \"billed at the Flash price\"; the page gives no date for the change"
-      }
-    }
+  "claude-opus-4-8": {
+   "by": "claude-opus-5-5",
+   "basis": "Claude Opus 5.5 is the current Opus generation; 4.8 is the 4.x line."
   },
-  "superseded": {
-    "claude-opus-4-6": {
-      "by": "claude-opus-5-5",
-      "basis": "Claude Opus 5.5 is the current Opus generation; 4.6 is the 4.x line."
-    },
-    "claude-opus-4-7": {
-      "by": "claude-opus-5-5",
-      "basis": "Claude Opus 5.5 is the current Opus generation; 4.7 is the 4.x line."
-    },
-    "claude-opus-4-8": {
-      "by": "claude-opus-5-5",
-      "basis": "Claude Opus 5.5 is the current Opus generation; 4.8 is the 4.x line."
-    },
-    "claude-sonnet-4-6": {
-      "by": "claude-sonnet-5-5",
-      "basis": "Claude Sonnet 5.5 is the current Sonnet generation."
-    },
-    "claude-haiku-4-5": {
-      "by": "claude-haiku-5-5",
-      "basis": "Claude Haiku 5.5 is the current Haiku generation (advertised by the same Claude accounts)."
-    },
-    "gpt-6-sol": {
-      "by": "gpt-6.1-sol",
-      "basis": "GPT-6.1 Sol is the newer Sol release."
-    },
-    "gpt-5.6-sol": {
-      "by": "gpt-6.1-sol",
-      "basis": "GPT-6.1 Sol is two releases newer in the Sol line."
-    },
-    "gpt-5.6-terra": {
-      "by": "gpt-6.1-terra",
-      "basis": "GPT-6.1 Terra is the newer Terra release."
-    },
-    "gpt-5.6-luna": {
-      "by": "gpt-6-luna",
-      "basis": "GPT-6 Luna is the newer Luna release."
-    },
-    "grok-4.5": {
-      "by": "grok-4.7",
-      "basis": "Grok 4.7 is the current Grok release."
-    },
-    "grok-4.6": {
-      "by": "grok-4.7",
-      "basis": "Grok 4.7 is the current Grok release."
-    },
-    "gemini-3.1-pro-preview": {
-      "by": "gemini-4-argon-high",
-      "basis": "Gemini 4 Pro (Argon) is the newer Pro generation."
-    },
-    "gemini-3.7-flash": {
-      "by": "gemini-3.8-flash-high",
-      "basis": "Gemini 3.8 Flash is the newer Flash release."
-    },
-    "glm-5.2": {
-      "by": "glm-5.3",
-      "basis": "GLM-5.3 is the newer GLM release."
-    },
-    "kimi-k2.6": {
-      "by": "kimi-k3",
-      "basis": "Kimi K3 is the newer Kimi generation."
-    },
-    "qwen3.7-max": {
-      "by": "qwen3.8-max",
-      "basis": "Qwen3.8-Max is the newer Qwen Max release."
-    },
-    "deepseek-v4-flash": {
-      "by": "deepseek-v4.1-flash-free",
-      "basis": "DeepSeek V4.1 Flash is the newer Flash release."
-    },
-    "claude-fable-5-1": {
-      "by": "claude-fable-5-2",
-      "basis": "Claude Fable 5.2 is the newer Fable release."
-    }
+  "claude-sonnet-4-6": {
+   "by": "claude-sonnet-5-5",
+   "basis": "Claude Sonnet 5.5 is the current Sonnet generation."
   },
-  "same_model": {
-    "dot": {
-      "model": "gpt-6-astra",
-      "carries": [
-        "creativity",
-        "coding",
-        "aesthetics",
-        "duration"
-      ],
-      "kind": "vendor",
-      "statement": "OpenAI announces dots as always-on agents powered by GPT-6 Astra (DevDay, 2026-09-29).",
-      "url": "https://openai.com/index/introducing-dots/",
-      "as_of": "2026-09-29",
-      "not_carried": "tool_operation: Dot takes no image or screenshot input through its packet channel (owner, 2026-10-09) and its per-turn speed is the packet channel's, so tool operation is the channel's own and stays missing, not Astra's."
-    },
-    "grok-bot": {
-      "model": "claude-opus-5-5",
-      "carries": [
-        "creativity",
-        "coding",
-        "aesthetics",
-        "duration",
-        "usd_per_hour"
-      ],
-      "kind": "maintainer",
-      "statement": "maintainer: grok-bot is Opus 5.5",
-      "as_of": "2026-11-11",
-      "not_carried": "tool_operation: grok-bot's per-turn speed and image recognition are the web channel's own, so tool operation stays channel-specific rather than Opus 5.5's.",
-      "capacity_rule": {
-        "kind": "maintainer",
-        "as_of": "2026-11-11",
-        "statement": "maintainer: grok-bot price and quota capacity follow the same-price Claude subscription",
-        "target_family": "grok",
-        "target_window": "credits",
-        "reference_family": "claude",
-        "reference_window": "seven_day"
-      }
-    }
+  "claude-haiku-4-5": {
+   "by": "claude-haiku-5-5",
+   "basis": "Claude Haiku 5.5 is the current Haiku generation (advertised by the same Claude accounts)."
   },
-  "calibration_panel": {
-    "anchor": "claude-opus-5-5",
+  "gpt-6-sol": {
+   "by": "gpt-6.1-sol",
+   "basis": "GPT-6.1 Sol is the newer Sol release."
+  },
+  "gpt-5.6-sol": {
+   "by": "gpt-6.1-sol",
+   "basis": "GPT-6.1 Sol is two releases newer in the Sol line."
+  },
+  "gpt-5.6-terra": {
+   "by": "gpt-6.1-terra",
+   "basis": "GPT-6.1 Terra is the newer Terra release."
+  },
+  "gpt-5.6-luna": {
+   "by": "gpt-6-luna",
+   "basis": "GPT-6 Luna is the newer Luna release."
+  },
+  "grok-4.5": {
+   "by": "grok-4.7",
+   "basis": "Grok 4.7 is the current Grok release."
+  },
+  "grok-4.6": {
+   "by": "grok-4.7",
+   "basis": "Grok 4.7 is the current Grok release."
+  },
+  "gemini-3.1-pro-preview": {
+   "by": "gemini-4-argon-high",
+   "basis": "Gemini 4 Pro (Argon) is the newer Pro generation."
+  },
+  "gemini-3.7-flash": {
+   "by": "gemini-3.8-flash-high",
+   "basis": "Gemini 3.8 Flash is the newer Flash release."
+  },
+  "glm-5.2": {
+   "by": "glm-5.3",
+   "basis": "GLM-5.3 is the newer GLM release."
+  },
+  "kimi-k2.6": {
+   "by": "kimi-k3",
+   "basis": "Kimi K3 is the newer Kimi generation."
+  },
+  "qwen3.7-max": {
+   "by": "qwen3.8-max",
+   "basis": "Qwen3.8-Max is the newer Qwen Max release."
+  },
+  "deepseek-v4-flash": {
+   "by": "deepseek-v4.1-flash-free",
+   "basis": "DeepSeek V4.1 Flash is the newer Flash release."
+  },
+  "claude-fable-5-1": {
+   "by": "claude-fable-5-2",
+   "basis": "Claude Fable 5.2 is the newer Fable release."
+  }
+ },
+ "same_model": {
+  "dot": {
+   "model": "gpt-6-astra",
+   "carries": [
+    "creativity",
+    "coding",
+    "aesthetics",
+    "duration"
+   ],
+   "kind": "vendor",
+   "statement": "OpenAI announces dots as always-on agents powered by GPT-6 Astra (DevDay, 2026-09-29).",
+   "url": "https://openai.com/index/introducing-dots/",
+   "as_of": "2026-09-29",
+   "not_carried": "tool_operation: Dot takes no image or screenshot input through its packet channel (owner, 2026-10-09) and its per-turn speed is the packet channel's, so tool operation is the channel's own and stays missing, not Astra's."
+  },
+  "grok-bot": {
+   "model": "claude-opus-5-5",
+   "carries": [
+    "creativity",
+    "coding",
+    "aesthetics",
+    "duration",
+    "usd_per_hour"
+   ],
+   "kind": "maintainer",
+   "statement": "maintainer: grok-bot is Opus 5.5",
+   "as_of": "2026-11-11",
+   "not_carried": "tool_operation: grok-bot's per-turn speed and image recognition are the web channel's own, so tool operation stays channel-specific rather than Opus 5.5's.",
+   "capacity_rule": {
+    "kind": "maintainer",
+    "as_of": "2026-11-11",
+    "statement": "maintainer: grok-bot price and quota capacity follow the same-price Claude subscription",
+    "target_family": "grok",
+    "target_window": "credits",
+    "reference_family": "claude",
+    "reference_window": "seven_day"
+   }
+  }
+ },
+ "calibration_panel": {
+  "anchor": "claude-opus-5-5",
+  "models": [
+   "claude-opus-5-5",
+   "gpt-6-astra",
+   "claude-sonnet-5-5",
+   "gpt-6.1-sol",
+   "grok-4.7",
+   "gemini-3.8-flash-high"
+  ],
+  "members": [
+   "claude-fable-5-1",
+   "claude-opus-5-5",
+   "claude-sonnet-5-5",
+   "deepseek-v4.1-flash-free",
+   "gemini-3.8-flash-high",
+   "gpt-6-astra",
+   "gpt-6-luna",
+   "gpt-6-sol",
+   "gpt-6.1-sol",
+   "grok-4.6",
+   "grok-4.7",
+   "minimax-m3"
+  ],
+  "kind": "maintainer",
+  "as_of": "2026-11-18",
+  "statement": "maintainer: the anchor (0 on every board), the sentinel models whose shared listing defines the core boards, and the panel members, declared (owner 2026-11-18: the members of v0.7.0, the panel the owner's hand-written levels were set against). A row listed on every core board does not join the panel; only the owner changes `members`; a member a core board does not list is an error (calibration/measurements.py)"
+ },
+ "effort_readings": {
+  "kind": "maintainer",
+  "as_of": "2026-11-18",
+  "statement": "maintainer: an effort name off the effort scale and the measured effort it reads. The boards list some models without an effort label; that listing is the model's one configuration, which the measurements store under `default` (calibration/measurements.py) and the calibration keys at the effort named here (calibration/five_axis.py aa_rows, time_rows), so a launch at `default` reads the values stored there (five-axis-scores.json `effort_readings`, axis_scores.reading_effort).",
+  "reads": {
+   "default": "high"
+  }
+ },
+ "families": {
+  "kind": "maintainer",
+  "as_of": "2026-11-18",
+  "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). `size` is the size class of the names a row decides: `small` names are never in the series of a `full` one (calibration/series.py). `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down); tier_up_version says whether the larger row's first model is the same version as the small row's current members (`same`) or the nearest version of the same line (`nearest`), calibration/series.py. `tier_up_older` on such a row names, for an older member of the row's line that is not a current member, its larger model and whether it is the same version (`same`) or the nearest (`nearest`).",
+  "rows": [
+   {
+    "pattern": "^grok-bot$",
+    "models": [],
+    "size": "full"
+   },
+   {
+    "pattern": "^claude-opus",
     "models": [
-      "claude-opus-5-5",
-      "gpt-6-astra",
-      "claude-sonnet-5-5",
-      "gpt-6.1-sol",
-      "grok-4.7",
-      "gemini-3.8-flash-high"
+     "claude-opus-5-5"
     ],
-    "members": [
-      "claude-fable-5-1",
-      "claude-opus-5-5",
-      "claude-sonnet-5-5",
-      "deepseek-v4.1-flash-free",
-      "gemini-3.8-flash-high",
-      "gpt-6-astra",
-      "gpt-6-luna",
-      "gpt-6-sol",
-      "gpt-6.1-sol",
-      "grok-4.6",
-      "grok-4.7",
-      "minimax-m3"
+    "size": "full"
+   },
+   {
+    "pattern": "^claude-sonnet",
+    "models": [
+     "claude-sonnet-5-5"
     ],
-    "kind": "maintainer",
-    "as_of": "2026-11-18",
-    "statement": "maintainer: the anchor (0 on every board), the sentinel models whose shared listing defines the core boards, and the panel members, declared (owner 2026-11-18: the members of v0.7.0, the panel the owner's hand-written levels were set against). A row listed on every core board does not join the panel; only the owner changes `members`; a member a core board does not list is an error (calibration/measurements.py)"
-  },
-  "effort_readings": {
-    "kind": "maintainer",
-    "as_of": "2026-11-18",
-    "statement": "maintainer: an effort name off the effort scale and the measured effort it reads. The boards list some models without an effort label; that listing is the model's one configuration, which the measurements store under `default` (calibration/measurements.py) and the calibration keys at the effort named here (calibration/five_axis.py aa_rows, time_rows), so a launch at `default` reads the values stored there (five-axis-scores.json `effort_readings`, axis_scores.reading_effort).",
-    "reads": {
-      "default": "high"
+    "size": "full"
+   },
+   {
+    "pattern": "^claude-fable",
+    "models": [
+     "claude-fable-5-2"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^claude-haiku",
+    "models": [
+     "claude-haiku-5-5"
+    ],
+    "size": "small",
+    "tier_up": "^claude-sonnet",
+    "tier_up_version": "same",
+    "tier_up_older": {
+     "claude-haiku-4-5": {
+      "model": "claude-sonnet-4-6",
+      "version": "nearest"
+     }
     }
+   },
+   {
+    "pattern": "^gpt-6.*luna",
+    "models": [
+     "gpt-6-luna"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^gpt-6.*terra",
+    "models": [
+     "gpt-6.1-terra",
+     "gpt-6-astra"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^gpt-6.*sol",
+    "models": [
+     "gpt-6.2-sol",
+     "gpt-6.1-sol",
+     "gpt-6-astra"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^gpt-6.*pro",
+    "models": [
+     "gpt-6-pro",
+     "gpt-6-astra"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^gpt-6",
+    "models": [
+     "gpt-6.2-astra",
+     "gpt-6-astra"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^gpt-oss.*20b",
+    "models": [
+     "gpt-oss-20b"
+    ],
+    "size": "small",
+    "tier_up": "^gpt-oss",
+    "tier_up_version": "same"
+   },
+   {
+    "pattern": "^gpt-oss",
+    "models": [
+     "gpt-oss-120b"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^gpt-5(?:\\.[0-5])?-(?:mini|nano)",
+    "models": [
+     "gpt-5.4-mini"
+    ],
+    "size": "small"
+   },
+   {
+    "pattern": "^gpt-5(?:\\.[0-5])?-pro",
+    "models": [
+     "gpt-5.5-pro",
+     "gpt-5.4-pro",
+     "gpt-5.2-pro"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^gpt-5(?:\\.[0-5])?$",
+    "models": [
+     "gpt-5.5",
+     "gpt-5.4",
+     "gpt-5.2"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^gemini.*hydrogen",
+    "models": [
+     "gemini-4-hydrogen-high",
+     "gemini-3.8-flash-high"
+    ],
+    "size": "small"
+   },
+   {
+    "pattern": "^gemini.*flash",
+    "models": [
+     "gemini-3.8-flash-high"
+    ],
+    "size": "small"
+   },
+   {
+    "pattern": "^gemini",
+    "models": [
+     "gemini-4-argon-high"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^grok.*(?:mini|fast)|^grok-code",
+    "models": [
+     "grok-4.7-build-fast",
+     "grok-4.7"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^grok",
+    "models": [
+     "grok-4.7"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^deepseek.*flash",
+    "models": [
+     "deepseek-v4.1-flash-free"
+    ],
+    "size": "small"
+   },
+   {
+    "pattern": "^deepseek",
+    "models": [
+     "deepseek-v4-pro"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^qwen.*flash",
+    "models": [
+     "qwen3.8-flash",
+     "qwen3.8-omni-flash"
+    ],
+    "size": "small",
+    "tier_up": "^qwen",
+    "tier_up_version": "same",
+    "tier_up_older": {
+     "qwen3.5-flash": {
+      "model": "qwen3.5-plus",
+      "version": "same"
+     },
+     "qwen3.6-flash": {
+      "model": "qwen3.6-plus",
+      "version": "same"
+     },
+     "qwen3.7-flash": {
+      "model": "qwen3.7-plus",
+      "version": "same"
+     }
+    }
+   },
+   {
+    "pattern": "^qwen.*coder",
+    "models": [
+     "qwen3-coder-next",
+     "qwen3.8-max"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^qwen[\\d.]+-\\d+b",
+    "models": [
+     "qwen3.8-27b"
+    ],
+    "size": "small"
+   },
+   {
+    "pattern": "^qwen",
+    "models": [
+     "qwen3.8-max"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^kimi|^moonshot|^k\\d",
+    "models": [
+     "kimi-k3.1-pro"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^glm.*flash",
+    "models": [
+     "glm-5.3-flash-free",
+     "glm-5.3-flashx"
+    ],
+    "size": "small",
+    "tier_up": "^glm",
+    "tier_up_version": "same"
+   },
+   {
+    "pattern": "^glm",
+    "models": [
+     "glm-5.3"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^minimax.*flash",
+    "models": [
+     "minimax-m3.1-flash"
+    ],
+    "size": "small",
+    "tier_up": "^minimax|^abab",
+    "tier_up_version": "nearest"
+   },
+   {
+    "pattern": "^minimax|^abab",
+    "models": [
+     "minimax-m3"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^doubao",
+    "models": [
+     "doubao-seed-2-1-pro-260628"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^mimo.*flash",
+    "models": [
+     "mimo-v2.6-flash-free"
+    ],
+    "size": "small",
+    "tier_up": "^mimo",
+    "tier_up_version": "same"
+   },
+   {
+    "pattern": "^mimo",
+    "models": [
+     "mimo-v2.6-pro"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^nemotron.*lightning",
+    "models": [
+     "nemotron-3.5-lightning-free",
+     "nemotron-3-ultra-free"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^nemotron.*(?:super|vl)",
+    "models": [
+     "nemotron-3.5-super-vl-free",
+     "nemotron-3-ultra-free"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^nemotron",
+    "models": [
+     "nemotron-3-ultra-free"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^hy\\d.*flash",
+    "models": [
+     "hy4-flash"
+    ],
+    "size": "small",
+    "tier_up": "^hy\\d",
+    "tier_up_version": "same"
+   },
+   {
+    "pattern": "^hy\\d",
+    "models": [
+     "hy4"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^muse",
+    "models": [
+     "muse-wonder-1.0"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^llama",
+    "models": [],
+    "size": "full"
+   },
+   {
+    "pattern": "^mistral|^codestral|^devstral",
+    "models": [
+     "mistral-large-4"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^gemma",
+    "models": [
+     "gemma-4-31b-it",
+     "gemma-4-26b-a4b-it"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^step.*flash",
+    "models": [
+     "step-3.7-flash",
+     "step-3.5-flash",
+     "step-3.5-flash-2603"
+    ],
+    "size": "small",
+    "tier_up": "^step",
+    "tier_up_version": "nearest"
+   },
+   {
+    "pattern": "^step",
+    "models": [
+     "step-5-preview"
+    ],
+    "size": "full"
+   },
+   {
+    "pattern": "^ministral",
+    "models": [
+     "ministral-14b-2512",
+     "ministral-8b-2512",
+     "ministral-3b-2512"
+    ],
+    "size": "small",
+    "tier_up": "^mistral|^codestral|^devstral",
+    "tier_up_version": "nearest"
+   },
+   {
+    "pattern": "^voxtral",
+    "models": [
+     "voxtral-small-2507"
+    ],
+    "size": "full"
+   }
+  ]
+ },
+ "models": {
+  "deepseek-v4.1-flash-free": {
+   "label": "DeepSeek Flash",
+   "listed_as": {
+    "aa": "DeepSeek V4.1 Flash 1017"
+   }
   },
-  "families": {
+  "claude-fable-5-1": {
+   "label": "Fable 5.1",
+   "api_family": "claude",
+   "listed_as": {
+    "arena": "Claude Fable 5.1",
+    "aa": "Claude Fable 5.1"
+   },
+   "list_price": {
+    "input": 10.0,
+    "cache_write_5m": 12.5,
+    "cache_write_1h": 20.0,
+    "cache_read": 0.25,
+    "output": 50.0
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "as_of": "2026-10-12",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "claude-fable-5-2": {
+   "label": "Fable 5.2",
+   "fast_capable": true,
+   "api_family": "claude",
+   "image_input_source": {
     "kind": "maintainer",
-    "as_of": "2026-11-18",
-    "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). `size` is the size class of the names a row decides: `small` names are never in the series of a `full` one (calibration/series.py). `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down); tier_up_version says whether the larger row's first model is the same version as the small row's current members (`same`) or the nearest version of the same line (`nearest`), calibration/series.py. `tier_up_older` on such a row names, for an older member of the row's line that is not a current member, its larger model and whether it is the same version (`same`) or the nearest (`nearest`).",
-    "rows": [
-      {
-        "pattern": "^grok-bot$",
-        "models": [],
-        "size": "full"
-      },
-      {
-        "pattern": "^claude-opus",
-        "models": [
-          "claude-opus-5-5"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^claude-sonnet",
-        "models": [
-          "claude-sonnet-5-5"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^claude-fable",
-        "models": [
-          "claude-fable-5-2"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^claude-haiku",
-        "models": [
-          "claude-haiku-5-5"
-        ],
-        "size": "small",
-        "tier_up": "^claude-sonnet",
-        "tier_up_version": "same",
-        "tier_up_older": {
-          "claude-haiku-4-5": {
-            "model": "claude-sonnet-4-6",
-            "version": "nearest"
-          }
-        }
-      },
-      {
-        "pattern": "^gpt-6.*luna",
-        "models": [
-          "gpt-6-luna"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^gpt-6.*terra",
-        "models": [
-          "gpt-6.1-terra",
-          "gpt-6-astra"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^gpt-6.*sol",
-        "models": [
-          "gpt-6.2-sol",
-          "gpt-6.1-sol",
-          "gpt-6-astra"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^gpt-6.*pro",
-        "models": [
-          "gpt-6-pro",
-          "gpt-6-astra"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^gpt-6",
-        "models": [
-          "gpt-6.2-astra",
-          "gpt-6-astra"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^gemini.*hydrogen",
-        "models": [
-          "gemini-4-hydrogen-high",
-          "gemini-3.8-flash-high"
-        ],
-        "size": "small"
-      },
-      {
-        "pattern": "^gemini.*flash",
-        "models": [
-          "gemini-3.8-flash-high"
-        ],
-        "size": "small"
-      },
-      {
-        "pattern": "^gemini",
-        "models": [
-          "gemini-4-argon-high"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^grok.*(?:mini|fast)|^grok-code",
-        "models": [
-          "grok-4.7-build-fast",
-          "grok-4.7"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^grok",
-        "models": [
-          "grok-4.7"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^deepseek.*flash",
-        "models": [
-          "deepseek-v4.1-flash-free"
-        ],
-        "size": "small"
-      },
-      {
-        "pattern": "^deepseek",
-        "models": [
-          "deepseek-v4-pro"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^qwen.*flash",
-        "models": [
-          "qwen3.8-flash",
-          "qwen3.8-omni-flash"
-        ],
-        "size": "small",
-        "tier_up": "^qwen",
-        "tier_up_version": "same"
-      },
-      {
-        "pattern": "^qwen.*coder",
-        "models": [
-          "qwen3-coder-next",
-          "qwen3.8-max"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^qwen[\\d.]+-\\d+b",
-        "models": [
-          "qwen3.8-27b"
-        ],
-        "size": "small"
-      },
-      {
-        "pattern": "^qwen",
-        "models": [
-          "qwen3.8-max"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^kimi|^moonshot",
-        "models": [
-          "kimi-k3.1-pro"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^glm.*flash",
-        "models": [
-          "glm-5.3-flash-free",
-          "glm-5.3-flashx"
-        ],
-        "size": "small",
-        "tier_up": "^glm",
-        "tier_up_version": "same"
-      },
-      {
-        "pattern": "^glm",
-        "models": [
-          "glm-5.3"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^minimax.*flash",
-        "models": [
-          "minimax-m3.1-flash"
-        ],
-        "size": "small",
-        "tier_up": "^minimax|^abab",
-        "tier_up_version": "nearest"
-      },
-      {
-        "pattern": "^minimax|^abab",
-        "models": [
-          "minimax-m3"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^doubao",
-        "models": [
-          "doubao-seed-2-1-pro-260628"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^mimo.*flash",
-        "models": [
-          "mimo-v2.6-flash-free"
-        ],
-        "size": "small",
-        "tier_up": "^mimo",
-        "tier_up_version": "same"
-      },
-      {
-        "pattern": "^mimo",
-        "models": [
-          "mimo-v2.6-pro"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^nemotron.*lightning",
-        "models": [
-          "nemotron-3.5-lightning-free",
-          "nemotron-3-ultra-free"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^nemotron.*(?:super|vl)",
-        "models": [
-          "nemotron-3.5-super-vl-free",
-          "nemotron-3-ultra-free"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^nemotron",
-        "models": [
-          "nemotron-3-ultra-free"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^hy\\d.*flash",
-        "models": [
-          "hy4-flash"
-        ],
-        "size": "small",
-        "tier_up": "^hy\\d",
-        "tier_up_version": "same"
-      },
-      {
-        "pattern": "^hy\\d",
-        "models": [
-          "hy4"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^muse",
-        "models": [
-          "muse-wonder-1.0"
-        ],
-        "size": "full"
-      },
-      {
-        "pattern": "^llama",
-        "models": [],
-        "size": "full"
-      },
-      {
-        "pattern": "^mistral|^codestral|^devstral",
-        "models": [
-          "mistral-large-4"
-        ],
-        "size": "full"
-      }
-    ]
+    "statement": "maintainer: claude-fable-5-2 accepts image input",
+    "as_of": "2026-11-12"
+   },
+   "listed_as": {
+    "arena": "Claude Fable 5.2",
+    "aa": "Claude Fable 5.2"
+   },
+   "vendor_fast_mode": {
+    "price_multiplier": 2.0,
+    "speed_multiplier": 2.5,
+    "fast_price": {
+     "input": 16.0,
+     "output": 80.0,
+     "cache_read": 0.4
+    },
+    "standard_price": {
+     "input": 8.0,
+     "output": 40.0,
+     "cache_read": 0.2
+    },
+    "as_of": "2026-11-10",
+    "url": "https://code.claude.com/docs/en/fast-mode",
+    "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "statement": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Fable 5.2 fast mode is $16/$80 per MTok (2x standard $8/$40, cache read $0.20) with up to 2.5x output tokens per second."
+   },
+   "list_price": {
+    "input": 8.0,
+    "cache_write_5m": 10.0,
+    "cache_write_1h": 16.0,
+    "cache_read": 0.2,
+    "output": 40.0
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "as_of": "2026-11-10",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
   },
-  "models": {
-    "deepseek-v4.1-flash-free": {
-      "label": "DeepSeek Flash",
-      "listed_as": {
-        "aa": "DeepSeek V4.1 Flash 1017"
-      }
+  "claude-opus-5-5": {
+   "label": "Opus 5.5",
+   "fast_capable": true,
+   "api_family": "claude",
+   "listed_as": {
+    "arena": "Claude Opus 5.5",
+    "aa": "Claude Opus 5.5"
+   },
+   "vendor_fast_mode": {
+    "price_multiplier": 2.0,
+    "speed_multiplier": 2.5,
+    "fast_price": {
+     "input": 8.0,
+     "output": 40.0,
+     "cache_read": 0.4
     },
-    "claude-fable-5-1": {
-      "label": "Fable 5.1",
-      "api_family": "claude",
-      "listed_as": {
-        "arena": "Claude Fable 5.1",
-        "aa": "Claude Fable 5.1"
-      },
-      "list_price": {
-        "input": 10.0,
-        "cache_write_5m": 12.5,
-        "cache_write_1h": 20.0,
-        "cache_read": 0.25,
-        "output": 50.0
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
-        "as_of": "2026-10-12",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
+    "standard_price": {
+     "input": 4.0,
+     "output": 20.0,
+     "cache_read": 0.2
     },
-    "claude-fable-5-2": {
-      "label": "Fable 5.2",
-      "fast_capable": true,
-      "api_family": "claude",
-      "image_input_source": {
-        "kind": "maintainer",
-        "statement": "maintainer: claude-fable-5-2 accepts image input",
-        "as_of": "2026-11-12"
-      },
-      "listed_as": {
-        "arena": "Claude Fable 5.2",
-        "aa": "Claude Fable 5.2"
-      },
-      "vendor_fast_mode": {
-        "price_multiplier": 2.0,
-        "speed_multiplier": 2.5,
-        "fast_price": {
-          "input": 16.0,
-          "output": 80.0,
-          "cache_read": 0.4
-        },
-        "standard_price": {
-          "input": 8.0,
-          "output": 40.0,
-          "cache_read": 0.2
-        },
-        "as_of": "2026-11-10",
-        "url": "https://code.claude.com/docs/en/fast-mode",
-        "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing",
-        "statement": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Fable 5.2 fast mode is $16/$80 per MTok (2x standard $8/$40, cache read $0.20) with up to 2.5x output tokens per second."
-      },
-      "list_price": {
-        "input": 8.0,
-        "cache_write_5m": 10.0,
-        "cache_write_1h": 16.0,
-        "cache_read": 0.2,
-        "output": 40.0
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
-        "as_of": "2026-11-10",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
-    },
-    "claude-opus-5-5": {
-      "label": "Opus 5.5",
-      "fast_capable": true,
-      "api_family": "claude",
-      "listed_as": {
-        "arena": "Claude Opus 5.5",
-        "aa": "Claude Opus 5.5"
-      },
-      "vendor_fast_mode": {
-        "price_multiplier": 2.0,
-        "speed_multiplier": 2.5,
-        "fast_price": {
-          "input": 8.0,
-          "output": 40.0,
-          "cache_read": 0.4
-        },
-        "standard_price": {
-          "input": 4.0,
-          "output": 20.0,
-          "cache_read": 0.2
-        },
-        "as_of": "2026-11-10",
-        "url": "https://code.claude.com/docs/en/fast-mode",
-        "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing",
-        "statement": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Opus 5.5 fast mode is $8/$40 per MTok (2x standard $4/$20, cache read $0.20) with up to 2.5x output tokens per second."
-      },
-      "list_price": {
-        "input": 4.0,
-        "cache_write_5m": 5.0,
-        "cache_write_1h": 8.0,
-        "cache_read": 0.2,
-        "output": 20.0
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
-        "as_of": "2026-10-12",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
-    },
-    "gpt-6.1-sol": {
-      "label": "Sol 6.1",
-      "fast_capable": true,
-      "api_family": "codex",
-      "listed_as": {
-        "arena": "GPT-6.1 Sol",
-        "aa": "GPT-6.1 Sol"
-      },
-      "list_price": {
-        "input": 2.0,
-        "cache_write_5m": 2.5,
-        "cache_write_1h": 2.5,
-        "cache_read": 0.1,
-        "output": 10.0
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://developers.openai.com/api/docs/pricing",
-        "as_of": "2026-10-12",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
-    },
-    "gpt-6.2-sol": {
-      "label": "Sol 6.2",
-      "api_family": "codex",
-      "listed_as": {
-        "aa": "GPT-6.2 Sol"
-      },
-      "list_price": {
-        "input": 2.0,
-        "cache_write_5m": 2.5,
-        "cache_write_1h": 2.5,
-        "cache_read": 0.1,
-        "output": 10.0
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://developers.openai.com/api/docs/pricing",
-        "as_of": "2026-11-18",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
-    },
-    "gpt-6-astra": {
-      "label": "Astra 6",
-      "fast_capable": true,
-      "api_family": "codex",
-      "listed_as": {
-        "arena": "GPT-6 Astra",
-        "aa": "GPT-6 Astra"
-      },
-      "list_price": {
-        "input": 10.0,
-        "cache_write_5m": 12.5,
-        "cache_write_1h": 12.5,
-        "cache_read": 1.0,
-        "output": 50.0
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://developers.openai.com/api/docs/pricing",
-        "as_of": "2026-10-12",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
-    },
-    "gpt-6.2-astra": {
-      "label": "Astra 6.2",
-      "api_family": "codex",
-      "listed_as": {
-        "aa": "GPT-6.2 Astra"
-      },
-      "list_price": {
-        "input": 8.0,
-        "cache_write_5m": 10.0,
-        "cache_write_1h": 10.0,
-        "cache_read": 0.4,
-        "output": 40.0
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://developers.openai.com/api/docs/pricing",
-        "as_of": "2026-11-18",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
-    },
-    "gemini-4-argon-high": {
-      "label": "Argon 4"
-    },
-    "gemini-4-hydrogen-high": {
-      "label": "Hydrogen 4",
-      "listed_as": {
-        "aa": "Gemini 4 Hydrogen"
-      }
-    },
-    "claude-sonnet-5-5": {
-      "label": "Sonnet 5.5",
-      "api_family": "claude",
-      "listed_as": {
-        "arena": "Claude Sonnet 5.5",
-        "aa": "Claude Sonnet 5.5"
-      },
-      "list_price": {
-        "input": 2.0,
-        "cache_write_5m": 2.5,
-        "cache_write_1h": 4.0,
-        "cache_read": 0.1,
-        "output": 10.0
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
-        "as_of": "2026-10-12",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
-    },
-    "grok-4.7": {
-      "label": "Grok 4.7",
-      "listed_as": {
-        "arena": "Grok 4.7",
-        "aa": "Grok 4.7"
-      }
-    },
-    "gemini-3.8-flash-high": {
-      "label": "Flash 3.8",
-      "listed_as": {
-        "arena": "Gemini 3.8 Flash",
-        "aa": "Gemini 3.8 Flash"
-      }
-    },
-    "grok-bot": {
-      "label": "Grok Bot",
-      "fixed_effort": "medium",
-      "excluded_when": "local_only",
-      "image_input_source": {
-        "kind": "maintainer",
-        "statement": "maintainer: grok-bot accepts image input",
-        "as_of": "2026-11-11"
-      }
-    },
-    "dot": {
-      "label": "Dot",
-      "excluded_when": "local_only",
-      "image_input_source": {
-        "kind": "maintainer",
-        "statement": "maintainer: dot accepts image input",
-        "as_of": "2026-11-12"
-      }
-    },
-    "gpt-6-pro": {
-      "label": "GPT 6 Pro",
-      "advisor_only": true,
-      "advisor_for": [
-        "architecture_reasoning",
-        "creative_ideation"
-      ],
-      "api_family": "codex",
-      "image_input_source": {
-        "kind": "maintainer",
-        "statement": "maintainer: gpt-6-pro accepts image input",
-        "as_of": "2026-11-12"
-      }
-    },
-    "claude-haiku-5-5": {
-      "label": "Haiku 5.5",
-      "api_family": "claude",
-      "listed_as": {
-        "arena": "Claude Haiku 5.5",
-        "aa": "Claude Haiku 5.5"
-      },
-      "list_price": {
-        "input": 0.1,
-        "cache_write_5m": 0.125,
-        "cache_write_1h": 0.2,
-        "cache_read": 0.01,
-        "output": 0.5
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://platform.claude.com/docs/en/about-claude/pricing",
-        "as_of": "2026-10-12",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
-    },
-    "gpt-6.1-terra": {
-      "label": "Terra 6.1",
-      "fast_capable": true,
-      "context_window": 500000,
-      "api_family": "codex",
-      "listed_as": {
-        "arena": "GPT-6.1 Terra",
-        "aa": "GPT-6.1 Terra"
-      }
-    },
-    "gpt-6-sol": {
-      "label": "Sol 6",
-      "fast_capable": true,
-      "context_window": 272000,
-      "api_family": "codex",
-      "list_price": {
-        "input": 2.0,
-        "cache_write_5m": 2.5,
-        "cache_write_1h": 2.5,
-        "cache_read": 0.2,
-        "output": 10.0
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://developers.openai.com/api/docs/pricing",
-        "as_of": "2026-10-12",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
+    "as_of": "2026-11-10",
+    "url": "https://code.claude.com/docs/en/fast-mode",
+    "pricing_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "statement": "Anthropic Claude Code fast mode & API pricing (read 2026-11-10): Claude Opus 5.5 fast mode is $8/$40 per MTok (2x standard $4/$20, cache read $0.20) with up to 2.5x output tokens per second."
+   },
+   "list_price": {
+    "input": 4.0,
+    "cache_write_5m": 5.0,
+    "cache_write_1h": 8.0,
+    "cache_read": 0.2,
+    "output": 20.0
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "as_of": "2026-10-12",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "gpt-6.1-sol": {
+   "label": "Sol 6.1",
+   "fast_capable": true,
+   "api_family": "codex",
+   "listed_as": {
+    "arena": "GPT-6.1 Sol",
+    "aa": "GPT-6.1 Sol"
+   },
+   "list_price": {
+    "input": 2.0,
+    "cache_write_5m": 2.5,
+    "cache_write_1h": 2.5,
+    "cache_read": 0.1,
+    "output": 10.0
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-10-12",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "gpt-6.2-sol": {
+   "label": "Sol 6.2",
+   "api_family": "codex",
+   "listed_as": {
+    "aa": "GPT-6.2 Sol"
+   },
+   "list_price": {
+    "input": 2.0,
+    "cache_write_5m": 2.5,
+    "cache_write_1h": 2.5,
+    "cache_read": 0.1,
+    "output": 10.0
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-11-18",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "gpt-6-astra": {
+   "label": "Astra 6",
+   "fast_capable": true,
+   "api_family": "codex",
+   "listed_as": {
+    "arena": "GPT-6 Astra",
+    "aa": "GPT-6 Astra"
+   },
+   "list_price": {
+    "input": 10.0,
+    "cache_write_5m": 12.5,
+    "cache_write_1h": 12.5,
+    "cache_read": 1.0,
+    "output": 50.0
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-10-12",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "gpt-6.2-astra": {
+   "label": "Astra 6.2",
+   "api_family": "codex",
+   "listed_as": {
+    "aa": "GPT-6.2 Astra"
+   },
+   "list_price": {
+    "input": 8.0,
+    "cache_write_5m": 10.0,
+    "cache_write_1h": 10.0,
+    "cache_read": 0.4,
+    "output": 40.0
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-11-18",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "gemini-4-argon-high": {
+   "label": "Argon 4"
+  },
+  "gemini-4-hydrogen-high": {
+   "label": "Hydrogen 4",
+   "listed_as": {
+    "aa": "Gemini 4 Hydrogen"
+   }
+  },
+  "claude-sonnet-5-5": {
+   "label": "Sonnet 5.5",
+   "api_family": "claude",
+   "listed_as": {
+    "arena": "Claude Sonnet 5.5",
+    "aa": "Claude Sonnet 5.5"
+   },
+   "list_price": {
+    "input": 2.0,
+    "cache_write_5m": 2.5,
+    "cache_write_1h": 4.0,
+    "cache_read": 0.1,
+    "output": 10.0
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "as_of": "2026-10-12",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "grok-4.7": {
+   "label": "Grok 4.7",
+   "listed_as": {
+    "arena": "Grok 4.7",
+    "aa": "Grok 4.7"
+   }
+  },
+  "gemini-3.8-flash-high": {
+   "label": "Flash 3.8",
+   "listed_as": {
+    "arena": "Gemini 3.8 Flash",
+    "aa": "Gemini 3.8 Flash"
+   }
+  },
+  "grok-bot": {
+   "label": "Grok Bot",
+   "fixed_effort": "medium",
+   "excluded_when": "local_only",
+   "image_input_source": {
+    "kind": "maintainer",
+    "statement": "maintainer: grok-bot accepts image input",
+    "as_of": "2026-11-11"
+   }
+  },
+  "dot": {
+   "label": "Dot",
+   "excluded_when": "local_only",
+   "image_input_source": {
+    "kind": "maintainer",
+    "statement": "maintainer: dot accepts image input",
+    "as_of": "2026-11-12"
+   }
+  },
+  "gpt-6-pro": {
+   "label": "GPT 6 Pro",
+   "advisor_only": true,
+   "advisor_for": [
+    "architecture_reasoning",
+    "creative_ideation"
+   ],
+   "api_family": "codex",
+   "image_input_source": {
+    "kind": "maintainer",
+    "statement": "maintainer: gpt-6-pro accepts image input",
+    "as_of": "2026-11-12"
+   }
+  },
+  "claude-haiku-5-5": {
+   "label": "Haiku 5.5",
+   "api_family": "claude",
+   "listed_as": {
+    "arena": "Claude Haiku 5.5",
+    "aa": "Claude Haiku 5.5"
+   },
+   "list_price": {
+    "input": 0.1,
+    "cache_write_5m": 0.125,
+    "cache_write_1h": 0.2,
+    "cache_read": 0.01,
+    "output": 0.5
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "as_of": "2026-10-12",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "gpt-6.1-terra": {
+   "label": "Terra 6.1",
+   "fast_capable": true,
+   "context_window": 500000,
+   "api_family": "codex",
+   "listed_as": {
+    "arena": "GPT-6.1 Terra",
+    "aa": "GPT-6.1 Terra"
+   }
+  },
+  "gpt-6-sol": {
+   "label": "Sol 6",
+   "fast_capable": true,
+   "context_window": 272000,
+   "api_family": "codex",
+   "list_price": {
+    "input": 2.0,
+    "cache_write_5m": 2.5,
+    "cache_write_1h": 2.5,
+    "cache_read": 0.2,
+    "output": 10.0
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-10-12",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "gpt-6-luna": {
+   "label": "Luna 6",
+   "fast_capable": true,
+   "context_window": 272000,
+   "api_family": "codex",
+   "listed_as": {
+    "arena": "GPT-6 Luna",
+    "aa": "GPT-6 Luna"
+   },
+   "list_price": {
+    "input": 0.1,
+    "cache_write_5m": 0.125,
+    "cache_write_1h": 0.125,
+    "cache_read": 0.01,
+    "output": 0.5
+   },
+   "list_price_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-10-12",
+    "statement": "API list price, standard tier, short context, USD per million tokens"
+   }
+  },
+  "gpt-5.6-sol": {
+   "label": "Sol 5.6",
+   "context_window": 272000,
+   "api_family": "codex"
+  },
+  "gpt-5.6-terra": {
+   "label": "Terra 5.6",
+   "context_window": 272000,
+   "api_family": "codex"
+  },
+  "gpt-5.6-luna": {
+   "label": "Luna 5.6",
+   "context_window": 272000,
+   "api_family": "codex"
+  },
+  "grok-4.7-build-fast": {
+   "label": "Grok 4.7 Build Fast"
+  },
+  "deepseek-v4-pro": {
+   "label": "DeepSeek V4 Pro",
+   "listed_as": {
+    "aa": "DeepSeek V4 Pro 0813"
+   }
+  },
+  "glm-5.3": {
+   "label": "GLM 5.3"
+  },
+  "glm-5.3-flash-free": {
+   "label": "GLM 5.3 Flash"
+  },
+  "qwen3-coder-next": {
+   "label": "Qwen 3 Coder Next",
+   "listed_as": {
+    "aa": "Qwen3 Coder Next"
+   }
+  },
+  "qwen3.8-max": {
+   "label": "Qwen 3.8 Max",
+   "listed_as": {
+    "aa": "Qwen3.8 Max"
+   }
+  },
+  "kimi-k3.1-pro": {
+   "label": "Kimi K3.1 Pro"
+  },
+  "kimi-k3": {
+   "label": "Kimi K3"
+  },
+  "minimax-m3": {
+   "label": "MiniMax M3"
+  },
+  "minimax-m3.1-flash": {
+   "label": "MiniMax M3.1 Flash"
+  },
+  "doubao-seed-2-1-pro-260628": {
+   "label": "Seed 2.1 Pro",
+   "listed_as": {
+    "arena": "Seed2.1 Pro Preview"
+   }
+  },
+  "mimo-v2.6-pro": {
+   "label": "MiMo V2.6 Pro"
+  },
+  "mimo-v2.6-flash-free": {
+   "label": "MiMo V2.6 Flash"
+  },
+  "nemotron-3-ultra-free": {
+   "label": "Nemotron 3 Ultra",
+   "listed_as": {
+    "aa": "Nemotron 3 Ultra 550B A55B"
+   }
+  },
+  "nemotron-3.5-super-vl-free": {
+   "label": "Nemotron 3.5 Super VL",
+   "listed_as": {
+    "arena": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B",
+    "aa": "Nemotron 3.5 Super VL"
+   }
+  },
+  "nemotron-3.5-lightning-free": {
+   "label": "Nemotron 3.5 Lightning",
+   "listed_as": {
+    "arena": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B",
+    "aa": "Nemotron 3.5 Lightning"
+   }
+  },
+  "mistral-large-4": {
+   "label": "Mistral Large 4"
+  },
+  "muse-wonder-1.0": {
+   "label": "Muse Wonder 1.0",
+   "listed_as": {
+    "aa": "Muse Wonder"
+   }
+  },
+  "beam-free": {
+   "label": "Beam",
+   "listed_as": {
+    "arena": "Beam 1.0 501B A23B"
+   }
+  },
+  "flint-40b-free": {
+   "label": "Flint 40B"
+  },
+  "claude-haiku-4-5": {
+   "label": "Haiku 4.5",
+   "api_family": "claude"
+  },
+  "claude-opus-4-6": {
+   "label": "Opus 4.6",
+   "api_family": "claude"
+  },
+  "claude-sonnet-4-6": {
+   "label": "Sonnet 4.6",
+   "api_family": "claude"
+  },
+  "glm-5.2": {
+   "label": "GLM 5.2"
+  },
+  "gpt-oss-120b": {
+   "label": "GPT OSS 120B",
+   "api_family": "codex",
+   "listed_as": {
+    "arena": "gpt-oss-120b",
+    "aa": "gpt-oss-120b"
+   }
+  },
+  "gemini-3.1-flash-lite": {
+   "label": "Flash 3.1 Lite",
+   "listed_as": {
+    "arena": "Gemini 3.1 Flash-Lite Preview"
+   }
+  },
+  "kimi-k2.7-code": {
+   "label": "Kimi K2.7 Code",
+   "listed_as": {
+    "arena": "Kimi K2.7 Code",
+    "aa": "Kimi K2.7 Code"
+   }
+  },
+  "qwen3.6-plus": {
+   "label": "Qwen 3.6 Plus",
+   "listed_as": {
+    "arena": "Qwen3.6-Plus"
+   }
+  },
+  "claude-opus-4-7": {
+   "label": "Opus 4.7",
+   "api_family": "claude",
+   "listed_as": {
+    "arena": "Claude Opus 4.7"
+   }
+  },
+  "claude-opus-4-8": {
+   "label": "Opus 4.8",
+   "fast_capable": true,
+   "api_family": "claude",
+   "listed_as": {
+    "arena": "Claude Opus 4.8"
+   }
+  },
+  "grok-4.5": {
+   "label": "Grok 4.5",
+   "listed_as": {
+    "arena": "Grok 4.5"
+   }
+  },
+  "grok-4.6": {
+   "label": "Grok 4.6",
+   "listed_as": {
+    "arena": "Grok 4.6"
+   }
+  },
+  "gemini-3.1-pro-preview": {
+   "label": "Gemini 3.1 Pro",
+   "listed_as": {
+    "arena": "Gemini 3.1 Pro Preview",
+    "aa": "Gemini 3.1 Pro Preview"
+   }
+  },
+  "gemini-3.7-flash": {
+   "label": "Flash 3.7",
+   "listed_as": {
+    "arena": "Gemini 3.7 Flash"
+   }
+  },
+  "kimi-k2.6": {
+   "label": "Kimi K2.6",
+   "listed_as": {
+    "arena": "Kimi K2.6"
+   }
+  },
+  "qwen3.7-max": {
+   "label": "Qwen 3.7 Max",
+   "listed_as": {
+    "arena": "Qwen3.7-Max"
+   }
+  },
+  "qwen3-flash-2025-07-28": {
+   "label": "Qwen 3 Flash",
+   "context_window": 1000000
+  },
+  "gemini-4-carbon": {
+   "label": "Carbon 4",
+   "listed_as": {
+    "arena": "Gemini 4 Carbon",
+    "aa": "Gemini 4 Carbon"
+   }
+  },
+  "step-5-preview": {
+   "label": "Step 5 Preview"
+  },
+  "hy3": {
+   "label": "Hy3"
+  },
+  "hy4": {
+   "label": "Hy4",
+   "listed_as": {
+    "aa": "Tencent Hy4"
+   }
+  },
+  "hy4-flash": {
+   "label": "Hy4 Flash"
+  },
+  "hy4-preview": {
+   "label": "Hy4 Preview"
+  },
+  "muse-ember": {
+   "label": "Muse Ember"
+  },
+  "muse-spark-1.3": {
+   "label": "Muse Spark 1.3"
+  },
+  "muse-spark-open": {
+   "label": "Muse Spark Open"
+  },
+  "qwen3.8-omni-flash": {
+   "label": "Qwen3.8 Omni Flash"
+  },
+  "qwen3.8-flash": {
+   "label": "Qwen3.8 Flash"
+  },
+  "qwen3.8-27b": {
+   "label": "Qwen3.8 27B"
+  },
+  "qwen4-max": {
+   "label": "Qwen4 Max"
+  },
+  "deepseek-v4-flash-promo": {
+   "label": "DeepSeek V4 Flash Promo"
+  },
+  "deepseek-v4.1-flash-promo": {
+   "label": "DeepSeek V4.1 Flash Promo"
+  },
+  "kimi-k2.8-preview": {
+   "label": "Kimi K2.8 Preview"
+  },
+  "glm-5.3-flashx": {
+   "label": "GLM 5.3 FlashX",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/vlm/glm-5.3-flash",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai lists glm-5.3-flashx as a model code of its own beside glm-5.3-flash (GLM-5.3-FlashX: 200 tokens/s, not yet on the plan); no statement that it is the same model"
+   }
+  },
+  "gemini-3.6-flash": {
+   "label": "Gemini 3.6 Flash"
+  },
+  "gpt-5.2": {
+   "label": "GPT-5.2",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-11-18",
+    "statement": "OpenAI pricing lists gpt-5.2 at $1.75 input, $0.175 cached input, $14.00 output per 1M tokens; the deprecations page has no row for it"
+   }
+  },
+  "gpt-5.2-pro": {
+   "label": "GPT-5.2 Pro",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-11-18",
+    "statement": "OpenAI pricing lists gpt-5.2-pro at $21.00 input, $168.00 output per 1M tokens; no deprecation row"
+   }
+  },
+  "gpt-5.4": {
+   "label": "GPT-5.4",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-11-18",
+    "statement": "OpenAI pricing lists gpt-5.4 at $2.50 input, $0.25 cached input, $15.00 output per 1M tokens (<272K context); no deprecation row"
+   }
+  },
+  "gpt-5.4-mini": {
+   "label": "GPT-5.4 mini",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-11-18",
+    "statement": "OpenAI pricing lists gpt-5.4-mini at $0.75 input, $0.075 cached input, $4.50 output per 1M tokens; no deprecation row"
+   }
+  },
+  "gpt-5.4-pro": {
+   "label": "GPT-5.4 Pro",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-11-18",
+    "statement": "OpenAI pricing lists gpt-5.4-pro at $30.00 input, $180.00 output per 1M tokens (<272K context); no deprecation row"
+   }
+  },
+  "gpt-5.5": {
+   "label": "GPT-5.5",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-11-18",
+    "statement": "OpenAI pricing lists gpt-5.5 at $5.00 input, $0.50 cached input, $30.00 output per 1M tokens (<272K context); no deprecation row"
+   }
+  },
+  "gpt-5.5-pro": {
+   "label": "GPT-5.5 Pro",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://developers.openai.com/api/docs/pricing",
+    "as_of": "2026-11-18",
+    "statement": "OpenAI pricing lists gpt-5.5-pro at $30.00 input, $180.00 output per 1M tokens (<272K context); no deprecation row"
+   }
+  },
+  "gpt-oss-20b": {
+   "label": "GPT OSS 20B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://huggingface.co/openai/gpt-oss-20b",
+    "as_of": "2026-11-18",
+    "statement": "OpenAI's model card: \"gpt-oss-20b — for lower latency, and local or specialized use cases\" (21B parameters, 3.6B active), one of \"OpenAI's open-weight models\"; reasoning effort \"low, medium, high\""
+   }
+  },
+  "claude-opus-4-5": {
+   "label": "Claude Opus 4.5",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+    "as_of": "2026-11-18",
+    "statement": "Anthropic lists claude-opus-4-5-20251101 as Active, retirement \"Not sooner than November 24, 2026\"; pricing (Claude Opus 4.5) $5 input, $6.25 5m cache write, $10 1h cache write, $0.50 cache read, $25 output per 1M tokens"
+   }
+  },
+  "gemini-2.5-flash-lite": {
+   "label": "Gemini 2.5 Flash-Lite",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://aistudio.google.com/docs/deprecations",
+    "as_of": "2026-11-18",
+    "statement": "Google: gemini-2.5-flash-lite \"is not deprecated and will continue to be served until further notice\"; pricing $0.10 input, $0.01 caching, $0.40 output per 1M tokens"
+   }
+  },
+  "gemini-3-flash-preview": {
+   "label": "Gemini 3 Flash Preview",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://aistudio.google.com/docs/deprecations",
+    "as_of": "2026-11-18",
+    "statement": "Google lists gemini-3-flash-preview (released December 17, 2025) with \"No shutdown date announced\"; pricing $0.50 input, $0.05 caching, $3.00 output per 1M tokens"
+   }
+  },
+  "gemini-3.5-flash-lite": {
+   "label": "Gemini 3.5 Flash-Lite",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://aistudio.google.com/docs/models",
+    "as_of": "2026-11-18",
+    "statement": "Google: \"Our fastest, most cost-effective 3.5 model for high-throughput execution\", released July 21, 2026, no shutdown date announced; pricing $0.30 input, $0.03 caching, $2.50 output per 1M tokens"
+   }
+  },
+  "gemma-4-26b-a4b-it": {
+   "label": "Gemma 4 26B A4B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://huggingface.co/google/gemma-4-26B-A4B-it",
+    "as_of": "2026-11-18",
+    "statement": "Google publishes google/gemma-4-26B-A4B-it (\"A highly efficient 26B MoE model designed for high-throughput, advanced reasoning\", gemma.ai); open weights, no deprecation stated"
+   },
+   "listed_as": {
+    "arena": "Gemma 4 26B A4B",
+    "aa": "Gemma 4 26B A4B"
+   }
+  },
+  "gemma-4-31b-it": {
+   "label": "Gemma 4 31B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://huggingface.co/google/gemma-4-31B-it",
+    "as_of": "2026-11-18",
+    "statement": "Google publishes google/gemma-4-31B-it (\"A powerful 31B parameter dense model\", gemma.ai); open weights, no deprecation stated"
+   },
+   "listed_as": {
+    "arena": "Gemma 4 31B",
+    "aa": "Gemma 4 31B"
+   }
+  },
+  "glm-4.5": {
+   "label": "GLM-4.5",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai pricing lists GLM-4.5 at $0.6 input, $0.11 cached input, $2.2 output per 1M tokens; no deprecation stated"
+   }
+  },
+  "glm-4.5-air": {
+   "label": "GLM-4.5-Air",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai pricing lists GLM-4.5-Air at $0.2 input, $0.03 cached input, $1.1 output per 1M tokens; no deprecation stated"
+   }
+  },
+  "glm-4.5-flash": {
+   "label": "GLM-4.5-Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai pricing lists GLM-4.5-Flash as free; no deprecation stated"
+   }
+  },
+  "glm-4.5v": {
+   "label": "GLM-4.5V",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai pricing lists GLM-4.5V (vision) at $0.6 input, $0.11 cached input, $1.8 output per 1M tokens; no deprecation stated"
+   }
+  },
+  "glm-4.6": {
+   "label": "GLM-4.6",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai lists GLM-4.6 (\"Strong Coding More Versatile\") at $0.6 input, $0.11 cached input, $2.2 output per 1M tokens"
+   }
+  },
+  "glm-4.6v": {
+   "label": "GLM-4.6V",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai pricing lists GLM-4.6V (vision) at $0.3 input, $0.05 cached input, $0.9 output per 1M tokens; no deprecation stated"
+   }
+  },
+  "glm-4.6v-flash": {
+   "label": "GLM-4.6V-Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai pricing lists GLM-4.6V-Flash as free; no deprecation stated"
+   }
+  },
+  "glm-4.7": {
+   "label": "GLM-4.7",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai lists GLM-4.7 (\"SOTA Performance Optimized Agentic Coding\") at $0.6 input, $0.11 cached input, $2.2 output per 1M tokens"
+   }
+  },
+  "glm-4.7-flash": {
+   "label": "GLM-4.7-Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai pricing lists GLM-4.7-Flash as free (bigmodel.cn: \"免费文本模型\"); no deprecation stated"
+   }
+  },
+  "glm-4.7-flashx": {
+   "label": "GLM-4.7-FlashX",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai pricing lists GLM-4.7-FlashX at $0.07 input, $0.01 cached input, $0.4 output per 1M tokens, an id and price of its own (bigmodel.cn: \"轻量高速\"); no deprecation stated"
+   }
+  },
+  "glm-5": {
+   "label": "GLM-5",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai lists GLM-5 (\"Agentic Long-Term Planning and Execution\", released 2026-02-12) at $1 input, $0.2 cached input, $3.2 output per 1M tokens"
+   }
+  },
+  "glm-5.1": {
+   "label": "GLM-5.1",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.z.ai/guides/overview/pricing",
+    "as_of": "2026-11-18",
+    "statement": "Z.ai lists GLM-5.1 (released 2026-04-07) at $1.4 input, $0.26 cached input, $4.4 output per 1M tokens"
+   }
+  },
+  "glm-5v-turbo": {
+   "label": "GLM-5V-Turbo",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.bigmodel.cn/cn/guide/start/model-overview",
+    "as_of": "2026-11-18",
+    "statement": "bigmodel.cn lists GLM-5V-Turbo (\"多模态 Coding 基座\", 200K context); no price on the pages read"
+   }
+  },
+  "k3.1-pro-highspeed": {
+   "label": "K3.1 Pro Highspeed",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+    "as_of": "2026-11-18",
+    "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\", about twice the quota; a speed variant, so a row of its own"
+   }
+  },
+  "kimi-for-coding-highspeed": {
+   "label": "Kimi for Coding Highspeed",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+    "as_of": "2026-11-18",
+    "statement": "Kimi Code: kimi-for-coding-highspeed is \"The high-speed version of K2.7 Code, with the same coding ability and ~5–6× faster output\"; a speed variant, so a row of its own"
+   }
+  },
+  "qwen-max": {
+   "label": "Qwen-Max",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio (international) lists qwen-max at $1.6 input, $6.4 output per 1M tokens, \"Non-thinking mode only\""
+   }
+  },
+  "qwen-plus": {
+   "label": "Qwen-Plus",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen-plus (\"Current capabilities are equivalent to qwen-plus-2025-12-01\") at $0.4 input, $1.2 output (non-thinking), $4 output (thinking) per 1M tokens"
+   }
+  },
+  "qwen3-coder-flash": {
+   "label": "Qwen3 Coder Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3-coder-flash (\"Current capabilities are equivalent to qwen3-coder-flash-2025-07-28\") at $0.3 input, $1.5 output per 1M tokens (0-32K)"
+   }
+  },
+  "qwen3-vl-plus": {
+   "label": "Qwen3 VL Plus",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3-vl-plus at $0.2 input, $1.6 output per 1M tokens (0-32K)"
+   }
+  },
+  "qwen3-omni-flash": {
+   "label": "Qwen3 Omni Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3-omni-flash (\"Non-thinking and thinking modes\")"
+   }
+  },
+  "qwen3.5-122b-a10b": {
+   "label": "Qwen3.5 122B A10B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.5-122b-a10b at $0.4 input, $3.2 output per 1M tokens"
+   }
+  },
+  "qwen3.5-27b": {
+   "label": "Qwen3.5 27B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.5-27b at $0.3 input, $2.4 output per 1M tokens"
+   }
+  },
+  "qwen3.5-35b-a3b": {
+   "label": "Qwen3.5 35B A3B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.5-35b-a3b at $0.25 input, $2 output per 1M tokens"
+   }
+  },
+  "qwen3.5-397b-a17b": {
+   "label": "Qwen3.5 397B A17B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.5-397b-a17b at $0.6 input, $3.6 output per 1M tokens"
+   }
+  },
+  "qwen3.5-flash": {
+   "label": "Qwen3.5 Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.5-flash (\"Current capabilities are equivalent to qwen3.5-flash-2026-02-23\") at $0.1 input, $0.4 output per 1M tokens"
+   }
+  },
+  "qwen3.5-plus": {
+   "label": "Qwen3.5 Plus",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.5-plus (\"Current capabilities are equivalent to qwen3.5-plus-2026-02-15\") at $0.4 input, $2.4 output per 1M tokens (0-256K)"
+   }
+  },
+  "qwen3.6-27b": {
+   "label": "Qwen3.6 27B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.6-27b at $0.6 input, $3.6 output per 1M tokens (0-256K)"
+   }
+  },
+  "qwen3.6-35b-a3b": {
+   "label": "Qwen3.6 35B A3B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.6-35b-a3b at $0.375 input, $2.25 output per 1M tokens (0-256K)"
+   }
+  },
+  "qwen3.6-flash": {
+   "label": "Qwen3.6 Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.6-flash (\"Current capabilities are equivalent to qwen3.6-flash-2026-04-16\") at $0.25 input, $1.5 output per 1M tokens (0-256K)"
+   }
+  },
+  "qwen3.7-flash": {
+   "label": "Qwen3.7 Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio lists qwen3.7-flash (\"Current capabilities are equivalent to qwen3.7-flash-2026-07-15\") at $0.03 input, $0.13 output per 1M tokens (0-32K)"
+   }
+  },
+  "qwen3.7-plus": {
+   "label": "Qwen3.7 Plus",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
+    "as_of": "2026-11-18",
+    "statement": "Alibaba Model Studio recommends qwen3.7-plus (\"Current capabilities are equivalent to qwen3.7-plus-2026-05-26\") at $0.4 input, $1.6 output per 1M tokens (0-256K)"
+   }
+  },
+  "codestral-2508": {
+   "label": "Codestral 25.08",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.mistral.ai/models",
+    "as_of": "2026-11-18",
+    "statement": "Mistral lists Codestral, version 25.08, with no deprecation date"
+   }
+  },
+  "ministral-14b-2512": {
+   "label": "Ministral 3 14B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.mistral.ai/models",
+    "as_of": "2026-11-18",
+    "statement": "Mistral lists Ministral 3 14B, version 25.12, with no deprecation date"
+   },
+   "listed_as": {
+    "aa": "Ministral 3 14B"
+   }
+  },
+  "ministral-3b-2512": {
+   "label": "Ministral 3 3B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.mistral.ai/models",
+    "as_of": "2026-11-18",
+    "statement": "Mistral lists Ministral 3 3B, version 25.12, with no deprecation date"
+   },
+   "listed_as": {
+    "aa": "Ministral 3 3B"
+   }
+  },
+  "ministral-8b-2512": {
+   "label": "Ministral 3 8B",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.mistral.ai/models",
+    "as_of": "2026-11-18",
+    "statement": "Mistral lists Ministral 3 8B, version 25.12, with no deprecation date"
+   },
+   "listed_as": {
+    "aa": "Ministral 3 8B"
+   }
+  },
+  "mistral-small-2603": {
+   "label": "Mistral Small 4",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.mistral.ai/models",
+    "as_of": "2026-11-18",
+    "statement": "Mistral lists Mistral Small 4, version 26.03, with no deprecation date"
+   }
+  },
+  "voxtral-small-2507": {
+   "label": "Voxtral Small",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.mistral.ai/models",
+    "as_of": "2026-11-18",
+    "statement": "Mistral lists Voxtral Small, version 25.07, with no deprecation date"
+   }
+  },
+  "grok-4.20-0309-reasoning": {
+   "label": "Grok 4.20 Reasoning",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.x.ai/docs/models?cluster=us-east-1",
+    "as_of": "2026-11-18",
+    "statement": "xAI lists grok-4.20-0309-reasoning at $1.25 input, $0.20 cached input, $2.50 output per 1M tokens (<200K), 1M context"
+   }
+  },
+  "grok-4.20-0309-non-reasoning": {
+   "label": "Grok 4.20 Non-Reasoning",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.x.ai/docs/models?cluster=us-east-1",
+    "as_of": "2026-11-18",
+    "statement": "xAI lists grok-4.20-0309-non-reasoning at $1.25 input, $0.20 cached input, $2.50 output per 1M tokens (<200K), 1M context"
+   }
+  },
+  "grok-4.20-multi-agent-0309": {
+   "label": "Grok 4.20 Multi-Agent",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.x.ai/docs/models?cluster=us-east-1",
+    "as_of": "2026-11-18",
+    "statement": "xAI lists grok-4.20-multi-agent-0309 at $1.25 input, $0.20 cached input, $2.50 output per 1M tokens (<200K), 1M context"
+   }
+  },
+  "grok-4.3": {
+   "label": "Grok 4.3",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.x.ai/docs/models?cluster=us-east-1",
+    "as_of": "2026-11-18",
+    "statement": "xAI lists grok-4.3 at $1.25 input, $0.20 cached input, $2.50 output per 1M tokens (<200K), 1M context"
+   }
+  },
+  "grok-build-0.1": {
+   "label": "Grok Build 0.1",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.x.ai/docs/models?cluster=us-east-1",
+    "as_of": "2026-11-18",
+    "statement": "xAI lists grok-build-0.1 at $1.00 input, $0.20 cached input, $2.00 output per 1M tokens (<200K), 256K context"
+   }
+  },
+  "step-3.5-flash": {
+   "label": "Step 3.5 Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://platform.stepfun.ai/docs/en/pricing/details",
+    "as_of": "2026-11-18",
+    "statement": "StepFun pricing (\"Pricing for Reasoning Models\") lists step-3.5-flash at $0.10 input, $0.02 cache hit, $0.30 output per 1M tokens"
+   }
+  },
+  "step-3.5-flash-2603": {
+   "label": "Step 3.5 Flash 2603",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://platform.stepfun.ai/docs/en/pricing/details",
+    "as_of": "2026-11-18",
+    "statement": "StepFun pricing lists step-3.5-flash-2603 at $0.10 input, $0.02 cache hit, $0.30 output per 1M tokens"
+   }
+  },
+  "step-3.7-flash": {
+   "label": "Step 3.7 Flash",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://platform.stepfun.ai/docs/en/pricing/details",
+    "as_of": "2026-11-18",
+    "statement": "StepFun pricing (\"Pricing for Multimodal Reasoning Models\") lists step-3.7-flash at $0.20 input, $0.04 cache hit, $1.15 output per 1M tokens"
+   }
+  },
+  "mimo-v2.5": {
+   "label": "MiMo V2.5",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://huggingface.co/XiaomiMiMo/MiMo-V2.5",
+    "as_of": "2026-11-18",
+    "statement": "Xiaomi publishes XiaomiMiMo/MiMo-V2.5 (text generation, 311B); no deprecation stated; the platform pages were not readable (script shells)"
+   }
+  },
+  "mimo-v2.5-pro": {
+   "label": "MiMo V2.5 Pro",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://huggingface.co/XiaomiMiMo/MiMo-V2.5-Pro",
+    "as_of": "2026-11-18",
+    "statement": "Xiaomi publishes XiaomiMiMo/MiMo-V2.5-Pro (1T); no deprecation stated; the platform pages were not readable (script shells)"
+   }
+  },
+  "doubao-seed-2.0-mini": {
+   "label": "Doubao Seed 2.0 Mini",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.volcengine.com/docs/82379/1330310",
+    "as_of": "2026-11-18",
+    "statement": "Volcengine Ark lists doubao-seed-2-0-mini-260428 (\"LTS\") as current; Magpie offers the plan id doubao-seed-2.0-mini; price (summary of the pricing page) CNY 0.2 input, 0.04 cache hit, 2.0 output per 1M tokens ([0,32]K)"
+   }
+  },
+  "doubao-seed-2.1-lite": {
+   "label": "Doubao Seed 2.1 Lite",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.volcengine.com/docs/82379/1330310",
+    "as_of": "2026-11-18",
+    "statement": "Volcengine Ark lists doubao-seed-2-1-lite-260915 as current (recommended); Magpie offers the plan id doubao-seed-2.1-lite"
+   }
+  },
+  "doubao-seed-2.1-pro": {
+   "label": "Doubao Seed 2.1 Pro",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.volcengine.com/docs/82379/1330310",
+    "as_of": "2026-11-18",
+    "statement": "Volcengine Ark lists doubao-seed-2-1-pro-260915 (recommended) and -260628 as current, CNY 6.00 input, 1.20 cache hit, 30.00 output per 1M tokens; Magpie offers the plan id doubao-seed-2.1-pro, which names no dated version"
+   }
+  },
+  "doubao-seed-evolving": {
+   "label": "Doubao Seed Evolving",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.volcengine.com/docs/ark/model-pricing?lang=zh",
+    "as_of": "2026-11-18",
+    "statement": "Volcengine Ark: \"统一调用 Model ID doubao-seed-evolving，无需关注版本切换\" (latest version 2026/11/05), CNY 6.00 input, 1.20 cache hit, 30.00 output per 1M tokens"
+   }
+  },
+  "deepseek-v4.1-flash-economy": {
+   "label": "DeepSeek V4.1 Flash Economy",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.volcengine.com/docs/82379/1330310",
+    "as_of": "2026-11-18",
+    "statement": "Volcengine Ark lists deepseek-v4-1-flash-economy-261017 (economy edition) as current; Magpie offers the plan id deepseek-v4.1-flash-economy; price (summary) CNY 0.80 input, 3.20 output per 1M tokens off-peak"
+   }
+  }
+ },
+ "dispatch_efforts": {
+  "grok": {
+   "grok-4.7": [
+    "low",
+    "high",
+    "xhigh"
+   ],
+   "grok-4.7-build-fast": [
+    "high"
+   ]
+  },
+  "claude": {
+   "claude-opus-4-6": [
+    "high"
+   ],
+   "claude-sonnet-4-6": [
+    "high"
+   ],
+   "claude-haiku-4-5": [
+    "high"
+   ],
+   "claude-opus-5-5": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "claude-sonnet-5-5": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "claude-fable-5-1": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "claude-fable-5-2": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "claude-haiku-5-5": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  "codex": {
+   "gpt-6-pro": [
+    "high"
+   ],
+   "gpt-6-astra": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "ultra"
+   ],
+   "gpt-6.2-astra": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "ultra"
+   ],
+   "gpt-6.2-sol": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "ultra"
+   ],
+   "gpt-6.1-sol": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "ultra"
+   ],
+   "gpt-6.1-terra": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "gpt-6-sol": [
+    "high"
+   ],
+   "gpt-6-luna": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "gpt-5.6-sol": [
+    "high"
+   ],
+   "gpt-5.6-terra": [
+    "high"
+   ],
+   "gpt-5.6-luna": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  },
+  "opencode": {
+   "deepseek-v4.1-flash-free": [
+    "default",
+    "low",
+    "high",
+    "max"
+   ]
+  },
+  "antigravity-resilient": {
+   "claude-opus-5-5": [
+    "low",
+    "medium",
+    "high"
+   ],
+   "claude-sonnet-5-5": [
+    "low",
+    "medium",
+    "high"
+   ]
+  },
+  "omp": {
+   "glm-5.2": [
+    "high",
+    "max"
+   ]
+  },
+  "pi": {
+   "gpt-6-pro": [
+    "high"
+   ],
+   "gpt-6-astra": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "gpt-6.2-astra": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "gpt-6.2-sol": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "gpt-6.1-sol": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "gpt-6.1-terra": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "gpt-6-sol": [
+    "high"
+   ],
+   "gpt-6-luna": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ],
+   "gpt-5.6-sol": [
+    "high"
+   ],
+   "gpt-5.6-terra": [
+    "high"
+   ],
+   "gpt-5.6-luna": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+   ]
+  }
+ },
+ "dispatch_efforts_sources": {
+  "statement": "the public vendor statement behind a dispatch_efforts row, where one is cited (scripts/reference_provenance.py)",
+  "rows": {
+   "codex": {
+    "gpt-5.6-luna": {
+     "kind": "vendor",
+     "url": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+     "as_of": "2026-11-18",
+     "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
     },
     "gpt-6-luna": {
-      "label": "Luna 6",
-      "fast_capable": true,
-      "context_window": 272000,
-      "api_family": "codex",
-      "listed_as": {
-        "arena": "GPT-6 Luna",
-        "aa": "GPT-6 Luna"
-      },
-      "list_price": {
-        "input": 0.1,
-        "cache_write_5m": 0.125,
-        "cache_write_1h": 0.125,
-        "cache_read": 0.01,
-        "output": 0.5
-      },
-      "list_price_source": {
-        "kind": "vendor",
-        "url": "https://developers.openai.com/api/docs/pricing",
-        "as_of": "2026-10-12",
-        "statement": "API list price, standard tier, short context, USD per million tokens"
-      }
+     "kind": "vendor",
+     "url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+     "as_of": "2026-11-18",
+     "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
     },
-    "gpt-5.6-sol": {
-      "label": "Sol 5.6",
-      "context_window": 272000,
-      "api_family": "codex"
-    },
-    "gpt-5.6-terra": {
-      "label": "Terra 5.6",
-      "context_window": 272000,
-      "api_family": "codex"
-    },
+    "gpt-6.1-terra": {
+     "kind": "vendor",
+     "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+     "as_of": "2026-11-18",
+     "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
+    }
+   },
+   "pi": {
     "gpt-5.6-luna": {
-      "label": "Luna 5.6",
-      "context_window": 272000,
-      "api_family": "codex"
+     "kind": "vendor",
+     "url": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+     "as_of": "2026-11-18",
+     "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
     },
-    "grok-4.7-build-fast": {
-      "label": "Grok 4.7 Build Fast"
+    "gpt-6-luna": {
+     "kind": "vendor",
+     "url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+     "as_of": "2026-11-18",
+     "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
     },
-    "deepseek-v4-pro": {
-      "label": "DeepSeek V4 Pro",
-      "listed_as": {
-        "aa": "DeepSeek V4 Pro 0813"
-      }
-    },
-    "glm-5.3": {
-      "label": "GLM 5.3"
-    },
-    "glm-5.3-flash-free": {
-      "label": "GLM 5.3 Flash"
-    },
-    "qwen3-coder-next": {
-      "label": "Qwen 3 Coder Next",
-      "listed_as": {
-        "aa": "Qwen3 Coder Next"
-      }
-    },
-    "qwen3.8-max": {
-      "label": "Qwen 3.8 Max",
-      "listed_as": {
-        "aa": "Qwen3.8 Max"
-      }
-    },
-    "kimi-k3.1-pro": {
-      "label": "Kimi K3.1 Pro"
-    },
-    "kimi-k3": {
-      "label": "Kimi K3"
-    },
-    "minimax-m3": {
-      "label": "MiniMax M3"
-    },
-    "minimax-m3.1-flash": {
-      "label": "MiniMax M3.1 Flash"
-    },
-    "doubao-seed-2-1-pro-260628": {
-      "label": "Seed 2.1 Pro",
-      "listed_as": {
-        "arena": "Seed2.1 Pro Preview"
-      }
-    },
-    "mimo-v2.6-pro": {
-      "label": "MiMo V2.6 Pro"
-    },
-    "mimo-v2.6-flash-free": {
-      "label": "MiMo V2.6 Flash"
-    },
-    "nemotron-3-ultra-free": {
-      "label": "Nemotron 3 Ultra",
-      "listed_as": {
-        "aa": "Nemotron 3 Ultra 550B A55B"
-      }
-    },
-    "nemotron-3.5-super-vl-free": {
-      "label": "Nemotron 3.5 Super VL",
-      "listed_as": {
-        "arena": "NVIDIA-Nemotron-3.5-Super-VL-120B-A12B",
-        "aa": "Nemotron 3.5 Super VL"
-      }
-    },
-    "nemotron-3.5-lightning-free": {
-      "label": "Nemotron 3.5 Lightning",
-      "listed_as": {
-        "arena": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B",
-        "aa": "Nemotron 3.5 Lightning"
-      }
-    },
-    "mistral-large-4": {
-      "label": "Mistral Large 4"
-    },
-    "muse-wonder-1.0": {
-      "label": "Muse Wonder 1.0",
-      "listed_as": {
-        "aa": "Muse Wonder"
-      }
-    },
-    "beam-free": {
-      "label": "Beam",
-      "listed_as": {
-        "arena": "Beam 1.0 501B A23B"
-      }
-    },
-    "flint-40b-free": {
-      "label": "Flint 40B"
-    },
-    "claude-haiku-4-5": {
-      "label": "Haiku 4.5",
-      "api_family": "claude"
-    },
-    "claude-opus-4-6": {
-      "label": "Opus 4.6",
-      "api_family": "claude"
-    },
-    "claude-sonnet-4-6": {
-      "label": "Sonnet 4.6",
-      "api_family": "claude"
-    },
-    "glm-5.2": {
-      "label": "GLM 5.2"
-    },
-    "gpt-oss-120b": {
-      "label": "GPT OSS 120B",
-      "api_family": "codex",
-      "listed_as": {
-        "arena": "gpt-oss-120b",
-        "aa": "gpt-oss-120b"
-      }
-    },
-    "gemini-3.1-flash-lite": {
-      "label": "Flash 3.1 Lite",
-      "listed_as": {
-        "arena": "Gemini 3.1 Flash-Lite Preview"
-      }
-    },
-    "kimi-k2.7-code": {
-      "label": "Kimi K2.7 Code",
-      "listed_as": {
-        "arena": "Kimi K2.7 Code",
-        "aa": "Kimi K2.7 Code"
-      }
-    },
-    "qwen3.6-plus": {
-      "label": "Qwen 3.6 Plus",
-      "listed_as": {
-        "arena": "Qwen3.6-Plus"
-      }
-    },
-    "claude-opus-4-7": {
-      "label": "Opus 4.7",
-      "api_family": "claude",
-      "listed_as": {
-        "arena": "Claude Opus 4.7"
-      }
-    },
-    "claude-opus-4-8": {
-      "label": "Opus 4.8",
-      "fast_capable": true,
-      "api_family": "claude",
-      "listed_as": {
-        "arena": "Claude Opus 4.8"
-      }
-    },
-    "grok-4.5": {
-      "label": "Grok 4.5",
-      "listed_as": {
-        "arena": "Grok 4.5"
-      }
-    },
-    "grok-4.6": {
-      "label": "Grok 4.6",
-      "listed_as": {
-        "arena": "Grok 4.6"
-      }
-    },
-    "gemini-3.1-pro-preview": {
-      "label": "Gemini 3.1 Pro",
-      "listed_as": {
-        "arena": "Gemini 3.1 Pro Preview",
-        "aa": "Gemini 3.1 Pro Preview"
-      }
-    },
-    "gemini-3.7-flash": {
-      "label": "Flash 3.7",
-      "listed_as": {
-        "arena": "Gemini 3.7 Flash"
-      }
-    },
-    "kimi-k2.6": {
-      "label": "Kimi K2.6",
-      "listed_as": {
-        "arena": "Kimi K2.6"
-      }
-    },
-    "qwen3.7-max": {
-      "label": "Qwen 3.7 Max",
-      "listed_as": {
-        "arena": "Qwen3.7-Max"
-      }
-    },
-    "qwen3-flash-2025-07-28": {
-      "label": "Qwen 3 Flash",
-      "context_window": 1000000
-    },
-    "gemini-4-carbon": {
-      "label": "Carbon 4",
-      "listed_as": {
-        "arena": "Gemini 4 Carbon",
-        "aa": "Gemini 4 Carbon"
-      }
-    },
-    "step-5-preview": {
-      "label": "Step 5 Preview"
-    },
-    "hy3": {
-      "label": "Hy3"
-    },
-    "hy4": {
-      "label": "Hy4",
-      "listed_as": {
-        "aa": "Tencent Hy4"
-      }
-    },
-    "hy4-flash": {
-      "label": "Hy4 Flash"
-    },
-    "hy4-preview": {
-      "label": "Hy4 Preview"
-    },
-    "muse-ember": {
-      "label": "Muse Ember"
-    },
-    "muse-spark-1.3": {
-      "label": "Muse Spark 1.3"
-    },
-    "muse-spark-open": {
-      "label": "Muse Spark Open"
-    },
-    "qwen3.8-omni-flash": {
-      "label": "Qwen3.8 Omni Flash"
-    },
-    "qwen3.8-flash": {
-      "label": "Qwen3.8 Flash"
-    },
-    "qwen3.8-27b": {
-      "label": "Qwen3.8 27B"
-    },
-    "qwen4-max": {
-      "label": "Qwen4 Max"
-    },
-    "deepseek-v4-flash-promo": {
-      "label": "DeepSeek V4 Flash Promo"
-    },
-    "deepseek-v4.1-flash-promo": {
-      "label": "DeepSeek V4.1 Flash Promo"
-    },
-    "kimi-k2.8-preview": {
-      "label": "Kimi K2.8 Preview"
-    },
-    "glm-5.3-flashx": {
-      "label": "GLM 5.3 FlashX",
-      "model_source": {
-        "kind": "vendor",
-        "url": "https://docs.z.ai/guides/vlm/glm-5.3-flash",
-        "as_of": "2026-11-18",
-        "statement": "Z.ai lists glm-5.3-flashx as a model code of its own beside glm-5.3-flash (GLM-5.3-FlashX: 200 tokens/s, not yet on the plan); no statement that it is the same model"
-      }
-    },
-    "gemini-3.6-flash": {
-      "label": "Gemini 3.6 Flash"
+    "gpt-6.1-terra": {
+     "kind": "vendor",
+     "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
+     "as_of": "2026-11-18",
+     "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
     }
-  },
-  "dispatch_efforts": {
-    "grok": {
-      "grok-4.7": [
-        "low",
-        "high",
-        "xhigh"
-      ],
-      "grok-4.7-build-fast": [
-        "high"
-      ]
-    },
-    "claude": {
-      "claude-opus-4-6": [
-        "high"
-      ],
-      "claude-sonnet-4-6": [
-        "high"
-      ],
-      "claude-haiku-4-5": [
-        "high"
-      ],
-      "claude-opus-5-5": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "claude-sonnet-5-5": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "claude-fable-5-1": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "claude-fable-5-2": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "claude-haiku-5-5": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ]
-    },
-    "codex": {
-      "gpt-6-pro": [
-        "high"
-      ],
-      "gpt-6-astra": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-        "ultra"
-      ],
-      "gpt-6.2-astra": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-        "ultra"
-      ],
-      "gpt-6.2-sol": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-        "ultra"
-      ],
-      "gpt-6.1-sol": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-        "ultra"
-      ],
-      "gpt-6.1-terra": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "gpt-6-sol": [
-        "high"
-      ],
-      "gpt-6-luna": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "gpt-5.6-sol": [
-        "high"
-      ],
-      "gpt-5.6-terra": [
-        "high"
-      ],
-      "gpt-5.6-luna": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ]
-    },
-    "opencode": {
-      "deepseek-v4.1-flash-free": [
-        "default",
-        "low",
-        "high",
-        "max"
-      ]
-    },
-    "antigravity-resilient": {
-      "claude-opus-5-5": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "claude-sonnet-5-5": [
-        "low",
-        "medium",
-        "high"
-      ]
-    },
-    "omp": {
-      "glm-5.2": [
-        "high",
-        "max"
-      ]
-    },
-    "pi": {
-      "gpt-6-pro": [
-        "high"
-      ],
-      "gpt-6-astra": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "gpt-6.2-astra": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "gpt-6.2-sol": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "gpt-6.1-sol": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "gpt-6.1-terra": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "gpt-6-sol": [
-        "high"
-      ],
-      "gpt-6-luna": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "gpt-5.6-sol": [
-        "high"
-      ],
-      "gpt-5.6-terra": [
-        "high"
-      ],
-      "gpt-5.6-luna": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ]
+   },
+   "claude": {
+    "claude-haiku-5-5": {
+     "kind": "vendor",
+     "url": "https://platform.claude.com/docs/en/build-with-claude/effort",
+     "as_of": "2026-11-18",
+     "statement": "Anthropic effort documentation: Claude Haiku 5.5 supports all five effort levels (low, medium, high, xhigh, max), medium the default"
     }
-  },
-  "dispatch_efforts_sources": {
-    "statement": "the public vendor statement behind a dispatch_efforts row, where one is cited (scripts/reference_provenance.py)",
-    "rows": {
-      "codex": {
-        "gpt-5.6-luna": {
-          "kind": "vendor",
-          "url": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
-          "as_of": "2026-11-18",
-          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
-        },
-        "gpt-6-luna": {
-          "kind": "vendor",
-          "url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
-          "as_of": "2026-11-18",
-          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
-        },
-        "gpt-6.1-terra": {
-          "kind": "vendor",
-          "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
-          "as_of": "2026-11-18",
-          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
-        }
-      },
-      "pi": {
-        "gpt-5.6-luna": {
-          "kind": "vendor",
-          "url": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
-          "as_of": "2026-11-18",
-          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
-        },
-        "gpt-6-luna": {
-          "kind": "vendor",
-          "url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
-          "as_of": "2026-11-18",
-          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
-        },
-        "gpt-6.1-terra": {
-          "kind": "vendor",
-          "url": "https://developers.openai.com/api/docs/models/gpt-6.1-terra",
-          "as_of": "2026-11-18",
-          "statement": "OpenAI model page: reasoning.effort supports none, low, medium (default), high, xhigh and max"
-        }
-      },
-      "claude": {
-        "claude-haiku-5-5": {
-          "kind": "vendor",
-          "url": "https://platform.claude.com/docs/en/build-with-claude/effort",
-          "as_of": "2026-11-18",
-          "statement": "Anthropic effort documentation: Claude Haiku 5.5 supports all five effort levels (low, medium, high, xhigh, max), medium the default"
-        }
-      }
+   }
+  }
+ },
+ "accounts": {
+  "claude": {
+   "plan": "Claude subscription",
+   "billing": "subscription",
+   "verified": false,
+   "expires_at": null,
+   "windows": {
+    "five_hour": {
+     "hours": 5
+    },
+    "seven_day": {
+     "hours": 168
+    },
+    "weekly_fable": {
+     "hours": 168,
+     "models": [
+      "fable"
+     ]
     }
-  },
-  "accounts": {
-    "claude": {
-      "plan": "Claude subscription",
-      "billing": "subscription",
-      "verified": false,
-      "expires_at": null,
-      "windows": {
-        "five_hour": {
-          "hours": 5
-        },
-        "seven_day": {
-          "hours": 168
-        },
-        "weekly_fable": {
-          "hours": 168,
-          "models": [
-            "fable"
-          ]
-        }
-      },
-      "bundles": {
-        "fable51_high": {
-          "model": "claude-fable-5-1",
-          "effort": "high"
-        },
-        "fable52_high": {
-          "model": "claude-fable-5-2",
-          "effort": "high"
-        },
-        "opus55_xhigh": {
-          "model": "claude-opus-5-5",
-          "effort": "xhigh"
-        },
-        "opus55_high": {
-          "model": "claude-opus-5-5",
-          "effort": "high"
-        },
-        "sonnet55_high": {
-          "model": "claude-sonnet-5-5",
-          "effort": "high"
-        },
-        "opus55_medium": {
-          "model": "claude-opus-5-5",
-          "effort": "medium"
-        },
-        "opus55_max": {
-          "model": "claude-opus-5-5",
-          "effort": "max"
-        },
-        "sonnet55_medium": {
-          "model": "claude-sonnet-5-5",
-          "effort": "medium"
-        }
-      },
-      "capacity_status": "unknown"
+   },
+   "bundles": {
+    "fable51_high": {
+     "model": "claude-fable-5-1",
+     "effort": "high"
     },
-    "codex": {
-      "plan": "Codex subscription",
-      "billing": "subscription",
-      "verified": false,
-      "expires_at": null,
-      "windows": {
-        "usage": {
-          "hours": 168
-        }
-      },
-      "bundles": {
-        "sol_max": {
-          "model": "gpt-6.1-sol",
-          "effort": "max"
-        },
-        "sol_xhigh": {
-          "model": "gpt-6.1-sol",
-          "effort": "xhigh"
-        },
-        "sol_high": {
-          "model": "gpt-6.1-sol",
-          "effort": "high"
-        },
-        "sol_medium": {
-          "model": "gpt-6.1-sol",
-          "effort": "medium"
-        },
-        "sol62_max": {
-          "model": "gpt-6.2-sol",
-          "effort": "max"
-        },
-        "sol62_xhigh": {
-          "model": "gpt-6.2-sol",
-          "effort": "xhigh"
-        },
-        "sol62_high": {
-          "model": "gpt-6.2-sol",
-          "effort": "high"
-        },
-        "sol62_medium": {
-          "model": "gpt-6.2-sol",
-          "effort": "medium"
-        },
-        "astra_high": {
-          "model": "gpt-6-astra",
-          "effort": "high"
-        },
-        "astra_xhigh": {
-          "model": "gpt-6-astra",
-          "effort": "xhigh"
-        },
-        "astra62_high": {
-          "model": "gpt-6.2-astra",
-          "effort": "high"
-        },
-        "astra62_xhigh": {
-          "model": "gpt-6.2-astra",
-          "effort": "xhigh"
-        },
-        "pi_sol_max": {
-          "model": "gpt-6.1-sol",
-          "effort": "max",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.1-sol"
-        },
-        "pi_sol_xhigh": {
-          "model": "gpt-6.1-sol",
-          "effort": "xhigh",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.1-sol"
-        },
-        "pi_sol_high": {
-          "model": "gpt-6.1-sol",
-          "effort": "high",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.1-sol"
-        },
-        "pi_sol_medium": {
-          "model": "gpt-6.1-sol",
-          "effort": "medium",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.1-sol"
-        },
-        "pi_sol62_max": {
-          "model": "gpt-6.2-sol",
-          "effort": "max",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.2-sol"
-        },
-        "pi_sol62_xhigh": {
-          "model": "gpt-6.2-sol",
-          "effort": "xhigh",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.2-sol"
-        },
-        "pi_sol62_high": {
-          "model": "gpt-6.2-sol",
-          "effort": "high",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.2-sol"
-        },
-        "pi_sol62_medium": {
-          "model": "gpt-6.2-sol",
-          "effort": "medium",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.2-sol"
-        },
-        "pi_astra_high": {
-          "model": "gpt-6-astra",
-          "effort": "high",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6-astra"
-        },
-        "pi_astra_xhigh": {
-          "model": "gpt-6-astra",
-          "effort": "xhigh",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6-astra"
-        },
-        "pi_astra62_high": {
-          "model": "gpt-6.2-astra",
-          "effort": "high",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.2-astra"
-        },
-        "pi_astra62_xhigh": {
-          "model": "gpt-6.2-astra",
-          "effort": "xhigh",
-          "provider": "pi",
-          "launch_model": "openai-codex/gpt-6.2-astra"
-        }
-      },
-      "capacity_status": "unknown"
+    "fable52_high": {
+     "model": "claude-fable-5-2",
+     "effort": "high"
     },
-    "antigravity": {
-      "plan": "Antigravity subscription",
-      "billing": "subscription",
-      "verified": false,
-      "expires_at": null,
-      "windows": {
-        "gemini-5h": {
-          "hours": 5,
-          "models": [
-            "gemini"
-          ]
-        },
-        "gemini-weekly": {
-          "hours": 168,
-          "models": [
-            "gemini"
-          ]
-        },
-        "3p-5h": {
-          "hours": 5,
-          "models_except": [
-            "gemini"
-          ]
-        },
-        "3p-weekly": {
-          "hours": 168,
-          "models_except": [
-            "gemini"
-          ]
-        }
-      },
-      "bundles": {
-        "flash_high": {
-          "provider": "antigravity-resilient",
-          "model": "gemini-3.8-flash-high",
-          "effort": "high",
-          "modeId": "full-access"
-        },
-        "argon_high": {
-          "provider": "antigravity-resilient",
-          "model": "gemini-4-argon-high",
-          "effort": "high",
-          "modeId": "full-access"
-        },
-        "hydrogen_high": {
-          "provider": "antigravity-resilient",
-          "model": "gemini-4-hydrogen-high",
-          "effort": "high",
-          "modeId": "full-access"
-        },
-        "agy_opus55_low": {
-          "provider": "antigravity-resilient",
-          "model": "claude-opus-5-5-low",
-          "launch_model": "claude-opus-5-5-low",
-          "effort": "low",
-          "modeId": "full-access",
-          "draws": [
-            "3p-5h",
-            "3p-weekly"
-          ]
-        },
-        "agy_opus55_medium": {
-          "provider": "antigravity-resilient",
-          "model": "claude-opus-5-5-medium",
-          "launch_model": "claude-opus-5-5-medium",
-          "effort": "medium",
-          "modeId": "full-access",
-          "draws": [
-            "3p-5h",
-            "3p-weekly"
-          ]
-        },
-        "agy_opus55_high": {
-          "provider": "antigravity-resilient",
-          "model": "claude-opus-5-5-high",
-          "launch_model": "claude-opus-5-5-high",
-          "effort": "high",
-          "modeId": "full-access",
-          "draws": [
-            "3p-5h",
-            "3p-weekly"
-          ]
-        },
-        "agy_sonnet55_low": {
-          "provider": "antigravity-resilient",
-          "model": "claude-sonnet-5-5-low",
-          "launch_model": "claude-sonnet-5-5-low",
-          "effort": "low",
-          "modeId": "full-access",
-          "draws": [
-            "3p-5h",
-            "3p-weekly"
-          ]
-        },
-        "agy_sonnet55_medium": {
-          "provider": "antigravity-resilient",
-          "model": "claude-sonnet-5-5-medium",
-          "launch_model": "claude-sonnet-5-5-medium",
-          "effort": "medium",
-          "modeId": "full-access",
-          "draws": [
-            "3p-5h",
-            "3p-weekly"
-          ]
-        },
-        "agy_sonnet55_high": {
-          "provider": "antigravity-resilient",
-          "model": "claude-sonnet-5-5-high",
-          "launch_model": "claude-sonnet-5-5-high",
-          "effort": "high",
-          "modeId": "full-access",
-          "draws": [
-            "3p-5h",
-            "3p-weekly"
-          ]
-        }
-      },
-      "capacity_status": "unknown"
+    "opus55_xhigh": {
+     "model": "claude-opus-5-5",
+     "effort": "xhigh"
     },
-    "opencode": {
-      "plan": "OpenCode",
-      "billing": "subscription",
-      "verified": false,
-      "expires_at": null,
-      "windows": {},
-      "bundles": {
-        "deepseek_flash_high": {
-          "provider": "opencode",
-          "model": "deepseek-v4.1-flash-free",
-          "launch_model": "opencode/deepseek-v4.1-flash-free",
-          "effort": "high",
-          "modeId": "build"
-        }
-      },
-      "capacity_status": "unknown",
-      "unmetered": true,
-      "unlimited": true,
-      "free_allowance": true
+    "opus55_high": {
+     "model": "claude-opus-5-5",
+     "effort": "high"
     },
-    "pi": {
-      "plan": "Pi",
-      "billing": "subscription",
-      "verified": false,
-      "expires_at": null,
-      "windows": {
-        "usage": {
-          "hours": 168
-        }
-      },
-      "bundles": {},
-      "capacity_status": "unknown"
+    "sonnet55_high": {
+     "model": "claude-sonnet-5-5",
+     "effort": "high"
     },
-    "grok": {
-      "plan": "Grok subscription",
-      "billing": "subscription",
-      "verified": false,
-      "expires_at": null,
-      "windows": {},
-      "bundles": {
-        "grok47_high": {
-          "provider": "grok",
-          "harness": "grok",
-          "model": "grok-4.7",
-          "effort": "high"
-        }
-      },
-      "capacity_status": "unknown"
+    "opus55_medium": {
+     "model": "claude-opus-5-5",
+     "effort": "medium"
     },
-    "dot": {
-      "plan": "Dot",
-      "billing": "subscription",
-      "verified": false,
-      "expires_at": null,
-      "windows": {},
-      "bundles": {
-        "dot_text": {
-          "model": "dot",
-          "provider": "dot"
-        }
-      },
-      "capacity_status": "unknown",
-      "unmetered": true,
-      "unlimited": true
+    "opus55_max": {
+     "model": "claude-opus-5-5",
+     "effort": "max"
     },
-    "chatgpt-web": {
-      "plan": "ChatGPT web",
-      "billing": "subscription",
-      "verified": false,
-      "expires_at": null,
-      "unmetered": true,
-      "windows": {},
-      "cadence": {
-        "window_seconds": 43200,
-        "limit": 5
-      },
-      "bundles": {
-        "pro_max": {
-          "model": "gpt-6-pro",
-          "effort": "max",
-          "provider": "chatgpt-web"
-        }
-      },
-      "capacity_status": "unknown"
-    },
-    "omp": {
-      "plan": "Venice API (Oh My Pi)",
-      "billing": "metered",
-      "verified": false,
-      "expires_at": null,
-      "windows": {},
-      "bundles": {
-        "venice_glm52_high": {
-          "provider": "omp",
-          "harness": "omp",
-          "model": "glm-5.2",
-          "launch_model": "venice-api/zai-org-glm-5-2",
-          "effort": "high",
-          "modeId": "full"
-        }
-      },
-      "capacity_status": "unknown"
+    "sonnet55_medium": {
+     "model": "claude-sonnet-5-5",
+     "effort": "medium"
     }
+   },
+   "capacity_status": "unknown"
   },
-  "capability_policy": {
-    "schema_version": 1,
-    "routes": {
-      "creative_ideation": {
-        "scope": "Cross-domain association, de-novo concept or mechanism invention, creative writing, narrative dialogue, and open-ended brainstorming.",
-        "role": "ideation worker or advisor",
-        "harness_order": [
-          "pi",
-          "codex"
-        ]
-      },
-      "architecture_reasoning": {
-        "scope": "First-principles system architecture, formal or mathematical reasoning, trade-off critique, and multi-system design planning without modifying source code.",
-        "role": "architect or reasoning advisor",
-        "harness_order": [
-          "pi",
-          "codex"
-        ]
-      },
-      "code_implementation": {
-        "scope": "Write, fix, refactor, or test backend, CLI, library, algorithm, configuration, or quantitative/experiment code.",
-        "role": "worker",
-        "harness_order": [
-          "codex",
-          "pi"
-        ]
-      },
-      "frontend_ui": {
-        "scope": "Implement, refactor, or style user-facing web or desktop UI views, interactive components, charts, layouts, CSS, and animations.",
-        "role": "frontend worker",
-        "harness_order": [
-          "codex",
-          "pi"
-        ]
-      },
-      "code_audit": {
-        "scope": "Independent read-only review or audit of code, pull requests, diffs, branches, security invariants, or release readiness (including writing a review report file).",
-        "role": "independent reviewer",
-        "harness_order": [
-          "codex",
-          "pi"
-        ]
-      },
-      "exploration_forensics": {
-        "scope": "Read-only codebase exploration, log/database/metric forensics, and runtime root-cause diagnosis on local evidence without modifying code.",
-        "implies": {
-          "local_only": true
-        },
-        "role": "explorer or forensic analyst",
-        "harness_order": [
-          "pi",
-          "codex"
-        ]
-      },
-      "web_research": {
-        "scope": "Gather, verify, and synthesize information from the public web, literature, documentation, or vendor sources into a sourced report.",
-        "role": "research worker",
-        "harness_order": [
-          "pi",
-          "codex"
-        ]
-      },
-      "visual_analysis": {
-        "scope": "Static offline inspection of images, photos, screenshots, or design mockups: OCR, UI layout/mockup diffs, and fine-grained aesthetic, styling, material, or lighting classification.",
-        "implies": {
-          "visual": true
-        },
-        "role": "visual analyst",
-        "harness_order": [
-          "pi",
-          "codex"
-        ]
-      },
-      "text_processing": {
-        "scope": "Rule-defined structured text cleaning, translation, format conversion, mechanical extraction, and bounded summarization.",
-        "role": "text worker",
-        "harness_order": [
-          "pi",
-          "codex"
-        ]
-      },
-      "live_loop": {
-        "scope": "Low-latency observe-decide-act loop attached to a live external text, WebSocket, or API stream where per-turn response time affects the outcome.",
-        "role": "live-loop worker",
-        "harness_order": [
-          "codex",
-          "pi"
-        ]
-      },
-      "gui_control": {
-        "scope": "Operate a live desktop, browser, or mobile graphical interface via screenshots, mouse clicks, and keyboard actions, or continuously monitor a live visual screen.",
-        "implies": {
-          "visual": true
-        },
-        "role": "computer-use worker",
-        "harness_order": [
-          "codex",
-          "pi"
-        ]
-      },
-      "other_or_mixed": {
-        "scope": "Unprofiled fallback route when no canonical work_kind was supplied.",
-        "role": "bounded worker"
-      }
-    },
-    "remote_reroute_guard": {
-      "enabled": true,
-      "bundle_id": "dot_text",
-      "window_seconds": 600
+  "codex": {
+   "plan": "Codex subscription",
+   "billing": "subscription",
+   "verified": false,
+   "expires_at": null,
+   "windows": {
+    "usage": {
+     "hours": 168
     }
-  },
-  "quota_sources": {
-    "grok-bot": "grok"
-  },
-  "priority_targets": [
-    {
-      "account": "codex",
-      "model": "gpt-6-astra",
-      "label": "Astra"
+   },
+   "bundles": {
+    "sol_max": {
+     "model": "gpt-6.1-sol",
+     "effort": "max"
     },
-    {
-      "account": "antigravity",
-      "model": "gemini-4-argon-high",
-      "label": "Argon"
+    "sol_xhigh": {
+     "model": "gpt-6.1-sol",
+     "effort": "xhigh"
     },
-    {
-      "account": "claude",
-      "model": "claude-opus-5-5",
-      "label": "Opus 5.5"
+    "sol_high": {
+     "model": "gpt-6.1-sol",
+     "effort": "high"
+    },
+    "sol_medium": {
+     "model": "gpt-6.1-sol",
+     "effort": "medium"
+    },
+    "sol62_max": {
+     "model": "gpt-6.2-sol",
+     "effort": "max"
+    },
+    "sol62_xhigh": {
+     "model": "gpt-6.2-sol",
+     "effort": "xhigh"
+    },
+    "sol62_high": {
+     "model": "gpt-6.2-sol",
+     "effort": "high"
+    },
+    "sol62_medium": {
+     "model": "gpt-6.2-sol",
+     "effort": "medium"
+    },
+    "astra_high": {
+     "model": "gpt-6-astra",
+     "effort": "high"
+    },
+    "astra_xhigh": {
+     "model": "gpt-6-astra",
+     "effort": "xhigh"
+    },
+    "astra62_high": {
+     "model": "gpt-6.2-astra",
+     "effort": "high"
+    },
+    "astra62_xhigh": {
+     "model": "gpt-6.2-astra",
+     "effort": "xhigh"
+    },
+    "pi_sol_max": {
+     "model": "gpt-6.1-sol",
+     "effort": "max",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.1-sol"
+    },
+    "pi_sol_xhigh": {
+     "model": "gpt-6.1-sol",
+     "effort": "xhigh",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.1-sol"
+    },
+    "pi_sol_high": {
+     "model": "gpt-6.1-sol",
+     "effort": "high",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.1-sol"
+    },
+    "pi_sol_medium": {
+     "model": "gpt-6.1-sol",
+     "effort": "medium",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.1-sol"
+    },
+    "pi_sol62_max": {
+     "model": "gpt-6.2-sol",
+     "effort": "max",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.2-sol"
+    },
+    "pi_sol62_xhigh": {
+     "model": "gpt-6.2-sol",
+     "effort": "xhigh",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.2-sol"
+    },
+    "pi_sol62_high": {
+     "model": "gpt-6.2-sol",
+     "effort": "high",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.2-sol"
+    },
+    "pi_sol62_medium": {
+     "model": "gpt-6.2-sol",
+     "effort": "medium",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.2-sol"
+    },
+    "pi_astra_high": {
+     "model": "gpt-6-astra",
+     "effort": "high",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6-astra"
+    },
+    "pi_astra_xhigh": {
+     "model": "gpt-6-astra",
+     "effort": "xhigh",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6-astra"
+    },
+    "pi_astra62_high": {
+     "model": "gpt-6.2-astra",
+     "effort": "high",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.2-astra"
+    },
+    "pi_astra62_xhigh": {
+     "model": "gpt-6.2-astra",
+     "effort": "xhigh",
+     "provider": "pi",
+     "launch_model": "openai-codex/gpt-6.2-astra"
     }
-  ]
+   },
+   "capacity_status": "unknown"
+  },
+  "antigravity": {
+   "plan": "Antigravity subscription",
+   "billing": "subscription",
+   "verified": false,
+   "expires_at": null,
+   "windows": {
+    "gemini-5h": {
+     "hours": 5,
+     "models": [
+      "gemini"
+     ]
+    },
+    "gemini-weekly": {
+     "hours": 168,
+     "models": [
+      "gemini"
+     ]
+    },
+    "3p-5h": {
+     "hours": 5,
+     "models_except": [
+      "gemini"
+     ]
+    },
+    "3p-weekly": {
+     "hours": 168,
+     "models_except": [
+      "gemini"
+     ]
+    }
+   },
+   "bundles": {
+    "flash_high": {
+     "provider": "antigravity-resilient",
+     "model": "gemini-3.8-flash-high",
+     "effort": "high",
+     "modeId": "full-access"
+    },
+    "argon_high": {
+     "provider": "antigravity-resilient",
+     "model": "gemini-4-argon-high",
+     "effort": "high",
+     "modeId": "full-access"
+    },
+    "hydrogen_high": {
+     "provider": "antigravity-resilient",
+     "model": "gemini-4-hydrogen-high",
+     "effort": "high",
+     "modeId": "full-access"
+    },
+    "agy_opus55_low": {
+     "provider": "antigravity-resilient",
+     "model": "claude-opus-5-5-low",
+     "launch_model": "claude-opus-5-5-low",
+     "effort": "low",
+     "modeId": "full-access",
+     "draws": [
+      "3p-5h",
+      "3p-weekly"
+     ]
+    },
+    "agy_opus55_medium": {
+     "provider": "antigravity-resilient",
+     "model": "claude-opus-5-5-medium",
+     "launch_model": "claude-opus-5-5-medium",
+     "effort": "medium",
+     "modeId": "full-access",
+     "draws": [
+      "3p-5h",
+      "3p-weekly"
+     ]
+    },
+    "agy_opus55_high": {
+     "provider": "antigravity-resilient",
+     "model": "claude-opus-5-5-high",
+     "launch_model": "claude-opus-5-5-high",
+     "effort": "high",
+     "modeId": "full-access",
+     "draws": [
+      "3p-5h",
+      "3p-weekly"
+     ]
+    },
+    "agy_sonnet55_low": {
+     "provider": "antigravity-resilient",
+     "model": "claude-sonnet-5-5-low",
+     "launch_model": "claude-sonnet-5-5-low",
+     "effort": "low",
+     "modeId": "full-access",
+     "draws": [
+      "3p-5h",
+      "3p-weekly"
+     ]
+    },
+    "agy_sonnet55_medium": {
+     "provider": "antigravity-resilient",
+     "model": "claude-sonnet-5-5-medium",
+     "launch_model": "claude-sonnet-5-5-medium",
+     "effort": "medium",
+     "modeId": "full-access",
+     "draws": [
+      "3p-5h",
+      "3p-weekly"
+     ]
+    },
+    "agy_sonnet55_high": {
+     "provider": "antigravity-resilient",
+     "model": "claude-sonnet-5-5-high",
+     "launch_model": "claude-sonnet-5-5-high",
+     "effort": "high",
+     "modeId": "full-access",
+     "draws": [
+      "3p-5h",
+      "3p-weekly"
+     ]
+    }
+   },
+   "capacity_status": "unknown"
+  },
+  "opencode": {
+   "plan": "OpenCode",
+   "billing": "subscription",
+   "verified": false,
+   "expires_at": null,
+   "windows": {},
+   "bundles": {
+    "deepseek_flash_high": {
+     "provider": "opencode",
+     "model": "deepseek-v4.1-flash-free",
+     "launch_model": "opencode/deepseek-v4.1-flash-free",
+     "effort": "high",
+     "modeId": "build"
+    }
+   },
+   "capacity_status": "unknown",
+   "unmetered": true,
+   "unlimited": true,
+   "free_allowance": true
+  },
+  "pi": {
+   "plan": "Pi",
+   "billing": "subscription",
+   "verified": false,
+   "expires_at": null,
+   "windows": {
+    "usage": {
+     "hours": 168
+    }
+   },
+   "bundles": {},
+   "capacity_status": "unknown"
+  },
+  "grok": {
+   "plan": "Grok subscription",
+   "billing": "subscription",
+   "verified": false,
+   "expires_at": null,
+   "windows": {},
+   "bundles": {
+    "grok47_high": {
+     "provider": "grok",
+     "harness": "grok",
+     "model": "grok-4.7",
+     "effort": "high"
+    }
+   },
+   "capacity_status": "unknown"
+  },
+  "dot": {
+   "plan": "Dot",
+   "billing": "subscription",
+   "verified": false,
+   "expires_at": null,
+   "windows": {},
+   "bundles": {
+    "dot_text": {
+     "model": "dot",
+     "provider": "dot"
+    }
+   },
+   "capacity_status": "unknown",
+   "unmetered": true,
+   "unlimited": true
+  },
+  "chatgpt-web": {
+   "plan": "ChatGPT web",
+   "billing": "subscription",
+   "verified": false,
+   "expires_at": null,
+   "unmetered": true,
+   "windows": {},
+   "cadence": {
+    "window_seconds": 43200,
+    "limit": 5
+   },
+   "bundles": {
+    "pro_max": {
+     "model": "gpt-6-pro",
+     "effort": "max",
+     "provider": "chatgpt-web"
+    }
+   },
+   "capacity_status": "unknown"
+  },
+  "omp": {
+   "plan": "Venice API (Oh My Pi)",
+   "billing": "metered",
+   "verified": false,
+   "expires_at": null,
+   "windows": {},
+   "bundles": {
+    "venice_glm52_high": {
+     "provider": "omp",
+     "harness": "omp",
+     "model": "glm-5.2",
+     "launch_model": "venice-api/zai-org-glm-5-2",
+     "effort": "high",
+     "modeId": "full"
+    }
+   },
+   "capacity_status": "unknown"
+  }
+ },
+ "capability_policy": {
+  "schema_version": 1,
+  "routes": {
+   "creative_ideation": {
+    "scope": "Cross-domain association, de-novo concept or mechanism invention, creative writing, narrative dialogue, and open-ended brainstorming.",
+    "role": "ideation worker or advisor",
+    "harness_order": [
+     "pi",
+     "codex"
+    ]
+   },
+   "architecture_reasoning": {
+    "scope": "First-principles system architecture, formal or mathematical reasoning, trade-off critique, and multi-system design planning without modifying source code.",
+    "role": "architect or reasoning advisor",
+    "harness_order": [
+     "pi",
+     "codex"
+    ]
+   },
+   "code_implementation": {
+    "scope": "Write, fix, refactor, or test backend, CLI, library, algorithm, configuration, or quantitative/experiment code.",
+    "role": "worker",
+    "harness_order": [
+     "codex",
+     "pi"
+    ]
+   },
+   "frontend_ui": {
+    "scope": "Implement, refactor, or style user-facing web or desktop UI views, interactive components, charts, layouts, CSS, and animations.",
+    "role": "frontend worker",
+    "harness_order": [
+     "codex",
+     "pi"
+    ]
+   },
+   "code_audit": {
+    "scope": "Independent read-only review or audit of code, pull requests, diffs, branches, security invariants, or release readiness (including writing a review report file).",
+    "role": "independent reviewer",
+    "harness_order": [
+     "codex",
+     "pi"
+    ]
+   },
+   "exploration_forensics": {
+    "scope": "Read-only codebase exploration, log/database/metric forensics, and runtime root-cause diagnosis on local evidence without modifying code.",
+    "implies": {
+     "local_only": true
+    },
+    "role": "explorer or forensic analyst",
+    "harness_order": [
+     "pi",
+     "codex"
+    ]
+   },
+   "web_research": {
+    "scope": "Gather, verify, and synthesize information from the public web, literature, documentation, or vendor sources into a sourced report.",
+    "role": "research worker",
+    "harness_order": [
+     "pi",
+     "codex"
+    ]
+   },
+   "visual_analysis": {
+    "scope": "Static offline inspection of images, photos, screenshots, or design mockups: OCR, UI layout/mockup diffs, and fine-grained aesthetic, styling, material, or lighting classification.",
+    "implies": {
+     "visual": true
+    },
+    "role": "visual analyst",
+    "harness_order": [
+     "pi",
+     "codex"
+    ]
+   },
+   "text_processing": {
+    "scope": "Rule-defined structured text cleaning, translation, format conversion, mechanical extraction, and bounded summarization.",
+    "role": "text worker",
+    "harness_order": [
+     "pi",
+     "codex"
+    ]
+   },
+   "live_loop": {
+    "scope": "Low-latency observe-decide-act loop attached to a live external text, WebSocket, or API stream where per-turn response time affects the outcome.",
+    "role": "live-loop worker",
+    "harness_order": [
+     "codex",
+     "pi"
+    ]
+   },
+   "gui_control": {
+    "scope": "Operate a live desktop, browser, or mobile graphical interface via screenshots, mouse clicks, and keyboard actions, or continuously monitor a live visual screen.",
+    "implies": {
+     "visual": true
+    },
+    "role": "computer-use worker",
+    "harness_order": [
+     "codex",
+     "pi"
+    ]
+   },
+   "other_or_mixed": {
+    "scope": "Unprofiled fallback route when no canonical work_kind was supplied.",
+    "role": "bounded worker"
+   }
+  },
+  "remote_reroute_guard": {
+   "enabled": true,
+   "bundle_id": "dot_text",
+   "window_seconds": 600
+  }
+ },
+ "quota_sources": {
+  "grok-bot": "grok"
+ },
+ "priority_targets": [
+  {
+   "account": "codex",
+   "model": "gpt-6-astra",
+   "label": "Astra"
+  },
+  {
+   "account": "antigravity",
+   "model": "gemini-4-argon-high",
+   "label": "Argon"
+  },
+  {
+   "account": "claude",
+   "model": "claude-opus-5-5",
+   "label": "Opus 5.5"
+  }
+ ]
 }
