@@ -509,6 +509,59 @@ class FixRoundRegressionTests(unittest.TestCase):
             )
 
 
+class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
+    """The user's own scores survive an update: a local file an earlier release wrote is carried into the current schema."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.local = Path(self.tmp.name) / 'user-scores.json'
+
+    def write(self, doc):
+        with self.local.open('w', encoding='utf-8', newline='\n') as handle:
+            json.dump(doc, handle)
+
+    def test_a_schema_1_file_is_read_with_its_entries_under_the_renamed_category(self):
+        entry = {'level': 2.6, 'as_of': '2026-11-12', 'kind': 'user', 'note': 'mine'}
+        facet = {'level': 1.5, 'as_of': '2026-11-13', 'kind': 'user'}
+        coding = {'level': 3.0, 'as_of': '2026-11-14', 'kind': 'user'}
+        self.write({'schema_version': 1, 'scores': {
+            'model-a': {'divergence': entry, 'coding': coding}, 'model-b': {'divergence.creative_writing': facet}}})
+        before = self.local.read_bytes()
+        loaded = user_scores.load_local(self.local)
+        self.assertEqual(loaded['schema_version'], user_scores.SCHEMA_VERSION)
+        self.assertEqual(loaded['scores'], {
+            'model-a': {'creativity': entry, 'coding': coding}, 'model-b': {'creativity.creative_writing': facet}})
+        self.assertEqual(self.local.read_bytes(), before)  # a read never writes
+
+    def test_the_next_save_writes_the_current_schema_and_keeps_the_earlier_entries(self):
+        entry = {'level': 2.6, 'as_of': '2026-11-12', 'kind': 'user'}
+        self.write({'schema_version': 1, 'scores': {'model-a': {'divergence': entry}}})
+        user_scores.set_score('model-b', 'coding', 2.0, local_path=self.local, as_of='2026-11-18')
+        saved = json.loads(self.local.read_text(encoding='utf-8'))
+        self.assertEqual(saved['schema_version'], user_scores.SCHEMA_VERSION)
+        self.assertEqual(saved['scores']['model-a'], {'creativity': entry})
+        self.assertEqual(saved['scores']['model-b']['coding']['level'], 2.0)
+
+    def test_every_schema_below_the_current_one_has_an_upgrade_step(self):
+        self.assertEqual(sorted(user_scores.LOCAL_UPGRADES), list(range(1, user_scores.SCHEMA_VERSION)))
+
+    def test_an_unknown_schema_or_shape_is_refused_not_guessed(self):
+        unknown_target = {'no_such_category': {'level': 2, 'as_of': '2026-11-12', 'kind': 'user'}}
+        for doc in ({'schema_version': user_scores.SCHEMA_VERSION + 1, 'scores': {}}, {'scores': {}},
+                    {'schema_version': 1, 'scores': {'model-a': unknown_target}}):
+            with self.subTest(doc=doc):
+                self.write(doc)
+                with self.assertRaisesRegex(ValueError, 'invalid local user-scores file'):
+                    user_scores.load_local(self.local)
+
+    def test_the_shipped_maintainer_file_has_no_upgrade_path(self):
+        # It ships with the version, so it is always in the current schema; an older one is a packaging error.
+        self.write({'schema_version': 1, 'scores': {}})
+        with self.assertRaisesRegex(ValueError, 'schema_version'):
+            user_scores.load_public(self.local, effective=False)
+
+
 class TaxonomyR2Round2FixTests(unittest.TestCase):
     """Regression coverage for Taxonomy R2 review-2 findings (R2-F1, R2-F6, R2-F7, R2-F8, R2-F9)."""
 
