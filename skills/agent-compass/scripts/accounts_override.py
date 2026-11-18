@@ -47,18 +47,31 @@ def _prefix_entries(allowed):
     return [x for x in ([allowed] if isinstance(allowed, str) else allowed) if isinstance(x, str) and x.strip()]
 
 
+def _entry_carries_over(entry):
+    """True for an `allowed_cwd` entry whose restriction the regex built from it reproduces exactly: v0.5.0 compared
+    path components (`account_fleet.account_cwd_allowed`, tag v0.5.0), the regex compares the normalized directory
+    (`cwd_policy.normalized`). They agree for a path with a drive (`D:/work/app`, either slash, any case, a trailing
+    separator, `.`, `..` or doubled separators) and for a relative name with no `.` or `..` segment (`work/app`, which
+    v0.5.0 looked for anywhere in the directory). They differ for `~` (expanded to the home directory), a path without
+    a drive (`/work/app`, resolved against the current drive) and a relative `.` or `..`, so those are not carried."""
+    if re.match(r'[A-Za-z]:[\\/]', entry):
+        return True
+    return (entry[0] not in '~/\\' and ':' not in entry
+            and all(part not in ('', '.', '..') for part in re.split(r'[\\/]', entry.rstrip('\\/'))))
+
+
 def _allowed_cwd_accounts(document):
-    """Accounts whose `allowed_cwd` carries over: a path or list of paths next to no `cwd_regex` (the restriction
-    becomes one), or one that restricts nothing (an empty value is dropped)."""
+    """Accounts whose `allowed_cwd` carries over: one that restricts nothing (an empty value is dropped), or a path or
+    list of paths next to no `cwd_regex`, every entry of which `_entry_carries_over` (the restriction becomes one)."""
     accounts = document.get('accounts')
     return [name for name, spec in (accounts.items() if isinstance(accounts, dict) else ())
             if isinstance(spec, dict) and isinstance(spec.get('allowed_cwd'), (str, list))
-            and (not spec.get('cwd_regex') or not _prefix_entries(spec['allowed_cwd']))]
+            and (not _prefix_entries(spec['allowed_cwd'])
+                 or (not spec.get('cwd_regex') and all(_entry_carries_over(x.strip()) for x in _prefix_entries(spec['allowed_cwd']))))]
 
 
 def _prefixes_to_regex(entries):
-    """Releases through v0.5.0 restricted an account to directories under `allowed_cwd` (a path or a list of paths); the
-    tray showed that restriction as this expression and saved it as `cwd_regex` when the user edited the account."""
+    """The regex that accepts the directories under any of the entries (all of them `_entry_carries_over`)."""
     patterns = []
     for value in entries:
         path = cwd_policy.normalized(value.strip())
@@ -109,10 +122,25 @@ def _delete_fix(path):
     return state_upgrade.fix_delete(path, 'this discards every account choice in it; set them again in the tray')
 
 
+def _allowed_cwd_refusal(name, spec):
+    """(what is wrong, the fix) for an `allowed_cwd` that `LOCAL_UPGRADES` did not carry over."""
+    allowed = spec.get('allowed_cwd')
+    if spec.get('cwd_regex') and isinstance(allowed, (str, list)) and _prefix_entries(allowed):
+        return (f'accounts.{name}.allowed_cwd sits next to a cwd_regex (v0.5.0 applied both)',
+                f'edit the file: remove accounts.{name}.allowed_cwd. That widens the account to every directory its '
+                f'cwd_regex allows, where v0.5.0 allowed only those that passed both; to keep the narrower restriction, '
+                f'write it into cwd_regex first')
+    return (f'accounts.{name}.allowed_cwd has an entry that is not carried over without guessing (a ~ path, a path '
+            f'without a drive, or a . or .. segment in a relative name)',
+            f'edit the file: replace accounts.{name}.allowed_cwd with accounts.{name}.cwd_regex, a regular expression '
+            f'over the directory written with forward slashes (for D:/work/app: ^D:/work/app(/|$)); nothing else in the '
+            f'file is lost')
+
+
 def validate_document(doc, path):
     """Raise `ValueError` for a document that is not in the current shape (after `upgrade_document`). Each message
-    names a fix that works when followed: delete the file (the tray then writes a new one), or, for an `allowed_cwd`
-    next to a `cwd_regex`, edit the one account."""
+    names a fix that works when followed: delete the file (the tray then writes a new one), or, for an `allowed_cwd` that
+    was not carried over, edit the one account."""
     if not isinstance(doc, dict):
         raise ValueError(state_upgrade.format_issue(
             path, 'invalid accounts-override format (expected JSON object)', _delete_fix(path),
@@ -134,10 +162,7 @@ def validate_document(doc, path):
                     path, f'invalid accounts-override entry for {name!r} (expected JSON object)', _delete_fix(path),
                 ))
             if 'allowed_cwd' in spec:
-                raise ValueError(state_upgrade.format_issue(
-                    path, f'accounts.{name}.allowed_cwd (replaced by cwd_regex) cannot be carried over next to its cwd_regex',
-                    f'edit the file: remove accounts.{name}.allowed_cwd and keep or change cwd_regex (nothing else is lost)',
-                ))
+                raise ValueError(state_upgrade.format_issue(path, *_allowed_cwd_refusal(name, spec)))
 
 
 def load_override(path):

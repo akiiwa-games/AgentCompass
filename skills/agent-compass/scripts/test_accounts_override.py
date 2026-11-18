@@ -1,11 +1,13 @@
 """The user's accounts-override.json is kept across updates (AGENTS.md, "What a released version wrote for the user is
 kept"): a file an earlier release wrote is carried into the current shape by `accounts_override.LOCAL_UPGRADES`."""
 import json
-from pathlib import Path
+import ntpath
+from pathlib import Path, PureWindowsPath
 import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPTS_DIR.parents[2]
@@ -19,11 +21,47 @@ import router_data  # noqa: E402
 import state_upgrade  # noqa: E402
 
 
+# The entries and directories of the review's grid (18 x 25).
+ALLOWED_CWD_GRID_ENTRIES = ['D:/work/app', 'D:\\work\\app\\', 'D:/work/app/', 'D:/', 'D:\\', '/', '/work/app', 'app',
+                            'work/app', 'D:/work/a.b', 'D:/work/(x)+', '~/proj', 'D:/work/../work/app', './app',
+                            'D:/Work/App', '//srv/share/app', 'D:/work/app ', ' D:/work/app']
+ALLOWED_CWD_GRID_DIRECTORIES = ['D:/work/app', 'D:\\work\\app', 'D:/work/app/', 'D:/work/app2', 'D:/work/app/sub',
+                                'D:/WORK/APP/sub', 'D:/work/apple', 'D:/', 'D:/other', 'C:/work/app', 'C:/',
+                                'D:/work/a.b', 'D:/work/aXb', 'D:/work/(x)+/q', 'D:/work/xx', 'D:/x/app/y',
+                                'D:/work/app/../app2', 'D:/work/./app', 'C:/Users/foo/proj/z', 'D:/work/other/app',
+                                'D:/work/app//sub', 'E:/work/app', 'D:/work/app/../app', 'D:/work/app/./sub',
+                                'D:/work//app']
+SEPARATORS = '\\/'
+
+
+def v0_5_0_allowed_cwd(entries, cwd):
+    """`account_fleet.account_cwd_allowed` of tag v0.5.0, the `allowed_cwd` part only, on Windows path semantics."""
+    def parts(path):
+        return tuple(p.lower().rstrip(SEPARATORS) for p in path.parts if p not in ('\\', '/'))
+    actual = parts(PureWindowsPath(ntpath.abspath(cwd)))
+    for raw in entries:
+        item = raw.strip()
+        candidate = PureWindowsPath(item)
+        if candidate.is_absolute() or ':' in item or item.startswith(('/', '\\')):
+            wanted = parts(PureWindowsPath(ntpath.abspath(item)))
+            if wanted and len(actual) >= len(wanted) and actual[:len(wanted)] == wanted:
+                return True
+        else:
+            wanted = parts(candidate)
+            n = len(wanted)
+            if n and any(actual[i:i + n] == wanted for i in range(len(actual) - n + 1)):
+                return True
+    return False
+
+
 class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / 'accounts-override.json'
+        patched = mock.patch.object(router_data, 'modules')   # it only puts the router scripts on the path; they are
+        patched.start()                                       # already importable here, and no skill is installed
+        self.addCleanup(patched.stop)
 
     def write(self, doc):
         with self.path.open('w', encoding='utf-8', newline='\n') as handle:
@@ -38,13 +76,12 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
         self.assertEqual({bid: spec['disabled'] for bid, spec in bundles.items()},
                          {'b1': True, 'b2': True, 'b3': False, 'b4': True, 'b5': False})
 
-    def test_allowed_cwd_alone_becomes_the_cwd_regex_the_tray_showed_and_saved(self):
+    def test_allowed_cwd_alone_becomes_a_cwd_regex_that_accepts_what_v0_5_0_accepted(self):
         self.write({'schema_version': 2, 'accounts': {
             'acct-a': {'allowed_cwd': ['D:/work/game', 'src/tools']}, 'acct-b': {'allowed_cwd': 'D:/work/docs/'},
             'acct-c': {'allowed_cwd': [], 'cwd_regex': 'keep-me'}, 'acct-d': {'allowed_cwd': ''}}})
         accounts = accounts_override.load_override(self.path)['accounts']
         self.assertEqual(set(accounts['acct-a']) | set(accounts['acct-b']), {'cwd_regex'})
-        # Declared rule: a cwd under an allowed path, or one that contains the relative segments, matches; others do not.
         regex_a, regex_b = accounts['acct-a']['cwd_regex'], accounts['acct-b']['cwd_regex']
         self.assertTrue(cwd_policy.matches(regex_a, 'd:\\Work\\Game\\sub'))
         self.assertTrue(cwd_policy.matches(regex_a, 'E:/a/src/tools/x'))
@@ -55,6 +92,45 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
         self.assertEqual(accounts['acct-c'], {'cwd_regex': 'keep-me'})  # an empty restriction restricts nothing
         self.assertEqual(accounts['acct-d'], {})
         re.compile(regex_a)
+
+    def test_the_carried_class_agrees_with_the_v0_5_0_matcher_and_every_other_entry_is_refused(self):
+        # Rule: a step carries an entry only where the regex accepts exactly the directories the v0.5.0 matcher
+        # accepted (the directories here all have a drive: a drive-less one resolves against the process's drive).
+        carried, refused = [], []
+        for entry in ALLOWED_CWD_GRID_ENTRIES:
+            doc = {'schema_version': 2, 'accounts': {'a': {'allowed_cwd': [entry]}}}
+            upgraded = accounts_override.upgrade_document(doc)['accounts']['a']
+            if 'allowed_cwd' in upgraded:
+                refused.append(entry)
+                continue
+            carried.append(entry)
+            for cwd in ALLOWED_CWD_GRID_DIRECTORIES:
+                with self.subTest(entry=entry, cwd=cwd):
+                    self.assertEqual(cwd_policy.matches(upgraded['cwd_regex'], cwd), v0_5_0_allowed_cwd([entry], cwd))
+        self.assertEqual(sorted(refused), sorted(['/', '/work/app', '~/proj', './app', '//srv/share/app']))
+        self.assertGreaterEqual(len(carried), 10)   # the check above is not vacuous
+
+    def test_a_directory_is_matched_in_its_normalized_form_for_every_cwd_regex(self):
+        # Rule: `D:/work/app/../app2` is the directory `D:/work/app2`, never one inside `D:/work/app`; a `cwd_regex`
+        # (upgraded or written by the user) sees the same directory the operating system would.
+        inside = '^D:/work/app(/|$)'
+        for outside in ('D:/work/app/../app2', 'D:\\work\\app\\..\\app2', 'D:/work/app/../../other', 'D:/work//app2'):
+            with self.subTest(directory=outside):
+                self.assertFalse(cwd_policy.matches(inside, outside))
+        for within in ('D:/work/app/sub/..', 'D:/work/./app/sub', 'D:/work//app', 'D:/other/../work/app/x'):
+            with self.subTest(directory=within):
+                self.assertTrue(cwd_policy.matches(inside, within))
+
+    def test_a_file_with_an_entry_that_is_not_carried_is_refused_with_a_fix_that_works(self):
+        for entry in ('~/proj', '/work/app', './app'):
+            with self.subTest(entry=entry):
+                self.write({'schema_version': 2, 'accounts': {'acct-a': {'verified': True, 'allowed_cwd': [entry]}}})
+                with self.assertRaises(ValueError) as caught:
+                    accounts_override.load_override(self.path)
+                self.assertIn('cwd_regex', str(caught.exception))
+                self.assertEqual(str(caught.exception), state_upgrade.check_accounts_override(self.path))
+                self.write({'schema_version': 2, 'accounts': {'acct-a': {'verified': True, 'cwd_regex': '^D:/work(/|$)'}}})
+                self.assertEqual(accounts_override.load_override(self.path)['accounts']['acct-a']['verified'], True)
 
     def test_the_migration_record_of_the_v0_2_to_v0_5_tray_is_dropped_and_nothing_else_changes(self):
         # Those releases applied none of its entries, so the file without it is the file they ran with.

@@ -119,17 +119,31 @@ class HostRulesKeptAcrossUpdatesTests(unittest.TestCase):
         for old, new in state_upgrade.HOST_RULE_UPGRADES.items():
             with self.subTest(old=old):
                 self.assertNotEqual(old, new)
-                self.assertFalse([tok for tok in state_upgrade.LEGACY_RULE_TOKENS if tok in new])
+                self.assertNotIn(old, new)
                 self.assertEqual(state_upgrade.upgrade_host_rule_text(f'a {old} b'), f'a {new} b')
 
-    def test_a_token_with_no_current_name_is_refused_not_guessed(self):
-        for bad in (b'path `@@ROUTE_JUDGE@@` here\n', b'set ROUTE_MANAGER_HOST\n', b'run python route_judge.py plan\n'):
-            with self.subTest(bad=bad):
-                self.overlay.write_bytes(bad)
-                with self.assertRaises(ValueError) as ctx:
-                    host_rules.load('shared', self.home)
-                self.assertIn('shared.md', str(ctx.exception))
-                self.assertIn('delete', str(ctx.exception))
+    def test_a_name_in_the_users_prose_is_rendered_as_written_and_only_the_retired_placeholder_is_refused(self):
+        # An overlay is the user's own text: only what cannot be rendered is refused (a placeholder with no meaning).
+        prose = b'The allocator lives in route_judge.py; export ROUTE_MANAGER_HOME=1 once.\n'
+        self.overlay.write_bytes(prose)
+        self.assertEqual(host_rules.load('shared', self.home), (prose.decode('utf-8'), 'overlay'))
+        self.overlay.write_bytes(b'path `@@ROUTE_JUDGE@@` here\n')
+        with self.assertRaises(ValueError) as ctx:
+            host_rules.load('shared', self.home)
+        self.assertIn('shared.md', str(ctx.exception))
+        self.assertIn('@@AGENTCOMPASS@@', str(ctx.exception))   # the fix names what to write instead
+        self.assertIn('delete', str(ctx.exception))
+
+    def test_the_overlay_files_doctor_checks_are_the_ones_load_reads(self):
+        import state_upgrade
+        self.assertEqual(sorted(host_rules.OVERLAY_FILES.values()), sorted(state_upgrade.HOST_RULE_OVERLAYS))
+
+    def test_a_managed_rule_block_holding_a_name_from_the_users_prose_is_not_stale(self):
+        import state_upgrade
+        block = f'{state_upgrade.RULE_BEGIN}\nsee route_judge.py and ROUTE_MANAGER_HOME\n{state_upgrade.RULE_END}\n'
+        self.assertIsNone(state_upgrade._check_global_rule_text('CLAUDE.md', block))
+        stale = f'{state_upgrade.RULE_BEGIN}\nrun ROUTER_WORKER=1\n{state_upgrade.RULE_END}\n'
+        self.assertIn('ROUTER_WORKER', state_upgrade._check_global_rule_text('CLAUDE.md', stale))
 
     def test_doctor_names_nothing_for_an_overlay_that_has_a_step(self):
         import state_upgrade

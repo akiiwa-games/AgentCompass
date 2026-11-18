@@ -39,18 +39,16 @@ HOST_RULE_UPGRADES = {
     'ROUTER_LIVE_MODELS': 'AGENTCOMPASS_LIVE_MODELS',
     'route-agent-work': 'agent-compass',
 }
+# The files `host_rules.load` reads; the others in `host-rules/` (dispatch.md, personal-routing-policy.md) are the user's own
+# documents, which no release or check reads as an overlay.
+HOST_RULE_OVERLAYS = ('shared.md', 'codex.md', 'daemon-append.md')
 HOST_POLICY_KEYS = frozenset({'allowed_accounts', 'judges', 'usage_providers', 'known_accounts'})
+RETIRED_PLACEHOLDER = '@@ROUTE_JUDGE@@'     # no current meaning on its own; `python -X utf8 @@ROUTE_JUDGE@@` is renamed above
 RULE_BEGIN = '<!-- agentcompass:begin -->'
 RULE_END = '<!-- agentcompass:end -->'
-LEGACY_RULE_TOKENS = (
-    '@@ROUTE_JUDGE@@',
-    'ROUTER_WORKER',
-    'ROUTER_ACCOUNTS_OVERRIDE',
-    'ROUTER_LIVE_MODELS',
-    'ROUTE_MANAGER_',
-    'route-agent-work',
-    'route_judge.py',
-)
+# What an earlier release's rule block held and a current render never does (an overlay's words are carried through
+# `upgrade_host_rule_text`, and the retired placeholder is refused); a name the user wrote in prose stays in the block.
+STALE_RULE_TOKENS = (*HOST_RULE_UPGRADES, RETIRED_PLACEHOLDER)
 LEGACY_HOOK_TOKENS = (
     'route-agent-work',
     'cli/_internal/agentcompass/data/setup/router_gate_hook.py',
@@ -339,22 +337,23 @@ def upgrade_host_rule_text(text: str) -> str:
 
 
 def overlay_fix(path: Path) -> str:
-    return ('edit the overlay to say what those tokens named (the command is `agentcompass`), or '
+    return (f'edit the overlay: replace {RETIRED_PLACEHOLDER} with `@@AGENTCOMPASS@@` (the command), or '
             + fix_delete(path, 'this discards your overlay: the shipped default rules are used instead'))
 
 
 def read_host_rule_file(path: Path) -> str:
-    """The text of one ``host-rules`` overlay carried into the current names (`upgrade_host_rule_text`). Raises
-    ``ValueError`` for a file that is unreadable or still holds a token with no current name."""
+    """The text of one ``host-rules`` overlay carried into the current names (`upgrade_host_rule_text`). The overlay is
+    the user's own text, so a name mentioned in it is left as written. Raises ``ValueError`` for a file that is
+    unreadable or still uses the retired placeholder, which cannot be rendered."""
     try:
         text = path.read_bytes().decode('utf-8-sig')    # bytes, not text mode: the overlay keeps its line endings
     except (OSError, UnicodeError) as exc:
         raise ValueError(format_issue(path, f'host-rules file unreadable ({exc})', overlay_fix(path))) from exc
     text = upgrade_host_rule_text(text)
-    found = [tok for tok in LEGACY_RULE_TOKENS if tok in text]
-    if found:
+    if RETIRED_PLACEHOLDER in text:
         raise ValueError(format_issue(
-            path, f'older host-rules overlay contains removed token(s): {", ".join(found)}', overlay_fix(path),
+            path, f'host-rules overlay uses the placeholder {RETIRED_PLACEHOLDER}, which has no current meaning',
+            overlay_fix(path),
         ))
     return text
 
@@ -394,39 +393,6 @@ def row_has_old_profile(row: dict) -> bool:
     return False
 
 
-def check_ledger(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    try:
-        text = path.read_text(encoding='utf-8-sig')
-    except (OSError, UnicodeError) as exc:
-        return format_issue(path, f'ledger unreadable ({exc})', fix_delete(path))
-    bad_json = 0
-    old_profiles = 0
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except ValueError:
-            bad_json += 1
-            continue
-        if not isinstance(row, dict):
-            bad_json += 1
-            continue
-        if row_has_old_profile(row):
-            old_profiles += 1
-    parts = []
-    if old_profiles:
-        parts.append(f'{old_profiles} older-format profile row(s)')
-    if bad_json:
-        parts.append(f'{bad_json} malformed JSON row(s)')
-    if parts:
-        return format_issue(path, 'ledger contains ' + ' and '.join(parts), fix_delete(path))
-    return None
-
-
 def check_dispatch_db(path: Path) -> str | None:
     """Only a database sqlite cannot read. One an older version made is not a fault: missing tables are created on use
     (`dispatch_registry.transaction`) and a decision recorded under an older task profile is refused on its own
@@ -456,6 +422,17 @@ def _overrides_fix(path: Path) -> str:
     return fix_delete(path, 'this discards the temporary priorities it holds')
 
 
+def check_provider_inventory(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    import provider_inventory
+    try:
+        provider_inventory.previous_inventory(path)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
 def check_router_overrides(path: Path) -> str | None:
     if not path.exists():
         return None
@@ -479,7 +456,7 @@ def _check_global_rule_text(path: Path | str, text: str) -> str | None:
         start = text.index(RULE_BEGIN)
         end = text.index(RULE_END, start) + len(RULE_END)
         managed = text[start:end]
-        found = [tok for tok in LEGACY_RULE_TOKENS if tok in managed]
+        found = [tok for tok in STALE_RULE_TOKENS if tok in managed]
         if found:
             return format_issue(
                 path,
@@ -488,7 +465,7 @@ def _check_global_rule_text(path: Path | str, text: str) -> str | None:
             )
         return None
     stripped = text.strip()
-    if stripped.startswith('# Agent Routing (Global)') or '@@ROUTE_JUDGE@@' in text or 'route-agent-work' in text:
+    if stripped.startswith('# Agent Routing (Global)') or RETIRED_PLACEHOLDER in text or 'route-agent-work' in text:
         return format_issue(
             path,
             'older un-markered global routing rule block',
@@ -628,61 +605,31 @@ def collect_issues(home: Path | None = None, environ: dict | None = None) -> lis
     accounts_path = Path(os.path.expandvars(override_env)).expanduser() if override_env else sdir / 'accounts-override.json'
     policy_env = str(env.get('ROUTER_HOST_POLICY') or '').strip()
     policy_path = Path(os.path.expandvars(policy_env)).expanduser() if policy_env else sdir / 'host-policy.json'
-    ledger_env = str(env.get('ROUTER_LEDGER') or '').strip()
-    ledger_path = Path(os.path.expandvars(ledger_env)).expanduser() if ledger_env else sdir / 'router-ledger.jsonl'
     db_env = str(env.get('ROUTER_DISPATCH_DB') or '').strip()
     db_path = Path(os.path.expandvars(db_env)).expanduser() if db_env else sdir / 'dispatch.sqlite3'
     overrides_env = str(env.get('ROUTER_OVERRIDES') or '').strip()
     overrides_path = Path(os.path.expandvars(overrides_env)).expanduser() if overrides_env else sdir / 'router-overrides.json'
-    cache_env = str(env.get('ROUTER_USAGE_CACHE') or '').strip()
 
     for issue in (
         check_accounts_override(accounts_path),
         check_usage_config(sdir / 'usage-config.json'),
         check_host_policy(policy_path),
         check_user_scores(sdir / 'user-scores.json'),
-        check_ledger(ledger_path),
         check_dispatch_db(db_path),
         check_router_overrides(overrides_path),
+        check_provider_inventory(sdir / 'provider-inventory.json'),
     ):
         if issue:
             issues.append(issue)
 
-    rules_dir = sdir / 'host-rules'
-    if rules_dir.is_dir():
-        try:
-            rule_files = sorted(rules_dir.glob('*.md'))
-        except OSError:
-            rule_files = []
-        for rfile in rule_files:
-            issue = check_host_rule_file(rfile)
-            if issue:
-                issues.append(issue)
+    for name in HOST_RULE_OVERLAYS:
+        issue = check_host_rule_file(sdir / 'host-rules' / name)
+        if issue:
+            issues.append(issue)
 
     # Removed by `agentcompass setup` and by the step that runs after a product update (remove_retired_reference_data).
     for leftover in retired_reference_data(sdir):
         issues.append(format_issue(leftover, f'{RETIRED_REFERENCE_DATA[leftover.name]}, not read', FIX_SETUP))
-
-    legacy_uf_cache = base_home / '.usage-float' / 'usage-cache.json'
-    if not cache_env and legacy_uf_cache.exists():
-        issues.append(format_issue(
-            legacy_uf_cache,
-            'older Usage Float cache location (AgentCompass reads only usage-cache.json under state dir)',
-            fix_delete(legacy_uf_cache),
-        ))
-
-    cal_dir = base_home / '.cache' / 'agentcompass-calibration'
-    if cal_dir.is_dir() and not (cal_dir / 'fetch-manifest.json').is_file():
-        try:
-            has_entries = any(cal_dir.iterdir())
-        except OSError:
-            has_entries = False
-        if has_entries:
-            issues.append(format_issue(
-                cal_dir,
-                'older calibration cache missing fetch-manifest.json',
-                fix_delete(cal_dir),
-            ))
 
     issues.extend(check_hooks_and_rules(base_home, env))
     return issues

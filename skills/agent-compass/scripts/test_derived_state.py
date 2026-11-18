@@ -126,17 +126,80 @@ class InventoryReplacedTests(unittest.TestCase):
         provider_inventory._LAST_PUBLISHED_INVENTORY.clear()
         self.addCleanup(provider_inventory._LAST_PUBLISHED_INVENTORY.clear)
 
-    def test_an_older_inventory_does_not_stop_discovery_and_the_next_publish_replaces_it(self):
+    SCHEMA = provider_inventory.INVENTORY_SCHEMA
+
+    def tombstone_inventory(self, schema):
+        # A credential the user removed in the launcher: its removal mark and its paused row.
+        return {'schema': schema, 'saved': [], 'accounts': {'acct': {'identity': 'id-1', 'status': 'paused'}},
+                'removed': [{'entry': 'e1', 'source': 'cc-switch', 'account': 'acct', 'identity': 'id-1'}]}
+
+    def applied(self, previous):
+        """What discovery does with `previous` on a credential that is installed again: pause it for the mark."""
+        result = {'schema': self.SCHEMA, 'saved': [], 'sources': {},
+                  'accounts': {'acct': {'identity': 'id-1', 'status': 'bound'}}}
+        provider_inventory.apply_removals(result, previous)
+        return result
+
+    def test_an_inventory_of_another_schema_without_removals_does_not_stop_discovery_and_is_replaced(self):
         target = self.state / 'provider-inventory.json'
-        for old in ({'schema': 'route-manager.providers.v1', 'accounts': {'x': {}}}, {'accounts': {}}, ['not', 'a', 'dict']):
+        for old in ({'schema': 'route-manager.providers.v1', 'accounts': {'x': {}}}, {'accounts': {}},
+                    {'schema': 'route-manager.providers.v1', 'removed': []}):
             with self.subTest(old=old):
                 target.write_text(json.dumps(old), encoding='utf-8')
                 current = provider_inventory.current()
-                self.assertEqual(current['schema'], 'agent-compass.providers.v2.local')
-                self.assertEqual(json.loads(target.read_text(encoding='utf-8'))['schema'], current['schema'])
+                self.assertEqual(current['schema'], self.SCHEMA)
+                self.assertEqual(json.loads(target.read_text(encoding='utf-8'))['schema'], self.SCHEMA)
                 issues = state_upgrade.collect_issues(self.root, {'ROUTER_STATE_DIR': str(self.state)})
                 self.assertFalse([issue for issue in issues if 'provider-inventory' in issue])
                 provider_inventory._LAST_PUBLISHED_INVENTORY.clear()
+
+    def test_the_removals_of_every_released_schema_are_carried_and_never_dropped_by_a_publish(self):
+        # Rule: a credential the user removed stays paused. v0.1.0 to v0.3.1 wrote this shape under the schema name
+        # `route-manager.providers.v2.local`; the current schema is read as it is.
+        target = self.state / 'provider-inventory.json'
+        for schema in ('route-manager.providers.v2.local', self.SCHEMA):
+            with self.subTest(schema=schema):
+                target.write_text(json.dumps(self.tombstone_inventory(schema)), encoding='utf-8')
+                result = self.applied(provider_inventory.previous_inventory(target))
+                self.assertEqual(result['accounts']['acct']['status'], 'paused')
+                self.assertEqual(len(result['removed']), 1)
+
+    def test_an_unreadable_inventory_fails_with_its_message_and_the_fix_it_names_works(self):
+        target = self.state / 'provider-inventory.json'
+        for bad in (json.dumps(self.tombstone_inventory(self.SCHEMA))[:40], '', '["not", "a", "dict"]'):
+            with self.subTest(bad=bad):
+                target.write_text(bad, encoding='utf-8')
+                with self.assertRaises(ValueError) as caught:
+                    provider_inventory.current()
+                self.assertIn(f'Fix: delete "{target}" (this discards which credentials you removed in the launcher',
+                              str(caught.exception))
+                self.assertEqual(str(caught.exception), state_upgrade.check_provider_inventory(target))
+                self.assertTrue(any(str(target) in issue for issue in state_upgrade.collect_issues(
+                    self.root, {'ROUTER_STATE_DIR': str(self.state)})))
+        target.unlink()                                   # follow it
+        self.assertEqual(provider_inventory.current()['schema'], self.SCHEMA)
+
+    def test_an_inventory_of_an_unknown_schema_that_holds_removals_is_refused_not_dropped(self):
+        target = self.state / 'provider-inventory.json'
+        target.write_text(json.dumps(self.tombstone_inventory('route-manager.providers.v1')), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'holds removals that cannot be read'):
+            provider_inventory.current()
+
+
+class OneReaderOfAccountsOverrideTests(unittest.TestCase):
+    def test_the_usage_collector_reads_a_disabled_reason_string_as_disabled_like_every_other_reader(self):
+        import usage_core
+        root = isolated_router_state(self.addCleanup, policy=False)
+        path = root / 'accounts-override.json'
+        spec = {'billing': 'metered', 'endpoint': 'https://api.example.test/v1', 'api_key': 'k'}
+        path.write_text(json.dumps({'schema_version': 2, 'accounts': {
+            'off-by-reason': {**spec, 'disabled': 'switched off in the tray'}, 'on': {**spec, 'disabled': False}}}),
+            encoding='utf-8')
+        with patch.dict(os.environ, {'AGENTCOMPASS_ACCOUNTS_OVERRIDE': str(path)}):
+            self.assertEqual(accounts_override.load_override(path)['accounts']['off-by-reason']['disabled'], True)
+            found = usage_core.discover_metered_usd_accounts()
+        self.assertNotIn('off-by-reason', found)
+        self.assertIn('on', found)
 
 
 class RefusalFixesWorkWhenFollowedTests(unittest.TestCase):
@@ -159,9 +222,22 @@ class RefusalFixesWorkWhenFollowedTests(unittest.TestCase):
         doc = {'schema_version': 2, 'accounts': {'acct-a': {
             'verified': True, 'allowed_cwd': ['D:/work'], 'cwd_regex': 'game', 'bundles': {'b1': {'disabled': True}}}}}
         path.write_text(json.dumps(doc), encoding='utf-8')
-        with self.assertRaisesRegex(ValueError, r'Fix: edit the file: remove accounts\.acct-a\.allowed_cwd'):
+        with self.assertRaisesRegex(ValueError, r'Fix: edit the file: remove accounts\.acct-a\.allowed_cwd') as caught:
             accounts_override.load_override(path)
+        # v0.5.0 applied both, so the edit widens the account: the text says so instead of "nothing else is lost".
+        self.assertIn('widens the account', str(caught.exception))
+        self.assertNotIn('nothing else is lost', str(caught.exception))
         del doc['accounts']['acct-a']['allowed_cwd']       # follow it
+        path.write_text(json.dumps(doc), encoding='utf-8')
+        self.assertEqual(accounts_override.load_override(path), doc)
+
+    def test_an_allowed_cwd_entry_that_is_not_carried_names_the_cwd_regex_to_write_and_the_edit_works(self):
+        path = self.state / 'accounts-override.json'
+        doc = {'schema_version': 2, 'accounts': {'acct-a': {'verified': True, 'allowed_cwd': ['~/proj']}}}
+        path.write_text(json.dumps(doc), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, r'Fix: edit the file: replace accounts\.acct-a\.allowed_cwd with accounts\.acct-a\.cwd_regex'):
+            accounts_override.load_override(path)
+        doc['accounts']['acct-a'] = {'verified': True, 'cwd_regex': '^D:/work/proj(/|$)'}                 # follow it
         path.write_text(json.dumps(doc), encoding='utf-8')
         self.assertEqual(accounts_override.load_override(path), doc)
 
@@ -204,11 +280,11 @@ class RefusalFixesWorkWhenFollowedTests(unittest.TestCase):
         directory = self.state / 'host-rules'
         directory.mkdir(parents=True)
         overlay = directory / 'shared.md'
-        overlay.write_text('run python route_judge.py plan\n', encoding='utf-8')
+        overlay.write_text('run @@ROUTE_JUDGE@@ plan\n', encoding='utf-8')
         with self.assertRaises(ValueError) as caught:
             host_rules.load('shared', self.root)
         self.assertIn('this discards your overlay', str(caught.exception))
-        overlay.write_text('run agentcompass plan\n', encoding='utf-8')                               # edit
+        overlay.write_text('run @@AGENTCOMPASS@@ plan\n', encoding='utf-8')                           # edit, as the text says
         self.assertEqual(host_rules.load('shared', self.root)[1], 'overlay')
         overlay.unlink()                                                                              # delete
         self.assertEqual(host_rules.load('shared', self.root)[1], 'default')

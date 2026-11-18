@@ -15,9 +15,10 @@ import dispatch_fallback as fallback
 import dispatch_flow as flow
 import dispatch_registry as registry
 import provider_retry
+import route_judge
 import usage_reading
 
-from router_test_support import isolated_router_state
+from router_test_support import isolated_router_state, profile
 import test_dispatch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'audit'))
@@ -480,6 +481,28 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual((out['action'], out['result'], out['covered']), ('final', 'declined', False))
         self.assertEqual(len(self.host.creates), 1)
         self.assertEqual(flow.public(registry.inspect(root['dispatch_id']))['next_action'], flow.TASK_INPUT_NEXT)
+
+    def test_a_dispatch_routed_before_an_update_ends_with_a_reason_when_it_fails_after_it(self):
+        # Rule: a decision recorded under an older task profile is not reinterpreted, so its failure is not replanned
+        # (the real judge refuses that profile) and not retried: the chain ends with a reason and nothing is relaunched.
+        import json
+        import sqlite3
+        from contextlib import closing
+        root = self.first()
+        old = {**profile(), 'realtime_loop': False,
+               'axis_demand': {'divergence': 1, 'global_rigor': 2, 'module_precision': 2, 'vision_tools': 0}}
+        with closing(sqlite3.connect(registry.db_path(), isolation_level=None)) as connection:
+            doc = json.loads(connection.execute('SELECT data FROM decisions WHERE id=?', (root['decision_id'],)).fetchone()[0])
+            doc['allocation_task']['profile'] = old
+            connection.execute('UPDATE decisions SET data=? WHERE id=?', (json.dumps(doc), root['decision_id']))
+        self.host.end(root['dispatch_id'], 'error', terminal={'reason': 'error', 'status': 'error'})
+        out = fallback.handle(root['dispatch_id'], judge=route_judge, host=self.host)
+        self.assertEqual((out['action'], out['result']), ('final', 'older_profile'))
+        self.assertIn('older version', out['text'])
+        self.assertIn('roll the brief again', out['text'])
+        self.assertEqual(len(self.host.creates), 1)                       # nothing was relaunched
+        self.assertEqual(registry.inspect(root['dispatch_id'])['fallback']['state'], 'final')
+        self.assertEqual(old, registry.decision_record(root['decision_id'])['allocation_task']['profile'])
 
     def owner_named(self, task=None):
         decision_bundle = dict(self.bundle)

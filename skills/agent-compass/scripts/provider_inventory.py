@@ -45,6 +45,7 @@ _SHIPPED_PLAN_TEMPLATES = None
 _STDLIB_WHICH = shutil.which
 _WHICH_CACHE = {}
 _REGISTRY_EXE_CACHE = {}
+INVENTORY_SCHEMA = 'agent-compass.providers.v2.local'
 _LAST_PUBLISHED_INVENTORY = {}
 _RESOLVE_CACHE = {}
 _TOML_CACHE = {}
@@ -637,6 +638,40 @@ def read_magpie(home, environ, result, bindings):
             'credentials_present': bool(facts.get('present'))})
 
 
+# The user's removals (a credential taken out of the launcher stays paused) live in the published inventory, so that file
+# is not only derived. {the schema an earlier release wrote: (does the document have it, the step that carries it)}:
+# releases v0.1.0 to v0.3.1 named the schema `route-manager.providers.v2.local` and kept `removed` and `saved` in the shape
+# of today (the identities are the same digests); v0.3.2 renamed the schema, and its first publish replaced such a file.
+LOCAL_UPGRADES = {
+    'route-manager.providers.v2.local (v0.1.0 to v0.3.1)': (
+        lambda doc: doc.get('schema') == 'route-manager.providers.v2.local',
+        lambda doc: {**doc, 'schema': INVENTORY_SCHEMA}),
+}
+
+
+def previous_inventory(path):
+    """The last published inventory in the current shape (`LOCAL_UPGRADES`); `{}` when there is none. A file that
+    cannot be read, or of another schema that holds removals nothing can read, is a fault, not something to replace:
+    the next publish would drop what the user removed. Another schema without removals holds only derived data."""
+    import state_upgrade
+    doc, why = read_json(path)
+    if why not in (None, 'missing'):
+        raise ValueError(state_upgrade.format_issue(path, f'provider inventory unreadable ({why})', _inventory_fix(path)))
+    for has_shape, step in LOCAL_UPGRADES.values():
+        if has_shape(doc):
+            doc = step(doc)
+    if doc.get('schema') != INVENTORY_SCHEMA and doc.get('removed'):
+        raise ValueError(state_upgrade.format_issue(
+            path, f'provider inventory of schema {doc.get("schema")!r} holds removals that cannot be read', _inventory_fix(path)))
+    return doc
+
+
+def _inventory_fix(path):
+    import state_upgrade
+    return state_upgrade.fix_delete(path, 'this discards which credentials you removed in the launcher: they are routable '
+                                          'again until you remove them again; the next discovery writes a new file')
+
+
 def apply_removals(result, previous):
     """A confirmed product removal pauses the same credential until restored.
 
@@ -1025,7 +1060,7 @@ def _discover(home=None, environ=None, now=None):
     if not isinstance(definitions, dict):
         definitions = {}
     cache = _read_usage_cache(home, environ)
-    result = {'schema': 'agent-compass.providers.v2.local', 'generated_at': now.isoformat(),
+    result = {'schema': INVENTORY_SCHEMA, 'generated_at': now.isoformat(),
               'accounts': {}, 'launchers': {}, 'saved': [], 'source_paths': {},
               'sources': {'paseo': paseo_error or 'read'}}
     # Sources retain private binding material only until this function returns.
@@ -1050,9 +1085,7 @@ def _discover(home=None, environ=None, now=None):
     _merge(result, bindings, **_discover_grok_bot(state_dir, environ))
     read_cc_switch(home, environ, definitions, result, bindings)
     read_magpie(home, environ, result, bindings)
-    # The last published inventory. One of another schema or shape is not read: `apply_removals` ignores it and the
-    # next publish (`current`) replaces it.
-    previous, _ = read_json(state_dir / 'provider-inventory.json')
+    previous = previous_inventory(state_dir / 'provider-inventory.json')
     apply_removals(result, previous)
     _pause_disabled_plugins(result, state_dir)
     _sync_launcher_status(result)

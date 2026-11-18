@@ -133,10 +133,14 @@ class StateUpgradeContractTests(unittest.TestCase):
             json.dumps({'schema_version': 1, 'scores': {'grok-bot': {'coding': {'level': 2.0, 'date': '2026-11-01'}}}}),
             encoding='utf-8',
         )
-        # 4. host-rules overlay holding a token with no current name
+        # 4. host-rules overlay holding a placeholder with no current meaning; the user's own documents beside the
+        # overlays are not overlays and are never named
         rules_dir = self.state / 'host-rules'
         rules_dir.mkdir(parents=True, exist_ok=True)
-        (rules_dir / 'shared.md').write_text('Run python route_judge.py plan before delegating.\n', encoding='utf-8')
+        (rules_dir / 'shared.md').write_text('Run @@ROUTE_JUDGE@@ before delegating.\n', encoding='utf-8')
+        own_documents = [rules_dir / 'dispatch.md', rules_dir / 'personal-routing-policy.md']
+        for document in own_documents:
+            document.write_text('My flow: python route_judge.py plan, ROUTE_MANAGER_HOME, @@ROUTE_JUDGE@@.\n', encoding='utf-8')
         # 5. ledger containing pre-four-category profile
         old_prof = {
             **profile(),
@@ -162,7 +166,7 @@ class StateUpgradeContractTests(unittest.TestCase):
         (self.state / 'usage-activity.json').write_text(
             json.dumps({'schema': 'route-manager.activity.v1'}), encoding='utf-8',
         )
-        # 8. provider-inventory with older schema
+        # 8. provider-inventory of another schema without removals (derived data) next to nothing else
         (self.state / 'provider-inventory.json').write_text(
             json.dumps({'schema': 'route-manager.providers.v1'}), encoding='utf-8',
         )
@@ -204,7 +208,8 @@ class StateUpgradeContractTests(unittest.TestCase):
 
         issues = report['upgrade_issues']
         # Derived state the product rebuilds or skips itself is not the user's chore: doctor does not list it.
-        for healed in (db_file, self.state / 'usage-activity.json', self.state / 'provider-inventory.json'):
+        for healed in (db_file, self.state / 'usage-activity.json', self.state / 'provider-inventory.json',
+                       self.state / 'router-ledger.jsonl', uf_cache, cal_cache, *own_documents):
             self.assertFalse(any(str(healed) in issue for issue in issues), healed)
         self.assertIn('Upgrade checks:', rendered)
         for issue in issues:
@@ -217,9 +222,6 @@ class StateUpgradeContractTests(unittest.TestCase):
             self.state / 'host-policy.json',
             self.state / 'user-scores.json',
             rules_dir / 'shared.md',
-            self.state / 'router-ledger.jsonl',
-            uf_cache,
-            cal_cache,
             claude_dir / 'settings.json',
             claude_dir / 'CLAUDE.md',
             old_skill,
