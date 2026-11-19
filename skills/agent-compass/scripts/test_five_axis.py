@@ -2769,6 +2769,25 @@ class SpeedVariantTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 five_axis.speed_declaration({'speed': bad})
 
+    def test_a_stated_ratio_moves_the_bases_responsiveness_by_ln_r_over_sd_and_no_ratio_keeps_it_as_a_bound(self):
+        """Rule (`Scorer.speed_variants`): a variant with no responsiveness of its own is its base's curve plus
+        ln(r) / sd_panel of aa.ttfa (method `speed_ratio`); without a stated ratio the base's curve, a lower bound."""
+        sc = five_axis.Scorer.__new__(five_axis.Scorer)
+        sc.meas = {'sources': {'aa.ttfa': {'scale': {'sd_panel': 0.5}}}}
+        cite = {'kind': 'vendor', 'url': 'https://example.com/models', 'as_of': '2026-11-19', 'statement': 'x'}
+        sc.speed = {'fast': {**cite, 'ratio': 4.0, 'stated': [2, 8]}, 'bound': {**cite, 'ratio': None, 'stated': None}}
+        sc.same = {'fast': {'model': 'base'}, 'bound': {'model': 'base'}}
+        key = five_axis.SPEED_KEY
+        facets = {'base': {key: {'value': 1.0, 'by_effort': {'high': 1.0, 'max': 0.5}, 'status': 'measured'}},
+                  'fast': {}, 'bound': {}}
+        sc.speed_variants(facets)
+        shift = round(math.log(4.0) / 0.5, 4)
+        self.assertEqual(facets['fast'][key]['by_effort'], {'high': round(1.0 + shift, 4), 'max': round(0.5 + shift, 4)})
+        self.assertEqual((facets['fast'][key]['estimate']['method'], facets['fast'][key]['estimate']['shift']),
+                         ('speed_ratio', shift))
+        self.assertEqual(facets['bound'][key]['by_effort'], {'high': 1.0, 'max': 0.5})
+        self.assertEqual(facets['bound'][key]['estimate']['method'], 'speed_lower_bound')
+
     def test_every_shipped_speed_variant_follows_the_rule(self):
         refs = account_fleet.REFERENCES
         acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig'))
@@ -2997,6 +3016,25 @@ class CrossLineTimeTests(unittest.TestCase):
         basis['acme-b-4'] = {}
         five_axis.cross_line_times(SimpleNamespace(entries=set()), rows, acc, {}, minutes, basis, set())
         return minutes['acme-b-4'], basis['acme-b-4']
+
+    def test_durations_give_a_row_with_no_time_of_its_line_the_other_lines_time(self):
+        """Rule (`durations` runs `cross_line_times`): a row with no Time/Task of its own or of its line, beside a read
+        relative of another line of the same maker and size at the same version, gets that relative's time
+        (cross_line_median) at each effort the relative has, end to end through the build of the times."""
+        def tp(e, t):
+            return {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': e, 'time_per_task_min': t,
+                    'listed_as': f'x ({e})', 'as_of': '2026-11-19', 'url': 'https://example.test/aa'}
+        fields = {five_axis.measurements.ANCHOR: [tp('high', 10.0)], 'acme-a-2': [tp('high', 6.0), tp('max', 9.0)],
+                  'acme-b-2': []}
+        rows = {m: {'fields': {'throughput': f}} for m, f in fields.items()}
+        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'product': 'acme', 'line': x,
+                          'size': 'full'} for x in 'ab']}
+        acc = {**READINGS, 'models': {m: {} for m in fields}, 'aliases': {}, 'families': fams,
+               'series_versions': {'versions': {'acme-a-2': 2, 'acme-b-2': 2}}}
+        out, _, _ = five_axis.durations(five_axis.Scorer({'models': fields}, acc), rows, acc)
+        got, basis = out['acme-b-2']['minutes_by_effort'], out['acme-b-2']['basis_by_effort']
+        self.assertEqual((got['high'], got['max']), (6.0, 9.0))
+        self.assertEqual((basis['high']['method'], basis['high']['base_model']), ('cross_line_median', ['acme-a-2']))
 
     def test_without_two_same_version_pairs_the_median_of_the_nearest_other_line_relatives(self):
         got, basis = self.run_step({'acme-a-4': 6.0, 'acme-a-3': 9.0, 'acme-b-1': 2.0})
