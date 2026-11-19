@@ -243,25 +243,6 @@
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "claude-haiku-4-5-20251001",
-   "efforts": [
-    "default"
-   ],
-   "row": "claude-haiku-4-5",
-   "kind": "other_weights_on_provider",
-   "detail": "claude-haiku-4-5-20251001 on anthropic is anthropic/claude-haiku-4-5-20251001 by that provider's own listing; the name resolves to row claude-haiku-4-5 (anthropic/claude-haiku-4-5)",
-   "identity": {
-    "provider": "anthropic",
-    "listed": [
-     "anthropic/claude-haiku-4-5-20251001"
-    ],
-    "row": [
-     "anthropic/claude-haiku-4-5"
-    ]
-   }
-  },
-  {
-   "catalog": "magpie-0.1.4470",
    "model": "deepseek-v4-flash",
    "efforts": [
     "none",

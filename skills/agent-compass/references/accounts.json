@@ -24,6 +24,7 @@
   }
  },
  "aliases": {
+  "claude-haiku-4-5-20251001": "claude-haiku-4-5",
   "claude-haiku-4-5@20251001": "claude-haiku-4-5",
   "fable": "claude-fable-5-2",
   "gemini-3.8-flash": "gemini-3.8-flash-high",
@@ -117,6 +118,12 @@
     "shorthand": true,
     "as_of": "2026-10-27",
     "statement": "maintainer: short name for gemini-4-argon-high (declared in accounts.json since commit 1d51189)"
+   },
+   "claude-haiku-4-5-20251001": {
+    "kind": "vendor",
+    "url": "https://platform.claude.com/docs/en/about-claude/models/overview",
+    "as_of": "2026-11-19",
+    "statement": "Anthropic: for models before 4.6, \"the alias is a convenience pointer that resolves to the dated ID\" (claude-haiku-4-5 -> claude-haiku-4-5-20251001; the dated ID is named under \"Before the 4.6 generation\" on https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions)"
    },
    "claude-haiku-4-5@20251001": {
     "kind": "vendor",
