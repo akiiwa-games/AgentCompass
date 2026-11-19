@@ -7,6 +7,7 @@ answer the axis demand itself."""
 import copy
 from datetime import datetime, timedelta, timezone
 import json
+import math
 import shutil
 from pathlib import Path
 import sys
@@ -2050,7 +2051,7 @@ class DurationTests(unittest.TestCase):
             self.assertTrue(all(b['method'] in ('aa', 'arena_fit', 'series', 'series_effort', 'fleet_effort_ratio',
                                                 'fleet_effort_position', 'same_model', 'effort_bound', 'size_step',
                                                 'fleet_lowest_step', 'fleet_highest_step', 'fleet_off_step',
-                                                'operating_point')
+                                                'operating_point', 'speed_ratio', 'speed_lower_bound')
                                 for b in dur['basis_by_effort'].values()), name)
             self.assertNotIn('value', dur)
 
@@ -2667,6 +2668,54 @@ class GrokPlanCapacityRuleTests(unittest.TestCase):
                             self.fail(f'{fname}:{node.lineno} calls plan_defaults(..., "default")')
 
 
+class SpeedVariantTests(unittest.TestCase):
+    """Rule (calibration/README.md, Speed variants; owner 2026-11-19): a `same_model` row with `speed` takes its model's
+    abilities; its responsiveness and Time/Task are its own reading, else the model's moved by the stated ratio r
+    (responsiveness + ln(r) / sd_panel of aa.ttfa, Time / r; a range read as its geometric mean), else the model's as a stated
+    lower bound; never the ordinary estimate from the model, and never the model's cost per hour."""
+
+    def test_speed_declaration_reads_a_range_as_its_geometric_mean_and_refuses_a_malformed_one(self):
+        cite = {'kind': 'vendor', 'url': 'https://example.com/models', 'as_of': '2026-11-19', 'statement': 'x'}
+        self.assertEqual(five_axis.speed_declaration({'speed': {**cite, 'ratio': [2, 8]}})['ratio'], 4.0)
+        self.assertEqual(five_axis.speed_declaration({'speed': {**cite, 'ratio': 3}})['ratio'], 3)
+        self.assertIsNone(five_axis.speed_declaration({'speed': {**cite, 'ratio': None}})['ratio'])
+        self.assertIsNone(five_axis.speed_declaration({'model': 'm'}))
+        for bad in ({**cite, 'ratio': 1}, {**cite, 'ratio': [3, 2]}, {**cite, 'ratio': 'fast'}, {'ratio': 2, 'statement': 'x'},
+                    {**cite, 'ratio': 2, 'statement': ''}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                five_axis.speed_declaration({'speed': bad})
+
+    def test_every_shipped_speed_variant_follows_the_rule(self):
+        refs = account_fleet.REFERENCES
+        acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig'))
+        meas = json.loads((refs / 'public-measurements.json').read_text(encoding='utf-8-sig'))
+        models = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))['models']
+        sd = meas['sources']['aa.ttfa']['scale']['sd_panel']
+        variants = {m: e for m, e in acc['same_model'].items() if 'speed' in e}
+        self.assertTrue(variants)
+        for m, entry in variants.items():
+            with self.subTest(model=m):
+                r = five_axis.speed_declaration(entry)['ratio']
+                base, own = models[entry['model']], models[m]
+                resp = own['axes']['tool_operation']['facets']['responsiveness']
+                if not resp['status'].startswith('measured'):
+                    self.assertEqual(resp['estimate']['method'], 'speed_ratio' if r else 'speed_lower_bound')
+                    shift = math.log(r) / sd if r else 0.0
+                    want = base['axes']['tool_operation']['facets']['responsiveness']['by_effort']
+                    for e, v in resp['by_effort'].items():
+                        self.assertAlmostEqual(v, want[e] + shift, delta=2e-4, msg=e)
+                dur = own['duration_multiplier']
+                if dur['basis_by_effort'].get('high', {}).get('method') in ('speed_ratio', 'speed_lower_bound'):
+                    self.assertAlmostEqual(dur['minutes_by_effort']['high'],
+                                           base['duration_multiplier']['minutes_by_effort']['high'] / (r or 1.0), delta=2e-3)
+                for cat in ('creativity', 'coding'):
+                    self.assertEqual(own['axes'][cat]['value'], base['axes'][cat]['value'], cat)
+                usd = own.get('usd_per_hour') or {}
+                if usd.get('value') is not None:
+                    self.assertNotIn(usd.get('method'), ('same_model',))
+                    self.assertEqual(usd.get('kind'), 'converted')        # at its own list price
+
+
 class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
     """references/five-axis-scores.json is generated (calibration/refresh.py step 3): it must be what five_axis.build makes
     from the shipped public-measurements.json, accounts.json and plan-templates.json. A hand edit, or an input changed
@@ -3023,7 +3072,7 @@ class CrossSizeAndEdgeRuleTests(unittest.TestCase):
         s = self.fa.Scorer.__new__(self.fa.Scorer)
         s.acc = acc or {'accounts': {}, 'dispatch_efforts': {}}
         s.size_of, s.size_steps, s.steps = size_of or {}, size_steps or {}, steps or {}
-        s.same, s.fill_refused, s.points = {}, [], {}
+        s.same, s.speed, s.fill_refused, s.points = {}, {}, [], {}
         return s
 
     @staticmethod

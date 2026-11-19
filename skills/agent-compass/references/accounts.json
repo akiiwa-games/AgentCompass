@@ -666,7 +666,17 @@
     "duration",
     "usd_per_hour"
    ],
-   "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own; no board reads them, so they are estimated by the ordinary methods and marked."
+   "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own. Its own board reading where one lists it; else its base's moved by the vendor's stated speed ratio (`speed`), else the base's as a stated lower bound; cost per hour only at its own list price (calibration/README.md, Speed variants).",
+   "speed": {
+    "ratio": [
+     2,
+     3
+    ],
+    "kind": "vendor",
+    "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+    "as_of": "2026-11-18",
+    "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" (a stated range: its geometric mean)"
+   }
   },
   "kimi-for-coding-highspeed": {
    "model": "kimi-k2.7-code",
@@ -685,7 +695,17 @@
     "duration",
     "usd_per_hour"
    ],
-   "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own; no board reads them, so they are estimated by the ordinary methods and marked."
+   "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own. Its own board reading where one lists it; else its base's moved by the vendor's stated speed ratio (`speed`), else the base's as a stated lower bound; cost per hour only at its own list price (calibration/README.md, Speed variants).",
+   "speed": {
+    "ratio": [
+     5,
+     6
+    ],
+    "kind": "vendor",
+    "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+    "as_of": "2026-11-18",
+    "statement": "Kimi Code: kimi-for-coding-highspeed is \"The high-speed version of K2.7 Code, with the same coding ability and ~5–6× faster output\" (a stated range: its geometric mean)"
+   }
   },
   "kimi-k3.1-pro-highspeed": {
    "model": "kimi-k3.1-pro",
@@ -704,7 +724,71 @@
     "duration",
     "usd_per_hour"
    ],
-   "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own; no board reads them, so they are estimated by the ordinary methods and marked."
+   "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own. Its own board reading where one lists it; else its base's moved by the vendor's stated speed ratio (`speed`), else the base's as a stated lower bound; cost per hour only at its own list price (calibration/README.md, Speed variants).",
+   "speed": {
+    "ratio": null,
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed with canonical_model_id moonshotai/kimi-k3.1-pro and states no speed ratio for this listing: the base's speed is a stated lower bound"
+   }
+  },
+  "mimo-v2.6-pro-ultraspeed": {
+   "model": "mimo-v2.6-pro",
+   "carries": [
+    "creativity",
+    "coding",
+    "aesthetics",
+    "tool_operation.image_recognition"
+   ],
+   "kind": "vendor",
+   "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+   "as_of": "2026-11-19",
+   "statement": "Xiaomi MiMo: MiMo-V2.6-Pro-UltraSpeed \"Retains V2.6-Pro's full flagship-level capability with zero compromise\" and \"Delivers V2.6-Pro's flagship performance at up to 20x output speed\"",
+   "own_estimated": [
+    "tool_operation.responsiveness",
+    "duration",
+    "usd_per_hour"
+   ],
+   "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own. Its own board reading where one lists it; else its base's moved by the vendor's stated speed ratio (`speed`), else the base's as a stated lower bound; cost per hour only at its own list price (calibration/README.md, Speed variants).",
+   "speed": {
+    "ratio": null,
+    "kind": "vendor",
+    "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+    "as_of": "2026-11-19",
+    "statement": "Xiaomi MiMo: \"Delivers up to 20x faster output speed than V2.6-Pro\"; \"up to\" is a ceiling, not a stated ratio or range, so no ratio is applied and the base's speed is a stated lower bound (owner, 2026-11-19)"
+   }
+  },
+  "grok-4.7-build-fast": {
+   "model": "grok-4.7",
+   "carries": [
+    "creativity",
+    "coding",
+    "aesthetics",
+    "tool_operation.image_recognition"
+   ],
+   "kind": "vendor",
+   "url": "https://docs.x.ai/developers/grok-4-7",
+   "as_of": "2026-11-19",
+   "statement": "xAI Grok 4.7 developer guide: \"Grok 4.7 Fast is the same model served on faster infrastructure.\" and \"It's available only in Cursor and Grok Build\" (the page names no model id)",
+   "id_declaration": {
+    "kind": "maintainer",
+    "as_of": "2026-11-19",
+    "statement": "maintainer: the Grok Build CLI's model id grok-4.7-build-fast (the id the CLI lists) is the product xAI calls Grok 4.7 Fast; the vendor page does not name the id (owner to confirm)"
+   },
+   "own_estimated": [
+    "tool_operation.responsiveness",
+    "duration",
+    "usd_per_hour"
+   ],
+   "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own. Its own board reading where one lists it; else its base's moved by the vendor's stated speed ratio (`speed`), else the base's as a stated lower bound; cost per hour only at its own list price (calibration/README.md, Speed variants). The page's \"2x the standard token rates\" is a multiple of the base's price, which the price method does not take as the row's own list price, so the row has no cost per hour.",
+   "speed": {
+    "ratio": null,
+    "kind": "vendor",
+    "url": "https://docs.x.ai/developers/grok-4-7",
+    "as_of": "2026-11-19",
+    "statement": "xAI publishes no speed ratio for Grok 4.7 Fast (\"the same model served on faster infrastructure\"): the base's speed is a stated lower bound"
+   }
   }
  },
  "calibration_panel": {
@@ -1672,7 +1756,13 @@
    "api_family": "codex"
   },
   "grok-4.7-build-fast": {
-   "label": "Grok 4.7 Build Fast"
+   "label": "Grok 4.7 Build Fast",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://docs.x.ai/developers/grok-4-7",
+    "as_of": "2026-11-19",
+    "statement": "xAI: \"Grok 4.7 Fast is the same model served on faster infrastructure.\" and \"It's available only in Cursor and Grok Build\"; the id grok-4.7-build-fast is the Grok Build CLI's (maintainer, 2026-11-19, same_model id_declaration)"
+   }
   },
   "deepseek-v4-pro": {
    "label": "DeepSeek V4 Pro"
@@ -2874,10 +2964,10 @@
   "mimo-v2.6-pro-ultraspeed": {
    "label": "MiMo V2.6 Pro UltraSpeed",
    "model_source": {
-    "kind": "community",
-    "url": "https://models.dev/api.json",
-    "as_of": "2026-11-10",
-    "statement": "models.dev lists xiaomi/mimo-v2.6-pro-ultraspeed (\"MiMo-V2.6-Pro-UltraSpeed\") with canonical_model_id xiaomi/mimo-v2.6-pro-ultraspeed (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+    "kind": "vendor",
+    "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+    "as_of": "2026-11-19",
+    "statement": "Xiaomi MiMo model page for MiMo-V2.6-Pro-UltraSpeed, API id mimo-v2.6-pro-ultraspeed: \"Delivers up to 20x faster output speed than V2.6-Pro\"; a speed variant, so a row of its own"
    }
   }
  },

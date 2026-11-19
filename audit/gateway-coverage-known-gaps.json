@@ -383,16 +383,6 @@
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "kimi-for-coding-highspeed",
-   "efforts": [
-    "default"
-   ],
-   "row": "kimi-for-coding-highspeed",
-   "kind": "no_time_reading_in_series",
-   "detail": "kimi-for-coding-highspeed: no cached board lists a Time/Task for it, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
    "model": "mimo-v2.5-pro-ultraspeed",
    "efforts": [
     "default"

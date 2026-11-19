@@ -102,7 +102,8 @@ scores on the four categories and the quota economy together. Nothing else score
 - A row that `accounts.json` `same_model` declares to be the very model another row names (a cited vendor statement with
   its `url`, or a dated `kind: "maintainer"` declaration) takes that model's facets as they stand, measured or
   estimated (method `same_model`), for the categories the row `carries`, plus its Time/Task (`duration`) and
-  `usd_per_hour` when carried.
+  `usd_per_hour` when carried. One that also declares `speed` is a speed variant (`speed_declaration`,
+  `speed_variants`): calibration/README.md.
 - usd_per_hour has one basis (rounds 8-9, user 2026-11-09 "全部都用arena"): `arena.agent_sessions` (arena.ai Agent / Overall
   real sessions, Cost/Task P50 / Time/Task P50 x 60, kind `community`), each source's value at High (else its effort-less
   listing, else the median of its listed efforts). For a model arena does not list with cost and time, the labelled
@@ -121,6 +122,7 @@ scores on the four categories and the quota economy together. Nothing else score
 import argparse
 import hashlib
 import json
+import math
 import re
 import statistics
 import sys
@@ -285,6 +287,30 @@ def bound_curve(by_effort, up=True, moved=None):
     if moved is not None:
         moved.update(e for e in out if out[e] != round(float(by_effort[e]), 4))
     return out
+
+
+SPEED_KEY = ('tool_operation', 'responsiveness')
+
+
+def speed_declaration(entry):
+    """The `speed` of a `same_model` entry (owner 2026-11-19, round 6 item 1): the row is a speed variant of its declared
+    model (same weights, its own speed and price). {'ratio': the vendor's stated speed ratio (a stated range [lo, hi] read
+    as its geometric mean), or None when the vendor states none; 'stated': the ratio as declared; the citation}. None for
+    an entry without `speed`; a malformed one stops the build."""
+    sp = (entry or {}).get('speed')
+    if sp is None:
+        return None
+    stated = sp.get('ratio') if isinstance(sp, dict) else None
+    ok_range = (isinstance(stated, list) and len(stated) == 2 and all(isinstance(x, (int, float)) for x in stated)
+                and 1 < stated[0] <= stated[1])
+    ok_one = isinstance(stated, (int, float)) and not isinstance(stated, bool) and stated > 1
+    if not isinstance(sp, dict) or not valid_public_declaration(sp) or not str(sp.get('statement') or '').strip() \
+            or not (stated is None or ok_range or ok_one):
+        raise ValueError('same_model speed needs a citation (https url or dated maintainer), a statement and `ratio`: '
+                         'a number above 1, a stated range [lo, hi] above 1, or null when the vendor states none')
+    ratio = math.sqrt(stated[0] * stated[1]) if ok_range else stated
+    return {'ratio': round(float(ratio), 4) if ratio is not None else None, 'stated': stated,
+            **{k: sp[k] for k in ('kind', 'url', 'as_of', 'statement') if sp.get(k)}}
 
 
 def valid_public_declaration(entry):
@@ -1085,6 +1111,7 @@ class Scorer:
             rows[m] = {'fields': fields, 'boards': self.board_entries(fields)}
         raw_same = series.same_model(self.acc)
         self.same = {k: v for k, v in raw_same.items() if valid_public_declaration(v)}
+        self.speed = {m: sp for m, e in self.same.items() if (sp := speed_declaration(e)) is not None}
         self.sibs = series.groups({**self.acc, 'same_model': self.same})
         self.versions, self.small = series.versions(self.acc), series.small_rows(self.acc)
         self.order = estimation_order(self.acc)
@@ -1124,6 +1151,8 @@ class Scorer:
                 kept = facets[m].get(key)
                 if kept is not None and kept.get('value') is not None:
                     continue
+                if m in self.speed and key == SPEED_KEY:
+                    continue        # a speed variant's speed rests on its base and the stated ratio (speed_variants)
                 usable = [b for b in self.sibs.get(m, ())
                           if (facets[b].get(key) or {}).get('status', '').startswith('measured')
                           and (facets[b].get(key) or {}).get('value') is not None and tier[b]['value'] is not None]
@@ -1209,11 +1238,39 @@ class Scorer:
         # the size step from the nearest version comes after the own ability median (estimation_order, review D)
         self.size_down(facets, keys, 'nearest')
         self.bound_across_size(facets)
+        self.speed_variants(facets)
         for m in self.points:
             if m in rows:
                 for rec in facets[m].values():
                     self.flatten_point(m, rec)
         self.copy_same_model(facets, declared)
+
+    def speed_variants(self, facets):
+        """A speed variant (`same_model` with `speed`, speed_declaration) without its own responsiveness reading: its base's
+        curve moved by the vendor's stated speed ratio r, ln(r) / sd_panel of the time-to-first-answer board (a speed ratio
+        r divides the time to the first answer token by r; method `speed_ratio`, the base value and the ratio shown), else,
+        when the vendor states no ratio, the base's curve as a stated lower bound (method `speed_lower_bound`: the variant
+        is at least as fast as its base). Never the base's value silently."""
+        for m, sp in sorted(self.speed.items()):
+            sd = ((((self.meas.get('sources') or {}).get(measurements.AA_TTFA) or {}).get('scale') or {}).get('sd_panel'))
+            base = self.same[m]['model']
+            rec = (facets.get(base) or {}).get(SPEED_KEY)
+            if m not in facets or SPEED_KEY in facets[m] or not (rec or {}).get('by_effort'):
+                continue
+            r = sp['ratio']
+            if r and not sd:
+                raise ValueError(f'{measurements.AA_TTFA} has no sd_panel: the speed ratio of {m} cannot be applied')
+            shift = round(math.log(r) / sd, 4) if r else 0.0
+            by = {e: round(v + shift, 4) for e, v in rec['by_effort'].items()}
+            cite = {k: v for k, v in sp.items() if k not in ('ratio', 'stated')}
+            how = ({'method': 'speed_ratio', 'ratio': r, 'stated_ratio': sp['stated'], 'shift': shift,
+                    'shift_basis': f'ln(ratio) / sd_panel of {measurements.AA_TTFA} ({sd}): the ratio divides the time to '
+                                   'the first answer token'} if r else
+                   {'method': 'speed_lower_bound', 'bound': 'lower: at least as fast as its base (no ratio stated)'})
+            facets[m][SPEED_KEY] = {'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {},
+                                    'measured_efforts': [],
+                                    'estimate': {**how, 'base_model': base, 'base_value': rec['value'],
+                                                 'base_status': rec['status'], 'speed': cite}}
 
     def flatten_point(self, m, rec):
         """An operating point row (`operating_points`): every effort reads its one value, the one at the effort `default`
@@ -1609,9 +1666,10 @@ def durations(scorer, rows, acc):
                                    'statement': entry.get('statement')}
     sibs = series.groups({**acc, 'same_model': same})
     measured = {m for m in rows if minutes[m]}
+    speed = {m: sp for m, e in same.items() if m in rows and (sp := speed_declaration(e)) is not None}
     for m in rows:
-        if minutes[m] or (m in same and not {'duration'} & {*(same[m].get('carries') or ()),
-                                                            *(same[m].get('own_estimated') or ())}):
+        if minutes[m] or m in speed or (m in same and not {'duration'} & {*(same[m].get('carries') or ()),
+                                                                          *(same[m].get('own_estimated') or ())}):
             continue        # a row declared to be another model's channel that does not carry its time keeps the channel's own
         groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in measured], sibs.get(m, ()), series.versions(acc),
                                 series.small_rows(acc), same)
@@ -1622,6 +1680,18 @@ def durations(scorer, rows, acc):
                 basis[m][e] = {'method': 'series', 'base_model': group[0] if len(group) == 1 else group,
                                'version_distance': d, 'source': basis[group[0]][e].get('source'),
                                'base_method': basis[group[0]][e]['method'], 'series': sorted([m, *sibs.get(m, ())])}
+    for m, sp in sorted(speed.items()):
+        base = same[m]['model']
+        if minutes[m] or base not in rows:
+            continue        # its own Time/Task reading stands
+        r = sp['ratio']
+        cite = {k: v for k, v in sp.items() if k not in ('ratio', 'stated')}
+        for e, t in minutes[base].items():
+            minutes[m][e] = round(t / r, 3) if r else t
+            basis[m][e] = {'method': 'speed_ratio' if r else 'speed_lower_bound', 'base_model': base, 'base_minutes': t,
+                           'base_method': basis[base][e]['method'], 'source': basis[base][e].get('source'),
+                           **({'ratio': r, 'stated_ratio': sp['stated']} if r else
+                              {'bound': 'upper: no longer than its base (no ratio stated)'}), 'speed': cite}
     fleet = {}
 
     def fleet_ratio(e, e0):
@@ -2070,6 +2140,14 @@ def convert_usd(usd, rows, scorer, meas, acc):
                       'merge': f'{how} conversion: usd of {b} x API list price ratio {ratio:.4f} over the community token mix',
                       'used': [],
                       'sources': {'base': {**usd[b], 'model': b}, 'ratio': round(ratio, 4), 'prices': prices, 'token_mix': mix}}
+            sp = speed_declaration(same.get(m)) if (same.get(m) or {}).get('model') == b else None
+            if sp is not None:
+                # a speed variant at its own list price: r times the base's tokens an hour (cost per task: the price ratio)
+                usd[m]['value'] = round(usd[m]['value'] * (sp['ratio'] or 1.0), 3)
+                usd[m]['speed'] = ({'ratio': sp['ratio'], 'stated_ratio': sp['stated']} if sp['ratio'] else
+                                   {'bound': "lower: at the base's tokens an hour (no ratio stated)"})
+                usd[m]['merge'] += (f" x the stated speed ratio {sp['ratio']}" if sp['ratio'] else
+                                    "; a lower bound: the variant's speed ratio is not stated")
             break
     for m, entry in sorted(same.items()):
         base = entry.get('model')

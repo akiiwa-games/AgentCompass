@@ -123,6 +123,17 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   bounded with the facet's own readings pinned, so it never moves one. A reading the rule moves is no longer a measurement
   (`bound_moved`; a Time/Task listing it moves becomes method `effort_bound`).
 - **`same_model` declarations.** A row `accounts.json` `same_model` declares to be another row's underlying model (`dot` -> `gpt-6-astra`, `grok-bot` -> `claude-opus-5-5`) inherits that model's facet curves, `duration_multiplier`, and `usd_per_hour` when listed in `carries` (`creativity`, `coding`, `aesthetics`, `duration`, `usd_per_hour`), while channel-specific `tool_operation` stays `missing`. When a `same_model` row also declares a `capacity_rule`, `axis_scores.five_axis_overlay` resolves the detected target subscription plan's monthly price from `plan-templates.json` at runtime and matches the same-price (or price-ratio-scaled nearest) reference subscription on the capacity ladder.
+- **Speed variants (owner, 2026-11-19).** A `same_model` row that also declares `speed` is a speed variant of its
+  model: the same weights served faster (the relation is the cited declaration, never the name). Its ability facets are
+  the model's (`carries`). Its responsiveness, Time/Task and cost per hour are its own: a board reading of the row where
+  one lists it; else the model's value moved by the vendor's stated speed ratio `r` (`speed.ratio`, cited on the row; a
+  stated range `[lo, hi]` read as its geometric mean): the ratio divides the time to the first answer token and the
+  Time/Task, so responsiveness moves by `ln(r) / sd_panel` of `aa.ttfa` and Time/Task is divided by `r` (method
+  `speed_ratio`, the base value and the ratio on the cell); else, when the vendor states no ratio (`ratio: null`, a
+  ceiling such as "up to 20x" is not one), the model's value as a stated lower bound (method `speed_lower_bound`: at
+  least as fast as its model). Cost per hour only at the row's own list price (converted from its model by the list price
+  ratio and times `r`, as the row reads `r` times the model's tokens an hour), never the model's price: without its own
+  price the row takes the unpriced path.
 - **Cost per hour from the fallback source (owner, 2026-11-19).** `usd_per_hour` is read from arena sessions
   (`arena.agent_sessions`); a row arena does not price takes option B (`derived.community_mix`: Artificial Analysis output
   speed priced at the community token mix), which runs high against arena sessions on the rows that have both. A row

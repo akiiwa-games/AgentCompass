@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.five-axis-scores/12",
- "generated_at": "2026-11-19T01:46:02+00:00",
+ "generated_at": "2026-11-19T01:53:02+00:00",
  "measurements_sha256": "41a0266c5761ce669b85430cb34942364995050b11157eaf4a61ffc51d1de9c2",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
@@ -24078,23 +24078,16 @@
         "max": -2.5133,
         "ultra": -2.2402
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
+        "method": "same_model",
         "base_model": "grok-4.7",
-        "base_value": -2.7243,
-        "base_tier": -0.0655,
-        "tier": -0.0655,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "fit": "creativity.creative_writing~tier",
-        "r": 0.95,
-        "skill": 0.8991,
-        "loo_rmse": 0.5136,
-        "n": 72,
-        "slope": 4.312,
-        "version_distance": 0
+        "base_status": "measured",
+        "kind": "vendor",
+        "statement": "xAI Grok 4.7 developer guide: \"Grok 4.7 Fast is the same model served on faster infrastructure.\" and \"It's available only in Cursor and Grok Build\" (the page names no model id)",
+        "url": "https://docs.x.ai/developers/grok-4-7",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -24166,23 +24159,16 @@
         "max": -1.2232,
         "ultra": -0.8792
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
+        "method": "same_model",
         "base_model": "grok-4.7",
-        "base_value": -1.4428,
-        "base_tier": -0.0655,
-        "tier": -0.0655,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "fit": "coding.execution~tier",
-        "r": 0.7669,
-        "skill": 0.537,
-        "loo_rmse": 0.8879,
-        "n": 59,
-        "slope": 2.8558,
-        "version_distance": 0
+        "base_status": "measured",
+        "kind": "vendor",
+        "statement": "xAI Grok 4.7 developer guide: \"Grok 4.7 Fast is the same model served on faster infrastructure.\" and \"It's available only in Cursor and Grok Build\" (the page names no model id)",
+        "url": "https://docs.x.ai/developers/grok-4-7",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -24245,18 +24231,16 @@
         "max": 0.3671,
         "ultra": 0.6991
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
+        "method": "same_model",
         "base_model": "grok-4.7",
-        "base_value": -0.0861,
-        "base_tier": -0.0655,
-        "tier": -0.0655,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "shift_basis": "shift 0: no fit, out-of-sample skill -0.057 (leave-one-out error not below the mean predictor's)",
-        "version_distance": 0
+        "base_status": "measured",
+        "kind": "vendor",
+        "statement": "xAI Grok 4.7 developer guide: \"Grok 4.7 Fast is the same model served on faster infrastructure.\" and \"It's available only in Cursor and Grok Build\" (the page names no model id)",
+        "url": "https://docs.x.ai/developers/grok-4-7",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -24327,23 +24311,16 @@
         "max": -1.5395,
         "ultra": -1.396
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
+        "method": "same_model",
         "base_model": "grok-4.7",
-        "base_value": -1.7555,
-        "base_tier": -0.0655,
-        "tier": -0.0655,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "fit": "aesthetics.design~tier",
-        "r": 0.8001,
-        "skill": 0.6287,
-        "loo_rmse": 0.8981,
-        "n": 76,
-        "slope": 3.8057,
-        "version_distance": 0
+        "base_status": "measured",
+        "kind": "vendor",
+        "statement": "xAI Grok 4.7 developer guide: \"Grok 4.7 Fast is the same model served on faster infrastructure.\" and \"It's available only in Cursor and Grok Build\" (the page names no model id)",
+        "url": "https://docs.x.ai/developers/grok-4-7",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -24406,7 +24383,7 @@
       "responsiveness": {
        "value": -0.7674,
        "by_effort": {
-        "none": 1.2852,
+        "none": 2.632,
         "minimal": 1.272,
         "low": 0.5794,
         "medium": -0.094,
@@ -24417,16 +24394,43 @@
        },
        "status": "estimated",
        "sources": {},
+       "measured_efforts": [],
        "estimate": {
-        "method": "sibling_shift",
+        "method": "speed_lower_bound",
+        "bound": "lower: at least as fast as its base (no ratio stated)",
         "base_model": "grok-4.7",
         "base_value": -0.7674,
-        "base_tier": -0.0655,
-        "tier": -0.0655,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "shift_basis": "shift 0: no fit, slope -0.288 is not positive",
-        "version_distance": 0
+        "base_status": "measured",
+        "speed": {
+         "kind": "vendor",
+         "url": "https://docs.x.ai/developers/grok-4-7",
+         "as_of": "2026-11-19",
+         "statement": "xAI publishes no speed ratio for Grok 4.7 Fast (\"the same model served on faster infrastructure\"): the base's speed is a stated lower bound"
+        }
+       }
+      },
+      "image_recognition": {
+       "value": -1.876,
+       "by_effort": {
+        "none": -4.3703,
+        "minimal": -2.8415,
+        "low": -2.5495,
+        "medium": -2.2127,
+        "high": -1.876,
+        "xhigh": -1.7116,
+        "max": -1.5419,
+        "ultra": -1.2986
+       },
+       "sources": {},
+       "status": "estimated",
+       "estimate": {
+        "method": "same_model",
+        "base_model": "grok-4.7",
+        "base_status": "estimated",
+        "kind": "vendor",
+        "statement": "xAI Grok 4.7 developer guide: \"Grok 4.7 Fast is the same model served on faster infrastructure.\" and \"It's available only in Cursor and Grok Build\" (the page names no model id)",
+        "url": "https://docs.x.ai/developers/grok-4-7",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -24440,100 +24444,45 @@
           "max"
          ],
          "from": {
-          "low": 0.5794
+          "low": -2.5495
          },
          "to": {
-          "high": -0.7674
+          "high": -1.876
          },
          "weight": 0.5
         },
-        "max": {
+        "xhigh": {
          "method": "panel_effort_step",
-         "from_effort": "xhigh",
-         "from_value": -1.1538,
-         "step": -1.4075,
+         "from_effort": "high",
+         "from_value": -1.876,
+         "step": 0.1644,
          "n": 8
         },
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": 0.5794,
-         "step": 0.6926,
-         "n": 24
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": -2.5613,
-         "step": -1.5362,
-         "n": 19
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -0.7674,
-         "step": 2.0526,
-         "n": 40
-        }
-       }
-      },
-      "image_recognition": {
-       "value": -0.0609,
-       "by_effort": {
-        "none": -2.5552,
-        "minimal": -1.2467,
-        "low": -0.9547,
-        "medium": -0.4581,
-        "high": -0.0609,
-        "xhigh": -0.0609,
-        "max": 0.0933,
-        "ultra": 0.3366
-       },
-       "status": "estimated",
-       "sources": {},
-       "estimate": {
-        "method": "sibling_shift",
-        "base_model": "grok-4.6",
-        "base_value": -1.5749,
-        "base_tier": -0.409,
-        "tier": -0.0655,
-        "tier_source": "sibling",
-        "shift": 1.514,
-        "fit": "tool_operation.image_recognition~tier",
-        "r": 0.8796,
-        "skill": 0.7436,
-        "loo_rmse": 0.7528,
-        "n": 55,
-        "slope": 4.4076,
-        "version_distance": 1
-       },
-       "measured_efforts": [],
-       "filled_efforts": {
         "max": {
          "method": "panel_effort_step",
-         "from_effort": "xhigh",
-         "from_value": -0.0609,
-         "step": 0.1542,
+         "from_effort": "high",
+         "from_value": -1.876,
+         "step": 0.3341,
          "n": 7
         },
         "minimal": {
          "method": "fleet_lowest_step",
          "from_effort": "low",
-         "from_value": -0.9547,
+         "from_value": -2.5495,
          "step": -0.292,
          "n": 13
         },
         "ultra": {
          "method": "fleet_highest_step",
          "from_effort": "max",
-         "from_value": 0.0933,
+         "from_value": -1.5419,
          "step": 0.2433,
          "n": 11
         },
         "none": {
          "method": "fleet_off_step",
          "from_effort": "high",
-         "from_value": -0.0609,
+         "from_value": -1.876,
          "step": -2.4943,
          "n": 32
         }
@@ -24544,7 +24493,7 @@
      "by_level": {
       "2": {
        "by_effort": {
-        "none": 1.2852,
+        "none": 2.632,
         "minimal": 1.272,
         "low": 0.5794,
         "medium": -0.094,
@@ -24559,12 +24508,12 @@
       },
       "3": {
        "by_effort": {
-        "none": -2.5552,
-        "minimal": -1.2467,
-        "low": -0.9547,
-        "medium": -0.4581,
-        "high": -0.7674,
-        "xhigh": -1.1538,
+        "none": -4.3703,
+        "minimal": -2.8415,
+        "low": -2.5495,
+        "medium": -2.2127,
+        "high": -1.876,
+        "xhigh": -1.7116,
         "max": -2.5613,
         "ultra": -4.0975
        },
@@ -24574,14 +24523,14 @@
        ]
       }
      },
-     "value": -0.7674,
+     "value": -1.876,
      "by_effort": {
-      "none": -2.5552,
-      "minimal": -1.2467,
-      "low": -0.9547,
-      "medium": -0.4581,
-      "high": -0.7674,
-      "xhigh": -1.1538,
+      "none": -4.3703,
+      "minimal": -2.8415,
+      "low": -2.5495,
+      "medium": -2.2127,
+      "high": -1.876,
+      "xhigh": -1.7116,
       "max": -2.5613,
       "ultra": -4.0975
      },
@@ -24592,7 +24541,7 @@
     "creativity": -2.7243,
     "coding": -1.4428,
     "aesthetics": -1.7555,
-    "tool_operation": -0.7674
+    "tool_operation": -1.876
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -24606,8 +24555,8 @@
     "status": "ok",
     "anchor_minutes": 9.289,
     "by_effort": {
-     "low": 1.0839,
      "high": 2.2785,
+     "low": 1.0839,
      "xhigh": 2.629,
      "medium": 1.6797,
      "max": 4.4227,
@@ -24616,8 +24565,8 @@
      "none": 0.4908
     },
     "minutes_by_effort": {
-     "low": 10.068,
      "high": 21.165,
+     "low": 10.068,
      "xhigh": 24.421,
      "medium": 15.603,
      "max": 41.082,
@@ -24626,59 +24575,47 @@
      "none": 4.559
     },
     "basis_by_effort": {
-     "low": {
-      "method": "series",
-      "base_model": "grok-4.7",
-      "version_distance": 0,
-      "source": "aa.cost_time",
-      "base_method": "aa",
-      "series": [
-       "grok-4.20-0309-non-reasoning",
-       "grok-4.20-0309-reasoning",
-       "grok-4.20-multi-agent-0309",
-       "grok-4.3",
-       "grok-4.5",
-       "grok-4.6",
-       "grok-4.7",
-       "grok-4.7-build-fast",
-       "grok-build-0.1"
-      ]
-     },
      "high": {
-      "method": "series",
+      "method": "speed_lower_bound",
       "base_model": "grok-4.7",
-      "version_distance": 0,
-      "source": "aa.cost_time",
+      "base_minutes": 21.165,
       "base_method": "aa",
-      "series": [
-       "grok-4.20-0309-non-reasoning",
-       "grok-4.20-0309-reasoning",
-       "grok-4.20-multi-agent-0309",
-       "grok-4.3",
-       "grok-4.5",
-       "grok-4.6",
-       "grok-4.7",
-       "grok-4.7-build-fast",
-       "grok-build-0.1"
-      ]
+      "source": "aa.cost_time",
+      "bound": "upper: no longer than its base (no ratio stated)",
+      "speed": {
+       "kind": "vendor",
+       "url": "https://docs.x.ai/developers/grok-4-7",
+       "as_of": "2026-11-19",
+       "statement": "xAI publishes no speed ratio for Grok 4.7 Fast (\"the same model served on faster infrastructure\"): the base's speed is a stated lower bound"
+      }
+     },
+     "low": {
+      "method": "speed_lower_bound",
+      "base_model": "grok-4.7",
+      "base_minutes": 10.068,
+      "base_method": "aa",
+      "source": "aa.cost_time",
+      "bound": "upper: no longer than its base (no ratio stated)",
+      "speed": {
+       "kind": "vendor",
+       "url": "https://docs.x.ai/developers/grok-4-7",
+       "as_of": "2026-11-19",
+       "statement": "xAI publishes no speed ratio for Grok 4.7 Fast (\"the same model served on faster infrastructure\"): the base's speed is a stated lower bound"
+      }
      },
      "xhigh": {
-      "method": "series",
+      "method": "speed_lower_bound",
       "base_model": "grok-4.7",
-      "version_distance": 0,
-      "source": "aa.cost_time",
+      "base_minutes": 24.421,
       "base_method": "aa",
-      "series": [
-       "grok-4.20-0309-non-reasoning",
-       "grok-4.20-0309-reasoning",
-       "grok-4.20-multi-agent-0309",
-       "grok-4.3",
-       "grok-4.5",
-       "grok-4.6",
-       "grok-4.7",
-       "grok-4.7-build-fast",
-       "grok-build-0.1"
-      ]
+      "source": "aa.cost_time",
+      "bound": "upper: no longer than its base (no ratio stated)",
+      "speed": {
+       "kind": "vendor",
+       "url": "https://docs.x.ai/developers/grok-4-7",
+       "as_of": "2026-11-19",
+       "statement": "xAI publishes no speed ratio for Grok 4.7 Fast (\"the same model served on faster infrastructure\"): the base's speed is a stated lower bound"
+      }
      },
      "medium": {
       "method": "fleet_effort_position",
@@ -89190,81 +89127,37 @@
     "tool_operation": {
      "facets": {
       "responsiveness": {
-       "value": -2.6594,
+       "value": -1.4866,
        "by_effort": {
-        "none": -0.1697,
-        "minimal": -0.1697,
-        "low": -0.8623,
-        "medium": -1.8178,
-        "high": -2.6594,
-        "xhigh": -3.7487,
-        "max": -5.1189,
-        "ultra": -6.6551
+        "none": 1.0031,
+        "minimal": 1.0031,
+        "low": 0.3105,
+        "medium": -0.645,
+        "high": -1.4866,
+        "xhigh": -2.5759,
+        "max": -3.9461,
+        "ultra": -5.4823
        },
        "status": "estimated",
        "sources": {},
+       "measured_efforts": [],
        "estimate": {
-        "method": "sibling_shift",
+        "method": "speed_ratio",
+        "ratio": 2.4495,
+        "stated_ratio": [
+         2,
+         3
+        ],
+        "shift": 1.1728,
+        "shift_basis": "ln(ratio) / sd_panel of aa.ttfa (0.763853): the ratio divides the time to the first answer token",
         "base_model": "kimi-k3.1-pro",
         "base_value": -2.6594,
-        "base_tier": -0.0214,
-        "tier": -0.0214,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "shift_basis": "shift 0: no fit, slope -0.288 is not positive",
-        "version_distance": 0
-       },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": 1.7971,
-         "n": 10
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": 0.8416,
-         "n": 8
-        },
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": -1.0893,
-         "n": 9
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": -2.4595,
-         "n": 7
-        },
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": -0.8623,
-         "step": 0.6926,
-         "n": 24
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": -5.1189,
-         "step": -1.5362,
-         "n": 19
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": 2.0526,
-         "n": 40,
-         "bounded_from": -0.6068
+        "base_status": "measured_partial",
+        "speed": {
+         "kind": "vendor",
+         "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+         "as_of": "2026-11-18",
+         "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" (a stated range: its geometric mean)"
         }
        }
       },
@@ -89349,14 +89242,14 @@
      "by_level": {
       "2": {
        "by_effort": {
-        "none": -0.1697,
-        "minimal": -0.1697,
-        "low": -0.8623,
-        "medium": -1.8178,
-        "high": -2.6594,
-        "xhigh": -3.7487,
-        "max": -5.1189,
-        "ultra": -6.6551
+        "none": 1.0031,
+        "minimal": 1.0031,
+        "low": 0.3105,
+        "medium": -0.645,
+        "high": -1.4866,
+        "xhigh": -2.5759,
+        "max": -3.9461,
+        "ultra": -5.4823
        },
        "facets": [
         "responsiveness"
@@ -89367,11 +89260,11 @@
         "none": -3.0459,
         "minimal": -1.5171,
         "low": -1.2251,
-        "medium": -1.8178,
-        "high": -2.6594,
-        "xhigh": -3.7487,
-        "max": -5.1189,
-        "ultra": -6.6551
+        "medium": -0.8498,
+        "high": -1.4866,
+        "xhigh": -2.5759,
+        "max": -3.9461,
+        "ultra": -5.4823
        },
        "facets": [
         "responsiveness",
@@ -89379,16 +89272,16 @@
        ]
       }
      },
-     "value": -2.6594,
+     "value": -1.4866,
      "by_effort": {
       "none": -3.0459,
       "minimal": -1.5171,
       "low": -1.2251,
-      "medium": -1.8178,
-      "high": -2.6594,
-      "xhigh": -3.7487,
-      "max": -5.1189,
-      "ultra": -6.6551
+      "medium": -0.8498,
+      "high": -1.4866,
+      "xhigh": -2.5759,
+      "max": -3.9461,
+      "ultra": -5.4823
      },
      "status": "estimated"
     }
@@ -89397,7 +89290,7 @@
     "creativity": -2.0623,
     "coding": -1.4114,
     "aesthetics": -0.1081,
-    "tool_operation": -2.6594
+    "tool_operation": -1.4866
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -89411,42 +89304,43 @@
     "status": "ok",
     "anchor_minutes": 9.289,
     "by_effort": {
-     "high": 4.1352,
-     "low": 1.3563,
-     "medium": 2.7961,
-     "xhigh": 6.0619,
-     "max": 9.4028,
-     "minimal": 0.6142,
-     "ultra": 9.4028,
-     "none": 0.6142
+     "high": 1.6882,
+     "low": 0.5538,
+     "medium": 1.1416,
+     "xhigh": 2.4749,
+     "max": 3.8388,
+     "minimal": 0.2507,
+     "ultra": 5.9553,
+     "none": 0.2507
     },
     "minutes_by_effort": {
-     "high": 38.412,
-     "low": 12.599,
-     "medium": 25.973,
-     "xhigh": 56.309,
-     "max": 87.343,
-     "minimal": 5.705,
-     "ultra": 87.343,
-     "none": 5.705
+     "high": 15.682,
+     "low": 5.144,
+     "medium": 10.604,
+     "xhigh": 22.989,
+     "max": 35.659,
+     "minimal": 2.329,
+     "ultra": 55.319,
+     "none": 2.329
     },
     "basis_by_effort": {
      "high": {
-      "method": "series",
+      "method": "speed_ratio",
       "base_model": "kimi-k3.1-pro",
-      "version_distance": 0,
-      "source": "aa.cost_time",
+      "base_minutes": 38.412,
       "base_method": "aa",
-      "series": [
-       "k3.1-pro-highspeed",
-       "kimi-for-coding-highspeed",
-       "kimi-k2.6",
-       "kimi-k2.7-code",
-       "kimi-k2.8-preview",
-       "kimi-k3",
-       "kimi-k3.1-pro",
-       "kimi-k3.1-pro-highspeed"
-      ]
+      "source": "aa.cost_time",
+      "ratio": 2.4495,
+      "stated_ratio": [
+       2,
+       3
+      ],
+      "speed": {
+       "kind": "vendor",
+       "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+       "as_of": "2026-11-18",
+       "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" (a stated range: its geometric mean)"
+      }
      },
      "low": {
       "method": "fleet_effort_ratio",
@@ -89857,31 +89751,39 @@
     "tool_operation": {
      "facets": {
       "responsiveness": {
-       "value": -0.7147,
+       "value": 1.5116,
        "by_effort": {
-        "none": -0.7147,
-        "minimal": -0.7147,
-        "low": -0.7147,
-        "medium": -0.7147,
-        "high": -0.7147,
-        "xhigh": -0.7147,
-        "max": -0.7147,
-        "ultra": -0.7147
+        "none": 1.5116,
+        "minimal": 1.5116,
+        "low": 1.5116,
+        "medium": 1.5116,
+        "high": 1.5116,
+        "xhigh": 1.5116,
+        "max": 1.5116,
+        "ultra": 1.5116
        },
        "status": "estimated",
        "sources": {},
+       "measured_efforts": [],
        "estimate": {
-        "method": "sibling_shift",
+        "method": "speed_ratio",
+        "ratio": 5.4772,
+        "stated_ratio": [
+         5,
+         6
+        ],
+        "shift": 2.2263,
+        "shift_basis": "ln(ratio) / sd_panel of aa.ttfa (0.763853): the ratio divides the time to the first answer token",
         "base_model": "kimi-k2.7-code",
         "base_value": -0.7147,
-        "base_tier": -0.3747,
-        "tier": -0.198,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "shift_basis": "shift 0: no fit, slope -0.288 is not positive",
-        "version_distance": 0
+        "base_status": "measured_partial",
+        "speed": {
+         "kind": "vendor",
+         "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+         "as_of": "2026-11-18",
+         "statement": "Kimi Code: kimi-for-coding-highspeed is \"The high-speed version of K2.7 Code, with the same coding ability and ~5–6× faster output\" (a stated range: its geometric mean)"
+        }
        },
-       "measured_efforts": [],
        "filled_efforts": {
         "none": {
          "method": "operating_point",
@@ -89973,14 +89875,14 @@
      "by_level": {
       "2": {
        "by_effort": {
-        "none": -0.7147,
-        "minimal": -0.7147,
-        "low": -0.7147,
-        "medium": -0.7147,
-        "high": -0.7147,
-        "xhigh": -0.7147,
-        "max": -0.7147,
-        "ultra": -0.7147
+        "none": 1.5116,
+        "minimal": 1.5116,
+        "low": 1.5116,
+        "medium": 1.5116,
+        "high": 1.5116,
+        "xhigh": 1.5116,
+        "max": 1.5116,
+        "ultra": 1.5116
        },
        "facets": [
         "responsiveness"
@@ -90032,21 +89934,71 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "status": "missing",
+    "status": "ok",
     "anchor_minutes": 9.289,
-    "by_effort": {},
-    "minutes_by_effort": {},
-    "basis_by_effort": {},
-    "efforts_without_time": [
-     "none",
-     "minimal",
-     "low",
-     "medium",
-     "high",
-     "xhigh",
-     "max",
-     "ultra"
-    ]
+    "by_effort": {
+     "none": 0.9865,
+     "minimal": 0.9865,
+     "low": 0.9865,
+     "medium": 0.9865,
+     "high": 0.9865,
+     "xhigh": 0.9865,
+     "max": 0.9865,
+     "ultra": 0.9865
+    },
+    "minutes_by_effort": {
+     "none": 9.164,
+     "minimal": 9.164,
+     "low": 9.164,
+     "medium": 9.164,
+     "high": 9.164,
+     "xhigh": 9.164,
+     "max": 9.164,
+     "ultra": 9.164
+    },
+    "basis_by_effort": {
+     "none": {
+      "method": "operating_point",
+      "from_effort": "high"
+     },
+     "minimal": {
+      "method": "operating_point",
+      "from_effort": "high"
+     },
+     "low": {
+      "method": "operating_point",
+      "from_effort": "high"
+     },
+     "medium": {
+      "method": "operating_point",
+      "from_effort": "high"
+     },
+     "xhigh": {
+      "method": "operating_point",
+      "from_effort": "high"
+     },
+     "max": {
+      "method": "operating_point",
+      "from_effort": "high"
+     },
+     "ultra": {
+      "method": "operating_point",
+      "from_effort": "high"
+     },
+     "high": {
+      "method": "fleet_effort_ratio",
+      "from_effort": "low",
+      "ratio": 3.0487,
+      "n": 15,
+      "iqr": [
+       2.6784,
+       3.7049
+      ],
+      "source": "aa.cost_time",
+      "note": "fleet effort ratio high/low, n=15, IQR 2.68-3.70"
+     }
+    },
+    "efforts_without_time": []
    },
    "image_input": {
     "value": null,
@@ -90090,13 +90042,6 @@
      "reason": "no_cited_source",
      "level": "red_if_metered",
      "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-    },
-    {
-     "model": "kimi-for-coding-highspeed",
-     "field": "duration_multiplier",
-     "reason": "no_time_per_task",
-     "level": "red",
-     "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
     },
     {
      "model": "kimi-for-coding-highspeed",
@@ -123520,68 +123465,18 @@
        },
        "status": "estimated",
        "sources": {},
+       "measured_efforts": [],
        "estimate": {
-        "method": "sibling_shift",
+        "method": "speed_lower_bound",
+        "bound": "lower: at least as fast as its base (no ratio stated)",
         "base_model": "kimi-k3.1-pro",
         "base_value": -2.6594,
-        "base_tier": -0.0214,
-        "tier": -0.0214,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "shift_basis": "shift 0: no fit, slope -0.288 is not positive",
-        "version_distance": 0
-       },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": 1.7971,
-         "n": 10
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": 0.8416,
-         "n": 8
-        },
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": -1.0893,
-         "n": 9
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": -2.4595,
-         "n": 7
-        },
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": -0.8623,
-         "step": 0.6926,
-         "n": 24
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": -5.1189,
-         "step": -1.5362,
-         "n": 19
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -2.6594,
-         "step": 2.0526,
-         "n": 40,
-         "bounded_from": -0.6068
+        "base_status": "measured_partial",
+        "speed": {
+         "kind": "community",
+         "url": "https://models.dev/api.json",
+         "as_of": "2026-11-10",
+         "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed with canonical_model_id moonshotai/kimi-k3.1-pro and states no speed ratio for this listing: the base's speed is a stated lower bound"
         }
        }
       },
@@ -123749,21 +123644,18 @@
     },
     "basis_by_effort": {
      "high": {
-      "method": "series",
+      "method": "speed_lower_bound",
       "base_model": "kimi-k3.1-pro",
-      "version_distance": 0,
-      "source": "aa.cost_time",
+      "base_minutes": 38.412,
       "base_method": "aa",
-      "series": [
-       "k3.1-pro-highspeed",
-       "kimi-for-coding-highspeed",
-       "kimi-k2.6",
-       "kimi-k2.7-code",
-       "kimi-k2.8-preview",
-       "kimi-k3",
-       "kimi-k3.1-pro",
-       "kimi-k3.1-pro-highspeed"
-      ]
+      "source": "aa.cost_time",
+      "bound": "upper: no longer than its base (no ratio stated)",
+      "speed": {
+       "kind": "community",
+       "url": "https://models.dev/api.json",
+       "as_of": "2026-11-10",
+       "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed with canonical_model_id moonshotai/kimi-k3.1-pro and states no speed ratio for this listing: the base's speed is a stated lower bound"
+      }
      },
      "low": {
       "method": "fleet_effort_ratio",
@@ -123913,23 +123805,16 @@
         "max": -1.6571,
         "ultra": -1.384
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
+        "method": "same_model",
         "base_model": "mimo-v2.6-pro",
-        "base_value": -1.9303,
-        "base_tier": -0.2194,
-        "tier": -0.2194,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "fit": "creativity.creative_writing~tier",
-        "r": 0.95,
-        "skill": 0.8991,
-        "loo_rmse": 0.5136,
-        "n": 72,
-        "slope": 4.312,
-        "version_distance": 0
+        "base_status": "measured_partial",
+        "kind": "vendor",
+        "statement": "Xiaomi MiMo: MiMo-V2.6-Pro-UltraSpeed \"Retains V2.6-Pro's full flagship-level capability with zero compromise\" and \"Delivers V2.6-Pro's flagship performance at up to 20x output speed\"",
+        "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -124005,23 +123890,16 @@
         "max": -1.0719,
         "ultra": -0.7279
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
+        "method": "same_model",
         "base_model": "mimo-v2.6-pro",
-        "base_value": -1.4862,
-        "base_tier": -0.2194,
-        "tier": -0.2194,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "fit": "coding.execution~tier",
-        "r": 0.7669,
-        "skill": 0.537,
-        "loo_rmse": 0.8879,
-        "n": 59,
-        "slope": 2.8558,
-        "version_distance": 0
+        "base_status": "measured_partial",
+        "kind": "vendor",
+        "statement": "Xiaomi MiMo: MiMo-V2.6-Pro-UltraSpeed \"Retains V2.6-Pro's full flagship-level capability with zero compromise\" and \"Delivers V2.6-Pro's flagship performance at up to 20x output speed\"",
+        "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -124088,18 +123966,16 @@
         "max": -0.6649,
         "ultra": -0.3329
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
+        "method": "same_model",
         "base_model": "mimo-v2.6-pro",
-        "base_value": -1.4975,
-        "base_tier": -0.2194,
-        "tier": -0.2194,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "shift_basis": "shift 0: no fit, out-of-sample skill -0.057 (leave-one-out error not below the mean predictor's)",
-        "version_distance": 0
+        "base_status": "measured_partial",
+        "kind": "vendor",
+        "statement": "Xiaomi MiMo: MiMo-V2.6-Pro-UltraSpeed \"Retains V2.6-Pro's full flagship-level capability with zero compromise\" and \"Delivers V2.6-Pro's flagship performance at up to 20x output speed\"",
+        "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -124174,23 +124050,16 @@
         "max": -0.8873,
         "ultra": -0.7438
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
+        "method": "same_model",
         "base_model": "mimo-v2.6-pro",
-        "base_value": -1.254,
-        "base_tier": -0.2194,
-        "tier": -0.2194,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "fit": "aesthetics.design~tier",
-        "r": 0.8001,
-        "skill": 0.6287,
-        "loo_rmse": 0.8981,
-        "n": 76,
-        "slope": 3.8057,
-        "version_distance": 0
+        "base_status": "measured_partial",
+        "kind": "vendor",
+        "statement": "Xiaomi MiMo: MiMo-V2.6-Pro-UltraSpeed \"Retains V2.6-Pro's full flagship-level capability with zero compromise\" and \"Delivers V2.6-Pro's flagship performance at up to 20x output speed\"",
+        "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -124268,68 +124137,18 @@
        },
        "status": "estimated",
        "sources": {},
+       "measured_efforts": [],
        "estimate": {
-        "method": "sibling_shift",
+        "method": "speed_lower_bound",
+        "bound": "lower: at least as fast as its base (no ratio stated)",
         "base_model": "mimo-v2.6-pro",
         "base_value": -0.9285,
-        "base_tier": -0.2194,
-        "tier": -0.2194,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "shift_basis": "shift 0: no fit, slope -0.288 is not positive",
-        "version_distance": 0
-       },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.9285,
-         "step": 1.7971,
-         "n": 10
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.9285,
-         "step": 0.8416,
-         "n": 8
-        },
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.9285,
-         "step": -1.0893,
-         "n": 9
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.9285,
-         "step": -2.4595,
-         "n": 7
-        },
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": 0.8686,
-         "step": 0.6926,
-         "n": 24
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": -3.388,
-         "step": -1.5362,
-         "n": 19
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -0.9285,
-         "step": 2.0526,
-         "n": 40,
-         "bounded_from": 1.1241
+        "base_status": "measured_partial",
+        "speed": {
+         "kind": "vendor",
+         "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+         "as_of": "2026-11-19",
+         "statement": "Xiaomi MiMo: \"Delivers up to 20x faster output speed than V2.6-Pro\"; \"up to\" is a ceiling, not a stated ratio or range, so no ratio is applied and the base's speed is a stated lower bound (owner, 2026-11-19)"
         }
        }
       },
@@ -124345,23 +124164,16 @@
         "max": -1.191,
         "ultra": -0.9477
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
+        "method": "same_model",
         "base_model": "mimo-v2.6-pro",
-        "base_value": -1.5251,
-        "base_tier": -0.2194,
-        "tier": -0.2194,
-        "tier_source": "sibling",
-        "shift": 0.0,
-        "fit": "tool_operation.image_recognition~tier",
-        "r": 0.8796,
-        "skill": 0.7436,
-        "loo_rmse": 0.7528,
-        "n": 55,
-        "slope": 4.4076,
-        "version_distance": 0
+        "base_status": "measured_partial",
+        "kind": "vendor",
+        "statement": "Xiaomi MiMo: MiMo-V2.6-Pro-UltraSpeed \"Retains V2.6-Pro's full flagship-level capability with zero compromise\" and \"Delivers V2.6-Pro's flagship performance at up to 20x output speed\"",
+        "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+        "as_of": "2026-11-19"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -124478,7 +124290,7 @@
     "kind": "converted",
     "fallback": false,
     "relation": "series",
-    "merge": "series conversion: usd of mimo-v2.6-pro x API list price ratio 10.0000 over the community token mix",
+    "merge": "series conversion: usd of mimo-v2.6-pro x API list price ratio 10.0000 over the community token mix; a lower bound: the variant's speed ratio is not stated",
     "used": [],
     "sources": {
      "base": {
@@ -124538,6 +124350,9 @@
       "input": 0.07359,
       "output": 0.00641
      }
+    },
+    "speed": {
+     "bound": "lower: at the base's tokens an hour (no ratio stated)"
     }
    },
    "duration_multiplier": {
@@ -124565,17 +124380,18 @@
     },
     "basis_by_effort": {
      "high": {
-      "method": "series",
+      "method": "speed_lower_bound",
       "base_model": "mimo-v2.6-pro",
-      "version_distance": 0,
-      "source": "aa.cost_time",
+      "base_minutes": 34.533,
       "base_method": "aa",
-      "series": [
-       "mimo-v2.5",
-       "mimo-v2.5-pro",
-       "mimo-v2.6-pro",
-       "mimo-v2.6-pro-ultraspeed"
-      ]
+      "source": "aa.cost_time",
+      "bound": "upper: no longer than its base (no ratio stated)",
+      "speed": {
+       "kind": "vendor",
+       "url": "https://mimo.mi.com/models/en-US/mimo-v2.6-pro-ultraspeed",
+       "as_of": "2026-11-19",
+       "statement": "Xiaomi MiMo: \"Delivers up to 20x faster output speed than V2.6-Pro\"; \"up to\" is a ceiling, not a stated ratio or range, so no ratio is applied and the base's speed is a stated lower bound (owner, 2026-11-19)"
+      }
      },
      "low": {
       "method": "fleet_effort_ratio",
@@ -125447,13 +125263,6 @@
    "reason": "no_cited_source",
    "level": "red_if_metered",
    "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-  },
-  {
-   "model": "kimi-for-coding-highspeed",
-   "field": "duration_multiplier",
-   "reason": "no_time_per_task",
-   "level": "red",
-   "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
   },
   {
    "model": "kimi-for-coding-highspeed",
