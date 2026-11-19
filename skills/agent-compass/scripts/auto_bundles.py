@@ -25,7 +25,7 @@ from pathlib import Path
 
 import public_data
 import released_names
-from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, resolve_in, split_model_effort
+from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, expand_providers, resolve_in, split_model_effort
 
 AUTO_PREFIX = 'auto:'
 STALE_LIMIT_SECONDS = 7 * 24 * 3600
@@ -114,11 +114,18 @@ def _name_candidates(raw_model, accounts):
     return base, (str(raw_model), base, name, stripped, aliases.get(stripped, stripped))
 
 
-def endpoint_providers(entry, provider, account):
+def endpoint_providers(entry, provider, account, accounts=None):
     """The serving providers (model_resolution.serving_providers `endpoints`) of the names a catalog entry lists for an
-    account: the entry's provider and the account when the entry is an endpoint (ENDPOINT_TYPES), whose ids are in its
-    own namespace; none for a launcher's list. Read by derive and by the tray's model list alike."""
-    return tuple(dict.fromkeys(p for p in (provider, account) if p)) if (entry or {}).get('type') in ENDPOINT_TYPES else ()
+    account: the entry's provider, the account, any Magpie preset/provider ids recorded on the entry or discovered
+    account, and the declaration providers `provider_names.providers` maps them to, when the entry is an endpoint
+    (ENDPOINT_TYPES or Magpie config); none for a launcher's list. Read by derive and by the tray's model list alike."""
+    entry_eps = tuple((entry or {}).get('endpoint_providers') or ())
+    disc_eps = tuple((((accounts or {}).get('_discovery') or {}).get('accounts') or {}).get(account, {}).get('magpie_providers') or ())
+    if (entry or {}).get('type') not in ENDPOINT_TYPES and not entry_eps:
+        return ()
+    src = accounts if isinstance(accounts, dict) and isinstance(accounts.get('provider_names'), dict) else _public_catalog()
+    raw = tuple(dict.fromkeys(p for p in (provider, account, *entry_eps, *disc_eps) if p))
+    return expand_providers(raw, src)
 
 
 def superseded_by(raw_model, accounts, providers=()):
@@ -404,7 +411,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 if '[' in raw:  # context-window variants (claude-opus-4-6[1m]) are the same model
                     continue
                 base, id_effort = split_effort(raw, accounts)
-                served = endpoint_providers(entry, provider, account)
+                served = endpoint_providers(entry, provider, account, accounts)
                 profile = default_profile(raw, accounts, served)
                 harness = pair_harness if pair_harness != PER_MODEL else \
                     proxy_harness((account_families or {}).get(account) or spec.get('family'), profile['model'], accounts)

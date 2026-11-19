@@ -758,6 +758,51 @@ class PinIdentityMatchesBundle(unittest.TestCase):
         self.assertEqual(model_resolution.resolve_in('other/decl-row', custom, ('gw',))['key'], 'glm-5.2')
         self.assertEqual(model_resolution.resolve_in('opencode/deepseek-v4-flash', custom, ('gw',))['source'], 'other_weights')
 
+    def test_host_provider_mapping_reaches_catalog_declarations_across_resolver_endpoints_and_provenance(self):
+        """Rule (provider_names.providers, model_resolution.expand_providers, auto_bundles.endpoint_providers): a host
+        provider id whose own id differs from the models.dev catalog it serves (e.g. Magpie preset `opencode-zen` ->
+        `opencode`, `tencent-cloud` -> `tencent-tokenhub`) reads that catalog's declarations without duplicating rows."""
+        import reference_provenance
+        for call in (
+            lambda: model_resolution.resolve_in('opencode-zen/deepseek-v4-flash', SHIPPED, ()),
+            lambda: model_resolution.resolve_in('deepseek-v4-flash', SHIPPED, ('opencode-zen',)),
+        ):
+            res = call()
+            self.assertEqual((res['key'], res['source'], res['provider']), (None, 'other_weights', 'opencode'))
+        tc = model_resolution.resolve_in('tencent-cloud/hy3-preview', SHIPPED, ())
+        self.assertEqual((tc['key'], tc['source'], tc['provider']), (None, 'other_weights', 'tencent-tokenhub'))
+
+        # endpoint_providers expands both direct preset ids and Magpie-bound accounts (`magpie_providers`):
+        self.assertEqual(auto_bundles.endpoint_providers({'type': 'openai_compatible'}, 'opencode-zen', 'opencode-zen', SHIPPED),
+                         ('opencode-zen', 'opencode'))
+        doc = copy.deepcopy(SHIPPED)
+        doc['accounts'] = {'my-zen': {'billing': 'subscription', 'family': 'codex', 'windows': {'balance': {'hours': 168}}, 'bundles': {}}}
+        doc['_discovery'] = {'accounts': {'my-zen': {'magpie_providers': ['opencode-zen', 'my-zen']}}}
+        for cat_entry in (
+            {'ok': True, 'type': 'configured', 'checked_at': NOW, 'endpoint_providers': ['opencode-zen'],
+             'models': ['deepseek-v4-flash']},
+            {'ok': True, 'type': 'openai_compatible', 'checked_at': NOW, 'models': [{'id': 'deepseek-v4-flash'}]},
+        ):
+            derived = auto_bundles.derive(doc, {'providers': {'my-zen': cat_entry}}, NOW)['bundles']['my-zen']
+            b = next(iter(derived.values()))
+            self.assertEqual((b['model'], b['score_source']), ('opencode/deepseek-v4-flash', 'other_weights'))
+            self.assertIn('opencode', b['_served'])
+            fleet = self.subscription_fleet({'my-zen': ('codex', derived, 'balance')})
+            self.assertEqual(self.plan_pin(fleet, model='deepseek-v4-flash')['choice'], next(iter(derived)))
+
+        # Provenance validation checks `provider_names.providers` citations and lowercase target shapes:
+        reference_provenance.validate_accounts_provenance(SHIPPED)
+        for bad_providers in (
+            {'OpenCode-Zen': SHIPPED['provider_names']['providers']['opencode-zen']},
+            {'opencode-zen': {**SHIPPED['provider_names']['providers']['opencode-zen'], 'providers': []}},
+            {'opencode-zen': {**SHIPPED['provider_names']['providers']['opencode-zen'], 'providers': ['opencode-zen']}},
+            {'opencode-zen': {**SHIPPED['provider_names']['providers']['opencode-zen'], 'url': 'not-https'}},
+        ):
+            broken = copy.deepcopy(SHIPPED)
+            broken['provider_names'] = {**broken['provider_names'], 'providers': bad_providers}
+            with self.assertRaisesRegex(ValueError, 'provider_names'):
+                reference_provenance.validate_accounts_provenance(broken)
+
 
 if __name__ == '__main__':
     unittest.main()

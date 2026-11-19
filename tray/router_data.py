@@ -2004,7 +2004,7 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
                 raw = model.get("id") if isinstance(model, dict) else model
                 if not isinstance(raw, str):
                     continue
-                served = auto_bundles.endpoint_providers(entry, provider, row.get("account"))
+                served = auto_bundles.endpoint_providers(entry, provider, row.get("account"), accounts)
                 key = raw if exact_catalog else canonical(raw, served)
                 label = (model.get("label") or model.get("model") or raw) if isinstance(model, dict) else raw
                 label = re.sub(r"\s*\((Low|Medium|High|XHigh|Max)\)$", "", label, flags=re.I)

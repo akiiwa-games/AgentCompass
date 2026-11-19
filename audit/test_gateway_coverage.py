@@ -416,6 +416,16 @@ class CheckRuleTests(unittest.TestCase):
                 with self.assertRaises(ValueError, msg=doc):
                     gc.load_catalogs(tmp)
 
+    def test_row_providers_expands_host_preset_ids_to_declared_catalog_providers(self):
+        """Rule (row_providers + provider_names.providers): a Magpie preset whose id differs from the models.dev catalog it
+        serves expands to include that catalog id in both resolution and identity_conflict."""
+        accounts = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        doc = {'provider_kind': 'magpie_preset', 'gate': {'makers': {'tencent-cloud': 'tencent'}, 'statement': 's'}}
+        self.assertEqual(gc.row_providers(doc, {'provider': 'opencode-zen', 'model': 'deepseek-v4-flash'}, accounts),
+                         ('opencode-zen', 'opencode'))
+        self.assertEqual(gc.row_providers(doc, {'provider': 'tencent-cloud', 'model': 'hy3-preview'}, accounts),
+                         ('tencent-cloud', 'tencent-tokenhub'))
+
 
 if __name__ == '__main__':
     unittest.main()

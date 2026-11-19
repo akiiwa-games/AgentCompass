@@ -182,6 +182,36 @@ class MagpieCatalogTests(unittest.TestCase):
         names = json.loads(mc.NAMES.read_text(encoding='utf-8'))
         self.assertEqual(mc.NAMES.read_text(encoding='utf-8'), mc.dumps_names(names))
 
+    def test_preset_providers_extracts_non_self_catalogs_and_excludes_hosting_self_catalogs(self):
+        """Rule (Addendum B): preset_providers maps each Magpie preset whose models.dev catalog id differs from its own id
+        (such as opencode-zen -> opencode), while a hosting vendor whose own id is already in its catalogs (azure ->
+        azure, openai) stays itself."""
+        custom_presets = '''package provider
+
+const AzurePreset = "azure"
+
+var presets = []PresetDef{
+	{ID: "opencode-zen", Kind: KindRelay, Catalog: "opencode"},
+	{ID: AzurePreset, Kind: KindVendor, Hosts: true, Catalog: "azure, openai"},
+	{ID: "tencent-cloud", Kind: KindVendor, Hosts: true, Catalog: "tencent-tokenhub"},
+	{ID: "stepfun", Kind: KindVendor, Catalog: "stepfun-ai-step-plan, stepfun-ai"},
+	{ID: "google", Kind: KindVendor, Catalog: "google"},
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            got = mc.preset_providers(tree(tmp, presets=custom_presets), 'deadbeef', as_of='2026-11-19')
+        self.assertEqual({k: v['providers'] for k, v in got.items()}, {
+            'opencode-zen': ['opencode'],
+            'stepfun': ['stepfun-ai-step-plan', 'stepfun-ai'],
+            'tencent-cloud': ['tencent-tokenhub'],
+        })
+        for entry in got.values():
+            self.assertTrue(entry['url'].startswith('https://github.com/yetone/magpie/blob/deadbeef/internal/provider/presets.go#L'))
+        shipped_map = json.loads(mc.ACCOUNTS.read_text(encoding='utf-8'))['provider_names']['providers']
+        self.assertEqual(len(shipped_map), 17)
+        self.assertEqual(shipped_map['opencode-zen']['providers'], ['opencode'])
+        self.assertNotIn('azure', shipped_map)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -6,6 +6,7 @@ One entry per released tag, newest first. The full notes of each release are on 
 
 - A model you name matches a bundle by identity (`account_fleet.pin_names_bundle`), never by leaf name or by comparing a resolved row id against a raw spelling: a no-row pair such as `opencode/deepseek-v4-flash` launches itself instead of a scored same-leaf bundle, a repository id (`deepseek-ai/DeepSeek-V4-Pro`) never matches the moved bare spelling (`deepseek-v4-pro`, `-0813`), and a bare moved name on an endpoint account whose provider declares other weights reaches that endpoint's bundle across `plan`, `record`, `prepare`, `roll --resume`, the spawn gate and tray quick priority targets.
 - Every lookup of a model spelling (provider declaration, maker default, exact row and alias) reads the full id, then what follows each `/` in turn, then the last segment (`model_resolution.slash_suffixes`), so `<preset>/<publisher>/<model>` ids such as `google-vertex/deepseek-ai/deepseek-v4.1-flash-maas` reach their `<publisher>/<model>` alias.
+- Host provider ids whose own id differs from the models.dev catalog they serve (`provider_names.providers`, built from Magpie's `presets.go`: e.g. `opencode-zen` -> `opencode`, `tencent-cloud` -> `tencent-tokenhub`) expand to those catalog ids across `model_resolution`, `auto_bundles.endpoint_providers`, the tray model list and `audit/gateway_coverage.py`, so `opencode-zen`'s `deepseek-v4-flash` and `tencent-cloud`'s `hy3-preview` read their `other_weights` declarations.
 
 ## v0.7.2 - 2026-11-19
 

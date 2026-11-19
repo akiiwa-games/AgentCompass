@@ -74,6 +74,27 @@ def serving_providers(raw_model_name, endpoints=()):
     return list(dict.fromkeys(out))
 
 
+def expand_providers(providers, accounts=None):
+    """`providers` with each host provider id followed by the declaration provider ids `provider_names.providers` maps
+    it to (order kept, duplicates dropped)."""
+    if isinstance(accounts, dict) and 'rows' in accounts and 'defaults' in accounts:
+        mapping = accounts.get('providers') or {}
+    elif isinstance(accounts, dict) and isinstance(accounts.get('provider_names'), dict):
+        mapping = accounts['provider_names'].get('providers') or {}
+    else:
+        mapping = {}
+    out = []
+    for p in providers or ():
+        if not p:
+            continue
+        out.append(str(p))
+        entry = mapping.get(str(p).lower()) if isinstance(mapping, dict) else None
+        for target in (entry.get('providers') if isinstance(entry, dict) else ()) or ():
+            if target:
+                out.append(str(target))
+    return tuple(dict.fromkeys(out))
+
+
 def slash_suffixes(spelling):
     """The spelling, then what follows each `/` in turn, ending at the last segment (`a/b/c` -> `('a/b/c', 'b/c', 'c')`)."""
     parts = spelling.split('/')
@@ -82,7 +103,7 @@ def slash_suffixes(spelling):
 
 def provider_declarations(raw_model_name, endpoints, table):
     """[(provider, declaration)] of `table` (provider_name_table) `rows` for the serving providers of the name; providers
-    and their names are looked up lowercase, each name in slash_suffixes order."""
+    and their names are looked up lowercase, expanding host provider ids (`table['providers']`) and slash_suffixes."""
     return [(p, d) for p, _, d in _declared_at(serving_providers(raw_model_name, endpoints), table)]
 
 
@@ -90,13 +111,14 @@ def _declared_at(pairs, table):
     rows = table['rows']
     out = []
     for p, n in pairs:
-        prows = rows.get(p.lower())
-        if not isinstance(prows, dict):
-            continue
-        for cand in slash_suffixes(n.lower()):
-            if isinstance(prows.get(cand), dict):
-                out.append((p.lower(), cand, prows[cand]))
-                break
+        for pid in expand_providers((p.lower(),), table):
+            prows = rows.get(pid.lower())
+            if not isinstance(prows, dict):
+                continue
+            for cand in slash_suffixes(n.lower()):
+                if isinstance(prows.get(cand), dict):
+                    out.append((pid.lower(), cand, prows[cand]))
+                    break
     return out
 
 

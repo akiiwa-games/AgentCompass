@@ -183,3 +183,12 @@ def test_an_endpoints_advertised_name_reads_the_declarations_derive_reads(tmp_pa
     catalog = {'providers': {'gw-catalog': {'ok': True, 'type': 'openai_compatible', 'models': [{'id': a}]}}}
     decorated = router_data.decorate_model_rows(rows, accounts, catalog)
     assert [group['model'] for group in decorated[0]['models']] == [b]
+
+    # A Magpie preset id (`opencode-zen`) or Magpie-bound account (`magpie_providers`) expands through provider_names.providers:
+    shipped = json.loads((Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'references' / 'accounts.json')
+                         .read_text(encoding='utf-8'))
+    shipped['_discovery'] = {'accounts': {'my-zen': {'magpie_providers': ['opencode-zen']}}}
+    zen_rows = [{'account': 'my-zen', 'harness': 'codex', 'providers': ['my-zen'], 'models': []}]
+    zen_cat = {'providers': {'my-zen': {'ok': True, 'type': 'openai_compatible', 'models': [{'id': 'deepseek-v4-flash'}]}}}
+    zen_dec = router_data.decorate_model_rows(zen_rows, shipped, zen_cat)
+    assert [group['model'] for group in zen_dec[0]['models']] == ['opencode/deepseek-v4-flash']

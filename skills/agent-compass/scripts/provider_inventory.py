@@ -604,8 +604,13 @@ def read_magpie(home, environ, result, bindings):
         disabled = item.get('off') or (builtin and item.get('hidden'))
         paused = [name for name in matched if disabled or (not builtin and keys[bindings[name]['key']])]
         models = [m for m in array(item.get('models')) if isinstance(m, str)]
+        magpie_ids = [str(p) for p in dict.fromkeys((item.get('preset'), item.get('id')))
+                      if not builtin and isinstance(p, str) and p.strip()]
         for name in matched:
             result['accounts'][name]['sources'].append('magpie-config')
+            if magpie_ids:
+                existing = result['accounts'][name].get('magpie_providers') or []
+                result['accounts'][name]['magpie_providers'] = list(dict.fromkeys([*existing, *magpie_ids]))
             if name in paused:
                 result['accounts'][name].update(status='paused', reason='disabled_in_magpie')
             # Magpie's empty picks mean defaults; noModels is its explicit Select none.
@@ -2039,8 +2044,10 @@ def _auto_catalog(inventory, live, now_epoch, environ=None):
     providers = {}
     for name, row in (inventory.get('accounts') or {}).items():
         models = [m for m in (row.get('models') or []) if isinstance(m, str)]
+        magpie_eps = [p for p in (row.get('magpie_providers') or []) if isinstance(p, str) and p]
         if models and row.get('status', 'ready') == 'ready':
-            providers[name] = {'ok': True, 'type': 'configured', 'checked_at': now_epoch, 'models': models}
+            providers[name] = {'ok': True, 'type': 'configured', 'checked_at': now_epoch, 'models': models,
+                               **({'endpoint_providers': magpie_eps} if magpie_eps else {})}
     if live:
         home = Path(env.get('ROUTER_PROVIDER_HOME') or Path.home())
         cache, _ = read_json(Path(env.get('ROUTER_STATE_DIR') or home / '.agent-compass') / 'model-catalog.json')
@@ -2050,7 +2057,9 @@ def _auto_catalog(inventory, live, now_epoch, environ=None):
             if name in providers:
                 ids = {(m.get('id') if isinstance(m, dict) else m) for m in entry.get('models') or []}
                 extra = [m for m in providers[name]['models'] if m not in ids]
-                entry = {**entry, 'models': list(entry.get('models') or []) + extra}
+                eps = providers[name].get('endpoint_providers')
+                entry = {**entry, 'models': list(entry.get('models') or []) + extra,
+                         **({'endpoint_providers': eps} if eps else {})}
             providers[name] = entry
     return {'providers': providers}
 

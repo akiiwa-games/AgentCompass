@@ -500,7 +500,7 @@
   }
  },
  "provider_names": {
-  "statement": "which row a served model name is (scripts/model_resolution.py, resolve_in): `rows` are a serving provider's own declarations, read first: its listing names a different dated snapshot than the maker's default (`status: other_weights` when the catalog has no row for it), its listing spells the row another way (`canonical_id`), or the maker shut the name down there (`status: retired`); `defaults` say what a name its maker moved to a newer dated snapshot serves now (the maker's statement, kind vendor, or the owner's rule applied by the maintainer to a name the maker's page describes, kind maintainer), read on any provider and with no provider known when no provider declares the name. A `defaults` key may be a full id with its owner part (a maker's repository id): it is read before the name's last segment, so it says what that id is whatever the moved name's default says (model_resolution.default_for). A listing that gives the moved name's own undated id (the row of the same id in `models`, or another name moved to the same snapshot) repeats the name and needs no declaration. A name neither declares resolves through `aliases` and `families`. Each declaration cites its source with its date (audit/gateway_coverage.py, declaration_violations)",
+  "statement": "which row a served model name is (scripts/model_resolution.py, resolve_in): `rows` are a serving provider's own declarations, read first: its listing names a different dated snapshot than the maker's default (`status: other_weights` when the catalog has no row for it), its listing spells the row another way (`canonical_id`), or the maker shut the name down there (`status: retired`); `providers` maps a host provider id whose own id differs from the models.dev catalog id(s) it serves (built from Magpie's presets.go by audit/magpie_catalog.py) to those provider ids; `defaults` say what a name its maker moved to a newer dated snapshot serves now (the maker's statement, kind vendor, or the owner's rule applied by the maintainer to a name the maker's page describes, kind maintainer), read on any provider and with no provider known when no provider declares the name. Every lookup of a spelling reads the full id, then what follows each `/` in turn, then the last segment (model_resolution.slash_suffixes). A listing that gives the moved name's own undated id (the row of the same id in `models`, or another name moved to the same snapshot) repeats the name and needs no declaration. A name neither declares resolves through `aliases` and `families`. Each declaration cites its source with its date (audit/gateway_coverage.py, declaration_violations)",
   "defaults": {
    "deepseek-ai/deepseek-v4-flash": {
     "model": "deepseek-v4-flash",
@@ -592,6 +592,16 @@
      "statement": "models.dev lists deepseek-v4-flash on opencode with canonical_model_id deepseek/deepseek-v4-flash-0731 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as weights the catalog has no row for, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
     }
    },
+   "tencent-tokenhub": {
+    "hy3-preview": {
+     "model": null,
+     "status": "other_weights",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists hy3-preview on tencent-tokenhub with canonical_model_id tencent/hy3-preview (release_date 2026-04-20, 64k max output, the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as earlier preview weights the catalog has no row for, not hy3 (tencent/hy3, release_date 2026-07-06, 128k max output)"
+    }
+   },
    "vivgrid": {
     "deepseek-v4-flash": {
      "model": null,
@@ -601,6 +611,165 @@
      "as_of": "2026-11-10",
      "statement": "models.dev lists deepseek-v4-flash on vivgrid with canonical_model_id deepseek/deepseek-v4-flash-0731 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as weights the catalog has no row for, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
     }
+   }
+  },
+  "providers": {
+   "fireworks": {
+    "providers": [
+     "fireworks-ai"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L651",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:651: preset 'fireworks' serves models.dev catalog 'fireworks-ai'"
+   },
+   "kimi-code": {
+    "providers": [
+     "kimi-code-plan-global"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L250",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:250: preset 'kimi-code' serves models.dev catalog 'kimi-code-plan-global'"
+   },
+   "kimi-code-cn": {
+    "providers": [
+     "kimi-code-plan-cn"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L254",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:254: preset 'kimi-code-cn' serves models.dev catalog 'kimi-code-plan-cn'"
+   },
+   "minimax-cn": {
+    "providers": [
+     "minimax"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L279",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:279: preset 'minimax-cn' serves models.dev catalog 'minimax'"
+   },
+   "moonshot": {
+    "providers": [
+     "moonshotai"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L242",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:242: preset 'moonshot' serves models.dev catalog 'moonshotai'"
+   },
+   "moonshot-cn": {
+    "providers": [
+     "moonshotai"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L245",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:245: preset 'moonshot-cn' serves models.dev catalog 'moonshotai'"
+   },
+   "opencode-zen": {
+    "providers": [
+     "opencode"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L624",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:624: preset 'opencode-zen' serves models.dev catalog 'opencode'"
+   },
+   "qwen": {
+    "providers": [
+     "alibaba"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L430",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:430: preset 'qwen' serves models.dev catalog 'alibaba'"
+   },
+   "qwen-cn": {
+    "providers": [
+     "alibaba"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L434",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:434: preset 'qwen-cn' serves models.dev catalog 'alibaba'"
+   },
+   "qwencloud": {
+    "providers": [
+     "alibaba"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L489",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:489: preset 'qwencloud' serves models.dev catalog 'alibaba'"
+   },
+   "stepfun": {
+    "providers": [
+     "stepfun-ai-step-plan",
+     "stepfun-ai"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L284",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:284: preset 'stepfun' serves models.dev catalog 'stepfun-ai-step-plan', 'stepfun-ai'"
+   },
+   "stepfun-cn": {
+    "providers": [
+     "stepfun-step-plan",
+     "stepfun"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L291",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:291: preset 'stepfun-cn' serves models.dev catalog 'stepfun-step-plan', 'stepfun'"
+   },
+   "tencent-cloud": {
+    "providers": [
+     "tencent-tokenhub"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L372",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:372: preset 'tencent-cloud' serves models.dev catalog 'tencent-tokenhub'"
+   },
+   "together": {
+    "providers": [
+     "togetherai"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L648",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:648: preset 'together' serves models.dev catalog 'togetherai'"
+   },
+   "xiaomi": {
+    "providers": [
+     "xiaomi-token-plan-cn",
+     "xiaomi-token-plan-sgp",
+     "xiaomi-token-plan-ams"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L306",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:306: preset 'xiaomi' serves models.dev catalog 'xiaomi-token-plan-cn', 'xiaomi-token-plan-sgp', 'xiaomi-token-plan-ams'"
+   },
+   "zai": {
+    "providers": [
+     "zhipuai"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L269",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:269: preset 'zai' serves models.dev catalog 'zhipuai'"
+   },
+   "zhipu": {
+    "providers": [
+     "zhipuai"
+    ],
+    "kind": "vendor",
+    "url": "https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/provider/presets.go#L258",
+    "as_of": "2026-11-19",
+    "statement": "Magpie internal/provider/presets.go:258: preset 'zhipu' serves models.dev catalog 'zhipuai'"
    }
   }
  },

@@ -149,6 +149,20 @@ def _validate_provider_names(doc):
             continue
         for name, d in sorted(names.items()):
             problems.append(check(f'rows/{provider}/{name}', name, d, False))
+    if 'providers' in table:
+        if not isinstance(table['providers'], dict):
+            problems.append('providers: {host provider id: {providers, kind, url, as_of, statement}}')
+        else:
+            for host_id, entry in sorted(table['providers'].items()):
+                targets = entry.get('providers') if isinstance(entry, dict) else None
+                if (not isinstance(host_id, str) or not host_id.strip() or host_id != host_id.lower() or '/' in host_id
+                        or not isinstance(entry, dict) or set(entry) != {'providers', 'kind', 'url', 'as_of', 'statement'}
+                        or entry.get('kind') not in PROVIDER_NAME_KINDS or not valid_public_declaration(entry)
+                        or not _ISO_DATE.match(str(entry.get('as_of') or '')) or not str(entry.get('statement') or '').strip()
+                        or not isinstance(targets, list) or not targets
+                        or any(not isinstance(t, str) or not t.strip() or t != t.lower() or '/' in t or t == host_id
+                               for t in targets)):
+                    problems.append(f'providers/{host_id!r}: {{providers: [lowercase target id, ...], kind, url, as_of, statement}}')
     problems = [x for x in problems if x]
     for account, spec in sorted((doc.get('accounts') or {}).items()):
         for bid, b in sorted(((spec or {}).get('bundles') or {}).items()):

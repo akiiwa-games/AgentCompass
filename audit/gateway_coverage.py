@@ -211,12 +211,14 @@ def ungated_reason(doc, row, out_of_scope):
     return None
 
 
-def row_providers(doc, row):
+def row_providers(doc, row, accounts=None):
     """The providers a gateway's own listing says serve the catalog row's name (owner, 2026-11-19, round 7): the row's
-    provider as the catalog names it, and the account's provider for a Magpie `account:<kind>` (its `gate.makers` entry).
-    model_resolution.serving_providers adds the provider part of a `provider/name` id."""
+    provider as the catalog names it, the account's provider for a Magpie `account:<kind>` (its `gate.makers` entry),
+    and the declaration providers `provider_names.providers` maps them to. model_resolution.serving_providers adds the
+    provider part of a `provider/name` id."""
     account = ((doc.get('gate') or {}).get('makers') or {}).get(row['provider']) if row['provider'].startswith('account:') else None
-    return tuple(dict.fromkeys(p for p in (row['provider'], account) if p))
+    base = tuple(dict.fromkeys(p for p in (row['provider'], account) if p))
+    return model_resolution.expand_providers(base, accounts) if accounts else base
 
 
 def own_ids(listings, row):
@@ -319,7 +321,7 @@ def pairs(accounts, catalogs, five_axis, public_scores, out_of_scope=None, names
         kind = doc['provider_kind']
         for row in doc['rows']:
             # A Magpie preset is an endpoint (its ids are in its own namespace); a harness row is a launcher's catalog.
-            providers = row_providers(doc, row) if kind == 'magpie_preset' else ()
+            providers = row_providers(doc, row, accounts) if kind == 'magpie_preset' else ()
             found = model_resolution.resolve_in(row['model'], accounts, providers)
             key = found['key'] if found['source'] in model_resolution.DIRECT_SOURCES else None
             efforts = row.get('efforts')
