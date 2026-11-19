@@ -531,9 +531,11 @@ def verify_f01_published_reference_data(ctx: dict):
              f"Reference data: fetched {fx.updated_version}" in results[-1].stdout
              and f"schema {SHIPPED_SCHEMA}" in results[-1].stdout, results[-1].stdout[-1500:])
 
-    # 4. A tampered sha256, corrupt JSON and a set no reader can route with are refused; the accepted set stays.
+    # 4. A tampered sha256, corrupt JSON and a set no reader can route with are refused; the accepted set stays. A file
+    # that does not match its sha256 is a failed fetch; one that matches and does not parse is a defect of the published
+    # version, rejected by version like any set this code's readers do not accept.
     for mode, label, outcome in (("bad_sha", "a tampered sha256", "failed"),
-                                 ("bad_json", "corrupt JSON with a matching sha256", "failed"),
+                                 ("bad_json", "corrupt JSON with a matching sha256", "rejected"),
                                  ("unreadable", "a consistent set without scoring.rotate_after_carried_tokens", "rejected")):
         fx.public_data_mode = mode
         res_bad = run_in_box(box, op, [box.agentcompass, "data", "--refresh"], env)
@@ -742,7 +744,8 @@ def verify_f04_quota_gate_scope_and_twins(ctx: dict):
         "(3) 5h window at its floor blocks new launch for claude, codex, and claude-2; "
         "(4) Magpie pool with accounts: 2 is judged on N×(100-mean); "
         "(5) new data-declared scoped window works with zero code change; "
-        "(6) owning parent's control message to its running worker on an exhausted window passes while idle is blocked; "
+        "(6) owning parent's control message to its running worker on an exhausted window passes while idle is blocked, "
+        "and a message to a worker the caller does not own is communication, not checked; "
         "(7) discovered bundles show up in model management for the user to check.",
     )
     # Sign in codex, claude, claude-2, and pi (sharing codex's subscription account_id)
@@ -1079,7 +1082,8 @@ scoped_opus_reason = gate.check_account_quota_exhausted(
 )
 
 # --- Check E: Owning parent's control message to its running worker on an exhausted window passes;
-#              idle, unknown-status, and non-owner running workers are blocked ---
+#              its idle and unknown-status workers are blocked; a message to a worker the caller does not own is
+#              communication and is not checked (dispatch-rules.md, section 4) ---
 write_cache({{
     "claude": {{
         "provider_id": "claude", "plan_label": "pro", "available": True, "stale": False, "fetched_at": now.isoformat(),
@@ -1357,11 +1361,11 @@ print(json.dumps({{
              and "weekly_sonnet" in str(doc_p.get("scoped_sonnet_reason"))
              and doc_p.get("scoped_opus_reason") is None,
              {"sonnet": doc_p.get("scoped_sonnet_reason"), "opus": doc_p.get("scoped_opus_reason")})
-    op.check("the owning parent's control message to its running worker on an exhausted window passes, while idle, unknown-status, and non-owner messages are blocked",
+    op.check("the owning parent's control message to its running worker on an exhausted window passes, its idle and unknown-status workers are blocked, and a message to a worker the caller does not own is not checked",
              doc_p.get("ctrl_running_eval") == {}
              and (doc_p.get("ctrl_idle_eval") or {}).get("decision") == "block"
              and (doc_p.get("ctrl_unknown_eval") or {}).get("decision") == "block"
-             and (doc_p.get("ctrl_nonowner_eval") or {}).get("decision") == "block",
+             and doc_p.get("ctrl_nonowner_eval") == {},
              {k: doc_p.get(k) for k in ("ctrl_running_eval", "ctrl_idle_eval", "ctrl_unknown_eval", "ctrl_nonowner_eval")})
     sup = doc_p.get("superseded_group") or {}
     lat = doc_p.get("latest_group") or {}
