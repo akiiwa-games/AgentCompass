@@ -762,7 +762,7 @@
    "id_declaration": {
     "kind": "maintainer",
     "as_of": "2026-11-19",
-    "statement": "maintainer: the Grok Build CLI's model id grok-4.7-build-fast (the id the CLI lists) is the product xAI calls Grok 4.7 Fast; the vendor page does not name the id (owner to confirm)"
+    "statement": "maintainer: the Grok Build CLI's model id grok-4.7-build-fast (the id the CLI lists) is the product xAI calls Grok 4.7 Fast; the vendor page does not name the id (confirmed by the owner, 2026-11-19)"
    },
    "own_estimated": [
     "tool_operation.responsiveness",
