@@ -12,8 +12,8 @@
    "closes_when": "a board lists any model on the facet at that effort (for none: a non-reasoning listing) beside a reasoning listing, giving the fleet step its pairs"
   },
   "no_time_reading_in_series": {
-   "missing": "an Artificial Analysis Time/Task of the model at some effort, or of its larger model of the same version: a same-series sibling gives only the ratio between efforts, never the time itself",
-   "closes_when": "Artificial Analysis publishes a Time/Task for the model, or for its larger model of the same version"
+   "missing": "an Artificial Analysis Time/Task of the model at some effort, of its larger model of the same version, or of a relative of the same maker and size (its own line, or another line within the declared version distance) read on a board: a same-series sibling gives only the ratio between efforts, never the time itself, and a relative's estimated time is never another row's basis",
+   "closes_when": "Artificial Analysis publishes a Time/Task for the model, for its larger model of the same version, or for a relative within the declared version distance"
   },
   "no_relative_statement": {
    "missing": "a row for the name: no public statement says which scored row it is (alias) or that it is the same model as one (same_model), and no board lists it",
@@ -65,26 +65,6 @@
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "gemma-4-26b-a4b-it",
-   "efforts": [
-    "default"
-   ],
-   "row": "gemma-4-26b-a4b-it",
-   "kind": "no_time_reading_in_series",
-   "detail": "gemma-4-26b-a4b-it: Artificial Analysis lists it (Gemma 4 26B A4B (Non-reasoning), Gemma 4 26B A4B (Reasoning)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gemma-4-31b-it",
-   "efforts": [
-    "default"
-   ],
-   "row": "gemma-4-31b-it",
-   "kind": "no_time_reading_in_series",
-   "detail": "gemma-4-31b-it: Artificial Analysis lists it (Gemma 4 31B (Non-reasoning), Gemma 4 31B (Reasoning)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
    "model": "gpt-5.2",
    "efforts": [
     "none",
@@ -95,7 +75,7 @@
    ],
    "row": "gpt-5.2",
    "kind": "no_time_reading_in_series",
-   "detail": "gpt-5.2: Artificial Analysis lists it (GPT-5.2 (Medium), GPT-5.2 (Non-reasoning), GPT-5.2 (Xhigh)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
+   "detail": "gpt-5.2: Artificial Analysis lists it (GPT-5.2 (Medium), GPT-5.2 (Non-reasoning), GPT-5.2 (Xhigh)) without a Time/Task, and it has no larger model of the same version with one nor a relative of another line of the same maker and size within version distance 1 with a time (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -121,7 +101,7 @@
    ],
    "row": "gpt-5.4",
    "kind": "no_time_reading_in_series",
-   "detail": "gpt-5.4: Artificial Analysis lists it (GPT-5.4 (Low), GPT-5.4 (Non-reasoning), GPT-5.4 (Xhigh)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
+   "detail": "gpt-5.4: Artificial Analysis lists it (GPT-5.4 (Low), GPT-5.4 (Non-reasoning), GPT-5.4 (Xhigh)) without a Time/Task, and it has no larger model of the same version with one nor a relative of another line of the same maker and size within version distance 1 with a time (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -135,7 +115,7 @@
    ],
    "row": "gpt-5.4-mini",
    "kind": "no_time_reading_in_series",
-   "detail": "gpt-5.4-mini: Artificial Analysis lists it (GPT-5.4 mini (Medium), GPT-5.4 mini (Non-reasoning), GPT-5.4 mini (Xhigh)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
+   "detail": "gpt-5.4-mini: Artificial Analysis lists it (GPT-5.4 mini (Medium), GPT-5.4 mini (Non-reasoning), GPT-5.4 mini (Xhigh)) without a Time/Task, and it has no larger model of the same version with one nor a relative of another line of the same maker and size within version distance 1 with a time (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -148,32 +128,6 @@
    "row": "gpt-5.4-pro",
    "kind": "no_public_measurement",
    "detail": "gpt-5.4-pro: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.5",
-   "efforts": [
-    "none",
-    "low",
-    "medium",
-    "high",
-    "xhigh"
-   ],
-   "row": "gpt-5.5",
-   "kind": "no_time_reading_in_series",
-   "detail": "gpt-5.5: Artificial Analysis lists it (GPT-5.5 (High), GPT-5.5 (Low), GPT-5.5 (Medium), GPT-5.5 (Non-reasoning), GPT-5.5 (Xhigh)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.5-pro",
-   "efforts": [
-    "medium",
-    "high",
-    "xhigh"
-   ],
-   "row": "gpt-5.5-pro",
-   "kind": "no_public_measurement",
-   "detail": "gpt-5.5-pro: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -193,7 +147,7 @@
    ],
    "row": "qwen3-flash-2025-07-28",
    "kind": "no_time_reading_in_series",
-   "detail": "qwen3-flash-2025-07-28: no cached board lists a Time/Task for it, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
+   "detail": "qwen3-flash-2025-07-28: no cached board lists it with a Time/Task; it has no relative of its own line with one, and its relatives of another line of the same maker and size within version distance 1 (the qwen3.5 rows) have only estimated times, none read on a board (an estimate is never another row's basis)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -212,8 +166,8 @@
     "default"
    ],
    "row": "qwen3-omni-flash",
-   "kind": "no_public_measurement",
-   "detail": "qwen3-omni-flash: no cached board lists it with time_per_task, tool_operation.responsiveness"
+   "kind": "no_time_reading_in_series",
+   "detail": "qwen3-omni-flash: no cached board lists it with a Time/Task; it has no relative of its own line with one, and its relatives of another line of the same maker and size within version distance 1 (the qwen3.5 rows) have only estimated times, none read on a board (an estimate is never another row's basis)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -366,17 +320,6 @@
      "mistral/ministral-8b-2512"
     ]
    }
-  },
-  {
-   "catalog": "shipped-launch-table",
-   "model": "gpt-6-pro",
-   "efforts": [
-    "high",
-    "max"
-   ],
-   "row": "gpt-6-pro",
-   "kind": "no_time_reading_in_series",
-   "detail": "gpt-6-pro: Artificial Analysis lists no Time/Task for it nor for any row of its declared line `pro` (gpt-5.x pro), and Time/Task reads only the row's own line (accounts.json families, round 6 item 4: a Pro model does not have Astra's speed)"
   }
  ]
 }

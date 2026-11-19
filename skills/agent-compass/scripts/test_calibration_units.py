@@ -16,7 +16,7 @@ import tiers  # noqa: E402
 # accounts.json's declarations the build reads (sources.effort_readings, five_axis.estimation_order)
 READINGS = {'effort_readings': {'labels': {'non-reasoning': 'none', 'reasoning': 'default'}, 'reads': {'default': 'high'}},
             'estimation_order': {'order': list(fa.ESTIMATION_ORDER), 'sibling_first_up_to_distance': 1,
-                                 'evidence': 'synthetic'}}
+                                 'speed_cross_line_before_fit': True, 'evidence': 'synthetic'}}
 
 
 # declared family rows (series.identity) for the luna, astra and claude rows of the fixtures
@@ -395,6 +395,8 @@ class EstimationOrderTests(unittest.TestCase):
         doc = READINGS['estimation_order']
         self.assertEqual(fa.estimation_order({'estimation_order': doc})['sibling_first_up_to_distance'], 1)
         for bad in ({**doc, 'order': list(reversed(doc['order']))}, {**doc, 'sibling_first_up_to_distance': '1'},
-                    {**doc, 'evidence': ''}, {k: v for k, v in doc.items() if k != 'evidence'}, None):
+                    {**doc, 'evidence': ''}, {k: v for k, v in doc.items() if k != 'evidence'}, None,
+                    {k: v for k, v in doc.items() if k != 'speed_cross_line_before_fit'},
+                    {**doc, 'speed_cross_line_before_fit': 'yes'}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 fa.estimation_order({'estimation_order': bad})

@@ -25,6 +25,34 @@ class ShippedCoverageTests(unittest.TestCase):
         self.assertEqual(counts['covered'] + counts['known_gap'], counts['pairs'])
         self.assertGreater(counts['pairs'], 0)
 
+    def test_every_launch_table_bundle_has_what_automatic_routing_reads_or_is_a_declared_gap(self):
+        """Rule (owner 2026-11-19): a shipped launch-table bundle never leaves automatic routing for want of data unless the
+        known-gap list declares its (model, effort) with the reason: it has every facet and Time/Task at its effort
+        (gc.missing_at), its image input known and, on a metered account, a cited usd_per_hour (candidate_eval's data
+        errors)."""
+        accounts = gc.read_json(gc.REFERENCES / 'accounts.json')
+        overlay = gc.axis_scores.five_axis_overlay(accounts, data=gc.read_json(gc.REFERENCES / 'five-axis-scores.json'),
+                                                   read_local_state=False,
+                                                   public_scores=gc.user_scores.load_public(gc.REFERENCES / 'user-scores.json'))
+        declared = {(e['model'], eff): e['detail'] for e in gc.load_gaps(gc.KNOWN_GAPS)['entries']
+                    if e['catalog'] == gc.LAUNCH_TABLE for eff in e['efforts']}
+        lacking = []
+        for account, spec in sorted(accounts['accounts'].items()):
+            billed = not (spec.get('unmetered') or spec.get('unlimited'))
+            for bid, bundle in sorted((spec.get('bundles') or {}).items()):
+                effort = bundle.get('effort') or 'default'
+                info = overlay['models'].get(gc.model_resolution.resolve_model(
+                    bundle['model'], accounts['models'], accounts.get('aliases') or {},
+                    gc.model_resolution.family_patterns(accounts))['key'])
+                state = (info or {}).get('five_axis') or {}
+                miss = gc.missing_at(info, effort)
+                miss += [] if (state.get('image_input') or {}).get('status') in ('yes', 'no') else ['image_input']
+                miss += ['usd_per_hour'] if billed and state.get('usd_status') != 'ok' else []
+                if miss and (bundle['model'], effort) not in declared:
+                    lacking.append((account, bid, bundle['model'], effort, miss))
+        self.assertEqual(lacking, [])
+        self.assertTrue(all(declared.values()))         # each declared gap states its reason
+
     def test_the_catalogs_keep_provider_model_and_efforts_only(self):
         for cid, doc in gc.load_catalogs().items():
             self.assertIn(doc['provider_kind'], gc.PROVIDER_KINDS, cid)

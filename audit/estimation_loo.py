@@ -11,9 +11,13 @@ again by the panel effort step and, at an edge effort, by the fleet's edge step.
 cells, the median and 90th percentile absolute error and the mean error (panel z), and the sibling against the tier fit
 on the same cells by version distance, the comparison `estimation_order.sibling_first_up_to_distance` rests on. Relatives
 are those the build uses (series.groups: an ability facet the maker's same-size rows of every line, responsiveness its own
-line); each responsiveness cell is also estimated from the nearest relative of another line of the same maker and size
-(`other_line_shift`), and the same-line against other-line comparison on the cells both estimate is printed, the evidence
-that a speed facet reads its own line only (round 6 item 4).
+line first); each responsiveness cell is also estimated from the maker's other lines as the build does
+(`Scorer.cross_line`: `cross_line_extrapolation` where the lines share two same-version pairs, else `cross_line_median`),
+and the cross-line estimate against the tier fit on the cells both estimate is printed, the evidence of
+`estimation_order.speed_cross_line_before_fit`. Time/Task, which has no tier fit, is scored apart (`cross_line_time_loo`):
+every High time read on Artificial Analysis, hidden, against the median of the other lines' read High times at the nearest
+version distance up to the declared one, and against the own line's nearest read relatives on the same cells (absolute
+log error). The Pro line has no Time/Task or responsiveness reading to score its declared floor against.
 
 The release that re-measures this updates `estimation_order.evidence` by hand; the refresh never reorders by itself.
 """
@@ -62,12 +66,10 @@ def cell_estimates(scorer, facets, keys, rows, declared, tier, m, key):
             e = scorer.group_estimate(m, group, d, key, facets, fits, {}, tier)
             out['sibling_shift'] = {'value': e['value'], 'base': group, 'distance': d}
         if not ability:
-            other = [b for b in usable(scorer.sibs) if scorer.line_of.get(b) != scorer.line_of.get(m)]
-            groups = series.nearest(m, other, scorer.sibs.get(m, ()), scorer.versions, scorer.small, None, scorer.line_of)
-            if groups:
-                d, group = groups[0]
-                e = scorer.group_estimate(m, group, d, key, facets, fits, {}, tier)
-                out['other_line_shift'] = {'value': e['value'], 'base': group, 'distance': d}
+            e = scorer.cross_line(m, key, facets, fits, {}, tier, without=m)
+            if e is not None:
+                out[e['estimate']['method']] = {'value': e['value'], 'base': e['estimate']['base_model'],
+                                                'distance': e['estimate']['version_distance']}
         if fits[key]:
             out['tier_fit'] = {'value': scorer.estimate(m, None, key, facets, fits, {}, tier)['value']}
     rel = scorer.size_of.get(m)
@@ -200,14 +202,38 @@ def sibling_against_fit(cells):
     return out
 
 
-def own_line_against_other_line(cells):
-    """(n, median |error| own line, median |error| other line, n own line only, n other line only) over the
-    responsiveness cells, the first three on the cells both estimate."""
-    speed = [c for c in cells if c['facet'] == '.'.join(fa.SPEED_KEY) and c['effort'] == 'high']
-    both = [c for c in speed if 'sibling_shift' in c['est'] and 'other_line_shift' in c['est']]
+def against(cells, a, b, facet='.'.join(fa.SPEED_KEY)):
+    """(n, median |error| of method a, of method b) over the High cells of `facet` both estimate."""
+    both = [c for c in cells if c['facet'] == facet and c['effort'] == 'high' and a in c['est'] and b in c['est']]
     med = lambda k: round(float(np.median([abs(c['est'][k]['value'] - c['truth']) for c in both])), 3) if both else None  # noqa: E731
-    return (len(both), med('sibling_shift'), med('other_line_shift'),
-            sum(1 for c in speed if 'sibling_shift' in c['est']), sum(1 for c in speed if 'other_line_shift' in c['est']))
+    return len(both), med(a), med(b)
+
+
+def cross_line_time_loo(references=REFERENCES):
+    """{'cross_line_median': (n, median |log error|), 'own_line': (n, ...), 'both': (n, cross, own)} over the High
+    Time/Task cells read on Artificial Analysis: each hidden and estimated from the median of the read High times of the
+    nearest relatives of another line (same maker and size, version distance up to the declared one), and of its own line."""
+    refs = Path(references)
+    acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig'))
+    models = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))['models']
+    read = {m: r['duration_multiplier']['minutes_by_effort']['high'] for m, r in models.items()
+            if (r['duration_multiplier']['basis_by_effort'].get('high') or {}).get('method') == 'aa'}
+    pool, line_of = series.groups(acc, 'ability'), series.lines(acc)
+    versions, small = series.versions(acc), series.small_rows(acc)
+    up_to = fa.estimation_order(acc)['sibling_first_up_to_distance']
+    errs = {'cross': {}, 'own': {}}
+    for m, truth in read.items():
+        for kind, keep in (('cross', lambda b: line_of.get(b) != line_of.get(m)), ('own', lambda b: line_of.get(b) == line_of.get(m))):
+            cands = [b for b in pool.get(m, ()) if b != m and b in read and keep(b)]
+            groups = series.nearest(m, cands, pool.get(m, ()), versions, small, None, line_of, up_to if kind == 'cross' else None)
+            if groups and groups[0][0] is not None and (kind == 'own' or groups[0][0] <= up_to):
+                est = float(np.median([read[b] for b in groups[0][1]]))
+                errs[kind][m] = abs(float(np.log(est / truth)))
+    both = sorted(set(errs['cross']) & set(errs['own']))
+    med = lambda xs: round(float(np.median(xs)), 3) if xs else None  # noqa: E731
+    return {'cross_line_median': (len(errs['cross']), med(list(errs['cross'].values()))),
+            'own_line': (len(errs['own']), med(list(errs['own'].values()))),
+            'both': (len(both), med([errs['cross'][m] for m in both]), med([errs['own'][m] for m in both]))}
 
 
 def main(argv=None):
@@ -224,9 +250,15 @@ def main(argv=None):
     print('\nsibling against tier fit on the same cells (median |error|):')
     for d, n, sib, fit in sibling_against_fit(cells):
         print(f'  distance {d}: n={n} sibling {sib:.3f}, tier fit {fit:.3f}')
-    n, own, other, n_own, n_other = own_line_against_other_line(cells)
-    print('\nresponsiveness at High, own line against another line of the same maker and size (median |error|):')
-    print(f'  both: n={n} own line {own}, other line {other}; own line alone n={n_own}, other line alone n={n_other}')
+    print('\nresponsiveness at High, on the cells both estimate (median |error|):')
+    for a, b in (('sibling_shift', 'cross_line_median'), ('cross_line_median', 'tier_fit'),
+                 ('cross_line_extrapolation', 'tier_fit'), ('cross_line_extrapolation', 'cross_line_median')):
+        n, ea, eb = against(cells, a, b)
+        print(f'  {a} against {b}: n={n} {ea} against {eb}')
+    t = cross_line_time_loo(args.references)
+    print('\nTime/Task at High read on Artificial Analysis (median |ln(estimate / reading)|):')
+    print(f"  other lines' median n={t['cross_line_median'][0]} {t['cross_line_median'][1]}; own line n={t['own_line'][0]} "
+          f"{t['own_line'][1]}; on the same cells n={t['both'][0]}: other lines {t['both'][1]}, own line {t['both'][2]}")
     return 0
 
 

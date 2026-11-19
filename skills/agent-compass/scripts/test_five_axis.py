@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -41,7 +42,7 @@ GPT_FAMILIES = {'rows': [{'pattern': '^gpt-(?:6|5\\.6).*luna', 'models': [], 'ma
                          {'pattern': '^claude', 'models': [], 'maker': 'anthropic', 'line': 'claude', 'size': 'full'}]}
 READINGS = {'effort_readings': {'labels': {'non-reasoning': 'none', 'reasoning': 'default'}, 'reads': {'default': 'high'}},
             'estimation_order': {'order': list(five_axis.ESTIMATION_ORDER), 'sibling_first_up_to_distance': 1,
-                                 'evidence': 'synthetic'}}
+                                 'speed_cross_line_before_fit': True, 'evidence': 'synthetic'}}
 
 
 def setUpModule():
@@ -1690,13 +1691,16 @@ class AnchorRelativeTests(unittest.TestCase):
         self.assertEqual(est['shift'], 0.0)
         self.assertTrue(est['shift_basis'].startswith('shift 0: no fit,'), est['shift_basis'])
 
-    def test_responsiveness_reads_the_own_line_and_an_ability_facet_the_makers_other_lines(self):
-        """Rule (Scorer.complete, series.groups, round 6 item 4): a missing ability facet is estimated from a relative of
-        the same maker and size on another line (at version distance up to the declared cap); responsiveness never is."""
+    def test_responsiveness_without_its_own_line_takes_the_median_of_the_makers_other_lines(self):
+        """Rule (Scorer.cross_line, owner 2026-11-19): a missing ability facet is estimated from a relative of the same maker
+        and size on another line (up to the declared distance); a missing responsiveness with no near relative of its own
+        line takes the maker's other lines: here no line pair shares two same-version readings, so the median of the
+        other lines' relatives (method cross_line_median)."""
+        resp_entry = lambda z: [{'source': 'aa.ttfa', 'facet': 'responsiveness', 'value': z,  # noqa: E731
+                                 'z_by_effort': dict.fromkeys(EFFORT_NAMES, z)}]
         meas = self.calibration_set({
             'acme-a-1': self.tiered(4.2, coding=[{'source': 'arena.agent_alignment', 'facet': 'faithfulness', 'value': -0.2}],
-                                    tool_operation=[{'source': 'aa.ttfa', 'facet': 'responsiveness', 'value': 0.5,
-                                                     'z_by_effort': dict.fromkeys(EFFORT_NAMES, 0.5)}]),
+                                    tool_operation=resp_entry(0.5)),
             'acme-b-1': self.tiered(4.0)})
         fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
         versions = {'series_versions': {'versions': {'acme-a-1': 1, 'acme-b-1': 1}}}
@@ -1704,8 +1708,32 @@ class AnchorRelativeTests(unittest.TestCase):
                                                     'families': fams}).score()
         faith = rows['acme-b-1']['axes']['coding']['facets']['faithfulness']['estimate']
         self.assertEqual((faith['method'], faith['base_model']), ('sibling_shift', 'acme-a-1'))
-        resp = rows['acme-b-1']['axes']['tool_operation']['facets'].get('responsiveness')
-        self.assertTrue(resp is None or resp['estimate'].get('base_model') != 'acme-a-1', resp)
+        resp = rows['acme-b-1']['axes']['tool_operation']['facets']['responsiveness']
+        self.assertEqual((resp['status'], resp['estimate']['method'], resp['estimate']['base_model']),
+                         ('estimated', 'cross_line_median', 'acme-a-1'))
+        self.assertEqual(resp['estimate']['lines']['acme-a-1']['n'], 0)
+
+    def test_responsiveness_moves_by_the_lines_median_step_where_two_same_version_pairs_read_both(self):
+        """Rule (Scorer.cross_line, owner 2026-11-19): where the relative's line and the row's own line are both measured on
+        at least two same-version pairs, the relative's value plus the median line-to-line difference (method
+        cross_line_extrapolation, n and spread shown); never the relative's value copied. acme-b-3, unread, puts the own
+        line's nearest reading (acme-b-2) two versions away, past the declared distance of 1."""
+        resp_entry = lambda z: [{'source': 'aa.ttfa', 'facet': 'responsiveness', 'value': z,  # noqa: E731
+                                 'z_by_effort': dict.fromkeys(EFFORT_NAMES, z)}]
+        meas = self.calibration_set({
+            'acme-a-1': self.tiered(4.0, tool_operation=resp_entry(0.5)), 'acme-b-1': self.tiered(4.0, tool_operation=resp_entry(0.2)),
+            'acme-a-2': self.tiered(4.0, tool_operation=resp_entry(0.7)), 'acme-b-2': self.tiered(4.0, tool_operation=resp_entry(0.3)),
+            'acme-a-3': self.tiered(4.0, tool_operation=resp_entry(0.6)), 'acme-b-3': self.tiered(4.0),
+            'acme-a-4': self.tiered(4.0, tool_operation=resp_entry(0.9)), 'acme-b-4': self.tiered(4.0)})
+        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
+        versions = {'series_versions': {'versions': {m: int(m[-1]) for m in meas['models'] if m.startswith('acme')}}}
+        rows, _, _, _, _, _ = self.fa.Scorer(meas, {**READINGS, **versions, 'models': {m: {} for m in meas['models']},
+                                                    'families': fams}).score()
+        resp = rows['acme-b-4']['axes']['tool_operation']['facets']['responsiveness']
+        line = resp['estimate']['lines']['acme-a-4']
+        self.assertEqual((resp['estimate']['method'], resp['estimate']['base_model'], line['n'], line['spread']),
+                         ('cross_line_extrapolation', ['acme-a-4'], 2, [-0.4, -0.3]))
+        self.assertAlmostEqual(resp['value'], 0.9 + float(np.median([-0.3, -0.4])), places=4)
 
     def test_a_same_model_row_takes_its_declared_models_scores_for_the_categories_it_carries(self):
         meas = self.calibration_set({})
@@ -2106,7 +2134,8 @@ class DurationTests(unittest.TestCase):
             self.assertTrue(all(b['method'] in ('aa', 'arena_fit', 'series', 'series_effort', 'fleet_effort_ratio',
                                                 'fleet_effort_position', 'same_model', 'effort_bound', 'size_step',
                                                 'fleet_lowest_step', 'fleet_highest_step', 'fleet_off_step',
-                                                'operating_point', 'speed_ratio', 'speed_lower_bound')
+                                                'operating_point', 'speed_ratio', 'speed_lower_bound', 'declared_response_floor',
+                                                'cross_line_extrapolation', 'cross_line_median')
                                 for b in dur['basis_by_effort'].values()), name)
             self.assertNotIn('value', dur)
 
@@ -2771,6 +2800,82 @@ class SpeedVariantTests(unittest.TestCase):
                     self.assertEqual(usd.get('kind'), 'converted')        # at its own list price
 
 
+class ResponseFloorTests(unittest.TestCase):
+    """Rule (calibration/README.md, Speed without a reading; owner 2026-11-19): a row with `response_time_source` and no
+    reading of its own has the declared floor as its Time/Task at every effort (a task is at least one response) and the
+    floor read through the time-to-first-answer transform as its responsiveness. A declaration, not a fit."""
+
+    @classmethod
+    def setUpClass(cls):
+        refs = account_fleet.REFERENCES
+        cls.acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig'))
+        cls.meas = json.loads((refs / 'public-measurements.json').read_text(encoding='utf-8-sig'))
+        cls.models = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))['models']
+
+    def test_a_declared_response_floor_is_the_time_at_every_effort_and_the_transformed_responsiveness(self):
+        floors = {m: r['response_time_source'] for m, r in self.acc['models'].items() if 'response_time_source' in r}
+        self.assertTrue(floors)
+        scale = self.meas['sources']['aa.ttfa']['scale']
+        for m, decl in floors.items():
+            with self.subTest(model=m):
+                dur = self.models[m]['duration_multiplier']
+                floored = [e for e, b in dur['basis_by_effort'].items() if b['method'] == 'declared_response_floor']
+                if floored:
+                    self.assertEqual(sorted(floored), sorted(five_axis.LADDER))
+                    self.assertEqual(set(dur['minutes_by_effort'].values()), {round(decl['min_seconds'] / 60.0, 3)})
+                resp = self.models[m]['axes']['tool_operation']['facets']['responsiveness']
+                if resp.get('estimate', {}).get('method') == 'declared_response_floor':
+                    z = (-math.log(decl['min_seconds']) - scale['anchor_raw']) / scale['sd_panel']
+                    self.assertTrue(all(abs(v - z) < 2e-4 for v in resp['by_effort'].values()), resp['by_effort'])
+
+
+class CrossLineTimeTests(unittest.TestCase):
+    """Rule (five_axis.cross_line_times; calibration/README.md, Speed without a reading; owner 2026-11-19): a row with no
+    Time/Task of its own or of its line takes the maker's other lines of the same size, nearest version up to the declared
+    distance, among relatives read on a board at some effort: the relatives' times times the median own/other ratio at High
+    where both lines are read on at least two same-version pairs (cross_line_extrapolation), else the median of the
+    relatives' times (cross_line_median). An estimated time is never a relative's basis."""
+
+    def run_step(self, read, estimated=(), versions=None):
+        """minutes/basis after the step, for acme rows `read` ({row: High minutes}, method aa) and `estimated`
+        ({row: High minutes}, method series)."""
+        models = {**read, **dict(estimated)}
+        acc = {**READINGS, 'models': {m: {} for m in [*models, 'acme-b-4']},
+               'families': {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'line': x, 'size': 'full'}
+                                     for x in 'ab']},
+               'series_versions': {'versions': versions or {m: int(m[-1]) for m in [*models, 'acme-b-4']}}}
+        rows = dict.fromkeys(acc['models'])
+        minutes = {m: {'high': t, 'xhigh': 2 * t} for m, t in models.items()} | {'acme-b-4': {}}
+        basis = {m: {e: {'method': 'aa' if m in read else 'series'} for e in ('high', 'xhigh')} for m in models}
+        basis['acme-b-4'] = {}
+        five_axis.cross_line_times(SimpleNamespace(entries=set()), rows, acc, {}, minutes, basis, set())
+        return minutes['acme-b-4'], basis['acme-b-4']
+
+    def test_without_two_same_version_pairs_the_median_of_the_nearest_other_line_relatives(self):
+        got, basis = self.run_step({'acme-a-4': 6.0, 'acme-a-3': 9.0, 'acme-b-1': 2.0})
+        self.assertEqual(got, {'high': 6.0, 'xhigh': 12.0})
+        self.assertEqual((basis['high']['method'], basis['high']['base_model'], basis['high']['version_distance']),
+                         ('cross_line_median', ['acme-a-4'], 0))
+
+    def test_with_two_same_version_pairs_the_relative_times_the_lines_median_ratio(self):
+        got, basis = self.run_step({'acme-a-1': 4.0, 'acme-b-1': 2.0, 'acme-a-2': 5.0, 'acme-b-2': 4.0, 'acme-a-4': 10.0},
+                                   versions={'acme-a-1': 1, 'acme-b-1': 1, 'acme-a-2': 2, 'acme-b-2': 2, 'acme-a-4': 3,
+                                             'acme-b-4': 3})
+        ratio = float(np.median([2.0 / 4.0, 4.0 / 5.0]))
+        self.assertEqual(basis['high']['method'], 'cross_line_extrapolation')
+        self.assertEqual(basis['high']['lines']['acme-a-4']['n'], 2)
+        self.assertAlmostEqual(got['high'], round(10.0 * ratio, 3))
+
+    def test_a_relative_whose_time_is_an_estimate_is_never_a_basis(self):
+        got, basis = self.run_step({'acme-b-1': 2.0}, estimated={'acme-a-4': 6.0})
+        self.assertEqual((got, basis), ({}, {}))
+
+    def test_a_relative_past_the_declared_version_distance_is_not_used(self):
+        got, _ = self.run_step({'acme-a-1': 6.0}, estimated={'acme-a-2': 7.0},      # acme-a-1: two versions away
+                               versions={'acme-a-1': 1, 'acme-a-2': 2, 'acme-b-4': 4})
+        self.assertEqual(got, {})
+
+
 class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
     """references/five-axis-scores.json is generated (calibration/refresh.py step 3): it must be what five_axis.build makes
     from the shipped public-measurements.json, accounts.json and plan-templates.json. A hand edit, or an input changed
@@ -3175,7 +3280,7 @@ class CrossSizeAndEdgeRuleTests(unittest.TestCase):
         s = self.fa.Scorer.__new__(self.fa.Scorer)
         s.acc = acc or {'accounts': {}, 'dispatch_efforts': {}}
         s.size_of, s.size_steps, s.steps = size_of or {}, size_steps or {}, steps or {}
-        s.same, s.speed, s.fill_refused, s.points = {}, {}, [], {}
+        s.same, s.speed, s.fill_refused, s.points, s.response_floor = {}, {}, [], {}, {}
         s.meas, s.links, s.distrust, s.entries = {'sources': {}}, {}, set(), frozenset()
         return s
 

@@ -1478,6 +1478,12 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.accounts = sim.fresh_accounts(shipped_template(), snapshot())
+        # The precondition of these tests, set here: ChatGPT Web's model carries a Time/Task, so its bundle is a routable
+        # candidate whose cadence price can be read. These tests are about the cadence window, not about data coverage;
+        # whether the shipped data has a Time for gpt-6-pro is the coverage check's (audit/gateway_coverage.py).
+        five = copy.deepcopy(axis_scores.load_five_axis())
+        five['models']['gpt-6-pro']['duration_multiplier'] = copy.deepcopy(five['models']['gpt-6-astra']['duration_multiplier'])
+        cls.five = five
 
     def _plan(self, *, claude_plan='pro', codex_plan='plus', claude_used=0.15, codex_used=0.15,
               claude_reset_h=84.0, codex_reset_h=84.0, seats_used=0, cadence_reset_h=9.0,
@@ -1521,11 +1527,12 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
             'wants_fast': False, 'task_count': '1',
             'expected_hours': hours,
         }
-        return allocator.plan(
-            {'objective': 'research', 'hours': hours, 'profile': profile},
-            usage, NOW, accounts=acc, overrides=[], records=recs,
-            host_policy_config={'allowed_accounts': ['claude', 'codex', 'chatgpt-web', 'dot']},
-        )
+        with patch.object(axis_scores, 'load_five_axis', return_value=self.five):
+            return allocator.plan(
+                {'objective': 'research', 'hours': hours, 'profile': profile},
+                usage, NOW, accounts=acc, overrides=[], records=recs,
+                host_policy_config={'allowed_accounts': ['claude', 'codex', 'chatgpt-web', 'dot']},
+            )
 
     def test_l1_local_research_with_4_of_5_seats_used_does_not_pick_pro_max_and_c_rises_with_used_seats(self):
         costs = []

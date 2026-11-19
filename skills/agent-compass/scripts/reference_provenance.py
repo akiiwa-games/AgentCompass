@@ -77,6 +77,13 @@ def validate_accounts_provenance(doc):
     for model, spec in (doc.get('models') or {}).items():
         if not isinstance(spec, dict):
             continue
+        rt = spec.get('response_time_source')
+        if rt is not None and not (isinstance(rt, dict) and valid_public_declaration(rt)
+                                   and str(rt.get('statement') or '').strip()
+                                   and isinstance(rt.get('min_seconds'), (int, float)) and not isinstance(rt.get('min_seconds'), bool)
+                                   and rt['min_seconds'] > 0):
+            raise ValueError(f'models[{model!r}].response_time_source requires a statement, `min_seconds` above 0 and an '
+                             'https url or dated kind="maintainer"')
         if spec.get('text_only') and not valid_public_declaration(spec.get('text_only_source')):
             raise ValueError(f'models[{model!r}].text_only requires a cited or dated maintainer text_only_source (with as_of)')
         if 'image_input' in spec and not valid_public_declaration(spec.get('image_input_source')):

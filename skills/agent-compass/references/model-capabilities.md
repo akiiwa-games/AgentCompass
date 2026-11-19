@@ -77,9 +77,9 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gpt-5.2-pro` | -0.57 | -3.66~ | -3.12~ | -4.18~ | missing! | - | yes |
 | `gpt-5.4` | -0.26 | -2.14 | -2.56~ | -4.23 | -0.61 | 11.382 | yes |
 | `gpt-5.4-mini` | -0.49 | -3.24 | -3.09~ | -4.26 | -2.09 | 8.602 | yes |
-| `gpt-5.4-pro` | -0.26 | -2.14~ | -2.56~ | -4.23~ | missing! | - | yes |
+| `gpt-5.4-pro` | -0.26 | -2.14~ | -2.56~ | -4.23~ | -0.61~ | - | yes |
 | `gpt-5.5` | -0.21 | -1.86 | -2.42~ | -2.17 | -1.05 | 24.62 | yes |
-| `gpt-5.5-pro` | -0.21 | -1.86~ | -2.42~ | -2.17~ | missing! | - | yes |
+| `gpt-5.5-pro` | -0.21 | -1.86~ | -2.42~ | -2.17~ | -1.05~ | - | yes |
 | `gpt-5.6-luna` | -0.64 | -3.03 | -2.75~ | -2.72 | -2.08 | 1.598 | yes |
 | `gpt-5.6-sol` | -0.21 | -1.49 | -1.74~ | -0.72 | -1.21 | 24.5 | yes |
 | `gpt-5.6-terra` | -0.21 | -2.84 | -2.80~ | -2.41 | -1.88 | 12.828 | yes |
@@ -136,10 +136,10 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `nemotron-3.5-super-vl-free` | -0.64 | -3.57~ | -3.47~ | -4.42 | -2.87~ | 6.161 | yes |
 | `qwen-max` | -0.30 | -3.12~ | -4.00~ | -3.02~ | -2.88~ | - | unknown |
 | `qwen-plus` | -0.30 | -2.11~ | -1.84~ | -2.19~ | -1.38~ | 1.715 | no |
-| `qwen3-coder-flash` | -0.90 | -6.03~ | -5.62~ | -6.71~ | missing! | - | no |
+| `qwen3-coder-flash` | -0.90 | -6.03~ | -5.62~ | -6.71~ | -4.61~ | - | no |
 | `qwen3-coder-next` | - | missing! | missing! | missing! | missing! | 6.334 | no |
 | `qwen3-flash-2025-07-28` | -0.90 | -3.45u | -2.62u | -2.78u | -2.85u | - | unknown |
-| `qwen3-omni-flash` | -0.90 | -5.01~ | -4.32~ | -5.88~ | missing! | - | unknown |
+| `qwen3-omni-flash` | -0.90 | -5.01~ | -4.32~ | -5.88~ | -3.47~ | - | unknown |
 | `qwen3-vl-plus` | -0.52 | -3.06~ | -2.45~ | -3.03~ | -2.34~ | - | unknown |
 | `qwen3.5-122b-a10b` | -0.74 | -4.24 | -2.88~ | -4.65 | -2.57 | - | yes |
 | `qwen3.5-27b` | -0.80 | -4.46 | -3.34~ | -4.68 | -2.62 | - | yes |

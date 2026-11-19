@@ -1508,7 +1508,8 @@
    "size_step nearest version"
   ],
   "sibling_first_up_to_distance": 1,
-  "evidence": "leave-one-out over the measured High cells of the shipped build (audit/estimation_loo.py, 2026-11-19, relatives by declared maker, line and size, round 6 item 4), median absolute error in panel z: panel effort step 0.221 (n=345), sibling at version distance 0 0.338 (n=156), fleet edge step 0.270 (n=143), sibling d=1 0.408 (n=149), tier fit 0.470 (n=292), sibling d>=2 0.715 (n=14), own ability median 0.637 (n=326), tier down 0.655 (n=13), size step same version 0.871 (n=20), size step nearest version 0.716 with p90 7.66 (n=21); on the same cells the sibling beats the tier fit at distance 0 (0.328 against 0.498, n=128) and 1 (0.297 against 0.455, n=103) and the tier fit wins from distance 2 (0.631 against 0.667, n=11); responsiveness from the own line 0.785 against another line of the same maker and size 1.029 on the same 29 cells. The same-version relations (tier down, size step same version) stay where the owner put them (round 5 review D)"
+  "speed_cross_line_before_fit": true,
+  "evidence": "leave-one-out over the measured High cells of the shipped build (audit/estimation_loo.py, 2026-11-19, relatives by declared maker, line and size, round 6 item 4), median absolute error in panel z: panel effort step 0.221 (n=345), sibling at version distance 0 0.338 (n=156), fleet edge step 0.270 (n=143), sibling d=1 0.408 (n=149), tier fit 0.470 (n=292), sibling d>=2 0.715 (n=14), own ability median 0.637 (n=326), tier down 0.655 (n=13), size step same version 0.871 (n=20), size step nearest version 0.716 with p90 7.66 (n=21); on the same cells the sibling beats the tier fit at distance 0 (0.328 against 0.498, n=128) and 1 (0.297 against 0.455, n=103) and the tier fit wins from distance 2 (0.631 against 0.667, n=11); responsiveness from the own line 0.764 against the maker's other lines (cross_line_median) 0.789 on the same 19 cells, cross_line_median alone 0.702 (n=25); the responsiveness tier fit has no skill (slope not positive, rejected), so it estimates no cell and `speed_cross_line_before_fit` (other lines before the fit, owner 2026-11-19) is untested against it; no two lines share two same-version readings, so cross_line_extrapolation estimates no cell yet. Time/Task at High read on Artificial Analysis, median |ln(estimate / reading)|: the other lines' median 0.415 (n=17), the own line 0.500 (n=13), on the same 8 cells 0.537 against 0.500; Time/Task has no tier fit. The same-version relations (tier down, size step same version) stay where the owner put them (round 5 review D)"
  },
  "models": {
   "deepseek-v4.1-flash-free": {
@@ -1779,6 +1780,12 @@
    }
   },
   "gpt-6-pro": {
+   "response_time_source": {
+    "kind": "maintainer",
+    "as_of": "2026-11-19",
+    "min_seconds": 600,
+    "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+   },
    "label": "GPT 6 Pro",
    "advisor_only": true,
    "advisor_for": [

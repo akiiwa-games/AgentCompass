@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.five-axis-scores/12",
- "generated_at": "2026-11-19T02:41:47+00:00",
+ "generated_at": "2026-11-19T03:27:19+00:00",
  "measurements_sha256": "928043c0a5dd93c6c34fccb7d32b05015f67d50277b13ecc13e9ae8632d1d052",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
@@ -15952,6 +15952,33 @@
     },
     "tool_operation": {
      "facets": {
+      "responsiveness": {
+       "value": -4.425,
+       "by_effort": {
+        "none": -4.425,
+        "minimal": -4.425,
+        "low": -4.425,
+        "medium": -4.425,
+        "high": -4.425,
+        "xhigh": -4.425,
+        "max": -4.425,
+        "ultra": -4.425
+       },
+       "status": "estimated",
+       "sources": {},
+       "measured_efforts": [],
+       "estimate": {
+        "method": "declared_response_floor",
+        "min_seconds": 600,
+        "bound": "upper: no faster than the declared floor",
+        "transform": "x = -ln(600 s) = -6.3969; z = (x - -3.01685) / 0.763853 (aa.ttfa scale)",
+        "declaration": {
+         "kind": "maintainer",
+         "as_of": "2026-11-19",
+         "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+        }
+       }
+      },
       "image_recognition": {
        "value": -2.1782,
        "by_effort": {
@@ -16025,38 +16052,59 @@
        }
       }
      },
-     "missing_facets": [
-      "responsiveness"
-     ],
+     "missing_facets": [],
      "by_level": {
       "2": {
-       "by_effort": {},
-       "facets": [],
-       "missing_facets": [
+       "by_effort": {
+        "none": -4.425,
+        "minimal": -4.425,
+        "low": -4.425,
+        "medium": -4.425,
+        "high": -4.425,
+        "xhigh": -4.425,
+        "max": -4.425,
+        "ultra": -4.425
+       },
+       "facets": [
         "responsiveness"
        ]
       },
       "3": {
-       "by_effort": {},
+       "by_effort": {
+        "none": -4.425,
+        "minimal": -4.425,
+        "low": -4.425,
+        "medium": -4.425,
+        "high": -4.425,
+        "xhigh": -4.425,
+        "max": -4.425,
+        "ultra": -4.425
+       },
        "facets": [
+        "responsiveness",
         "image_recognition"
-       ],
-       "missing_facets": [
-        "responsiveness"
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "partial"
+     "value": -4.425,
+     "by_effort": {
+      "none": -4.425,
+      "minimal": -4.425,
+      "low": -4.425,
+      "medium": -4.425,
+      "high": -4.425,
+      "xhigh": -4.425,
+      "max": -4.425,
+      "ultra": -4.425
+     },
+     "status": "estimated"
     }
    },
    "scores": {
     "creativity": -3.3541,
     "coding": -1.13,
     "aesthetics": -1.1114,
-    "tool_operation": null
+    "tool_operation": -4.425
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -16067,21 +16115,111 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "status": "missing",
+    "status": "ok",
     "anchor_minutes": 9.289,
-    "by_effort": {},
-    "minutes_by_effort": {},
-    "basis_by_effort": {},
-    "efforts_without_time": [
-     "none",
-     "minimal",
-     "low",
-     "medium",
-     "high",
-     "xhigh",
-     "max",
-     "ultra"
-    ]
+    "by_effort": {
+     "none": 1.0765,
+     "minimal": 1.0765,
+     "low": 1.0765,
+     "medium": 1.0765,
+     "high": 1.0765,
+     "xhigh": 1.0765,
+     "max": 1.0765,
+     "ultra": 1.0765
+    },
+    "minutes_by_effort": {
+     "none": 10.0,
+     "minimal": 10.0,
+     "low": 10.0,
+     "medium": 10.0,
+     "high": 10.0,
+     "xhigh": 10.0,
+     "max": 10.0,
+     "ultra": 10.0
+    },
+    "basis_by_effort": {
+     "none": {
+      "method": "declared_response_floor",
+      "min_seconds": 600,
+      "bound": "lower: a task takes at least one response of at least the declared time",
+      "declaration": {
+       "kind": "maintainer",
+       "as_of": "2026-11-19",
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+      }
+     },
+     "minimal": {
+      "method": "declared_response_floor",
+      "min_seconds": 600,
+      "bound": "lower: a task takes at least one response of at least the declared time",
+      "declaration": {
+       "kind": "maintainer",
+       "as_of": "2026-11-19",
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+      }
+     },
+     "low": {
+      "method": "declared_response_floor",
+      "min_seconds": 600,
+      "bound": "lower: a task takes at least one response of at least the declared time",
+      "declaration": {
+       "kind": "maintainer",
+       "as_of": "2026-11-19",
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+      }
+     },
+     "medium": {
+      "method": "declared_response_floor",
+      "min_seconds": 600,
+      "bound": "lower: a task takes at least one response of at least the declared time",
+      "declaration": {
+       "kind": "maintainer",
+       "as_of": "2026-11-19",
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+      }
+     },
+     "high": {
+      "method": "declared_response_floor",
+      "min_seconds": 600,
+      "bound": "lower: a task takes at least one response of at least the declared time",
+      "declaration": {
+       "kind": "maintainer",
+       "as_of": "2026-11-19",
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+      }
+     },
+     "xhigh": {
+      "method": "declared_response_floor",
+      "min_seconds": 600,
+      "bound": "lower: a task takes at least one response of at least the declared time",
+      "declaration": {
+       "kind": "maintainer",
+       "as_of": "2026-11-19",
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+      }
+     },
+     "max": {
+      "method": "declared_response_floor",
+      "min_seconds": 600,
+      "bound": "lower: a task takes at least one response of at least the declared time",
+      "declaration": {
+       "kind": "maintainer",
+       "as_of": "2026-11-19",
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+      }
+     },
+     "ultra": {
+      "method": "declared_response_floor",
+      "min_seconds": 600,
+      "bound": "lower: a task takes at least one response of at least the declared time",
+      "declaration": {
+       "kind": "maintainer",
+       "as_of": "2026-11-19",
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+      }
+     }
+    },
+    "efforts_without_time": []
    },
    "image_input": {
     "value": true,
@@ -16130,20 +16268,6 @@
      "reason": "no_cited_source",
      "level": "red_if_metered",
      "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-    },
-    {
-     "model": "gpt-6-pro",
-     "field": "duration_multiplier",
-     "reason": "no_time_per_task",
-     "level": "red",
-     "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-    },
-    {
-     "model": "gpt-6-pro",
-     "field": "tool_operation.responsiveness",
-     "reason": "facet_unmeasured_no_estimate",
-     "level": "red_if_demanded",
-     "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
     },
     {
      "model": "gpt-6-pro",
@@ -51675,6 +51799,121 @@
     },
     "tool_operation": {
      "facets": {
+      "responsiveness": {
+       "value": -0.3015,
+       "by_effort": {
+        "none": 2.1116,
+        "minimal": 2.1116,
+        "low": 1.4956,
+        "medium": 0.5401,
+        "high": -0.3015,
+        "xhigh": -1.3908,
+        "max": -2.761,
+        "ultra": -4.2971
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "cross_line_median",
+        "base_model": [
+         "qwen3.5-122b-a10b",
+         "qwen3.5-27b",
+         "qwen3.5-35b-a3b",
+         "qwen3.5-397b-a17b"
+        ],
+        "base_value": [
+         0.1676,
+         -1.3054,
+         0.5627,
+         -0.7706
+        ],
+        "base_tier": [
+         -0.7377,
+         -0.8026,
+         -0.9211,
+         -0.5338
+        ],
+        "tier": -0.9046,
+        "tier_source": "sibling",
+        "shift": [
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
+        "version_distance": 1,
+        "tie": "median of the tied relatives",
+        "lines": {
+         "qwen3.5-122b-a10b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-27b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-35b-a3b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-397b-a17b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         }
+        }
+       },
+       "measured_efforts": [],
+       "filled_efforts": {
+        "low": {
+         "method": "panel_effort_step",
+         "from_effort": "high",
+         "from_value": -0.3015,
+         "step": 1.7971,
+         "n": 10
+        },
+        "medium": {
+         "method": "panel_effort_step",
+         "from_effort": "high",
+         "from_value": -0.3015,
+         "step": 0.8416,
+         "n": 8
+        },
+        "xhigh": {
+         "method": "panel_effort_step",
+         "from_effort": "high",
+         "from_value": -0.3015,
+         "step": -1.0893,
+         "n": 9
+        },
+        "max": {
+         "method": "panel_effort_step",
+         "from_effort": "high",
+         "from_value": -0.3015,
+         "step": -2.4595,
+         "n": 7
+        },
+        "minimal": {
+         "method": "fleet_lowest_step",
+         "from_effort": "low",
+         "from_value": 1.4956,
+         "step": 0.7422,
+         "n": 25,
+         "bounded_from": 2.2378
+        },
+        "ultra": {
+         "method": "fleet_highest_step",
+         "from_effort": "max",
+         "from_value": -2.761,
+         "step": -1.5361,
+         "n": 19
+        }
+       }
+      },
       "image_recognition": {
        "value": -3.4672,
        "by_effort": {
@@ -51773,38 +52012,59 @@
        }
       }
      },
-     "missing_facets": [
-      "responsiveness"
-     ],
+     "missing_facets": [],
      "by_level": {
       "2": {
-       "by_effort": {},
-       "facets": [],
-       "missing_facets": [
+       "by_effort": {
+        "none": 2.1116,
+        "minimal": 2.1116,
+        "low": 1.4956,
+        "medium": 0.5401,
+        "high": -0.3015,
+        "xhigh": -1.3908,
+        "max": -2.761,
+        "ultra": -4.2971
+       },
+       "facets": [
         "responsiveness"
        ]
       },
       "3": {
-       "by_effort": {},
+       "by_effort": {
+        "none": -4.611,
+        "minimal": -4.4327,
+        "low": -4.1407,
+        "medium": -3.7654,
+        "high": -3.4672,
+        "xhigh": -3.3028,
+        "max": -3.1331,
+        "ultra": -4.2971
+       },
        "facets": [
+        "responsiveness",
         "image_recognition"
-       ],
-       "missing_facets": [
-        "responsiveness"
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "partial"
+     "value": -3.4672,
+     "by_effort": {
+      "none": -4.611,
+      "minimal": -4.4327,
+      "low": -4.1407,
+      "medium": -3.7654,
+      "high": -3.4672,
+      "xhigh": -3.3028,
+      "max": -3.1331,
+      "ultra": -4.2971
+     },
+     "status": "estimated"
     }
    },
    "scores": {
     "creativity": -5.0145,
     "coding": -4.3197,
     "aesthetics": -5.8808,
-    "tool_operation": null
+    "tool_operation": -3.4672
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -51884,13 +52144,6 @@
      "reason": "no_cited_source",
      "level": "red_if_vision_demanded",
      "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-    },
-    {
-     "model": "qwen3-flash-2025-07-28",
-     "field": "tool_operation.responsiveness",
-     "reason": "facet_unmeasured_no_estimate",
-     "level": "red_if_demanded",
-     "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
     },
     {
      "model": "qwen3-flash-2025-07-28",
@@ -71747,6 +72000,64 @@
     },
     "tool_operation": {
      "facets": {
+      "responsiveness": {
+       "value": 0.5093,
+       "by_effort": {
+        "none": 3.2396,
+        "minimal": 3.2396,
+        "low": 3.022,
+        "medium": 1.7636,
+        "high": 0.5093,
+        "xhigh": -0.8563,
+        "max": -2.2638,
+        "ultra": -3.7999
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "cross_line_median",
+        "base_model": "gpt-5.5",
+        "base_value": 0.5093,
+        "base_tier": -0.2082,
+        "tier": -0.2585,
+        "tier_source": "sibling",
+        "shift": 0.0,
+        "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
+        "version_distance": 1,
+        "lines": {
+         "gpt-5.5": {
+          "line": "gpt-5",
+          "n": 0,
+          "pairs": []
+         }
+        }
+       },
+       "measured_efforts": [],
+       "filled_efforts": {
+        "max": {
+         "method": "panel_effort_step",
+         "from_effort": "xhigh",
+         "from_value": -0.8563,
+         "step": -1.4075,
+         "n": 8
+        },
+        "minimal": {
+         "method": "fleet_lowest_step",
+         "from_effort": "low",
+         "from_value": 3.022,
+         "step": 0.7422,
+         "n": 25,
+         "bounded_from": 3.7642
+        },
+        "ultra": {
+         "method": "fleet_highest_step",
+         "from_effort": "max",
+         "from_value": -2.2638,
+         "step": -1.5361,
+         "n": 19
+        }
+       }
+      },
       "image_recognition": {
        "value": -0.6068,
        "by_effort": {
@@ -71824,38 +72135,59 @@
        }
       }
      },
-     "missing_facets": [
-      "responsiveness"
-     ],
+     "missing_facets": [],
      "by_level": {
       "2": {
-       "by_effort": {},
-       "facets": [],
-       "missing_facets": [
+       "by_effort": {
+        "none": 3.2396,
+        "minimal": 3.2396,
+        "low": 3.022,
+        "medium": 1.7636,
+        "high": 0.5093,
+        "xhigh": -0.8563,
+        "max": -2.2638,
+        "ultra": -3.7999
+       },
+       "facets": [
         "responsiveness"
        ]
       },
       "3": {
-       "by_effort": {},
+       "by_effort": {
+        "none": -4.2831,
+        "minimal": -1.5723,
+        "low": -1.2803,
+        "medium": -0.905,
+        "high": -0.6068,
+        "xhigh": -0.8563,
+        "max": -2.2638,
+        "ultra": -3.7999
+       },
        "facets": [
+        "responsiveness",
         "image_recognition"
-       ],
-       "missing_facets": [
-        "responsiveness"
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "partial"
+     "value": -0.6068,
+     "by_effort": {
+      "none": -4.2831,
+      "minimal": -1.5723,
+      "low": -1.2803,
+      "medium": -0.905,
+      "high": -0.6068,
+      "xhigh": -0.8563,
+      "max": -2.2638,
+      "ultra": -3.7999
+     },
+     "status": "estimated"
     }
    },
    "scores": {
     "creativity": -2.1406,
     "coding": -2.5563,
     "aesthetics": -4.2343,
-    "tool_operation": null
+    "tool_operation": -0.6068
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -71942,13 +72274,6 @@
      "reason": "no_time_per_task",
      "level": "red",
      "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-    },
-    {
-     "model": "gpt-5.4-pro",
-     "field": "tool_operation.responsiveness",
-     "reason": "facet_unmeasured_no_estimate",
-     "level": "red_if_demanded",
-     "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
     },
     {
      "model": "gpt-5.4-pro",
@@ -72681,21 +73006,287 @@
     }
    },
    "duration_multiplier": {
-    "status": "missing",
+    "status": "ok",
     "anchor_minutes": 9.289,
-    "by_effort": {},
-    "minutes_by_effort": {},
-    "basis_by_effort": {},
-    "efforts_without_time": [
-     "none",
-     "minimal",
-     "low",
-     "medium",
-     "high",
-     "xhigh",
-     "max",
-     "ultra"
-    ]
+    "by_effort": {
+     "none": 0.0673,
+     "minimal": 0.0673,
+     "low": 0.1128,
+     "medium": 0.3063,
+     "high": 0.5144,
+     "xhigh": 0.6464,
+     "max": 1.336,
+     "ultra": 2.2474
+    },
+    "minutes_by_effort": {
+     "none": 0.625,
+     "minimal": 0.625,
+     "low": 1.048,
+     "medium": 2.845,
+     "high": 4.778,
+     "xhigh": 6.004,
+     "max": 12.41,
+     "ultra": 20.876
+    },
+    "basis_by_effort": {
+     "none": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       0.513,
+       1.022,
+       0.625
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "minimal": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       0.513,
+       1.022,
+       0.625
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "low": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       0.513,
+       2.119,
+       1.048
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "medium": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       2.845,
+       4.833,
+       2.441
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "high": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       4.778,
+       8.34,
+       3.642
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "xhigh": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       6.004,
+       10.521,
+       5.711
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "max": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       9.954,
+       26.22,
+       12.41
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "ultra": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       16.745,
+       44.107,
+       20.876
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     }
+    },
+    "efforts_without_time": []
    },
    "image_input": {
     "value": true,
@@ -72759,15 +73350,7 @@
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "gpt-5.5",
-     "field": "duration_multiplier",
-     "reason": "no_time_per_task",
-     "level": "red",
-     "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-    }
-   ]
+   "data_errors": []
   },
   "gpt-5.5-pro": {
    "axes": {
@@ -73127,6 +73710,64 @@
     },
     "tool_operation": {
      "facets": {
+      "responsiveness": {
+       "value": 0.5093,
+       "by_effort": {
+        "none": 3.2396,
+        "minimal": 3.2396,
+        "low": 3.022,
+        "medium": 1.7636,
+        "high": 0.5093,
+        "xhigh": -0.8563,
+        "max": -2.2638,
+        "ultra": -3.7999
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "cross_line_median",
+        "base_model": "gpt-5.5",
+        "base_value": 0.5093,
+        "base_tier": -0.2082,
+        "tier": -0.2082,
+        "tier_source": "sibling",
+        "shift": 0.0,
+        "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
+        "version_distance": 0,
+        "lines": {
+         "gpt-5.5": {
+          "line": "gpt-5",
+          "n": 0,
+          "pairs": []
+         }
+        }
+       },
+       "measured_efforts": [],
+       "filled_efforts": {
+        "max": {
+         "method": "panel_effort_step",
+         "from_effort": "xhigh",
+         "from_value": -0.8563,
+         "step": -1.4075,
+         "n": 8
+        },
+        "minimal": {
+         "method": "fleet_lowest_step",
+         "from_effort": "low",
+         "from_value": 3.022,
+         "step": 0.7422,
+         "n": 25,
+         "bounded_from": 3.7642
+        },
+        "ultra": {
+         "method": "fleet_highest_step",
+         "from_effort": "max",
+         "from_value": -2.2638,
+         "step": -1.5361,
+         "n": 19
+        }
+       }
+      },
       "image_recognition": {
        "value": -1.0505,
        "by_effort": {
@@ -73190,38 +73831,59 @@
        }
       }
      },
-     "missing_facets": [
-      "responsiveness"
-     ],
+     "missing_facets": [],
      "by_level": {
       "2": {
-       "by_effort": {},
-       "facets": [],
-       "missing_facets": [
+       "by_effort": {
+        "none": 3.2396,
+        "minimal": 3.2396,
+        "low": 3.022,
+        "medium": 1.7636,
+        "high": 0.5093,
+        "xhigh": -0.8563,
+        "max": -2.2638,
+        "ultra": -3.7999
+       },
+       "facets": [
         "responsiveness"
        ]
       },
       "3": {
-       "by_effort": {},
+       "by_effort": {
+        "none": -3.7761,
+        "minimal": -1.7229,
+        "low": -1.4309,
+        "medium": -1.1498,
+        "high": -1.0505,
+        "xhigh": -0.9139,
+        "max": -2.2638,
+        "ultra": -3.7999
+       },
        "facets": [
+        "responsiveness",
         "image_recognition"
-       ],
-       "missing_facets": [
-        "responsiveness"
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "partial"
+     "value": -1.0505,
+     "by_effort": {
+      "none": -3.7761,
+      "minimal": -1.7229,
+      "low": -1.4309,
+      "medium": -1.1498,
+      "high": -1.0505,
+      "xhigh": -0.9139,
+      "max": -2.2638,
+      "ultra": -3.7999
+     },
+     "status": "estimated"
     }
    },
    "scores": {
     "creativity": -1.8569,
     "coding": -2.4168,
     "aesthetics": -2.1704,
-    "tool_operation": null
+    "tool_operation": -1.0505
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -73232,21 +73894,287 @@
     "reason": "not listed on arena.ai Agent / Overall"
    },
    "duration_multiplier": {
-    "status": "missing",
+    "status": "ok",
     "anchor_minutes": 9.289,
-    "by_effort": {},
-    "minutes_by_effort": {},
-    "basis_by_effort": {},
-    "efforts_without_time": [
-     "none",
-     "minimal",
-     "low",
-     "medium",
-     "high",
-     "xhigh",
-     "max",
-     "ultra"
-    ]
+    "by_effort": {
+     "none": 0.0673,
+     "minimal": 0.0673,
+     "low": 0.1128,
+     "medium": 0.3063,
+     "high": 0.5144,
+     "xhigh": 0.6464,
+     "max": 1.336,
+     "ultra": 2.2474
+    },
+    "minutes_by_effort": {
+     "none": 0.625,
+     "minimal": 0.625,
+     "low": 1.048,
+     "medium": 2.845,
+     "high": 4.778,
+     "xhigh": 6.004,
+     "max": 12.41,
+     "ultra": 20.876
+    },
+    "basis_by_effort": {
+     "none": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       0.513,
+       1.022,
+       0.625
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "minimal": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       0.513,
+       1.022,
+       0.625
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "low": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       0.513,
+       2.119,
+       1.048
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "medium": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       2.845,
+       4.833,
+       2.441
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "high": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       4.778,
+       8.34,
+       3.642
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "xhigh": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       6.004,
+       10.521,
+       5.711
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "max": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       9.954,
+       26.22,
+       12.41
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "ultra": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gpt-5.6-luna",
+       "gpt-5.6-sol",
+       "gpt-5.6-terra"
+      ],
+      "version_distance": 1,
+      "base_minutes": [
+       16.745,
+       44.107,
+       20.876
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gpt-5.6-luna": {
+        "line": "luna",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-sol": {
+        "line": "sol",
+        "n": 0,
+        "pairs": []
+       },
+       "gpt-5.6-terra": {
+        "line": "terra",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     }
+    },
+    "efforts_without_time": []
    },
    "image_input": {
     "value": true,
@@ -73301,20 +74229,6 @@
      "reason": "no_cited_source",
      "level": "red_if_metered",
      "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-    },
-    {
-     "model": "gpt-5.5-pro",
-     "field": "duration_multiplier",
-     "reason": "no_time_per_task",
-     "level": "red",
-     "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-    },
-    {
-     "model": "gpt-5.5-pro",
-     "field": "tool_operation.responsiveness",
-     "reason": "facet_unmeasured_no_estimate",
-     "level": "red_if_demanded",
-     "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
     },
     {
      "model": "gpt-5.5-pro",
@@ -78253,21 +79167,175 @@
     }
    },
    "duration_multiplier": {
-    "status": "missing",
+    "status": "ok",
     "anchor_minutes": 9.289,
-    "by_effort": {},
-    "minutes_by_effort": {},
-    "basis_by_effort": {},
-    "efforts_without_time": [
-     "none",
-     "minimal",
-     "low",
-     "medium",
-     "high",
-     "xhigh",
-     "max",
-     "ultra"
-    ]
+    "by_effort": {
+     "none": 0.0774,
+     "minimal": 0.0774,
+     "low": 0.1604,
+     "medium": 0.4355,
+     "high": 0.9114,
+     "xhigh": 1.6175,
+     "max": 2.7211,
+     "ultra": 4.5773
+    },
+    "minutes_by_effort": {
+     "none": 0.719,
+     "minimal": 0.719,
+     "low": 1.49,
+     "medium": 4.045,
+     "high": 8.466,
+     "xhigh": 15.025,
+     "max": 25.276,
+     "ultra": 42.519
+    },
+    "basis_by_effort": {
+     "none": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       0.719
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "minimal": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       0.719
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "low": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       1.49
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "medium": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       4.045
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "high": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       8.466
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "xhigh": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       15.025
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "max": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       25.276
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "ultra": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       42.519
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     }
+    },
+    "efforts_without_time": []
    },
    "image_input": {
     "value": true,
@@ -78329,15 +79397,7 @@
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "gemma-4-26b-a4b-it",
-     "field": "duration_multiplier",
-     "reason": "no_time_per_task",
-     "level": "red",
-     "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-    }
-   ]
+   "data_errors": []
   },
   "gemma-4-31b-it": {
    "axes": {
@@ -79057,21 +80117,175 @@
     }
    },
    "duration_multiplier": {
-    "status": "missing",
+    "status": "ok",
     "anchor_minutes": 9.289,
-    "by_effort": {},
-    "minutes_by_effort": {},
-    "basis_by_effort": {},
-    "efforts_without_time": [
-     "none",
-     "minimal",
-     "low",
-     "medium",
-     "high",
-     "xhigh",
-     "max",
-     "ultra"
-    ]
+    "by_effort": {
+     "none": 0.0774,
+     "minimal": 0.0774,
+     "low": 0.1604,
+     "medium": 0.4355,
+     "high": 0.9114,
+     "xhigh": 1.6175,
+     "max": 2.7211,
+     "ultra": 4.5773
+    },
+    "minutes_by_effort": {
+     "none": 0.719,
+     "minimal": 0.719,
+     "low": 1.49,
+     "medium": 4.045,
+     "high": 8.466,
+     "xhigh": 15.025,
+     "max": 25.276,
+     "ultra": 42.519
+    },
+    "basis_by_effort": {
+     "none": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       0.719
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "minimal": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       0.719
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "low": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       1.49
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "medium": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       4.045
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "high": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       8.466
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "xhigh": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       15.025
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "max": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       25.276
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     },
+     "ultra": {
+      "method": "cross_line_median",
+      "base_model": [
+       "gemini-4-hydrogen-high"
+      ],
+      "version_distance": 0,
+      "base_minutes": [
+       42.519
+      ],
+      "source": "aa.cost_time",
+      "lines": {
+       "gemini-4-hydrogen-high": {
+        "line": "hydrogen",
+        "n": 0,
+        "pairs": []
+       }
+      }
+     }
+    },
+    "efforts_without_time": []
    },
    "image_input": {
     "value": true,
@@ -79132,15 +80346,7 @@
     },
     "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "gemma-4-31b-it",
-     "field": "duration_multiplier",
-     "reason": "no_time_per_task",
-     "level": "red",
-     "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-    }
-   ]
+   "data_errors": []
   },
   "glm-4.5": {
    "axes": {
@@ -93297,6 +94503,106 @@
     },
     "tool_operation": {
      "facets": {
+      "responsiveness": {
+       "value": 2.1116,
+       "by_effort": {
+        "none": 2.1116,
+        "minimal": 2.1116,
+        "low": 2.1116,
+        "medium": 2.1116,
+        "high": 2.1116,
+        "xhigh": 2.1116,
+        "max": 2.1116,
+        "ultra": 2.1116
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "cross_line_median",
+        "base_model": [
+         "qwen3.5-122b-a10b",
+         "qwen3.5-27b",
+         "qwen3.5-35b-a3b",
+         "qwen3.5-397b-a17b"
+        ],
+        "base_value": [
+         0.1676,
+         -1.3054,
+         0.5627,
+         -0.7706
+        ],
+        "base_tier": [
+         -0.7377,
+         -0.8026,
+         -0.9211,
+         -0.5338
+        ],
+        "tier": -0.9046,
+        "tier_source": "sibling",
+        "shift": [
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
+        "version_distance": 1,
+        "tie": "median of the tied relatives",
+        "lines": {
+         "qwen3.5-122b-a10b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-27b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-35b-a3b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-397b-a17b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         }
+        }
+       },
+       "measured_efforts": [],
+       "filled_efforts": {
+        "minimal": {
+         "method": "operating_point",
+         "from_effort": "none"
+        },
+        "low": {
+         "method": "operating_point",
+         "from_effort": "none"
+        },
+        "medium": {
+         "method": "operating_point",
+         "from_effort": "none"
+        },
+        "high": {
+         "method": "operating_point",
+         "from_effort": "none"
+        },
+        "xhigh": {
+         "method": "operating_point",
+         "from_effort": "none"
+        },
+        "max": {
+         "method": "operating_point",
+         "from_effort": "none"
+        },
+        "ultra": {
+         "method": "operating_point",
+         "from_effort": "none"
+        }
+       }
+      },
       "image_recognition": {
        "value": -4.611,
        "by_effort": {
@@ -93381,38 +94687,59 @@
        }
       }
      },
-     "missing_facets": [
-      "responsiveness"
-     ],
+     "missing_facets": [],
      "by_level": {
       "2": {
-       "by_effort": {},
-       "facets": [],
-       "missing_facets": [
+       "by_effort": {
+        "none": 2.1116,
+        "minimal": 2.1116,
+        "low": 2.1116,
+        "medium": 2.1116,
+        "high": 2.1116,
+        "xhigh": 2.1116,
+        "max": 2.1116,
+        "ultra": 2.1116
+       },
+       "facets": [
         "responsiveness"
        ]
       },
       "3": {
-       "by_effort": {},
+       "by_effort": {
+        "none": -4.611,
+        "minimal": -4.611,
+        "low": -4.611,
+        "medium": -4.611,
+        "high": -4.611,
+        "xhigh": -4.611,
+        "max": -4.611,
+        "ultra": -4.611
+       },
        "facets": [
+        "responsiveness",
         "image_recognition"
-       ],
-       "missing_facets": [
-        "responsiveness"
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "partial"
+     "value": -4.611,
+     "by_effort": {
+      "none": -4.611,
+      "minimal": -4.611,
+      "low": -4.611,
+      "medium": -4.611,
+      "high": -4.611,
+      "xhigh": -4.611,
+      "max": -4.611,
+      "ultra": -4.611
+     },
+     "status": "estimated"
     }
    },
    "scores": {
     "creativity": -6.0265,
     "coding": -5.6185,
     "aesthetics": -6.7148,
-    "tool_operation": null
+    "tool_operation": -4.611
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -93500,13 +94827,6 @@
      "reason": "no_time_per_task",
      "level": "red",
      "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-    },
-    {
-     "model": "qwen3-coder-flash",
-     "field": "tool_operation.responsiveness",
-     "reason": "facet_unmeasured_no_estimate",
-     "level": "red_if_demanded",
-     "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
     },
     {
      "model": "qwen3-coder-flash",
@@ -94632,6 +95952,121 @@
     },
     "tool_operation": {
      "facets": {
+      "responsiveness": {
+       "value": -0.3015,
+       "by_effort": {
+        "none": 2.1116,
+        "minimal": 2.1116,
+        "low": 1.4956,
+        "medium": 0.5401,
+        "high": -0.3015,
+        "xhigh": -1.3908,
+        "max": -2.761,
+        "ultra": -4.2971
+       },
+       "status": "estimated",
+       "sources": {},
+       "estimate": {
+        "method": "cross_line_median",
+        "base_model": [
+         "qwen3.5-122b-a10b",
+         "qwen3.5-27b",
+         "qwen3.5-35b-a3b",
+         "qwen3.5-397b-a17b"
+        ],
+        "base_value": [
+         0.1676,
+         -1.3054,
+         0.5627,
+         -0.7706
+        ],
+        "base_tier": [
+         -0.7377,
+         -0.8026,
+         -0.9211,
+         -0.5338
+        ],
+        "tier": -0.9046,
+        "tier_source": "sibling",
+        "shift": [
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
+        "version_distance": 1,
+        "tie": "median of the tied relatives",
+        "lines": {
+         "qwen3.5-122b-a10b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-27b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-35b-a3b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-397b-a17b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         }
+        }
+       },
+       "measured_efforts": [],
+       "filled_efforts": {
+        "low": {
+         "method": "panel_effort_step",
+         "from_effort": "high",
+         "from_value": -0.3015,
+         "step": 1.7971,
+         "n": 10
+        },
+        "medium": {
+         "method": "panel_effort_step",
+         "from_effort": "high",
+         "from_value": -0.3015,
+         "step": 0.8416,
+         "n": 8
+        },
+        "xhigh": {
+         "method": "panel_effort_step",
+         "from_effort": "high",
+         "from_value": -0.3015,
+         "step": -1.0893,
+         "n": 9
+        },
+        "max": {
+         "method": "panel_effort_step",
+         "from_effort": "high",
+         "from_value": -0.3015,
+         "step": -2.4595,
+         "n": 7
+        },
+        "minimal": {
+         "method": "fleet_lowest_step",
+         "from_effort": "low",
+         "from_value": 1.4956,
+         "step": 0.7422,
+         "n": 25,
+         "bounded_from": 2.2378
+        },
+        "ultra": {
+         "method": "fleet_highest_step",
+         "from_effort": "max",
+         "from_value": -2.761,
+         "step": -1.5361,
+         "n": 19
+        }
+       }
+      },
       "image_recognition": {
        "value": -3.4672,
        "by_effort": {
@@ -94730,38 +96165,59 @@
        }
       }
      },
-     "missing_facets": [
-      "responsiveness"
-     ],
+     "missing_facets": [],
      "by_level": {
       "2": {
-       "by_effort": {},
-       "facets": [],
-       "missing_facets": [
+       "by_effort": {
+        "none": 2.1116,
+        "minimal": 2.1116,
+        "low": 1.4956,
+        "medium": 0.5401,
+        "high": -0.3015,
+        "xhigh": -1.3908,
+        "max": -2.761,
+        "ultra": -4.2971
+       },
+       "facets": [
         "responsiveness"
        ]
       },
       "3": {
-       "by_effort": {},
+       "by_effort": {
+        "none": -4.611,
+        "minimal": -4.4327,
+        "low": -4.1407,
+        "medium": -3.7654,
+        "high": -3.4672,
+        "xhigh": -3.3028,
+        "max": -3.1331,
+        "ultra": -4.2971
+       },
        "facets": [
+        "responsiveness",
         "image_recognition"
-       ],
-       "missing_facets": [
-        "responsiveness"
        ]
       }
      },
-     "flag": "partial",
-     "value": null,
-     "by_effort": {},
-     "status": "partial"
+     "value": -3.4672,
+     "by_effort": {
+      "none": -4.611,
+      "minimal": -4.4327,
+      "low": -4.1407,
+      "medium": -3.7654,
+      "high": -3.4672,
+      "xhigh": -3.3028,
+      "max": -3.1331,
+      "ultra": -4.2971
+     },
+     "status": "estimated"
     }
    },
    "scores": {
     "creativity": -5.0145,
     "coding": -4.3197,
     "aesthetics": -5.8808,
-    "tool_operation": null
+    "tool_operation": -3.4672
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -94841,13 +96297,6 @@
      "reason": "no_cited_source",
      "level": "red_if_vision_demanded",
      "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-    },
-    {
-     "model": "qwen3-omni-flash",
-     "field": "tool_operation.responsiveness",
-     "reason": "facet_unmeasured_no_estimate",
-     "level": "red_if_demanded",
-     "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
     },
     {
      "model": "qwen3-omni-flash",
@@ -98628,96 +100077,117 @@
     "tool_operation": {
      "facets": {
       "responsiveness": {
-       "value": -0.7368,
+       "value": -0.3015,
        "by_effort": {
-        "none": 1.8025,
-        "minimal": 1.8025,
-        "low": 1.0603,
-        "medium": 0.1048,
-        "high": -0.7368,
-        "xhigh": -1.8261,
-        "max": -3.1963,
-        "ultra": -4.7324
+        "none": 2.1116,
+        "minimal": 2.1116,
+        "low": 1.4956,
+        "medium": 0.5401,
+        "high": -0.3015,
+        "xhigh": -1.3908,
+        "max": -2.761,
+        "ultra": -4.2971
        },
        "status": "estimated",
        "sources": {},
-       "measured_efforts": [],
        "estimate": {
-        "method": "size_step",
-        "base_model": "qwen3.5-plus",
-        "version": "same",
-        "base_status": "estimated",
-        "step": 0.0,
-        "move": 0.0,
-        "n": 3,
-        "agree": false,
-        "reason": "directions disagree",
-        "basis": "facet",
-        "pairs": [
-         [
-          "claude-haiku-5-5",
-          "claude-sonnet-5-5"
-         ],
-         [
-          "gpt-oss-20b",
-          "gpt-oss-120b"
-         ],
-         [
-          "mimo-v2.6-flash-free",
-          "mimo-v2.6-pro"
-         ]
-        ]
+        "method": "cross_line_median",
+        "base_model": [
+         "qwen3.5-122b-a10b",
+         "qwen3.5-27b",
+         "qwen3.5-35b-a3b",
+         "qwen3.5-397b-a17b"
+        ],
+        "base_value": [
+         0.1676,
+         -1.3054,
+         0.5627,
+         -0.7706
+        ],
+        "base_tier": [
+         -0.7377,
+         -0.8026,
+         -0.9211,
+         -0.5338
+        ],
+        "tier": -0.9046,
+        "tier_source": "arena_overall",
+        "shift": [
+         0.0,
+         0.0,
+         0.0,
+         0.0
+        ],
+        "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
+        "version_distance": 0,
+        "tie": "median of the tied relatives",
+        "lines": {
+         "qwen3.5-122b-a10b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-27b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-35b-a3b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.5-397b-a17b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         }
+        }
        },
+       "measured_efforts": [],
        "filled_efforts": {
         "low": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -0.7368,
+         "from_value": -0.3015,
          "step": 1.7971,
          "n": 10
         },
         "medium": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -0.7368,
+         "from_value": -0.3015,
          "step": 0.8416,
          "n": 8
         },
         "xhigh": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -0.7368,
+         "from_value": -0.3015,
          "step": -1.0893,
          "n": 9
         },
         "max": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -0.7368,
+         "from_value": -0.3015,
          "step": -2.4595,
          "n": 7
         },
         "minimal": {
          "method": "fleet_lowest_step",
          "from_effort": "low",
-         "from_value": 1.0603,
+         "from_value": 1.4956,
          "step": 0.7422,
-         "n": 25
+         "n": 25,
+         "bounded_from": 2.2378
         },
         "ultra": {
          "method": "fleet_highest_step",
          "from_effort": "max",
-         "from_value": -3.1963,
+         "from_value": -2.761,
          "step": -1.5361,
          "n": 19
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -0.7368,
-         "step": 0.0,
-         "n": 48,
-         "bounded_from": -0.7368
         }
        }
       },
@@ -98823,14 +100293,14 @@
      "by_level": {
       "2": {
        "by_effort": {
-        "none": 1.8025,
-        "minimal": 1.8025,
-        "low": 1.0603,
-        "medium": 0.1048,
-        "high": -0.7368,
-        "xhigh": -1.8261,
-        "max": -3.1963,
-        "ultra": -4.7324
+        "none": 2.1116,
+        "minimal": 2.1116,
+        "low": 1.4956,
+        "medium": 0.5401,
+        "high": -0.3015,
+        "xhigh": -1.3908,
+        "max": -2.761,
+        "ultra": -4.2971
        },
        "facets": [
         "responsiveness"
@@ -98844,8 +100314,8 @@
         "medium": -3.7654,
         "high": -3.4672,
         "xhigh": -3.3028,
-        "max": -3.1963,
-        "ultra": -4.7324
+        "max": -3.1331,
+        "ultra": -4.2971
        },
        "facets": [
         "responsiveness",
@@ -98861,8 +100331,8 @@
       "medium": -3.7654,
       "high": -3.4672,
       "xhigh": -3.3028,
-      "max": -3.1963,
-      "ultra": -4.7324
+      "max": -3.1331,
+      "ultra": -4.2971
      },
      "status": "estimated"
     }
@@ -101993,96 +103463,99 @@
     "tool_operation": {
      "facets": {
       "responsiveness": {
-       "value": -0.7368,
+       "value": -0.3207,
        "by_effort": {
-        "none": 1.8025,
-        "minimal": 1.8025,
-        "low": 1.0603,
-        "medium": 0.1048,
-        "high": -0.7368,
-        "xhigh": -1.8261,
-        "max": -3.1963,
-        "ultra": -4.7324
+        "none": 1.8857,
+        "minimal": 1.8857,
+        "low": 1.4764,
+        "medium": 0.5209,
+        "high": -0.3207,
+        "xhigh": -1.41,
+        "max": -2.7802,
+        "ultra": -4.3163
        },
        "status": "estimated",
        "sources": {},
-       "measured_efforts": [],
        "estimate": {
-        "method": "size_step",
-        "base_model": "qwen3.6-plus",
-        "version": "same",
-        "base_status": "measured_partial",
-        "step": 0.0,
-        "move": 0.0,
-        "n": 3,
-        "agree": false,
-        "reason": "directions disagree",
-        "basis": "facet",
-        "pairs": [
-         [
-          "claude-haiku-5-5",
-          "claude-sonnet-5-5"
-         ],
-         [
-          "gpt-oss-20b",
-          "gpt-oss-120b"
-         ],
-         [
-          "mimo-v2.6-flash-free",
-          "mimo-v2.6-pro"
-         ]
-        ]
+        "method": "cross_line_median",
+        "base_model": [
+         "qwen3.6-27b",
+         "qwen3.6-35b-a3b"
+        ],
+        "base_value": [
+         -0.7584,
+         0.117
+        ],
+        "base_tier": [
+         -0.7702,
+         -0.7702
+        ],
+        "tier": -0.9046,
+        "tier_source": "sibling",
+        "shift": [
+         0.0,
+         0.0
+        ],
+        "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
+        "version_distance": 0,
+        "tie": "median of the tied relatives",
+        "lines": {
+         "qwen3.6-27b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.6-35b-a3b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         }
+        }
        },
+       "measured_efforts": [],
        "filled_efforts": {
         "low": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -0.7368,
+         "from_value": -0.3207,
          "step": 1.7971,
          "n": 10
         },
         "medium": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -0.7368,
+         "from_value": -0.3207,
          "step": 0.8416,
          "n": 8
         },
         "xhigh": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -0.7368,
+         "from_value": -0.3207,
          "step": -1.0893,
          "n": 9
         },
         "max": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -0.7368,
+         "from_value": -0.3207,
          "step": -2.4595,
          "n": 7
         },
         "minimal": {
          "method": "fleet_lowest_step",
          "from_effort": "low",
-         "from_value": 1.0603,
+         "from_value": 1.4764,
          "step": 0.7422,
-         "n": 25
+         "n": 25,
+         "bounded_from": 2.2186
         },
         "ultra": {
          "method": "fleet_highest_step",
          "from_effort": "max",
-         "from_value": -3.1963,
+         "from_value": -2.7802,
          "step": -1.5361,
          "n": 19
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -0.7368,
-         "step": 0.0,
-         "n": 48,
-         "bounded_from": -0.7368
         }
        }
       },
@@ -102181,14 +103654,14 @@
      "by_level": {
       "2": {
        "by_effort": {
-        "none": 1.8025,
-        "minimal": 1.8025,
-        "low": 1.0603,
-        "medium": 0.1048,
-        "high": -0.7368,
-        "xhigh": -1.8261,
-        "max": -3.1963,
-        "ultra": -4.7324
+        "none": 1.8857,
+        "minimal": 1.8857,
+        "low": 1.4764,
+        "medium": 0.5209,
+        "high": -0.3207,
+        "xhigh": -1.41,
+        "max": -2.7802,
+        "ultra": -4.3163
        },
        "facets": [
         "responsiveness"
@@ -102203,7 +103676,7 @@
         "high": -3.6828,
         "xhigh": -3.5184,
         "max": -3.3487,
-        "ultra": -4.7324
+        "ultra": -4.3163
        },
        "facets": [
         "responsiveness",
@@ -102220,7 +103693,7 @@
       "high": -3.6828,
       "xhigh": -3.5184,
       "max": -3.3487,
-      "ultra": -4.7324
+      "ultra": -4.3163
      },
      "status": "estimated"
     }
@@ -102855,96 +104328,99 @@
     "tool_operation": {
      "facets": {
       "responsiveness": {
-       "value": -1.0504,
+       "value": -0.3207,
        "by_effort": {
-        "none": 1.4889,
-        "minimal": 1.4889,
-        "low": 0.7467,
-        "medium": -0.2088,
-        "high": -1.0504,
-        "xhigh": -2.1397,
-        "max": -3.5099,
-        "ultra": -5.046
+        "none": 1.8857,
+        "minimal": 1.8857,
+        "low": 1.4764,
+        "medium": 0.5209,
+        "high": -0.3207,
+        "xhigh": -1.41,
+        "max": -2.7802,
+        "ultra": -4.3163
        },
        "status": "estimated",
        "sources": {},
-       "measured_efforts": [],
        "estimate": {
-        "method": "size_step",
-        "base_model": "qwen3.7-plus",
-        "version": "same",
-        "base_status": "measured_partial",
-        "step": 0.0,
-        "move": 0.0,
-        "n": 3,
-        "agree": false,
-        "reason": "directions disagree",
-        "basis": "facet",
-        "pairs": [
-         [
-          "claude-haiku-5-5",
-          "claude-sonnet-5-5"
-         ],
-         [
-          "gpt-oss-20b",
-          "gpt-oss-120b"
-         ],
-         [
-          "mimo-v2.6-flash-free",
-          "mimo-v2.6-pro"
-         ]
-        ]
+        "method": "cross_line_median",
+        "base_model": [
+         "qwen3.6-27b",
+         "qwen3.6-35b-a3b"
+        ],
+        "base_value": [
+         -0.7584,
+         0.117
+        ],
+        "base_tier": [
+         -0.7702,
+         -0.7702
+        ],
+        "tier": -0.596,
+        "tier_source": "sibling",
+        "shift": [
+         0.0,
+         0.0
+        ],
+        "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
+        "version_distance": 1,
+        "tie": "median of the tied relatives",
+        "lines": {
+         "qwen3.6-27b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         },
+         "qwen3.6-35b-a3b": {
+          "line": "open",
+          "n": 0,
+          "pairs": []
+         }
+        }
        },
+       "measured_efforts": [],
        "filled_efforts": {
         "low": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -1.0504,
+         "from_value": -0.3207,
          "step": 1.7971,
          "n": 10
         },
         "medium": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -1.0504,
+         "from_value": -0.3207,
          "step": 0.8416,
          "n": 8
         },
         "xhigh": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -1.0504,
+         "from_value": -0.3207,
          "step": -1.0893,
          "n": 9
         },
         "max": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -1.0504,
+         "from_value": -0.3207,
          "step": -2.4595,
          "n": 7
         },
         "minimal": {
          "method": "fleet_lowest_step",
          "from_effort": "low",
-         "from_value": 0.7467,
+         "from_value": 1.4764,
          "step": 0.7422,
-         "n": 25
+         "n": 25,
+         "bounded_from": 2.2186
         },
         "ultra": {
          "method": "fleet_highest_step",
          "from_effort": "max",
-         "from_value": -3.5099,
+         "from_value": -2.7802,
          "step": -1.5361,
          "n": 19
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -1.0504,
-         "step": 0.0,
-         "n": 48,
-         "bounded_from": -1.0504
         }
        }
       },
@@ -103046,14 +104522,14 @@
      "by_level": {
       "2": {
        "by_effort": {
-        "none": 1.4889,
-        "minimal": 1.4889,
-        "low": 0.7467,
-        "medium": -0.2088,
-        "high": -1.0504,
-        "xhigh": -2.1397,
-        "max": -3.5099,
-        "ultra": -5.046
+        "none": 1.8857,
+        "minimal": 1.8857,
+        "low": 1.4764,
+        "medium": 0.5209,
+        "high": -0.3207,
+        "xhigh": -1.41,
+        "max": -2.7802,
+        "ultra": -4.3163
        },
        "facets": [
         "responsiveness"
@@ -103066,9 +104542,9 @@
         "low": -2.9397,
         "medium": -2.5644,
         "high": -2.2662,
-        "xhigh": -2.1397,
-        "max": -3.5099,
-        "ultra": -5.046
+        "xhigh": -2.1018,
+        "max": -2.7802,
+        "ultra": -4.3163
        },
        "facets": [
         "responsiveness",
@@ -103083,9 +104559,9 @@
       "low": -2.9397,
       "medium": -2.5644,
       "high": -2.2662,
-      "xhigh": -2.1397,
-      "max": -3.5099,
-      "ultra": -5.046
+      "xhigh": -2.1018,
+      "max": -2.7802,
+      "ultra": -4.3163
      },
      "status": "estimated"
     }
@@ -127033,20 +128509,6 @@
   },
   {
    "model": "gpt-6-pro",
-   "field": "duration_multiplier",
-   "reason": "no_time_per_task",
-   "level": "red",
-   "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-  },
-  {
-   "model": "gpt-6-pro",
-   "field": "tool_operation.responsiveness",
-   "reason": "facet_unmeasured_no_estimate",
-   "level": "red_if_demanded",
-   "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
-  },
-  {
-   "model": "gpt-6-pro",
    "field": "axes",
    "reason": "aa_only",
    "level": "yellow",
@@ -127334,13 +128796,6 @@
   },
   {
    "model": "qwen3-flash-2025-07-28",
-   "field": "tool_operation.responsiveness",
-   "reason": "facet_unmeasured_no_estimate",
-   "level": "red_if_demanded",
-   "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
-  },
-  {
-   "model": "qwen3-flash-2025-07-28",
    "field": "axes",
    "reason": "aa_only",
    "level": "yellow",
@@ -127516,24 +128971,10 @@
   },
   {
    "model": "gpt-5.4-pro",
-   "field": "tool_operation.responsiveness",
-   "reason": "facet_unmeasured_no_estimate",
-   "level": "red_if_demanded",
-   "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
-  },
-  {
-   "model": "gpt-5.4-pro",
    "field": "axes",
    "reason": "aa_only",
    "level": "yellow",
    "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
-  },
-  {
-   "model": "gpt-5.5",
-   "field": "duration_multiplier",
-   "reason": "no_time_per_task",
-   "level": "red",
-   "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
   },
   {
    "model": "gpt-5.5-pro",
@@ -127541,20 +128982,6 @@
    "reason": "no_cited_source",
    "level": "red_if_metered",
    "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-  },
-  {
-   "model": "gpt-5.5-pro",
-   "field": "duration_multiplier",
-   "reason": "no_time_per_task",
-   "level": "red",
-   "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-  },
-  {
-   "model": "gpt-5.5-pro",
-   "field": "tool_operation.responsiveness",
-   "reason": "facet_unmeasured_no_estimate",
-   "level": "red_if_demanded",
-   "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
   },
   {
    "model": "gpt-5.5-pro",
@@ -127576,20 +129003,6 @@
    "reason": "aa_only",
    "level": "yellow",
    "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
-  },
-  {
-   "model": "gemma-4-26b-a4b-it",
-   "field": "duration_multiplier",
-   "reason": "no_time_per_task",
-   "level": "red",
-   "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
-  },
-  {
-   "model": "gemma-4-31b-it",
-   "field": "duration_multiplier",
-   "reason": "no_time_per_task",
-   "level": "red",
-   "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
   },
   {
    "model": "glm-4.5-air",
@@ -127747,13 +129160,6 @@
   },
   {
    "model": "qwen3-coder-flash",
-   "field": "tool_operation.responsiveness",
-   "reason": "facet_unmeasured_no_estimate",
-   "level": "red_if_demanded",
-   "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
-  },
-  {
-   "model": "qwen3-coder-flash",
    "field": "axes",
    "reason": "aa_only",
    "level": "yellow",
@@ -127800,13 +129206,6 @@
    "reason": "no_cited_source",
    "level": "red_if_vision_demanded",
    "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-  },
-  {
-   "model": "qwen3-omni-flash",
-   "field": "tool_operation.responsiveness",
-   "reason": "facet_unmeasured_no_estimate",
-   "level": "red_if_demanded",
-   "effect": "missing facet with no estimate: excluded under mode B at levels requiring this facet"
   },
   {
    "model": "qwen3-omni-flash",

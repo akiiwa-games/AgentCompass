@@ -22,8 +22,8 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   and the `size` (`small` or `full`) of the names it decides, and a row takes those of the `families` row that decides its
   bare name (`series.identity`); a `same_model` row takes its declared model's. A row's relatives for an **ability** facet
   (creativity, coding, design, image recognition, and the tier) are the rows of the same maker and the same size, every
-  line (`series.groups(acc, 'ability')`); for **responsiveness, Time/Task and cost per hour** only those of its own line
-  as well (`groups(acc, 'line')`: a Pro model does not have Astra's speed). A line name shared by two `families` rows is
+  line (`series.groups(acc, 'ability')`); for **responsiveness, Time/Task and cost per hour** those of its own line first
+  (`groups(acc, 'line')`; Speed without a reading, below). A line name shared by two `families` rows is
   one line across versions (gpt-5.6 and gpt-6 `sol`, `terra`, `luna`; gpt-5.x and gpt-6 `pro`). A `small` row is never a
   relative of a `full` one, and conversion stays within one size. Relatives are ordered (`series.nearest`): the row the
   `same_model` declaration names first, alone; then by version distance, the rank difference among the distinct versions
@@ -31,8 +31,26 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   another line at equal distance; a relative without a declared version comes last. An ability relative of another line
   is used only up to `estimation_order.sibling_first_up_to_distance`. Relatives still tied form one group and contribute
   the median of their estimates: no name decides, so adding a row that is not the nearest relative of X never changes X's
-  estimate. A row with no measured relative of its own line has no responsiveness and no Time/Task from relatives (the
-  `pro` line today: `audit/gateway-coverage-known-gaps.json`, kind `no_time_reading_in_series`).
+  estimate.
+- **Speed without a reading (owner, 2026-11-19).** Responsiveness and Time/Task of a row with no reading of its own, in this
+  order, each cell marked estimated with its method and inputs: (1) the vendor's stated ratio (Speed variants, below) or a
+  dated maintainer declaration scoped to the row's one launch path: `models.<id>.response_time_source` `min_seconds`, the
+  time from the request to the complete answer (gpt-6-pro, ChatGPT Web only: 600 s, owner 2026-11-19), read as Time/Task
+  `min_seconds / 60` minutes at every effort (a task is at least one response) and as responsiveness through the
+  transform every measured row goes through on the time-to-first-answer board, z = (-ln(seconds) - x_anchor) / sd_panel
+  (a long-thinking answer starts no sooner than its thinking ends), at every effort (method `declared_response_floor`;
+  a declared bound, not a fit: no Pro-line reading exists to score it against, and no measured cell of another row moves
+  it); (2) a relative of its own line, as above; (3) the maker's other lines, same size, version distance up to
+  `estimation_order.sibling_first_up_to_distance`, among relatives read on a board (an estimated value is never another
+  row's basis): where the relative's line and the row's own line are both read on at least two same-version pairs, the
+  relative's value moved by their median line-to-line step (responsiveness: plus the median difference in panel z;
+  Time/Task: times the median ratio at High), n and spread on the cell (method `cross_line_extrapolation`), else the
+  median of every such relative at the nearest distance (method `cross_line_median`; `Scorer.cross_line`,
+  `cross_line_times`); (4) the fleet
+  methods (the responsiveness fit against tier, which `estimation_order.speed_cross_line_before_fit` puts after the other
+  lines; Time/Task has none), then a known gap. Cost per hour keeps its own rule (the row's own list price, its own
+  line's relatives only; Cost per hour from the fallback source, below). The evidence is
+  `estimation_order.evidence` (audit/estimation_loo.py).
 - **Downward from the larger model (owner, 2026-11-18).** A second relation, used only when a small row's same-size series,
   the tier fit and its own boards leave a facet without any value: a small `families` row may declare `tier_up`, the
   pattern of the same line's next larger row, with `tier_up_version` `same` (that row's first model is the same version

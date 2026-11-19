@@ -311,6 +311,7 @@ class FixRoundRegressionTests(unittest.TestCase):
                                          'effort_readings': {'reads': {'default': 'high'}},
                                          'estimation_order': {'order': list(fa.ESTIMATION_ORDER),
                                                               'sibling_first_up_to_distance': 1,
+                                                              'speed_cross_line_before_fit': True,
                                                               'evidence': 'synthetic'}}).score()
         self.assertIsNone(rows['partial_coder']['axes']['coding']['value'])
         self.assertEqual(rows['partial_coder']['axes']['coding']['missing_facets'], ['faithfulness'])

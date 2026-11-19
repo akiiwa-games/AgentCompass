@@ -164,7 +164,8 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # reader's (scripts/data_age.py). Within /12 before its first release (round 6): every effort read on every board, edge
 # steps from the boards' listings (`sample`, `boards`; method `other_facets_median`), speed variants, relatives by maker,
 # line and size, fleet fits frozen per release (a model entry's rows, `public-measurements.json` `model_entries`, scored by
-# the release's fits and in none). Levels unchanged.
+# the release's fits and in none), speed without a reading (methods `declared_response_floor`, `cross_line_extrapolation`,
+# `cross_line_median`; `estimation_order.speed_cross_line_before_fit`). Levels unchanged.
 SCHEMA = 'agent-compass.five-axis-scores/12'
 AXES = measurements.AXES
 EFFORTS = user_scores.MEASURED_EFFORTS                   # the efforts boards measure and the panel steps reach
@@ -230,9 +231,10 @@ def estimation_order(acc):
     comes before the tier fit; its evidence is the leave-one-out table in the declaration (audit/estimation_loo.py)."""
     doc = acc.get('estimation_order')
     if (not isinstance(doc, dict) or tuple(doc.get('order') or ()) != ESTIMATION_ORDER
-            or not isinstance(doc.get('sibling_first_up_to_distance'), int) or not str(doc.get('evidence') or '').strip()):
+            or not isinstance(doc.get('sibling_first_up_to_distance'), int) or not str(doc.get('evidence') or '').strip()
+            or not isinstance(doc.get('speed_cross_line_before_fit'), bool)):
         raise ValueError('accounts.json estimation_order must declare the order ' + ', '.join(ESTIMATION_ORDER)
-                         + ' with sibling_first_up_to_distance and its evidence')
+                         + ' with sibling_first_up_to_distance, speed_cross_line_before_fit and its evidence')
     return doc
 
 
@@ -447,6 +449,9 @@ class Scorer:
         self.entries = frozenset(meas.get('model_entries') or ())
         self.readings = effort_readings(acc)
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
+        # declared response floors (`response_time_source`): a row's one launch path, round 6
+        self.response_floor = {m: spec['response_time_source'] for m, spec in self.models.items()
+                               if isinstance(spec.get('response_time_source'), dict)}
         self.points = operating_points(acc)
 
     def trusted(self, entries):
@@ -1089,6 +1094,47 @@ class Scorer:
         return {'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {}, 'estimate': est,
                 'measured_efforts': []}
 
+    def cross_line(self, m, key, facets, fits, rejected, tier, without=None):
+        """A speed facet's value from the maker's other lines (owner 2026-11-19): the relatives of another line, same maker
+        and size (series.groups 'ability'), measured, at the nearest version distance up to the declared one. Where each
+        relative's line and the row's own line are both measured on at least two same-version pairs, the relative's curve
+        plus the median line-to-line difference over those pairs (method `cross_line_extrapolation`, n and spread shown;
+        z is additive on this facet's log scale), the median over the relatives; else the median of the relatives'
+        estimates (method `cross_line_median`). None without such a relative. `without`: a row left out (leave-one-out)."""
+        mine, pool = self.line_of.get(m), self.sibs.get(m, ())
+
+        def measured(b):
+            rec = facets.get(b, {}).get(key) or {}
+            return (b != without and b != m and rec.get('status', '').startswith('measured') and rec.get('value') is not None
+                    and tier[b]['value'] is not None)
+        cands = [b for b in pool if self.line_of.get(b) != mine and measured(b)]
+        groups = series.nearest(m, cands, pool, self.versions, self.small, None, self.line_of,
+                                self.order['sibling_first_up_to_distance'])
+        if not groups or groups[0][0] is None:
+            return None
+        d, group = groups[0]
+        lines = {}
+        for b in group:
+            lb = self.line_of.get(b)
+            ours = [x for x in pool if self.line_of.get(x) == mine and measured(x)]
+            theirs = [y for y in pool if self.line_of.get(y) == lb and measured(y)]
+            pairs = sorted((x, y) for x in ours for y in theirs
+                           if series.distance(x, y, self.sibs.get(x, ()), self.versions) == 0)
+            diffs = [facets[x][key]['value'] - facets[y][key]['value'] for x, y in pairs]
+            lines[b] = {'line': lb, 'n': len(pairs), 'pairs': [list(q) for q in pairs],
+                        **({'shift': round(float(np.median(diffs)), 4),
+                            'spread': [round(min(diffs), 4), round(max(diffs), 4)]} if diffs else {})}
+        if all(r['n'] >= MIN_SIZE_PAIRS for r in lines.values()):
+            curves = [{e: v + lines[b]['shift'] for e, v in facets[b][key]['by_effort'].items()} for b in group]
+            efforts = [e for e in LADDER if all(e in c for c in curves)]
+            by = bound_curve({e: round(float(np.median([c[e] for c in curves])), 4) for e in efforts}, rises(key))
+            return {'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {}, 'measured_efforts': [],
+                    'estimate': {'method': 'cross_line_extrapolation', 'base_model': group, 'version_distance': d,
+                                 'base_value': [facets[b][key]['value'] for b in group], 'lines': lines}}
+        est = self.group_estimate(m, group, d, key, facets, fits, rejected, tier)
+        est['estimate'] = {**est['estimate'], 'method': 'cross_line_median', 'lines': lines}
+        return est
+
     @staticmethod
     def category(a, facets):
         """{'value', 'by_effort', 'status', ...} of category `a` from its facet records. Never silently skips a missing
@@ -1188,8 +1234,8 @@ class Scorer:
                 kept = facets[m].get(key)
                 if kept is not None and kept.get('value') is not None:
                     continue
-                if m in self.speed and key == SPEED_KEY:
-                    continue        # a speed variant's speed rests on its base and the stated ratio (speed_variants)
+                if (m in self.speed or m in self.response_floor) and key == SPEED_KEY:
+                    continue        # a speed variant's speed rests on its base, a declared floor on itself
                 # an ability facet reads the maker's same-size rows of every line; a speed facet its own line only
                 sibs = (self.sibs if rises(key) else self.line_sibs).get(m, ())
                 usable = [b for b in sibs
@@ -1199,13 +1245,21 @@ class Scorer:
                                         self.order['sibling_first_up_to_distance'] if rises(key) else None)
                 d, group = groups[0] if groups else (None, [])
                 # the declared order (accounts.json estimation_order): a relative up to the declared version distance
-                # first; from there on, or without a declared distance, the tier fit first
+                # first; from there on, or without a declared distance, the tier fit first; a speed facet without a near
+                # relative of its own line reads the maker's other lines (cross_line) before or after the fit, as declared
                 near = bool(group) and d is not None and d <= self.order['sibling_first_up_to_distance']
-                if group and (near or not fits.get(key)):
+                cross = None if rises(key) or near else self.cross_line(m, key, facets, fits, rejected, tier)
+                if group and near:
                     facets[m][key] = self.group_estimate(m, group, d, key, facets, fits, rejected, tier)
+                elif cross and self.order['speed_cross_line_before_fit']:
+                    facets[m][key] = cross
                 elif fits.get(key):
                     facets[m][key] = self.estimate(m, None, key, facets, fits, rejected, tier)
-                if group or fits.get(key):
+                elif cross:
+                    facets[m][key] = cross
+                elif group:
+                    facets[m][key] = self.group_estimate(m, group, d, key, facets, fits, rejected, tier)
+                if group or fits.get(key) or cross:
                     if kept is not None and 'none' in kept['by_effort']:      # its measured reasoning-off reading stays
                         # and the estimate moves, not the measurement: bounded with the measured none pinned
                         est = facets[m][key]
@@ -1285,6 +1339,7 @@ class Scorer:
         self.size_down(facets, keys, 'nearest')
         self.bound_across_size(facets)
         self.speed_variants(facets)
+        self.response_floors(facets)
         self.flatten_points(facets, rows)
         self.copy_same_model(facets, declared)
 
@@ -1320,6 +1375,30 @@ class Scorer:
                                     'measured_efforts': [],
                                     'estimate': {**how, 'base_model': base, 'base_value': rec['value'],
                                                  'base_status': rec['status'], 'speed': cite}}
+
+    def response_floors(self, facets):
+        """A row with a declared floor of its response time (`response_time_source`, `min_seconds`) and no responsiveness
+        reading of its own: the floor read through the transform every measured row goes through on the time-to-first-answer
+        board, x = -ln(seconds), z = (x - x_anchor) / sd_panel, at every effort (method `declared_response_floor`). A
+        response that takes at least that long reaches its first answer token no sooner than its thinking ends, which for a
+        long-thinking response is most of that time: the value is a declared upper bound, not a fit, and stays where it is
+        (no measured cell of another row moves it, none moves against it)."""
+        scale = (((self.meas.get('sources') or {}).get(measurements.AA_TTFA) or {}).get('scale') or {})
+        for m, decl in sorted(self.response_floor.items()):
+            if m not in facets or SPEED_KEY in facets[m]:
+                continue
+            if not scale.get('sd_panel'):
+                raise ValueError(f'{measurements.AA_TTFA} has no scale: the declared response floor of {m} cannot be read')
+            x = -math.log(decl['min_seconds'])
+            z = round((x - scale['anchor_raw']) / scale['sd_panel'], 4)
+            facets[m][SPEED_KEY] = {'value': z, 'by_effort': dict.fromkeys(LADDER, z), 'status': 'estimated', 'sources': {},
+                                    'measured_efforts': [],
+                                    'estimate': {'method': 'declared_response_floor', 'min_seconds': decl['min_seconds'],
+                                                 'bound': 'upper: no faster than the declared floor',
+                                                 'transform': (f"x = -ln({decl['min_seconds']} s) = {x:.4f}; z = (x - "
+                                                               f"{scale['anchor_raw']:.6g}) / {scale['sd_panel']:.6g} "
+                                                               f"({measurements.AA_TTFA} scale)"),
+                                                 'declaration': {k: v for k, v in decl.items() if k != 'min_seconds'}}}
 
     def flatten_point(self, m, rec):
         """An operating point row (`operating_points`): every effort reads its one value, the one at the effort `default`
@@ -1692,6 +1771,49 @@ def apply_time_size_step(minutes, basis, relations, step):
                            'pairs': [[p['small'], p['large']] for p in step['pairs']], 'source': AA_TIME}
 
 
+def cross_line_times(scorer, rows, acc, same, minutes, basis, skip):
+    """Time/Task of a row with no reading of its own or of its line, from the maker's other lines (owner 2026-11-19): the
+    relatives of another line, same maker and size, read on a board at some effort (Artificial Analysis or the arena
+    fit; an estimate is never another row's basis, so a model entry's estimate-only release row moves no row), at the
+    nearest version distance up to the declared one, with their times after the effort conversion. Where each relative's line and the row's own line are both read
+    (Artificial Analysis or the arena fit) on at least two same-version pairs, the relative's times the median ratio own / other over those pairs at High (method
+    `cross_line_extrapolation`, n and spread shown), the median over the relatives; else the median of the relatives'
+    times (method `cross_line_median`). `minutes` and `basis` are updated in place; rows in `skip` are left alone."""
+    pool = without_entries(series.groups({**acc, 'same_model': same}, 'ability'), scorer.entries)
+    line_of, versions, small = series.lines(acc), series.versions(acc), series.small_rows(acc)
+    up_to = estimation_order(acc)['sibling_first_up_to_distance']
+    read = {b for b in rows if 'high' in minutes[b]
+            and (basis[b].get('high') or {}).get('method') in ('aa', 'arena_fit')}
+    timed = {b for b in rows if any(x.get('method') in ('aa', 'arena_fit') for x in basis[b].values())}
+    for m in sorted(rows):
+        if minutes[m] or m in skip or (m in same and 'duration' not in (same[m].get('carries') or ())
+                                       and 'duration' not in (same[m].get('own_estimated') or ())):
+            continue
+        mine = line_of.get(m)
+        cands = [b for b in pool.get(m, ()) if line_of.get(b) != mine and b in timed]
+        groups = series.nearest(m, cands, pool.get(m, ()), versions, small, None, line_of, up_to)
+        if not groups or groups[0][0] is None:
+            continue
+        d, group = groups[0]
+        lines = {}
+        for b in group:
+            ours = [x for x in pool.get(m, ()) if line_of.get(x) == mine and x in read]
+            theirs = [y for y in pool.get(m, ()) if line_of.get(y) == line_of.get(b) and y in read]
+            pairs = sorted((x, y) for x in ours for y in theirs
+                           if series.distance(x, y, pool.get(x, ()), versions) == 0)
+            ratios = [minutes[x]['high'] / minutes[y]['high'] for x, y in pairs]
+            lines[b] = {'line': line_of.get(b), 'n': len(pairs), 'pairs': [list(q) for q in pairs],
+                        **({'ratio': round(float(np.median(ratios)), 4),
+                            'spread': [round(min(ratios), 4), round(max(ratios), 4)]} if ratios else {})}
+        extrapolate = all(r['n'] >= MIN_SIZE_PAIRS for r in lines.values())
+        for e in [e for e in LADDER if all(e in minutes[b] for b in group)]:
+            vals = [minutes[b][e] * (lines[b]['ratio'] if extrapolate else 1.0) for b in group]
+            minutes[m][e] = round(float(np.median(vals)), 3)
+            basis[m][e] = {'method': 'cross_line_extrapolation' if extrapolate else 'cross_line_median',
+                           'base_model': group, 'version_distance': d, 'base_minutes': [minutes[b][e] for b in group],
+                           'source': AA_TIME, 'lines': lines}
+
+
 def durations(scorer, rows, acc):
     """({model: duration record}, fit or None, why the fit was rejected or None): one basis for the time a task takes,
     Artificial Analysis Time/Task at the same effort, as a multiple of the anchor's at High (module docstring)."""
@@ -1770,6 +1892,9 @@ def durations(scorer, rows, acc):
                            'base_method': basis[base][e]['method'], 'source': basis[base][e].get('source'),
                            **({'ratio': r, 'stated_ratio': sp['stated']} if r else
                               {'bound': 'upper: no longer than its base (no ratio stated)'}), 'speed': cite}
+    # a declared response floor: the rows with no reading of their own or of their line; set last (below), so no fleet
+    # step or ratio reaches it
+    floored = sorted(m for m in scorer.response_floor if m in rows and not minutes[m])
     fleet = {}
 
     def fleet_ratio(e, e0):
@@ -1950,6 +2075,15 @@ def durations(scorer, rows, acc):
             t = minutes[m][at]
             minutes[m] = {e: t for e in LADDER}
             basis[m] = {**{e: {'method': 'operating_point', 'from_effort': at} for e in LADDER if e != at}, at: basis[m][at]}
+    # the maker's other lines, after every step of the row's own line and of the fleet's effort conversion
+    cross_line_times(scorer, rows, acc, same, minutes, basis, set(floored) | set(speed) | set(scorer.points))
+    for m in floored:
+        decl = scorer.response_floor[m]
+        floor = round(decl['min_seconds'] / 60.0, 3)      # a task is at least one response (calibration/README.md)
+        minutes[m] = dict.fromkeys(LADDER, floor)
+        basis[m] = {e: {'method': 'declared_response_floor', 'min_seconds': decl['min_seconds'],
+                        'bound': 'lower: a task takes at least one response of at least the declared time',
+                        'declaration': {k: v for k, v in decl.items() if k != 'min_seconds'}} for e in LADDER}
     for m in rows:
         out[m] = {'status': 'ok' if minutes[m] else 'missing', 'anchor_minutes': anchor,
                   'by_effort': {e: round(t / anchor, 4) for e, t in minutes[m].items()},
