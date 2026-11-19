@@ -363,6 +363,7 @@ def _manage_overrides_locked(args, now=None):
                 and not override_depleted(o, usage, accounts)]
         intent = (getattr(args, 'intent', None) or ' '.join(args.basis.split())).strip()
         model = account_fleet.stored_model(args.model, accounts, args.account) if args.model else None
+        stored = account_fleet.stored_form(args.model, accounts, args.account) if args.model else None
         boost = 0.1 if args.boost is None else args.boost
         if not expires and override_depleted({'account': args.account, 'model': model, 'window': args.window,
                                                         'boost': boost}, usage, accounts):
@@ -390,7 +391,7 @@ def _manage_overrides_locked(args, now=None):
         if previous and previous.get('stop_on_reset'):
             stop_on_reset = True  # A boost-only update is not permission to disable reset retirement.
         entry = {'id': previous['id'] if previous else entry_id, 'intent': intent,
-                 'account': args.account, 'window': args.window, 'model': model,
+                 'account': args.account, 'window': args.window, 'model': stored,
                  'expected_reset_at': resets.isoformat() if resets else (previous or {}).get('expected_reset_at', (previous or {}).get('resets_at')),
                  'expires_at': expires.isoformat() if expires else (previous or {}).get('expires_at'),
                  'boost': boost, 'until': until.isoformat(),

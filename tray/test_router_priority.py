@@ -186,6 +186,20 @@ class PriorityTests(unittest.TestCase):
             choices = priority.targets(accounts)
         self.assertEqual([(t['account'], t['model'], t['label']) for t in choices], [('codex', 'gpt-6-astra', 'Moved')])
 
+    def test_a_bare_target_on_a_launcher_account_reads_as_its_bundle_does(self):
+        """Rule (account_fleet.stored_model, round 3): on a launcher account (manual bundles, a launcher's catalog)
+        derive reads names with no serving provider, so a stored bare name does too: a provider declaration keyed by
+        the account's provider id does not turn the stored target away from the bundle it names."""
+        accounts = account_fleet.load_accounts()
+        accounts['provider_names'] = {**accounts['provider_names'], 'rows': {**accounts['provider_names']['rows'], 'codex': {
+            'gpt-6-astra': {'model': None, 'status': 'other_weights', 'kind': 'community', 'url': 'https://example.com/x',
+                            'as_of': '2026-11-19', 'statement': 's'}}}}
+        # another spelling of the bundle's model, so the target is matched by resolution, not by the same text
+        accounts['priority_targets'] = [{'account': 'codex', 'model': 'GPT-6-Astra', 'label': 'Astra'}]
+        with patch.object(host_policy, 'load_policy', return_value=None):
+            choices = priority.targets(accounts)
+        self.assertEqual([(t['account'], t['model']) for t in choices], [('codex', 'gpt-6-astra')])
+
     def test_switch_model_is_atomic_and_failed_baseline_preserves_current_choice(self):
         self.enable(); before = self.path.read_bytes()
         with patch.object(host_policy, 'load_policy', return_value=None):

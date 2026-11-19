@@ -442,6 +442,17 @@ def resolve_model_key(model: str, accounts: dict | None = None) -> str:
     return raw
 
 
+def score_key_for_row(row: str, accounts: dict) -> str | None:
+    """The key a score for `row` is written under: the row's id when a key of that id lands on it, else the first
+    (in name order) `provider_names` `defaults` name declared to be the row that lands on it (a maker's repository id
+    such as `deepseek-ai/deepseek-v4-pro`), else None: nothing reaches the row, so it takes no hand-written score."""
+    if resolve_model_key(row, accounts) == row:
+        return row
+    declared = model_resolution.provider_name_table(accounts)['defaults']
+    return next((name for name, d in sorted(declared.items())
+                 if d.get('model') == row and resolve_model_key(name, accounts) == row), None)
+
+
 def score_layer(layer: dict, accounts: dict) -> dict:
     """{row: {target: entry}} of one user-scores layer ({key: {target: entry}}), each key read by resolve_model_key. Keys
     landing on one row merge by target; a key that is the row's own id (`deepseek-v4-pro-0813`) wins over another
@@ -529,6 +540,8 @@ def set_score(model: str, target: str, level: float, *, public: bool = False, no
     lv = normalize_level(level)
     stamp = normalize_date(as_of)
     model_key = resolve_model_key(model, accounts)
+    if isinstance(accounts, dict) and resolve_model_key(model_key, accounts) != model_key:
+        model_key = str(model).strip()      # the row's own id lands elsewhere (a moved name): keep the key that reaches it
     kind = 'maintainer' if public else 'user'
     entry = {'level': lv, 'as_of': stamp, 'kind': kind}
     if note is not None and str(note).strip():

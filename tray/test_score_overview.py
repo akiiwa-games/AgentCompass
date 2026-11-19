@@ -1,3 +1,4 @@
+import copy
 """The scoring page's data: the four categories, model levels on the panel scale (1 weakest, 2 median, 3 best, above 3 extrapolated) and the manual-score path (hermetic)."""
 import json
 import sys
@@ -296,17 +297,24 @@ def test_editor_prefill_is_never_lossy_and_category_clear_warns_when_facet_overr
     assert '1' in cleared
 
 
-def test_a_row_whose_id_is_a_moved_name_takes_no_manual_score(tmp_path, monkeypatch):
-    """Rule (router-internals.md, Score keys): a score keyed by a name its maker moved lands on the row the name means
-    now, so the row of the same id takes no hand-written score; the tray refuses instead of writing it to another row."""
+def test_a_row_whose_id_is_a_moved_name_takes_a_score_under_the_name_that_reaches_it(tmp_path, monkeypatch):
+    """Rule (router-internals.md, Score keys): the undated row of a moved name is scored under a declared name that
+    reaches it (user_scores.score_key_for_row, a repository id); a row nothing reaches is refused, nothing written."""
     local = tmp_path / 'user-scores.json'
     monkeypatch.setenv(user_scores.ENV_VAR, str(local))
-    accounts = router_data._cached_accounts()
-    moved = [n for n, d in accounts['provider_names']['defaults'].items() if n in accounts['models'] and d['model'] != n]
-    assert moved
+    accounts = copy.deepcopy(router_data._cached_accounts())
+    defaults = accounts['provider_names']['defaults']
+    row = next(d['model'] for n, d in sorted(defaults.items()) if '/' in n and user_scores.resolve_model_key(d['model'], accounts) != d['model'])
+    key = user_scores.score_key_for_row(row, accounts)
+    monkeypatch.setattr(router_data, '_cached_accounts', lambda: accounts)
+    router_data.set_manual_score(row, 'coding.faithfulness', 2.5)
+    assert list(json.loads(local.read_text(encoding='utf-8'))['scores']) == [key]
+    assert user_scores.resolve_model_key(key, accounts) == row
+    router_data.clear_manual_score(row, 'coding.faithfulness')
+    assert json.loads(local.read_text(encoding='utf-8'))['scores'] == {}
+    accounts['provider_names']['defaults'] = {n: d for n, d in defaults.items() if not ('/' in n and d['model'] == row)}
     with pytest.raises(ValueError):
-        router_data.set_manual_score(moved[0], 'coding.faithfulness', 2.5)
-    assert not local.exists()
+        router_data.set_manual_score(row, 'coding.faithfulness', 2.5)
 
 
 def test_manual_score_goes_through_the_cli_writer_to_the_local_file_only(tmp_path, monkeypatch):

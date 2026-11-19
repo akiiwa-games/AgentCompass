@@ -162,7 +162,11 @@ def default_profile(raw_model, accounts, providers=()):
                 'basis': f"Calibrated row in accounts.models: {resolved['provider']} serves this name as {resolved['key']} "
                          '(provider_names).'}
     if resolved['source'] == 'default':
-        return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
+        # A row whose own id reads as another row (the undated row a repository id is declared to be) keeps the
+        # advertised spelling, so a later resolution of the bundle's model reads the same declaration.
+        model = (resolved['key'] if resolve_in(resolved['key'], accounts)['key'] == resolved['key']
+                 else split_model_effort(raw_model)[0])
+        return {'model': model, 'source': 'calibrated', 'target': resolved['key'],
                 'basis': f"Calibrated row in accounts.models: the maker now serves this name as {resolved['key']} "
                          '(provider_names defaults).'}
     if resolved['source'] in DIRECT_SOURCES:
@@ -455,6 +459,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 'availability': availability, 'last_detected_at': last,
                 'compatibility': status, **({'compatibility_reason': reason} if reason else {}),
                 '_v0_7_0_id': released_id,
+                **({'_served': list(served)} if served else {}),   # the serving providers read here (stored_model)
             }
             if availability == 'expired':
                 bundle['discovery_unavailable'] = True

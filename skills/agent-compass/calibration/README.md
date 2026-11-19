@@ -357,8 +357,18 @@ source like an alias (`kind`, `url`, `as_of`, `statement`); no name or date rule
   model another way, `canonical_id` gives that spelling (Mistral lists `ministral-14b-2512` as
   `mistral/ministral-3-14b-instruct-2512`).
 
+- **A full id names fixed weights** (a maker's repository id: `deepseek-ai/deepseek-v4-pro`, DeepSeek's Hugging Face
+  repository of the April preview weights, beside the separate `deepseek-ai/DeepSeek-V4-Pro-0813`): `defaults["<owner>/<name>"]`
+  with the row of those weights, citing the repository page. It is read before the last segment's default, on any provider.
+  A gateway's own id for the maker's API name (`deepseek/deepseek-v4-pro` on OpenRouter) is not a repository id and gets
+  none.
+
 Known cost: a host that serves the earlier open weights under the undated name is read as the new snapshot until its
-listing names that snapshot or the maintainer declares it (`rows`).
+listing names that snapshot or the maintainer declares it. The maintainer can declare it three ways, each accepted by the
+provenance check and the release check: the host and the name (`rows["<host>"]["<name>"]`, kind `maintainer` or the
+maker, with a statement of its own; a `community` declaration resting on a listing that only repeats the name is refused
+by the release check), a full id on any provider (`defaults["<owner>/<name>"]`), or a full id on one host
+(`rows["<host>"]["<owner>/<name>"]`).
 - **The maker shut the name down on its own endpoint**: `rows["<maker>"]["<name>"] = {"model": null, "status": "retired",
   "kind": "vendor", ...}` with the maker's notice, and the name's entry in `audit/gateway-out-of-scope.json`.
 

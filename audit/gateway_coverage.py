@@ -256,11 +256,16 @@ def declaration_violations(accounts, listed):
     """(violation lines, counts): where a `provider_names` declaration of `accounts` disagrees with the models.dev names
     file (`listed`). A declared name the file does not hold (rebuild it); a provider's declaration whose row's canonical
     ids (or its `canonical_id`) are not among those the file lists for the name on that provider; a `retired` declaration
-    that does not cite the maker; a listing of a default's name, on a provider that declares nothing for it, that names
+    that does not cite the maker; a `community` declaration (models.dev as its source) of another row than the name's
+    default where the provider's listing only repeats the name (the source does not say what it declares; a `vendor` or
+    `maintainer` declaration with its own statement is the maintainer's act and passes); a listing of a default's name, on a provider that declares nothing for it, that names
     another id than the default's row or the moved name's own undated id (row_ids: a listing repeating the name is
     read as the default; one naming a different dated snapshot needs the provider's declaration). `counts`: the
     (provider, name) listings of the file under a default, under a provider's declaration, and under neither."""
     names = (listed or {}).get('names') or {}
+    lowered = {}                     # names are looked up lowercase, as resolution reads them
+    for name, listings in names.items():
+        lowered.setdefault(name.lower(), []).extend(listings)
     table = model_resolution.provider_name_table(accounts)
     out = []
 
@@ -268,12 +273,13 @@ def declaration_violations(accounts, listed):
         return row_ids(names, accounts, d['model']) | ({d['canonical_id']} if d.get('canonical_id') else set())
 
     for name in sorted(set(table['defaults']) | {n for r in table['rows'].values() for n in r}):
-        if name not in names:
+        if name not in lowered:
             out.append(f'provider_names {name}: not in the models.dev names file (rebuild it with audit/magpie_catalog.py)')
     for provider, rows in sorted(table['rows'].items()):
         for name, d in sorted(rows.items()):
             where = f'provider_names rows[{provider}][{name}]'
-            ids = {x[1] for x in names.get(name) or () if x[0].lower() == provider and x[1]}
+            ids = {x[1] for x in lowered.get(name) or () if x[0].lower() == provider and x[1]}
+            default = model_resolution.maker_default(name, table)
             if d.get('model') is None:
                 if d.get('status') == 'retired' and d.get('kind') != 'vendor':
                     out.append(f"{where}: a retired declaration cites the maker's notice (kind vendor)")
@@ -281,14 +287,19 @@ def declaration_violations(accounts, listed):
                 out.append(f"{where}: declares row {d['model']} ({', '.join(sorted(accepted(d))) or 'no canonical id'}), "
                            f"the names file lists {', '.join(sorted(ids))} on {provider}: correct the declaration and "
                            'publish it (agentcompass data publish)')
+            elif (d.get('kind') == 'community' and default is not None and default.get('model') != d['model'] and ids
+                  and ids <= row_ids(names, accounts, default['model'])):
+                out.append(f"{where}: declares row {d['model']} citing the names file, whose listing on {provider} "
+                           f"({', '.join(sorted(ids))}) only repeats the name, which reads {default['model']}: the source "
+                           'does not say what the declaration says (remove it, or declare it as the maker or the '
+                           'maintainer with a statement of its own)')
     counts = {'default': 0, 'provider': 0, 'neither': 0}
     for name, listings in names.items():
         for provider, canonical, *_ in listings:
             if name.lower() in (table['rows'].get(provider.lower()) or {}):
                 counts['provider'] += 1
-            elif name.lower() in table['defaults']:
+            elif (d := model_resolution.maker_default(name, table)) is not None:
                 counts['default'] += 1
-                d = table['defaults'][name.lower()]
                 if canonical and canonical not in accepted(d):
                     out.append(f"provider_names defaults[{name}] is {d['model']}, and {provider} lists the name as "
                                f'{canonical}, another snapshot, with no declaration of its own: declare what it serves '

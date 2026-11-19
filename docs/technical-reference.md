@@ -76,7 +76,8 @@ undated ids of the names moved to it: a listing repeating a moved name is that r
 `other_weights_on_provider`, both ids on the entry), the row being the one `accounts.json` `provider_names` makes it on
 that provider (the rule in [router-internals.md](../skills/agent-compass/references/router-internals.md), One resolver);
 every `provider_names` declaration must agree with the saved models.dev listings, and a listing of a maker's default name
-on a provider that declares nothing must be the default's row or repeat the name (`declaration_violations`), counted on each run as listings
+on a provider that declares nothing must be the default's row or repeat the name, and a `community` declaration of
+another row on a listing that only repeats the name is refused (`declaration_violations`), counted on each run as listings
 under a default, under a provider's declaration and under neither. `quota_cost` is the quota economy: the part of the
 task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. The window's
 price comes from a value ladder built over the demand grid `quota_economy.FIVE_AXIS_DEMAND_GRID` (levels 0–3 on the thinking

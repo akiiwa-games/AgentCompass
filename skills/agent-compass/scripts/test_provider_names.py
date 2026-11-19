@@ -135,10 +135,27 @@ class ResolutionRules(unittest.TestCase):
                 providers = () if spelling.startswith('acme/') else ('acme',)
                 self.assertEqual(account_fleet.resolve_model(spelling, doc, providers)['key'], b)
 
+    def test_a_full_id_is_read_before_its_last_segment(self):
+        """Rule (model_resolution.default_for): a `defaults` key with an owner part says what that full id is, read before
+        the last segment's declaration, on any provider, in any case, behind a provider prefix; another owner part reads
+        the last segment's."""
+        a, b = two_rows()
+        doc = doc_with(defaults={'moved': decl(b), 'owner/moved': decl(a)})
+        for name, providers, want in (('owner/moved', (), a), ('Owner/Moved', ('host',), a), ('host/owner/moved', (), a),
+                                      ('owner/moved-latest', (), a), ('other/moved', (), b), ('moved', ('host',), b)):
+            with self.subTest(name=name, providers=providers):
+                self.assertEqual(account_fleet.resolve_model(name, doc, providers)['key'], want)
+        for name, entry in SHIPPED['provider_names']['defaults'].items():
+            if '/' in name:
+                with self.subTest(shipped=name):
+                    self.assertEqual(account_fleet.resolve_model(name.upper(), SHIPPED, ('somehost',))['key'], entry['model'])
+
     def test_a_spelling_that_is_a_row_itself_is_that_row(self):
         """Rule: the declarations of an undecorated spelling are read only where resolution would reach that spelling's
         row: a decorated spelling that is a row of its own (a dated snapshot) stays that row."""
-        for entry in SHIPPED['provider_names']['defaults'].values():
+        for name, entry in SHIPPED['provider_names']['defaults'].items():
+            if '/' in name:
+                continue                       # a full id names fixed weights: its row is the undated one
             with self.subTest(row=entry['model']):
                 self.assertEqual(account_fleet.resolve_model(entry['model'], SHIPPED)['source'], 'exact')
 
@@ -175,7 +192,7 @@ class ShippedDeclarations(unittest.TestCase):
             'retired not from the maker': {'rows': {provider: {'x-name': decl(None, status='retired', kind='community')}}},
             'undated': {'rows': {provider: {'x-name': {**decl(entry['model']), 'as_of': None}}}},
             'uppercase name': {'rows': {provider: {'X-Name': decl(entry['model'])}}},
-            'name with provider part': {'rows': {provider: {'a/b': decl(entry['model'])}}},
+            'name with an empty part': {'rows': {provider: {'a//b': decl(entry['model'])}}},
         }
         for label, change in breaks.items():
             broken = copy.deepcopy(SHIPPED)
@@ -292,20 +309,39 @@ class StoredStateIsKept(unittest.TestCase):
         self.assertEqual(user_scores.unresolved_models({'scores': layer}, SHIPPED), [])
 
 
-    def test_a_name_stored_for_an_account_reads_what_its_bundles_of_that_name_read(self):
-        """Rule (account_fleet.stored_model): a temporary priority stored for an account under a bare name (v0.7.1 stored
-        the row key) is read with the account's providers, so it matches the account's bundle of that name, whether the
-        provider declares the name (no row there) or the maker's default applies."""
+    def test_a_name_stored_for_an_account_reads_what_derive_read_for_that_account(self):
+        """Rule (account_fleet.stored_model, account_providers): a temporary priority stored for an account under a bare
+        name (v0.7.1 stored the row key) is read with the serving providers derive used there: on an endpoint account the
+        endpoint (so the provider's declaration applies, as it does to the bundle), on a launcher account none (as at
+        v0.7.1, moved only by a maker's default)."""
         a, b = two_rows()
-        acc = doc_with(defaults={'moved-name': decl(b)}, rows={'host': {a.lower(): decl(None, status='other_weights')}})
-        acc['accounts'] = {'host': {'bundles': {
-            'x': {'provider': 'host', 'model': auto_bundles.default_profile(f'host/{a}', acc)['model']},
-            'y': {'provider': 'host', 'model': auto_bundles.default_profile('host/moved-name', acc)['model']}}}}
-        bundles = acc['accounts']['host']['bundles']
-        for stored, bid in ((a, 'x'), ('moved-name', 'y'), (f'host/{a}', 'x')):
-            with self.subTest(stored=stored):
-                self.assertEqual(account_fleet.stored_model(stored, acc, 'host'), account_fleet.canonical(bundles[bid]['model'], acc))
-        self.assertNotEqual(account_fleet.stored_model(a, acc, 'host'), account_fleet.canonical(bundles['y']['model'], acc))
+        table = {'statement': 't', 'defaults': {'moved-name': decl(b)},
+                 'rows': {'gw': {a.lower(): decl(None, status='other_weights')}}}
+        for kind, listed, reaches in (
+                ('openai_compatible', [a, 'moved-name'], {a: [a], 'moved-name': ['moved-name']}),
+                ('paseo_provider', [a, f'gw/{a}', 'moved-name'], {a: [a], 'moved-name': ['moved-name']})):
+            acc = gateway_accounts(table)
+            acc['accounts']['gw']['bundles'] = auto_bundles.derive(acc, catalog(listed, kind=kind), NOW)['bundles']['gw']
+            by_launch = {bl['launch_model']: bl for bl in acc['accounts']['gw']['bundles'].values()}
+            for stored, launches in reaches.items():
+                with self.subTest(kind=kind, stored=stored):
+                    got = sorted(launch for launch, bl in by_launch.items()
+                                 if account_fleet.stored_model(stored, acc, 'gw') == account_fleet.canonical(bl['model'], acc))
+                    self.assertEqual(got, launches)
+
+    def test_what_a_writer_stores_reads_its_bundle_again(self):
+        """Rule (account_fleet.stored_form): the value a priority writer stores for a bundle's advertised name reads the
+        bundle's row again, on both catalog kinds, for a moved name, a repository id and a name with no row there."""
+        a, b = two_rows()
+        table = {'statement': 't', 'defaults': {a.lower(): decl(b), f'owner/{a.lower()}': decl(a)},
+                 'rows': {'gw': {'gone': decl(None, status='other_weights')}}}
+        for kind, listed in (('openai_compatible', [a, f'owner/{a}', 'gone']), ('paseo_provider', [a, f'owner/{a}', 'gw/gone'])):
+            acc = gateway_accounts(table)
+            acc['accounts']['gw']['bundles'] = auto_bundles.derive(acc, catalog(listed, kind=kind), NOW)['bundles']['gw']
+            for bundle in acc['accounts']['gw']['bundles'].values():
+                with self.subTest(kind=kind, launch=bundle['launch_model']):
+                    stored = account_fleet.stored_form(bundle['launch_model'], acc, 'gw')
+                    self.assertEqual(account_fleet.stored_model(stored, acc, 'gw'), account_fleet.canonical(bundle['model'], acc))
 
 ENTRY = {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'user'}
 
@@ -337,6 +373,24 @@ class ScoreKeys(unittest.TestCase):
             with self.subTest(key=name):
                 self.assertEqual(user_scores.resolve_model_key(name, SHIPPED), user_scores.resolve_model_key(name, bare))
 
+    def test_a_row_takes_a_score_under_the_key_that_reaches_it(self):
+        """Rule (user_scores.score_key_for_row, set_score): a row whose own id lands on it is keyed by its id; a row
+        whose id lands elsewhere (the undated row of a moved name) is keyed by a declared name that reaches it (a
+        repository id), and set_score writes that key, never the row id; a row nothing reaches takes none."""
+        a, b = two_rows()
+        doc = doc_with(defaults={a.lower(): decl(b), f'owner/{a.lower()}': decl(a)})
+        self.assertEqual(user_scores.score_key_for_row(b, doc), b)
+        self.assertEqual(user_scores.score_key_for_row(a, doc), f'owner/{a.lower()}')
+        self.assertIsNone(user_scores.score_key_for_row(a, doc_with(defaults={a.lower(): decl(b)})))
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            local = Path(tmp) / 'user-scores.json'
+            got = user_scores.set_score(f'owner/{a.lower()}', 'creativity', 2.0, accounts=doc, local_path=local)
+            self.assertEqual(got['model'], f'owner/{a.lower()}')
+            self.assertEqual(user_scores.resolve_model_key(got['model'], doc), a)
+            got = user_scores.set_score(b, 'creativity', 2.0, accounts=doc, local_path=local)
+            self.assertEqual(got['model'], b)
+
     def test_the_rows_own_key_wins_over_a_moved_name_for_each_target_whatever_the_order(self):
         a, b = two_rows()
         doc = doc_with(defaults={a.lower(): decl(b)})
@@ -364,7 +418,7 @@ class BundleModelsReadTheirRowAgain(unittest.TestCase):
         reads the row the advertised name resolved to on its endpoint: an endpoint declaring the undated row of a moved
         name, an alias of such a row and a moved name each keep their row."""
         defaults = SHIPPED['provider_names']['defaults']
-        rows = {'gw': {name: decl(name) for name in defaults}}
+        rows = {'gw': {name: decl(name) for name in defaults if '/' not in name}}
         acc = gateway_accounts({'statement': 't', 'defaults': defaults, 'rows': rows})
         alias = next((al for al, row in SHIPPED.get('aliases', {}).items() if row in defaults), None)
         names = [*defaults, *([alias] if alias else [])]

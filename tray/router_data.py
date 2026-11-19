@@ -568,11 +568,13 @@ def set_manual_score(model: str, target: str, level: float) -> str:
     """A local manual score, through the same writer as `agentcompass score set` (never the public file)."""
     modules()
     import user_scores
-    landing = user_scores.resolve_model_key(model, _cached_accounts())
-    if landing != model:
-        # The row's own id is a name its maker moved: a score keyed by it lands on the row the name means now.
-        raise ValueError(_tr("{0} 没有可写评分的名字：这个名字现在指 {1}").format(model, landing))
-    result = user_scores.set_score(model, target, level)
+    accounts = _cached_accounts()
+    key = user_scores.score_key_for_row(model, accounts)
+    if key is None:
+        # The row's own id is a name its maker moved and no declared name reaches the row.
+        raise ValueError(_tr("{0} 没有可写评分的名字：这个名字现在指 {1}").format(
+            model, user_scores.resolve_model_key(model, accounts)))
+    result = user_scores.set_score(key, target, level)
     return _tr("已为 {0} 的 {1} 写入本机评分 {2}").format(result["model"], result["target"], result["entry"]["level"])
 
 
@@ -580,6 +582,7 @@ def clear_manual_score(model: str, target: str) -> str:
     """Clear a local manual score, through the same writer as `agentcompass score clear` (never the public file)."""
     modules()
     import user_scores
+    model = user_scores.score_key_for_row(model, _cached_accounts()) or model   # the key set_manual_score wrote
     result = user_scores.clear_score(model, target)
     if "." not in target and result["removed"] == 0:
         local = user_scores.list_scores(model, scope="local").get("local") or {}
@@ -1319,6 +1322,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
     accounts = account_fleet.load_accounts()
     if account not in accounts["accounts"]:
         raise ValueError(_tr("未知账号"))
+    stored = account_fleet.stored_form(model, accounts, account) if model else None
     model = account_fleet.stored_model(model, accounts, account) if model else None
     path = quota_overrides.overrides_path()
     with override_store.locked(path):
@@ -1339,7 +1343,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
             existing["until"] = new_until
             existing["basis"] = _tr('用户设置 {0}/{1} 预计 {2} 小时后重置，越近消耗优先级越高').format(account, model or _tr('全部模型'), hours)
             if model:
-                existing["model"] = model
+                existing["model"] = stored
             else:
                 existing.pop("model", None)
             if boost is not None:
@@ -1354,7 +1358,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
         if boost is not None:
             row['boost'] = round(float(boost), 2)
         if model:
-            row["model"] = model
+            row["model"] = stored
         if stop_on_reset:
             windows = [(wid, spec) for wid, spec, _ in quota_pools.applicable_windows(accounts["accounts"][account], model, {}, accounts=accounts)
                        if spec.get("hours", 0) >= 24]

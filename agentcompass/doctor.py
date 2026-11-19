@@ -286,8 +286,14 @@ def choice_conflicts(home: Path, environ: dict | None) -> list[str]:
         for bid, bundle in ((spec.get("bundles") if isinstance(spec, dict) else None) or {}).items():
             if isinstance(bundle, dict) and bundle.get("_choice_conflict"):
                 folded.setdefault(tuple(bundle["_choice_conflict"]), []).append(bid)
-    return [f"{', '.join(ids)} disagree; out of automatic routing: {', '.join(sorted(bids))} "
-            f"(set the model's checkbox again in the tray)" for ids, bids in sorted(folded.items())]
+    lines = []
+    for ids, bids in sorted(folded.items()):
+        # Each id once: a stored id that is also a bundle's id now is named once, with both roles.
+        named = ', '.join(i + (' (a bundle)' if i in bids else '') for i in dict.fromkeys(ids))
+        out = (['the bundle(s) marked'] if set(ids) & set(bids) else []) + sorted(set(bids) - set(ids))
+        lines.append(f"{named} disagree; out of automatic routing: {', '.join(out)} "
+                     f"(set the model's checkbox again in the tray)")
+    return lines
 
 
 def collect(home: Path | None = None) -> dict:

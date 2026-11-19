@@ -169,12 +169,22 @@ def canonical(model, accounts, providers=()):
 
 
 def account_providers(accounts, account):
-    """The providers serving an account's bundles (each bundle's `provider`, else the account): the serving providers
-    a model name stored for that account (a temporary priority, a quick reset-priority target) is read with, so a
-    stored name reads what the account's bundles of that name read (model_resolution.serving_providers `endpoints`)."""
+    """The serving providers derive read an account's names with (auto_bundles.endpoint_providers, recorded on each
+    derived bundle as `_served`): an endpoint account's catalog provider and the account, none for a launcher's list or
+    a manual bundle. A model name stored for that account (a temporary priority, a quick reset-priority target) is read
+    with them, so a stored name reads what the account's bundles of that name read; on a launcher account it reads as
+    with no provider (moved only by a maker's default)."""
     spec = ((accounts or {}).get('accounts') or {}).get(account) or {}
-    return tuple(dict.fromkeys((b.get('provider') or account) for b in (spec.get('bundles') or {}).values()
-                               if isinstance(b, dict)))
+    return tuple(dict.fromkeys(p for b in (spec.get('bundles') or {}).values() if isinstance(b, dict)
+                               for p in b.get('_served') or ()))
+
+
+def stored_form(model, accounts, account):
+    """What a writer stores for a model name chosen on `account`: its stored_model when that reads back to itself
+    (a row id, a dated snapshot id for a moved name, `<provider>/<name>` for a name with no row there), else the name
+    as given (a repository id whose row's own id now reads another row), so the stored value reads its row again."""
+    key = stored_model(model, accounts, account)
+    return key if stored_model(key, accounts, account) == key else split_model_effort(model)[0]
 
 
 def stored_model(model, accounts, account):

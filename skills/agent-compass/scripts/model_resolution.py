@@ -87,10 +87,21 @@ def _declared_at(pairs, table):
 
 
 def maker_default(raw_model_name, table):
-    """The maker's declaration of what the served name (its last `/` segment, lowercase, no `:effort`) serves now
-    (`table` `defaults`), or None."""
-    entry = table['defaults'].get(split_model_effort(raw_model_name)[0].rsplit('/', 1)[-1].lower())
-    return entry if isinstance(entry, dict) else None
+    """The `defaults` declaration (`table`) of the name (lowercase, no `:effort`), or None: default_for its spelling."""
+    return default_for(split_model_effort(raw_model_name)[0].lower(), table)
+
+
+def default_for(spelling, table):
+    """The `defaults` declaration of a lowercase spelling, its full id read before its last segment: the spelling, then
+    what follows each `/` in turn (`siliconflow/deepseek-ai/deepseek-v4-pro`, `deepseek-ai/deepseek-v4-pro`,
+    `deepseek-v4-pro`); the first declared wins, or None. A declaration keyed by a full id (a maker's repository id)
+    thus says what that id is, whatever its last segment's default says."""
+    parts = spelling.split('/')
+    for i in range(len(parts)):
+        entry = table['defaults'].get('/'.join(parts[i:]))
+        if isinstance(entry, dict):
+            return entry
+    return None
 
 
 def undecorated(name):
@@ -134,7 +145,8 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
     one declared row is the key (source `provider`, the declaring provider in 'provider'); a declaration with no row
     gives its status (`retired`, `other_weights`: key None, no row on that provider, so out of automatic routing, while a
     route the user names still launches); serving providers that declare different rows give `conflict` (key None).
-    Else the maker's declaration of what the name serves now (maker_default: source `default`). Else the name's row
+    Else the `defaults` declaration of the name, its full id before its last segment (default_for: source `default`).
+    Else the name's row
     (`exact`, `alias`). The three are read for each spelling of undecorated (the name as given, each vendor tag stripped,
     a dash effort dropped) before the next spelling: a decorated spelling reads the declarations of the undecorated name
     exactly where it would reach that name's row. The result does not depend on the order of the declarations. A name
@@ -176,7 +188,7 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
                 raise public_data.ReferenceDataError(f"provider_names rows[{by!r}] names row {d['model']!r}, which the "
                                                      'catalog does not have')
             return found(d['model'], 'provider', dash_effort, provider=by)
-        default = provider_names['defaults'].get(spelling)
+        default = default_for(spelling, provider_names)
         if isinstance(default, dict):
             if default.get('model') not in known:
                 raise public_data.ReferenceDataError(f"provider_names defaults[{spelling!r}] names row "
@@ -186,11 +198,13 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
 
     pairs = serving_providers(raw, providers)
     served_steps = [undecorated(n) for _, n in pairs]
+    full_steps = undecorated(raw)            # the full id (owner part included), stripped as the last segment is
     for step, (spelling, dash_effort) in enumerate(undecorated(name)):
         if dash_effort is None:
             name = spelling       # `bare`: the spelling reached so far (a dash effort is not stripped from it)
         served = [(p, steps[step][0]) for (p, _), steps in zip(pairs, served_steps) if step < len(steps)]
-        if (hit := declared_row(spelling, served, dash_effort)) is not None:
+        full = full_steps[step][0] if step < len(full_steps) else spelling
+        if (hit := declared_row(full, served, dash_effort)) is not None:
             return hit
         if step == 0:
             if match := exact(raw):

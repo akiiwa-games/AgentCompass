@@ -111,8 +111,9 @@ def _validate_provider_names(doc):
     provider part or effort. A provider's declaration (`rows`) names a row the catalog has, or none with a status
     (model_resolution.PROVIDER_NAME_STATUSES; `retired` cites the maker), under a provider id written lowercase (as
     every lookup reads it); a default (`defaults`) is the maker's statement (kind vendor) or the owner's rule applied by
-    the maintainer (kind maintainer, citing the maker's page it rests on), names a row, and its name is itself a row of
-    the catalog: the moved name's own undated id, the one a listing that only repeats the name gives. A shipped account bundle whose launch name a declaration makes another row runs that
+    the maintainer (kind maintainer, citing the maker's page it rests on) and names a row; a moved name is itself a row of
+    the catalog (the undated id a listing that only repeats the name gives), and a name with an owner part is a full id
+    (a maker's repository id) read before its last segment (model_resolution.default_for). A shipped account bundle whose launch name a declaration makes another row runs that
     row (a name with no row there has no bundle)."""
     table = model_resolution.provider_name_table(doc)
     models = doc.get('models') or {}
@@ -123,12 +124,12 @@ def _validate_provider_names(doc):
                 or not valid_public_declaration(d) or not _ISO_DATE.match(str(d.get('as_of') or ''))
                 or not str(d.get('statement') or '').strip()):
             return f'{where}: {{model, kind ({", ".join(PROVIDER_NAME_KINDS)}), url, as_of, statement}}'
-        if name != name.lower() or '/' in name or model_resolution.split_model_effort(name)[1]:
-            return f'{where}: a served name is lowercase, without a provider part or an effort'
+        if name != name.lower() or model_resolution.split_model_effort(name)[1] or '' in name.split('/'):
+            return f'{where}: a served name is lowercase, without an effort (a full id keeps its owner part)'
         if 'canonical_id' in d and not str(d['canonical_id'] or '').strip():
             return f'{where}: canonical_id is the id models.dev gives the pair'
         if default and (d.get('kind') not in ('vendor', 'maintainer') or 'status' in d or d.get('model') not in models
-                        or name not in models):
+                        or ('/' not in name and name not in models)):
             return (f"{where}: a default is the maker's statement (kind vendor) or a maintainer declaration, names a row "
                     'the catalog has, and its name is a row of the catalog (the undated id the name repeats)')
         if d.get('model') is None and (d.get('status') not in model_resolution.PROVIDER_NAME_STATUSES
