@@ -3,7 +3,7 @@
     git -c core.longpaths=true clone -q --depth 1 --branch v<version> https://github.com/yetone/magpie <dir>
     python -X utf8 audit/magpie_catalog.py <dir>
 
-writes `audit/gateway-catalogs/magpie-<version>.json` (schema `agent-compass.gateway-catalog/2`, `provider_kind:
+writes `audit/gateway-catalogs/magpie-<version>.json` (schema `agent-compass.gateway-catalog/3`, `provider_kind:
 magpie_preset`), the same bytes for the same checkout. `--version` and `--commit` name the source when the checkout is not a
 git clone of a tag; `--out` writes elsewhere.
 

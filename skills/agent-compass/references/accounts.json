@@ -817,7 +817,7 @@
   ],
   "kind": "maintainer",
   "as_of": "2026-11-19",
-  "statement": "maintainer: the anchor (0 on every board), the sentinel models whose shared listing defines the core boards, and the panel members, declared (owner 2026-11-18: the members of v0.7.0, the panel the owner's hand-written levels were set against). A row listed on every core board does not join the panel; only the owner changes `members`; a member a core board does not list is an error (calibration/measurements.py). Members changed by the owner on 2026-11-19: muse-spark-1.3 replaces deepseek-v4.1-flash-free, because no single snapshot of DeepSeek V4.1 Flash is listed on every core board"
+  "statement": "maintainer: the anchor (0 on every board), the sentinel models whose shared listing defines the core boards, and the panel members, declared (owner 2026-11-18). A row listed on every core board does not join the panel; only the owner changes `members`; a member a core board does not list is an error (calibration/measurements.py). Members changed by the owner on 2026-11-19: muse-spark-1.3 replaces deepseek-v4.1-flash-free, because no single snapshot of DeepSeek V4.1 Flash is listed on every core board. The owner's hand-written levels (references/user-scores.json) were set against the earlier panel, the members of v0.7.0 (deepseek-v4.1-flash-free where muse-spark-1.3 now is)"
  },
  "effort_readings": {
   "kind": "maintainer",
