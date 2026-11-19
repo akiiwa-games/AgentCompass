@@ -417,14 +417,22 @@ class CheckRuleTests(unittest.TestCase):
                     gc.load_catalogs(tmp)
 
     def test_row_providers_expands_host_preset_ids_to_declared_catalog_providers(self):
-        """Rule (row_providers + provider_names.providers): a Magpie preset whose id differs from the models.dev catalog it
-        serves expands to include that catalog id in both resolution and identity_conflict."""
+        """Rule (row_providers + provider_names.host_providers['magpie']): a Magpie preset whose id differs from the
+        models.dev catalog it serves maps to that catalog id on `magpie_preset` catalogs only, never on `harness`
+        catalogs or colliding models.dev provider ids (`zai` -> `zhipuai`, without keeping `zai`)."""
         accounts = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
-        doc = {'provider_kind': 'magpie_preset', 'gate': {'makers': {'tencent-cloud': 'tencent'}, 'statement': 's'}}
+        doc = {'provider_kind': 'magpie_preset', 'gate': {'makers': {'tencent-cloud': 'tencent', 'account:claude': 'anthropic'}, 'statement': 's'}}
         self.assertEqual(gc.row_providers(doc, {'provider': 'opencode-zen', 'model': 'deepseek-v4-flash'}, accounts),
-                         ('opencode-zen', 'opencode'))
+                         ('opencode',))
         self.assertEqual(gc.row_providers(doc, {'provider': 'tencent-cloud', 'model': 'hy3-preview'}, accounts),
-                         ('tencent-cloud', 'tencent-tokenhub'))
+                         ('tencent-tokenhub',))
+        self.assertEqual(gc.row_providers(doc, {'provider': 'zai', 'model': 'glm-5.2'}, accounts),
+                         ('zhipuai',))
+        self.assertEqual(gc.row_providers(doc, {'provider': 'account:claude', 'model': 'claude-opus-5-5'}, accounts),
+                         ('account:claude', 'anthropic'))
+        harness_doc = {'provider_kind': 'harness'}
+        self.assertEqual(gc.row_providers(harness_doc, {'provider': 'zai', 'model': 'glm-5.2'}, accounts),
+                         ('zai',))
 
 
 if __name__ == '__main__':

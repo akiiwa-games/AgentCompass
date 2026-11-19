@@ -214,11 +214,13 @@ def ungated_reason(doc, row, out_of_scope):
 def row_providers(doc, row, accounts=None):
     """The providers a gateway's own listing says serve the catalog row's name (owner, 2026-11-19, round 7): the row's
     provider as the catalog names it, the account's provider for a Magpie `account:<kind>` (its `gate.makers` entry),
-    and the declaration providers `provider_names.providers` maps them to. model_resolution.serving_providers adds the
-    provider part of a `provider/name` id."""
+    and—for a `magpie_preset` catalog—the declaration providers `provider_names.host_providers['magpie']` maps a Magpie
+    preset id to. model_resolution.serving_providers adds the provider part of a `provider/name` id."""
     account = ((doc.get('gate') or {}).get('makers') or {}).get(row['provider']) if row['provider'].startswith('account:') else None
     base = tuple(dict.fromkeys(p for p in (row['provider'], account) if p))
-    return model_resolution.expand_providers(base, accounts) if accounts else base
+    if accounts and doc.get('provider_kind') == 'magpie_preset':
+        return model_resolution.expand_host_providers(base, 'magpie', accounts)
+    return base
 
 
 def own_ids(listings, row):

@@ -184,9 +184,14 @@ def test_an_endpoints_advertised_name_reads_the_declarations_derive_reads(tmp_pa
     decorated = router_data.decorate_model_rows(rows, accounts, catalog)
     assert [group['model'] for group in decorated[0]['models']] == [b]
 
-    # A Magpie preset id (`opencode-zen`) or Magpie-bound account (`magpie_providers`) expands through provider_names.providers:
+    # A Magpie-bound account (`magpie_providers`) expands through provider_names.host_providers['magpie'], while a
+    # non-Magpie OpenAI-compatible account never reads Magpie's preset table:
     shipped = json.loads((Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'references' / 'accounts.json')
                          .read_text(encoding='utf-8'))
+    non_magpie = copy.deepcopy(shipped)
+    non_magpie_rows = [{'account': 'opencode-zen', 'harness': 'codex', 'providers': ['opencode-zen'], 'models': []}]
+    non_magpie_cat = {'providers': {'opencode-zen': {'ok': True, 'type': 'openai_compatible', 'models': [{'id': 'deepseek-v4-flash'}]}}}
+    assert [group['model'] for group in router_data.decorate_model_rows(non_magpie_rows, non_magpie, non_magpie_cat)[0]['models']] == ['deepseek-v4.1-flash-1017']
     shipped['_discovery'] = {'accounts': {'my-zen': {'magpie_providers': ['opencode-zen']}}}
     zen_rows = [{'account': 'my-zen', 'harness': 'codex', 'providers': ['my-zen'], 'models': []}]
     zen_cat = {'providers': {'my-zen': {'ok': True, 'type': 'openai_compatible', 'models': [{'id': 'deepseek-v4-flash'}]}}}

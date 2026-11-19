@@ -758,23 +758,64 @@ class PinIdentityMatchesBundle(unittest.TestCase):
         self.assertEqual(model_resolution.resolve_in('other/decl-row', custom, ('gw',))['key'], 'glm-5.2')
         self.assertEqual(model_resolution.resolve_in('opencode/deepseek-v4-flash', custom, ('gw',))['source'], 'other_weights')
 
-    def test_host_provider_mapping_reaches_catalog_declarations_across_resolver_endpoints_and_provenance(self):
-        """Rule (provider_names.providers, model_resolution.expand_providers, auto_bundles.endpoint_providers): a host
-        provider id whose own id differs from the models.dev catalog it serves (e.g. Magpie preset `opencode-zen` ->
-        `opencode`, `tencent-cloud` -> `tencent-tokenhub`) reads that catalog's declarations without duplicating rows."""
+    def test_host_provider_mapping_is_scoped_to_magpie_and_all_hy3_preview_listings_are_declared(self):
+        """Rule (R2-F1/F2: provider_names.host_providers['magpie'], model_resolution.expand_host_providers,
+        auto_bundles.endpoint_providers): Magpie's preset table applies only to Magpie preset ids (never to prefixes in
+        names or non-Magpie accounts whose provider id is `zai`, `minimax-cn`, `stepfun` or `xiaomi`); disagreeing
+        catalogs under one multi-catalog Magpie preset are a `conflict` on that preset only; and every models.dev
+        listing of `tencent/hy3-preview` is declared `other_weights`."""
         import reference_provenance
-        for call in (
-            lambda: model_resolution.resolve_in('opencode-zen/deepseek-v4-flash', SHIPPED, ()),
-            lambda: model_resolution.resolve_in('deepseek-v4-flash', SHIPPED, ('opencode-zen',)),
-        ):
-            res = call()
-            self.assertEqual((res['key'], res['source'], res['provider']), (None, 'other_weights', 'opencode'))
-        tc = model_resolution.resolve_in('tencent-cloud/hy3-preview', SHIPPED, ())
-        self.assertEqual((tc['key'], tc['source'], tc['provider']), (None, 'other_weights', 'tencent-tokenhub'))
+        names_doc = json.loads((Path(__file__).resolve().parents[3] / 'audit' / 'models-dev-names.json').read_text(encoding='utf-8'))['names']
 
-        # endpoint_providers expands both direct preset ids and Magpie-bound accounts (`magpie_providers`):
+        # F2: every (provider, name) listing in models-dev-names.json with canonical id `tencent/hy3-preview` resolves
+        # to `other_weights` on that provider (both as an endpoint and as a launcher prefix):
+        hy3_preview_pairs = [(p, n) for n, entries in sorted(names_doc.items()) for p, c, *_ in entries if c == 'tencent/hy3-preview']
+        self.assertTrue(hy3_preview_pairs)
+        for provider, listed_name in hy3_preview_pairs:
+            with self.subTest(provider=provider, listed_name=listed_name):
+                ep_res = model_resolution.resolve_in(listed_name, SHIPPED, (provider,))
+                pref_res = model_resolution.resolve_in(
+                    listed_name if listed_name.lower().startswith(provider.lower() + '/') else f'{provider}/{listed_name}',
+                    SHIPPED, (),
+                )
+                self.assertEqual((ep_res['key'], ep_res['source'], ep_res['provider']), (None, 'other_weights', provider.lower()))
+                self.assertEqual((pref_res['key'], pref_res['source'], pref_res['provider']), (None, 'other_weights', provider.lower()))
+
+        # F1: non-Magpie prefixes and non-Magpie OpenAI-compatible accounts never read Magpie's preset table:
+        self.assertEqual(model_resolution.resolve_in('opencode-zen/deepseek-v4-flash', SHIPPED, ())['source'], 'default')
+        self.assertEqual(auto_bundles.endpoint_providers({'type': 'openai_compatible'}, 'zai', 'zai', SHIPPED), ('zai',))
         self.assertEqual(auto_bundles.endpoint_providers({'type': 'openai_compatible'}, 'opencode-zen', 'opencode-zen', SHIPPED),
-                         ('opencode-zen', 'opencode'))
+                         ('opencode-zen',))
+
+        test_acc = copy.deepcopy(SHIPPED)
+        test_acc['provider_names']['rows'] = {
+            **test_acc['provider_names']['rows'],
+            'stepfun-ai-step-plan': {'step-test': decl('gpt-5.5')},
+            'stepfun-ai': {'step-test': decl('gpt-6-astra')},
+            'xiaomi-token-plan-cn': {'mimo-test': decl('gpt-5.5')},
+            'xiaomi-token-plan-sgp': {'mimo-test': decl(None, status='other_weights')},
+            'zhipuai': {'glm-test': decl(None, status='other_weights')},
+            'zai': {'glm-test': decl('glm-5.2')},
+            'minimax': {'mm-test': decl(None, status='other_weights')},
+            'minimax-cn': {'mm-test': decl('glm-5.2')},
+        }
+        # Non-Magpie prefix or non-Magpie endpoint reads only its own provider id, never Magpie's mapped catalogs:
+        self.assertEqual(model_resolution.resolve_in('zai/glm-test', test_acc, ())['key'], 'glm-5.2')
+        self.assertEqual(model_resolution.resolve_in('glm-test', test_acc, ('zai',))['key'], 'glm-5.2')
+        self.assertEqual(model_resolution.resolve_in('minimax-cn/mm-test', test_acc, ())['key'], 'glm-5.2')
+        self.assertEqual(model_resolution.resolve_in('stepfun/step-test', test_acc, ())['source'], 'unknown')
+        self.assertEqual(model_resolution.resolve_in('xiaomi/mimo-test', test_acc, ())['source'], 'unknown')
+        # Magpie preset `zai` replaces `zai` with `zhipuai` (no collision with `zai`), while a multi-catalog Magpie preset
+        # whose catalogs disagree resolves to `conflict` on that Magpie preset only:
+        magpie_zai = model_resolution.expand_host_providers(('zai',), 'magpie', test_acc)
+        self.assertEqual(magpie_zai, ('zhipuai',))
+        self.assertEqual(model_resolution.resolve_in('glm-test', test_acc, magpie_zai)['source'], 'other_weights')
+        magpie_stepfun = model_resolution.expand_host_providers(('stepfun',), 'magpie', test_acc)
+        self.assertEqual(model_resolution.resolve_in('step-test', test_acc, magpie_stepfun)['source'], 'conflict')
+        magpie_xiaomi = model_resolution.expand_host_providers(('xiaomi',), 'magpie', test_acc)
+        self.assertEqual(model_resolution.resolve_in('mimo-test', test_acc, magpie_xiaomi)['source'], 'conflict')
+
+        # Magpie-bound accounts (`magpie_providers` / `endpoint_providers`) expand through `host_providers.magpie`:
         doc = copy.deepcopy(SHIPPED)
         doc['accounts'] = {'my-zen': {'billing': 'subscription', 'family': 'codex', 'windows': {'balance': {'hours': 168}}, 'bundles': {}}}
         doc['_discovery'] = {'accounts': {'my-zen': {'magpie_providers': ['opencode-zen', 'my-zen']}}}
@@ -790,16 +831,19 @@ class PinIdentityMatchesBundle(unittest.TestCase):
             fleet = self.subscription_fleet({'my-zen': ('codex', derived, 'balance')})
             self.assertEqual(self.plan_pin(fleet, model='deepseek-v4-flash')['choice'], next(iter(derived)))
 
-        # Provenance validation checks `provider_names.providers` citations and lowercase target shapes:
+        # Provenance validation checks `provider_names.host_providers` citations and rejects top-level `providers`:
         reference_provenance.validate_accounts_provenance(SHIPPED)
-        for bad_providers in (
-            {'OpenCode-Zen': SHIPPED['provider_names']['providers']['opencode-zen']},
-            {'opencode-zen': {**SHIPPED['provider_names']['providers']['opencode-zen'], 'providers': []}},
-            {'opencode-zen': {**SHIPPED['provider_names']['providers']['opencode-zen'], 'providers': ['opencode-zen']}},
-            {'opencode-zen': {**SHIPPED['provider_names']['providers']['opencode-zen'], 'url': 'not-https'}},
+        zen_entry = SHIPPED['provider_names']['host_providers']['magpie']['opencode-zen']
+        for bad_pn in (
+            {**SHIPPED['provider_names'], 'providers': {'opencode-zen': zen_entry}},
+            {**SHIPPED['provider_names'], 'host_providers': {'Magpie': {'opencode-zen': zen_entry}}},
+            {**SHIPPED['provider_names'], 'host_providers': {'magpie': {'OpenCode-Zen': zen_entry}}},
+            {**SHIPPED['provider_names'], 'host_providers': {'magpie': {'opencode-zen': {**zen_entry, 'providers': []}}}},
+            {**SHIPPED['provider_names'], 'host_providers': {'magpie': {'opencode-zen': {**zen_entry, 'providers': ['opencode-zen']}}}},
+            {**SHIPPED['provider_names'], 'host_providers': {'magpie': {'opencode-zen': {**zen_entry, 'url': 'not-https'}}}},
         ):
             broken = copy.deepcopy(SHIPPED)
-            broken['provider_names'] = {**broken['provider_names'], 'providers': bad_providers}
+            broken['provider_names'] = bad_pn
             with self.assertRaisesRegex(ValueError, 'provider_names'):
                 reference_provenance.validate_accounts_provenance(broken)
 
