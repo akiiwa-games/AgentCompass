@@ -2801,9 +2801,13 @@ class SpeedVariantTests(unittest.TestCase):
 
 
 class ResponseFloorTests(unittest.TestCase):
-    """Rule (calibration/README.md, Speed without a reading; owner 2026-11-19): a row with `response_time_source` and no
-    reading of its own has the declared floor as its Time/Task at every effort (a task is at least one response) and the
-    floor read through the time-to-first-answer transform as its responsiveness. A declaration, not a fit."""
+    """Rule (calibration/README.md, Speed without a reading; owner 2026-11-19): a declared floor of the response time
+    (`response_time_source` `min_seconds`) on a row with no reading of its own bounds, it does not replace: Time/Task is
+    the longer of the floor (min_seconds / 60 minutes, a task is at least one response) and what the next method of the
+    order gives at that effort, responsiveness the slower of the floor read through the time-to-first-answer transform and
+    the method's value; the floor alone where no method gives one; the cell keeps both inputs and which one binds; no
+    inversion along effort."""
+    FLOOR = {'kind': 'maintainer', 'as_of': '2026-11-19', 'min_seconds': 600, 'statement': 'synthetic'}
 
     @classmethod
     def setUpClass(cls):
@@ -2812,21 +2816,72 @@ class ResponseFloorTests(unittest.TestCase):
         cls.meas = json.loads((refs / 'public-measurements.json').read_text(encoding='utf-8-sig'))
         cls.models = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))['models']
 
-    def test_a_declared_response_floor_is_the_time_at_every_effort_and_the_transformed_responsiveness(self):
+    def times(self, relative_minutes):
+        """durations() for a floored astra-line row `gpt-6-pro` beside its read same-line relative `gpt-6-astra`
+        ({effort: AA minutes}) and a floored row `solo` with no relative."""
+        def tp(e, t):
+            return {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': e, 'time_per_task_min': t,
+                    'listed_as': f'x ({e})', 'as_of': '2026-11-19', 'url': 'https://example.test/aa'}
+        fields = {five_axis.measurements.ANCHOR: [tp('high', 10.0)],
+                  'gpt-6-astra': [tp(e, t) for e, t in relative_minutes.items()], 'gpt-6-pro': [], 'solo': []}
+        rows = {m: {'fields': {'throughput': f}} for m, f in fields.items()}
+        acc = {**READINGS, 'models': {m: ({'response_time_source': self.FLOOR} if m in ('gpt-6-pro', 'solo') else {})
+                                      for m in fields}, 'aliases': {}, 'families': GPT_FAMILIES}
+        out, _, _ = five_axis.durations(five_axis.Scorer({'models': fields}, acc), rows, acc)
+        return out
+
+    def test_time_is_the_longer_of_the_floor_and_the_estimate_at_each_effort(self):
+        out = self.times({'high': 4.0, 'max': 30.0})
+        pro, basis = out['gpt-6-pro']['minutes_by_effort'], out['gpt-6-pro']['basis_by_effort']
+        self.assertEqual((pro['high'], basis['high']['binds'], basis['high']['estimate']['minutes']), (10.0, 'floor', 4.0))
+        self.assertEqual((pro['max'], basis['max']['binds'], basis['max']['estimate']['method']), (30.0, 'estimate', 'series'))
+        efforts = [e for e in five_axis.LADDER if e in pro]
+        self.assertEqual([pro[e] for e in efforts], sorted(pro[e] for e in efforts))     # no inversion along effort
+        solo = out['solo']
+        self.assertEqual(set(solo['minutes_by_effort'].values()), {10.0})
+        self.assertEqual({b['binds'] for b in solo['basis_by_effort'].values()}, {'floor'})
+        self.assertIsNone(solo['basis_by_effort']['high']['estimate'])
+
+    def responsiveness(self, relative_z):
+        def resp(z):
+            return [{'source': 'aa.ttfa', 'facet': 'responsiveness', 'value': z, 'z_by_effort': dict.fromkeys(EFFORT_NAMES, z)}]
+        rel = AnchorRelativeTests('test_responsiveness_without_its_own_line_takes_the_median_of_the_makers_other_lines')
+        rel.ms = five_axis.measurements
+        meas = {**rel.calibration_set({'acme-a-1': rel.tiered(4.2, tool_operation=resp(relative_z)),
+                                       'acme-b-1': rel.tiered(4.0)}),
+                'sources': {'aa.ttfa': {'scale': {'anchor_raw': -3.0, 'sd_panel': 1.0}}}}
+        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
+        acc = {**READINGS, 'series_versions': {'versions': {'acme-a-1': 1, 'acme-b-1': 1}}, 'families': fams,
+               'models': {m: ({'response_time_source': self.FLOOR} if m == 'acme-b-1' else {}) for m in meas['models']}}
+        rows, _, _, _, _, _ = five_axis.Scorer(meas, acc).score()
+        return rows['acme-b-1']['axes']['tool_operation']['facets']['responsiveness']
+
+    def test_responsiveness_is_the_slower_of_the_floor_and_the_estimate(self):
+        z = round(-math.log(600) + 3.0, 4)
+        floor = self.responsiveness(0.5)            # the other line's relative is faster than the floor: the floor binds
+        self.assertEqual((floor['value'], floor['estimate']['binds_by_effort']['high'],
+                          floor['estimate']['estimate_input']['estimate']['method']), (z, 'floor', 'cross_line_median'))
+        slow = self.responsiveness(-5.0)            # slower than the floor: the estimate binds
+        self.assertEqual((slow['estimate']['binds_by_effort']['high'], slow['estimate']['floor_value']), ('estimate', z))
+        self.assertAlmostEqual(slow['value'], slow['estimate']['estimate_input']['by_effort']['high'], places=4)
+        self.assertLess(slow['value'], z)
+
+    def test_the_shipped_floors_bound_the_shipped_estimates(self):
         floors = {m: r['response_time_source'] for m, r in self.acc['models'].items() if 'response_time_source' in r}
         self.assertTrue(floors)
         scale = self.meas['sources']['aa.ttfa']['scale']
         for m, decl in floors.items():
             with self.subTest(model=m):
                 dur = self.models[m]['duration_multiplier']
-                floored = [e for e, b in dur['basis_by_effort'].items() if b['method'] == 'declared_response_floor']
-                if floored:
-                    self.assertEqual(sorted(floored), sorted(five_axis.LADDER))
-                    self.assertEqual(set(dur['minutes_by_effort'].values()), {round(decl['min_seconds'] / 60.0, 3)})
+                floor = round(decl['min_seconds'] / 60.0, 3)
+                for e, b in dur['basis_by_effort'].items():
+                    if b['method'] == 'declared_response_floor' and 'bounded_by' not in b:
+                        est = (b['estimate'] or {}).get('minutes')
+                        self.assertEqual(dur['minutes_by_effort'][e], max(floor, est) if est is not None else floor)
                 resp = self.models[m]['axes']['tool_operation']['facets']['responsiveness']
                 if resp.get('estimate', {}).get('method') == 'declared_response_floor':
                     z = (-math.log(decl['min_seconds']) - scale['anchor_raw']) / scale['sd_panel']
-                    self.assertTrue(all(abs(v - z) < 2e-4 for v in resp['by_effort'].values()), resp['by_effort'])
+                    self.assertTrue(all(v <= z + 2e-4 for v in resp['by_effort'].values()), resp['by_effort'])
 
 
 class CrossLineTimeTests(unittest.TestCase):

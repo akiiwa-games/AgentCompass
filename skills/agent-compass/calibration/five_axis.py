@@ -1234,8 +1234,8 @@ class Scorer:
                 kept = facets[m].get(key)
                 if kept is not None and kept.get('value') is not None:
                     continue
-                if (m in self.speed or m in self.response_floor) and key == SPEED_KEY:
-                    continue        # a speed variant's speed rests on its base, a declared floor on itself
+                if m in self.speed and key == SPEED_KEY:
+                    continue        # a speed variant's speed rests on its base
                 # an ability facet reads the maker's same-size rows of every line; a speed facet its own line only
                 sibs = (self.sibs if rises(key) else self.line_sibs).get(m, ())
                 usable = [b for b in sibs
@@ -1379,26 +1379,36 @@ class Scorer:
     def response_floors(self, facets):
         """A row with a declared floor of its response time (`response_time_source`, `min_seconds`) and no responsiveness
         reading of its own: the floor read through the transform every measured row goes through on the time-to-first-answer
-        board, x = -ln(seconds), z = (x - x_anchor) / sd_panel, at every effort (method `declared_response_floor`). A
-        response that takes at least that long reaches its first answer token no sooner than its thinking ends, which for a
-        long-thinking response is most of that time: the value is a declared upper bound, not a fit, and stays where it is
-        (no measured cell of another row moves it, none moves against it)."""
+        board, x = -ln(seconds), z = (x - x_anchor) / sd_panel, bounds the value the next method of the order gives at each
+        effort: the slower of the two (z at most the floor's), the floor alone where no method gives one, then bounded along
+        effort (method `declared_response_floor`, both inputs and which one binds on the cell). A response that takes at
+        least that long reaches its first answer token no sooner than its thinking ends, which for a long-thinking response
+        is most of that time: a declared bound, not a fit."""
         scale = (((self.meas.get('sources') or {}).get(measurements.AA_TTFA) or {}).get('scale') or {})
         for m, decl in sorted(self.response_floor.items()):
-            if m not in facets or SPEED_KEY in facets[m]:
-                continue
+            rec = (facets.get(m) or {}).get(SPEED_KEY)
+            if m not in facets or (rec or {}).get('status', '').startswith('measured'):
+                continue        # its own reading stands
             if not scale.get('sd_panel'):
                 raise ValueError(f'{measurements.AA_TTFA} has no scale: the declared response floor of {m} cannot be read')
             x = -math.log(decl['min_seconds'])
             z = round((x - scale['anchor_raw']) / scale['sd_panel'], 4)
-            facets[m][SPEED_KEY] = {'value': z, 'by_effort': dict.fromkeys(LADDER, z), 'status': 'estimated', 'sources': {},
-                                    'measured_efforts': [],
-                                    'estimate': {'method': 'declared_response_floor', 'min_seconds': decl['min_seconds'],
-                                                 'bound': 'upper: no faster than the declared floor',
-                                                 'transform': (f"x = -ln({decl['min_seconds']} s) = {x:.4f}; z = (x - "
-                                                               f"{scale['anchor_raw']:.6g}) / {scale['sd_panel']:.6g} "
-                                                               f"({measurements.AA_TTFA} scale)"),
-                                                 'declaration': {k: v for k, v in decl.items() if k != 'min_seconds'}}}
+            given = (rec or {}).get('by_effort') or {}
+            binds = {e: 'estimate' if given.get(e) is not None and given[e] <= z else 'floor' for e in LADDER}
+            moved = set()
+            by = bound_curve({e: given[e] if binds[e] == 'estimate' else z for e in LADDER}, rises(SPEED_KEY), moved)
+            facets[m][SPEED_KEY] = {
+                'value': by.get('high'), 'by_effort': by, 'status': 'estimated', 'sources': {}, 'measured_efforts': [],
+                'estimate': {'method': 'declared_response_floor', 'min_seconds': decl['min_seconds'], 'floor_value': z,
+                             'binds_by_effort': binds,
+                             **({'bounded_along_effort': sorted(moved, key=LADDER.index)} if moved else {}),
+                             'estimate_input': ({k: rec[k] for k in ('value', 'by_effort', 'status', 'estimate') if k in rec}
+                                                if given else None),
+                             'bound': 'upper: no faster than the declared floor',
+                             'transform': (f"x = -ln({decl['min_seconds']} s) = {x:.4f}; z = (x - "
+                                           f"{scale['anchor_raw']:.6g}) / {scale['sd_panel']:.6g} "
+                                           f"({measurements.AA_TTFA} scale)"),
+                             'declaration': {k: v for k, v in decl.items() if k != 'min_seconds'}}}
 
     def flatten_point(self, m, rec):
         """An operating point row (`operating_points`): every effort reads its one value, the one at the effort `default`
@@ -1892,9 +1902,9 @@ def durations(scorer, rows, acc):
                            'base_method': basis[base][e]['method'], 'source': basis[base][e].get('source'),
                            **({'ratio': r, 'stated_ratio': sp['stated']} if r else
                               {'bound': 'upper: no longer than its base (no ratio stated)'}), 'speed': cite}
-    # a declared response floor: the rows with no reading of their own or of their line; set last (below), so no fleet
-    # step or ratio reaches it
-    floored = sorted(m for m in scorer.response_floor if m in rows and not minutes[m])
+    # a declared response floor: the rows with no reading of their own; it bounds, last (below), what the other steps give
+    floored = sorted(m for m in scorer.response_floor if m in rows
+                     and not any(b.get('method') in ('aa', 'arena_fit') for b in basis[m].values()))
     fleet = {}
 
     def fleet_ratio(e, e0):
@@ -2076,12 +2086,18 @@ def durations(scorer, rows, acc):
             minutes[m] = {e: t for e in LADDER}
             basis[m] = {**{e: {'method': 'operating_point', 'from_effort': at} for e in LADDER if e != at}, at: basis[m][at]}
     # the maker's other lines, after every step of the row's own line and of the fleet's effort conversion
-    cross_line_times(scorer, rows, acc, same, minutes, basis, set(floored) | set(speed) | set(scorer.points))
-    for m in floored:
+    cross_line_times(scorer, rows, acc, same, minutes, basis, set(speed) | set(scorer.points))
+    for m in floored:   # the floor bounds: the longer of it and the other steps' time, then bounded along effort
         decl = scorer.response_floor[m]
         floor = round(decl['min_seconds'] / 60.0, 3)      # a task is at least one response (calibration/README.md)
-        minutes[m] = dict.fromkeys(LADDER, floor)
-        basis[m] = {e: {'method': 'declared_response_floor', 'min_seconds': decl['min_seconds'],
+        given, how = dict(minutes[m]), dict(basis[m])
+        binds = {e: 'estimate' if given.get(e) is not None and given[e] >= floor else 'floor' for e in LADDER}
+        moved = set()
+        minutes[m] = bound_curve({e: given[e] if binds[e] == 'estimate' else floor for e in LADDER}, True, moved)
+        basis[m] = {e: {'method': 'declared_response_floor', 'binds': binds[e], 'min_seconds': decl['min_seconds'],
+                        'floor_minutes': floor,
+                        'estimate': {'minutes': given[e], **how[e]} if given.get(e) is not None else None,
+                        **({'bounded_by': 'the time at a neighbouring effort (no inversion along effort)'} if e in moved else {}),
                         'bound': 'lower: a task takes at least one response of at least the declared time',
                         'declaration': {k: v for k, v in decl.items() if k != 'min_seconds'}} for e in LADDER}
     for m in rows:

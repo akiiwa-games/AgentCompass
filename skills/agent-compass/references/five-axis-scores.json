@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.five-axis-scores/12",
- "generated_at": "2026-11-19T03:27:19+00:00",
+ "generated_at": "2026-11-19T03:39:02+00:00",
  "measurements_sha256": "928043c0a5dd93c6c34fccb7d32b05015f67d50277b13ecc13e9ae8632d1d052",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
@@ -15970,6 +15970,76 @@
        "estimate": {
         "method": "declared_response_floor",
         "min_seconds": 600,
+        "floor_value": -4.425,
+        "binds_by_effort": {
+         "none": "floor",
+         "minimal": "floor",
+         "low": "floor",
+         "medium": "floor",
+         "high": "floor",
+         "xhigh": "floor",
+         "max": "floor",
+         "ultra": "floor"
+        },
+        "estimate_input": {
+         "value": 0.8927,
+         "by_effort": {
+          "none": 3.496,
+          "minimal": 3.496,
+          "low": 2.7538,
+          "medium": 1.8233,
+          "high": 0.8927,
+          "xhigh": 0.3497,
+          "max": -1.5668,
+          "ultra": -3.1029
+         },
+         "status": "estimated",
+         "estimate": {
+          "method": "cross_line_median",
+          "base_model": [
+           "gpt-6-astra",
+           "gpt-6-luna",
+           "gpt-6-sol"
+          ],
+          "base_value": [
+           -0.8866,
+           0.8927,
+           1.6484
+          ],
+          "base_tier": [
+           0.0583,
+           -0.6414,
+           -0.2915
+          ],
+          "tier": -0.2915,
+          "tier_source": "sibling",
+          "shift": [
+           0.0,
+           0.0,
+           0.0
+          ],
+          "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
+          "version_distance": 0,
+          "tie": "median of the tied relatives",
+          "lines": {
+           "gpt-6-astra": {
+            "line": "astra",
+            "n": 0,
+            "pairs": []
+           },
+           "gpt-6-luna": {
+            "line": "luna",
+            "n": 0,
+            "pairs": []
+           },
+           "gpt-6-sol": {
+            "line": "sol",
+            "n": 0,
+            "pairs": []
+           }
+          }
+         }
+        },
         "bound": "upper: no faster than the declared floor",
         "transform": "x = -ln(600 s) = -6.3969; z = (x - -3.01685) / 0.763853 (aa.ttfa scale)",
         "declaration": {
@@ -16124,8 +16194,8 @@
      "medium": 1.0765,
      "high": 1.0765,
      "xhigh": 1.0765,
-     "max": 1.0765,
-     "ultra": 1.0765
+     "max": 1.3058,
+     "ultra": 2.1967
     },
     "minutes_by_effort": {
      "none": 10.0,
@@ -16134,13 +16204,48 @@
      "medium": 10.0,
      "high": 10.0,
      "xhigh": 10.0,
-     "max": 10.0,
-     "ultra": 10.0
+     "max": 12.13,
+     "ultra": 20.405
     },
     "basis_by_effort": {
      "none": {
       "method": "declared_response_floor",
+      "binds": "floor",
       "min_seconds": 600,
+      "floor_minutes": 10.0,
+      "estimate": {
+       "minutes": 0.625,
+       "method": "cross_line_median",
+       "base_model": [
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol"
+       ],
+       "version_distance": 0,
+       "base_minutes": [
+        1.612,
+        0.625,
+        0.621
+       ],
+       "source": "aa.cost_time",
+       "lines": {
+        "gpt-6-astra": {
+         "line": "astra",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-luna": {
+         "line": "luna",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-sol": {
+         "line": "sol",
+         "n": 0,
+         "pairs": []
+        }
+       }
+      },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
@@ -16150,7 +16255,42 @@
      },
      "minimal": {
       "method": "declared_response_floor",
+      "binds": "floor",
       "min_seconds": 600,
+      "floor_minutes": 10.0,
+      "estimate": {
+       "minutes": 0.625,
+       "method": "cross_line_median",
+       "base_model": [
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol"
+       ],
+       "version_distance": 0,
+       "base_minutes": [
+        1.612,
+        0.625,
+        0.621
+       ],
+       "source": "aa.cost_time",
+       "lines": {
+        "gpt-6-astra": {
+         "line": "astra",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-luna": {
+         "line": "luna",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-sol": {
+         "line": "sol",
+         "n": 0,
+         "pairs": []
+        }
+       }
+      },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
@@ -16160,7 +16300,42 @@
      },
      "low": {
       "method": "declared_response_floor",
+      "binds": "floor",
       "min_seconds": 600,
+      "floor_minutes": 10.0,
+      "estimate": {
+       "minutes": 0.625,
+       "method": "cross_line_median",
+       "base_model": [
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol"
+       ],
+       "version_distance": 0,
+       "base_minutes": [
+        3.341,
+        0.625,
+        0.621
+       ],
+       "source": "aa.cost_time",
+       "lines": {
+        "gpt-6-astra": {
+         "line": "astra",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-luna": {
+         "line": "luna",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-sol": {
+         "line": "sol",
+         "n": 0,
+         "pairs": []
+        }
+       }
+      },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
@@ -16170,7 +16345,42 @@
      },
      "medium": {
       "method": "declared_response_floor",
+      "binds": "floor",
       "min_seconds": 600,
+      "floor_minutes": 10.0,
+      "estimate": {
+       "minutes": 3.467,
+       "method": "cross_line_median",
+       "base_model": [
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol"
+       ],
+       "version_distance": 0,
+       "base_minutes": [
+        6.523,
+        3.467,
+        1.415
+       ],
+       "source": "aa.cost_time",
+       "lines": {
+        "gpt-6-astra": {
+         "line": "astra",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-luna": {
+         "line": "luna",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-sol": {
+         "line": "sol",
+         "n": 0,
+         "pairs": []
+        }
+       }
+      },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
@@ -16180,7 +16390,42 @@
      },
      "high": {
       "method": "declared_response_floor",
+      "binds": "floor",
       "min_seconds": 600,
+      "floor_minutes": 10.0,
+      "estimate": {
+       "minutes": 5.822,
+       "method": "cross_line_median",
+       "base_model": [
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol"
+       ],
+       "version_distance": 0,
+       "base_minutes": [
+        8.815,
+        5.822,
+        2.442
+       ],
+       "source": "aa.cost_time",
+       "lines": {
+        "gpt-6-astra": {
+         "line": "astra",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-luna": {
+         "line": "luna",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-sol": {
+         "line": "sol",
+         "n": 0,
+         "pairs": []
+        }
+       }
+      },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
@@ -16190,7 +16435,42 @@
      },
      "xhigh": {
       "method": "declared_response_floor",
+      "binds": "floor",
       "min_seconds": 600,
+      "floor_minutes": 10.0,
+      "estimate": {
+       "minutes": 7.316,
+       "method": "cross_line_median",
+       "base_model": [
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol"
+       ],
+       "version_distance": 0,
+       "base_minutes": [
+        10.201,
+        7.316,
+        3.081
+       ],
+       "source": "aa.cost_time",
+       "lines": {
+        "gpt-6-astra": {
+         "line": "astra",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-luna": {
+         "line": "luna",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-sol": {
+         "line": "sol",
+         "n": 0,
+         "pairs": []
+        }
+       }
+      },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
@@ -16200,7 +16480,42 @@
      },
      "max": {
       "method": "declared_response_floor",
+      "binds": "estimate",
       "min_seconds": 600,
+      "floor_minutes": 10.0,
+      "estimate": {
+       "minutes": 12.13,
+       "method": "cross_line_median",
+       "base_model": [
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol"
+       ],
+       "version_distance": 0,
+       "base_minutes": [
+        19.964,
+        12.13,
+        7.678
+       ],
+       "source": "aa.cost_time",
+       "lines": {
+        "gpt-6-astra": {
+         "line": "astra",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-luna": {
+         "line": "luna",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-sol": {
+         "line": "sol",
+         "n": 0,
+         "pairs": []
+        }
+       }
+      },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
@@ -16210,7 +16525,42 @@
      },
      "ultra": {
       "method": "declared_response_floor",
+      "binds": "estimate",
       "min_seconds": 600,
+      "floor_minutes": 10.0,
+      "estimate": {
+       "minutes": 20.405,
+       "method": "cross_line_median",
+       "base_model": [
+        "gpt-6-astra",
+        "gpt-6-luna",
+        "gpt-6-sol"
+       ],
+       "version_distance": 0,
+       "base_minutes": [
+        33.583,
+        20.405,
+        12.916
+       ],
+       "source": "aa.cost_time",
+       "lines": {
+        "gpt-6-astra": {
+         "line": "astra",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-luna": {
+         "line": "luna",
+         "n": 0,
+         "pairs": []
+        },
+        "gpt-6-sol": {
+         "line": "sol",
+         "n": 0,
+         "pairs": []
+        }
+       }
+      },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",

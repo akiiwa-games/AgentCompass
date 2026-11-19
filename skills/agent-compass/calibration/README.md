@@ -35,12 +35,14 @@ The router scores a model on **four capability categories** (`creativity`, `codi
 - **Speed without a reading (owner, 2026-11-19).** Responsiveness and Time/Task of a row with no reading of its own, in this
   order, each cell marked estimated with its method and inputs: (1) the vendor's stated ratio (Speed variants, below) or a
   dated maintainer declaration scoped to the row's one launch path: `models.<id>.response_time_source` `min_seconds`, the
-  time from the request to the complete answer (gpt-6-pro, ChatGPT Web only: 600 s, owner 2026-11-19), read as Time/Task
-  `min_seconds / 60` minutes at every effort (a task is at least one response) and as responsiveness through the
-  transform every measured row goes through on the time-to-first-answer board, z = (-ln(seconds) - x_anchor) / sd_panel
-  (a long-thinking answer starts no sooner than its thinking ends), at every effort (method `declared_response_floor`;
-  a declared bound, not a fit: no Pro-line reading exists to score it against, and no measured cell of another row moves
-  it); (2) a relative of its own line, as above; (3) the maker's other lines, same size, version distance up to
+  time from the request to the complete answer (gpt-6-pro, ChatGPT Web only: 600 s, owner 2026-11-19), a floor that
+  bounds the value the next steps below give, never replaces it: Time/Task at each effort is the longer of
+  `min_seconds / 60` minutes (a task is at least one response) and that value, responsiveness the slower of the floor
+  read through the transform every measured row goes through on the time-to-first-answer board,
+  z = (-ln(seconds) - x_anchor) / sd_panel (a long-thinking answer starts no sooner than its thinking ends), and that
+  value; the floor alone where no step gives one; then bounded along effort (method `declared_response_floor`, the cell
+  keeping both inputs and which one binds; a declared bound, not a fit: no Pro-line reading exists to score it
+  against); (2) a relative of its own line, as above; (3) the maker's other lines, same size, version distance up to
   `estimation_order.sibling_first_up_to_distance`, among relatives read on a board (an estimated value is never another
   row's basis): where the relative's line and the row's own line are both read on at least two same-version pairs, the
   relative's value moved by their median line-to-line step (responsiveness: plus the median difference in panel z;
