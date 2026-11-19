@@ -18,6 +18,10 @@
   "no_relative_statement": {
    "missing": "a row for the name: no public statement says which scored row it is (alias) or that it is the same model as one (same_model), and no board lists it",
    "closes_when": "a vendor or catalog statement relates the name to a row, or a board lists it as a row of its own"
+  },
+  "anchor_reading_moved": {
+   "missing": "a reading on the shipped scale: a board lists the model only in a fetch after the release snapshot, the board moved since, and fewer than two panel members are listed in both fetches to measure its drift (calibration/README.md, To add a model)",
+   "closes_when": "the next release's fetch, which reads the model with every other row on one snapshot"
   }
  },
  "entries": [

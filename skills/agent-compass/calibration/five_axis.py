@@ -683,6 +683,11 @@ class Scorer:
                             'listed_effort': listed,
                         }
 
+        for m, r in rows.items():       # a reading corrected by its board's drift says so in the cell (refresh.py)
+            for (a, f), srcs in r['boards'].items():
+                for src, e in srcs.items():
+                    if 'drift_correction' in e and src in curves.get(m, {}).get((a, f), {}):
+                        curves[m][(a, f)][src]['drift_correction'] = e['drift_correction']
         links = self.link(curves, panel)
 
         # Expand non-AA efforts from the linked anchor effort using uncompressed linked AA deltas, then bound every board's
@@ -832,7 +837,8 @@ class Scorer:
                               'link_scale': r.get('link_scale', 1.0), 'link_offset': r.get('link_offset'),
                               **({'effort_shift_basis': r['effort_shift_basis']} if r.get('effort_shift_basis') else {}),
                               **({'effort_basis': r['effort_basis']} if r.get('effort_basis') else {}),
-                              **({'bound_moved': r['bound_moved']} if r.get('bound_moved') else {})}
+                              **({'bound_moved': r['bound_moved']} if r.get('bound_moved') else {}),
+                              **({'drift_correction': r['drift_correction']} if r.get('drift_correction') else {})}
                         for src, r in recs.items()},
             'measured_efforts': [e for e in effs if e not in moved],
         }

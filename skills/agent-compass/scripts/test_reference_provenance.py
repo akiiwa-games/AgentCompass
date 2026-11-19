@@ -211,5 +211,33 @@ class ProvenanceTests(unittest.TestCase):
         self.assertRejected('user-scores.json')
 
 
+class DriftCorrectionShapeTests(unittest.TestCase):
+    """Rule (calibration/refresh.py board_drift): a measurement corrected by its board's drift states drift, n >= 2
+    named panel members, the spread {min, max, mad} around the drift and both dates, on a scaled source; a five-axis
+    cell source carries the same record as its measurement."""
+    GOOD = {'drift': -0.04, 'n': 3, 'members': ['a-m', 'b-m', 'c-m'], 'spread': {'min': -0.1, 'max': 0.02, 'mad': 0.03},
+            'snapshot_as_of': '2026-11-18', 'fetched_as_of': '2026-11-19'}
+
+    def doc(self, correction, scaled=True):
+        return {'sources': {'b.x': {'scale': {'anchor': 'a-m'}} if scaled else {}},
+                'models': {'new-m': {'coding': [{'source': 'b.x', 'value': 0.1, 'drift_correction': correction}]}}}
+
+    def test_the_shape(self):
+        reference_provenance.validate_measurements_provenance(self.doc(self.GOOD))
+        bad = [dict(self.GOOD, n=1, members=['a-m']), dict(self.GOOD, members=['a-m']),
+               dict(self.GOOD, spread={'min': 0.0, 'max': 0.1, 'mad': 0.0}), dict(self.GOOD, fetched_as_of=None),
+               {k: v for k, v in self.GOOD.items() if k != 'spread'}]
+        for correction in bad:
+            with self.subTest(correction=correction), self.assertRaises(ValueError):
+                reference_provenance.validate_measurements_provenance(self.doc(correction))
+        with self.assertRaisesRegex(ValueError, 'without a scale'):
+            reference_provenance.validate_measurements_provenance(self.doc(self.GOOD, scaled=False))
+        cell = lambda c: {'models': {'new-m': {'axes': {'coding': {'facets': {'execution': {'sources': {
+            'b.x': {'drift_correction': c}}}}}}}}}
+        reference_provenance.validate_five_axis_provenance(cell(self.GOOD), self.doc(self.GOOD))
+        with self.assertRaisesRegex(ValueError, 'differs'):
+            reference_provenance.validate_five_axis_provenance(cell(dict(self.GOOD, drift=0.0)), self.doc(self.GOOD))
+
+
 if __name__ == '__main__':
     unittest.main()

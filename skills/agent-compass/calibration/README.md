@@ -135,7 +135,7 @@ The router scores a model on **four capability categories** (`creativity`, `codi
 | `five_axis.py [--distrust SOURCE] [--accept-panel-change]` | Writes `references/five-axis-scores.json`: per-effort facet curves, parallel-board link offsets, category scores, `estimate_fits` (`r`, `skill`, `loo_rmse`, `n`), `usd_per_hour`, `duration_multiplier`, community plan capacities, panel `anchor.targets` (`levels` 1..3 with the level-3 `ceiling`, `continuity = t3 - t2`), `anchor.sd_panel` and `anchor.panel_change`, and surfaced data errors. Refuses a panel change unless accepted. |
 | `arena_capture.py import CAPTURE.json ...` / `show` | Imports browser-captured `arena.ai` Agent / Code and Alignment boards and preserves their manifest entries across `sources.py fetch`. |
 | `community.py` | Reads community real-usage measurements of subscription window capacity, token mix, vendor plan multipliers (each names the windows it covers), and usd-per-hour check rows; `MAINTAINER_READINGS` holds dated maintainer measurements of windows no public source measures, and `UNMEASURED` declares the windows left without any. |
-| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`; `--model ID` merges only that model's rows on the shipped scale, see To add a model): runs fetch and the release-page fetch (unless `--no-fetch`; a cache without the release pages the plan chooses reports each as missing, exit 2, so refresh once without `--no-fetch` after the leaderboard page changes), `measurements.py`, `five_axis.py`, `capability_catalog.py`, validates the provenance checks (`reference_provenance.py`) and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing or invalid, 3 refused with nothing written (a refused panel change or `--model`; the staleness report never exits 3). |
+| `refresh.py [--no-fetch] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]` | Single entry point (`agentcompass data refresh [--no-fetch] [--accept-panel-change]`; `--model ID` fetches into the model's own cache entry and merges only its rows on the shipped scale, see To add a model): runs fetch and the release-page fetch (unless `--no-fetch`; a cache without the release pages the plan chooses reports each as missing, exit 2, so refresh once without `--no-fetch` after the leaderboard page changes), `measurements.py`, `five_axis.py`, `capability_catalog.py`, validates the provenance checks (`reference_provenance.py`) and `user-scores.json` schema, and prints the source-age report. Exit 0 fresh, 1 stale, 2 missing or invalid, 3 refused with nothing written (a refused panel change or `--model`; the staleness report never exits 3). |
 
 ## Refresh
 
@@ -185,22 +185,46 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    prices from one provider, and a shorthand that is a row or a name a saved catalog offers. A name with `-pro`, a speed variant (`-highspeed`, `-ultraspeed`) or another marker
    of a different model is a row of its own, never an alias. A board that lists the row under another name gets it in
    `models.<id>.listed_as` (`arena`, `aa`).
-5. **Rebuild its row.** Run `agentcompass data refresh --model <id>` (repeatable for several new models). It fetches the
-   boards into the data directory, builds the measurements, and writes to `public-measurements.json` only the named
-   models' entries, conflicts and checks, every entry the full refresh writes for them: with the panel scale unchanged,
-   the model's row and its five-axis block equal those of a full refresh over the same boards. A board z-score whose
-   source scale (`sources[<id>].scale`) moved since the shipped fetch is recomputed on the shipped scale,
-   `(raw - anchor_raw) / sd_panel` (recorded at 6 significant digits, so such a z can differ in the fourth decimal); the
-   `tier` is standardized over the fetched board itself and kept as built. Every other row, the panel and the scales stay
-   as shipped. It prints each entry it left out and why (two reasons only: the anchor's reading moved since the shipped
-   fetch, or a z-score whose source has no shipped scale) and notes what else it did; a model no board lists, or an entry
-   it cannot merge for another reason, stops the run before anything is written (exit 3; a run that writes exits with
-   the staleness status 0, 1 or 2). It then validates the catalog
-   (`reference_provenance.validate_accounts_provenance`) and rebuilds `five-axis-scores.json` and
-   `model-capabilities.{json,md}`. Values fitted over all measured models (the tier fits, the fleet effort ratios) still
-   move for other models; the run prints how many moved, by field. A model in `calibration_panel` (or the anchor) is
-   refused: it changes the scale, so it needs the full refresh (`agentcompass data refresh`, or `--no-fetch` from cached
-   downloads), which rebuilds every row. Commit the changed files under `references/`.
+5. **Rebuild its row.** Run `agentcompass data refresh --model <id>` (repeatable for several new models).
+   - **Its own entry in the cache.** It fetches what the full refresh fetches into the model's entry,
+     `DIR/models/<id>/` (the pages, each with url, fetched_at and sha256 in the entry's `fetch-manifest.json`, and
+     `entry.json`, schema `agent-compass.calibration-model-entry/1`, naming the model and the fetch time), never into
+     the release snapshot (the pages at the top of `DIR`), which it does not touch. Every rebuild, the one it runs and
+     any later `--no-fetch`, builds the measurements from the release snapshot and takes each model that has an entry,
+     in catalog order, from its own entry's pages, so `--no-fetch` after `--model` writes byte for byte the same files
+     (on the same day: the source ages count days). The full refresh, a new release snapshot that reads every row,
+     retires the entries. Without a release snapshot in `DIR` (no `fetch-manifest.json`) it merges into the shipped
+     measurements.
+   - **Only the model's rows.** It writes to `public-measurements.json` only the named models' entries, conflicts and
+     checks, every entry the full refresh writes for them: with the panel scale unchanged, the model's row and its
+     five-axis block equal those of a full refresh over the same boards. It never changes another row's measured value:
+     when the release snapshot and the other entries do not give every other row and the panel exactly as shipped (a
+     cache that is not this release's, or a catalog edit that moved another row) it stops with nothing written and no
+     entry stored. The `tier` is standardized over the entry's board itself and kept as built.
+   - **A reading taken after the release snapshot (owner, 2026-11-19).** A board z-score is put on the shipped scale by
+     the board's own drift, measured on the declared panel: drift = the median, over the panel members the board lists
+     in both the release snapshot and this fetch, of (raw in this fetch - raw in the snapshot); `n` is how many members
+     it used. The model's raw readings are corrected by the drift and converted with the shipped anchor and sd_panel
+     like any reading, `(raw - drift - anchor_raw) / sd_panel` (the scale recorded at 6 significant digits, so such a z
+     can differ in the fourth decimal). The entry is still measured, and carries `drift_correction` {`drift`, `n`,
+     `members`, `spread` {`min`, `max`, `mad`}, `snapshot_as_of`, `fetched_as_of`} in `public-measurements.json` and in
+     its five-axis cell source (`scripts/reference_provenance.py` checks the shape). The rule assumes the board moved by
+     one common shift between the two dates; the spread says how far the members disagree with that: the range of the
+     members' own changes and their median absolute deviation from the drift, so a wide spread means the board did not
+     move as one and the corrected reading is as uncertain as that spread. With fewer than two members in both, a board
+     that moved leaves the entry out (the pair is a known gap of kind `anchor_reading_moved` until the next release's
+     fetch). Where the board did not move (every member's raw the same) the merge is the plain one: the entry as built
+     on the same scale, else recomputed on the shipped scale, and left out when the anchor's reading moved; a z-score
+     whose source has no shipped scale is left out. The run prints each entry it left out and why, each corrected board
+     with its drift and spread, and what else it did; a model no board lists, or an entry it cannot merge for another
+     reason, stops the run before anything is written (exit 3; a run that writes exits with the staleness status 0, 1
+     or 2).
+   - It then validates the catalog (`reference_provenance.validate_accounts_provenance`) and rebuilds
+     `five-axis-scores.json` and `model-capabilities.{json,md}`. Values fitted over all measured models (the tier fits,
+     the fleet effort steps and ratios) still move for other models; the run prints how many moved, by field. A model in
+     `calibration_panel` (or the anchor) is refused: it changes the scale, so it needs the full refresh (`agentcompass
+     data refresh`, or `--no-fetch` from cached downloads), which rebuilds every row. Commit the changed files under
+     `references/`.
 
 A **maintainer manual score** is `agentcompass score set <model> ... --public`, which writes `references/user-scores.json`;
 then run the refresh. A **measured score** comes from the boards on the next refresh. The calibration

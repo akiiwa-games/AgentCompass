@@ -624,7 +624,7 @@ class ModelRowMergeTests(unittest.TestCase):
         scale = scale or self.FRESH_SCALE
         return _measurements(scale, {
             'anchor-m': {'coding': [_board_entry(50.0, scale)]},
-            'panel-m': {'coding': [_board_entry(41.0, scale)]},
+            'panel-m': {'coding': [_board_entry(40.0, scale)]},     # the panel's readings did not move
             'old-m': {'coding': [_board_entry(47.0, scale)]},
             'new-m': {'coding': [_board_entry(62.0, scale, {'low': 55.0, 'high': 62.0})],
                       'price': [{'source': 's.price', 'value': {'input': 1.0}, 'as_of': '2026-11-13'}],
@@ -727,7 +727,7 @@ class ModelRowMergeTests(unittest.TestCase):
             fresh_data, _ = build_calibration_fixture(root / 'fresh', now)
         read = lambda name: json.loads((refs / name).read_text(encoding='utf-8'))
         meas_before, scores_before = read('public-measurements.json'), read('five-axis-scores.json')
-        refresh.rebuild(fresh_data, now=now, references=refs, models=[added])
+        refresh.rebuild(shipped_data, now=now, references=refs, models=[added], pages=fresh_data)
         meas_after, scores_after = read('public-measurements.json'), read('five-axis-scores.json')
         self.assertTrue(meas_after['models'][added])
         self.assertEqual({m: r for m, r in meas_after['models'].items() if m != added},
@@ -781,8 +781,8 @@ class ModelRowMergeTests(unittest.TestCase):
                                                     encoding='utf-8', newline='\n')
                 full_refs = root / 'full'
                 shutil.copytree(refs, full_refs)
-                refresh.rebuild(boards, now=now, references=refs, models=[added])
                 refresh.rebuild(boards, now=now, references=full_refs)
+                refresh.rebuild(boards, now=now, references=refs, models=[added], pages=boards)
                 read = lambda where, name: json.loads((where / name).read_text(encoding='utf-8'))
                 merged_meas, full_meas = read(refs, 'public-measurements.json'), read(full_refs, 'public-measurements.json')
                 merged_scores, full_scores = read(refs, 'five-axis-scores.json'), read(full_refs, 'five-axis-scores.json')
@@ -799,6 +799,136 @@ class ModelRowMergeTests(unittest.TestCase):
         after = {'models': {'a': {'x': 1.5, 'y': {'z': 2}}, 'new-m': {'x': 9}}}
         self.assertIn('1 values of 1 other models moved, by field: x 1', refresh.blast_radius(before, after, ['new-m']))
         self.assertEqual(refresh.blast_radius(before, before, ['new-m']), 'no value of another model moved')
+
+
+class ModelEntryTests(unittest.TestCase):
+    """Rule (calibration/refresh.py, --model): what --model read is kept as that model's own dated entry in the cache
+    (DIR/models/<id>/: its pages, each with url and fetched_at), separate from the release snapshot; a later --no-fetch
+    rebuild takes every other row from the snapshot and the model's rows from its entry, byte for byte the same files;
+    --model never changes another row's measured value and never overwrites a page of the release snapshot."""
+    GENERATED = ('public-measurements.json', 'five-axis-scores.json', 'model-capabilities.json', 'model-capabilities.md')
+    ADDED = 'gpt-5.6-sol'
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix='refresh-entry-model-'))
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.now = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+        self.cache, self.refs = build_calibration_fixture(self.root / 'shipped', self.now)
+        refresh.rebuild(self.cache, now=self.now, references=self.refs)        # the release: shipped = snapshot build
+        with patch(f'{__name__}.PANEL_MODELS', (*PANEL_MODELS, (self.ADDED, 'GPT-5.6 Sol', 'OpenAI'))):
+            self.pages, _ = build_calibration_fixture(self.root / 'fresh', self.now)     # newer boards listing it
+
+    def generated(self):
+        return {name: (self.refs / name).read_bytes() for name in self.GENERATED}
+
+    def snapshot(self):
+        return {str(f.relative_to(self.cache)): hashlib.sha256(f.read_bytes()).hexdigest()
+                for f in self.cache.rglob('*') if f.is_file() and f.relative_to(self.cache).parts[0] != refresh.MODEL_ENTRIES}
+
+    def test_a_no_fetch_rebuild_after_model_writes_the_same_bytes_from_the_entry(self):
+        refresh.rebuild(self.cache, now=self.now, references=self.refs, models=[self.ADDED], pages=self.pages)
+        after_model = self.generated()
+        self.assertTrue(json.loads(after_model['public-measurements.json'])['models'][self.ADDED])
+        self.assertEqual(list(refresh.model_entries(self.cache)), [self.ADDED])
+        refresh.rebuild(self.cache, now=self.now, references=self.refs)     # what `--no-fetch` runs
+        self.assertEqual(self.generated(), after_model)
+        self.assertEqual(refresh.retire_model_entries(self.cache), [self.ADDED])
+        self.assertFalse((self.cache / refresh.MODEL_ENTRIES).exists())
+
+    def test_model_fetches_into_its_own_entry_and_never_writes_a_page_of_the_release_snapshot(self):
+        before = self.snapshot()
+
+        def fetch(target, only=None):      # the download, served from the newer boards
+            for f in self.pages.iterdir():
+                shutil.copyfile(f, Path(target) / f.name)
+        out = io.StringIO()
+        with patch.object(sources, 'fetch', side_effect=fetch), patch.object(sources, 'fetch_releases'), \
+                patch('sys.stdout', out), patch('sys.stderr', out):
+            code = refresh.main(['--data', str(self.cache), '--references', str(self.refs), '--model', self.ADDED])
+        self.assertIn(code, refresh.LEVEL.values(), out.getvalue())
+        self.assertEqual(self.snapshot(), before)
+        entry = self.cache / refresh.MODEL_ENTRIES / self.ADDED
+        doc = refresh.model_entries(self.cache)[self.ADDED]
+        self.assertEqual((doc['schema'], doc['model']), (refresh.ENTRY_SCHEMA, self.ADDED))
+        self.assertTrue(doc['fetched_at'])
+        self.assertEqual(sources.manifest(entry), sources.manifest(self.pages))
+        self.assertEqual(sorted(p.name for p in (self.cache / refresh.MODEL_ENTRIES).iterdir()), [self.ADDED])
+
+    def test_model_never_changes_another_rows_measured_value(self):
+        shipped = json.loads((self.refs / 'public-measurements.json').read_text(encoding='utf-8'))
+        refresh.rebuild(self.cache, now=self.now, references=self.refs, models=[self.ADDED], pages=self.pages)
+        merged = json.loads((self.refs / 'public-measurements.json').read_text(encoding='utf-8'))
+        self.assertEqual({m: r for m, r in merged['models'].items() if m != self.ADDED},
+                         {m: r for m, r in shipped['models'].items() if m != self.ADDED})
+        # a shipped row the cache does not give (a snapshot that is not this release's): refused, nothing written
+        other = next(m for m, r in shipped['models'].items() if m != self.ADDED and r.get('coding'))
+        shipped['models'][other]['coding'][0]['value'] += 1.0
+        (self.refs / 'public-measurements.json').write_text(json.dumps(shipped, indent=1, ensure_ascii=False) + '\n',
+                                                           encoding='utf-8', newline='\n')
+        shutil.rmtree(self.cache / refresh.MODEL_ENTRIES)
+        files = self.generated()
+        with self.assertRaisesRegex(refresh.Refused, other):
+            refresh.rebuild(self.cache, now=self.now, references=self.refs, models=[self.ADDED], pages=self.pages)
+        self.assertEqual(self.generated(), files)
+        self.assertEqual(refresh.model_entries(self.cache), {})
+
+
+class BoardDriftTests(unittest.TestCase):
+    """Rule (calibration/refresh.py board_drift, --model): a reading taken after the release snapshot is put on the
+    shipped scale by the board's own drift, the median over the panel members the board lists in both fetches of
+    (raw now - raw then), and then converted with the shipped anchor and sd_panel; with fewer than two such members the
+    reading is left out; on a board that did not move the merge is the plain one."""
+    SCALE = {'anchor': 'anchor-m', 'anchor_raw': 50.0, 'sd_panel': 10.0, 'n_panel': 3}
+    PANEL = {'anchor-m': 50.0, 'panel-m': 40.0, 'third-m': 45.0}
+
+    def doc(self, readings, scale, as_of):
+        out = _measurements(scale, {m: {'coding': [_board_entry(r, scale, as_of=as_of)]} for m, r in readings.items()})
+        out['panel'] = {'models': sorted(self.PANEL)}
+        out['sources']['b.code']['as_of'] = as_of
+        return out
+
+    def shipped(self):
+        return self.doc(self.PANEL, self.SCALE, '2026-11-10')
+
+    def fresh(self, shift, members=None, new_raw=62.0):
+        """The board `shift` higher for every model; `new-m` measured at `new_raw` before the shift."""
+        listed = {m: r + shift for m, r in self.PANEL.items() if members is None or m in members}
+        scale = dict(self.SCALE, anchor_raw=listed.get('anchor-m', self.SCALE['anchor_raw'] + shift))
+        doc = self.doc(listed, scale, '2026-11-19')
+        doc['models']['new-m'] = {'coding': [_board_entry(new_raw + shift, scale, {'low': 55.0 + shift, 'high': new_raw + shift},
+                                                          as_of='2026-11-19')]}
+        return doc
+
+    def test_a_common_shift_is_corrected_back_to_the_unshifted_reading(self):
+        merged, left_out, notes = refresh.merge_model_rows(self.shipped(), self.fresh(3.0), ['new-m'])
+        board = merged['models']['new-m']['coding'][0]
+        z = lambda raw: round((raw - self.SCALE['anchor_raw']) / self.SCALE['sd_panel'], 4)
+        self.assertEqual(left_out, [])
+        self.assertEqual(board['value'], z(62.0))
+        self.assertEqual(board['z_by_effort'], {'low': z(55.0), 'high': z(62.0)})
+        self.assertEqual(board['drift_correction'], {
+            'drift': 3.0, 'n': 3, 'members': sorted(self.PANEL), 'spread': {'min': 3.0, 'max': 3.0, 'mad': 0.0},
+            'snapshot_as_of': '2026-11-10', 'fetched_as_of': '2026-11-19'})
+        self.assertTrue(any('b.code moved since the release snapshot: drift 3' in n for n in notes))
+
+    def test_with_one_panel_member_in_both_fetches_the_reading_is_left_out(self):
+        merged, left_out, _ = refresh.merge_model_rows(self.shipped(), self.fresh(3.0, members={'anchor-m'}), ['new-m'])
+        self.assertNotIn('coding', merged['models']['new-m'])
+        self.assertEqual([(f, src) for _, f, src, _ in left_out], [('coding', 'b.code')])
+        self.assertIn('1 panel member(s) are listed in both', left_out[0][3])
+
+    def test_on_a_board_that_did_not_move_the_merge_is_the_plain_one(self):
+        shipped = self.shipped()
+        for scale in (self.SCALE, dict(self.SCALE, sd_panel=8.0)):        # the same scale, and a rescaled one
+            with self.subTest(sd=scale['sd_panel']):
+                fresh = self.fresh(0.0)
+                fresh['sources']['b.code']['scale'] = scale
+                merged, left_out, notes = refresh.merge_model_rows(shipped, fresh, ['new-m'])
+                entry = fresh['models']['new-m']['coding'][0]
+                plain, _, _ = refresh._on_shipped_scale('coding', entry, shipped['sources'], fresh['sources'])
+                self.assertEqual(merged['models']['new-m']['coding'], [plain])
+                self.assertNotIn('drift_correction', plain)
+                self.assertFalse(any('moved since the release snapshot' in n for n in notes))
 
 
 class AaRecordTests(unittest.TestCase):

@@ -76,7 +76,8 @@ OUT_OF_SCOPE_STATUSES = ('retired', 'deprecated', 'unlisted', 'moving_alias', 's
 ROW_KEYS = {'provider', 'model', 'efforts'}
 GAP_KEYS = {'catalog', 'model', 'efforts', 'row', 'kind', 'detail'}
 # The closed set of missing inputs a known gap may name (round 5 review G); the gaps file states for each what closes it.
-GAP_KINDS = ('no_public_measurement', 'no_fleet_reading_at_effort', 'no_time_reading_in_series', 'no_relative_statement')
+GAP_KINDS = ('no_public_measurement', 'no_fleet_reading_at_effort', 'no_time_reading_in_series', 'no_relative_statement',
+             'anchor_reading_moved')
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 FACETS = (('creativity', 'creative_writing'), ('coding', 'execution'), ('coding', 'faithfulness'),
           ('aesthetics', 'design'), ('tool_operation', 'responsiveness'), ('tool_operation', 'image_recognition'))

@@ -227,6 +227,58 @@ def _validate_catalog_tables(doc):
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
 
 
+DRIFT_KEYS = {'drift', 'n', 'members', 'spread', 'snapshot_as_of', 'fetched_as_of'}
+
+
+def _drift_problem(where, d, scaled):
+    """Why a `drift_correction` record is malformed, or None (calibration/refresh.py board_drift)."""
+    date = lambda v: isinstance(v, str) and re.match(r'^\d{4}-\d{2}-\d{2}$', v)
+    num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
+    if not isinstance(d, dict) or set(d) != DRIFT_KEYS:
+        return f'{where}: drift_correction has exactly {", ".join(sorted(DRIFT_KEYS))}'
+    if not num(d['drift']) or not isinstance(d['n'], int) or d['n'] < 2 or not isinstance(d['members'], list) \
+            or len(d['members']) != d['n']:
+        return f'{where}: drift_correction needs a numeric drift and n >= 2 panel members named in members'
+    spread = d['spread']
+    if not (isinstance(spread, dict) and set(spread) == {'min', 'max', 'mad'} and all(num(v) for v in spread.values())
+            and spread['min'] <= d['drift'] <= spread['max'] and spread['mad'] >= 0):
+        return f'{where}: drift_correction.spread is {{min, max, mad}} around the drift'
+    if not (date(d['snapshot_as_of']) and date(d['fetched_as_of'])):
+        return f'{where}: drift_correction names both dates (snapshot_as_of, fetched_as_of)'
+    if not scaled:
+        return f'{where}: drift_correction on a source without a scale'
+    return None
+
+
+def validate_measurements_provenance(doc):
+    """A measurement corrected by its board's drift states the correction in that shape, on a scaled source."""
+    bad = []
+    for model, row in sorted((doc.get('models') or {}).items()):
+        for field, items in sorted(row.items()):
+            for e in items:
+                if 'drift_correction' in e:
+                    scaled = bool(((doc.get('sources') or {}).get(e.get('source')) or {}).get('scale'))
+                    bad.append(_drift_problem(f"models.{model}.{field} {e.get('source')}", e['drift_correction'], scaled))
+    bad = [b for b in bad if b]
+    if bad:
+        raise ValueError('; '.join(bad))
+
+
+def validate_five_axis_provenance(doc, measurements):
+    """A cell source carrying drift_correction carries the one of its measurement entry, unchanged."""
+    bad = []
+    for model, row in sorted((doc.get('models') or {}).items()):
+        entries = {e.get('source'): e for items in ((measurements.get('models') or {}).get(model) or {}).values()
+                   for e in items}
+        for axis, ax in sorted((row.get('axes') or {}).items()):
+            for facet, cell in sorted((ax.get('facets') or {}).items()):
+                for src, rec in sorted((cell.get('sources') or {}).items()):
+                    if 'drift_correction' in rec and rec['drift_correction'] != (entries.get(src) or {}).get('drift_correction'):
+                        bad.append(f'models.{model}.{axis}.{facet} {src}: drift_correction differs from its measurement')
+    if bad:
+        raise ValueError('; '.join(bad))
+
+
 def validate_references(directory=REFERENCES):
     """Raise ValueError naming the file and the field when a shipped reference file breaks the provenance rule."""
     directory = Path(directory)
@@ -241,3 +293,11 @@ def validate_references(directory=REFERENCES):
             check(read(name))
         except ValueError as exc:
             raise ValueError(f'{directory / name} is invalid: {exc}') from None
+    if (directory / 'public-measurements.json').is_file():
+        meas = read('public-measurements.json')
+        try:
+            validate_measurements_provenance(meas)
+            if (directory / 'five-axis-scores.json').is_file():
+                validate_five_axis_provenance(read('five-axis-scores.json'), meas)
+        except ValueError as exc:
+            raise ValueError(f'{directory} measurements or five-axis scores are invalid: {exc}') from None

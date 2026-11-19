@@ -4,22 +4,30 @@ report each source's age. Run once per release; the result ships with the versio
 `agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`
 `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...] [--references DIR]`
 
-`--model ID` (repeatable) adds or updates only those models' measurement rows, conflicts and checks: step 2 builds the
-measurements from the boards as usual, but writes to the shipped `public-measurements.json` only the named models'
-entries, every entry the full refresh writes for them. Rule: with the panel scale unchanged, the model's row and its
-five-axis block equal those of a full refresh over the same boards. A board z-score whose source scale
-(`sources[<id>].scale`) moved since the shipped fetch is recomputed from its raw reading on the shipped scale,
-z = (raw - anchor_raw) / sd_panel (recorded at 6 significant digits, so such a z can differ in the fourth decimal from
-one on the unrounded scale). The `tier` is standardized over the fetched board itself (tiers.py) and is kept as built.
-An entry is left out for two reasons only: a z-score whose source has no shipped scale, or a moved anchor reading;
-anything else that cannot be merged, or a model no board lists, stops the run before anything is written. Every other
-row, the panel and the scales stay as shipped. A panel model or the anchor is refused: it changes the scale and needs
-the full refresh. Steps 3..6 run as usual: the panel, sd_panel, targets and `anchor.panel_change` stay as shipped, a
-level-3 ceiling moves only when the added model sets it, and values fitted over all measured models (tier fits, fleet
-effort ratios) still move for other models; the run prints how many did, by field.
+`--model ID` (repeatable) adds or updates only those models' measurement rows, conflicts and checks. It fetches the
+boards into a model entry of the cache (`DIR/models/<id>/`: the pages with their own `fetch-manifest.json`, url,
+fetched_at and sha256 per file, and `entry.json` naming the model and the fetch time), never into the release snapshot
+(the pages at the top of `DIR`), which it does not touch. Step 2 then builds the measurements from the release snapshot
+and takes each model that has an entry, in catalog order, from its own entry's pages (merge_model_rows), so a later
+`--no-fetch` rebuild, which does the same, writes byte for byte the same files (on the same day: the source ages count
+days). Rule: with the panel scale unchanged, the model's row and its five-axis block equal those of a full refresh over
+the same boards. A board z-score is put on the snapshot's scale by the board's own drift (board_drift: the median,
+over the panel members the board lists in both fetches, of the change of their raw readings; at least two members, else
+the entry is left out on a board that moved), z = (raw - drift - anchor_raw) / sd_panel, and states the correction in
+`drift_correction` (calibration/README.md, To add a model); on a board that did not move this is the plain merge. The
+`tier` is standardized over the entry's board itself (tiers.py) and is kept as built. Otherwise an entry is left out
+only when its source has no scale in the snapshot, or, on a board that did not move, its anchor reading moved; anything
+else that cannot be merged, or a model no board lists, stops the run before anything is written. `--model` never changes another row's measured value: when the release
+snapshot and the other entries do not give every other row and the panel exactly as shipped (a cache that is not this
+release's, or a catalog edit that moved another row), the run stops with nothing written and no entry stored. A panel
+model or the anchor is refused: it changes the scale and needs the full refresh. Steps 3..6 run as usual: the panel,
+sd_panel, targets and `anchor.panel_change` stay as shipped, a level-3 ceiling moves only when the added model sets it,
+and values fitted over all measured models (tier fits, fleet effort ratios) still move for other models; the run prints
+how many did, by field. The full refresh (a new release snapshot) reads every row from the boards and retires the model
+entries; without a release snapshot in `DIR` (no `fetch-manifest.json`), `--model` merges into the shipped measurements.
 
 Topological chain:
-1. Fetch (skipped with `--no-fetch`): `sources.fetch` downloads the benchmark boards and community pages into `DIR` and
+1. Fetch (skipped with `--no-fetch`; `--model` fetches into the model's entry instead): `sources.fetch` downloads the benchmark boards and community pages into `DIR` and
    writes `fetch-manifest.json` (url, fetched_at, sha256 per file); `sources.fetch_releases` then downloads, one page
    each, the Artificial Analysis release pages of the catalogue models whose release the leaderboard page names as
    deprecated without records (`measurements.aa_release_plan`). A source that fails is recorded missing and its old
@@ -44,6 +52,8 @@ import argparse
 import copy
 import json
 import re
+import shutil
+import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,6 +73,15 @@ import user_scores  # noqa: E402
 
 LEVEL = {'ok': 0, 'unused': 0, 'stale': 1, 'missing': 2}   # unused: fetched, left out by design (METR)
 REFUSED = 3                 # the run refused and wrote nothing; LEVEL never uses it
+
+
+MODEL_ENTRIES = 'models'    # the cache's subdirectory of model entries, one per model added with --model
+ENTRY_FILE = 'entry.json'
+ENTRY_SCHEMA = 'agent-compass.calibration-model-entry/1'
+MODEL_ID = re.compile(r'[a-z0-9][a-z0-9._-]*')     # a catalog id that is also a directory name
+MIN_DRIFT_MEMBERS = 2      # panel members a board's drift is measured on, at least
+DRIFT_FIELDS = ('drift', 'n', 'members', 'spread', 'snapshot_as_of', 'fetched_as_of')
+STAGING = '.fetching'       # the entry pages being fetched, under MODEL_ENTRIES; never read as an entry
 
 
 class Refused(ValueError):
@@ -161,10 +180,46 @@ def refuse_panel_models(names, acc, shipped):
                              'of every board; run the full refresh (agentcompass data refresh) instead')
 
 
-def _on_shipped_scale(field, entry, shipped_sources, fresh_sources):
+def _member_raw(entry):
+    """The raw reading an entry scores: `raw`, else the raw of the effort whose z the entry picked (aa.index)."""
+    if 'raw' in entry:
+        return entry['raw']
+    picked = [e for e, z in (entry.get('z_by_effort') or {}).items() if z == entry.get('z')]
+    return (entry.get('raw_by_effort') or {}).get(picked[0]) if picked else None
+
+
+def board_drift(src, shipped, fresh):
+    """How the board `src` moved between the release snapshot (`shipped`) and this fetch (`fresh`), measured on the
+    declared panel (the shipped document's panel members): {drift, n, members, spread {min, max, mad}, snapshot_as_of,
+    fetched_as_of, moved}. drift is the median over the members the board lists in both of (raw now - raw then); moved
+    is whether any member's raw differs; n is how many members it used."""
+    diffs = {}
+    for m in (shipped.get('panel') or {}).get('models') or ():
+        then = next((e for items in ((shipped.get('models') or {}).get(m) or {}).values() for e in items
+                     if e.get('source') == src), None)
+        now = next((e for items in ((fresh.get('models') or {}).get(m) or {}).values() for e in items
+                    if e.get('source') == src), None)
+        a, b = (_member_raw(then) if then else None), (_member_raw(now) if now else None)
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            diffs[m] = b - a
+    values = sorted(diffs.values())
+    drift = statistics.median(values) if values else 0.0
+    return {'drift': round(drift, 6), 'n': len(values), 'members': sorted(diffs),
+            'spread': {'min': round(values[0], 6) if values else 0.0, 'max': round(values[-1], 6) if values else 0.0,
+                       'mad': round(statistics.median(abs(v - drift) for v in values), 6) if values else 0.0},
+            'snapshot_as_of': ((shipped.get('sources') or {}).get(src) or {}).get('as_of'),
+            'fetched_as_of': ((fresh.get('sources') or {}).get(src) or {}).get('as_of'),
+            'moved': any(v != 0 for v in values)}
+
+
+def _on_shipped_scale(field, entry, shipped_sources, fresh_sources, drift=None):
     """(entry as merged, how, None) or (None, None, why it is left out) for one freshly built measurement entry; `how`
-    is 'as built' or 'rescaled'. The two reasons to leave an entry out are a board z-score whose source has no shipped
-    scale, and a moved anchor reading; anything else that cannot be merged raises, so nothing is written."""
+    is 'as built', 'rescaled' or 'drift corrected'. On a board that moved since the release snapshot (`drift`, from
+    board_drift: some panel member's reading differs) the raw readings are corrected by the board's drift and converted
+    with the shipped anchor and sd_panel; with fewer than two panel members to measure the drift the entry is left out.
+    On a board that did not move: as built on the same scale, else rescaled, and left out when the anchor reading moved.
+    A z-score whose source has no shipped scale is left out; anything else that cannot be merged raises, so nothing is
+    written."""
     src = entry.get('source')
     if field in DOWNLOAD_SCALE_FIELDS:
         return entry, 'as built', None
@@ -174,17 +229,23 @@ def _on_shipped_scale(field, entry, shipped_sources, fresh_sources):
     shipped_scale = (shipped_sources.get(src) or {}).get('scale')
     if not shipped_scale:
         return None, None, 'its source has no shipped scale and the entry is a z-score'
-    if (shipped_scale['anchor'], shipped_scale['anchor_raw']) != (fresh_scale['anchor'], fresh_scale['anchor_raw']):
-        return None, None, (f"anchor reading moved ({shipped_scale['anchor']}: {shipped_scale['anchor_raw']} shipped, "
-                            f"{fresh_scale['anchor_raw']} now)")
-    if all(shipped_scale[k] == fresh_scale[k] for k in _SCALE_KEYS):
-        return entry, 'as built', None      # the same scale: the full refresh's own value
+    moved = bool(drift and drift['moved'])
+    if moved and drift['n'] < MIN_DRIFT_MEMBERS:
+        return None, None, (f"the board moved since the release snapshot and {drift['n']} panel member(s) are listed in "
+                            f'both, fewer than {MIN_DRIFT_MEMBERS}, so its drift is not measured')
+    if not moved:
+        if (shipped_scale['anchor'], shipped_scale['anchor_raw']) != (fresh_scale['anchor'], fresh_scale['anchor_raw']):
+            return None, None, (f"anchor reading moved ({shipped_scale['anchor']}: {shipped_scale['anchor_raw']} shipped, "
+                                f"{fresh_scale['anchor_raw']} now)")
+        if all(shipped_scale[k] == fresh_scale[k] for k in _SCALE_KEYS):
+            return entry, 'as built', None      # the same scale: the full refresh's own value
+    shift = drift['drift'] if moved else 0.0
     anchor_raw, sd = shipped_scale['anchor_raw'], shipped_scale['sd_panel']
     out = dict(entry)
     if 'raw' in entry:
-        out['value'] = round((entry['raw'] - anchor_raw) / sd, 4)
+        out['value'] = round((entry['raw'] - shift - anchor_raw) / sd, 4)
     if 'raw_by_effort' in entry:
-        out['z_by_effort'] = {e: round((r - anchor_raw) / sd, 4) for e, r in entry['raw_by_effort'].items()}
+        out['z_by_effort'] = {e: round((r - shift - anchor_raw) / sd, 4) for e, r in entry['raw_by_effort'].items()}
     if 'z' in entry:                # the picked effort's z (aa.index), found by which effort carried it
         picked = [e for e, z in (entry.get('z_by_effort') or {}).items() if z == entry['z']]
         if not picked or picked[0] not in out.get('z_by_effort', {}):
@@ -196,6 +257,12 @@ def _on_shipped_scale(field, entry, shipped_sources, fresh_sources):
                              'shipped scale; nothing written')
         out['method'] = _SCALE_TEXT.sub(lambda m: (f"x_anchor {anchor_raw:.6g} ({m['anchor']}), sd_panel {sd:.6g} over "
                                                    f"{shipped_scale['n_panel']} panel models"), entry['method'])
+    if moved:
+        out['drift_correction'] = {k: drift[k] for k in DRIFT_FIELDS}
+        out['method'] += (f"; reading taken after the release snapshot, corrected by the board's drift {shift:.6g} (median "
+                          f"over {drift['n']} panel members of the change {drift['snapshot_as_of']} -> "
+                          f"{drift['fetched_as_of']}) before the conversion")
+        return out, 'drift corrected', None
     return out, 'rescaled', None
 
 
@@ -206,7 +273,7 @@ def merge_model_rows(shipped, fresh, names, now=None):
     A named model with no measurement entry at all raises (no board lists it)."""
     merged, left_out, notes = copy.deepcopy(shipped), [], []
     shipped_sources, fresh_sources = shipped.get('sources') or {}, fresh.get('sources') or {}
-    rescaled, tier_boards = 0, set()
+    rescaled, corrected, tier_boards, drifts = 0, {}, set(), {}
     for name in names:
         entries = (fresh.get('models') or {}).get(name) or {}
         if not any(entries.values()):
@@ -215,12 +282,17 @@ def merge_model_rows(shipped, fresh, names, now=None):
         row = {}
         for field, items in entries.items():
             for entry in items:
-                kept, how, reason = _on_shipped_scale(field, entry, shipped_sources, fresh_sources)
+                src = entry.get('source')
+                if src not in drifts:
+                    drifts[src] = board_drift(src, shipped, fresh)
+                kept, how, reason = _on_shipped_scale(field, entry, shipped_sources, fresh_sources, drifts[src])
                 if kept is None:
                     left_out.append((name, field, entry.get('source'), reason))
                     continue
                 row.setdefault(field, []).append(kept)
                 rescaled += how == 'rescaled'
+                if how == 'drift corrected':
+                    corrected[src] = kept['drift_correction']
                 src = entry.get('source')
                 if src not in merged['sources'] and src in fresh_sources:
                     merged['sources'][src] = fresh_sources[src]
@@ -229,12 +301,20 @@ def merge_model_rows(shipped, fresh, names, now=None):
                 if field in DOWNLOAD_SCALE_FIELDS and shipped_sha != (fresh_sources.get(src) or {}).get('sha256'):
                     tier_boards.add(src)
         merged['models'][name] = row
+    order = list(fresh.get('models') or ())
+    merged['models'] = dict(sorted(merged['models'].items(),
+                                   key=lambda kv: (kv[0] not in order, order.index(kv[0]) if kv[0] in order else 0)))
     for key in ('conflicts', 'checks'):
         merged[key] = _in_build_order([c for c in shipped.get(key) or () if c.get('model') not in names],
                                       [c for c in fresh.get(key) or () if c.get('model') in names], fresh.get(key) or [])
     if rescaled:
         notes.append(f'{rescaled} board z-scores recomputed on the shipped scale (the panel scale moved since the '
                      f'shipped fetch); {ROUNDED_SCALE_NOTE}')
+    for src, d in sorted(corrected.items()):
+        notes.append(f"{src} moved since the release snapshot: drift {d['drift']:.6g} over {d['n']} panel members "
+                     f"(spread {d['spread']['min']:.6g} .. {d['spread']['max']:.6g}, median absolute deviation "
+                     f"{d['spread']['mad']:.6g}; {d['snapshot_as_of']} -> {d['fetched_as_of']}), corrected before the "
+                     'conversion to the shipped scale')
     for src in sorted(tier_boards):
         notes.append(f'the tier from {src} is computed on the fetched board, a different file from the shipped fetch; '
                      "the other models' tiers stay on the shipped one")
@@ -313,10 +393,72 @@ def fetch_sources(target, references=None):
     sources.fetch_releases(target, measurements.aa_release_files(measurements.aa_release_plan(target, acc['models'], sources.effort_readings(acc))[0]))
 
 
+def model_entries(target):
+    """{model: entry.json document} of the model entries in the cache `target` (`target/models/<id>/`)."""
+    root = Path(target) / MODEL_ENTRIES
+    out = {}
+    for folder in sorted(root.iterdir()) if root.is_dir() else ():
+        if folder.name.startswith('.'):
+            continue            # pages being fetched or stored, not an entry yet
+        path = folder / ENTRY_FILE
+        doc = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
+        if doc.get('schema') != ENTRY_SCHEMA or doc.get('model') != folder.name:
+            raise ValueError(f'{folder}: not a model entry ({ENTRY_FILE} of schema {ENTRY_SCHEMA} naming {folder.name}); '
+                             'remove the directory or run `agentcompass data refresh --model <id>` again')
+        out[folder.name] = doc
+    return out
+
+
+def store_model_entry(target, name, pages, fetched_at):
+    """Copy the fetched pages `pages` (a directory with its fetch-manifest.json) to `name`'s entry in the cache `target`,
+    replacing an older entry of `name`; no other file of the cache is written."""
+    dest = Path(target) / MODEL_ENTRIES / name
+    tmp = dest.with_name(f'.{name}.new')
+    shutil.rmtree(tmp, ignore_errors=True)
+    pages = Path(pages)
+    shutil.copytree(pages, tmp, ignore=lambda folder, names: [MODEL_ENTRIES] if Path(folder) == pages else [])
+    (tmp / ENTRY_FILE).write_text(json.dumps({
+        'schema': ENTRY_SCHEMA, 'model': name, 'fetched_at': fetched_at,
+        'statement': (f'the pages `agentcompass data refresh --model {name}` fetched, each with its url, fetched_at and '
+                      f"sha256 in {sources.MANIFEST}; every rebuild takes {name}'s rows from them and every other row "
+                      'from the release snapshot, until the full refresh retires the entry')},
+        indent=1, ensure_ascii=False) + '\n', encoding='utf-8', newline='\n')
+    if dest.exists():
+        shutil.rmtree(dest)
+    tmp.rename(dest)
+
+
+def fetch_model_pages(target, references=None):
+    """Download into the staging directory of the cache's model entries what the full refresh downloads (fetch_sources:
+    the boards and the release pages the plan chooses, the panel's among them, so the entry's boards have their own
+    scales) and return it; boards transcribed from the browser are copied from the release snapshot (a fetch keeps them,
+    as `sources.fetch` does). Nothing at the top of `target` (the release snapshot) is written."""
+    target = Path(target)
+    staging = target / MODEL_ENTRIES / STAGING
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True)
+    known = sources.manifest(target) if (target / sources.MANIFEST).is_file() else {}
+    transcribed = {n: r for n, r in known.items() if r.get('kind') == 'transcribed'}
+    for name in transcribed:
+        shutil.copyfile(target / name, staging / name)
+    (staging / sources.MANIFEST).write_text(json.dumps({'files': transcribed}, indent=1), encoding='utf-8')
+    fetch_sources(staging, references)
+    return staging
+
+
+def retire_model_entries(target):
+    """The full refresh reads every row from its new release snapshot: remove the model entries; return their ids."""
+    names = sorted(model_entries(target))
+    shutil.rmtree(Path(target) / MODEL_ENTRIES, ignore_errors=True)
+    return names
+
+
 def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, accept_panel_change=False,
-            models=()):
-    """Steps 2..5. With `models`, step 2 merges only those rows into the shipped measurements (merge_model_rows), and
-    the returned five-axis document carries `_model_merge` {left_out, blast_radius} for the caller to print."""
+            models=(), pages=None):
+    """Steps 2..5 over the cache `target`: the release snapshot, and each model entry's rows from its own pages.
+    `models` names the models the directory `pages` was fetched for: their rows come from `pages`, every other row and
+    the panel must stay as shipped (else Refused, nothing written), `pages` becomes their entry when the files are
+    written, and the returned five-axis document carries `_model_merge` {left_out, notes, blast_radius} to print."""
     target = Path(target)
     ref_dir = Path(references) if references is not None else (sources.REPO / 'references')
     meas_path = Path(meas_out) if meas_out is not None else (ref_dir / 'public-measurements.json')
@@ -327,13 +469,40 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
     reference_provenance.validate_accounts_provenance(acc)
     validate_user_scores(ref_dir / 'user-scores.json')
 
-    built = measurements.Builder(target, acc, now=now).build()
+    shipped = json.loads(meas_path.read_text(encoding='utf-8-sig')) if meas_path.is_file() else None
+    entries = {n: target / MODEL_ENTRIES / n for n in model_entries(target)}
+    entries.update({n: Path(pages) for n in models} if pages is not None else {})
+    for name in entries:
+        if name not in (acc.get('models') or {}):
+            raise Refused(f'model entry {target / MODEL_ENTRIES / name}: accounts.json has no row {name}; remove the entry')
+    refuse_panel_models(list(entries), acc, shipped or {})
+    if (target / sources.MANIFEST).is_file():
+        built = measurements.Builder(target, acc, now=now).build()      # the release snapshot
+    elif models and shipped is not None:
+        built = copy.deepcopy(shipped)      # no release snapshot in the cache: the shipped document stands for it
+    else:
+        sources.manifest(target)            # raises: the cache has no fetch-manifest.json
+    left_out, notes = [], []
+    for name in (m for m in acc['models'] if m in entries):    # catalog order, so the result never depends on history
+        fresh = measurements.Builder(entries[name], acc, now=now).build()
+        built, out, said = merge_model_rows(built, fresh, [name], now=now)
+        if name in models:
+            left_out += out
+            notes += said
     merge = None
     if models:
-        shipped = json.loads(meas_path.read_text(encoding='utf-8-sig'))
-        refuse_panel_models(models, acc, shipped)
+        if shipped is not None:
+            moved = sorted(m for m in {*shipped['models'], *built['models']} - set(models)
+                           if shipped['models'].get(m) != built['models'].get(m))
+            panel = shipped.get('panel') != built.get('panel')
+            if moved or panel:
+                raise Refused(
+                    f"--model {', '.join(models)}: the release snapshot in {target} and its other model entries do not "
+                    f"give the shipped rows of {len(moved)} other models ({', '.join(moved[:5])}"
+                    f"{', ...' if len(moved) > 5 else ''}){' nor the shipped panel' if panel else ''}, so the merge would "
+                    "change them (a cache that is not this release's, or a catalog edit that moved another row); "
+                    'nothing written and no entry stored')
         before = json.loads(scores_path.read_text(encoding='utf-8-sig')) if scores_path.is_file() else None
-        built, left_out, notes = merge_model_rows(shipped, built, models, now=now)
         merge = {'left_out': left_out, 'notes': notes, 'before': before}
     meas = _preserve_generated_at(meas_path, built)
     raw = (json.dumps(meas, indent=1, ensure_ascii=False) + '\n').encode('utf-8')
@@ -343,6 +512,10 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
         five_axis.build(meas, acc, plans, distrust=distrust, meas_bytes=raw, now=now,
                         previous=five_axis.previous_doc(scores_path), accept_panel_change=accept_panel_change),
     )
+    if pages is not None:
+        stamp = (now or datetime.now(timezone.utc)).isoformat(timespec='seconds')
+        for name in models:
+            store_model_entry(target, name, pages, stamp)
     meas_path.parent.mkdir(parents=True, exist_ok=True)
     meas_path.write_bytes(raw)
     scores_path.parent.mkdir(parents=True, exist_ok=True)
@@ -413,26 +586,41 @@ def main(argv=None, prog=None):
                     help="add or update only this model's measurement rows, on the shipped scale (repeatable)")
     args = ap.parse_args(argv)
     target = sources.data_dir(args.data, create=not args.no_fetch)
+    staging = None
     try:
         if args.model:          # refused before any download
+            if args.no_fetch:
+                raise Refused("--model fetches that model's own pages; --no-fetch already rebuilds every model entry in "
+                              f'{target / MODEL_ENTRIES} from its own pages, so run it without --model')
+            for name in args.model:
+                if not MODEL_ID.fullmatch(name):
+                    raise Refused(f'--model {name}: not a catalog id (lower-case letters, digits, ".", "_", "-")')
             ref_dir = Path(args.references) if args.references is not None else (sources.REPO / 'references')
             refuse_panel_models(args.model, json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig')),
                                 json.loads((ref_dir / 'public-measurements.json').read_text(encoding='utf-8-sig')))
-        if args.no_fetch:
+            staging = fetch_model_pages(target, args.references)
+        elif args.no_fetch:
             sources.manifest(target)
         else:
             fetch_sources(target, args.references)
+            retired = retire_model_entries(target)
+            if retired:
+                print(f"Retired model entries (the new release snapshot reads their rows): {', '.join(retired)}")
         _, doc = rebuild(target, references=args.references, distrust=args.distrust,
-                         accept_panel_change=args.accept_panel_change, models=args.model)
+                         accept_panel_change=args.accept_panel_change, models=args.model, pages=staging)
     except (Refused, five_axis.PanelChangeRefused) as exc:
         sys.stderr.write(f'{exc}\n')
         return REFUSED
     except (OSError, ValueError) as exc:
         sys.stderr.write(f'{exc}\n')
         return 2
+    finally:
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
     if '_model_merge' in doc:
         merge = doc['_model_merge']
-        print(f"Merged rows: {', '.join(args.model)} (other rows, panel, sources and targets as shipped)")
+        print(f"Merged rows: {', '.join(args.model)}, stored as their entries in {target / MODEL_ENTRIES} "
+              '(other rows, panel, sources and targets as shipped)')
         for model, field, src, reason in merge['left_out']:
             print(f'  left out: {model} {field} {src}: {reason}; its scores use the remaining entries')
         for note in merge['notes']:
