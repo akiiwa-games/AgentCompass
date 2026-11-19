@@ -2975,8 +2975,8 @@ class SameModelPointTests(unittest.TestCase):
 
 class ReleasedEntryRowTests(unittest.TestCase):
     """Rule (five_axis.Scorer.new_entries, without_entries; round 8 item 4): a row the release had without readings keeps
-    its place in the declared structure when a model entry gives it readings (`released_entry_rows`), so every other row
-    is built as in the release; a row a model entry adds takes no place in it (the ladders lose its rung)."""
+    its place in the declared structure when a model entry gives it readings (it is in `release_rows`), so every other row
+    is built as in the release; a row that is not a row of the release takes no place in it (the ladders lose its rung)."""
 
     def test_a_released_row_keeps_its_rung_and_a_new_row_takes_none(self):
         refs = account_fleet.REFERENCES
@@ -3005,10 +3005,10 @@ class ReleasedEntryRowTests(unittest.TestCase):
         self.assertTrue(rungs)
         row = rungs[0][0]
         entries = sorted({*meas.get('model_entries', ()), row})
-        kept = build({**meas, 'model_entries': entries, 'released_entry_rows': [row]})
+        kept = build({**meas, 'model_entries': entries})
         self.assertEqual({m: r for m, r in kept['models'].items() if m != row},
                          {m: r for m, r in release['models'].items() if m != row})
-        added = estimates(build({**meas, 'model_entries': entries}))
+        added = estimates(build({**meas, 'release_rows': [m for m in meas['release_rows'] if m != row]}))   # not one
         for _, key in (r for r in rungs if r[0] == row):
             with self.subTest(cell=key):
                 self.assertEqual(added[key]['version_distance'], estimates(release)[key]['version_distance'] - 1)

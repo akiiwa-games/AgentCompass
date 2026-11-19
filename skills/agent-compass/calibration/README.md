@@ -288,14 +288,18 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    - **Fleet fits are frozen per release (owner, 2026-11-19).** Everything fitted over the fleet is fitted on the release
      snapshot's rows only: the tier scale (anchor rating and sd) and the index -> tier map, the tier fits, the effort,
      edge and size steps, the effort correlations and links, the Time/Task fits and ratios, the usd cross-source ratio
-     and the fallback scale, the level targets, the level-3 ceilings and the panel. A row a model entry gave
-     (`public-measurements.json` `model_entries`) never enters a fit, a target, a ceiling or the panel, and is never a
-     relative's base; it is scored by the release's fits, and may itself be estimated from snapshot relatives
+     and the fallback scale, the level targets, the level-3 ceilings and the panel. The rows of the release are a
+     recorded fact of its snapshot: the fetching refresh writes them once into the snapshot's `fetch-manifest.json`
+     (`release_rows`, the catalogue rows it was read for), every rebuild, `--no-fetch` and `--model` alike, carries them
+     unchanged into `public-measurements.json` `release_rows`, and they are published with the set (`refresh.release_rows_of`).
+     A row that is not a row of the release (one added to `accounts.json` later, whatever the snapshot reads for it) and
+     a row a model entry gave (`model_entries`) never enter a fit, a target, a ceiling or the panel, and are never a
+     relative's base; they are scored by the release's fits, and may themselves be estimated from release relatives
      (`five_axis.without_entries`, `release_same_model`, `release_tier_up`). The declared structure (version ladders and
-     distances, the relatives a record lists) stays the release's: a row the release had without readings keeps its place
-     in it when an entry gives it readings (`released_entry_rows`), and a new row takes none. A row the release reads
-     is refused (`--model` stops with nothing written and no entry stored): its readings belong to the release's fits
-     and change with the next release. Its tier is its board reading put
+     distances, the relatives a record lists) stays the release's: a row of the release keeps its place in it when an entry
+     gives it readings, and any other row takes none. A row of the release its snapshot reads is refused (`--model` stops
+     with nothing written and no entry stored): its readings belong to the release's fits and change with the next
+     release. So adding a row and rebuilding with `--no-fetch` before or after `--model` writes the same bytes. Its tier is its board reading put
      on the release snapshot's tier scale (`sources.tier.arena_overall.tier_scale`) or through its index map
      (`sources.tier.aa_index.tier_map`), after the board's drift as below. So adding a model changes only that model's
      rows: every other row and every fit, step, link and target of `five-axis-scores.json` stays byte for byte; only the

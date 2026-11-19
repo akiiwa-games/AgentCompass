@@ -367,6 +367,7 @@ def build_calibration_fixture(root: Path, as_of_dt: datetime | None = None, aren
     (data_dir / sources.MANIFEST).write_text(
         json.dumps({'files': manifest_files}, indent=1) + '\n', encoding='utf-8', newline='\n'
     )
+    sources.record_release_rows(data_dir, accounts['models'])     # what the fetching refresh records (refresh.main)
     return data_dir, refs_dir
 
 
@@ -479,6 +480,36 @@ class RefreshEntryTests(unittest.TestCase):
         code, stdout, stderr = self._run_refresh('--no-fetch')
         self.assertEqual(code, 0, stderr + stdout)
         self.assertEqual(json.loads(scores.read_text(encoding='utf-8'))['anchor']['panel_change'], record)
+
+    def test_the_fetching_refresh_records_the_rows_of_the_release_and_a_rebuild_carries_them(self):
+        """Rule (round 9 item 2; refresh.main, sources.record_release_rows, refresh.release_rows_of): the fetching refresh
+        records the catalogue rows its snapshot was read for in the snapshot's manifest; every rebuild carries that record
+        unchanged into public-measurements.json `release_rows`, whatever accounts.json holds by then; a snapshot without
+        the record takes the published one once; with neither, the rebuild stops."""
+        manifest = self.data_dir / sources.MANIFEST
+        doc = json.loads(manifest.read_text(encoding='utf-8'))
+        manifest.write_text(json.dumps({**doc, 'release_rows': ['stale']}), encoding='utf-8')
+        with patch.object(sources, 'fetch'), patch.object(sources, 'fetch_releases'):
+            code, _, err = self._run_refresh()
+        self.assertIn(code, refresh.LEVEL.values(), err)
+        rows = sorted(json.loads((self.refs_dir / 'accounts.json').read_text(encoding='utf-8'))['models'])
+        self.assertEqual(sources.release_rows(self.data_dir), rows)
+        acc = json.loads((self.refs_dir / 'accounts.json').read_text(encoding='utf-8'))
+        acc['models']['later-row'] = copy.deepcopy(acc['models'][rows[0]])
+        (self.refs_dir / 'accounts.json').write_text(json.dumps(acc, indent=1) + '\n', encoding='utf-8', newline='\n')
+        read = lambda: json.loads((self.refs_dir / 'public-measurements.json').read_text(encoding='utf-8'))['release_rows']
+        self.assertIn(self._run_refresh('--no-fetch')[0], refresh.LEVEL.values())
+        self.assertEqual(read(), rows)                                   # a later catalogue row is not one
+        manifest.write_text(json.dumps({'files': doc['files']}), encoding='utf-8')     # a snapshot without the record
+        self.assertIn(self._run_refresh('--no-fetch')[0], refresh.LEVEL.values())
+        self.assertEqual((read(), sources.release_rows(self.data_dir)), (rows, rows))
+        manifest.write_text(json.dumps({'files': doc['files']}), encoding='utf-8')
+        published = json.loads((self.refs_dir / 'public-measurements.json').read_text(encoding='utf-8'))
+        published.pop('release_rows')
+        (self.refs_dir / 'public-measurements.json').write_text(json.dumps(published), encoding='utf-8')
+        code, _, err = self._run_refresh('--no-fetch')
+        self.assertEqual(code, refresh.REFUSED)
+        self.assertIn('no record of the rows of the release', err)
 
     def test_missing_source_exits_2_as_before(self):
         # Missing board source (`designarena-svg.html`) rebuilds, reports missing in source-age table, and exits 2.
@@ -925,7 +956,9 @@ class ModelEntryTests(unittest.TestCase):
         self.assertEqual(doc['_model_merge']['blast_radius'], 'no value of another model moved')
         self.assert_no_other_row_moved(self.ADDED, before, read())
         meas = json.loads((self.refs / 'public-measurements.json').read_text(encoding='utf-8'))
-        self.assertEqual((meas['model_entries'], meas['released_entry_rows']), ([self.ADDED], [self.ADDED]))
+        release_rows = json.loads((self.cache / sources.MANIFEST).read_text(encoding='utf-8'))['release_rows']
+        self.assertEqual((meas['model_entries'], meas['release_rows']), ([self.ADDED], release_rows))
+        self.assertIn(self.ADDED, release_rows)
 
         new, display = 'gpt-5.65-sol', 'GPT-5.65 Sol'           # 2. a new row, at a version of its own in its series
         acc = json.loads((self.refs / 'accounts.json').read_text(encoding='utf-8'))
@@ -940,15 +973,52 @@ class ModelEntryTests(unittest.TestCase):
         self.assertEqual(doc['_model_merge']['blast_radius'], 'no value of another model moved')
         self.assert_no_other_row_moved(new, before, read(), rows_added=1)
         meas = json.loads((self.refs / 'public-measurements.json').read_text(encoding='utf-8'))
-        self.assertEqual((meas['model_entries'], meas['released_entry_rows']), (sorted([self.ADDED, new]), [self.ADDED]))
+        self.assertEqual((meas['model_entries'], meas['release_rows']), (sorted([self.ADDED, new]), release_rows))
+        self.assertNotIn(new, release_rows)
 
         read = next(m for m, r in meas['models'].items()             # 3. a released row the release reads
-                    if any(r.values()) and m not in meas['model_entries'] and m not in meas['panel']['models'])
+                    if any(r.values()) and m in release_rows and m not in meas['model_entries']
+                    and m not in meas['panel']['models'])
         files, stored = self.generated(), refresh.model_entries(self.cache)
-        with self.assertRaisesRegex(refresh.Refused, f"--model {read}: the release reads {read} "
-                                                     ".*belong to the release's fits.*no entry stored"):
+        with self.assertRaisesRegex(refresh.Refused, f"--model {read}: {read} is a row of the release and its snapshot "
+                                                     "reads it .*belong to the release's fits.*no entry stored"):
             refresh.rebuild(self.cache, now=self.now, references=self.refs, models=[read], pages=self.pages)
         self.assertEqual((self.generated(), refresh.model_entries(self.cache)), (files, stored))
+
+    def test_a_new_row_the_snapshot_lists_enters_no_fit_whichever_command_rebuilds_in_either_order(self):
+        """Rule (round 9 item 2; refresh.release_rows_of, five_axis.Scorer): the rows of the release are recorded with its
+        snapshot, so a row added to accounts.json after the release is never one, whichever command rebuilds: a
+        `--no-fetch` rebuild scores it from what the snapshot reads for it and changes no byte outside it, `--model` then
+        takes it, and the two orders write the same bytes."""
+        new, sibling, display = 'gemini-3.9-flash-high', 'gemini-3.8-flash-high', ('Gemini 3.9 Flash', 'Google')
+        cache, refs = build_calibration_fixture(self.root / 'listed', self.now, arena_partial=[(new, *display)])
+        refresh.rebuild(cache, now=self.now, references=refs)                    # the release, without the row
+        recorded = json.loads((cache / sources.MANIFEST).read_text(encoding='utf-8'))['release_rows']
+        acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8'))
+        acc['models'][new] = {**copy.deepcopy(acc['models'][sibling]), 'listed_as': {'arena': display[0], 'aa': display[0]}}
+        (refs / 'accounts.json').write_text(json.dumps(acc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8',
+                                           newline='\n')
+        pages, _ = build_calibration_fixture(self.root / 'listed-fresh', self.now, arena_partial=[(new, *display)])
+        read = lambda where: json.loads((where / 'five-axis-scores.json').read_text(encoding='utf-8'))
+        release = read(refs)
+        orders = {}
+        for order in ('no-fetch then model', 'model only'):
+            c, r = self.root / order / 'cache', self.root / order / 'refs'
+            shutil.copytree(cache, c)
+            shutil.copytree(refs, r)
+            if order == 'no-fetch then model':
+                refresh.rebuild(c, now=self.now, references=r)                   # what `--no-fetch` runs
+                meas = json.loads((r / 'public-measurements.json').read_text(encoding='utf-8'))
+                self.assertTrue(any(meas['models'][new].values()))               # the snapshot's readings of the row
+                self.assert_no_other_row_moved(new, release, read(r), rows_added=1)
+            _, doc = refresh.rebuild(c, now=self.now, references=r, models=[new], pages=pages)
+            self.assertEqual(doc['_model_merge']['blast_radius'], 'no value of another model moved')
+            self.assert_no_other_row_moved(new, release, read(r), rows_added=1)
+            meas = json.loads((r / 'public-measurements.json').read_text(encoding='utf-8'))
+            self.assertEqual((meas['release_rows'], meas['model_entries']), (recorded, [new]))
+            orders[order] = {name: (r / name).read_bytes() for name in self.GENERATED}
+        self.assertNotIn(new, recorded)
+        self.assertEqual(orders['no-fetch then model'], orders['model only'])
 
     def test_model_never_changes_another_rows_measured_value(self):
         shipped = json.loads((self.refs / 'public-measurements.json').read_text(encoding='utf-8'))

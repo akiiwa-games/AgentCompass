@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/12",
  "generated_at": "2026-11-19T00:35:51+00:00",
- "measurements_sha256": "05278a0ffc838e9534991e78c2735c85c0b9db996bc79206593704c89b56d63b",
+ "measurements_sha256": "5b9c6e0a31d541dbf46b2b629d88ca3a64bf34aabbe0c31062e2f45b696e2021",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
  "estimate_fits": {

@@ -22,7 +22,8 @@ Raw downloads stay outside git (default: ~/.cache/agentcompass-calibration, or A
 `fetch` writes `fetch-manifest.json` beside the downloads: each file's url, fetched_at (UTC), sha256 and size, or the
 error when a source could not be fetched. A source that fails is recorded as missing, never replaced by an older copy.
 The Artificial Analysis release pages are fetched by `fetch_releases` (`agentcompass data refresh` runs it after `fetch`)
-into the same directory and manifest, as `aa-release-<slug>.html`, under the same rule.
+into the same directory and manifest, as `aa-release-<slug>.html`, under the same rule. The fetching refresh then records in
+the manifest the catalogue rows the snapshot was read for (`release_rows`, round 9): the rows of the release.
 """
 import argparse
 import bisect
@@ -66,6 +67,7 @@ AA_RELEASE_URL = 'https://artificialanalysis.ai/models/{}'      # one Artificial
 AA_RELEASE_FILE = 'aa-release-{}.html'
 AA_RELEASE_NAME = re.compile(rf'aa-release-(?P<slug>{AA_SLUG})\.html')     # the file name AA_RELEASE_FILE gives a slug
 MANIFEST = 'fetch-manifest.json'
+RELEASE_ROWS = 'release_rows'    # the manifest's record of the release's rows (release_rows)
 REPO = Path(__file__).resolve().parents[1]
 ACCOUNTS = REPO / 'references' / 'accounts.json'
 AGENT = {'User-Agent': 'Mozilla/5.0 (agentcompass calibration)'}
@@ -133,6 +135,21 @@ def manifest(target):
             f'to fetch calibration sources first, or delete "{target}".'
         )
     return json.loads(path.read_text(encoding='utf-8'))['files']
+
+
+def release_rows(target):
+    """The rows of the release this snapshot was read for (`fetch-manifest.json` `release_rows`, written once by the
+    fetching refresh, `record_release_rows`), or None where the manifest has no record."""
+    rows = json.loads((Path(target) / MANIFEST).read_text(encoding='utf-8')).get(RELEASE_ROWS)
+    return None if rows is None else list(rows)
+
+
+def record_release_rows(target, rows):
+    """Record `rows` as the rows of the release the snapshot in `target` was read for, beside its files."""
+    path = Path(target) / MANIFEST
+    doc = json.loads(path.read_text(encoding='utf-8'))
+    doc[RELEASE_ROWS] = sorted(rows)
+    path.write_text(json.dumps(doc, indent=1), encoding='utf-8')
 
 
 def accounts():

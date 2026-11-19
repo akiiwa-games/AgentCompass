@@ -456,10 +456,11 @@ def pick_price(entries):
 
 
 def without_entries(groups, entries):
-    """`groups` ({row: [relative, ...]}) with the rows a model entry added taken out of the relative lists (owner
-    2026-11-19, round 6 item 8; `Scorer.new_entries`): the declared structure (version ladders and distances) is the
-    release's, so adding a model changes no other row. A row the release had without readings keeps its place (round 8);
-    no model-entry row is ever a relative's base (each candidate list leaves out `Scorer.entries`)."""
+    """`groups` ({row: [relative, ...]}) with the rows that are not rows of the release taken out of the relative lists
+    (owner 2026-11-19, round 6 item 8; `Scorer.new_entries`): the declared structure (version ladders and distances) is
+    the release's, so adding a model changes no other row. A row of the release keeps its place, with or without a model
+    entry (round 8); no row outside the release's fits is ever a relative's base (each candidate list leaves out
+    `Scorer.entries`)."""
     return {k: [j for j in v if j not in entries] for k, v in groups.items()}
 
 
@@ -477,10 +478,14 @@ class Scorer:
     def __init__(self, meas, acc, distrust=()):
         self.meas, self.acc = meas, acc
         self.distrust = set(distrust)
-        # the rows a model entry gave (refresh --model, merge_model_rows): scored by the release's fits, never in one,
-        # never a relative's base; those the release did not have also stay out of the declared structure (round 8)
-        self.entries = frozenset(meas.get('model_entries') or ())
-        self.new_entries = self.entries - frozenset(meas.get('released_entry_rows') or ())
+        # The rows of the release (`release_rows`, recorded with its snapshot and carried by every rebuild, refresh
+        # release_rows_of; round 9). A row that is not one (`new_entries`) stays out of the declared structure; it and
+        # every row a model entry gave (`model_entries`, refresh --model) are scored by the release's fits, never enter
+        # one and are never a relative's base (`entries`). A document without the record (a fixture built by hand) has
+        # release rows only.
+        rows = frozenset(meas.get('models') or ())
+        self.new_entries = rows - frozenset(meas['release_rows']) if 'release_rows' in meas else frozenset()
+        self.entries = frozenset(meas.get('model_entries') or ()) | self.new_entries
         self.readings = effort_readings(acc)
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
         # declared response floors (`response_time_source`): a row's one launch path, round 6

@@ -24,8 +24,10 @@ else that cannot be merged, or a model no board lists, stops the run before anyt
 snapshot and the other entries do not give every other row and the panel exactly as shipped (a cache that is not this
 release's, or a catalog edit that moved another row), the run stops with nothing written and no entry stored. A panel
 model or the anchor is refused: it changes the scale and needs the full refresh. Fleet fits are frozen per release
-(owner, 2026-11-19): the merged document lists the entries' models in `model_entries`, and steps 3..6 fit, step, link,
-target, cap and anchor on the release snapshot's rows only, scoring an entry's rows by those fits, so every other row and
+(owner, 2026-11-19): the merged document lists the entries' models in `model_entries` and the rows of the release in
+`release_rows` (recorded once by the fetching refresh in the snapshot's manifest, carried by every rebuild:
+release_rows_of), and steps 3..6 fit, step, link, target, cap and anchor on the release's rows only, scoring an entry's
+rows and any row added after the release by those fits, so every other row and
 every fitted quantity stays as shipped; the run prints how many values of other models moved (none). The full refresh (a new release snapshot) reads every row from the boards and retires the model
 entries; without a release snapshot in `DIR` (no `fetch-manifest.json`), `--model` merges into the shipped measurements.
 
@@ -500,6 +502,25 @@ def retire_model_entries(target):
     return names
 
 
+def release_rows_of(target, shipped):
+    """(rows, record): the rows of the release, sorted, and whether the snapshot's manifest is to record them. Owner: the
+    release snapshot's `fetch-manifest.json` `release_rows`, written once by the fetching refresh (main,
+    sources.record_release_rows: the catalogue rows the snapshot was read for). Every rebuild, `--no-fetch` and `--model`,
+    carries them unchanged into public-measurements.json `release_rows`, the copy published with the set; without a
+    release snapshot in the cache (`--model` on the shipped document) the published copy stands for the record, and a
+    snapshot read before the record existed records the published copy once (record True)."""
+    snapshot = (Path(target) / sources.MANIFEST).is_file()
+    rows = sources.release_rows(target) if snapshot else None
+    if rows is not None:
+        return sorted(rows), False
+    published = (shipped or {}).get('release_rows')
+    if published is None:
+        raise Refused(f'no record of the rows of the release: neither {Path(target) / sources.MANIFEST} nor the shipped '
+                      'public-measurements.json has `release_rows`; run the fetching refresh (`agentcompass data refresh` '
+                      'without --no-fetch), which records them')
+    return sorted(published), snapshot
+
+
 def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, accept_panel_change=False,
             models=(), pages=None):
     """Steps 2..5 over the cache `target`: the release snapshot, and each model entry's rows from its own pages.
@@ -529,22 +550,21 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
         built = copy.deepcopy(shipped)      # no release snapshot in the cache: the shipped document stands for it
     else:
         sources.manifest(target)            # raises: the cache has no fetch-manifest.json
-    # What the release had (round 8): its rows are those of the published measurements that no model entry gave, plus
-    # those an entry gave a row the release had without readings (`released_entry_rows`). A released row with readings
-    # belongs to the release's fits and changes with the next release (the full refresh), so no entry may take its readings
-    # away from them; a released row without readings takes its readings from the entry and keeps its place in the
-    # declared structure (five_axis.Scorer.new_entries); any other row is new.
-    release = shipped if shipped is not None else built
-    given = set(release.get('model_entries') or ())
+    # The rows of the release (round 9) are a recorded fact of its snapshot, never inferred from a file a rebuild writes:
+    # release_rows_of. A release row the snapshot reads is the release's (its readings belong to the release's fits and
+    # change with the next release), so no entry may take it; any other row may have an entry. Every fit, target, step,
+    # ratio, panel statistic and the declared structure read release rows only (five_axis.Scorer); a row that is not a
+    # release row is scored by the release's fits from what the snapshot or its entry reads and enters none.
+    release_rows, record = release_rows_of(target, shipped)
+    given = set(built.get('model_entries') or ())       # rows the shipped document had from an entry (no snapshot)
     for name in entries:
-        read = sorted(f for f, items in ((release.get('models') or {}).get(name) or {}).items() if items)
-        if read and name not in given:
+        read = sorted(f for f, items in ((built.get('models') or {}).get(name) or {}).items() if items)
+        if name in release_rows and read and name not in given:
             raise Refused((f'--model {name}' if name in models else f'model entry {target / MODEL_ENTRIES / name}')
-                          + f": the release reads {name} ({', '.join(read)}); those readings belong to the release's fits "
-                          'and change with the next release (the full refresh), not by a model entry; '
+                          + f": {name} is a row of the release and its snapshot reads it ({', '.join(read)}); those "
+                          "readings belong to the release's fits and change with the next release (the full refresh), "
+                          'not by a model entry; '
                           + ('nothing written and no entry stored' if name in models else 'remove the entry'))
-    released = sorted(n for n in entries if n in (release.get('released_entry_rows') or ())
-                      or (n in (release.get('models') or {}) and n not in given))
     left_out, notes = [], []
     for name in (m for m in acc['models'] if m in entries):    # catalog order, so the result never depends on history
         fresh = measurements.Builder(entries[name], acc).build()
@@ -552,9 +572,7 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
         if name in models:
             left_out += out
             notes += said
-    built.pop('released_entry_rows', None)
-    if released:
-        built['released_entry_rows'] = released
+    built['release_rows'] = release_rows
     merge = None
     if models:
         if shipped is not None:
@@ -575,6 +593,8 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
     # Built before anything is written: a refused panel change (five_axis.PanelChangeRefused) leaves every file as it was.
     doc = five_axis.build(meas, acc, plans, distrust=distrust, meas_bytes=raw, now=now,
                           previous=five_axis.previous_doc(scores_path), accept_panel_change=accept_panel_change)
+    if record:
+        sources.record_release_rows(target, release_rows)
     if pages is not None:
         stamp = (now or datetime.now(timezone.utc)).isoformat(timespec='seconds')
         for name in models:
@@ -682,6 +702,8 @@ def main(argv=None, prog=None):
             sources.manifest(target)
         else:
             fetch_sources(target, args.references)
+            ref_dir = Path(args.references) if args.references is not None else (sources.REPO / 'references')
+            sources.record_release_rows(target, json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig'))['models'])
             retired = retire_model_entries(target)
             if retired:
                 print(f"Retired model entries (the new release snapshot reads their rows): {', '.join(retired)}")
