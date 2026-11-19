@@ -8,6 +8,7 @@ import copy
 from datetime import datetime, timedelta, timezone
 import json
 import math
+import re
 import shutil
 from pathlib import Path
 import sys
@@ -2993,6 +2994,23 @@ class FloorScoreProvenanceTests(unittest.TestCase):
             reference_provenance.validate_scores_against_floors(scores(2.0), acc, five, meas)
         reference_provenance.validate_scores_against_floors(scores(1.0), acc, five, meas)
         self.assertLess(-5.0, z_floor)
+
+    def test_a_score_under_another_spelling_of_the_row_is_checked_too(self):
+        """Round 8 item 2: the score's key is resolved to its row first (an alias, a provider-qualified name), as the
+        overlay reads it, so writing the score under another spelling does not pass the check."""
+        import reference_provenance
+        acc = {'models': {'pro': {'response_time_source': {'kind': 'maintainer', 'as_of': '2026-11-19', 'min_seconds': 600,
+                                                            'statement': 's'}}},
+               'aliases': {'Pro via consult': 'pro'}}
+        meas = {'sources': {'aa.ttfa': {'scale': {'anchor_raw': -3.0, 'sd_panel': 1.0}}}}
+        levels = {str(k): {'target': t} for k, t in ((1, -5.0), (2, -1.0), (3, 1.0))}
+        five = {'anchor': {'targets': {'tool_operation': {'facets': {'responsiveness': {'levels': levels}}}}}}
+        for key in ('Pro via consult', 'vendor/pro', 'vendor/Pro via consult'):
+            for target in reference_provenance.FLOOR_TARGETS:
+                doc = {'scores': {key: {target: {'level': 2.0, 'kind': 'maintainer', 'as_of': '2026-11-11'}}}}
+                with self.subTest(key=key, target=target), \
+                        self.assertRaisesRegex(ValueError, f'{re.escape(key)} \\(row pro\\) {re.escape(target)} level 2'):
+                    reference_provenance.validate_scores_against_floors(doc, acc, five, meas)
 
 
 class CrossLineTimeTests(unittest.TestCase):

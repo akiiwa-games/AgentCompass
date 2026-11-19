@@ -828,6 +828,28 @@ def _category_data_reference(facet_refs: dict[str, dict], manual_level: float) -
     }
 
 
+def operating_point_floor(cell: dict, own_cell: dict | None, status: str, cat: str, facet: str) -> dict:
+    """`cell` (a manual score's facet cell) bounded below by the row's operating point (owner 2026-11-19, round 8): a
+    row declared as another row at an operating point (accounts.json `same_model` with `at_effort`; its facet is that
+    row's cell at the point, five-axis-scores.json estimate `same_model` with `at_effort`) never reads below it on an
+    ability facet under a shipped maintainer score, so what routing reads is max(score, base cell) at each effort and
+    the cell records both inputs and which binds (`operating_point_floor`). A local user's score is the user's and is
+    not bounded; responsiveness keeps its own rule (the base cell, then the declared response floor)."""
+    est = (own_cell or {}).get('estimate') or {}
+    if (status != 'maintainer' or est.get('method') != 'same_model' or 'at_effort' not in est
+            or (cat, facet) == ('tool_operation', 'responsiveness')):
+        return cell
+    base = {e: float(v) for e, v in ((own_cell or {}).get('by_effort') or {}).items() if v is not None}
+    score = cell['by_effort']
+    by = {e: (max(v, base[e]) if e in base else v) for e, v in score.items()}
+    return {**cell, 'value': by.get('high', cell['value']), 'by_effort': by,
+            'operating_point_floor': {'base_model': est.get('base_model'), 'at_effort': est['at_effort'],
+                                      'base_by_effort': {e: base[e] for e in score if e in base},
+                                      'score_by_effort': dict(score),
+                                      'binds_by_effort': {e: 'base' if e in base and base[e] > v else 'score'
+                                                          for e, v in score.items()}}}
+
+
 def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed_effort: str | None = None,
                      effort_steps: dict | None = None) -> None:
     """Mutate `five_state` (`info['five_axis']`) in place with one layer (`maintainer` or `user`) of manual scores;
@@ -855,13 +877,13 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                 facet_refs[f] = f_ref
                 by_eff, measured = _manual_by_effort(zf, facets.get(f), rises_with_effort(cat, f), fixed_effort,
                                                  (effort_steps or {}).get(f'{cat}.{f}'))
-                facets[f] = {
+                facets[f] = operating_point_floor({
                     'value': zf,
                     'by_effort': by_eff,
                     'measured_efforts': measured,
                     'status': status,
                     'manual': {**rec, 'target': target, 'z': zf, 'data_reference': f_ref},
-                }
+                }, facets.get(f), status, cat, f)
                 estimates.pop(f'{cat}.{f}', None)
             z_val = round(min(z_map.values()), 4)
             cat_ref = _category_data_reference(facet_refs, rec['level'])
@@ -888,13 +910,13 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
             f_ref = _facet_data_reference(facets.get(facet), cat, facet, rec['level'], targets_table)
             by_eff, measured = _manual_by_effort(z_val, facets.get(facet), rises_with_effort(cat, facet), fixed_effort,
                                              (effort_steps or {}).get(f'{cat}.{facet}'))
-            facets[facet] = {
+            facets[facet] = operating_point_floor({
                 'value': z_val,
                 'by_effort': by_eff,
                 'measured_efforts': measured,
                 'status': status,
                 'manual': {**rec, 'target': target, 'z': z_val, 'data_reference': f_ref},
-            }
+            }, facets.get(facet), status, cat, facet)
             estimates.pop(f'{cat}.{facet}', None)
             cat_cell = _recompute_category_from_facets(cat, cat_cell, status)
             manual[target] = {**rec, 'z': z_val, 'data_reference': f_ref}

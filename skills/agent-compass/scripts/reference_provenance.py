@@ -303,22 +303,29 @@ def validate_scores_against_floors(scores, accounts, five_axis, measurements):
     """A shipped maintainer score on a row's responsiveness never contradicts a declared floor of the same row's response
     time (owner, 2026-11-19, round 7): the score's level read on the facet's level scale is no faster than the floor read
     through the time-to-first-answer transform (`models.<id>.response_time_source`). A later declaration supersedes an
-    older score; the error names both. A local user's score is the user's and is not checked."""
+    older score; the error names both. A score's key is resolved to its row first (`user_scores.resolve_model_key`: an
+    alias, a provider-qualified name), as the overlay that applies it reads it, so another spelling of the row is checked
+    too (round 8). A local user's score is the user's and is not checked. An ability score below a row's operating point
+    is not an error: the overlay bounds it (`user_scores.operating_point_floor`)."""
     scale = ((((measurements or {}).get('sources') or {}).get('aa.ttfa') or {}).get('scale') or {})
     targets = ((five_axis or {}).get('anchor') or {}).get('targets') or {}
+    keyed = {}
+    for key, recs in sorted((((scores or {}).get('scores')) or {}).items()):
+        keyed.setdefault(user_scores.resolve_model_key(key, accounts), []).append((key, recs))
     bad = []
     for model, spec in sorted(((accounts or {}).get('models') or {}).items()):
         floor = (spec or {}).get('response_time_source') if isinstance(spec, dict) else None
         if not isinstance(floor, dict) or not scale.get('sd_panel'):
             continue
         z_floor = (-math.log(floor['min_seconds']) - scale['anchor_raw']) / scale['sd_panel']
-        for target in FLOOR_TARGETS:
-            rec = (((scores or {}).get('scores') or {}).get(model) or {}).get(target)
+        for key, target in ((key, target) for key, _ in keyed.get(model, ()) for target in FLOOR_TARGETS):
+            rec = ((((scores or {}).get('scores')) or {}).get(key) or {}).get(target)
             if not isinstance(rec, dict):
                 continue
             z = user_scores.level_to_z(rec['level'], *user_scores.target_triad(targets, 'tool_operation', 'responsiveness'))
+            named = key if key == model else f'{key} (row {model})'
             if z > z_floor + 1e-9:
-                bad.append(f"user-scores.json {model} {target} level {rec['level']} ({rec.get('kind')}, {rec.get('as_of')}) reads "
+                bad.append(f"user-scores.json {named} {target} level {rec['level']} ({rec.get('kind')}, {rec.get('as_of')}) reads "
                            f"responsiveness z {z:.3f}, faster than the declared floor accounts.json "
                            f"models.{model}.response_time_source ({floor['min_seconds']} s, {floor.get('as_of')}: z {z_floor:.3f})")
     if bad:

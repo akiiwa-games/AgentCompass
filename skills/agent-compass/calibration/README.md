@@ -182,8 +182,12 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   the owner's placement directly above `max`): every effort of the row reads the model's cell at that effort, facets and
   Time/Task, whatever method gave the model that cell (method `same_model`, `at_effort` and the model cell's method on the
   cell); a declared response floor then bounds it (Speed without a reading, below). A shipped maintainer score never
-  reads a row's responsiveness faster than its declared floor: the refresh refuses one, naming both
-  (`reference_provenance.validate_scores_against_floors`); a local user's score is not checked.
+  reads a row's responsiveness faster than its declared floor: the refresh refuses one, naming both, under whatever
+  spelling the score's key resolves from (`reference_provenance.validate_scores_against_floors`). On every ability facet
+  the model's cell at the point is a floor under a shipped maintainer score of the row (owner, 2026-11-19, round 8):
+  routing reads max(score, model cell) at each effort, applied with the maintainer overlay
+  (`user_scores.operating_point_floor`, which records both inputs and which binds); a local user's score is the user's
+  and is neither bounded nor checked.
 - **Speed variants (owner, 2026-11-19).** A `same_model` row that also declares `speed` is a speed variant of its
   model: the same weights served faster (the relation is the cited declaration, never the name). Its ability facets are
   the model's (`carries`). Its responsiveness, Time/Task and cost per hour are its own: a board reading of the row where

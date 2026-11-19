@@ -1237,6 +1237,61 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
         self.assertIsNone(anchor('ultra', {'high': 0}, ['high']))
 
 
+class OperatingPointFloorTests(unittest.TestCase):
+    """Rule (user_scores.operating_point_floor; owner 2026-11-19, round 8; calibration/README.md, One operating point on its
+    model): on a row declared as another row at an operating point, the model's cell at the point is a floor under a
+    shipped maintainer score on every ability facet: routing reads max(score, base) at each effort and the cell records
+    both inputs and which binds. A local user's score and responsiveness are not bounded."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.targets = axis_scores.load_five_axis()['anchor']['targets']
+        triad = user_scores.target_triad(cls.targets, 'coding', 'execution')
+        cls.z1, cls.z3 = user_scores.level_to_z(1.0, *triad), user_scores.level_to_z(3.0, *triad)
+        cls.base = round((cls.z1 + cls.z3) / 2, 4)
+
+    def table(self, point=True):
+        estimate = {'method': 'same_model', 'base_model': 'astra', **({'at_effort': 'ultra'} if point else {})}
+
+        def cell(value):
+            return {'value': value, 'by_effort': dict.fromkeys(('low', 'high', 'max', 'ultra'), value),
+                    'status': 'estimated', 'measured_efforts': [], 'estimate': dict(estimate)}
+        return {'pro': {'five_axis': {'scores': {}, 'categories': {
+            'coding': {'facets': {'execution': cell(self.base), 'faithfulness': cell(self.base)}, 'value': None, 'by_effort': {}},
+            'tool_operation': {'facets': {'responsiveness': cell(self.base)}, 'value': None, 'by_effort': {}}}}}}
+
+    def overlay(self, scores, kind='maintainer', point=True):
+        models = self.table(point)
+        doc = {'schema_version': user_scores.SCHEMA_VERSION,
+               'scores': {'pro': {t: {'level': lv, 'as_of': '2026-11-19', 'kind': kind} for t, lv in scores.items()}}}
+        user_scores.apply_overlay(models, self.targets, **({'public_scores': doc} if kind == 'maintainer' else {'local_scores': doc}))
+        cats = models['pro']['five_axis']['categories']
+        return {f: c for cat in cats.values() for f, c in cat['facets'].items()}
+
+    def test_the_base_binds_a_maintainer_score_below_it_and_the_score_binds_above_it(self):
+        got = self.overlay({'coding.execution': 1.0, 'coding.faithfulness': 3.0})
+        low, high = got['execution'], got['faithfulness']
+        for e in ('low', 'high', 'max', 'ultra'):
+            self.assertEqual(low['by_effort'][e], self.base)
+            self.assertEqual(high['by_effort'][e], max(high['operating_point_floor']['score_by_effort'][e], self.base))
+            self.assertGreater(high['by_effort'][e], self.base)
+        self.assertEqual(set(low['operating_point_floor']['binds_by_effort'].values()), {'base'})
+        self.assertEqual(set(high['operating_point_floor']['binds_by_effort'].values()), {'score'})
+        self.assertLess(low['operating_point_floor']['score_by_effort']['high'], self.base)
+        self.assertEqual((low['operating_point_floor']['base_model'], low['operating_point_floor']['at_effort']),
+                         ('astra', 'ultra'))
+        self.assertEqual(low['value'], low['by_effort']['high'])
+
+    def test_a_local_user_score_responsiveness_and_a_row_without_a_point_are_not_bounded(self):
+        cases = ((self.overlay({'coding.execution': 1.0}, kind='user'), 'execution'),
+                 (self.overlay({'tool_operation.responsiveness': 1.0}), 'responsiveness'),
+                 (self.overlay({'coding.execution': 1.0}, point=False), 'execution'))
+        for got, facet in cases:
+            with self.subTest(facet=facet):
+                self.assertNotIn('operating_point_floor', got[facet])
+                self.assertLess(got[facet]['by_effort']['high'], self.base)
+
+
 class EffectiveSourceTests(unittest.TestCase):
     """Rule (owner 2026-11-18, user_scores._follow_effective_sources): a facet derived from a larger model follows that
     model's effective value after hand-written scores, shipped and local, and is never above it; a hand-written score on the
