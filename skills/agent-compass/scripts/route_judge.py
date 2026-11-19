@@ -98,9 +98,11 @@ def match_bundle(accounts, args, include_disabled=False):
         if (include_disabled or not bundle.get('disabled'))
         and bundle['account'] == args.account
         and bundle['provider'] == args.provider
-        and (args.effort is None or bundle.get('effort') == args.effort)
     ]
-    matches = account_fleet.pin_matching_bundles(args.model, pool, accounts)
+    matches = [
+        b for b in account_fleet.pin_matching_bundles(args.model, pool, accounts)
+        if args.effort is None or b.get('effort') == args.effort
+    ]
     if not matches:
         return None
     default = account_fleet.model_spec(accounts, matches[0]['model']).get('default_effort') or 'high'

@@ -764,7 +764,7 @@ class PinIdentityMatchesBundle(unittest.TestCase):
                                               fast=False, parent_id='parent-1')
                     res = route_judge.record_constraint(args, task)
                     if acct == 'opencode':
-                        self.assertEqual(res['bundle'].get('bundle_id'), next(iter(derived['bundles']['opencode'])))
+                        self.assertEqual(res['selected_bundle'].get('bundle_id'), next(iter(derived['bundles']['opencode'])))
                     prep = dispatch_registry.prepare(res['decision_id'], task, {'title': 'x', 'initialPrompt': 'go'},
                                                      copy.deepcopy(self.usage), accounts=copy.deepcopy(fleet), now=self.at)
                     self.assertEqual(prep['request']['provider'], want_provider)
@@ -855,10 +855,10 @@ class PinIdentityMatchesBundle(unittest.TestCase):
         test_acc = copy.deepcopy(SHIPPED)
         test_acc['provider_names']['rows'] = {
             **test_acc['provider_names']['rows'],
-            'stepfun-ai-step-plan': {'step-test': decl('gpt-5.5')},
-            'stepfun-ai': {'step-test': decl('gpt-6-astra')},
-            'xiaomi-token-plan-cn': {'mimo-test': decl('gpt-5.5')},
-            'xiaomi-token-plan-sgp': {'mimo-test': decl(None, status='other_weights')},
+            'stepfun-ai-step-plan': {'probe-step': decl('gpt-5.5')},
+            'stepfun-ai': {'probe-step': decl('gpt-6-astra')},
+            'xiaomi-token-plan-cn': {'probe-mimo': decl('gpt-5.5')},
+            'xiaomi-token-plan-sgp': {'probe-mimo': decl(None, status='other_weights')},
             'zhipuai': {'glm-test': decl(None, status='other_weights')},
             'zai': {'glm-test': decl('glm-5.2')},
             'minimax': {'mm-test': decl(None, status='other_weights')},
@@ -868,17 +868,17 @@ class PinIdentityMatchesBundle(unittest.TestCase):
         self.assertEqual(model_resolution.resolve_in('zai/glm-test', test_acc, ())['key'], 'glm-5.2')
         self.assertEqual(model_resolution.resolve_in('glm-test', test_acc, ('zai',))['key'], 'glm-5.2')
         self.assertEqual(model_resolution.resolve_in('minimax-cn/mm-test', test_acc, ())['key'], 'glm-5.2')
-        self.assertEqual(model_resolution.resolve_in('stepfun/step-test', test_acc, ())['source'], 'unknown')
-        self.assertEqual(model_resolution.resolve_in('xiaomi/mimo-test', test_acc, ())['source'], 'unknown')
+        self.assertEqual(model_resolution.resolve_in('stepfun/probe-step', test_acc, ())['source'], 'unknown')
+        self.assertEqual(model_resolution.resolve_in('xiaomi/probe-mimo', test_acc, ())['source'], 'unknown')
         # Magpie preset `zai` replaces `zai` with `zhipuai` (no collision with `zai`), while a multi-catalog Magpie preset
         # whose catalogs disagree resolves to `conflict` on that Magpie preset only:
         magpie_zai = model_resolution.expand_host_providers(('zai',), 'magpie', test_acc)
         self.assertEqual(magpie_zai, ('zhipuai',))
         self.assertEqual(model_resolution.resolve_in('glm-test', test_acc, magpie_zai)['source'], 'other_weights')
         magpie_stepfun = model_resolution.expand_host_providers(('stepfun',), 'magpie', test_acc)
-        self.assertEqual(model_resolution.resolve_in('step-test', test_acc, magpie_stepfun)['source'], 'conflict')
+        self.assertEqual(model_resolution.resolve_in('probe-step', test_acc, magpie_stepfun)['source'], 'conflict')
         magpie_xiaomi = model_resolution.expand_host_providers(('xiaomi',), 'magpie', test_acc)
-        self.assertEqual(model_resolution.resolve_in('mimo-test', test_acc, magpie_xiaomi)['source'], 'conflict')
+        self.assertEqual(model_resolution.resolve_in('probe-mimo', test_acc, magpie_xiaomi)['source'], 'conflict')
 
         # Magpie-bound accounts (`magpie_providers` / `endpoint_providers`) expand through `host_providers.magpie`:
         doc = copy.deepcopy(SHIPPED)

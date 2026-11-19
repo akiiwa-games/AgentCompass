@@ -1158,13 +1158,13 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
             for name, spec in table.items()
             if account in (None, name)
             for bundle_id, bundle in (spec.get("bundles") or {}).items()
-            if target.get("effort") in (None, bundle.get("effort"))
-            and (not provider or (bundle.get("provider") == "pi") == (provider == "pi"))
+            if (not provider or (bundle.get("provider") == "pi") == (provider == "pi"))
         ]
         if target["model"] in CLAUDE_MODEL_FAMILIES:
-            candidates = [c for c in pool if same_launch_value("model", target["model"], c.get("launch_model"))]
+            matched = [c for c in pool if same_launch_value("model", target["model"], c.get("launch_model"))]
         else:
-            candidates = router_owner("account_fleet", "pin_matching_bundles")(target["model"], pool, accounts)
+            matched = router_owner("account_fleet", "pin_matching_bundles")(target["model"], pool, accounts)
+        candidates = [c for c in matched if target.get("effort") in (None, c.get("effort"))]
     if not account and len({c["account"] for c in candidates}) == 1:
         account = candidates[0]["account"]
     return account, [c for c in candidates if c["account"] == account]

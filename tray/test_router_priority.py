@@ -336,10 +336,10 @@ class PriorityTests(unittest.TestCase):
                      'efforts_on': ['high'], 'efforts_off': []},
                 ],
             }]
-            decorated = router_data.decorate_model_rows(rows, {'providers': {
+            decorated = router_data.decorate_model_rows(rows, split_accounts, {'providers': {
                 'codex': {'ok': True, 'type': 'paseo_provider', 'checked_at': 100.0,
                           'models': ['deepseek-ai/DeepSeek-V4-Pro']}
-            }}, split_accounts)
+            }})
             by_model = {g['model']: g['availability'] for g in decorated[0]['models']}
             self.assertEqual(by_model, {'deepseek-v4-pro': 'detected', 'deepseek-v4-pro-0813': 'missing'})
 

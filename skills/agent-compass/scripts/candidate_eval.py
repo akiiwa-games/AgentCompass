@@ -36,18 +36,16 @@ UNCHECKED = 'unchecked in model management'
 
 
 def pin_matched_ids(task, ctx):
-    """Bundle ids in `ctx['bundles']` named by `task`'s model/bundle constraint over the pool the task's other
-    constraints leave (`constraint_bundle`, `constraint_effort`, `ctx['unavailable']`), via
-    `account_fleet.pin_matching_bundles`."""
+    """Bundle ids in `ctx['bundles']` named by `task`'s model/bundle constraint over the pool left by
+    `constraint_bundle` and `ctx['unavailable']`, via `account_fleet.pin_matching_bundles` (effort is checked on its own
+    in `evaluate_bundle`, so a missing effort on an exact-spelling bundle never falls back to another provider's)."""
     accounts = ctx['accounts']
     unavailable = ctx.get('unavailable') or ()
     cb = task.get('constraint_bundle')
-    ce = task.get('constraint_effort')
     pool = [
         b for b in (ctx.get('bundles') or {}).values()
         if (b.get('id') or b.get('bundle_id')) not in unavailable
         and (not cb or (b.get('id') or b.get('bundle_id')) == cb)
-        and (not ce or str(quota_economy.scoring_effort(b, account_fleet.model_spec(accounts, b['model'])) or '').lower() == ce)
     ]
     if cb and not task.get('constraint_raw_model'):
         return {(b.get('id') or b.get('bundle_id')) for b in pool if (b.get('id') or b.get('bundle_id')) == cb}
