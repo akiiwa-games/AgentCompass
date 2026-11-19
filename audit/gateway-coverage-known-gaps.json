@@ -180,6 +180,48 @@
    "detail": "voxtral-small-2507: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
   },
   {
+   "catalog": "cindy-0.1.140",
+   "model": "deepseek/deepseek-v4-flash",
+   "efforts": [
+    "medium",
+    "high",
+    "max"
+   ],
+   "row": "deepseek-v4-flash",
+   "kind": "other_weights_on_provider",
+   "detail": "deepseek/deepseek-v4-flash (on the claude, codex and pi harnesses) is served by deepseek, whose own listing gives deepseek-v4-flash as deepseek/deepseek-v4.1-flash-1017; the name resolves to row deepseek-v4-flash (deepseek/deepseek-v4-flash)",
+   "identity": {
+    "provider": "deepseek",
+    "listed": [
+     "deepseek/deepseek-v4.1-flash-1017"
+    ],
+    "row": [
+     "deepseek/deepseek-v4-flash"
+    ]
+   }
+  },
+  {
+   "catalog": "cindy-0.1.140",
+   "model": "deepseek/deepseek-v4-pro",
+   "efforts": [
+    "medium",
+    "high",
+    "max"
+   ],
+   "row": "deepseek-v4-pro",
+   "kind": "other_weights_on_provider",
+   "detail": "deepseek/deepseek-v4-pro (on the claude, codex and pi harnesses) is served by deepseek, whose own listing gives deepseek-v4-pro as deepseek/deepseek-v4-pro-0813; the name resolves to row deepseek-v4-pro (deepseek/deepseek-v4-pro)",
+   "identity": {
+    "provider": "deepseek",
+    "listed": [
+     "deepseek/deepseek-v4-pro-0813"
+    ],
+    "row": [
+     "deepseek/deepseek-v4-pro"
+    ]
+   }
+  },
+  {
    "catalog": "magpie-0.1.4470",
    "model": "claude-haiku-4-5-20251001",
    "efforts": [

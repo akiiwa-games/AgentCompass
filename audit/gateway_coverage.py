@@ -25,8 +25,9 @@ maker does not offer for chat) is reported, not gated, in every catalog. The rul
   facet (creativity, coding execution and faithfulness, aesthetics design, tool_operation responsiveness and image
   recognition) and Time/Task has a value at that effort, maintainer scores applied (axis_scores.five_axis_overlay without
   local state); an effort off the scale is read where the data declares (axis_scores.reading_effort: `default` reads High);
-  and the name is that row's weights on that provider: a pair is not covered by a row the provider's own listing identifies
-  as other weights (owner, 2026-11-19), where the models.dev names file gives (provider, name) a canonical id and the row
+  and the name is that row's weights on every provider that serves it: a pair is not covered by a row a serving
+  provider's own listing identifies as other weights (owner, 2026-11-19), the serving providers being the row's provider,
+  the account's provider of a Magpie `account:<kind>` and the provider part of a `provider/name` id (round 7), where the models.dev names file gives (provider, name) a canonical id and the row
   has one (a canonical id the file lists whose last segment is the row's id) and they differ, unless the name is an alias
   citing the maker's own statement that it is that row (as for the alias check below). Such a pair is a known gap of kind
   `other_weights_on_provider`, its entry carrying both canonical ids (`identity`); the data has no provider-scoped identity
@@ -200,18 +201,36 @@ def ungated_reason(doc, row, out_of_scope):
     return None
 
 
-def identity_conflict(names, accounts, provider, model, row):
-    """{provider, listed, row} when the models.dev names file identifies `model` on `provider` as other weights than `row`
-    (both have a canonical id and they differ, and `model` is not an alias citing the maker's statement), else None."""
+def serving_providers(doc, row):
+    """[(provider, name)]: every provider that serves the catalog row's name in that gateway's own listing, with the name
+    it serves (owner, 2026-11-19, round 7): the row's provider as the catalog names it, the account's provider for a
+    Magpie `account:<kind>` (its `gate.makers` entry), and the provider part of a `provider/name` id with the name after
+    it."""
+    model = row['model']
+    out = [(row['provider'], model)]
+    account = ((doc.get('gate') or {}).get('makers') or {}).get(row['provider']) if row['provider'].startswith('account:') else None
+    if account:
+        out.append((account, model))
+    if '/' in model:
+        head, tail = model.split('/', 1)
+        out.append((head, tail))
+    return list(dict.fromkeys(out))
+
+
+def identity_conflict(names, accounts, served, model, row):
+    """{provider, listed, row} for the first (provider, name) of `served` (serving_providers) the models.dev names file
+    identifies as other weights than `row` (both have a canonical id and they differ, and `model` is not an alias citing
+    the maker's statement), else None: every provider the file knows for the pair is checked, not one of them."""
     listings = (names or {}).get('names') or {}
-    listed = sorted({x[1] for x in listings.get(model) or () if x[0] == provider and x[1]})
     own = sorted({x[1] for x in listings.get(row) or () if x[1] and x[1].rsplit('/', 1)[-1] == row})
-    if not listed or not own or set(listed) & set(own):
-        return None
     source = (((accounts.get('alias_sources') or {}).get('rows') or {}).get(model) or {})
-    if (accounts.get('aliases') or {}).get(model) == row and source.get('kind') == 'vendor':
+    if not own or ((accounts.get('aliases') or {}).get(model) == row and source.get('kind') == 'vendor'):
         return None
-    return {'provider': provider, 'listed': listed, 'row': own}
+    for provider, name in served:
+        listed = sorted({x[1] for x in listings.get(name) or () if x[0] == provider and x[1]})
+        if listed and not set(listed) & set(own):
+            return {'provider': provider, 'listed': listed, 'row': own}
+    return None
 
 
 def pairs(accounts, catalogs, five_axis, public_scores, out_of_scope=None, names=None):
@@ -235,7 +254,7 @@ def pairs(accounts, catalogs, five_axis, public_scores, out_of_scope=None, names
             elif efforts is None:                          # a Magpie row without efforts: the model's one configuration
                 efforts = ['default']
             ungated = None if cid == LAUNCH_TABLE else ungated_reason(doc, row, out_of_scope or {})
-            identity = identity_conflict(names, accounts, row['provider'], row['model'], key) if key else None
+            identity = identity_conflict(names, accounts, serving_providers(doc, row), row['model'], key) if key else None
             for effort in efforts:
                 if key is None:
                     missing = [f"no row ({found['source']})"]

@@ -257,6 +257,33 @@ class CheckRuleTests(unittest.TestCase):
                                                                                    'nick': {'kind': 'community'}}}}
         self.assertEqual(found(nick, community)['own']['identity']['listed'], ['mk/nick-dated'])
 
+    def test_every_provider_serving_the_name_is_checked_the_id_prefix_and_the_accounts_provider_too(self):
+        """Rule (owner, 2026-11-19, round 7): a pair is identified by every provider that serves the name in that gateway's
+        own listing: the row's provider, the account's provider of a Magpie `account:<kind>` (gate.makers) and the provider
+        part of a `provider/name` id (with the name after it); one of them listing other weights leaves it uncovered."""
+        accounts = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        five = gc.read_json(gc.REFERENCES / 'five-axis-scores.json')
+        scores = {'schema_version': 3, 'scores': {}}
+        row = next(m for m in accounts['models']
+                   if not gc.missing_at(gc.axis_scores.five_axis_overlay(accounts, data=five, read_local_state=False,
+                                                                         public_scores=scores)['models'].get(m), 'high'))
+        same = {'schema': gc.NAMES_SCHEMA, 'names': {row: [['own', f'mk/{row}', 1, 2]]}}
+        other = {'schema': gc.NAMES_SCHEMA, 'names': {row: [['own', f'mk/{row}-0813', 1, 2], ['relay', f'mk/{row}', 1, 2]]}}
+        catalogs = {'h': {'provider_kind': 'harness', 'rows': [{'provider': 'claude', 'model': f'own/{row}', 'efforts': ['high']}]},
+                    'm': {'provider_kind': 'magpie_preset', 'gate': {'makers': {'account:x': 'own', 'relay': 'relay'}, 'statement': 's'},
+                          'rows': [{'provider': 'account:x', 'model': row, 'efforts': ['high'], 'maker': 'own'},
+                                   {'provider': 'relay', 'model': row, 'efforts': ['high'], 'maker': 'relay'}]}}
+
+        def found(listing):
+            return {(p['catalog'], p['provider']): p for p in gc.pairs(accounts, catalogs, five, scores, names=listing)}
+        self.assertEqual({k: (v['missing'], v['identity']) for k, v in found(same).items()},
+                         {k: ([], None) for k in (('h', 'claude'), ('m', 'account:x'), ('m', 'relay'))})
+        moved = found(other)
+        conflict = {'provider': 'own', 'listed': [f'mk/{row}-0813'], 'row': [f'mk/{row}']}
+        self.assertEqual((moved[('h', 'claude')]['identity'], moved[('m', 'account:x')]['identity']), (conflict, conflict))
+        self.assertEqual((moved[('m', 'relay')]['identity'], moved[('m', 'relay')]['missing']), (None, []))
+        self.assertEqual(gc.serving_providers(catalogs['h'], catalogs['h']['rows'][0]), [('claude', f'own/{row}'), ('own', row)])
+
     def test_a_row_without_efforts_takes_the_launch_table_at_a_harness_and_default_at_a_magpie_preset(self):
         """Rule (`pairs`): a harness row that lists no efforts is offered at the launch table's efforts, and is a gap off
         it; a Magpie row that lists none is the model's one configuration, offered at `default`."""
