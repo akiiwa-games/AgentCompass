@@ -22,6 +22,7 @@ import antigravity_plan
 import grok_bot_paths
 from model_resolution import family_patterns, resolve_canonical_model
 import provider_retry
+import public_data
 import usage_cache
 
 MAX_BYTES = 5 * 1024 * 1024
@@ -118,21 +119,23 @@ def apply_shared_quota(accounts):
                     bundle.setdefault('discovery_unavailable', reason)
 
 
-def _shipped_plan_templates():
+def shipped_plan_templates():
+    """plan-templates.json of the reference set this process holds (public_data.document), parsed once per set."""
     global _SHIPPED_PLAN_TEMPLATES
-    source = PLAN_TEMPLATES
-    if _SHIPPED_PLAN_TEMPLATES is None or _SHIPPED_PLAN_TEMPLATES[0] != source or read_json is not _STDLIB_READ_JSON:
-        shipped, _ = read_json(source)
-        if read_json is _STDLIB_READ_JSON and shipped:
-            _SHIPPED_PLAN_TEMPLATES = (source, shipped)
-    else:
-        shipped = _SHIPPED_PLAN_TEMPLATES[1]
-    return obj(shipped)
+    if read_json is not _STDLIB_READ_JSON:     # a test's reader stands in for the file
+        return obj(read_json(PLAN_TEMPLATES)[0])
+    held = public_data.set_id(PLAN_TEMPLATES.parent)
+    if _SHIPPED_PLAN_TEMPLATES is None or _SHIPPED_PLAN_TEMPLATES[0] != held:
+        try:
+            _SHIPPED_PLAN_TEMPLATES = (held, obj(public_data.document(PLAN_TEMPLATES)))
+        except (OSError, ValueError):
+            return {}
+    return _SHIPPED_PLAN_TEMPLATES[1]
 
 
 def plan_table(accounts, family, shipped=None):
     """Merged `{plan_id: entry}` for `family` from shipped plan-templates.json plus `accounts['plan_templates']`."""
-    shipped_all = _shipped_plan_templates() if shipped is None else obj(shipped)
+    shipped_all = shipped_plan_templates() if shipped is None else obj(shipped)
     base = obj(shipped_all.get(family))
     overrides = obj(obj(obj(accounts).get('plan_templates')).get(family))
     return {**base, **overrides}
@@ -146,7 +149,7 @@ def plan_defaults(accounts, family, plan, shipped=None):
     `windows`, `cadence` and `unmetered` are copied onto an account; other keys (provenance, basis, price) are
     documentation. A plan's capacity is not in the template: it comes from the community capacity data by plan.
     """
-    shipped_all = _shipped_plan_templates() if shipped is None else obj(shipped)
+    shipped_all = shipped_plan_templates() if shipped is None else obj(shipped)
     overrides = obj(obj(obj(accounts).get('plan_templates')).get(family))
     base = obj(shipped_all.get(family))
     template = None
@@ -1896,6 +1899,27 @@ ACCOUNT_DIR_VARIABLES = (('CLAUDE_CONFIG_DIR', '.claude'), ('CLAUDE_SECURESTORAG
                          ('CODEX_HOME', '.codex'), ('PI_CODING_AGENT_DIR', '.pi/agent'))
 
 
+# The harnesses whose native sub-agents run inside the calling session, on its own account, with the variable that
+# names that account's directory and its default under the home.
+SESSION_ACCOUNT_DIRS = {'claude': ('CLAUDE_CONFIG_DIR', '.claude'), 'codex': ('CODEX_HOME', '.codex')}
+
+
+def session_account(family, inventory, environ=None, home=None):
+    """The account a session of `family` runs on: the one discovered account of that family whose home is the directory
+    the session's environment names (SESSION_ACCOUNT_DIRS). None when that is not recorded (another family, no such
+    row, or more than one): never guessed. Read-only."""
+    if family not in SESSION_ACCOUNT_DIRS:
+        return None
+    environ = os.environ if environ is None else environ
+    home = Path(home or environ.get('ROUTER_PROVIDER_HOME') or Path.home())
+    key, default = SESSION_ACCOUNT_DIRS[family]
+    own = _expand_home(environ.get(key) or str(home / default), home).resolve()
+    rows = obj((inventory or {}).get('accounts'))
+    found = [name for name, row in rows.items() if isinstance(row, dict) and row.get('family') == family
+             and row.get('home') and _expand_home(row['home'], home).resolve() == own]
+    return found[0] if len(found) == 1 else None
+
+
 def environment_rewrites_accounts(home, environ=None):
     """True when this process's environment points an account directory somewhere else (a worker started on another
     account). Discovery ignores those variables, but such a process does not speak for the machine's shared files."""
@@ -2059,6 +2083,59 @@ def _apply_auto_bundles(accounts, inventory, live):
                                  'seen': derived['seen'] if live else {}}
 
 
+def listed_rows(accounts, account, provider, model, effort, live_doc):
+    """({bundle id: row}, None) for a model the user named on `account` that has no row there, when the account's
+    provider lists it in `live_doc` (live_models.load_or_refresh); else (None, the fact that refuses it). The rows are
+    what discovery derives for an advertised model (auto_bundles), with the provider's list as the authority over a
+    family guessed from the name. A row carries the effort the user named where its harness takes one. Read-only."""
+    import time
+    import auto_bundles
+    import live_models
+    entry = ((live_doc or {}).get('providers') or {}).get(provider)
+    if not isinstance(entry, dict):
+        off = '' if live_models.enabled() else ' (live model lists are off: AGENTCOMPASS_LIVE_MODELS)'
+        return None, f'the model list of provider {provider} could not be read{off}'
+    if entry.get('ok') is not True:
+        return None, (f'the model list of provider {provider} could not be read '
+                      f"({live_models.unavailable_detail(entry) or entry.get('error') or 'model_list_unavailable'})")
+    if not live_models.offers_model(provider, model, entry):
+        return None, f'provider {provider} does not list {model}'
+    families = {name: row.get('family') for name, row in (((accounts.get('_discovery') or {}).get('accounts')) or {}).items()}
+    derived = auto_bundles.derive(accounts, {'providers': {provider: {'ok': True, 'checked_at': time.time(),
+                                                                      'models': [model]}}},
+                                  time.time(), account_families=families, named={(account, model)})
+    rows = dict(derived['bundles'].get(account) or {})
+    if not rows:
+        excluded = [e['reason'] for e in derived['excluded'] if e.get('account') == account]
+        return None, (f"{account} cannot launch it ({'; '.join(excluded)})" if excluded
+                      else f'account {account} does not launch through provider {provider}')
+    if effort:
+        named_rows = {}
+        for row in rows.values():
+            if auto_bundles.HARNESS_DEFAULT_EFFORT.get(row.get('harness')) is not None or row.get('effort'):
+                row = dict(row, effort=effort)
+            named_rows[auto_bundles.auto_bundle_id(account, row.get('harness'), row['model'], row.get('effort'))] = row
+        rows = named_rows
+    return rows, None
+
+
+def with_listed_rows(accounts, listed):
+    """A copy of `accounts` with the rows `listed_rows` derived (`{'account', 'rows'}`) for one calculation, and their
+    efforts in the launch contract: never written to defaults or settings."""
+    if not isinstance(listed, dict) or not listed.get('rows'):
+        return accounts
+    out = copy.deepcopy(accounts)
+    account = listed['account']
+    target = out['accounts'][account].setdefault('bundles', {})
+    for bid, row in listed['rows'].items():
+        target.setdefault(bid, dict(row))
+        if row.get('effort'):
+            efforts = out.setdefault('dispatch_efforts', {}).setdefault(account, {}).setdefault(row['model'], [])
+            if row['effort'] not in efforts:
+                efforts.append(row['effort'])
+    return out
+
+
 UNVERIFIABLE_SIGN_IN = ('antigravity', 'opencode', 'grok')
 UNVERIFIED_SIGN_IN_LABEL = 'installed, sign-in unverified'
 # Plans whose models run without any account: there is no sign-in to prove (OpenCode's free models).
@@ -2116,7 +2193,7 @@ def apply(accounts, inventory=None, *, live=None):
     known_models = accounts.get('models') if isinstance(accounts.get('models'), dict) else {}
     aliases = accounts.get('aliases') if isinstance(accounts.get('aliases'), dict) else {}
     model_families = family_patterns(accounts)
-    shipped_templates = _shipped_plan_templates()
+    shipped_templates = shipped_plan_templates()
 
     for name, row in inventory['accounts'].items():
         if name not in specs:

@@ -8,6 +8,7 @@ import time
 
 import dispatch_registry
 import env_vars
+import public_data
 import scorer_client
 import subscription_judge
 import usage_reading
@@ -31,15 +32,44 @@ def ledger_path():
 LEDGER_WRITES = True    # `plan --dry-run` turns this off so a trial run leaves no decision on record
 
 
+LAUNCH_STAGES = ('plan', 'select', 'record')
+
+
+def automatic_routing_marker(entry):
+    """`outside_automatic_routing` of a ledger row: the switches (`host_policy.automatic_routing_exclusions`, the switches
+    in effect now) its launch reaches past. Only a row that carries a launch has one: a plan/select/record row with a
+    chosen bundle that its writer did not refuse (`host_policy_violation`)."""
+    bundle = entry.get('bundle')
+    if (entry.get('stage') not in LAUNCH_STAGES or entry.get('choice') in (None, 'none', 'self', 'split')
+            or entry.get('host_policy_violation') or not isinstance(bundle, dict) or not bundle.get('account')):
+        return None
+    import account_fleet
+    import host_policy
+    return host_policy.automatic_routing_exclusions(bundle, account_fleet.load_accounts(), host_policy.load_policy()) or None
+
+
 def append_ledger(entry):
-    """Append one decision record. Auditing must never break routing, so failures are swallowed."""
+    """Append one decision record. Auditing must never break routing, so failures are swallowed, except a data error of
+    a fetched reference set while marking, which comes before the row and so re-runs the stage on the shipped set
+    (public_data.with_fallback). Every row is marked here (`automatic_routing_marker`), so no writer can leave the
+    marker out or set it by hand."""
     if not LEDGER_WRITES:
         return False
+    entry = {k: v for k, v in entry.items() if k != 'outside_automatic_routing'}
+    try:
+        marker = automatic_routing_marker(entry)
+    except Exception as exc:   # noqa: BLE001 - an unreadable fleet or policy leaves the row unmarked, never unwritten
+        if public_data.is_data_error(exc) and public_data.held()['source'] == 'fetched':
+            raise   # a reader failing on a fetched set, before the row: the stage runs again on the shipped set
+        marker = None
+    if marker:
+        entry['outside_automatic_routing'] = marker
     try:
         path = ledger_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open('a', encoding='utf-8') as stream:
             stream.write(json.dumps(entry, ensure_ascii=False, allow_nan=False) + '\n')
+        public_data.effect('ledger row')        # a re-run would write a second row: never re-run after this
         return True
     except (OSError, ValueError, TypeError):
         return False
@@ -240,8 +270,11 @@ def finalize(result, payload, requested, started, task=None, records=None):
     if expected_usd is not None and isinstance(bundle, dict) and bundle:
         bundle.setdefault('expected_usd', expected_usd)
         result.setdefault('expected_usd', expected_usd)
+    listed_rows = result.pop('_listed_rows', None)
+    route = result.pop('_route', None)
     if LEDGER_WRITES and result.get('stage') in ('plan', 'select', 'record'):
-        result.update(dispatch_registry.issue(result, task, now, allocation_task=allocation_task))
+        result.update(dispatch_registry.issue(result, task, now, allocation_task=allocation_task, listed_rows=listed_rows,
+                                              route=route))
     append_ledger({
         'v': 1, 'at': now.isoformat(), 'stage': result.get('stage'), 'source': result.get('source'),
         'choice': result.get('choice'), 'specialty': result.get('specialty'),
@@ -278,6 +311,7 @@ def finalize(result, payload, requested, started, task=None, records=None):
         'needs_user_decision': decision.get('needs_user_decision') or None,
         'router_choice': result.get('router_choice'), 'agrees': result.get('agrees'),
         **({'classifier_skipped': result['classifier_skipped']} if 'classifier_skipped' in result else {}),
+        **({'data_errors': list(result['data_errors'])} if result.get('data_errors') else {}),
         **({'keep_whole': kept['reason'], 'task_count': kept.get('task_count')}
            if (kept := next((a for a in alerts if a.get('code') == 'kept_whole'), None)) else {}),
         'objective': objective[:200] if isinstance(objective, str) else None,

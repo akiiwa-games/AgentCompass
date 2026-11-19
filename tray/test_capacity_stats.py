@@ -362,6 +362,7 @@ class PriceTableTests(Fixture):
         scripts = self.root / ".codex" / "skills" / "agent-compass" / "scripts"
         scripts.mkdir(parents=True)
         (scripts / "usage_cache.py").write_text("", encoding="utf-8")
+        (scripts / "public_data.py").write_text("import json\n\ndef document(path, environ=None):\n    return json.loads(path.read_text(encoding=\'utf-8\'))\n", encoding="utf-8")
         (scripts.parent / "references").mkdir()
         (scripts.parent / "references" / "accounts.json").write_text(json.dumps({"models": models}), encoding="utf-8")
         environ = mock.patch.dict(cs.os.environ, {"CODEX_HOME": str(self.root / ".codex")})
@@ -370,6 +371,10 @@ class PriceTableTests(Fixture):
         path = mock.patch.object(cs.sys, "path", [str(scripts), *[p for p in cs.sys.path if not p.endswith("scripts")]])
         path.start()
         self.addCleanup(path.stop)
+        modules = mock.patch.dict(cs.sys.modules)
+        modules.start()
+        self.addCleanup(modules.stop)
+        cs.sys.modules.pop("public_data", None)
 
     def test_a_catalog_with_no_list_price_at_all_is_a_named_error_not_an_empty_table(self):
         self.catalog({"model-a": {"family": "x"}, "model-b": {"family": "x"}})

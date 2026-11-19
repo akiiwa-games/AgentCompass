@@ -21,6 +21,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import owned_process
 import services
 
 SCRIPT = Path(__file__).resolve().parent / "dot_plugin.mjs"
@@ -98,7 +99,11 @@ def run_node(endpoint: str, *arguments: str) -> dict:
     if node is None:
         return {"ok": False, "step": "node", "error": "node.exe was not found"}
     try:
-        done = subprocess.run([node, str(SCRIPT), endpoint, *arguments], capture_output=True, text=True, encoding="utf-8",
+        argv, env = owned_process.direct([node, str(SCRIPT), endpoint, *arguments])
+    except owned_process.OwnedProcessError as exc:
+        return {"ok": False, "step": "node", "error": str(exc)}
+    try:
+        done = subprocess.run(argv, env=env, capture_output=True, text=True, encoding="utf-8",
                               timeout=RUN_SECONDS, creationflags=services.CREATE_NO_WINDOW, check=False)
     except subprocess.TimeoutExpired:
         return {"ok": False, "step": "timeout", "error": f"no result within {RUN_SECONDS} s"}

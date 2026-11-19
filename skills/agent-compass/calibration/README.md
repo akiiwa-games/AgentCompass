@@ -145,7 +145,7 @@ agentcompass data refresh --no-fetch          # rebuild and validate from cached
 agentcompass data refresh --no-fetch --accept-panel-change   # write a rebuild whose panel members changed (refused otherwise)
 ```
 
-The fetching refresh runs once per release, as a step of preparing it; the data it writes is fixed until the next release.
+The fetching refresh runs once per release, as a step of preparing it; nothing reads the boards between releases. What moves between releases is only what the maintainer publishes on purpose (below).
 
 Or from this directory: `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report FILE] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`.
 
@@ -223,13 +223,42 @@ Every per-model fact is reference data under `references/`; adding a model or a 
      `five-axis-scores.json` and `model-capabilities.{json,md}`. Values fitted over all measured models (the tier fits,
      the fleet effort steps and ratios) still move for other models; the run prints how many moved, by field. A model in
      `calibration_panel` (or the anchor) is refused: it changes the scale, so it needs the full refresh (`agentcompass
-     data refresh`, or `--no-fetch` from cached downloads), which rebuilds every row. Commit the changed files under
-     `references/`.
+     data refresh`, or `--no-fetch` from cached downloads), which rebuilds every row. Then publish and push (Publishing a model
+     between releases).
 
 A **maintainer manual score** is `agentcompass score set <model> ... --public`, which writes `references/user-scores.json`;
-then run the refresh. A **measured score** comes from the boards on the next refresh. The calibration
+then run `agentcompass data refresh --no-fetch` and `agentcompass data publish`. A **measured score** comes from the boards on the next refresh. The calibration
 scale itself (the anchor, the sentinel models and the panel members) is `calibration_panel` in `accounts.json`, a dated
 maintainer declaration; changing it rescales every score. Every written value names its sources and dates.
+
+## Publishing a model between releases
+
+Installs read a set the maintainer published on `main` without a product update
+([router-internals.md](../references/router-internals.md#5-reference-data-shipped-and-published)). For a new model:
+
+1. Edit `references/accounts.json` (steps 1 to 4 above).
+2. `agentcompass data refresh --model <id>` (step 5).
+3. `agentcompass data publish`: accepts the set (this code's readers load it and an offline plan completes with it) and
+   writes it to `published/<schema>/` and its manifest to `references/public-data.json`. Editing `references/` alone
+   publishes nothing.
+4. The checks: `agentcompass data publish --check` and `agentcompass data publish --check-released` (every released
+   version of the same schema accepts it), `pytest skills/agent-compass/scripts/test_public_data.py
+   skills/agent-compass/scripts/test_reference_provenance.py`.
+5. Commit the changed files under `references/` and `published/` and push to `main`, once.
+
+Nothing else: installs pick the set up at their next check (at most 6 hours). A corrected hand-written score or launch
+row is the same procedure with its own edit in place of steps 1 and 2. A model whose launch needs code (a new harness or
+provider, a new account family, a new launch field) cannot be published this way: the acceptance refuses a harness or
+family this code does not launch, and such a model ships with a release. A bundle's effort is checked only against the
+set's own `dispatch_efforts` row for its harness, which the same publication may extend; whether the CLI accepts that
+effort is not checked, so add one only when the CLI documents it.
+
+When to bump `SCHEMA_VERSION` (`scripts/public_data.py`): with any change after which a released reader of the current
+schema would misread data written for the new code: a new required field, a renamed or removed key, a changed meaning or
+unit. `--check-released` catches a publication an older reader refuses; it cannot catch a field an older reader reads and
+interprets differently, so that judgement is the maintainer's. After a bump, `data publish` writes `published/<new>/`;
+installs of the older schema keep reading `published/<old>/`. A release prepared on `main` under a new schema publishes
+its own set first, so `--check --release` holds when it is tagged.
 
 ## Rules the data follows
 

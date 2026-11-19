@@ -334,7 +334,7 @@ def setup_parser() -> argparse.ArgumentParser:
     parser.add_argument("--usage-float", dest="usage_float", action="store_true",
                         help="Also fetch the optional Usage Float desktop display plugin (not needed for routing).")
     parser.add_argument("--disable", action="append", default=[], metavar="ACCOUNT",
-                        help="Keep this detected account out of routing (repeatable).")
+                        help="Keep this detected account out of automatic routing; a route the user names still dispatches (repeatable).")
     parser.add_argument("--home", help="Operate on another home directory (testing).")
     return parser
 
@@ -360,15 +360,6 @@ def clear_obsolete_usage_configs(home: Path, dry_run: bool = False) -> dict:
             continue
         cleared[str(path)] = state_upgrade.clear_obsolete_usage_file(path)
     return cleared
-
-
-def remove_retired_reference_data(home: Path, dry_run: bool = False) -> list[str]:
-    """The removed reference data channel's cache and setting under the state directory (state_upgrade owns the list)."""
-    import state_upgrade
-    sdir = state_upgrade.state_dir(home)
-    if dry_run:
-        return [str(path) for path in state_upgrade.retired_reference_data(sdir)]
-    return state_upgrade.remove_retired_reference_data(sdir)
 
 
 def setup_main(argv: list[str] | None = None) -> int:
@@ -405,7 +396,7 @@ def setup_main(argv: list[str] | None = None) -> int:
     enabled = set()
     for row in usable:
         if row["signed_in"] is None and row["name"] not in disabled:
-            if not asker.ask(f"{row['name']} is installed but its sign-in cannot be verified. Route work to it?", True):
+            if not asker.ask(f"{row['name']} is installed but its sign-in cannot be verified. Include it in automatic routing?", True):
                 disabled.add(row["name"])
             elif asker.interactive:
                 # Only an answer the user gave re-admits an account. The non-interactive default is no choice: an
@@ -418,10 +409,9 @@ def setup_main(argv: list[str] | None = None) -> int:
     summary["override"] = override
     summary["host_policy"] = str(policy_path)
     summary["usage_config_cleanup"] = clear_obsolete_usage_configs(home, dry)
-    summary["retired_reference_data"] = remove_retired_reference_data(home, dry)
-    _line(f"\nAccounts the router may use: {', '.join(r['name'] for r in usable if r['name'] not in disabled) or 'none'}")
+    _line(f"\nAccounts in automatic routing: {', '.join(r['name'] for r in usable if r['name'] not in disabled) or 'none'}")
     if disabled:
-        _line(f"Kept out of routing: {', '.join(sorted(disabled))}")
+        _line(f"Kept out of automatic routing (a route you name still dispatches): {', '.join(sorted(disabled))}")
     _line(f"  {'would write' if dry else 'wrote'} {override['path']}")
 
     # 3. One usage collection with the router's own collector; the Usage Float display plugin only when asked for.

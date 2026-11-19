@@ -52,7 +52,10 @@ def named_pin_block(task, candidates):
 
 
 def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None, capabilities=None, overrides=None,
-         host_policy_config=None, *, read_local_state=True):
+         host_policy_config=None, *, read_local_state=True, named_accounts=(), route=None):
+    """`named_accounts`: accounts a named route or an explicit resume names (dispatch_registry.prepare). Their facts are
+    read whether or not they take part in automatic routing (candidate_ranking.rank). `route`: the route fields of a
+    decision AgentCompass recorded (task_intake.ROUTE_FIELDS); a caller's task never carries them."""
     accounts = accounts_override.normalize(accounts or account_fleet.load_accounts())
     capabilities = capabilities or account_fleet.load_capabilities(accounts=accounts)
     now = now or datetime.now(timezone.utc)
@@ -61,7 +64,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     usage, accounts, applied = quota_overrides.apply_overrides(active_overrides, usage, accounts, now)
     accounts = axis_scores.five_axis_overlay(accounts, read_local_state=read_local_state)
     policy = accounts['scoring']
-    task = task_intake.normalize_task(raw_task, policy, capabilities, accounts)
+    task = task_intake.normalize_task(raw_task, policy, capabilities, accounts, route=route)
     if task['worker'] is None and task['chain_id'] and records:
         for record in reversed(records):
             if record.get('chain') == task['chain_id'] and (record.get('bundle') or {}).get('bundle_id'):
@@ -73,12 +76,14 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                 task['worker'] = w
                 break
     candidates, eligible, system = candidate_ranking.rank(task, usage, policy, accounts, capabilities, now, unavailable, applied, records,
-                                        host_policy_config, read_local_state=read_local_state)
+                                        host_policy_config, read_local_state=read_local_state,
+                                        named_accounts=named_accounts)
     # Metered last resort: only when no subscription bundle is eligible, re-rank with checked metered bundles admitted.
     if not eligible and any(c['excluded'] == [candidate_eval.METERED_LAST_RESORT] for c in candidates):
         task['metered_fallback'] = True
         candidates, eligible, system = candidate_ranking.rank(task, usage, policy, accounts, capabilities, now, unavailable, applied,
-                                            records, host_policy_config, read_local_state=read_local_state)
+                                            records, host_policy_config, read_local_state=read_local_state,
+                                            named_accounts=named_accounts)
     worker_id = (task['worker'] or {}).get('bundle')
     resume = next((c for c in candidates if c['id'] == worker_id), None)
     decision = {'task': {k: task[k] for k in ('kind', 'difficulty', 'hours', 'chain_hours', 'coupling')}, 'system': system,

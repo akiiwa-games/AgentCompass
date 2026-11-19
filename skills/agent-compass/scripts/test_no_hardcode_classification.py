@@ -241,6 +241,11 @@ ALLOWED_TAINT_SINK_STATEMENTS = {
         "if args.task == '-':",
     ): 'checks whether --task - requests reading brief from stdin',
     (
+        'skills/agent-compass/scripts/caller_input.py',
+        'capture',
+        "if args.stage == 'roll' and getattr(args, 'task', None) == '-':",
+    ): 'checks whether roll --task - asks for stdin, read once before a re-run',
+    (
         'skills/agent-compass/scripts/roll.py',
         'title_of',
         'for line in text.splitlines():',

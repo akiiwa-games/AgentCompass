@@ -20,6 +20,7 @@ import os
 import re
 from pathlib import Path
 
+import public_data
 from model_resolution import DIRECT_SOURCES, family_patterns, resolve_canonical_model, resolve_model
 
 AUTO_PREFIX = 'auto:'
@@ -36,18 +37,19 @@ _PUBLIC_CATALOG_CACHE = None
 
 def _public_catalog():
     global _PUBLIC_CATALOG_CACHE
-    if _PUBLIC_CATALOG_CACHE is None:
-        ref = Path(__file__).resolve().parents[1] / 'references' / 'accounts.json'
+    ref = Path(__file__).resolve().parents[1] / 'references' / 'accounts.json'
+    held = public_data.set_id(ref.parent)
+    if _PUBLIC_CATALOG_CACHE is None or _PUBLIC_CATALOG_CACHE[0] != held:
         try:
-            doc = json.loads(ref.read_text(encoding='utf-8-sig'))
+            doc = public_data.document(ref)
         except (OSError, ValueError):
             doc = {}
-        _PUBLIC_CATALOG_CACHE = {
+        _PUBLIC_CATALOG_CACHE = (held, {
             'models': doc.get('models') if isinstance(doc.get('models'), dict) else {},
             'aliases': doc.get('aliases') if isinstance(doc.get('aliases'), dict) else {},
             'families': doc.get('families'),
-        }
-    return _PUBLIC_CATALOG_CACHE
+        })
+    return _PUBLIC_CATALOG_CACHE[1]
 
 
 def _model_api_family(model, accounts=None):
@@ -145,8 +147,12 @@ def default_profile(raw_model, accounts):
             'basis': 'No row and no same-series row: no scores (out of automatic routing).'}
 
 
-def harness_compatibility(harness, model, account_spec, accounts=None):
+def harness_compatibility(harness, model, account_spec, accounts=None, listed=False):
     """('ok'|'unverified'|'excluded', reason). Read-only rules; no endpoint is called here.
+
+    `listed`: the user named this model on the account and the account's provider lists it. The provider's list is then
+    the authority over what the name suggests: neither the non-chat name pattern nor a family the public data does not
+    know excludes it (automatic routing keeps both). A family the data does know still decides.
 
     A metered account (including a metered USD balance) is driven by Codex CLI over the Responses API.
     That bridge is not verified for non-OpenAI models, so those models on codex/pi are 'unverified'
@@ -155,7 +161,7 @@ def harness_compatibility(harness, model, account_spec, accounts=None):
     `anthropic_compatible: true`.
     """
     spec = account_spec or {}
-    if not is_chat_model(model):
+    if not is_chat_model(model) and not listed:
         return 'excluded', 'non-chat model (embedding/image/audio)'
     api_family = _model_api_family(model, accounts)
     proxy = spec.get('billing') == 'metered' or spec.get('backend_kind') == 'metered_usd'
@@ -168,6 +174,8 @@ def harness_compatibility(harness, model, account_spec, accounts=None):
     if harness == 'claude':
         if api_family == 'claude' or spec.get('anthropic_compatible') is True:
             return 'ok', ''
+        if listed and not api_family:
+            return 'ok', 'listed by the provider; public data has no API family for it'
         return 'excluded', 'Claude Code requires an Anthropic Messages endpoint'
     return 'ok', ''
 
@@ -227,13 +235,14 @@ def auto_bundle_id(account, harness, model, effort=None):
     return f'{AUTO_PREFIX}{account}:{harness}:{model}' + (f'@{effort}' if effort else '')
 
 
-def derive(accounts, catalog, now, overrides=None, seen=None, account_families=None):
+def derive(accounts, catalog, now, overrides=None, seen=None, account_families=None, named=()):
     """Return {'bundles': {account: {bid: bundle}}, 'excluded': [...], 'seen': {...}}.
 
     overrides: sparse preferences document ({'accounts': {acc: {'bundles': {bid: {'disabled': bool}}}}}),
     the same shape tray router_data.toggle_harness_model writes.
     seen: {bundle_id: last_detected_epoch}; the returned 'seen' should be persisted by the caller.
     account_families: {account: discovered launcher family}, for accounts whose harness is chosen per model.
+    named: {(account, advertised id)} the user named and the provider lists (`harness_compatibility(listed=True)`).
     Manual bundles always win for the same (account, harness, canonical base model).
     """
     providers = (catalog or {}).get('providers') or {}
@@ -267,8 +276,9 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                     proxy_harness((account_families or {}).get(account) or spec.get('family'),
                                   default_profile(raw, accounts)['model'], accounts)
                 profile = default_profile(raw, accounts)
-                status, reason = harness_compatibility(harness, profile['model'], spec, accounts)
-                if status != 'excluded' and not is_chat_model(raw):
+                listed = (account, raw) in named
+                status, reason = harness_compatibility(harness, profile['model'], spec, accounts, listed=listed)
+                if status != 'excluded' and not is_chat_model(raw) and not listed:
                     status, reason = 'excluded', 'non-chat model (embedding/image/audio)'
                 key = base_key(raw)
                 if status == 'excluded':

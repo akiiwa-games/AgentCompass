@@ -11,7 +11,9 @@ import time
 
 from datetime import timedelta
 
+import caller_input
 import dispatch_fallback
+import public_data
 import dispatch_registry as registry
 import entry
 from worker_context import require_parent_id
@@ -115,12 +117,17 @@ REMOVED_NEXT = ('Paseo created this worker and it was removed before this dispat
                 'holds nothing. The worker may have done part of the work: check that before rolling this brief again.')
 
 
+LAUNCH_OPERATIONS = ('create', 'resume')     # bridge operations that start or continue a worker (effects)
+
+
 def host_call(payload):
     """One bridge round trip, bounded by payload timeout_seconds. Files rather than pipes: a killed bridge cannot
     keep the caller waiting on a stream some descendant still holds open."""
     bridge = Path(os.environ.get('ROUTER_PASEO_BRIDGE') or
                   Path(__file__).resolve().parents[3] / 'setup' / 'paseo_dispatch_bridge.mjs')
     timeout = payload.get('timeout_seconds') or (RESUME_TIMEOUT if payload.get('operation') == 'resume' else HOST_TIMEOUT)
+    if payload.get('operation') in LAUNCH_OPERATIONS:
+        public_data.effect(f"paseo {payload['operation']}")    # marked before the bridge starts: never repeated
     try:
         with tempfile.TemporaryFile() as stdin, tempfile.TemporaryFile() as stdout:
             stdin.write(json.dumps(payload).encode('utf-8'))
@@ -166,7 +173,8 @@ def public(row, now=None):
             'created_at', 'launched_at', 'started_at', 'observed_at', 'lease_until', 'hard_until', 'released_at', 'access')
     out = {k: row[k] for k in keys if k in row}
     auto = dispatch_fallback.enabled()
-    if row.get('operation') == 'resume':
+    if row.get('operation') == 'resume' and (row.get('observed_at') or row['state'] not in registry.TERMINAL):
+        # Ended without the host ever showing the worker on this turn (the resume was refused): not a resume.
         out['resumed'] = True
     if row['state'] == 'create_failed':
         import launch_failures
@@ -446,6 +454,7 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     notification = None
     queried_host = False
     launch_error = None
+    refusal_detail = None   # what the host found different on a named worker it would not resume
     # watch_seconds is a hard limit on waiting: a bridge call is cut at what is left of it. Sending a create is not
     # waiting: it runs to HOST_TIMEOUT whatever the watch, and the daemon carries on when it is cut.
     deadline = time.monotonic() + watch_seconds
@@ -488,9 +497,19 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
         if row.get('operation') == 'resume' and row.get('agent_id'):
             response = host({'operation': 'resume', 'dispatch_id': dispatch_id,
                              'parent_id': parent_id, 'agent_id': row['agent_id'], 'request': row['request']})
-            if response.get('sent') is False and response.get('error') not in (
-                'addressable_parent_required', 'parent_agent_not_found', 'notification_start_failed'
-            ):
+            refused_resume = response.get('sent') is False and response.get('error') not in (
+                'addressable_parent_required', 'parent_agent_not_found', 'notification_start_failed')
+            if refused_resume and registry.named_resume(row, path):
+                # `--resume <id>` named this worker: its context is what the caller asked for, and a new worker has
+                # none of it. Nothing is created in its place, on any account; the caller decides what comes next.
+                row = registry.release(dispatch_id, parent_id, 'resume_refused:' + str(response.get('error') or 'unknown'),
+                                       failed=True, path=path)
+                launch_error = response.get('error') or 'resume_refused'
+                if isinstance(response.get('detail'), dict):
+                    refusal_detail = {k: response['detail'].get(k) for k in ('worker', 'requested')}
+                response = {'sent': None}
+            elif refused_resume:
+                # An automatic resume: the plan chose the bundle, so a fresh worker on it carries the brief.
                 row = registry.fallback_to_create(dispatch_id, now=registry.utcnow(), path=path)
                 # The failed resume used up part of the window, so this gets a fresh one, still inside the deadline.
                 response = create(registry.utcnow())
@@ -534,6 +553,8 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     result = public_chain(row, path)
     if launch_error:
         result['error'] = launch_error
+        if refusal_detail:
+            result['refusal_detail'] = refusal_detail
     elif row['state'] == 'create_failed':
         result['error'] = 'create_failed'
     elif row['state'] == 'failed' and row.get('agent_id'):
@@ -649,7 +670,7 @@ def cli(args):
     if action == 'prepare':
         if not args.input:
             raise ValueError('dispatch prepare requires --input {decision_id, task, launch}')
-        document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+        document = json.loads(caller_input.read_text(args, args.input))
         require_actual_parent(document['task'].get('parent_agent_id'))
         import usage_reading
         reconcile()

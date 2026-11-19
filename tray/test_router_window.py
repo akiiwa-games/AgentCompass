@@ -72,10 +72,11 @@ class DnaDimensionTests(unittest.TestCase):
     def test_model_table_carries_cited_prices_only_and_the_economy_is_relative_to_the_dearest(self):
         from types import SimpleNamespace
         models = {'priced': {'usd_per_hour': 15}, 'free': {'usd_per_hour': 0}, 'dear': {'usd_per_hour': 30}, 'unpriced': {}}
-        fake = SimpleNamespace(REFERENCES=Path('unused'), load_accounts=lambda _: {'models': models},
+        fake = SimpleNamespace(REFERENCES=Path('unused'), load_accounts=lambda *_, **__: {'models': models},
                                five_axis_overlay=lambda accounts: accounts,
                                models_table=lambda accounts: accounts['models'])
-        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, 'modules', return_value=(fake, None)),                 mock.patch.object(account_fleet, 'REFERENCES', fake.REFERENCES),                 mock.patch.object(account_fleet, 'load_accounts', fake.load_accounts),                 mock.patch.object(account_fleet, 'models_table', fake.models_table),                 mock.patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay),                 mock.patch.object(router_data, 'STATE_DIR', Path(directory)):
+        with tempfile.TemporaryDirectory() as directory,                 mock.patch.object(router_data, 'modules', return_value=(fake, None)),                 mock.patch.object(account_fleet, 'REFERENCES', fake.REFERENCES),                 mock.patch.object(account_fleet, 'load_accounts', fake.load_accounts),                 mock.patch.object(account_fleet, 'models_table', fake.models_table),                 mock.patch.object(axis_scores, 'five_axis_overlay', fake.five_axis_overlay),                 mock.patch.object(router_data, 'STATE_DIR', Path(directory)), \
+                mock.patch.object(router_data, '_public_accounts', return_value={'models': models}):
             table = router_data.model_table()
             series, _ = router_data.dna_series(table, 'priced', 'unpriced')
         self.assertNotIn('usd_per_hour', table['unpriced'])
@@ -624,7 +625,7 @@ class SettingsTests(unittest.TestCase):
     def test_toggle_bundle_writes_to_override(self):
         override = self.dir / "accounts-override.json"
         b_msg = router_data.toggle_bundle("claude", "opus55_xhigh")
-        self.assertIn("已停用", b_msg)
+        self.assertIn("不参与自动派发", b_msg)
         doc2 = json.loads(override.read_text(encoding="utf-8"))
         self.assertTrue(doc2["accounts"]["claude"]["bundles"]["opus55_xhigh"].get("disabled"))
         fake_alloc = mock.Mock()
@@ -641,7 +642,7 @@ class SettingsTests(unittest.TestCase):
                 mock.patch.object(account_fleet, "load_accounts", fake_alloc.load_accounts):
             dyn_msg = router_data.toggle_bundle("claude-magpie", "claude-magpie__sonnet55_high")
             self.assertIn("Claude Magpie", dyn_msg)
-            self.assertIn("已停用", dyn_msg)
+            self.assertIn("不参与自动派发", dyn_msg)
         doc3 = json.loads(override.read_text(encoding="utf-8"))
         self.assertTrue(doc3["accounts"]["claude-magpie"]["bundles"]["claude-magpie__sonnet55_high"].get("disabled"))
 
@@ -787,7 +788,7 @@ class LanguageTests(unittest.TestCase):
         self.assertIn("省额度", router_data.STRATEGY_PRESETS)
         self.assertEqual(router_data.countdown(3600), "1h 00m")
         self.assertEqual(panel_widgets.short_badge("Paused: disabled"), "Paused")
-        self.assertEqual(panel_widgets.short_badge("Blocked by Host"), "Blocked by Host")
+        self.assertEqual(panel_widgets.short_badge("Out of auto routing"), "Out of auto routing")
         self.assertEqual(easytier.label({"state": easytier.RUNNING, "peers": [{"cost": "p2p"}, {"cost": "p2p"}]}),
                          "Running (2 peers)")
         self.assertEqual(network_status.peer_values({"cost": "Local"})[2], "Local")
@@ -1655,7 +1656,7 @@ class RotationThresholdEndToEndTests(unittest.TestCase):
             doc = json.loads(CATALOG_JSON.read_text(encoding="utf-8-sig"))
             doc["scoring"].pop("rotate_after_carried_tokens", None)
             bad.write_text(json.dumps(doc), encoding="utf-8")
-            with mock.patch.object(router_data, "_accounts_path", return_value=bad), \
+            with mock.patch.object(router_data, "_public_accounts", return_value=json.loads(bad.read_text(encoding="utf-8"))), \
                     mock.patch.object(router_data, "STATE_DIR", state):
                 with self.assertRaises(KeyError):
                     router_data.rotation_limit()
@@ -1759,7 +1760,7 @@ class RotationThresholdEndToEndTests(unittest.TestCase):
 
                 with mock.patch.object(worker_sessions, "session_state", return_value=under_state):
                     self.assertIsNone(
-                        gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, caller_id="parent-e2e")
+                        gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, identities={"parent-e2e"})
                     )
                     plan_under = allocator.plan(
                         dict(task_template, chain={"id": "c-e2e", "coupling": "high", "total_hours": 3,
@@ -1773,7 +1774,7 @@ class RotationThresholdEndToEndTests(unittest.TestCase):
                     self.assertEqual(tray_workers[0]["limit"], 750_000)
 
                 with mock.patch.object(worker_sessions, "session_state", return_value=over_state):
-                    reason = gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, caller_id="parent-e2e")
+                    reason = gate_mod.check_worker_compaction_limit(wid, paseo_agents_dir=paseo_home / "agents", home=root_dir, identities={"parent-e2e"})
                     self.assertIsNotNone(reason)
                     self.assertIn("historical_context_tokens=800,000/750,000", reason)
                     self.assertIn("rotate_after_carried_tokens=750,000", reason)

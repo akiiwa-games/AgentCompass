@@ -37,6 +37,7 @@ import component_launch
 import gateways
 import plugins
 import runtime_paths
+import owned_process
 import services
 
 LOCK = threading.Lock()
@@ -59,6 +60,10 @@ def report(kind: str, message: str, component: str | None = None, **extra) -> No
 def run(args: list[str], cwd: Path, env: dict[str, str] | None = None, timeout: float = 600) -> str:
     report("progress", _tr('执行 {0} {1}').format(f'{Path(args[0]).name}', f"{' '.join(args[1:3])}"))
     safe_work_dir = services.safe_cwd(cwd)
+    try:
+        args, env = owned_process.direct(args, env)     # a batch launcher runs as its program, never through cmd.exe
+    except owned_process.OwnedProcessError as error:
+        raise RuntimeError(str(error)) from None
     process = subprocess.Popen(args, cwd=str(safe_work_dir), env=env, text=True, encoding="utf-8", errors="replace",
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                creationflags=services.CREATE_NO_WINDOW)
@@ -2023,15 +2028,15 @@ def _router_cli(installs: dict) -> list[str]:
     return [sys.executable, "-m", "agentcompass"]
 
 
-def _post_update_step(installs: dict, exec_run) -> tuple[str, str]:
-    """Bring local state in line with the installed version: `agentcompass data --refresh` removes what an earlier version
-    left behind (state_upgrade.remove_retired_reference_data). Released updaters run the same command after an update.
-    A failure is reported and does not stop the tray restart; doctor then names what is left and its fix."""
+def _refresh_public_data_step(installs: dict, exec_run) -> tuple[str, str]:
+    """Check the published reference data with the updated version: `agentcompass data --refresh` (public_data.py), the
+    command released updaters also run after an update. It exits 0 offline; a failure is reported and does not stop the
+    tray restart, and the background check of the next routing run tries again."""
     try:
         exec_run([*_router_cli(installs), "data", "--refresh"], Path(installs["tray"]["root"]))
     except Exception as error:
-        return _tr("整理本地状态失败：{0}。请运行 agentcompass setup").format(error), "failed"
-    return _tr("已按新版本整理本地状态（agentcompass data --refresh）"), "updated"
+        return _tr("检查公共参考数据失败：{0}。请运行 agentcompass data --refresh").format(error), "failed"
+    return _tr("已检查公共参考数据（agentcompass data --refresh）"), "updated"
 
 
 def _reapply_setup_step(installs: dict, exec_run, state_dir: Path | None = None) -> tuple[str, str]:
@@ -2317,8 +2322,8 @@ def update_agentcompass(
                         raise RuntimeError(
                             _tr("{0} 失败（退出码 {1}）").format(installer_exe.name, rc)
                         )
-                    report("component", _tr("整理本地状态"))
-                    post_msg, post_status = _post_update_step(installs, exec_run=exec_run)
+                    report("component", _tr("检查公共参考数据"))
+                    post_msg, post_status = _refresh_public_data_step(installs, exec_run=exec_run)
                     steps.append(post_msg)
                     report("result", post_msg, status=post_status)
                     msg = _tr("已完成安装包静默更新（{0}）").format(tag_label)
@@ -2362,8 +2367,8 @@ def update_agentcompass(
                 updated_any = True
 
         if updated_any:
-            report("component", _tr("整理本地状态"))
-            post_msg, post_status = _post_update_step(installs, exec_run=exec_run)
+            report("component", _tr("检查公共参考数据"))
+            post_msg, post_status = _refresh_public_data_step(installs, exec_run=exec_run)
             steps.append(post_msg)
             report("result", post_msg, status=post_status)
 

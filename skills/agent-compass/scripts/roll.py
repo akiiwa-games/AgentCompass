@@ -20,7 +20,11 @@ import dispatch_flow
 import entry
 import dispatch_registry as registry
 import host_placement
+import host_policy
+import launch_values
 import provider_inventory
+import caller_input
+import public_data
 import scorer_client
 import subscription_cli
 import turn_refusal
@@ -48,7 +52,7 @@ CLI_RUNS = {
                                                                  '--permission-mode', 'bypassPermissions',
                                                                  '--settings', json.dumps({'fastMode': bool(fast)})]),
     'codex': ('codex', lambda model, effort, cwd, fast=False: ['exec', '-m', model,
-                                                               *(['-c', f'model_reasoning_effort="{effort}"'] if effort else []),
+                                                               *(['-c', 'model_reasoning_effort=' + launch_values.toml_string(effort)] if effort else []),
                                                                '-c', 'features.fast_mode=' + str(bool(fast)).lower(),
                                                                '-c', 'service_tier="priority"' if fast else 'service_tier="default"',
                                                                '--dangerously-bypass-approvals-and-sandbox',
@@ -80,9 +84,9 @@ def title_of(text):
 def read_task_text(args):
     """The assignment exactly as given: --brief file, --task text, or --task - for stdin (no command-line length limit)."""
     if args.brief is not None:
-        return args.brief.read_bytes().decode('utf-8-sig')  # bytes, so CRLF is not rewritten
+        return caller_input.read_bytes(args, args.brief).decode('utf-8-sig')  # bytes, so CRLF is not rewritten
     if args.task == '-':
-        return sys.stdin.buffer.read().decode('utf-8-sig')
+        return caller_input.stdin_bytes(args).decode('utf-8-sig')
     return args.task
 
 
@@ -193,6 +197,34 @@ def _resolve_worker_bundle(worker, accounts=None):
     return bundle
 
 
+def named_route_conflict(args, bundle, accounts=None):
+    """`roll --resume <id>` with model flags: None when every flag given names the worker's own route (they add nothing:
+    the turn is the explicit resume), else the error text. --resume names the worker, and its route is the worker's
+    own; a different named route contradicts it, so neither is chosen for the caller. Fast mode is part of the route:
+    --fast on a worker that runs without it is such a contradiction (the entry cannot tell an absent --fast from a plain
+    mode asked for, so only a given --fast is compared)."""
+    import account_fleet
+    import model_resolution
+    if accounts is None:
+        accounts = account_fleet.load_accounts()
+    model, named_effort = model_resolution.split_model_effort(args.model) if args.model else (None, None)
+    effort = args.effort or named_effort
+    # Each flag the caller gave that names another route than the worker's own; the error names only these.
+    conflicting = [flag for flag, differs in (
+        ('--provider', args.provider and args.provider != bundle.get('provider')),
+        ('--account', args.account and args.account != bundle.get('account')),
+        ('--model', model and account_fleet.row_key(model, accounts)
+         != account_fleet.row_key(bundle.get('model') or '', accounts)),
+        ('--effort' if args.effort else '--model', effort and effort != bundle.get('effort')),
+        ('--fast', getattr(args, 'fast', False) and not bundle.get('fast'))) if differs]
+    if not conflicting:
+        return None
+    own = f"{bundle.get('account')}/{bundle.get('model')}:{bundle.get('effort')}{', fast' if bundle.get('fast') else ''}"
+    flags = ' and '.join(dict.fromkeys(conflicting))
+    return (f"--resume names the worker and its route is the worker's own ({own}); drop {flags}, or roll "
+            'without --resume to launch the named route.')
+
+
 def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
     """Gate-enforced refusal for continuing `worker`, or None when permitted. Fails closed if unresolvable."""
     if accounts is None:
@@ -211,6 +243,30 @@ def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
         )
     except ValueError as exc:
         return str(exc) or 'worker_not_resolvable'
+
+
+def _auto_resumable(worker, policy, usage_cache_path=None, accounts=None):
+    """Whether roll may resume `worker` without being told to. Resuming is then the router's choice, so the two
+    preference switches apply as they do to a plan: the account takes part in automatic routing on this host
+    (`host_policy.account_allowed`) and the worker's model is not unchecked in model management. The gate must admit
+    the turn too. An explicit `--resume` is the caller's choice and reads only the gate (`_worker_gate_refusal`)."""
+    import account_fleet
+    if accounts is None:
+        accounts = account_fleet.load_accounts()
+    bundle = _resolve_worker_bundle(worker, accounts)
+    if bundle is None or not host_policy.account_allowed(policy, bundle.get('account')):
+        return False
+    rows = [r for r in account_fleet.bundle_rows(accounts, bundle.get('bundle_id') or bundle.get('id'))
+            if r['account'] == bundle.get('account')]
+    if host_policy.disabled_cause(bundle['account'], rows, accounts):
+        return False
+    return not _worker_gate_refusal(worker, usage_cache_path=usage_cache_path, accounts=accounts)
+
+
+def workspace_mismatch_text(agent_id, own_dir, requested):
+    return (f'Nothing was launched: worker {agent_id!r} works in {own_dir}, and --workspace names {requested}; a '
+            'worker is resumed only in its own directory, and no other worker was started in its place. Drop '
+            f'--workspace to resume it where it works, or roll without --resume to start a worker in {requested}.')
 
 
 def _resume_refusal(out, explicit_id, error, next_text, code=2):
@@ -301,8 +357,7 @@ def summary(decision):
     bundle = decision.get('selected_bundle') or {}
     out = {'choice': decision.get('choice'),
            'bundle': {k: bundle[k] for k in ('provider', 'harness', 'account', 'model', 'effort', 'modeId', 'launch_model', 'fast', 'fast_billing') if bundle.get(k)},
-           'reason': ((decision.get('host_policy_violation') or {}).get('reason') or
-                      (decision.get('decision') or {}).get('reason') or '')[:300] or None,
+           'reason': ((decision.get('decision') or {}).get('reason') or '')[:300] or None,
            'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn'],
            **({'warnings': warnings} if (warnings := decision.get('warnings') or (decision.get('decision') or {}).get('warnings')) else {})}
     return out
@@ -379,6 +434,7 @@ def dot(args, out, prompt_file, *, task=None, decision=None):
     apply_to = ['--apply-to', target_cwd] if target_cwd else []
     command = python(DOT_RUNNER, 'run', '--prompt-file', str(prompt_file),
                      *[x for f in files for x in ('--file', f)], *apply_to, '--no-wait')
+    public_data.effect('dot worker launch')     # marked before the runner starts: a launch is never repeated
     proc = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace',
                           timeout=180)
     found = re.search(r'task_id=(\S+)', proc.stderr)
@@ -428,6 +484,7 @@ def grok_bot(args, out, prompt_file, task, bundle, *, decision=None):
     if bundle.get('model') != 'grok-bot' or bundle.get('account') != 'grok-bot' or bundle.get('effort'):
         raise ValueError('Use --provider grok-bot --account grok-bot --model grok-bot without an effort; upstream owns model selection.')
     try:
+        public_data.effect('grok-bot worker launch')    # marked before the runner starts: a launch is never repeated
         receipt = runner.submit(prompt_file.read_text(encoding='utf-8'), out['parent_id'], task['task_id'])
     except (runner.TransportError, OSError, ValueError) as exc:
         return dict(out, launched=False, dispatch_mode='grok-bot', caller_action='check_error', error=str(exc)), 1
@@ -587,9 +644,10 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         resume_bundle = _resolve_worker_bundle(explicit_worker, fleet)
     elif not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
+        policy = host_policy.load_policy()
         compatible = [w for w in all_reusable
                       if _bundle_matches_worker(selected_bundle, w, same_model)
-                      and not _worker_gate_refusal(w, usage_cache_path=usage_cache_path, accounts=fleet)]
+                      and _auto_resumable(w, policy, usage_cache_path=usage_cache_path, accounts=fleet)]
         if is_ro_review:
             compatible = independent_reviewers(compatible)
         chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')
@@ -649,7 +707,32 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         outcome = dispatch_fallback.after_refusal(decision['decision_id'], fresh, refused, access=access,
                                                   workspace=workspace, cwd=landing, judge=judge)
         return fallback_result(out, outcome, decision, parent, args)
+    except ValueError as refused:
+        if not explicit_id:
+            raise
+        # A fact about the named worker's own bundle (its row is gone from the configuration, the decision expired):
+        # a blocked result with its reason, never an uncaught exception.
+        return _resume_refusal(
+            out, explicit_id, 'resume_worker_unavailable',
+            f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({refused}). '
+            'Omit --resume to start a fresh worker.',
+        )
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=0)
+    if explicit_id and receipt.get('state') in ('failed', 'create_failed'):
+        # The named worker did not take the turn (the host refused the resume) or failed on it: nothing was started in
+        # its place, and nothing will be (dispatch_flow, dispatch_fallback `worker_named`).
+        cause = receipt.get('cause') or receipt.get('error') or receipt.get('state')
+        detail = receipt.get('refusal_detail') or {}
+        worker_out = dict(out, worker=dict(receipt, provider=decision['selected_bundle']['provider']))
+        if receipt.get('error') == 'worker_workspace_mismatch':
+            return _resume_refusal(worker_out, explicit_id, 'resume_workspace_mismatch', workspace_mismatch_text(
+                explicit_id, detail.get('worker') or 'an unknown directory', detail.get('requested') or landing))
+        differs = (f": the worker has {detail.get('worker')}, this turn asked for {detail.get('requested')}"
+                   if detail else '')
+        return _resume_refusal(
+            worker_out, explicit_id, 'resume_worker_unavailable',
+            f'Worker {explicit_id!r} did not take this turn ({cause}{differs}); no other worker was started in its '
+            'place. Roll the brief without --resume to let the router choose, or name a route.')
     if (receipt.get('state') == 'create_failed' or (receipt.get('state') == 'failed' and receipt.get('agent_id'))) \
             and dispatch_fallback.enabled() and judge is not None:
         # Paseo confirms no worker runs this brief any more (none was created, or it ended in error while roll watched):
@@ -901,7 +984,7 @@ def cli_command(family, provider):
                                              if c.is_file()), None)
                 if found is None:
                     raise RuntimeError(f'The Grok executable configured for {provider!r} is missing: {name}')
-                return [str(found)]
+                return subscription_cli.direct_prefix(found)
             if not spec.get('extends'):
                 break
             provider = spec['extends']
@@ -919,6 +1002,9 @@ def cli(args, out, bundle, text):
     if family not in CLI_RUNS:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     next=f'No Paseo daemon and no CLI here for {bundle["provider"]!r}' + native), 0
+    # A value that cannot be one argument refuses this launch here, before anything is written for it.
+    model = launch_values.argument('model', bundle.get('launch_model') or bundle['model'])
+    effort = bundle.get('effort') and launch_values.argument('effort', bundle['effort'])
     if bundle.get('fast'):
         from fast_modes import validate
         import account_fleet
@@ -930,7 +1016,7 @@ def cli(args, out, bundle, text):
     env.update(provider_env)
     env.update(AGENTCOMPASS_WORKER='1', ROUTER_PARENT_AGENT_ID=out['parent_id'],
                ROUTER_PARENT_HOST=out['parent_host'], ROUTER_PARENT_ADDRESS=out['parent_address'])
-    run = CLI_RUNS_DIR / f'{time.strftime("%Y%m%d-%H%M%S")}-{bundle["provider"]}-{os.getpid()}'
+    run = CLI_RUNS_DIR / f'{time.strftime("%Y%m%d-%H%M%S")}-{launch_values.path_part(bundle["provider"])}-{os.getpid()}'
     run.mkdir(parents=True, exist_ok=True)
     (run / 'brief.md').write_bytes(text.encode('utf-8'))
     options = {'creationflags': subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP} \
@@ -938,15 +1024,16 @@ def cli(args, out, bundle, text):
     prompt_argument = family in PROMPT_ARGUMENT
     try:
         argv = [*cli_command(family, bundle['provider']),
-                *flags(bundle.get('launch_model') or bundle['model'], bundle.get('effort'), cwd, bool(bundle.get('fast')))]
+                *flags(model, effort, cwd, bool(bundle.get('fast')))]
         if family in PROMPT_FILE:
             argv += ['--prompt-file', str(run / 'brief.md')]
         with open(run / 'brief.md', 'rb') as brief, open(run / 'output.txt', 'wb') as stdout, \
                 open(run / 'stderr.txt', 'wb') as stderr:
+            public_data.effect('cli worker launch')
             process = subprocess.Popen(argv + [text] if prompt_argument else argv, cwd=cwd, env=env,
                                        stdin=subprocess.DEVNULL if prompt_argument or family in PROMPT_FILE else brief,
                                        stdout=stdout, stderr=stderr, **options)
-    except (RuntimeError, OSError) as exc:
+    except (RuntimeError, OSError, launch_values.UnreadableLauncher) as exc:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     next=f'The {executable} CLI could not start ({exc})' + native), 1
     worker = {'provider': bundle['provider'], 'cli': executable, 'pid': process.pid,
@@ -1131,7 +1218,8 @@ def run(args, judge):
 
 
 def _run(args, judge):
-    """judge is the route_judge module (classify_pinned, record_constraint, plan_stage, scorer_unavailable_result)."""
+    """judge is the route_judge module (classify_pinned, record_constraint, record_resume, plan_stage,
+    scorer_unavailable_result)."""
     text = read_task_text(args)
     if not text.strip():
         raise ValueError('The task is empty.')
@@ -1207,10 +1295,21 @@ def _run(args, judge):
                     f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({gate_reason}). '
                     'Omit --resume to start a fresh worker.',
                 )
+            own_dir = host_placement.canonical_dir(explicit_worker.get('cwd') or explicit_worker.get('workspace'))
+            if canonical_ws and own_dir and own_dir != canonical_ws:
+                # A worker does not move: the host resumes it only in its own directory (the bridge's
+                # `worker_workspace_mismatch`), and a new worker in --workspace would not hold its context.
+                return _resume_refusal(base_out, explicit_id, 'resume_workspace_mismatch', workspace_mismatch_text(
+                    explicit_id, own_dir, canonical_ws))
+            if args.provider or args.model or args.effort or getattr(args, 'fast', False):
+                conflict = named_route_conflict(args, _resolve_worker_bundle(explicit_worker) or {})
+                if conflict:
+                    raise ValueError(conflict)
             matched_worker = explicit_worker
         elif not getattr(args, 'new_worker', False):
+            policy = host_policy.load_policy()
             eligible = [w for w in all_reusable
-                        if not w.get('worn') and not _worker_gate_refusal(w, usage_cache_path=usage_cache_path)]
+                        if not w.get('worn') and _auto_resumable(w, policy, usage_cache_path=usage_cache_path)]
             matched_worker = match_reusable_worker(args, task, text, parent, workers=eligible)
         else:
             matched_worker = None
@@ -1226,7 +1325,14 @@ def _run(args, judge):
                 },
             }
     with provider_inventory.snapshot():
-        if args.provider or args.model or args.effort:
+        if explicit_id:
+            # The caller named the worker: its route is the worker's own bundle, not what an automatic plan of this
+            # task would choose (which excludes, for one, an account out of automatic routing). Model flags that name
+            # that same route add nothing (named_route_conflict refused any other).
+            classified = judge.classify_pinned(task, args)
+            decision = (classified['result'] if 'result' in classified else
+                        judge.record_resume(args, task, classified, _resolve_worker_bundle(matched_worker), explicit_id))
+        elif args.provider or args.model or args.effort:
             if not args.basis:
                 raise ValueError('Naming --provider/--model/--effort is a user override; quote the user with --basis.')
             args.constraint = 'user_override'
@@ -1280,13 +1386,6 @@ def _run(args, judge):
     if decision.get('choice') in (None, 'none') or not bundle:
         return dict(out, launched=False, dispatch_mode='none', caller_action='execute_self_or_ask_user',
                     next=decision.get('next') or 'No worker fits this brief; do it yourself or ask the user.'), 2
-    if decision.get('host_policy_violation'):
-        violation = decision['host_policy_violation']
-        return dict(out, launched=False, dispatch_mode='none', caller_action='check_host_policy',
-                    host_policy_violation=violation,
-                    next=f"Host policy excludes account {violation.get('account')!r}. Inspect "
-                         f"{violation.get('policy_path') or 'the configured host policy'}; discovery and an explicit "
-                         'task request do not change allowed_accounts.'), 2
     if (decision.get('decision') or {}).get('needs_user_decision') and not (explicit_id and bundle):
         return dict(out, launched=False, dispatch_mode='none', caller_action='ask_user',
                     next='The router needs a user decision; show route.reason to the user.'), 2

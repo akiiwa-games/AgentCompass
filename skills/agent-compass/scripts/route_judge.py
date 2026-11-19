@@ -15,6 +15,7 @@ import urllib.request
 # Also support the path-loaded allocator and python -I entrypoints.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import account_state
+import caller_input
 import antigravity_plan
 import decision_ledger
 import dispatch_flow
@@ -23,6 +24,7 @@ import entry
 import fast_modes
 import host_policy
 import provider_inventory
+import public_data
 import quota_overrides
 import roll
 import scorer_client
@@ -137,30 +139,46 @@ def record_constraint(args, task=None, classified=None):
     pin.effort = args.effort or named_effort or resolved['effort']
     direct = resolved['source'] in model_resolution.DIRECT_SOURCES
     own_model = account_fleet.row_key(pin.model, accounts)
-    own_rows = [b for b in account_fleet.bundles(accounts).values() if b['account'] == args.account and b['provider'] == args.provider
-                and account_fleet.row_key(b['model'], accounts) == own_model]
-    if not direct and (not own_rows or (pin.effort and pin.effort not in {b.get('effort') for b in own_rows}
-                                        and not any(pin.effort in (account_fleet.dispatch_allowed_efforts(b, accounts) or ())
-                                                    for b in own_rows))):
-        # What it resembles is another model. The same answer the plan gives: blocked, never a substitute.
-        raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no configured route on "
-                         f"{args.account}/{args.provider}. Tell the user; do not substitute another model.")
+
+    def rows_of_model():
+        return [b for b in account_fleet.bundles(accounts).values() if b['account'] == args.account
+                and b['provider'] == args.provider and account_fleet.row_key(b['model'], accounts) == own_model]
+    own_rows = rows_of_model()
+    listed = None
+    if not own_rows:
+        # No row of this model on the account: the account's provider decides, from its live model list (read once, as
+        # every named route reads it). What a name resembles is another model, never a substitute.
+        import live_models
+        rows, why = provider_inventory.listed_rows(
+            accounts, args.account, args.provider, pin.model, pin.effort,
+            live_models.load_or_refresh([args.provider], named=(args.account,)))
+        if rows is None:
+            raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no row on "
+                             f"{args.account}/{args.provider}, and {why}. Tell the user; do not substitute another model.")
+        listed = {'account': args.account, 'rows': rows}
+        accounts = provider_inventory.with_listed_rows(accounts, listed)
+        own_rows = rows_of_model()
+    accepted = {b.get('effort') for b in own_rows} | {
+        e for b in own_rows for e in (account_fleet.dispatch_allowed_efforts(b, accounts) or ())}
+    if pin.effort and pin.effort not in accepted:
+        # The launch contract is the fact of what the harness accepts.
+        raise ValueError(account_fleet.unaccepted_effort(account_fleet.bundle_harness(own_rows[0], args.account),
+                                                         pin.model, pin.effort, accepted))
     chosen = match_bundle(accounts, pin)
     disabled_match = match_bundle(accounts, pin, include_disabled=True) if chosen is None else None
+    # The model-management checkbox says which models the router chooses by itself, like host policy for accounts. The
+    # user's own naming reaches an unchecked model (with a warning below); a project rule does not override the
+    # user's checkbox. Off by default (superseded in public data) is not the user's checkbox: any naming reaches it.
     if disabled_match is not None:
-        if account_fleet.bundles(accounts)[disabled_match].get('disabled_by_default'):
-            chosen = disabled_match     # off by default, not by the user: naming the model reaches it
+        if (args.constraint == 'user_override'
+                or account_fleet.bundles(accounts)[disabled_match].get('disabled_by_default')):
+            chosen = disabled_match
         else:
-            raise ValueError(
-                f"Bundle {disabled_match!r} ({args.account}/{pin.model}) is disabled. "
-                f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
-            )
-    if own_rows and all(b.get('disabled') and not b.get('disabled_by_default') for b in own_rows):
+            raise ValueError(_unchecked_refusal(args, pin.model))
+    if (args.constraint != 'user_override' and own_rows
+            and all(b.get('disabled') and not b.get('disabled_by_default') for b in own_rows)):
         # Every level unchecked is the model unchecked, also at a level with no row of its own.
-        raise ValueError(
-            f"Bundle {own_rows[0]['id']!r} ({args.account}/{pin.model}) is disabled. "
-            f"Do not dispatch {pin.model} on {args.account}; run `{router_command()} plan` to select an enabled bundle."
-        )
+        raise ValueError(_unchecked_refusal(args, pin.model))
     discovered = account_fleet.bundles(accounts).get(chosen) or {}
     if discovered.get('discovery_unavailable'):
         raise ValueError(discovered['discovery_unavailable'])
@@ -220,26 +238,105 @@ def record_constraint(args, task=None, classified=None):
     if retrying:
         warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a turn "
                     "that ends on the model's reply lifts the hold (a cancel or stop does not)", *warnings]
+    # Host policy says which accounts the router chooses by itself, the model-management checkbox which models. Only
+    # the user's own naming reaches past them; a project rule (hard_constraint) is shared between machines and does
+    # not override one machine's switch. Account loading may enroll a newly discovered account; check the resulting
+    # policy. The ledger marks the row (decision_ledger.automatic_routing_marker).
+    policy = host_policy.load_policy()
+    if args.constraint == 'user_override':
+        warnings = [*(f'{text}; launched because the user named it in this request'
+                      for text in host_policy.exclusion_texts(bundle, accounts, policy)), *warnings]
+    elif not host_policy.account_allowed(policy, args.account):
+        outside = host_policy.outside_routing(args.account)
+        result['host_policy_violation'] = {
+            'account': args.account, 'dispatch_allowed': False, 'policy_path': str(host_policy.policy_path()[0]),
+            'reason': (f'{outside}; a {args.constraint} record does not override that, only a route the user named '
+                       "in this request (--constraint user_override with the user's words in --basis)")}
     if warnings:
         result['warnings'] = warnings
     if classified:
         result['_allocation_task'] = task
         if classified.get('scorer') is not None:
-            result.update(scorer=classified['scorer'], task_profile=task['profile'])
+            result.update(scorer=classified['scorer'], task_profile=task.get('profile'))
+        if classified.get('unclassified'):
+            unclassified_data_error(result, classified['unclassified'], task['expected_hours'])
         if classified.get('hours_estimate'):
             result['hours_estimate'] = classified['hours_estimate']
         if classified.get('alerts'):
             result['alerts'] = list(classified['alerts'])
+    # What this record decides beyond the task: kept on the decision, passed to the plan as route fields
+    # (task_intake.ROUTE_FIELDS), never written into a task.
+    route = {**({'unclassified': classified['unclassified']} if (classified or {}).get('unclassified') else {}),
+             **({'force_fast': True} if fast_requested else {})}
+    if route:
+        result['_route'] = route
     if fast_requested:
-        result['_allocation_task'] = {**(task or {}), 'force_fast': True}
-    # Account loading may enroll a newly discovered account; check the resulting policy.
-    availability = host_policy.load_policy()
-    if not host_policy.account_allowed(availability, args.account):
-        result['host_policy_violation'] = {'account': args.account, 'dispatch_allowed': False,
-                                           'policy_path': str(host_policy.policy_path()[0]),
-                                           'reason': 'excluded by host policy; constraint recorded, not dispatch authorization'}
+        # A verified fast contract with no cited price launches (candidate_eval), carrying that data error.
+        fast_gap = fast_modes.price_gap(c_model, account_fleet.model_spec(overlaid_accounts, pin.model))
+        if fast_gap:
+            result['data_errors'] = [*result.get('data_errors', []), fast_gap]
+            result['warnings'] = [*result.get('warnings', []), f"data error: {fast_gap}; launched fast because the user "
+                                  "named it, reserved at the plain mode's spend"]
+    if listed:
+        result['_listed_rows'] = listed     # issue and prepare plan with them (provider_inventory.with_listed_rows)
+        listed_gap = (f'{args.account}/{pin.model} has no row in the shipped data: unscored and unpriced until the public '
+                      'data has it')
+        result['data_errors'] = [*result.get('data_errors', []), listed_gap]
+        result.setdefault('warnings', []).append(
+            f'data error: {listed_gap}; launched because the user named it and provider {args.provider} lists it')
     _compare_with_router(result, task, usage, now, chosen, fast_requested, classified)
     return decision_ledger.finalize(result, None, 'auto', started, reviewed_task if classified else task)
+
+
+def record_resume(args, task, classified, bundle, agent_id):
+    """`roll --resume <agent_id>`: the caller named a worker, so the route is that worker's own bundle, whatever an
+    automatic plan would choose for the task (an account out of automatic routing included). The task is classified
+    like any roll (`classify_pinned`) so the turn is priced and reserved; the facts about the worker (busy, worn, a
+    refusing window, leftover meter fields, a model its account no longer offers) are decided where they live: roll's
+    resume checks, the gate's turn check and `dispatch_registry.prepare`. Returns the finalized decision."""
+    started = time.monotonic()
+    import account_fleet
+    accounts = account_fleet.load_accounts()
+    now = datetime.now(timezone.utc)
+    usage = usage_reading.usage_snapshot(args.usage_cache, args.accounts, now)
+    usage = provider_inventory.merge_usage(usage, accounts, now, args.accounts)
+    plan_task = {**classified['task'],
+                 **({'parent_agent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {})}
+    chosen = bundle.get('bundle_id') or bundle.get('id')
+    result = {'stage': 'record', 'choice': 'constraint', 'source': 'explicit_resume', 'constraint': 'explicit_resume',
+              'basis': f'roll --resume {agent_id}', 'selected_bundle': dict(bundle), 'judge': None,
+              'observed_at': now.isoformat(), 'usage': usage, '_allocation_task': plan_task}
+    if classified.get('scorer') is not None:
+        result.update(scorer=classified['scorer'], task_profile=plan_task.get('profile'))
+    if classified.get('unclassified'):
+        unclassified_data_error(result, classified['unclassified'], plan_task['expected_hours'])
+        result['_route'] = {'unclassified': classified['unclassified']}
+    if classified.get('hours_estimate'):
+        result['hours_estimate'] = classified['hours_estimate']
+    if classified.get('alerts'):
+        result['alerts'] = list(classified['alerts'])
+    warnings = [f'{text}; the turn goes to worker {agent_id!r} because --resume named it'
+                for text in host_policy.exclusion_texts(bundle, accounts, host_policy.load_policy())]
+    _compare_with_router(result, plan_task, usage, now, chosen, bool(bundle.get('fast')), classified)
+    if result.get('agrees') is False and result.get('router_choice') not in (None, 'none'):
+        warnings.append(f"The turn goes to worker {agent_id!r} on its existing bundle {chosen!r} as requested "
+                        f"(--resume); the router would otherwise have chosen {result['router_choice']!r}.")
+    if warnings:
+        result['warnings'] = warnings
+    return decision_ledger.finalize(result, None, 'auto', started, task)
+
+
+def unclassified_data_error(result, reason, hours):
+    """The data error of a named launch without a classifier profile, in the result and its ledger row."""
+    error = (f"unclassified ({reason}): no task profile; priced and reserved from --hours "
+             f"{float(hours):g} at the named effort")
+    result['data_errors'] = [*result.get('data_errors', []), error]
+    result['warnings'] = [*result.get('warnings', []), f'data error: {error}']
+
+
+def _unchecked_refusal(args, model):
+    return (f'{host_policy.unchecked_routing(args.account, model)}; a {args.constraint} record does not override that, '
+            "only a route the user named in this request (--constraint user_override with the user's words in --basis)")
 
 
 def _record_task(args, task):
@@ -248,8 +345,10 @@ def _record_task(args, task):
     if task is None:
         task = {}
     if not task and args.input is not None:
-        loaded = json.loads(args.input.read_text(encoding='utf-8-sig'))
+        loaded = json.loads(caller_input.read_text(args, args.input))
         task = loaded.get('task') if isinstance(loaded, dict) and isinstance(loaded.get('task'), dict) else {}
+    import task_intake
+    task_intake.check_caller_task(task)
     if not task.get('parent_agent_id'):
         # The gate matches same-session rows first; a record without the session ID loses to any
         # roll this session made inside the window. Only real host IDs, never the ppid fallback.
@@ -299,7 +398,6 @@ def _compare_with_router(result, task, usage, now, chosen, fast_requested, class
         result.update({'router_choice': None, 'agrees': None, 'classifier_skipped': True})
     elif task:
         try:
-            plan_task = {**task, 'force_fast': True} if fast_requested else task
             has_cadence = any(
                 isinstance((spec or {}).get('cadence'), dict)
                 for spec in (account_fleet.load_accounts().get('accounts') or {}).values()
@@ -307,7 +405,8 @@ def _compare_with_router(result, task, usage, now, chosen, fast_requested, class
             plan_records = (dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
                             if not ((task.get('chain') or {}).get('id') or has_cadence) else
                             decision_ledger.read_ledger() + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES))
-            plan = allocator.plan(plan_task, usage, now, records=plan_records)
+            plan = allocator.plan(task, usage, now, records=plan_records,
+                                  route={'force_fast': True} if fast_requested else None)
         except (ValueError, KeyError, TypeError) as exc:
             result['router_error'] = f'{type(exc).__name__}: {exc}'
         else:
@@ -485,27 +584,40 @@ def classify_task(task, needs, capabilities, policy, timeout, use_model=True):
     return profile, task, needs, scorer, hours_estimate, alerts
 
 
-def pinned_unclassified_result(task, scorer, hours, started):
-    """A pinned roll with no task profile. The allocator prices and reserves a launch only from a profile, so
-    nothing launches; the message says what is missing and never names an hours figure it does not have."""
-    why = (scorer or {}).get('fallback_detail') or (scorer or {}).get('fallback_reason') or 'scorer_unavailable'
-    given = (f'--hours {hours:g} was given, but' if hours is not None
-             else '--hours was not given, so there is no hours estimate, and AgentCompass does not invent one;')
-    reason = (f'Pinned roll: the System-One classifier is unavailable ({why}). {given} without the classifier\'s task '
-              'profile the pinned bundle cannot be priced or reserved, so nothing was launched.')
+def unclassified_reason(scorer):
+    return (scorer or {}).get('fallback_detail') or (scorer or {}).get('fallback_reason') or 'scorer_unavailable'
+
+
+def pinned_unclassified_result(task, scorer, started):
+    """A pinned roll with no task profile and no --hours: there is nothing to price or reserve the launch from, and
+    AgentCompass does not invent an hours figure. With --hours the named route launches unclassified (classify_pinned)."""
+    reason = (f'Pinned roll: the System-One classifier is unavailable ({unclassified_reason(scorer)}) and --hours was not '
+              'given, so there is nothing to price or reserve the launch from, and AgentCompass does not invent an '
+              'estimate; nothing was launched.')
     result = scorer_unavailable_result(task, scorer, started)
     result.update(reason=reason, decision=dict(result['decision'], reason=reason), pinned=True,
-                  next='Run the same roll again when the classifier answers (`agentcompass scorer --action test` checks '
-                       'it), or do the task in this session.')
+                  next='Roll it again with --hours <n> (your estimate of the work) to launch the named route priced '
+                       'from those hours, unclassified; or roll again when the classifier answers '
+                       '(`agentcompass scorer --action test` checks it).')
     return result
+
+
+def _unclassified(task, scorer, hours, started):
+    """classify_pinned's answer when no classifier profile exists: with --hours the named route launches, planned
+    without a profile (task_intake `unclassified`: no category demand, hours from --hours at the named effort); without
+    --hours it stops (pinned_unclassified_result)."""
+    if hours is None:
+        return {'result': pinned_unclassified_result(task, scorer, started)}
+    return {'task': task, 'unclassified': unclassified_reason(scorer), 'scorer': scorer, 'hours_estimate': None,
+            'alerts': []}
 
 
 def classify_pinned(task, args):
     """`roll --provider/--account/--model`: only the model choice is pinned. The task gets the same System-One profile
     and hours estimate as an automatic roll, so the pinned bundle is priced and reserved like any other launch.
 
-    Returns {'task', 'scorer', 'hours_estimate', 'alerts'}; or {'result': ...} when the roll stops here (split, or no
-    profile to price with)."""
+    Returns {'task', 'scorer', 'hours_estimate', 'alerts'} (and 'unclassified', the reason, when no classifier answered
+    and --hours was given); or {'result': ...} when the roll stops here (split, or no profile to price with)."""
     started = time.monotonic()
     hours = task.get('expected_hours')
     if isinstance(task.get('profile'), dict):
@@ -520,7 +632,7 @@ def classify_pinned(task, args):
     if getattr(args, 'no_score', False):
         scorer = {'source': 'scorer_unavailable', 'model': None, 'fallback_reason': 'no_score_without_profile',
                   'fallback_detail': '--no-score was given and the task carries no profile'}
-        return {'result': pinned_unclassified_result(task, scorer, hours, started)}
+        return _unclassified(task, scorer, hours, started)
     import account_fleet
     import task_intake
     capabilities = account_fleet.load_capabilities()
@@ -530,7 +642,7 @@ def classify_pinned(task, args):
         task, needs, capabilities, policy, getattr(args, 'score_timeout', scorer_client.SCORER_TIMEOUT_SECONDS),
         use_model=not getattr(args, 'dry_run', False))
     if profile is None:
-        return {'result': pinned_unclassified_result(task, scorer, hours, started)}
+        return _unclassified(task, scorer, hours, started)
     checked = task_intake.validate_caller_profile(classified['profile'])
     classified = {**classified, 'profile': checked}
     if checked.get('multi_task') is True:
@@ -655,6 +767,9 @@ def plan_stage(document, args):
     if extra_alerts:
         planned.setdefault('alerts', []).extend(extra_alerts)
     _add_plan_alerts(planned, task, capabilities, dot_down)
+    reference_alert = public_data.reference_alert()
+    if reference_alert:
+        planned.setdefault('alerts', []).append(reference_alert)
     if task.get('hours_source') == 'classifier_estimate':
         planned['hours_estimate'] = hours_estimate or {
             'hours': (planned.get('decision', {}).get('task') or {}).get('hours'), 'source': 'caller_profile'}
@@ -671,6 +786,8 @@ def _plan_input_task(document, args):
     task = document.get('task')
     if not isinstance(task, dict) or not task:
         raise ValueError('Input requires task.')
+    import task_intake
+    task_intake.check_caller_task(task)
     if getattr(args, 'hours', None) is not None and task.get('expected_hours') is None:
         task = {**task, 'expected_hours': args.hours}
     if getattr(args, 'can_wait_hours', None) is not None and task.get('can_wait_hours') is None:
@@ -717,7 +834,7 @@ def scorer_cli(args):
     if args.action == 'set':
         if not args.scorer_type:
             raise ValueError('scorer set requires --type.')
-        api_key = sys.stdin.readline().strip() if args.api_key == '-' else args.api_key
+        api_key = caller_input.stdin_line(args).strip() if args.api_key == '-' else args.api_key
         scorer_client.save_scorer_config(args.scorer_type, api_key, args.base_url, args.model,
                            None if args.fallback_to_agy is None else args.fallback_to_agy == 'on', path)
         return {'stage': 'scorer', 'action': 'set', 'saved': True, **scorer_client.scorer_status(scorer_client.load_scorer_config(path), path)}, 0
@@ -735,7 +852,7 @@ def score_stage(args):
     import account_fleet
     if args.input is None:
         raise ValueError('score requires --input.')
-    document = json.loads(args.input.read_text(encoding='utf-8-sig'))
+    document = json.loads(caller_input.read_text(args, args.input))
     task = document.get('task')
     if not isinstance(task, dict) or not task:
         raise ValueError('Input requires task.')
@@ -773,7 +890,7 @@ def build_parser():
     parser.add_argument('--title', help='roll: worker title (default: first line of the brief).')
     parser.add_argument('--workspace', help='roll: existing directory this worker writes in and claims exclusively (default: parent cwd, warning only).')
     parser.add_argument('--task-id', help='roll: stable id for this task (default: derived from the brief).')
-    parser.add_argument('--resume', metavar='AGENT_ID', help='roll: resume this specific idle worker owned by the parent session.')
+    parser.add_argument('--resume', metavar='AGENT_ID', help='roll: resume this specific idle worker owned by the parent session, on its own route and in its own directory; when it cannot take the turn, nothing else is started.')
     parser.add_argument('--new-worker', action='store_true', help='roll: always create a new dispatch and worker: no resume, and no handing back an open dispatch of the same brief.')
     parser.add_argument('--access', choices=('read-only', 'write'), help='roll: explicit override for whether this brief only reads or writes its workspace (default: classified by System-One, else write). Only a writer is held to one per --workspace.')
     parser.add_argument('--score', action='store_true',
@@ -837,8 +954,16 @@ def build_parser():
     return parser
 
 
+def render(result, table=False):
+    """The text a stage prints: the plan table, or strict JSON (no NaN or Infinity). The acceptance of a reference set
+    serializes its offline plans with this too (public_data.accept)."""
+    if table:
+        from demo_plan import format_table
+        return format_table(result)
+    return json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False)
+
+
 def main():
-    import account_fleet
     if sys.argv[1:2] == ['score'] and len(sys.argv) >= 3 and sys.argv[2] in ('set', 'list', 'clear', 'suggest'):
         import user_scores
         return user_scores.cli_main(sys.argv[2:])
@@ -854,91 +979,106 @@ def main():
         return 0 if args.help else 2
     decision_ledger.LEDGER_WRITES = not (args.dry_run and args.stage in ('plan', 'record', 'roll'))
     if args.stage in ('roll', 'plan', 'providers', 'select') and not args.demo:
+        # This run keeps the reference set it takes; a due check runs in its own process and applies to the next run.
+        public_data.refresh_in_background()
         antigravity_plan.refresh_in_background(state_upgrade.state_dir())
     try:
-        if args.demo and (args.stage != 'plan' or not args.dry_run):
-            raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
-        if not 1 <= args.timeout <= 600:
-            raise ValueError('Timeout must be 1 to 600 seconds.')
-        if not 1 <= args.score_timeout <= 120:
-            raise ValueError('Score timeout must be 1 to 120 seconds.')
-        if args.stage == 'scorer':
-            result, code = scorer_cli(args)
-            print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-            return code
-        if args.stage == 'score':
-            result, code = score_stage(args)
-            print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-            return code
-        if args.can_wait_hours is not None and (not math.isfinite(args.can_wait_hours) or args.can_wait_hours < 0):
-            raise ValueError('--can-wait-hours must be a non-negative number of hours.')
-        if args.stage == 'roll':
-            briefs = args.brief or []
-            if bool(briefs) == (args.task is not None):
-                raise ValueError('roll requires exactly one of --task "<text>" (or --task - for stdin) or --brief <task.md>.')
-            if len(briefs) > 1:
-                result, code = roll.run_batch(args, sys.modules[__name__])
-            else:
-                args.brief = briefs[0] if briefs else None
-                result, code = roll.run(args, sys.modules[__name__])
-        elif args.stage in ('dispatch', 'launch'):
-            if args.dry_run:
-                raise ValueError('Dispatch/launch is a lifecycle operation; use an isolated fake host for tests')
-            result = dispatch_flow.cli(args)
-            code = 1 if result.get('state') in ('failed', 'create_failed') else 0
-        elif args.stage == 'providers':
-            accounts = account_fleet.load_accounts()
-            result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync')}
-            code = 0
-        elif args.stage == 'usage':
-            result = usage_reading.usage_snapshot(args.usage_cache, args.accounts)
-            result = provider_inventory.merge_usage(result, account_fleet.load_accounts(), datetime.now(timezone.utc), args.accounts)
-            code = 0 if result['read_ok'] else 1
-        elif args.stage == 'override':
-            result = quota_overrides.manage_overrides(args)
-            code = 0
-        elif args.stage == 'record':
-            if args.constraint is None:
-                raise ValueError('record requires --constraint.')
-            result = record_constraint(args)
-            code = 0
-        elif args.stage == 'plan':
-            if args.input is None and args.demo:
-                from demo_plan import SAMPLE_DOCUMENT
-                document = json.loads(json.dumps(SAMPLE_DOCUMENT))
-            elif args.input is None:
-                raise ValueError('plan requires --input.')
-            else:
-                document = json.loads(args.input.read_text(encoding='utf-8-sig'))
-            result, code = plan_stage(document, args)
-        else:
-            if args.input is None:
-                raise ValueError('Routing stages require --input.')
-            document = json.loads(args.input.read_text(encoding='utf-8-sig'))
-            payload = subscription_judge.build_request(args.stage, document, args.usage_cache)
-            started = time.monotonic()
-            if args.dry_run:
-                result = payload
-            else:
-                result = decision_ledger.finalize(subscription_judge.evaluate(payload, args.judge, args.timeout), payload, args.judge,
-                                  started, document.get('task'))
-            code = 1 if result.get('source') == 'judge_unavailable' else 0
-        if args.stage == 'plan' and (args.format == 'table' or (args.demo and args.format is None)):
-            from demo_plan import format_table
-            print(format_table(result))
-        else:
-            print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
-        return code
-    except (OSError, ValueError, RuntimeError, TypeError, AttributeError, sqlite3.Error) as exc:
+        # The caller's input (stdin, the --input and --brief files) is read once, here, before the part that may run
+        # again; a re-run receives what was read (caller_input). A reader failing on a fetched reference set with a
+        # data error before this run had an effect (a ledger row, a reservation, a launch: public_data.effect) runs the
+        # stage again on the shipped set; after an effect, for a refusal or an environment failure, the error is this
+        # run's answer (public_data.with_fallback).
+        caller = caller_input.capture(args)
+        return public_data.with_fallback(lambda: _run_stage(caller_input.attach(build_parser().parse_args(), caller)))
+    except (OSError, ValueError, RuntimeError, sqlite3.Error, *public_data.DATA_ERRORS) as exc:
+        # Every failure, a data-class error (KeyError, TypeError, ...) included, is reported as the named error, never
+        # as a traceback.
         failure = {'error': 'Routing input or local runtime failed', 'error_type': type(exc).__name__}
         if isinstance(exc, (ValueError, scorer_client.ScorerError)):
             # Only fixed texts written in this repository (caller input rules, scorer limits); other errors may carry paths or bodies.
             failure['detail'] = str(exc)[:400]
+        elif public_data.is_data_error(exc):
+            failure['error'] = 'Reference or local data could not be read'
         failure['next'] = ('Fix the cause in detail, then roll again. A task that already has a Paseo dispatch comes back as that '
                            'worker (pending), not as a second launch.' if args.stage == 'roll' else
                            'Check reviewed input and usage cache; continue feasible parent work.')
         print(json.dumps(failure, ensure_ascii=False))
         return 1
+
+
+def _run_stage(args):
+    """One stage, from freshly parsed arguments (a re-run gets its own)."""
+    import account_fleet
+    if args.demo and (args.stage != 'plan' or not args.dry_run):
+        raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
+    if not 1 <= args.timeout <= 600:
+        raise ValueError('Timeout must be 1 to 600 seconds.')
+    if not 1 <= args.score_timeout <= 120:
+        raise ValueError('Score timeout must be 1 to 120 seconds.')
+    if args.stage == 'scorer':
+        result, code = scorer_cli(args)
+        print(render(result))
+        return code
+    if args.stage == 'score':
+        result, code = score_stage(args)
+        print(render(result))
+        return code
+    if args.can_wait_hours is not None and (not math.isfinite(args.can_wait_hours) or args.can_wait_hours < 0):
+        raise ValueError('--can-wait-hours must be a non-negative number of hours.')
+    if args.stage == 'roll':
+        briefs = args.brief or []
+        if bool(briefs) == (args.task is not None):
+            raise ValueError('roll requires exactly one of --task "<text>" (or --task - for stdin) or --brief <task.md>.')
+        if len(briefs) > 1:
+            result, code = roll.run_batch(args, sys.modules[__name__])
+        else:
+            args.brief = briefs[0] if briefs else None
+            result, code = roll.run(args, sys.modules[__name__])
+    elif args.stage in ('dispatch', 'launch'):
+        if args.dry_run:
+            raise ValueError('Dispatch/launch is a lifecycle operation; use an isolated fake host for tests')
+        result = dispatch_flow.cli(args)
+        code = 1 if result.get('state') in ('failed', 'create_failed') else 0
+    elif args.stage == 'providers':
+        accounts = account_fleet.load_accounts()
+        result = {**accounts['_discovery'], 'host_policy_sync': accounts.get('_host_policy_sync'),
+                  'public_data': public_data.status()}
+        code = 0
+    elif args.stage == 'usage':
+        result = usage_reading.usage_snapshot(args.usage_cache, args.accounts)
+        result = provider_inventory.merge_usage(result, account_fleet.load_accounts(), datetime.now(timezone.utc), args.accounts)
+        code = 0 if result['read_ok'] else 1
+    elif args.stage == 'override':
+        result = quota_overrides.manage_overrides(args)
+        code = 0
+    elif args.stage == 'record':
+        if args.constraint is None:
+            raise ValueError('record requires --constraint.')
+        result = record_constraint(args)
+        code = 0
+    elif args.stage == 'plan':
+        if args.input is None and args.demo:
+            from demo_plan import sample_document
+            document = sample_document()
+        elif args.input is None:
+            raise ValueError('plan requires --input.')
+        else:
+            document = json.loads(caller_input.read_text(args, args.input))
+        result, code = plan_stage(document, args)
+    else:
+        if args.input is None:
+            raise ValueError('Routing stages require --input.')
+        document = json.loads(caller_input.read_text(args, args.input))
+        payload = subscription_judge.build_request(args.stage, document, args.usage_cache)
+        started = time.monotonic()
+        if args.dry_run:
+            result = payload
+        else:
+            result = decision_ledger.finalize(subscription_judge.evaluate(payload, args.judge, args.timeout), payload, args.judge,
+                              started, document.get('task'))
+        code = 1 if result.get('source') == 'judge_unavailable' else 0
+    print(render(result, table=args.stage == 'plan' and (args.format == 'table' or (args.demo and args.format is None))))
+    return code
 
 
 if __name__ == '__main__':

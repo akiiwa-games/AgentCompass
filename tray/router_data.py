@@ -40,7 +40,7 @@ def save_ui_language(lang: str) -> str:
 
 def strategy_preset_key(name: str) -> str:
     """Accept either display language without changing the persisted Chinese preset keys."""
-    return next((key for key in STRATEGY_PRESETS if name in (key, i18n.english(key))), name)
+    return next((key for key in _strategy_presets() if name in (key, i18n.english(key))), name)
 
 
 # Cards are ordered and named by product family; account names come only from config and discovery.
@@ -89,7 +89,11 @@ PRESETS = (
     ("回测研究包", "运行因子回测，计算样本外夏普并整理研究报告", 3.0, False, False),
 )
 PRESETS = LocalizedSequence(PRESETS)
-def _shipped_tuning_defaults() -> dict[str, int]:
+
+
+def _tuning_defaults() -> dict[str, int]:
+    """The public tuning of the reference set the tray holds (public_data.document via worker_sessions), read when asked,
+    so it moves with the set at the tray's defined point (_cached_accounts) instead of freezing at import."""
     scripts = Path(__file__).resolve().parents[1] / "skills" / "agent-compass" / "scripts"
     if str(scripts) not in sys.path:
         sys.path.insert(0, str(scripts))
@@ -102,16 +106,28 @@ def _shipped_tuning_defaults() -> dict[str, int]:
     }
 
 
-TUNING_DEFAULTS = _shipped_tuning_defaults()
-STRATEGY_PRESETS = {
-    "均衡": dict(TUNING_DEFAULTS),
-    "省额度": {"safety_margin_pct": 12, "short_window_floor_pct": 20, "rotate_after_carried_tokens": 3000000},
-    "重置前蹬完": {
-        "safety_margin_pct": 3,
-        "short_window_floor_pct": 8,
-        "rotate_after_carried_tokens": TUNING_DEFAULTS["rotate_after_carried_tokens"],
-    },
-}
+def _strategy_presets() -> dict[str, dict]:
+    defaults = _tuning_defaults()
+    return {
+        "均衡": dict(defaults),
+        "省额度": {"safety_margin_pct": 12, "short_window_floor_pct": 20, "rotate_after_carried_tokens": 3000000},
+        "重置前蹬完": {
+            "safety_margin_pct": 3,
+            "short_window_floor_pct": 8,
+            "rotate_after_carried_tokens": defaults["rotate_after_carried_tokens"],
+        },
+    }
+
+
+def __getattr__(name):
+    """TUNING_DEFAULTS and STRATEGY_PRESETS, from the reference set held now (PEP 562)."""
+    if name == "TUNING_DEFAULTS":
+        return _tuning_defaults()
+    if name == "STRATEGY_PRESETS":
+        return _strategy_presets()
+    raise AttributeError(name)
+
+
 TUNING_LIMITS = {"safety_margin_pct": (0, 50), "short_window_floor_pct": (0, 50),
                  "rotate_after_carried_tokens": (100000, 10000000)}
 BOOST_RANGE = (0.10, 0.50)
@@ -157,6 +173,7 @@ def _accounts_fingerprint() -> tuple | None:
     paseo_home = Path(os.environ.get("PASEO_HOME") or Path.home() / ".paseo")
     files = (
         refs / "accounts.json",
+        _reference_state(),
         STATE_DIR / "accounts-override.json",
         STATE_DIR / "host-policy.json",
         STATE_DIR / "plugins.json",
@@ -182,15 +199,18 @@ def _cached_accounts() -> dict:
     global _ACCOUNTS_CACHE
     modules()
     import account_fleet
+    import public_data
     fp = _accounts_fingerprint()
     if fp is None:
-        return account_fleet.load_accounts()
+        public_data.retake()
+        return public_data.with_fallback(account_fleet.load_accounts)
     now = time.monotonic()
     with _ACCOUNTS_CACHE_LOCK:
         cached = _ACCOUNTS_CACHE
         if cached is not None and cached[0] == fp and now - cached[1] < 2.0:
             return cached[2]
-    accounts = account_fleet.load_accounts()
+    public_data.retake()  # the tray's defined point: it moves to a newer reference set only here, as a whole
+    accounts = public_data.with_fallback(account_fleet.load_accounts)
     fp_after = _accounts_fingerprint() or fp
     with _ACCOUNTS_CACHE_LOCK:
         _ACCOUNTS_CACHE = (fp_after, time.monotonic(), accounts)
@@ -470,7 +490,7 @@ def model_table() -> dict:
     modules()
     import account_fleet
     import axis_scores
-    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(account_fleet.REFERENCES / "accounts.json"))
+    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(document=_public_accounts()))
     return account_fleet.models_table(accounts)
 
 
@@ -533,7 +553,7 @@ def score_overview() -> dict:
     import account_fleet
     import axis_scores
     import score_overview as overview
-    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(account_fleet.REFERENCES / "accounts.json"))
+    accounts = axis_scores.five_axis_overlay(account_fleet.load_accounts(document=_public_accounts()))
     data = axis_scores.load_five_axis(axis_scores.five_axis_config(accounts.get("scoring")).get("path"))
     models = account_fleet.models_table(accounts)
     meta = accounts.get("_five_axis") or {}
@@ -595,7 +615,7 @@ def account_badge(name: str, inventory_row: dict | None, plugin_config: dict, po
     if not host_policy.account_allowed(policy, name):
         if row.get('billing') in ('metered', 'unknown'):
             return _tr('仅手动使用'), 'idle'
-        return _tr("本机策略禁用"), "idle"
+        return _tr("不参与自动派发"), "idle"
     status = row.get("status")
     if status == 'quota_exhausted':
         return _tr('额度已耗尽，等待刷新恢复'), 'warn'
@@ -780,7 +800,7 @@ def account_cards() -> list[dict]:
     inv_accounts = inventory.get("accounts") or {}
     acc_table = accounts.get("accounts") or {}
     # An account drawing on another's quota (fleet `quota_sources`) shows as that pool's one card;
-    # dispatch exclusions (`allowed_accounts`) mark the card as not dispatched rather than hiding its usage.
+    # accounts out of automatic routing (`allowed_accounts`) mark the card rather than hiding its usage.
     members: dict[str, list[str]] = {}
     for member, source in sources.items():
         members.setdefault(source, []).append(member)
@@ -1403,7 +1423,23 @@ def save_host_policy(allowed: list[str], all_accounts: list[str], path: Path | N
         return _tr('已保存本机准入：{0} 个账号').format(f'{len(allowed)}')
 
 
+def _public_accounts() -> dict:
+    """The public accounts.json of the reference set the tray holds (public_data.document)."""
+    modules()
+    import account_fleet
+    import public_data
+    return public_data.document(account_fleet.REFERENCES / "accounts.json")
+
+
+def _reference_state() -> Path:
+    """The channel's state file: a newly accepted set changes it, which makes the tray retake (_cached_accounts)."""
+    modules()
+    import public_data
+    return public_data.cache_dir() / "state.json"
+
+
 def _accounts_path() -> Path:
+    """The shipped references/accounts.json (the file a checkout edits; routing reads _public_accounts())."""
     modules()
     import account_fleet
     return account_fleet.REFERENCES / "accounts.json"
@@ -1425,12 +1461,11 @@ def _user_accounts_path(create: bool = False) -> Path:
         modules()
         import accounts_override
         accounts_override.load_override(user_file)
-        return user_file
-    return _accounts_path()
+    return user_file
 
 
 def read_tuning(path: Path | None = None) -> dict:
-    document = json.loads((path or _accounts_path()).read_text(encoding="utf-8-sig"))
+    document = json.loads(path.read_text(encoding="utf-8-sig")) if path is not None else _public_accounts()
     if path is None:
         modules()
         import accounts_override
@@ -1438,19 +1473,20 @@ def read_tuning(path: Path | None = None) -> dict:
         if override is not None:
             document = accounts_override.merge(document, override)
     scoring = document.get("scoring") or {}
-    return {key: scoring.get(key) for key in TUNING_DEFAULTS}
+    return {key: scoring.get(key) for key in _tuning_defaults()}
 
 
 def validate_tuning(values: dict) -> dict:
+    defaults = _tuning_defaults()
     clean = {}
     for key, value in values.items():
-        if key not in TUNING_DEFAULTS:
+        if key not in defaults:
             raise ValueError(_tr('未知参数 {0}').format(f'{key}'))
         low, high = TUNING_LIMITS[key]
         number = float(value)
         if not low <= number <= high:
             raise ValueError(_tr('{0} 需在 {1} ~ {2} 之间').format(f'{key}', f'{low}', f'{high}'))
-        clean[key] = int(number) if isinstance(TUNING_DEFAULTS[key], int) else round(number, 4)
+        clean[key] = int(number) if isinstance(defaults[key], int) else round(number, 4)
     return clean
 
 
@@ -1498,7 +1534,7 @@ def _replace_number(text: str, key: str, value, start: int, end: int) -> str:
 def save_tuning(values: dict | str, path: Path | None = None) -> str:
     """Change only the named scoring thresholds in accounts-override.json (or path), in place, after a backup."""
     if isinstance(values, str):
-        values = STRATEGY_PRESETS[strategy_preset_key(values)]
+        values = _strategy_presets()[strategy_preset_key(values)]
     if path is None:
         clean = validate_tuning(values)
         current = read_tuning()
@@ -1547,7 +1583,7 @@ def restore_tuning(path: Path | None = None) -> str:
             _edit_preferences(lambda doc: doc.pop("scoring", None))
             return _tr("已恢复默认路由参数")
         return _tr("参数未变化")
-    return save_tuning(dict(TUNING_DEFAULTS), path)
+    return save_tuning(_tuning_defaults(), path)
 
 
 def _backup(path: Path, tag: str) -> Path | None:
@@ -2010,7 +2046,7 @@ def model_probe_definitions(rows: list[dict]) -> dict:
     document = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {}
     accounts = document.get("accounts") if isinstance(document.get("accounts"), dict) else {}
     overrides = {name: spec for name, spec in accounts.items() if isinstance(spec, dict)}
-    baseline = (_read_json(_accounts_path()).get("accounts") or {})
+    baseline = (_public_accounts().get("accounts") or {})
     paseo = _read_json(Path(os.environ.get("PASEO_HOME") or Path.home() / ".paseo") / "config.json")
     provider_settings = (paseo.get("agents") or {}).get("providers") or {}
     definitions = {}
@@ -2124,7 +2160,8 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
         enable_now = bool(bundles[bundle_id].get("_model_disabled", bundles[bundle_id].get("disabled")))
         _edit_preferences(lambda doc: doc.setdefault("accounts", {}).setdefault(account, {}).setdefault(
             "bundles", {}).setdefault(bundle_id, {}).update(disabled=not enable_now))
-        return _tr('{0} · {1} 已{2}').format(account_label(account), bundle_id, _tr('启用') if enable_now else _tr('停用'))
+        return _tr('{0} · {1}：{2}').format(account_label(account), bundle_id,
+                                            _tr('参与自动派发') if enable_now else _tr('不参与自动派发'))
     target = path or _user_accounts_path(create=True)
     modules()
     import accounts_override
@@ -2145,7 +2182,8 @@ def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str
     bundles[bundle_id]["disabled"] = not enable_now
     _backup(target, "accounts-json")
     _atomic_json(target, doc)
-    return _tr('{0} · {1} 已{2}').format(f'{account_label(account)}', f'{bundle_id}', f"{(_tr('启用') if enable_now else _tr('停用'))}")
+    return _tr('{0} · {1}：{2}').format(account_label(account), bundle_id,
+                                        _tr('参与自动派发') if enable_now else _tr('不参与自动派发'))
 
 
 def toggle_account_host(account: str) -> str:

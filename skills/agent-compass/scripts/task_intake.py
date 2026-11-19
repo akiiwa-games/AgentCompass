@@ -403,11 +403,54 @@ def named_pin(constraints, task, accounts):
     return name, effort or resolved['effort']
 
 
+# Route fields: what AgentCompass sets for itself on the task it plans, from a decision it recorded. They reach
+# `normalize_task` only through its `route` argument (allocator.plan(route=...)), never from a caller's task, since each
+# changes what may launch without the decision that authorizes it:
+# - pinned_bundle: the bundle a recorded user_override launches (dispatch_registry.prepare);
+# - user_named_bundle: the bundle the user's naming or an explicit resume launches, which the two routing preferences do
+#   not govern (candidate_eval: OUT_OF_AUTOMATIC_ROUTING, UNCHECKED);
+# - unclassified: a named launch with no classifier answer, planned from --hours (route_judge.classify_pinned);
+# - force_fast: a named fast route (route_judge.record_constraint, prepare).
+ROUTE_FIELDS = ('pinned_bundle', 'user_named_bundle', 'unclassified', 'force_fast')
+# Keys a caller's task may not carry at all: the route fields, the state the allocator itself derives on the planned task
+# (`metered_fallback`, `worker`; a caller names its worker in chain.worker), the rows a record keeps for a listed model,
+# and `include_unverified`, which would lift the launch-evidence check (`verified` is discovery's fact).
+NOT_CALLER_INPUT = (*ROUTE_FIELDS, 'metered_fallback', 'worker', 'listed_rows', 'include_unverified')
+
+
+def router_fields(task):
+    """The fields of `task` only AgentCompass sets (NOT_CALLER_INPUT, and `needs.force_fast`), by name."""
+    task = task if isinstance(task, dict) else {}
+    needs = task.get('needs') if isinstance(task.get('needs'), dict) else {}
+    return [k for k in NOT_CALLER_INPUT if k in task] + [f'needs.{k}' for k in ('force_fast',) if k in needs]
+
+
+def check_caller_task(task):
+    """Refuse a caller's task that carries a field only AgentCompass sets (router_fields), by name; never drop it.
+    Called where a caller's task enters (route_judge: plan --input, record), not on a task AgentCompass stored: a stored
+    decision in an earlier version's shape is dispatch_registry.earlier_version's."""
+    task = task if isinstance(task, dict) else {}
+    found = router_fields(task)
+    if found:
+        raise ValueError(
+            f"invalid_task_input: {', '.join(found)} {'is' if len(found) == 1 else 'are'} set by AgentCompass itself, "
+            "never by the caller's task. Remove it; to launch a route the user named, use --provider/--account/--model "
+            "with the user's words in --basis.")
+    return task
+
+
 COUPLINGS = ('low', 'medium', 'high')       # chain.coupling; high is a related task that continues its worker
 
 
-def normalize_task(raw, policy, capabilities, accounts):
+def normalize_task(raw, policy, capabilities, accounts, route=None):
+    """`raw` is the task to plan: a caller's, checked where it entered (check_caller_task), or one a decision stored;
+    a route field in it is never read. `route` holds the route fields AgentCompass passes for a decision it recorded
+    (ROUTE_FIELDS)."""
     task = dict(raw or {})
+    route = dict(route or {})
+    unknown = sorted(set(route) - set(ROUTE_FIELDS))
+    if unknown:
+        raise ValueError(f"route fields must be among {', '.join(ROUTE_FIELDS)}, not {', '.join(unknown)}")
     profile = validate_caller_profile(task['profile']) if task.get('profile') is not None else None
     needs = dict(task.get('needs')) if isinstance(task.get('needs'), dict) else {}
     if not _flag_present(needs, 'gui') and _flag_present(task, 'needs_gui'):
@@ -440,24 +483,31 @@ def normalize_task(raw, policy, capabilities, accounts):
             'wants_fast': wants_fast,
             'read_only_review': read_only_review,
         }
-    if profile is None:
+    # A named route launched without a classifier answer (route_judge.classify_pinned, only with --hours) carries the
+    # reason instead of a profile: no work kind, no difficulty and no category demand are known, and none is made up.
+    unclassified = route.get('unclassified') if profile is None and isinstance(route.get('unclassified'), str) else None
+    if profile is None and not unclassified:
         raise ValueError('task.profile is required: the classifier always produces it, with its axis_demand')
-    kind = task_kind({**task, 'profile': profile}, capabilities)
-    derived = profile_difficulty(profile, policy)
-    difficulty = task.get('difficulty') or derived
-    source = 'caller' if task.get('difficulty') else 'profile'
-    if difficulty not in DIFFICULTY_ORDER:
-        raise ValueError('difficulty must be one of ' + ', '.join(DIFFICULTY_ORDER))
+    if unclassified:
+        kind = derived = difficulty = None
+        source = 'unclassified'
+    else:
+        kind = task_kind({**task, 'profile': profile}, capabilities)
+        derived = profile_difficulty(profile, policy)
+        difficulty = task.get('difficulty') or derived
+        source = 'caller' if task.get('difficulty') else 'profile'
+        if difficulty not in DIFFICULTY_ORDER:
+            raise ValueError('difficulty must be one of ' + ', '.join(DIFFICULTY_ORDER))
     chain = task.get('chain') if isinstance(task.get('chain'), dict) else {}
     coupling = chain.get('coupling') or 'low'
     if coupling not in COUPLINGS:
         raise ValueError('chain.coupling must be low, medium or high')
-    if not (task.get('expected_hours') or profile.get('expected_hours')):
+    if not (task.get('expected_hours') or (profile or {}).get('expected_hours')):
         raise ValueError('expected_hours is required: the caller gives it (--hours) or the classifier estimates it in task.profile')
     hours = float(task.get('expected_hours') or profile['expected_hours'])
     constraints = task.get('constraints') if isinstance(task.get('constraints'), dict) else {}
     constraint_model, constraint_effort = named_pin(constraints, task, accounts)
-    implies = capabilities['routes'][kind].get('implies') or {}
+    implies = (capabilities['routes'][kind].get('implies') or {}) if kind else {}
     # Caller false stands. The profile fills an unset flag. Route implies fill only what both left unset.
     needs.update(resolve_modality_needs(needs, profile, implies))
     worker = dict(chain['worker']) if isinstance(chain.get('worker'), dict) else None
@@ -477,19 +527,19 @@ def normalize_task(raw, policy, capabilities, accounts):
     else:
         needs_gui = bool(kind == 'gui_control')
     return {'kind': kind, 'difficulty': difficulty, 'difficulty_source': source, 'hours': hours,
-            'profile': profile, 'profile_difficulty': derived,
+            'profile': profile, 'profile_difficulty': derived, 'unclassified': unclassified,
             'needs_gui': needs_gui,
             'wants_fast': wants_fast,
             'read_only_review': read_only_review,
-            'force_fast': bool(task.get('force_fast') or needs.get('force_fast')),
+            'force_fast': bool(route.get('force_fast')),
             'disable_fast': bool(task.get('disable_fast') or needs.get('disable_fast')),
-            'pinned_bundle': task.get('pinned_bundle'),
+            'pinned_bundle': route.get('pinned_bundle'), 'user_named_bundle': route.get('user_named_bundle'),
             'chain_hours': float(chain.get('total_hours') or hours), 'coupling': coupling, 'worker': worker,
             'handoff_ready': bool(chain.get('handoff_ready')), 'needs_visual': needs['visual'],
             'local_only': bool(needs.get('local_only')),
             'file_transfer': bool(needs.get('file_transfer')), 'outbound_ok': needs.get('outbound_ok'),
             'constraint_bundle': constraints.get('bundle') if isinstance(constraints.get('bundle'), str) else None,
             'constraint_model': constraint_model, 'constraint_effort': constraint_effort,
-            'metered_ok': bool(task.get('metered_ok')), 'include_unverified': bool(task.get('include_unverified')),
+            'metered_ok': bool(task.get('metered_ok')),
             'can_wait_hours': float(task.get('can_wait_hours') or 0), 'chain_id': chain.get('id'),
             'cwd': task.get('cwd')}

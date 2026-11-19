@@ -1007,21 +1007,26 @@ export async function execute(client, input, notify = ensureNotification) {
       return {ok: false, sent: false, error: 'worker_not_found'};
     const labels = existing.labels ?? {};
     const owner = labels['router.parent_id'] ?? labels['paseo.parent-agent-id'];
+    // A refusal names what differs (directories, provider/model ids, effort ids: no prompt or credential text),
+    // so a caller that named this worker learns exactly why it did not take the turn.
     if (!owner || owner !== input.parent_id)
-      return {ok: false, sent: false, error: 'worker_parent_mismatch'};
+      return {ok: false, sent: false, error: 'worker_parent_mismatch', detail: {worker: owner ?? null, requested: input.parent_id}};
     const slash = r.provider.indexOf('/');
     const provider = r.provider.slice(0, slash), model = r.provider.slice(slash + 1);
     if (existing.provider !== provider || existing.model !== model)
-      return {ok: false, sent: false, error: 'worker_model_mismatch'};
+      return {ok: false, sent: false, error: 'worker_model_mismatch',
+        detail: {worker: `${existing.provider}/${existing.model}`, requested: r.provider}};
     const effort = existing.effectiveThinkingOptionId ?? existing.thinkingOptionId;
     if ((r.settings?.modeId && existing.currentModeId && existing.currentModeId !== r.settings.modeId)
         || (r.settings?.thinkingOptionId && effort && effort !== r.settings.thinkingOptionId))
-      return {ok: false, sent: false, error: 'worker_settings_mismatch'};
+      return {ok: false, sent: false, error: 'worker_settings_mismatch',
+        detail: {worker: `${existing.currentModeId ?? ''}:${effort ?? ''}`,
+                 requested: `${r.settings?.modeId ?? ''}:${r.settings?.thinkingOptionId ?? ''}`}};
     // The writer rule checked the directory that was asked for, so a resumed worker must live in that directory.
     if (typeof r.cwd === 'string' && r.cwd.trim()) {
       const existingDir = existing.cwd ?? (existing.workspaceId ? await workspaceDirectory(client, existing.workspaceId) : null);
       if (!existingDir || !samePath(existingDir, r.cwd))
-        return {ok: false, sent: false, error: 'worker_workspace_mismatch'};
+        return {ok: false, sent: false, error: 'worker_workspace_mismatch', detail: {worker: existingDir ?? null, requested: r.cwd}};
     }
     const alreadyBound = labels['router.dispatch_id'] === input.dispatch_id;
     if (!alreadyBound && (existing.status === 'running' || existing.status === 'initializing'

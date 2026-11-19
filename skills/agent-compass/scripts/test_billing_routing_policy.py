@@ -116,10 +116,10 @@ class AutomaticRoutingTests(unittest.TestCase):
     def test_dispatch_recheck_keeps_explicit_selection_for_pinned_bundle(self):
         # dispatch_registry.prepare re-plans a user_override with pinned_bundle and no model
         # constraint; the explicit choice must survive that recheck end to end.
-        decision = allocator.plan({**TASK, 'pinned_bundle': BUNDLE}, USAGE, NOW, accounts=omp_accounts(), overrides=[],
+        decision = allocator.plan(TASK, USAGE, NOW, accounts=omp_accounts(), overrides=[], route={'pinned_bundle': BUNDLE},
                                   host_policy_config=None)
         self.assertFalse([r for r in omp_row(decision)['excluded'] if 'metered' in r or 'billing' in r])
-        other = allocator.plan({**TASK, 'pinned_bundle': 'sol_high'}, USAGE, NOW, accounts=omp_accounts(), overrides=[],
+        other = allocator.plan(TASK, USAGE, NOW, accounts=omp_accounts(), overrides=[], route={'pinned_bundle': 'sol_high'},
                                host_policy_config=None)
         self.assertIn('metered access is a last resort', omp_row(other)['excluded'])
 

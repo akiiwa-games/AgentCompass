@@ -76,9 +76,9 @@ shared quota, model identity, unlimited capacity or a dollar price.
   rejection. Recovery is the documented canonical command/configuration, not a
   validator bypass. Validate the actual record stage with isolated SQLite/ledger
   and mocked transport: `--dry-run` alone does not exercise decision persistence.
-  A host-policy exclusion reports `check_host_policy`, the affected account and
-  policy path; it is a configuration block, not an unanswered task-permission
-  question. Legacy allowlists preserve exclusions; opted-in automatic admission
+  An account outside host policy's `allowed_accounts` is out of automatic
+  routing only: a named route (below) still launches, with a warning in the
+  decision. Legacy allowlists preserve exclusions; opted-in automatic admission
   follows the [shared discovery contract](provider-discovery.md#automatic-admission-of-newly-discovered-accounts).
 
 ## Setup and use
@@ -107,9 +107,9 @@ Use a dedicated Bot for AgentCompass tasks. Configure validates the ID with an
 upstream read-only bot listing, then saves only the ID under
 `~/.agent-compass/grok-bot/config.json`. Authentication remains in upstream/native
 desktop handling under the current Windows user. No tokens belong in this config.
-If `roll` reports `check_host_policy`, enable only `grok-bot` through AgentCompass's
-existing local account-admission settings for this authorized integration, keeping
-the other account restrictions. `configure` does not edit that policy; subsequent
+If `grok-bot` is kept out of automatic routing in AgentCompass's account settings,
+the named command above still launches it, with a warning; switching it on only lets
+the router choose it by itself. `configure` does not edit that policy; subsequent
 discovery admits new ready accounts only when automatic admission is enabled.
 A logged-in native account with readable, valid stored credentials is required.
 Opening the cloud-computer preview or keeping an app process running is not required

@@ -14,6 +14,7 @@ from unittest.mock import patch
 import allocator
 import axis_scores
 import candidate_eval
+import task_intake
 import candidate_ranking
 import ledger_snapshot
 import quota_economy
@@ -108,9 +109,11 @@ class Fleet:
         pub.setdefault('scores', {}).setdefault('claude-haiku-5-5', {})['coding.faithfulness'] = {
             'level': 1.0, 'as_of': '2026-11-11', 'kind': 'maintainer',
         }
+        route = {k: task.pop(k) for k in task_intake.ROUTE_FIELDS if k in task}   # route fields, never task fields
         with patch.object(axis_scores.user_scores, 'load_public', return_value=pub):
             return allocator.plan({'objective': 't', 'hours': hours, 'profile': profile, **task}, usage, NOW, accounts=acc,
-                                  overrides=[], records=[], host_policy_config={'allowed_accounts': list(allowed)})
+                                  overrides=[], records=[], host_policy_config={'allowed_accounts': list(allowed)},
+                                  route=route)
 
 
 def eligible(decision):
@@ -1087,7 +1090,7 @@ class PoolIndependenceTests(unittest.TestCase):
         'outbound_denied': {'needs': {'outbound_ok': False}},
         'file_transfer': {'needs': {'file_transfer': True}},
         'disable_fast': {'needs': {'disable_fast': True}},
-        'force_fast': {'needs': {'force_fast': True}},
+        'force_fast': {'force_fast': True},
         'named_model': {'constraints': {'model': 'claude-opus-5-5'}},
         'named_effort': {'constraints': {'effort': 'high'}},
         'metered_ok': {'metered_ok': True},

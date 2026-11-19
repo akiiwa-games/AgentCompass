@@ -15,9 +15,7 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sqlite3
-import stat
 from pathlib import Path
 
 FIX_SETUP = 're-run "agentcompass setup"'
@@ -73,12 +71,6 @@ _RESET_METER_FIELDS = (
     'timezone',
 )
 _OLD_PROXY_KINDS = frozenset({'litellm', 'proxy', 'api-proxy'})
-# What the removed between-release reference data channel left in the state directory: the copy it fetched (a cache the
-# product made) and the file that held its options. Reference data ships with the version; nothing reads these.
-RETIRED_REFERENCE_DATA = {
-    'public-data': 'cache of the removed between-release reference data copy',
-    'public-data-config.json': 'setting of the removed between-release reference data copy',
-}
 
 
 def fix_delete(path: Path | str, discards: str | None = None) -> str:
@@ -210,30 +202,6 @@ def clear_obsolete_usage_file(path: Path) -> list[str]:
     return keys
 
 
-def retired_reference_data(sdir: Path) -> list[Path]:
-    """The leftovers of the removed reference data channel present in the state directory ``sdir``."""
-    return [sdir / name for name in RETIRED_REFERENCE_DATA if os.path.lexists(sdir / name)]
-
-
-def remove_retired_reference_data(sdir: Path) -> list[str]:
-    """Remove the removed channel's leftovers by their exact path under ``sdir``; nothing else is touched. A link is
-    removed as a link, never followed. Returns the paths removed (empty when there were none)."""
-    removed = []
-    for path in retired_reference_data(Path(sdir)):
-        link = path.is_symlink() or getattr(os.lstat(path), 'st_reparse_tag', 0) == stat.IO_REPARSE_TAG_MOUNT_POINT
-        if link:
-            try:
-                os.unlink(path)
-            except OSError:
-                os.rmdir(path)      # a directory link on Windows (junction or directory symlink)
-        elif path.is_dir():
-            shutil.rmtree(path)
-        else:
-            path.unlink()
-        removed.append(str(path))
-    return removed
-
-
 def check_usage_config(path: Path) -> str | None:
     if not path.exists():
         return None
@@ -272,8 +240,8 @@ def check_accounts_override(path: Path) -> str | None:
 def host_policy_fix(path: Path | str) -> str:
     return ('edit the file to a JSON object with "allowed_accounts" (a list of account names) and, if wanted, '
             '"known_accounts", "usage_providers" (lists of names) and "judges" (codex or sonnet), or '
-            + fix_delete(path, 'this discards which accounts this machine may use: every account is allowed again '
-                               'until you set them in the tray'))
+            + fix_delete(path, 'this discards which accounts take part in automatic routing on this machine; every '
+                               'account does again until you set them in the tray'))
 
 
 def validate_host_policy_doc(doc, path: Path | str) -> dict:
@@ -626,10 +594,6 @@ def collect_issues(home: Path | None = None, environ: dict | None = None) -> lis
         issue = check_host_rule_file(sdir / 'host-rules' / name)
         if issue:
             issues.append(issue)
-
-    # Removed by `agentcompass setup` and by the step that runs after a product update (remove_retired_reference_data).
-    for leftover in retired_reference_data(sdir):
-        issues.append(format_issue(leftover, f'{RETIRED_REFERENCE_DATA[leftover.name]}, not read', FIX_SETUP))
 
     issues.extend(check_hooks_and_rules(base_home, env))
     return issues

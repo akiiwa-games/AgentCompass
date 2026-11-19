@@ -631,10 +631,13 @@ def reload_paseo_daemon(paseo_home: Path) -> None:
     cli = shutil.which("paseo") or next((str(c) for c in (Path(local) / "Programs" / "Paseo" / "resources" / "bin" / "paseo.cmd",) if local and c.is_file()), None)
     if not cli:
         return
+    import launch_values
     try:
-        done = subprocess.run([cli, "reload", "--home", str(paseo_home)], capture_output=True, text=True, timeout=60)
+        prefix, variables = launch_values.program(cli)
+        done = subprocess.run([*prefix, "reload", "--home", str(paseo_home)], capture_output=True, text=True, timeout=60,
+                              env={**os.environ, **variables} if variables else None)
         report(f"[paseo] reload: {(done.stdout or done.stderr).strip() or done.returncode}")
-    except (OSError, subprocess.SubprocessError) as exc:
+    except (OSError, subprocess.SubprocessError, launch_values.UnreadableLauncher) as exc:
         report(f"[paseo] reload skipped ({exc}); run `paseo reload` to apply the new appendSystemPrompt")
 
 

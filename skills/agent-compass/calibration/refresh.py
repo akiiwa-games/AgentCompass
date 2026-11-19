@@ -1,5 +1,6 @@
 """Rebuild every shipped calibrated file and generated capability view in topological order, validate the result, and
-report each source's age. Run once per release; the result ships with the version and is fixed until the next one.
+report each source's age. Run once per release, as a step of preparing it; between releases only what the maintainer
+publishes on purpose (`agentcompass data publish`, published/<schema>/) reaches installs.
 
 `agentcompass data refresh [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...]`
 `python -X utf8 refresh.py [--no-fetch] [--data DIR] [--report PATH] [--distrust SOURCE] [--accept-panel-change] [--model ID ...] [--references DIR]`

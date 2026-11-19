@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the tags: --check-released runs every released reader of this data schema
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -27,6 +29,12 @@ jobs:
             echo "::error::.github/RELEASE_SUBTITLE ('$subtitle') is already the title of a published release; write this release's subtitle"
             exit 1
           fi
+      # A release ships references/ as the latest published set of its data schema (published/<schema>/), accepted by this
+      # code and by every released reader of the same schema.
+      - name: Check that the release ships the published reference set of its schema
+        run: |
+          python -X utf8 skills/agent-compass/scripts/public_data.py publish --check --release
+          python -X utf8 skills/agent-compass/scripts/public_data.py publish --check-released
       - name: Build the wheel
         run: |
           python -m pip install --upgrade build hatchling

@@ -123,20 +123,21 @@ def skill_scripts() -> Path | None:
 
 
 class PriceTableError(RuntimeError):
-    """The shipped catalog has no list price on any model, so no call can be priced."""
+    """The catalog in effect has no list price on any model, so no call can be priced."""
 
 
 def load_prices() -> dict[str, tuple[float, ...]]:
-    """{model id: list price per PRICE_FIELDS} from the shipped catalog (references/accounts.json)."""
+    """{model id: list price per PRICE_FIELDS} from the catalog of the reference set held (public_data.document)."""
     scripts = skill_scripts()
     if scripts is None:
         raise RuntimeError("agent-compass skill scripts not found: the catalog holding the models' list prices is unavailable")
+    import public_data
     path = scripts.parent / "references" / "accounts.json"
-    doc = json.loads(path.read_text(encoding="utf-8-sig"))
+    doc = public_data.document(path)
     prices = {model: tuple(float(row["list_price"][f]) for f in PRICE_FIELDS)
               for model, row in doc["models"].items() if isinstance(row, dict) and row.get("list_price")}
     if not prices:
-        raise PriceTableError(f"the shipped model catalog ({path}) has no list_price on any model, so no call can be "
+        raise PriceTableError(f"the model catalog in effect ({path}) has no list_price on any model, so no call can be "
                               "priced; update AgentCompass to the latest release to receive new reference data")
     return prices
 

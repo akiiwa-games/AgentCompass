@@ -51,6 +51,8 @@
 !/deployment/host_policy_parity.py
 # The router skills; each host links ~/.codex/skills/<name> here.
 !/skills/
+# The published reference sets, one directory per data schema; only `agentcompass data publish` writes them.
+!/published/
 **/__pycache__/
 **/.pytest_cache/
 **/*.pyc

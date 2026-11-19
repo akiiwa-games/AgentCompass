@@ -106,7 +106,7 @@ def advertised(doc, family):
 def account_set_snapshot(name):
     """A discovery snapshot holding only the set's accounts, each ready on a subscription."""
     rows, launchers = {}, {}
-    doc = json.loads(account_fleet.fleet_document_path().read_text(encoding='utf-8-sig'))
+    doc = account_fleet.fleet_document()
     for account, (family, plan) in ACCOUNT_SETS[name]['accounts'].items():
         row = {'family': family, 'status': 'ready', 'plan': plan, 'billing': 'subscription', 'sources': ['native'],
                'identity': f'sim-{account}', 'quota_account': account, 'models': advertised(doc, family)}
@@ -133,7 +133,7 @@ def machine_accounts():
 
 def fresh_accounts(document=None, inventory=None):
     """Public data plus discovery, as load_accounts builds it, minus personal overrides and machine measurements."""
-    doc = document if document is not None else json.loads(account_fleet.fleet_document_path().read_text(encoding='utf-8-sig'))
+    doc = document if document is not None else account_fleet.fleet_document()
     accounts = accounts_override.normalize(copy.deepcopy(doc))
     accounts = provider_inventory.apply(accounts, inventory, live=False)
     provider_inventory.apply_shared_quota(accounts)
@@ -434,7 +434,7 @@ def replay(last=None, path=None, accounts=None, warnings=None):
 
 
 STATE_COPY_MAX_BYTES = 1 << 20
-STATE_COPY_DIRS = ('grok-bot',)    # discovery reads the Grok Bot config
+STATE_COPY_DIRS = ('public-data', 'grok-bot')    # routing reads the published reference set and the Grok Bot config
 
 
 def sandbox_state(folder, *, include_local=True):

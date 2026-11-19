@@ -9,6 +9,9 @@ DEFAULT_ORG = "akiiwa-games"
 PRODUCT_REPO = "AgentCompass"
 RELEASES_API = f"https://api.github.com/repos/{DEFAULT_ORG}/{PRODUCT_REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{DEFAULT_ORG}/{PRODUCT_REPO}/releases/latest"
+# The published reference sets on `main` (skills/agent-compass/scripts/public_data.py): an install reads
+# <this>/<its data schema>/public-data.json and the files it lists.
+PUBLIC_DATA_URL = f"https://raw.githubusercontent.com/{DEFAULT_ORG}/{PRODUCT_REPO}/main/published/"
 
 _ORG_ENV = ("AGENTCOMPASS_GITHUB_ORG",)
 _USAGE_FLOAT_ENV = ("AGENTCOMPASS_USAGE_FLOAT_REPO",)

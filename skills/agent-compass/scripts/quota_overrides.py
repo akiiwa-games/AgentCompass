@@ -9,6 +9,7 @@ from pathlib import Path
 
 import override_store
 import account_fleet
+import public_data
 import quota_pools
 
 
@@ -411,6 +412,7 @@ def _manage_overrides_locked(args, now=None):
         removed = 0
     path.parent.mkdir(parents=True, exist_ok=True)
     override_store.write(path, {**document, 'v': 1, 'overrides': rows})
+    public_data.effect('quota override')
     ledger_row = {'v': 1, 'at': now.isoformat(), 'stage': 'override',
                   'action': 'clear' if args.clear else 'upsert', 'removed': removed}
     if not args.clear:

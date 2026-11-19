@@ -335,7 +335,13 @@ class RoutingTests(unittest.TestCase):
             args.account = 'claude-lab'
             args.provider = 'claude-lab'
             args.model = 'claude-opus-5-5'
-            with self.assertRaisesRegex(ValueError, 'disabled'):
+            # The model-management checkbox governs automatic routing only: the user's naming launches it with a
+            # warning, a project rule does not (router-internals.md, Pins).
+            with patch.object(usage_reading, 'usage_snapshot', return_value={'read_ok': True, 'accounts': {}}):
+                named = router.record_constraint(args)
+            self.assertTrue(any('unchecked in model management' in w for w in named.get('warnings') or ()), named)
+            args.constraint = 'hard_constraint'
+            with patch.object(usage_reading, 'usage_snapshot', return_value={'read_ok': True, 'accounts': {}}),                     self.assertRaisesRegex(ValueError, 'unchecked in model management'):
                 router.record_constraint(args)
 
     def test_ledger_rows_name_the_writing_session_not_its_parent(self):
