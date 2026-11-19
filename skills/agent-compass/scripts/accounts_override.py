@@ -1,6 +1,5 @@
 """Sparse account preferences shared by the tray and allocator; no discovery or disk writes."""
 from copy import deepcopy
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -101,31 +100,15 @@ def _without_migration_record(document):
     return {key: value for key, value in document.items() if key != 'migration_ambiguous_enabled'}
 
 
-def _split_auto_id(bid):
-    """(account, harness, model key, '@effort' or '', '#hash' or '') of an auto bundle id (auto_bundles.auto_bundle_id:
-    auto:<account>:<harness>:<model key>[@<effort>], `#<sha256(name)[:8]>` added for a second name of one key), else None."""
-    prefix = auto_bundles.AUTO_PREFIX
-    if not isinstance(bid, str) or not bid.startswith(prefix):
-        return None
-    parts = bid[len(prefix):].split(':', 2)
-    if len(parts) != 3:
-        return None
-    account, harness, rest = parts
-    rest, _, tag = rest.partition('#')
-    model, at, effort = rest.partition('@')
-    return account, harness, model, (at + effort), ('#' + tag if tag else '')
-
-
-def _schema_2_to_3(doc, accounts=None):
+def _schema_2_to_3(doc):
     """Schema 2 (through v0.7.0): an auto bundle's id holds the row its advertised name resolved to
-    (auto_bundles.auto_bundle_id). A name v0.7.0 resolved through an alias this release removed or re-targeted
-    (`released_names.V0_7_0`) now gets another id, so the checkbox the user set on the v0.7.0 id is also set on the id
-    the name gets now (`released_names.current_key` under the shipped catalog `accounts`), unless the user already set
-    that one. The v0.7.0 id keeps its choice: it still names that row. A v0.7.0 id with a `#hash` suffix was one
-    advertised name's own (the second name of the row on that account): it carries only to that name."""
-    if accounts is None:
-        import public_data
-        accounts = public_data.document(Path(__file__).resolve().parents[1] / 'references' / 'accounts.json')
+    (auto_bundles.auto_bundle_id). Where the choice is read (`auto_bundles.choice_for`) a stored model name applies to
+    the bundle it resolves to now, which keeps every id whose name resolves now as it did then, or that is the
+    advertised name itself. What it cannot see is a name v0.7.0 resolved through an alias this release removed or
+    re-targeted (`released_names.V0_7_0`): the v0.7.0 id holds the old row, which still names that row. So the choice
+    is also stored under the advertised name, which is resolved where it is read like any other; the v0.7.0 id keeps its
+    choice. A v0.7.0 id with a `#hash` suffix was one advertised name's own (the second name of the row on that
+    account): it carries only to that name, under the same suffix."""
     names = {}
     for name, row in released_names.V0_7_0.items():
         names.setdefault(row, []).append(name)
@@ -135,17 +118,15 @@ def _schema_2_to_3(doc, accounts=None):
         if not isinstance(bundles, dict):
             continue
         for bid, pref in list(bundles.items()):
-            parts = _split_auto_id(bid)
+            parts = auto_bundles.split_id(bid)
             if parts is None or not isinstance(pref, dict) or 'disabled' not in pref:
                 continue
             account, harness, row, effort, tag = parts
             for name in names.get(row, ()):
-                if tag and tag != '#' + hashlib.sha256(name.encode()).hexdigest()[:8]:
+                if tag and '#' + tag != auto_bundles.name_tag(name):
                     continue
-                key = released_names.current_key(name, accounts)
-                new = auto_bundles.auto_bundle_id(account, harness, key, effort[1:] or None)
-                if key != row and new not in bundles:
-                    bundles[new] = {'disabled': pref['disabled']}
+                bundles.setdefault(auto_bundles.auto_bundle_id(account, harness, name, effort) + ('#' + tag if tag else ''),
+                                   {'disabled': pref['disabled']})
     out['schema_version'] = SCHEMA_VERSION
     return out
 
@@ -244,6 +225,18 @@ def load_override(path):
     return doc
 
 
+def set_bundle_choice(document, owner, bundle_id, disabled, folded=()):
+    """Store the user's checkbox of one bundle under its id. The stored ids it was read from (`folded`, the bundle's
+    `_choice_ids`: auto_bundles.choice_for) go first, wherever they are stored, so the bundle reads this one choice."""
+    for spec in (document.get('accounts') or {}).values():
+        bundles = spec.get('bundles') if isinstance(spec, dict) else None
+        for sid in folded:
+            if isinstance(bundles, dict) and sid != bundle_id:
+                bundles.pop(sid, None)
+    document.setdefault('accounts', {}).setdefault(owner, {}).setdefault('bundles', {}).setdefault(
+        bundle_id, {})['disabled'] = bool(disabled)
+
+
 def harness(bundle, account, bundle_id, resolver):
     provider = bundle.get('provider') or account
     if not bundle.get('harness') and provider in ('grok', 'grok-bot'):
@@ -309,6 +302,8 @@ def apply(accounts, document):
         if 'cwd_regex' in spec:
             target['cwd_regex'] = spec['cwd_regex']
         for bid, bundle in (spec.get('bundles') or {}).items():
+            if auto_bundles.split_id(bid) is not None:
+                continue  # an auto bundle's choice is read below, by the name it holds
             target_bundle = (target.get('bundles') or {}).get(bid)
             if target_bundle is None:
                 target_bundle = next((entry for account in accounts.get('accounts', {}).values()
@@ -316,3 +311,19 @@ def apply(accounts, document):
                                       if key == bid and entry.get('provider') == name), None)
             if isinstance(bundle, dict) and isinstance(target_bundle, dict) and 'disabled' in bundle:
                 target_bundle['disabled'] = bundle['disabled']
+    choices = auto_bundles.stored_choices(document, accounts)
+    for account, target in (accounts.get('accounts') or {}).items():
+        bundles = target.get('bundles') if isinstance(target, dict) else None
+        if not isinstance(bundles, dict) or account not in choices:
+            continue
+        by_model = auto_bundles.harness_by_model(bundles)
+        for bundle in bundles.values():
+            if not isinstance(bundle, dict) or not bundle.get('auto'):
+                continue
+            chosen, ids, disagree = auto_bundles.choice_for(choices[account], bundle, accounts, by_model)
+            if chosen is None:
+                continue
+            # The user's checkbox replaces the public default; a model the provider stopped listing stays off.
+            bundle['disabled'] = chosen or bundle.get('availability') == 'expired'
+            bundle.pop('disabled_by_default', None)
+            auto_bundles.mark_choice(bundle, ids, disagree)

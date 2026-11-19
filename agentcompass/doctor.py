@@ -261,6 +261,35 @@ def install_lines(environ: dict | None = None) -> list[str]:
     return lines
 
 
+def choice_conflicts(home: Path, environ: dict | None) -> list[str]:
+    """The user's stored model choices that fold into one bundle and disagree (auto_bundles.choice_for): each set of
+    stored ids once, with the bundles it leaves out of automatic routing. Read only: nothing is rewritten."""
+    try:
+        scripts = locations.skill_root() / "agent-compass" / "scripts"
+        if str(scripts) not in sys.path:
+            sys.path.append(str(scripts))
+        import account_fleet
+        import accounts_override
+        import provider_inventory
+
+        user_doc = accounts_override.load_override(account_fleet.accounts_override_path(environ))
+        if not user_doc:
+            return []
+        accounts = account_fleet.fleet_document()
+        provider_inventory.apply(accounts, provider_inventory.discover(home=home, environ=environ), live=True,
+                                 environ=environ)
+        accounts_override.apply(accounts, user_doc)
+    except Exception as error:
+        return [f"unavailable ({error.__class__.__name__}: {error})"]
+    folded: dict[tuple, list[str]] = {}
+    for spec in (accounts.get("accounts") or {}).values():
+        for bid, bundle in ((spec.get("bundles") if isinstance(spec, dict) else None) or {}).items():
+            if isinstance(bundle, dict) and bundle.get("_choice_conflict"):
+                folded.setdefault(tuple(bundle["_choice_conflict"]), []).append(bid)
+    return [f"{', '.join(ids)} disagree; out of automatic routing: {', '.join(sorted(bids))} "
+            f"(set the model's checkbox again in the tray)" for ids, bids in sorted(folded.items())]
+
+
 def collect(home: Path | None = None) -> dict:
     home = Path.home() if home is None else Path(home)
     environ = None if _real_home(home) else pinned_environ(home)
@@ -288,6 +317,7 @@ def collect(home: Path | None = None) -> dict:
         "conflicts": conflicts(home, environ if environ is not None else os.environ),
         "hooks": [(str(path), _hook_installed(path)) for path in _hook_paths(home)],
         "upgrade_issues": upgrade_issues(home, environ),
+        "choice_conflicts": choice_conflicts(home, environ),
     }
 
 
@@ -344,6 +374,10 @@ def render(report: dict) -> str:
     for path, state in report.get("hooks") or []:
         lines.append(f"  {path}: {state}")
     issues = report.get("upgrade_issues") or []
+    conflicts_found = report.get("choice_conflicts") or []
+    lines.append("Model choices: " + ("no disagreement" if not conflicts_found
+                                      else f"{len(conflicts_found)} set(s) of stored choices disagree"))
+    lines.extend(f"  {line}" for line in conflicts_found)
     lines.append("Upgrade checks: " + ("none" if not issues else f"{len(issues)} item(s) need attention"))
     for issue in issues:
         lines.append(f"  {issue}")

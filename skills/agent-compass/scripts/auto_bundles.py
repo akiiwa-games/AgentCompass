@@ -235,6 +235,76 @@ def auto_bundle_id(account, harness, model, effort=None):
     return f'{AUTO_PREFIX}{account}:{harness}:{model}' + (f'@{effort}' if effort else '')
 
 
+def name_tag(raw):
+    """The suffix that tells apart a second advertised name of one key on an account (`#` + sha256(name)[:8])."""
+    return '#' + hashlib.sha256(raw.encode()).hexdigest()[:8]
+
+
+def split_id(bid):
+    """(account, harness, model name, effort or None, tag or None) of an auto bundle id
+    (auto:<account>:<harness>:<model name>[@<effort>][#<tag>]), else None."""
+    if not isinstance(bid, str) or not bid.startswith(AUTO_PREFIX):
+        return None
+    parts = bid[len(AUTO_PREFIX):].split(':', 2)
+    if len(parts) != 3:
+        return None
+    account, harness, rest = parts
+    rest, _, tag = rest.partition('#')
+    model, _, effort = rest.partition('@')
+    return account, harness, model, effort or None, tag or None
+
+
+def harness_by_model(bundles):
+    """True for an account whose auto bundles take their harness from the model (`_account_harnesses`: no bundle of
+    its own), so a stored choice's harness says nothing of its own."""
+    return not any(isinstance(b, dict) and not b.get('auto') for b in (bundles or {}).values())
+
+
+def stored_choices(document, accounts):
+    """{account: [choice]}: the user's checkboxes on auto bundles in an accounts-override document, keyed by the
+    account their id names (the tray may store one under the account that pays for it). Each holds the model name of
+    the id as written and the key that name resolves to now (`default_profile`): a stored choice applies to the
+    bundle its model name resolves to now, so an alias added by a release or a data set published between releases
+    never strands it (owner review, round 8)."""
+    out = {}
+    for spec in ((document or {}).get('accounts') or {}).values():
+        for sid, pref in ((spec.get('bundles') if isinstance(spec, dict) else None) or {}).items():
+            parts = split_id(sid)
+            if parts is None or not isinstance(pref, dict) or not isinstance(pref.get('disabled'), bool):
+                continue
+            account, harness, name, effort, tag = parts
+            out.setdefault(account, []).append({'id': sid, 'harness': harness, 'name': name, 'effort': effort,
+                                                'tag': tag, 'key': default_profile(name, accounts)['model'],
+                                                'disabled': pref['disabled']})
+    return out
+
+
+def choice_for(choices, bundle, accounts, by_model):
+    """(disabled or None, [stored ids], whether they disagree) for an auto bundle: every stored choice of its account at its effort (and its
+    harness, unless the account takes the harness from the model) whose model name resolves now to the bundle's key or
+    is the bundle's advertised name, a tagged one only for the name its tag hashes. Several that disagree leave the
+    bundle disabled: the user took the model out of automatic routing under one of its names (a named route still
+    launches)."""
+    raw = bundle.get('launch_model') or bundle.get('model') or ''
+    spelled, tag = _name_candidates(raw, accounts)[0], name_tag(raw)[1:]
+    hits = [c for c in choices or () if c['effort'] == bundle.get('effort')
+            and (by_model or c['harness'] == bundle.get('harness')) and c['tag'] in (None, tag)
+            and (c['key'] == bundle.get('model') or c['name'] == spelled)]
+    if not hits:
+        return None, [], False
+    values = {c['disabled'] for c in hits}
+    return True in values, sorted(c['id'] for c in hits), len(values) > 1
+
+
+def mark_choice(bundle, ids, disagree):
+    """The stored ids a bundle read its checkbox from (`_choice_ids`, the ids the tray replaces when the user sets it
+    again) and, when they disagree, `_choice_conflict` (listed once by `agentcompass doctor`)."""
+    if ids:
+        bundle['_choice_ids'] = ids
+    if disagree:
+        bundle['_choice_conflict'] = ids
+
+
 def derive(accounts, catalog, now, overrides=None, seen=None, account_families=None, named=()):
     """Return {'bundles': {account: {bid: bundle}}, 'excluded': [...], 'seen': {...}}.
 
@@ -246,7 +316,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
     Manual bundles always win for the same (account, harness, canonical base model).
     """
     providers = (catalog or {}).get('providers') or {}
-    prefs = ((overrides or {}).get('accounts') or {})
+    choices = stored_choices(overrides, accounts)
     seen = dict(seen or {})
     out = {'bundles': {}, 'excluded': [], 'seen': seen}
 
@@ -290,23 +360,25 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 bid = auto_bundle_id(account, harness, key, effort)
                 taken = out['bundles'].get(account, {}).get(bid)
                 if taken and taken['launch_model'] != raw:
-                    bid += '#' + hashlib.sha256(raw.encode()).hexdigest()[:8]
+                    bid += name_tag(raw)
                 availability, last = _availability(entry, raw, now, seen.get(bid))
                 if availability == 'detected':
                     seen[bid] = now
                 model_name = profile['model'] if profile['source'] != 'calibrated' else key
-                pref = ((prefs.get(account) or {}).get('bundles') or {}).get(bid) or {}
+                chosen, chosen_ids, disagree = choice_for(
+                    choices.get(account), {'launch_model': raw, 'model': model_name, 'effort': effort, 'harness': harness},
+                    accounts, pair_harness == PER_MODEL)
                 # The checkbox default is public data alone: checked unless superseded there. The user's
-                # model-management checkbox (pref) overrides it. Metered stays a last resort in routing.
+                # model-management checkbox (`choice_for`) overrides it. Metered stays a last resort in routing.
                 default_disabled = superseded_by(raw, accounts) is not None or superseded_by(key, accounts) is not None
                 # Unchecked only by default, not by the user: naming this model still reaches it.
-                by_default = default_disabled and 'disabled' not in pref and availability != 'expired'
+                by_default = default_disabled and chosen is None and availability != 'expired'
                 bundle = {
                     'provider': provider, 'harness': harness, 'model': model_name, 'launch_model': raw,
                     **({'effort': effort} if effort else {}),
                     **({'modeId': HARNESS_MODE[harness]} if harness in HARNESS_MODE else {}),
                     'draws': _metered_draws(spec) if metered else _draws(spec, key, accounts),
-                    'disabled': bool(pref.get('disabled', default_disabled)) or availability == 'expired',
+                    'disabled': bool(default_disabled if chosen is None else chosen) or availability == 'expired',
                     **({'disabled_by_default': True} if by_default else {}),
                     'auto': True, 'billing': 'metered' if metered else 'subscription',
                     'score_source': profile['source'], 'score_basis': profile['basis'],
@@ -315,6 +387,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 }
                 if availability == 'expired':
                     bundle['discovery_unavailable'] = True
+                mark_choice(bundle, chosen_ids, disagree)
                 out['bundles'].setdefault(account, {})[bid] = bundle
     return out
 
