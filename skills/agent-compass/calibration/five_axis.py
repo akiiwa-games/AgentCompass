@@ -308,6 +308,23 @@ def bound_curve(by_effort, up=True, moved=None):
     return out
 
 
+def bound_pinned(by_effort, pins, up=True):
+    """`by_effort` bounded along effort with the efforts `pins` (the measured ones) kept as they are when they are in
+    order (an estimate moves, a measurement does not); two measurements out of order fall back to the anchor rule
+    (bound_curve: High, else the effort nearest it, kept and the others bounded from it)."""
+    try:
+        return {e: round(float(v), 4) for e, v in user_scores.bound_along_effort(by_effort, up, pins).items()}
+    except ValueError:
+        return bound_curve(by_effort, up)
+
+
+def effort_floor(rec, e):
+    """The lowest value the record's rising curve can take at effort `e` without moving a measurement: its highest
+    measured value at `e` or below (None when it has none)."""
+    by, i = rec.get('by_effort') or {}, LADDER.index(e)
+    lo = [by[x] for x in rec.get('measured_efforts') or () if x in by and LADDER.index(x) <= i]
+    return max(lo) if lo else None
+
 SPEED_KEY = ('tool_operation', 'responsiveness')
 
 
@@ -463,6 +480,7 @@ class Scorer:
         self.readings = effort_readings(acc)
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
         # declared response floors (`response_time_source`): a row's one launch path, round 6
+        self.measured_inversions = []      # bound_across_size: two measurements out of the size order
         self.response_floor = {m: spec['response_time_source'] for m, spec in self.models.items()
                                if isinstance(spec.get('response_time_source'), dict)}
         self.points = operating_points(acc)
@@ -1222,8 +1240,11 @@ class Scorer:
         self.fill_refused = self.fill_high(facets)
         for fs in facets.values():
             for key, rec in fs.items():
-                moved = set()
-                rec['by_effort'] = bound_curve(rec['by_effort'], rises(key), moved)
+                # along effort an estimate moves, a measurement does not; two measurements out of order: the anchor rule
+                pins = [x for x in rec['measured_efforts'] if x in rec['by_effort']]
+                bounded = bound_pinned(rec['by_effort'], pins, rises(key)) if pins else bound_curve(rec['by_effort'], rises(key))
+                moved = {x for x in bounded if bounded[x] != round(float(rec['by_effort'][x]), 4)}
+                rec['by_effort'] = bounded
                 if moved:
                     rec['bound_moved'] = sorted(set(rec.get('bound_moved') or ()) | moved, key=LADDER.index)
                 rec['measured_efforts'] = [e for e in rec['measured_efforts'] if e not in moved]
@@ -1448,22 +1469,105 @@ class Scorer:
         rec['measured_efforts'] = [e for e in rec.get('measured_efforts') or () if e == at]
         rec['value'] = v
 
+    def dominance(self, rows):
+        """{row A: [rows B dominating A]} (owner 2026-11-19, round 7, as corrected): A is dominated by B when they are the
+        same maker and product (series.identity), A's declared size is strictly smaller than B's (`small` below `full`)
+        and A's version is not newer than B's: both declare a version (`series_versions`) and A's is not above B's, or B is
+        A's declared larger model of the same version (series.tier_up, `version: same`). Equal size never dominates and
+        version alone never does; a pair whose versions the data does not order is not compared."""
+        ident = series.identity({**self.acc, 'same_model': self.same})
+        up = series.tier_up(self.acc)
+        rows = [m for m in rows if m in ident]
+
+        def not_newer(a, b):
+            if a in self.versions and b in self.versions:
+                return self.versions[a] <= self.versions[b]
+            return up.get(a) == {'model': b, 'version': 'same'}
+        return {a: sorted(b for b in rows if ident[a]['size'] == 'small' and ident[b]['size'] == 'full'
+                          and ident[b]['maker'] == ident[a]['maker'] and ident[b]['product'] == ident[a]['product']
+                          and not_newer(a, b)) for a in rows}
+
     def bound_across_size(self, facets):
-        """No inversion across size (owner 2026-11-18): an ability facet a small row derived from its larger model
-        (`tier_down`, `size_step`) is never above the larger model's at any effort both have; the efforts it held are listed
-        in the estimate's `held_at_larger`. The speed facets have no bound across size: their size step is used only where
-        the pairs agree (`pair_agreement`)."""
-        for m, rel in sorted(self.size_of.items()):
-            for key, rec in facets[m].items():
-                est = rec.get('estimate') or {}
-                if not rises(key) or est.get('method') not in ('tier_down', 'size_step'):
+        """No inversion across size (owner 2026-11-18, restated 2026-11-19 round 7): on every ability facet and effort, a
+        row's value does not exceed that of any row dominating it (`dominance`). An estimate moves, a measurement does
+        not, along effort as across size. A dominating estimate is raised to the lowest value a dominated row can take at
+        that effort (its measurement, else the floor its own measured efforts give it, `effort_floor`;
+        `size_order.raised`); a dominated estimate is bounded by the lowest dominating value (`size_order.held`); each
+        moved record is then bounded along effort with its measured efforts kept (`bound_pinned`; an effort that moves
+        only there `size_order.along_effort`), which also keeps a held value at its floor and a raised one under its
+        ceiling. Each moved effort keeps the value it had (`from`). The curves come in bounded along effort,
+        and raising a curve to a rising floor under its ceiling, or holding one at another rising curve above its floor,
+        keeps it in order, so one pass is the fixpoint, in no order a name decides (the raise reads no held value).
+        Whatever is still out of order is kept as read and listed (`self.measured_inversions`, the refresh report), each
+        pair with which of its values is measured. A model-entry row is bounded by release rows and never moves one.
+        The speed facets have no bound across size."""
+        dom = {a: bs for a, bs in self.dominance(list(facets)).items() if bs}
+        release = {m for m in facets if m not in self.entries}
+        below = {}
+        for a, bs in dom.items():
+            for b in bs:
+                below.setdefault(b, []).append(a)
+        keys = sorted({k for fs in facets.values() for k in fs if rises(k)})
+        moved_recs = []
+        for key in keys:
+            for e in LADDER:
+                val, meas, floor = {}, {}, {}
+                for m in set(dom) | set(below):
+                    rec = facets[m].get(key)
+                    v = ((rec or {}).get('by_effort') or {}).get(e)
+                    if v is not None:
+                        val[m], meas[m], floor[m] = v, e in (rec.get('measured_efforts') or ()), effort_floor(rec, e)
+                for m in sorted(below):    # raise: a dominating estimate is at least what a dominated row can be
+                    if m not in val or meas[m]:
+                        continue
+                    lows = [(val[a] if meas[a] else floor[a], a) for a in below[m]
+                            if a in val and (a in release or m not in release)]
+                    lows = [(v, a) for v, a in lows if v is not None]
+                    if not lows:
+                        continue
+                    v, a = max(lows)
+                    if v > val[m] + 1e-9:
+                        self._move(facets[m][key], e, v, 'raised', a, moved_recs)
+                        val[m] = round(v, 4)
+                for m in sorted(dom):      # bound: a dominated estimate is at most every dominating value
+                    ups = [(val[b], b) for b in dom[m] if b in val and (b in release or m not in release)]
+                    if m not in val or meas[m] or not ups:
+                        continue
+                    v, b = min(ups)
+                    if v < val[m] - 1e-9:
+                        self._move(facets[m][key], e, v, 'held', b, moved_recs)
+                        val[m] = round(v, 4)
+        for rec in moved_recs:             # along effort: the measured efforts stay, the estimates are bounded
+            pins = [x for x in rec.get('measured_efforts') or () if x in rec['by_effort']]
+            old = rec['by_effort']
+            rec['by_effort'] = bound_pinned(old, pins) if pins else bound_curve(old, True)
+            for e, v in rec['by_effort'].items():
+                if v != round(float(old[e]), 4) and not any(e in d for d in rec['size_order'].values()):
+                    rec['size_order'].setdefault('along_effort', {})[e] = {'from': round(float(old[e]), 4)}
+            rec['value'] = rec['by_effort'].get('high')
+        self.measured_inversions = []
+        for a in sorted(dom):
+            for b in dom[a]:
+                if not (b in release or a not in release):
                     continue
-                theirs = facets[rel['model']][key]['by_effort']
-                held = [e for e, v in rec['by_effort'].items() if e in theirs and v > theirs[e]]
-                if held:
-                    rec['by_effort'] = {e: (theirs[e] if e in held else v) for e, v in rec['by_effort'].items()}
-                    rec['value'] = rec['by_effort'].get('high')
-                    est['held_at_larger'] = held
+                for key in keys:
+                    ra, rb = facets[a].get(key), facets[b].get(key)
+                    for e in LADDER:
+                        va, vb = ((ra or {}).get('by_effort') or {}).get(e), ((rb or {}).get('by_effort') or {}).get(e)
+                        if va is not None and vb is not None and va > vb + 1e-9:
+                            self.measured_inversions.append({
+                                'model': a, 'dominated_by': b, 'facet': '.'.join(key), 'effort': e, 'value': va,
+                                'dominating_value': vb, 'measured': e in (ra.get('measured_efforts') or ()),
+                                'dominating_measured': e in (rb.get('measured_efforts') or ())})
+
+    @staticmethod
+    def _move(rec, e, v, how, by, moved_recs):
+        rec['size_order'] = rec.get('size_order') or {}
+        rec['size_order'].setdefault(how, {})[e] = {'model': by, 'from': round(rec['by_effort'][e], 4)}
+        rec['by_effort'][e] = round(v, 4)
+        rec['value'] = rec['by_effort'].get('high')
+        if not any(r is rec for r in moved_recs):
+            moved_recs.append(rec)
 
     def own_ability_median(self, own, keys):
         """The last, coarsest method (owner 2026-11-18): an ability facet the model still lacks (`own`: its facet records)
@@ -2669,6 +2773,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
            'effort_steps': {**scorer.steps, 'time_per_task': scorer.time_steps},
            'size_steps': {**scorer.size_steps, 'time_per_task': scorer.time_size_step},
            'effort_fill_refused': scorer.fill_refused,
+           'measured_size_inversions': scorer.measured_inversions,
            'checks': meas.get('checks') or [],
            'models': models, 'data_errors': errors}
     return doc

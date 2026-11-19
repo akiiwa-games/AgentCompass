@@ -77,9 +77,23 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   pairs`): the derived value is the larger model's. Time/Task follows the same rule on the log ratio
   `time(small) / time(large)` at High (`time_size_step`; ratio 1 where the pairs disagree). The boards do not show a
   smaller model as uniformly faster or slower, so no direction is assumed for the speed facets. An ability value is in
-  addition never above the larger model's at the same effort (`min(step, 0)`, and `bound_across_size` after the fill, the
-  efforts it held listed as `held_at_larger`). Status `estimated`, method `size_step` with the base model, version, step,
-  `n`, `agree` and the pairs; the table is published as `size_steps`.
+  addition never above the larger model's at the same effort (`min(step, 0)`, and the bound across size below). Status
+  `estimated`, method `size_step` with the base model, version, step, `n`, `agree` and the pairs; the table is published
+  as `size_steps`.
+- **No inversion across size (owner, 2026-11-18; restated 2026-11-19, round 7).** A row is dominated by another when they
+  are the same maker and product (`families`), its declared size is strictly smaller (`small` below `full`) and its
+  version is not newer: both declare a version (`series_versions`) and its is not above, or the other is its declared
+  larger model of the same version (`tier_up_version: same`). Equal size never dominates, whatever the line or version,
+  and version alone never does; a pair the data gives no version order is not compared. On every ability facet and
+  effort a dominated row's value does not exceed a dominating one's (`Scorer.dominance`, `Scorer.bound_across_size`,
+  after every fill). An estimate moves, a measurement does not: a dominating estimate is raised to the lowest value a
+  dominated row can take there (its measurement, else the floor its own measured efforts give it, `effort_floor`; the
+  cell's `size_order.raised`), a dominated estimate is bounded by the lowest dominating value (`size_order.held`), each
+  with the value it had and the row that moved it, and each moved curve is bounded along effort with its measured efforts
+  kept (`bound_pinned`; an effort that moves only there is listed under `size_order.along_effort` with its value before). One pass is the fixpoint, in no order a name decides. What measurements alone keep out of order
+  is kept as read and listed (`measured_size_inversions`, printed by the refresh), a reading, not a defect, and no
+  known-gap entry. A newer smaller model above an older larger one is not dominated. A model-entry row is bounded by
+  release rows and never moves one. The speed facets have no bound across size.
 - **Edge efforts (owner, 2026-11-18; `none` round 5; readings and steps round 6).** Every effort of the one order
   (`user_scores.EFFORTS`, `none` and `minimal` included) is read on every board: a listing labelled Minimal is a measured
   reading at `minimal`, one labelled None or with a thinking-off label (`accounts.json` `effort_readings.labels`:
@@ -87,8 +101,11 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   `five_axis.Scorer.aa_rows`). `none` is reasoning switched off, below `minimal` (the vendors' statements are quoted once, in
   `effort_readings`). A reading off the measured ladder enters the facet as listed, its distance from its board's own High
   added to the facet's High (`Scorer.facet_value`), and is used as measured: one board's bound does not move it, the
-  facet's bound does, against the facet's own measured readings only (High the anchor), and an estimate next to a measured
-  `none` is bounded by it, never the other way round. A curve without an edge effort gets it from its neighbour plus the
+  facet's bound does, against the facet's own measured readings only, and an estimate next to a measured `none` is bounded
+  by it, never the other way round (along effort an estimate moves, a measurement does not, `bound_pinned`). Two
+  measurements out of order are the one case where a measurement moves: the anchor rule (High, else the effort nearest
+  it, kept and the others bounded from it) moves the one farther from the anchor, and the cell lists it in `bound_moved`
+  (gpt-6.1-terra execution: the measured `none`, -1.517, above the measured `low`, -1.808, is moved to it). A curve without an edge effort gets it from its neighbour plus the
   fleet's step at that end (`user_scores.EDGES`): `value(low) - value(medium)` for `minimal`, `value(max) - value(xhigh)`
   for `ultra`, and for `none` `value(none)` minus the lowest listed reasoning effort, anchored at the curve's lowest
   measured reasoning effort (High when nothing below High is measured; `user_scores.edge_anchor`). The step is a property

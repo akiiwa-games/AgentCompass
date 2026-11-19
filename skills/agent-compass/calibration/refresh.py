@@ -625,7 +625,9 @@ def staleness(doc, now=None):
     return rows, {0: 'ok', 1: 'stale', 2: 'missing'}[worst]
 
 
-def markdown(rows, generated_at, checks=()):
+def markdown(rows, generated_at, checks=(), inversions=()):
+    """The run report: the community usd checks, the measured pairs out of the size order (`inversions`: a reading kept
+    as read, not a defect, five_axis.Scorer.bound_across_size) and the source ages."""
     out = []
     if checks:
         out += ['Community usd per worker-hour / the usd_per_hour in use (1.0 = agreement)', '',
@@ -633,6 +635,16 @@ def markdown(rows, generated_at, checks=()):
                 '| :--- | ---: | ---: | ---: | :--- | :--- |']
         out += [f"| {c['model']} | {c['value']} | {c['usd_per_hour']} | {c['community_over_usd']} | {c['source']} "
                 f"| {c['as_of']} |" for c in checks]
+        out.append('')
+    if inversions:
+        out += ['Values out of the size order that measurements keep, kept as read (a smaller model above the larger one of '
+                'the same maker and product that dominates it; measured: the value is a measurement, else its own measured '
+                'efforts hold it there)', '',
+                '| Smaller model | Dominated by | Facet | Effort | Value | Measured | Dominating value | Measured |',
+                '| :--- | :--- | :--- | :--- | ---: | :--- | ---: | :--- |']
+        out += [f"| {i['model']} | {i['dominated_by']} | {i['facet']} | {i['effort']} | {i['value']} | "
+                f"{'yes' if i['measured'] else 'no'} | {i['dominating_value']} | {'yes' if i['dominating_measured'] else 'no'} |"
+                for i in inversions]
         out.append('')
     out += [f'Source ages at {generated_at} (stale after {data_age.STALE_DAYS} days)', '',
            '| Source / window | Kind | Data date | Age (days) | Status | Note |', '| :--- | :--- | :--- | ---: | :--- | :--- |']
@@ -699,7 +711,8 @@ def main(argv=None, prog=None):
         print()
     now = datetime.now(timezone.utc)
     rows, worst = staleness(doc, now)
-    text = markdown(rows, now.isoformat(timespec='seconds'), doc.get('usd_checks') or ())
+    text = markdown(rows, now.isoformat(timespec='seconds'), doc.get('usd_checks') or (),
+                    doc.get('measured_size_inversions') or ())
     ref_dir = Path(args.references) if args.references is not None else (sources.REPO / 'references')
     suggestions = user_scores.suggest_scores(scope='public', public_path=ref_dir / 'user-scores.json', five_data=doc,
                                              accounts=json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig')))

@@ -3144,6 +3144,11 @@ class EffortCoverageRuleTests(unittest.TestCase):
                 own = measured | filled | ({'high'} if c['status'] == 'interpolated' else set())
                 self.assertEqual(own | set(c.get('bound_moved') or ()), set(c['by_effort']), (m, key))
 
+    @staticmethod
+    def before_size(cell, e):
+        """The cell's value at `e` before the bound across size moved it (`size_order`, Scorer.bound_across_size)."""
+        return next((d[e]['from'] for d in (cell.get('size_order') or {}).values() if e in d), cell['by_effort'][e])
+
     def test_filled_values_follow_the_declared_methods(self):
         """Rule (`fill_one`, `fill_edge`): one-sided, own value plus the published panel step (then the bound); an edge effort
         its neighbour plus the fleet's edge step; bracketed, linear in rank."""
@@ -3165,7 +3170,7 @@ class EffortCoverageRuleTests(unittest.TestCase):
                 else:
                     (lo, vlo), (up, vup) = next(iter(how['from'].items())), next(iter(how['to'].items()))
                     expected = round(vlo + how['weight'] * (vup - vlo), 4)
-                self.assertEqual(how.get('bounded_from', c['by_effort'][e]), expected, (m, key, e))
+                self.assertEqual(how.get('bounded_from', self.before_size(c, e)), expected, (m, key, e))
 
     def test_a_derived_value_follows_its_formula_and_never_exceeds_its_larger_model(self):
         """Rule (`tier_down`): value(e) = large(e) + min(gap, 0), held by the bound and never above large(e); gap the mean of
@@ -3183,7 +3188,8 @@ class EffortCoverageRuleTests(unittest.TestCase):
             gap_keys = [tuple(k.split('.')) for k in est['gap_facets']]
             own = self.doc['models'][m]['axes']
             theirs = self.doc['models'][big]['axes']
-            gap = np.mean([own[a]['facets'][f]['value'] - theirs[a]['facets'][f]['value'] for a, f in gap_keys])
+            gap = np.mean([self.before_size(own[a]['facets'][f], 'high') - self.before_size(theirs[a]['facets'][f], 'high')
+                           for a, f in gap_keys])
             self.assertAlmostEqual(est['gap'], round(float(gap), 4), places=3)
             self.assertEqual(est['drop'], round(min(est['gap'], 0.0), 4))
             large = theirs[key[0]]['facets'][key[1]]['by_effort']
@@ -3330,7 +3336,7 @@ class EffortCoverageRuleTests(unittest.TestCase):
                              (step['step'], step['n'], step['agree'], rel[m]['version']))
             move = min(step['step'], 0.0) if up else step['step']
             self.assertEqual(est['move'], round(move, 4))
-            if 'high' not in est.get('held_at_larger', ()):
+            if 'high' not in (c.get('size_order') or {}).get('held', {}):
                 self.assertAlmostEqual(c['by_effort']['high'], large['high'] + move, places=3, msg=(m, key))
             others = {(a, f): x for a, ax in self.doc['models'][m]['axes'].items() for f, x in (ax.get('facets') or {}).items()}
             if rel[m]['version'] == 'nearest' or not up:
@@ -3523,31 +3529,159 @@ class CrossSizeAndEdgeRuleTests(unittest.TestCase):
             for e, v in facets['big'][self.EXE]['by_effort'].items():
                 self.assertAlmostEqual(got['by_effort'][e], v + drop, places=4, msg=(gap, e))
 
-    def test_the_bound_across_size_holds_an_ability_value_at_the_larger_models_and_leaves_speed_alone(self):
-        est = {'method': 'size_step', 'base_model': 'big'}
-        facets = {'small': {self.EXE: self.rec({'high': -0.1, 'max': 0.9}, 'estimated', [], dict(est)),
-                            self.RESP: self.rec({'high': 0.4, 'max': 0.1}, 'estimated', [], dict(est))},
-                  'big': {self.EXE: self.rec({'high': 0.0, 'max': 0.5}), self.RESP: self.rec({'high': 0.0, 'max': -0.5})}}
-        sc = self.scorer(size_of={'small': {'model': 'big', 'version': 'nearest'}})
+    FAMILIES = {'rows': [
+        {'pattern': '^big', 'models': [], 'maker': 'acme', 'product': 'P', 'line': 'a', 'size': 'full'},
+        {'pattern': '^twin', 'models': [], 'maker': 'acme', 'product': 'P', 'line': 'b', 'size': 'full'},
+        {'pattern': '^small', 'models': [], 'maker': 'acme', 'product': 'P', 'line': 'a', 'size': 'small'},
+        {'pattern': '^other', 'models': [], 'maker': 'acme', 'product': 'Q', 'line': 'q', 'size': 'small'}]}
+
+    def dom_scorer(self, models, versions, entries=(), up=None):
+        """A scorer over made-up rows of maker acme: `big*` and `twin*` full (product P, lines a and b), `small*` small (P,
+        line a), `other*` small of product Q; `up` {small row: (its declared larger model, version)} (series.tier_up)."""
+        fams = {'rows': [dict(r) for r in self.FAMILIES['rows']]}
+        for small, (big, version) in (up or {}).items():
+            fams['rows'].insert(0, {'pattern': f'^{small}$', 'models': [small], 'maker': 'acme', 'product': 'P',
+                                    'line': 'a', 'size': 'small', 'tier_up': f'^{big}$', 'tier_up_version': version})
+            fams['rows'].insert(0, {'pattern': f'^{big}$', 'models': [big], 'maker': 'acme', 'product': 'P', 'line': 'a',
+                                    'size': 'full'})
+        sc = self.scorer(acc={'accounts': {}, 'dispatch_efforts': {}, 'models': {m: {} for m in models},
+                              'families': fams, 'series_versions': {'versions': versions}})
+        sc.versions, sc.entries = dict(versions), frozenset(entries)
+        return sc
+
+    def test_only_a_strictly_smaller_row_of_the_same_maker_and_product_not_newer_is_dominated(self):
+        """Rule (`dominance`, owner 2026-11-19 round 7 as corrected): A is dominated by B when they are the same maker and
+        product, A's size is strictly smaller and A's version not newer (both declared, or B is A's declared larger model
+        of the same version). Equal size never dominates, version alone never does, nor another product."""
+        rows = ['big-2', 'big-3', 'twin-1', 'small-2', 'small-3', 'other-1', 'smallx', 'smally', 'bigx', 'bigy']
+        sc = self.dom_scorer(rows, {'big-2': 2, 'big-3': 3, 'twin-1': 1, 'small-2': 2, 'small-3': 3, 'other-1': 1},
+                             up={'smallx': ('bigx', 'same'), 'smally': ('bigy', 'nearest')})
+        got = sc.dominance(rows)
+        self.assertEqual(got['small-2'], ['big-2', 'big-3'])           # small, not newer than either full row of P
+        self.assertEqual(got['small-3'], ['big-3'])                    # newer than big-2: not dominated by it
+        self.assertEqual(got['big-2'], [])                             # version alone (big-3) never dominates
+        self.assertEqual(got['twin-1'], [])                            # equal size, any line
+        self.assertEqual(got['other-1'], [])                           # another product of the same maker
+        self.assertEqual(got['smallx'], ['bigx'])                      # no versions: the declared same-version larger model
+        self.assertEqual(got['smally'], [])                            # `nearest` does not order the versions
+
+    def test_a_dominated_estimate_is_held_and_a_measurement_stays_along_effort(self):
+        """Rule (`bound_across_size`): a dominated estimate is bounded by the dominating value (`size_order.held`); the
+        record is then bounded along effort with its measured efforts kept."""
+        facets = {'small-2': {self.EXE: self.rec({'low': -0.5, 'high': 0.4, 'max': 0.9}, 'estimated', ['low'])},
+                  'big-2': {self.EXE: self.rec({'low': -1.0, 'high': 0.0, 'max': 0.5})}}
+        sc = self.dom_scorer(facets, {'small-2': 2, 'big-2': 2})
         sc.bound_across_size(facets)
-        self.assertEqual(facets['small'][self.EXE]['by_effort'], {'high': -0.1, 'max': 0.5})
-        self.assertEqual(facets['small'][self.EXE]['estimate']['held_at_larger'], ['max'])
-        self.assertEqual(facets['small'][self.RESP]['by_effort'], {'high': 0.4, 'max': 0.1})     # faster than the larger: kept
+        got = facets['small-2'][self.EXE]
+        self.assertEqual(got['by_effort'], {'low': -0.5, 'high': 0.0, 'max': 0.5})
+        self.assertEqual(got['size_order']['held']['high'], {'model': 'big-2', 'from': 0.4})
+        self.assertEqual(sc.measured_inversions, [{'model': 'small-2', 'dominated_by': 'big-2', 'facet': 'coding.execution',
+                                                   'effort': 'low', 'value': -0.5, 'dominating_value': -1.0,
+                                                   'measured': True, 'dominating_measured': True}])
+
+    def test_a_dominating_estimate_is_raised_to_a_dominated_measurement(self):
+        facets = {'small-2': {self.EXE: self.rec({'high': 0.4})},
+                  'big-2': {self.EXE: self.rec({'high': 0.0, 'max': 0.2}, 'estimated', [])}}
+        sc = self.dom_scorer(facets, {'small-2': 2, 'big-2': 2})
+        sc.bound_across_size(facets)
+        self.assertEqual(facets['big-2'][self.EXE]['by_effort'], {'high': 0.4, 'max': 0.4})
+        self.assertEqual(facets['big-2'][self.EXE]['size_order']['raised']['high'], {'model': 'small-2', 'from': 0.0})
+        self.assertEqual(facets['small-2'][self.EXE]['by_effort'], {'high': 0.4})
+
+    def test_two_measurements_out_of_the_size_order_are_kept_and_listed(self):
+        facets = {'small-2': {self.EXE: self.rec({'high': 0.4})}, 'big-2': {self.EXE: self.rec({'high': 0.0})}}
+        sc = self.dom_scorer(facets, {'small-2': 2, 'big-2': 2})
+        sc.bound_across_size(facets)
+        self.assertEqual((facets['small-2'][self.EXE]['by_effort'], facets['big-2'][self.EXE]['by_effort']),
+                         ({'high': 0.4}, {'high': 0.0}))
+        self.assertEqual(sc.measured_inversions, [{'model': 'small-2', 'dominated_by': 'big-2', 'facet': 'coding.execution',
+                                                   'effort': 'high', 'value': 0.4, 'dominating_value': 0.0,
+                                                   'measured': True, 'dominating_measured': True}])
+
+    def test_an_estimate_moves_within_what_its_own_measurements_allow_and_the_rest_is_listed(self):
+        """Rule (`bound_across_size` with `effort_floor`): a dominating estimate is raised to the floor a dominated row's
+        measured efforts give it (not only to a measurement at that effort); a dominated estimate is held no lower than
+        its own floor; what measurements alone keep out of order is listed, the flags saying which value is measured."""
+        facets = {'small-2': {self.EXE: self.rec({'low': 0.3, 'high': 0.5, 'xhigh': 0.6}, 'measured', ['low', 'high'])},
+                  'big-2': {self.EXE: self.rec({'low': -0.1, 'high': 0.0, 'xhigh': 0.2}, 'measured', ['low', 'high'])}}
+        sc = self.dom_scorer(facets, {'small-2': 2, 'big-2': 2})
+        sc.bound_across_size(facets)
+        small, big = facets['small-2'][self.EXE]['by_effort'], facets['big-2'][self.EXE]['by_effort']
+        self.assertEqual(big, {'low': -0.1, 'high': 0.0, 'xhigh': 0.5})         # xhigh raised to the floor small's high gives
+        self.assertEqual(small, {'low': 0.3, 'high': 0.5, 'xhigh': 0.5})        # held, never below its measured high
+        self.assertEqual([(i['effort'], i['measured'], i['dominating_measured']) for i in sc.measured_inversions],
+                         [('low', True, True), ('high', True, True)])
+        facets = {'small-2': {self.EXE: self.rec({'low': 0.3, 'medium': 0.6}, 'measured', ['low'])},
+                  'big-2': {self.EXE: self.rec({'low': 0.0, 'medium': 0.1})}}
+        sc = self.dom_scorer(facets, {'small-2': 2, 'big-2': 2})
+        sc.bound_across_size(facets)
+        self.assertEqual(facets['small-2'][self.EXE]['by_effort'], {'low': 0.3, 'medium': 0.3})
+        self.assertEqual([(i['effort'], i['measured'], i['dominating_measured']) for i in sc.measured_inversions],
+                         [('low', True, True), ('medium', False, True)])
+
+    def test_a_newer_smaller_row_and_an_older_larger_one_are_left_as_they_are(self):
+        facets = {'small-3': {self.EXE: self.rec({'high': 0.4}, 'estimated', [])},
+                  'big-2': {self.EXE: self.rec({'high': 0.0}, 'estimated', [])}}
+        sc = self.dom_scorer(facets, {'small-3': 3, 'big-2': 2})
+        sc.bound_across_size(facets)
+        self.assertEqual((facets['small-3'][self.EXE]['by_effort'], facets['big-2'][self.EXE]['by_effort']),
+                         ({'high': 0.4}, {'high': 0.0}))
+
+    def test_a_model_entry_row_is_bounded_by_release_rows_and_never_moves_one(self):
+        """Rule (frozen fits, round 6): an entry is held by a release row; an entry's measurement never raises a release
+        row and an entry's value never holds one."""
+        def run(entries, small, big):
+            facets = {'small-2': {self.EXE: self.rec({'high': 0.4}, *small)},
+                      'big-2': {self.EXE: self.rec({'high': 0.0}, *big)}}
+            self.dom_scorer(facets, {'small-2': 2, 'big-2': 2}, entries).bound_across_size(facets)
+            return facets['small-2'][self.EXE]['by_effort']['high'], facets['big-2'][self.EXE]['by_effort']['high']
+        self.assertEqual(run(['small-2'], ('estimated', []), ()), (0.0, 0.0))        # the entry is held
+        self.assertEqual(run(['small-2'], (), ('estimated', [])), (0.4, 0.0))        # its measurement raises no release row
+        self.assertEqual(run(['big-2'], ('estimated', []), ()), (0.4, 0.0))          # an entry holds no release row
+
+    def test_the_bound_across_size_reads_no_order_of_the_rows_and_leaves_speed_alone(self):
+        """The raise reads measurements only and a dominating row is never dominated, so the result is one in any order
+        of the rows; responsiveness has no bound across size."""
+        def build(order):
+            base = {'small-2': {self.EXE: self.rec({'high': 0.6}, 'estimated', []),
+                                self.RESP: self.rec({'high': 0.4}, 'estimated', [])},
+                    'small-1': {self.EXE: self.rec({'high': 0.3})},
+                    'big-2': {self.EXE: self.rec({'high': 0.0}, 'estimated', []), self.RESP: self.rec({'high': 0.0})},
+                    'big-3': {self.EXE: self.rec({'high': 0.5})}}
+            facets = {m: base[m] for m in order}
+            sc = self.dom_scorer(facets, {'small-1': 1, 'small-2': 2, 'big-2': 2, 'big-3': 3})
+            sc.bound_across_size(facets)
+            return {m: {k: r['by_effort'] for k, r in fs.items()} for m, fs in facets.items()}
+        one = build(['small-2', 'small-1', 'big-2', 'big-3'])
+        self.assertEqual(one, build(['big-3', 'big-2', 'small-1', 'small-2']))
+        self.assertEqual(one['big-2'][self.EXE], {'high': 0.3})          # raised to small-1's measurement
+        self.assertEqual(one['small-2'][self.EXE], {'high': 0.3})        # then held by big-2 (below big-3's 0.5)
+        self.assertEqual(one['small-2'][self.RESP], {'high': 0.4})       # faster than the larger: kept
+
+    def test_along_effort_an_estimate_moves_and_a_measurement_does_not(self):
+        """Rule (`bound_pinned`, round 7 item 5, the effort direction): the measured efforts keep their values when they
+        are in order and the estimates are bounded around them; two measurements out of order fall back to the anchor
+        rule."""
+        self.assertEqual(self.fa.bound_pinned({'none': -1.5, 'low': -1.8, 'high': 0.0}, ['none', 'high']),
+                         {'none': -1.5, 'low': -1.5, 'high': 0.0})
+        self.assertEqual(self.fa.bound_pinned({'none': -1.5, 'low': -1.8, 'high': 0.0}, ['none', 'low', 'high']),
+                         self.fa.bound_curve({'none': -1.5, 'low': -1.8, 'high': 0.0}))
 
     def test_complete_bounds_a_filled_small_value_at_its_larger_models(self):
         """End to end: the larger model runs on a ladder of its own (low, xhigh, max), so the fill interpolates its xhigh at
         the midpoint, the small model's at three quarters; without the bound after the fill the small one ends above."""
         facets = {'small': {}, 'big': {self.EXE: self.rec({'low': -1.0, 'max': 1.0})}}
         # the same-version size step comes before the fill (estimation_order); the nearest-version one after it
-        sc = self.scorer(size_of={'small': {'model': 'big', 'version': 'same'}},
-                         size_steps={}, acc={'accounts': {}, 'dispatch_efforts': {'h': {'big': ['low', 'xhigh', 'max']}}})
+        sc = self.dom_scorer(facets, {'small': 2, 'big': 2})
+        sc.size_of = {'small': {'model': 'big', 'version': 'same'}}
+        sc.acc['dispatch_efforts'] = {'h': {'big': ['low', 'xhigh', 'max']}}
         sc.size_step_table = lambda f, k: {'coding.execution': self.step(-0.1)}
         sc.complete(facets, [self.EXE], ['small', 'big'])
         small, big = facets['small'][self.EXE]['by_effort'], facets['big'][self.EXE]['by_effort']
         self.assertEqual(big['xhigh'], 0.0)
         for e, v in small.items():
             self.assertLessEqual(v, big[e] + 1e-9, e)
-        self.assertEqual(facets['small'][self.EXE]['estimate']['held_at_larger'], ['xhigh'])
+        self.assertEqual(list(facets['small'][self.EXE]['size_order']['held']), ['xhigh'])
 
     def test_an_edge_effort_is_its_neighbour_plus_the_fleet_step_held_by_no_inversion(self):
         """Rule (`edge_step_table`, round 6 item 5): the step is the median over every listing a board of the facet holds
