@@ -120,8 +120,14 @@ class PublicationTests(unittest.TestCase):
         self.root = root / 'published'
         self.target = self.root / SCHEMA
 
-    def test_the_repository_publishes_what_it_ships(self):
-        self.assertEqual(public_data.check_published(release=True), '')
+    def test_a_release_ships_exactly_the_published_set_of_its_schema(self):
+        # The rule on a synthetic tree; the repository's own state is the workflow's (`data publish --check`) and the
+        # release's (`--check --release`, also packaging/verify_release.py), not a unit test's.
+        public_data.publish(self.references, self.root, now=T0)
+        self.assertEqual(public_data.check_published(self.root, self.references, release=True), '')
+        edit(self.references, 'accounts.json', lambda d: d['scoring'].__setitem__('safety_margin_pct', 0.6))
+        self.assertIn('accounts.json', public_data.check_published(self.root, self.references, release=True))
+        self.assertEqual(public_data.check_published(self.root, self.references), '')     # not a release: published stays
 
     def test_publish_writes_the_set_to_its_schema_and_editing_references_publishes_nothing(self):
         manifest = public_data.publish(self.references, self.root, now=T0)
@@ -780,6 +786,25 @@ class RouteFallbackTests(unittest.TestCase):
                 return done.code
         self.plan_falls_back(KeyError, entry)       # not one the stage handler catches: the entry point's fall-back
 
+    def shipped_copy(self, root):
+        """The shipped set the router's readers take: a copy of the checkout's references beside its own manifest, so these
+        tests do not depend on whether the checkout has published what it holds (a tree that edited its data and has not
+        yet published reads its references as local edits, and would never hold a fetched set). Every reader addresses
+        the checkout's references/; the held set of that directory is taken from the copy."""
+        shipped = root / 'install' / 'references'
+        copy_set(shipped)
+        write_json(shipped / public_data.MANIFEST, public_data.build_manifest(
+            shipped, now=datetime.now(timezone.utc) - timedelta(days=1)))
+        real_key, checkout = public_data._key, os.path.normcase(str(public_data.BUNDLED))
+
+        def key(bundled, environ):
+            found = real_key(bundled, environ)
+            return (str(shipped), found[1]) if os.path.normcase(found[0]) == checkout else found
+        held_from_copy = patch.object(public_data, '_key', key)
+        held_from_copy.start()
+        self.addCleanup(held_from_copy.stop)
+        return shipped
+
     def fetched_set(self):
         isolated_router_state(self.addCleanup)
         public_data.release()
@@ -787,6 +812,7 @@ class RouteFallbackTests(unittest.TestCase):
         public_data.release()
         root = Path(tempfile.mkdtemp(prefix='public-data-route-'))
         self.addCleanup(shutil.rmtree, root, True)
+        shipped = self.shipped_copy(root)
         remote = root / 'remote'
         copy_set(remote)
         edit(remote, 'accounts.json', lambda d: d['scoring'].__setitem__('safety_margin_pct', 0.5))
@@ -794,7 +820,7 @@ class RouteFallbackTests(unittest.TestCase):
             remote, now=datetime.now(timezone.utc) + timedelta(minutes=1)))
         env = {'ROUTER_STATE_DIR': os.environ['ROUTER_STATE_DIR'], 'AGENTCOMPASS_PUBLIC_DATA': 'on',
                'AGENTCOMPASS_PUBLIC_DATA_URL': URL}
-        self.assertEqual(public_data.refresh(environ=env, fetch=FakeRemote(remote))['status'], 'updated')
+        self.assertEqual(public_data.refresh(environ=env, fetch=FakeRemote(remote), bundled=shipped)['status'], 'updated')
         task = root / 'task.json'
         write_json(task, {'task': {'objective': 'Fix an off-by-one slice in parser.py and add a unit test.',
                                    'expected_hours': 0.5, 'profile': {
@@ -1371,6 +1397,19 @@ class EndToEndTests(unittest.TestCase):
 
     MODEL, BUNDLE, LIKE = 'fixture-model-high', 'fixture_high', 'gpt-6.2-sol'
 
+    @classmethod
+    def setUpClass(cls):
+        """The install: a copy of the checkout's package and skill with its references beside their own manifest, so the
+        test does not depend on whether the checkout has published what it holds."""
+        cls.install = Path(tempfile.mkdtemp(prefix='public-data-e2e-install-'))
+        cls.addClassCleanup(shutil.rmtree, cls.install, True)
+        skip = shutil.ignore_patterns('__pycache__', '*.pyc')
+        shutil.copytree(REPO / 'agentcompass', cls.install / 'agentcompass', ignore=skip)
+        shutil.copytree(REPO / 'skills' / 'agent-compass', cls.install / 'skills' / 'agent-compass', ignore=skip)
+        shipped = cls.install / 'skills' / 'agent-compass' / 'references'
+        write_json(shipped / public_data.MANIFEST, public_data.build_manifest(
+            shipped, now=datetime.now(timezone.utc) - timedelta(days=1)))
+
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix='public-data-e2e-'))
         self.addCleanup(shutil.rmtree, self.root, True)
@@ -1408,7 +1447,7 @@ class EndToEndTests(unittest.TestCase):
                    AGENTCOMPASS_PUBLIC_DATA_URL=self.fixture.url, AGENTCOMPASS_ANTIGRAVITY_PLAN='off',
                    AGENTCOMPASS_LIVE_MODELS='off', ROUTER_SCORE_CACHE='off', NO_PROXY='*', PYTHONUTF8='1',
                    AGENTCOMPASS_PUBLIC_DATA_INTERVAL_HOURS='1000')
-        done = subprocess.run([sys.executable, '-X', 'utf8', str(REPO / 'agentcompass'), *map(str, args)], cwd=self.home,
+        done = subprocess.run([sys.executable, '-X', 'utf8', str(self.install / 'agentcompass'), *map(str, args)], cwd=self.home,
                               env=env, capture_output=True, text=True, encoding='utf-8', timeout=180)
         print(f'$ agentcompass {" ".join(map(str, args))} -> {done.returncode}', file=sys.stderr)
         return done
