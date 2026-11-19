@@ -290,8 +290,12 @@ Every per-model fact is reference data under `references/`; adding a model or a 
      edge and size steps, the effort correlations and links, the Time/Task fits and ratios, the usd cross-source ratio
      and the fallback scale, the level targets, the level-3 ceilings and the panel. A row a model entry gave
      (`public-measurements.json` `model_entries`) never enters a fit, a target, a ceiling or the panel, and is never a
-     relative of a release snapshot row; it is scored by the release's fits, and may itself be estimated from snapshot
-     relatives (`five_axis.without_entries`, `release_same_model`, `release_tier_up`). Its tier is its board reading put
+     relative's base; it is scored by the release's fits, and may itself be estimated from snapshot relatives
+     (`five_axis.without_entries`, `release_same_model`, `release_tier_up`). The declared structure (version ladders and
+     distances, the relatives a record lists) stays the release's: a row the release had without readings keeps its place
+     in it when an entry gives it readings (`released_entry_rows`), and a new row takes none. A row the release reads
+     is refused (`--model` stops with nothing written and no entry stored): its readings belong to the release's fits
+     and change with the next release. Its tier is its board reading put
      on the release snapshot's tier scale (`sources.tier.arena_overall.tier_scale`) or through its index map
      (`sources.tier.aa_index.tier_map`), after the board's drift as below. So adding a model changes only that model's
      rows: every other row and every fit, step, link and target of `five-axis-scores.json` stays byte for byte; only the

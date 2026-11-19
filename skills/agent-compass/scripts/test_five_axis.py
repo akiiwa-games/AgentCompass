@@ -2973,6 +2973,47 @@ class SameModelPointTests(unittest.TestCase):
                 self.assertGreaterEqual(min(pro['minutes_by_effort'].values()), out['base']['minutes_by_effort']['max'])
 
 
+class ReleasedEntryRowTests(unittest.TestCase):
+    """Rule (five_axis.Scorer.new_entries, without_entries; round 8 item 4): a row the release had without readings keeps
+    its place in the declared structure when a model entry gives it readings (`released_entry_rows`), so every other row
+    is built as in the release; a row a model entry adds takes no place in it (the ladders lose its rung)."""
+
+    def test_a_released_row_keeps_its_rung_and_a_new_row_takes_none(self):
+        refs = account_fleet.REFERENCES
+        meas = json.loads((refs / 'public-measurements.json').read_text(encoding='utf-8-sig'))
+        acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig'))
+        plans = json.loads((refs / 'plan-templates.json').read_text(encoding='utf-8-sig'))
+        shipped = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))
+        versions, siblings = acc['series_versions']['versions'], five_axis.series.groups(acc, 'ability')
+        unread = {m for m, r in meas['models'].items() if not any(r.values()) and m not in meas.get('model_entries', ())}
+
+        def build(m):
+            return json.loads(json.dumps(five_axis.build(
+                m, acc, plans, distrust=shipped['distrusted_sources'], now=datetime.fromisoformat(shipped['generated_at']),
+                previous=shipped), ensure_ascii=False))
+
+        def estimates(doc):
+            return {(m, c, f): cell['estimate'] for m, r in doc['models'].items() for c, ax in r['axes'].items()
+                    for f, cell in (ax.get('facets') or {}).items() if (cell.get('estimate') or {}).get('version_distance')}
+        release = build(meas)
+        # an unread release row on the version ladder between an estimated cell's row and its base (a rung that counts)
+        rungs = sorted((x, key) for key, e in estimates(release).items() if e['version_distance'] >= 2
+                       and key[0] in versions and e['base_model'] in versions for x in siblings.get(key[0], ())
+                       if x in unread and x in versions
+                       and min(versions[key[0]], versions[e['base_model']]) < versions[x]
+                       < max(versions[key[0]], versions[e['base_model']]))
+        self.assertTrue(rungs)
+        row = rungs[0][0]
+        entries = sorted({*meas.get('model_entries', ()), row})
+        kept = build({**meas, 'model_entries': entries, 'released_entry_rows': [row]})
+        self.assertEqual({m: r for m, r in kept['models'].items() if m != row},
+                         {m: r for m, r in release['models'].items() if m != row})
+        added = estimates(build({**meas, 'model_entries': entries}))
+        for _, key in (r for r in rungs if r[0] == row):
+            with self.subTest(cell=key):
+                self.assertEqual(added[key]['version_distance'], estimates(release)[key]['version_distance'] - 1)
+
+
 class FloorScoreProvenanceTests(unittest.TestCase):
     """Rule (reference_provenance.validate_scores_against_floors, owner 2026-11-19, round 7): a shipped maintainer score on
     responsiveness that reads faster than the same row's declared response floor refuses the references, naming both; a
@@ -3032,7 +3073,7 @@ class CrossLineTimeTests(unittest.TestCase):
         minutes = {m: {'high': t, 'xhigh': 2 * t} for m, t in models.items()} | {'acme-b-4': {}}
         basis = {m: {e: {'method': 'aa' if m in read else 'series'} for e in ('high', 'xhigh')} for m in models}
         basis['acme-b-4'] = {}
-        five_axis.cross_line_times(SimpleNamespace(entries=set()), rows, acc, {}, minutes, basis, set())
+        five_axis.cross_line_times(SimpleNamespace(entries=set(), new_entries=set()), rows, acc, {}, minutes, basis, set())
         return minutes['acme-b-4'], basis['acme-b-4']
 
     def test_durations_give_a_row_with_no_time_of_its_line_the_other_lines_time(self):

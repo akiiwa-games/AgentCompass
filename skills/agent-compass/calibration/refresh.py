@@ -529,6 +529,22 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
         built = copy.deepcopy(shipped)      # no release snapshot in the cache: the shipped document stands for it
     else:
         sources.manifest(target)            # raises: the cache has no fetch-manifest.json
+    # What the release had (round 8): its rows are those of the published measurements that no model entry gave, plus
+    # those an entry gave a row the release had without readings (`released_entry_rows`). A released row with readings
+    # belongs to the release's fits and changes with the next release (the full refresh), so no entry may take its readings
+    # away from them; a released row without readings takes its readings from the entry and keeps its place in the
+    # declared structure (five_axis.Scorer.new_entries); any other row is new.
+    release = shipped if shipped is not None else built
+    given = set(release.get('model_entries') or ())
+    for name in entries:
+        read = sorted(f for f, items in ((release.get('models') or {}).get(name) or {}).items() if items)
+        if read and name not in given:
+            raise Refused((f'--model {name}' if name in models else f'model entry {target / MODEL_ENTRIES / name}')
+                          + f": the release reads {name} ({', '.join(read)}); those readings belong to the release's fits "
+                          'and change with the next release (the full refresh), not by a model entry; '
+                          + ('nothing written and no entry stored' if name in models else 'remove the entry'))
+    released = sorted(n for n in entries if n in (release.get('released_entry_rows') or ())
+                      or (n in (release.get('models') or {}) and n not in given))
     left_out, notes = [], []
     for name in (m for m in acc['models'] if m in entries):    # catalog order, so the result never depends on history
         fresh = measurements.Builder(entries[name], acc).build()
@@ -536,6 +552,9 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
         if name in models:
             left_out += out
             notes += said
+    built.pop('released_entry_rows', None)
+    if released:
+        built['released_entry_rows'] = released
     merge = None
     if models:
         if shipped is not None:

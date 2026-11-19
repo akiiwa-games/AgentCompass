@@ -456,8 +456,10 @@ def pick_price(entries):
 
 
 def without_entries(groups, entries):
-    """`groups` ({row: [relative, ...]}) with every model-entry row taken out of the relative lists (owner 2026-11-19,
-    round 6 item 8): a row rests only on the release snapshot's rows, so adding a model changes no other row."""
+    """`groups` ({row: [relative, ...]}) with the rows a model entry added taken out of the relative lists (owner
+    2026-11-19, round 6 item 8; `Scorer.new_entries`): the declared structure (version ladders and distances) is the
+    release's, so adding a model changes no other row. A row the release had without readings keeps its place (round 8);
+    no model-entry row is ever a relative's base (each candidate list leaves out `Scorer.entries`)."""
     return {k: [j for j in v if j not in entries] for k, v in groups.items()}
 
 
@@ -475,8 +477,10 @@ class Scorer:
     def __init__(self, meas, acc, distrust=()):
         self.meas, self.acc = meas, acc
         self.distrust = set(distrust)
-        # the rows a model entry gave (refresh --model, merge_model_rows): scored by the release's fits, never in one
+        # the rows a model entry gave (refresh --model, merge_model_rows): scored by the release's fits, never in one,
+        # never a relative's base; those the release did not have also stay out of the declared structure (round 8)
         self.entries = frozenset(meas.get('model_entries') or ())
+        self.new_entries = self.entries - frozenset(meas.get('released_entry_rows') or ())
         self.readings = effort_readings(acc)
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
         # declared response floors (`response_time_source`): a row's one launch path, round 6
@@ -504,12 +508,13 @@ class Scorer:
                 out[m] = {'value': round(float(np.mean([e['value'] for e in chosen])), 4), 'method': method, 'sources': cite,
                           **({'status': 'estimated'} if method == 'other_overall' else {})}
         direct_tier = {m: t['value'] for m, t in out.items()}
-        sibs = without_entries(series.groups(self.acc, 'ability'), self.entries)
+        sibs = without_entries(series.groups(self.acc, 'ability'), self.new_entries)
         same = release_same_model(self.acc, self.entries)
         for m in rows:
             if m in out:
                 continue
-            groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in direct_tier], sibs.get(m, ()), self.versions,
+            groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in direct_tier and b not in self.entries],
+                                    sibs.get(m, ()), self.versions,
                                     self.small, same, self.line_of, self.order['sibling_first_up_to_distance'])
             if groups:
                 group = groups[0][1]
@@ -1136,8 +1141,8 @@ class Scorer:
 
         def measured(b):
             rec = facets.get(b, {}).get(key) or {}
-            return (b != without and b != m and rec.get('status', '').startswith('measured') and rec.get('value') is not None
-                    and tier[b]['value'] is not None)
+            return (b != without and b != m and b not in self.entries and rec.get('status', '').startswith('measured')
+                    and rec.get('value') is not None and tier[b]['value'] is not None)
         cands = [b for b in pool if self.line_of.get(b) != mine and measured(b)]
         groups = series.nearest(m, cands, pool, self.versions, self.small, None, self.line_of,
                                 self.order['sibling_first_up_to_distance'])
@@ -1224,8 +1229,8 @@ class Scorer:
         raw_same = series.same_model(self.acc)
         self.same = {k: v for k, v in raw_same.items() if valid_public_declaration(v) and v.get('model') not in self.entries}
         self.speed = {m: sp for m, e in self.same.items() if (sp := speed_declaration(e)) is not None}
-        self.sibs = without_entries(series.groups({**self.acc, 'same_model': self.same}, 'ability'), self.entries)
-        self.line_sibs = without_entries(series.groups({**self.acc, 'same_model': self.same}, 'line'), self.entries)
+        self.sibs = without_entries(series.groups({**self.acc, 'same_model': self.same}, 'ability'), self.new_entries)
+        self.line_sibs = without_entries(series.groups({**self.acc, 'same_model': self.same}, 'line'), self.new_entries)
         self.versions, self.small, self.line_of = series.versions(self.acc), series.small_rows(self.acc), series.lines(self.acc)
         self.order = estimation_order(self.acc)
         tier = self.tier_records(rows)
@@ -1272,8 +1277,8 @@ class Scorer:
                     continue        # a speed variant's speed rests on its base
                 # an ability facet reads the maker's same-size rows of every line; a speed facet its own line only
                 sibs = (self.sibs if rises(key) else self.line_sibs).get(m, ())
-                usable = [b for b in sibs
-                          if (facets[b].get(key) or {}).get('status', '').startswith('measured')
+                usable = [b for b in sibs if b not in self.entries
+                          and (facets[b].get(key) or {}).get('status', '').startswith('measured')
                           and (facets[b].get(key) or {}).get('value') is not None and tier[b]['value'] is not None]
                 groups = series.nearest(m, usable, sibs, self.versions, self.small, self.same, self.line_of,
                                         self.order['sibling_first_up_to_distance'] if rises(key) else None)
@@ -1924,7 +1929,7 @@ def cross_line_times(scorer, rows, acc, same, minutes, basis, skip):
     (Artificial Analysis or the arena fit) on at least two same-version pairs, the relative's times the median ratio own / other over those pairs at High (method
     `cross_line_extrapolation`, n and spread shown), the median over the relatives; else the median of the relatives'
     times (method `cross_line_median`). `minutes` and `basis` are updated in place; rows in `skip` are left alone."""
-    pool = without_entries(series.groups({**acc, 'same_model': same}, 'ability'), scorer.entries)
+    pool = without_entries(series.groups({**acc, 'same_model': same}, 'ability'), scorer.new_entries)
     line_of, versions, small = series.lines(acc), series.versions(acc), series.small_rows(acc)
     up_to = estimation_order(acc)['sibling_first_up_to_distance']
     read = {b for b in rows if 'high' in minutes[b]
@@ -1935,7 +1940,7 @@ def cross_line_times(scorer, rows, acc, same, minutes, basis, skip):
                                        and 'duration' not in (same[m].get('own_estimated') or ())):
             continue
         mine = line_of.get(m)
-        cands = [b for b in pool.get(m, ()) if line_of.get(b) != mine and b in timed]
+        cands = [b for b in pool.get(m, ()) if line_of.get(b) != mine and b in timed and b not in scorer.entries]
         groups = series.nearest(m, cands, pool.get(m, ()), versions, small, None, line_of, up_to)
         if not groups or groups[0][0] is None:
             continue
@@ -2008,7 +2013,7 @@ def durations(scorer, rows, acc):
                                    'url': entry.get('url'), 'as_of': entry.get('as_of'),
                                    'statement': entry.get('statement')}
     declared = series.groups({**acc, 'same_model': same}, 'line')     # Time/Task is a speed quantity: its own line only
-    sibs = without_entries(declared, scorer.entries)
+    sibs = without_entries(declared, scorer.new_entries)
     line_of = series.lines(acc)
     measured = {m for m in rows if minutes[m]}
     speed = {m: sp for m, e in same.items() if m in rows and (sp := speed_declaration(e)) is not None}
@@ -2016,7 +2021,8 @@ def durations(scorer, rows, acc):
         if minutes[m] or m in speed or (m in same and not {'duration'} & {*(same[m].get('carries') or ()),
                                                                           *(same[m].get('own_estimated') or ())}):
             continue        # a row declared to be another model's channel that does not carry its time keeps the channel's own
-        groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in measured], sibs.get(m, ()), series.versions(acc),
+        groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in measured and b not in scorer.entries], sibs.get(m, ()),
+                                series.versions(acc),
                                 series.small_rows(acc), same, line_of)
         if groups:
             d, group = groups[0]
@@ -2024,7 +2030,7 @@ def durations(scorer, rows, acc):
                 minutes[m][e] = round(float(np.median([minutes[b][e] for b in group])), 3)
                 basis[m][e] = {'method': 'series', 'base_model': group[0] if len(group) == 1 else group,
                                'version_distance': d, 'source': basis[group[0]][e].get('source'),
-                               'base_method': basis[group[0]][e]['method'], 'series': sorted([m, *declared.get(m, ())])}
+                               'base_method': basis[group[0]][e]['method'], 'series': sorted([m, *sibs.get(m, ())])}
     for m, sp in sorted(speed.items()):
         base = same[m]['model']
         if minutes[m] or base not in rows:
@@ -2068,8 +2074,8 @@ def durations(scorer, rows, acc):
     for m, r in rows.items():
         direct = dict(minutes[m])
         if direct:
-            groups = series.nearest(m, sibs.get(m, ()), sibs.get(m, ()), series.versions(acc), series.small_rows(acc), same,
-                                    line_of)
+            groups = series.nearest(m, [b for b in sibs.get(m, ()) if b not in scorer.entries], sibs.get(m, ()),
+                                    series.versions(acc), series.small_rows(acc), same, line_of)
             known = dict(direct)
 
             def side(effort, pool):
@@ -2484,14 +2490,15 @@ def convert_usd(usd, rows, scorer, meas, acc):
     `relation: size`) when that has a direct value."""
     direct = {m for m, u in usd.items() if u.get('value') is not None and u.get('kind') not in ('derived', 'converted')}
     same = release_same_model(acc, scorer.entries)
-    sibs = without_entries(series.groups({**acc, 'same_model': same}, 'line'), scorer.entries)   # a speed and price quantity
+    sibs = without_entries(series.groups({**acc, 'same_model': same}, 'line'), scorer.new_entries)   # a speed and price quantity
     line_of = series.lines(acc)
     mix = token_mix(meas)
     larger = release_tier_up(acc, scorer.entries)
     for m in rows:
         if m in direct:
             continue
-        groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in direct], sibs.get(m, ()), series.versions(acc),
+        groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in direct and b not in scorer.entries], sibs.get(m, ()),
+                                series.versions(acc),
                                 series.small_rows(acc), same, line_of)
         near = groups[0][1] if groups else []
         conv = []

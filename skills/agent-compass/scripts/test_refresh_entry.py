@@ -895,29 +895,60 @@ class ModelEntryTests(unittest.TestCase):
         self.assertEqual(sources.manifest(entry), sources.manifest(self.pages))
         self.assertEqual(sorted(p.name for p in (self.cache / refresh.MODEL_ENTRIES).iterdir()), [self.ADDED])
 
-    def test_adding_a_model_changes_no_other_row_fit_step_link_target_or_panel(self):
-        """Rule (owner 2026-11-19, round 6 item 8): fleet fits are frozen per release; a model entry's rows never enter
-        a fit, a step, a link, a correlation, a target, a ceiling or the panel. Adding one leaves every other row and
-        every top-level quantity of five-axis-scores.json byte-identical; only the added model's own row, its records in
-        the per-model lists, the tier-source counts, measurements_sha256 and generated_at may differ."""
-        read = lambda: json.loads((self.refs / 'five-axis-scores.json').read_text(encoding='utf-8'))
-        before = read()
-        _, doc = refresh.rebuild(self.cache, now=self.now, references=self.refs, models=[self.ADDED], pages=self.pages)
-        after = read()
-        self.assertEqual(doc['_model_merge']['blast_radius'], 'no value of another model moved')
-        self.assertTrue(after['models'][self.ADDED])
-        self.assertEqual({m: r for m, r in after['models'].items() if m != self.ADDED},
-                         {m: r for m, r in before['models'].items() if m != self.ADDED})
-        others = lambda doc, key: [e for e in doc[key] if e.get('model') != self.ADDED]
+    def assert_no_other_row_moved(self, added, before, after, rows_added=0):
+        """Every other row and every top-level quantity of five-axis-scores.json as before; only the added model's own
+        row, its records in the per-model lists, the tier-source counts (their total grows by the rows added) and
+        measurements_sha256 may differ."""
+        self.assertTrue(after['models'][added])
+        self.assertEqual({m: r for m, r in after['models'].items() if m != added},
+                         {m: r for m, r in before['models'].items() if m != added})
+        others = lambda doc, key: [e for e in doc[key] if e.get('model') != added]
         for key in sorted(set(before) | set(after)):
             if key in ('models', 'generated_at', 'measurements_sha256', 'tier_sources'):
                 continue
-            with self.subTest(key=key):
+            with self.subTest(model=added, key=key):
                 if isinstance(after.get(key), list) and any(isinstance(e, dict) and 'model' in e for e in after[key]):
                     self.assertEqual(others(after, key), others(before, key))
                 else:
                     self.assertEqual(after.get(key), before.get(key))
-        self.assertEqual(sum(after['tier_sources'].values()), sum(before['tier_sources'].values()))
+        self.assertEqual(sum(after['tier_sources'].values()), sum(before['tier_sources'].values()) + rows_added)
+
+    def test_adding_a_model_changes_no_other_row_fit_step_link_target_or_panel(self):
+        """Rule (owner 2026-11-19, round 6 item 8; round 8 item 4): fleet fits are frozen per release; a model entry's
+        rows never enter a fit, a step, a link, a correlation, a target, a ceiling or the panel, and the declared
+        structure (version ladders, distances, relatives) stays the release's. Three cases: a released row the release
+        snapshot does not read (it keeps its place in the structure), a new row (it takes none), and a released row the
+        snapshot reads (refused: its readings belong to the release's fits)."""
+        read = lambda: json.loads((self.refs / 'five-axis-scores.json').read_text(encoding='utf-8'))
+        before = read()                                       # 1. a released row without readings
+        _, doc = refresh.rebuild(self.cache, now=self.now, references=self.refs, models=[self.ADDED], pages=self.pages)
+        self.assertEqual(doc['_model_merge']['blast_radius'], 'no value of another model moved')
+        self.assert_no_other_row_moved(self.ADDED, before, read())
+        meas = json.loads((self.refs / 'public-measurements.json').read_text(encoding='utf-8'))
+        self.assertEqual((meas['model_entries'], meas['released_entry_rows']), ([self.ADDED], [self.ADDED]))
+
+        new, display = 'gpt-5.65-sol', 'GPT-5.65 Sol'           # 2. a new row, at a version of its own in its series
+        acc = json.loads((self.refs / 'accounts.json').read_text(encoding='utf-8'))
+        acc['models'][new] = {**copy.deepcopy(acc['models'][self.ADDED]), 'listed_as': {'arena': display, 'aa': display}}
+        acc['series_versions']['versions'][new] = 5.65
+        (self.refs / 'accounts.json').write_text(json.dumps(acc, indent=1, ensure_ascii=False) + '\n', encoding='utf-8',
+                                                newline='\n')
+        with patch(f'{__name__}.PANEL_MODELS', (*PANEL_MODELS, (new, display, 'OpenAI'))):
+            pages, _ = build_calibration_fixture(self.root / 'fresh-new', self.now)
+        before = read()
+        _, doc = refresh.rebuild(self.cache, now=self.now, references=self.refs, models=[new], pages=pages)
+        self.assertEqual(doc['_model_merge']['blast_radius'], 'no value of another model moved')
+        self.assert_no_other_row_moved(new, before, read(), rows_added=1)
+        meas = json.loads((self.refs / 'public-measurements.json').read_text(encoding='utf-8'))
+        self.assertEqual((meas['model_entries'], meas['released_entry_rows']), (sorted([self.ADDED, new]), [self.ADDED]))
+
+        read = next(m for m, r in meas['models'].items()             # 3. a released row the release reads
+                    if any(r.values()) and m not in meas['model_entries'] and m not in meas['panel']['models'])
+        files, stored = self.generated(), refresh.model_entries(self.cache)
+        with self.assertRaisesRegex(refresh.Refused, f"--model {read}: the release reads {read} "
+                                                     ".*belong to the release's fits.*no entry stored"):
+            refresh.rebuild(self.cache, now=self.now, references=self.refs, models=[read], pages=self.pages)
+        self.assertEqual((self.generated(), refresh.model_entries(self.cache)), (files, stored))
 
     def test_model_never_changes_another_rows_measured_value(self):
         shipped = json.loads((self.refs / 'public-measurements.json').read_text(encoding='utf-8'))
