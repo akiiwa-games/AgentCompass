@@ -114,6 +114,13 @@ def _name_candidates(raw_model, accounts):
     return base, (str(raw_model), base, name, stripped, aliases.get(stripped, stripped))
 
 
+def endpoint_providers(entry, provider, account):
+    """The serving providers (model_resolution.serving_providers `endpoints`) of the names a catalog entry lists for an
+    account: the entry's provider and the account when the entry is an endpoint (ENDPOINT_TYPES), whose ids are in its
+    own namespace; none for a launcher's list. Read by derive and by the tray's model list alike."""
+    return tuple(dict.fromkeys(p for p in (provider, account) if p)) if (entry or {}).get('type') in ENDPOINT_TYPES else ()
+
+
 def superseded_by(raw_model, accounts, providers=()):
     """The newer model id public data names for this model, or None (latest, or unknown to the data).
 
@@ -394,7 +401,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 if '[' in raw:  # context-window variants (claude-opus-4-6[1m]) are the same model
                     continue
                 base, id_effort = split_effort(raw, accounts)
-                served = tuple(dict.fromkeys((provider, account))) if entry.get('type') in ENDPOINT_TYPES else ()
+                served = endpoint_providers(entry, provider, account)
                 profile = default_profile(raw, accounts, served)
                 harness = pair_harness if pair_harness != PER_MODEL else \
                     proxy_harness((account_families or {}).get(account) or spec.get('family'), profile['model'], accounts)

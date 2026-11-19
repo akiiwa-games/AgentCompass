@@ -368,11 +368,11 @@ def evaluate_bundle(bundle, task, ctx):
     if spec.get('unlimited'):
         result['notes'].append('unlimited usage')
     boost = sum(float(o.get('boost') or 0) for o in ctx.get('overrides', ())
-                if o['account'] == bundle['account'] and (not o.get('model') or account_fleet.canonical(o['model'], accounts) == model)
+                if o['account'] == bundle['account'] and (not o.get('model') or account_fleet.stored_model(o['model'], accounts, o['account']) == model)
                 and (quota_overrides.expected_reset_time(o) is None or quota_overrides.expected_reset_time(o) <= now))
     for intent in ctx.get('overrides', ()):
         if (intent['account'] == bundle['account'] and intent.get('expected_reset_at')
-                and (not intent.get('model') or account_fleet.canonical(intent['model'], accounts) == model)):
+                and (not intent.get('model') or account_fleet.stored_model(intent['model'], accounts, bundle['account']) == model)):
             result['notes'].append(f"expected reset {intent['expected_reset_at']}: {intent['reset_expectation_status']}; capacity requires a fresh observation")
     if boost:
         result['components']['boost'] = round(boost, 3)

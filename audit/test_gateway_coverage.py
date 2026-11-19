@@ -312,7 +312,8 @@ class CheckRuleTests(unittest.TestCase):
     def test_a_declaration_the_names_file_contradicts_fails_and_one_it_agrees_with_passes(self):
         """Rule (declaration_violations; owner, 2026-11-19): a provider's declaration must be a row whose canonical ids (or
         its canonical_id) the names file lists for the name on that provider; a listing of a default's name on a provider
-        with no declaration of its own must be the default's row (the provider's listing beats the maker's default)."""
+        with no declaration of its own gives the default's row or repeats the name (its own undated id, row_ids), and one
+        naming another dated id is a violation (round 2)."""
         accounts = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
         a, b = [m for m in accounts['models'] if isinstance(accounts['models'][m], dict)][:2]
         accounts['provider_names'] = {'statement': 't', 'defaults': {}, 'rows': {
@@ -324,10 +325,11 @@ class CheckRuleTests(unittest.TestCase):
         accounts['provider_names'] = {'statement': 't', 'rows': {}, 'defaults': {
             'n': {'model': b, 'kind': 'vendor', 'url': 'https://x', 'as_of': '2026-11-19', 'statement': 's'}}}
         names = {'schema': gc.NAMES_SCHEMA, 'names': {b: [['q', f'mk/{b}', 1, 1]],
-                                                      'n': [['maker', f'mk/{b}', 1, 1], ['host', f'mk/n', 1, 1]]}}
+                                                      'n': [['maker', f'mk/{b}', 1, 1], ['host', 'mk/n', 1, 1],
+                                                            ['other', 'mk/n-0731', 1, 1]]}}
         violations, counts = gc.declaration_violations(accounts, names)
-        self.assertEqual((len(violations), counts['default']), (1, 2))
-        self.assertIn('host', violations[0])
+        self.assertEqual((len(violations), counts['default']), (1, 3))
+        self.assertIn('other', violations[0])
 
     def test_a_row_without_efforts_takes_the_launch_table_at_a_harness_and_default_at_a_magpie_preset(self):
         """Rule (`pairs`): a harness row that lists no efforts is offered at the launch table's efforts, and is a gap off

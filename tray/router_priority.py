@@ -116,7 +116,7 @@ def overlaps(row, account, model, now, accounts):
     import quota_overrides
     return (active(row, now) and not quota_overrides.override_reset_landed(row, None, accounts, now)
             and row.get('account') == account
-            and (not row.get('model') or account_fleet.canonical(row['model'], accounts) == model))
+            and (not row.get('model') or account_fleet.stored_model(row['model'], accounts, account) == model))
 
 
 def _candidates(accounts):
@@ -144,16 +144,17 @@ def _weekly_window(accounts, account, model):
 
 
 def targets(accounts):
-    """The configured targets with an enabled bundle. A target's model is matched to a bundle's as the same row
-    (account_fleet.row_key), so a target stored under a name whose maker moved it to a newer dated snapshot reaches the
-    bundle that now runs that snapshot."""
+    """The configured targets with an enabled bundle. A target's model, read with its account's providers
+    (account_fleet.account_providers), is matched to a bundle's as the same row (account_fleet.row_key), so a target stored
+    under a name whose maker moved it to a newer dated snapshot reaches the bundle that now runs that snapshot, and one
+    stored under a name the account's provider declares reaches that provider's bundle."""
     import account_fleet
     candidates = _candidates(accounts)
     configured = [t for t in accounts.get('priority_targets') or () if isinstance(t, dict)]
     pairs = []
     for target in configured:
         account, wanted = target.get('account'), target.get('model')
-        row = account_fleet.row_key(wanted, accounts) if wanted else None
+        row = account_fleet.row_key(wanted, accounts, account_fleet.account_providers(accounts, account)) if wanted else None
         model = next((m for a, m in candidates if a == account and (m == wanted or account_fleet.row_key(m, accounts) == row)), None)
         if model is not None and (account, model) not in [(a, m) for a, m, _ in pairs]:
             pairs.append((account, model, target.get('label')))

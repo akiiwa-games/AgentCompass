@@ -167,3 +167,19 @@ def test_the_background_refresh_is_rare_but_never_lets_a_discovered_model_expire
     source = inspect.getsource(panel_models.ModelsPage.refresh_model_availability) if hasattr(panel_models, 'ModelsPage')         else inspect.getsource(panel_models)
     assert 'model_catalog.BACKGROUND_REFRESH_SECONDS * 1000' in source and 'after(600000' not in source
 
+
+
+def test_an_endpoints_advertised_name_reads_the_declarations_derive_reads(tmp_path, monkeypatch):
+    """Rule (auto_bundles.endpoint_providers): the tray's model list reads an endpoint's advertised name with the serving
+    providers derive gives it (the catalog provider and the account), so a declaration under the account reaches it."""
+    settings(tmp_path, monkeypatch)
+    accounts = json.loads((Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'references' / 'accounts.json')
+                          .read_text(encoding='utf-8'))
+    scored = [m for m, v in accounts['models'].items() if isinstance(v, dict) and m not in accounts.get('aliases', {}).values()]
+    a, b = scored[0], scored[1]
+    accounts['provider_names'] = {'statement': 't', 'defaults': {}, 'rows': {'gw-account': {a.lower(): {
+        'model': b, 'kind': 'vendor', 'url': 'https://example.com/x', 'as_of': '2026-11-19', 'statement': 's'}}}}
+    rows = [{'account': 'gw-account', 'harness': 'codex', 'providers': ['gw-catalog'], 'models': []}]
+    catalog = {'providers': {'gw-catalog': {'ok': True, 'type': 'openai_compatible', 'models': [{'id': a}]}}}
+    decorated = router_data.decorate_model_rows(rows, accounts, catalog)
+    assert [group['model'] for group in decorated[0]['models']] == [b]

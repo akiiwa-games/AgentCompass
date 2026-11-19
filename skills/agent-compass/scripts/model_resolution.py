@@ -4,10 +4,13 @@ Always preserve an exact calibrated model/alias before trying a family match. A 
 no scores (nothing here supplies a default row).
 
 Which row a served name is comes first from the catalog's `provider_names` table (owner, 2026-11-19): a serving
-provider's own declaration (`rows`: the provider's listing identifies the name as a row, or as weights with no row, or
-the maker shut the name down there), else the maker's declaration of what the name serves now (`defaults`: a name whose
+provider's own declaration (`rows`: the provider's listing names a different dated snapshot than the maker's default,
+or spells the row another way, or the maker shut the name down there), else the maker's declaration of what the name serves now (`defaults`: a name whose
 maker moved it to a newer dated snapshot reads as that snapshot's row on any provider and with no provider known), else
-the name resolves as below. The serving provider of a name is the endpoint a caller knows serves it (an OpenAI-compatible
+the name resolves as below. A decorated spelling (case, a vendor tag such as a date, `-latest` or `-preview`, a dash
+effort) reads the declarations of each undecorated spelling at the step where it would reach a row of that spelling, so
+`deepseek-v4-pro-high` reads the declarations of `deepseek-v4-pro` (resolve_model). Provider ids, like names, are
+matched lowercase. The serving provider of a name is the endpoint a caller knows serves it (an OpenAI-compatible
 gateway account, a Magpie preset or `account:<kind>`), else the provider part of a `provider/name` id
 (serving_providers); the release check (audit/gateway_coverage.py) reads the same functions.
 """
@@ -72,11 +75,15 @@ def serving_providers(raw_model_name, endpoints=()):
 
 
 def provider_declarations(raw_model_name, endpoints, table):
-    """[(provider, declaration)] of `table` (provider_name_table) `rows` for the serving providers of the name; a
-    provider's names are looked up lowercase, as the provider serves them."""
+    """[(provider, declaration)] of `table` (provider_name_table) `rows` for the serving providers of the name; providers
+    and their names are looked up lowercase."""
+    return _declared_at(serving_providers(raw_model_name, endpoints), table)
+
+
+def _declared_at(pairs, table):
     rows = table['rows']
-    return [(p, rows[p][n.lower()]) for p, n in serving_providers(raw_model_name, endpoints)
-            if isinstance(rows.get(p), dict) and isinstance(rows[p].get(n.lower()), dict)]
+    return [(p.lower(), rows[p.lower()][n.lower()]) for p, n in pairs
+            if isinstance(rows.get(p.lower()), dict) and isinstance(rows[p.lower()].get(n.lower()), dict)]
 
 
 def maker_default(raw_model_name, table):
@@ -84,6 +91,18 @@ def maker_default(raw_model_name, table):
     (`table` `defaults`), or None."""
     entry = table['defaults'].get(split_model_effort(raw_model_name)[0].rsplit('/', 1)[-1].lower())
     return entry if isinstance(entry, dict) else None
+
+
+def undecorated(name):
+    """[(spelling, dash effort)]: `name` (lowercase), then each vendor tag stripped in turn (_VENDOR_TAG), then the fully
+    stripped name without a dash effort when it has one: the spellings resolve_model tries for a row, in its order."""
+    out, name = [(name.lower(), None)], name.lower()
+    while (stripped := _VENDOR_TAG.sub('', name)) != name:
+        name = stripped
+        out.append((name, None))
+    if dashed := _DASH_EFFORT.match(name):
+        out.append((dashed['name'], dashed['effort']))
+    return out
 
 
 def split_model_effort(raw):
@@ -115,8 +134,11 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
     one declared row is the key (source `provider`, the declaring provider in 'provider'); a declaration with no row
     gives its status (`retired`, `other_weights`: key None, no row on that provider, so out of automatic routing, while a
     route the user names still launches); serving providers that declare different rows give `conflict` (key None).
-    Else the maker's declaration of what the name serves now (maker_default: source `default`). The result does not
-    depend on the order of the declarations. A name nothing declares resolves as below.
+    Else the maker's declaration of what the name serves now (maker_default: source `default`). Else the name's row
+    (`exact`, `alias`). The three are read for each spelling of undecorated (the name as given, each vendor tag stripped,
+    a dash effort dropped) before the next spelling: a decorated spelling reads the declarations of the undecorated name
+    exactly where it would reach that name's row. The result does not depend on the order of the declarations. A name
+    nothing declares and no spelling reaches as a row resolves as below.
 
     source: `exact` (the directory has this name), `alias` (found after dropping a provider prefix, case, date,
     -latest/-preview, a vendor tag or an effort suffix, or through `aliases`), `family` (only a fuzzy family match),
@@ -141,37 +163,43 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
     def found(key, source, named_effort=None, provider=None):
         return {'key': key, 'source': source, 'effort': effort or named_effort, 'bare': name, 'provider': provider}
 
-    declared = provider_declarations(raw, providers, provider_names)
-    if len({(d.get('model'), d.get('status')) for _, d in declared}) > 1:
-        return found(None, 'conflict')
-    if declared:
-        d, by = declared[0][1], min(p for p, _ in declared)
-        if d.get('model') is None:
-            return found(None, d.get('status'), provider=by)
-        if d['model'] not in known:
-            raise public_data.ReferenceDataError(f"provider_names rows[{by!r}] names row {d['model']!r}, which the catalog "
-                                                 'does not have')
-        return found(d['model'], 'provider', provider=by)
-    if (default := maker_default(raw, provider_names)) is not None:
-        if default.get('model') not in known:
-            raise public_data.ReferenceDataError(f"provider_names defaults[{name!r}] names row {default.get('model')!r}, which "
-                                                 'the catalog does not have')
-        return found(default['model'], 'default')
-    if match := exact(raw):
-        return found(match, 'exact' if match == raw else 'alias')
-    for candidate in (raw.rsplit('/', 1)[-1], raw.lower(), name):
-        if match := exact(candidate):
-            return found(match, 'alias')
-    while True:
-        stripped = _VENDOR_TAG.sub('', name)
-        if stripped == name:
-            break
-        name = stripped
-        if match := exact(name):
-            return found(match, 'alias')
-    if dashed := _DASH_EFFORT.match(name):
-        if match := exact(dashed['name']):
-            return found(match, 'alias', dashed['effort'])
+    def declared_row(spelling, served, dash_effort):
+        """The `found` of the declarations of one spelling (served: [(provider, that provider's spelling)]), or None."""
+        declared = _declared_at(served, provider_names)
+        if len({(d.get('model'), d.get('status')) for _, d in declared}) > 1:
+            return found(None, 'conflict')
+        if declared:
+            d, by = declared[0][1], min(p for p, _ in declared)
+            if d.get('model') is None:
+                return found(None, d.get('status'), dash_effort, provider=by)
+            if d['model'] not in known:
+                raise public_data.ReferenceDataError(f"provider_names rows[{by!r}] names row {d['model']!r}, which the "
+                                                     'catalog does not have')
+            return found(d['model'], 'provider', dash_effort, provider=by)
+        default = provider_names['defaults'].get(spelling)
+        if isinstance(default, dict):
+            if default.get('model') not in known:
+                raise public_data.ReferenceDataError(f"provider_names defaults[{spelling!r}] names row "
+                                                     f"{default.get('model')!r}, which the catalog does not have")
+            return found(default['model'], 'default', dash_effort)
+        return None
+
+    pairs = serving_providers(raw, providers)
+    served_steps = [undecorated(n) for _, n in pairs]
+    for step, (spelling, dash_effort) in enumerate(undecorated(name)):
+        if dash_effort is None:
+            name = spelling       # `bare`: the spelling reached so far (a dash effort is not stripped from it)
+        served = [(p, steps[step][0]) for (p, _), steps in zip(pairs, served_steps) if step < len(steps)]
+        if (hit := declared_row(spelling, served, dash_effort)) is not None:
+            return hit
+        if step == 0:
+            if match := exact(raw):
+                return found(match, 'exact' if match == raw else 'alias')
+            for candidate in (raw.rsplit('/', 1)[-1], raw.lower(), name):
+                if match := exact(candidate):
+                    return found(match, 'alias')
+        elif match := exact(spelling):
+            return found(match, 'alias', dash_effort)
     row = next((f for f in families if re.search(f['pattern'], name)), None)
     if row is not None:
         target = next((t for t in row['models'] if t in known), None)

@@ -159,7 +159,29 @@ def resolve_model(model, accounts, providers=()):
 
 
 def canonical(model, accounts, providers=()):
-    return resolve_in(model, accounts, providers)['key'] or model
+    """The row a name scores as: the resolved key (a family guess folded to its target), else the name itself; a name
+    with no row on its serving provider (PROVIDER_NAME_STATUSES) is that provider's own, `<provider>/<name>` as row_key
+    gives it."""
+    resolved = resolve_in(model, accounts, providers)
+    if resolved['source'] in PROVIDER_NAME_STATUSES:
+        return f"{resolved['provider']}/{model_leaf(model)}".lower()
+    return resolved['key'] or model
+
+
+def account_providers(accounts, account):
+    """The providers serving an account's bundles (each bundle's `provider`, else the account): the serving providers
+    a model name stored for that account (a temporary priority, a quick reset-priority target) is read with, so a
+    stored name reads what the account's bundles of that name read (model_resolution.serving_providers `endpoints`)."""
+    spec = ((accounts or {}).get('accounts') or {}).get(account) or {}
+    return tuple(dict.fromkeys((b.get('provider') or account) for b in (spec.get('bundles') or {}).values()
+                               if isinstance(b, dict)))
+
+
+def stored_model(model, accounts, account):
+    """canonical of a model name stored for `account`: a bare name is read as the account's providers serve it
+    (account_providers); a `provider/name` already names its provider (as a bundle's qualified model does)."""
+    bare = '/' not in split_model_effort(model)[0]
+    return canonical(model, accounts, account_providers(accounts, account) if bare else ())
 
 
 def model_spec(accounts, model, providers=()):

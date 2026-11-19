@@ -66,6 +66,36 @@ class DoctorTests(unittest.TestCase):
             text = doctor.render({"choice_conflicts": lines})
             self.assertIn("Model choices: 1 set(s) of stored choices disagree", text)
 
+    def test_names_that_became_one_model_and_hold_different_choices_are_listed(self):
+        """Round 2 item 4 (provider_names): two names a maker's default makes one model (v0.7.1 gave each its own id)
+        holding different stored choices leave the bundle unchecked, and doctor lists them once, rewriting nothing."""
+        import json
+        from unittest import mock
+        import account_fleet
+        import auto_bundles
+        defaults = account_fleet.fleet_document()["provider_names"]["defaults"]
+        first, second = next((x, y) for x in defaults for y in defaults if x < y and defaults[x]["model"] == defaults[y]["model"])
+        old, new = f"auto:acct:codex:{first}@high", f"auto:acct:codex:{second}@high"
+        with TemporaryDirectory() as directory:
+            home = Path(directory)
+            state = home / ".agent-compass"
+            state.mkdir()
+            stored = json.dumps({"schema_version": 2, "accounts": {"acct": {"bundles": {
+                old: {"disabled": True}, new: {"disabled": False}}}}})
+            (state / "accounts-override.json").write_text(stored, encoding="utf-8")
+
+            def discovered(accounts, inventory, **_):
+                accounts["accounts"]["acct"] = {"billing": "metered", "family": "codex", "windows": {}, "bundles": {}}
+                cat = {"providers": {"acct": {"ok": True, "type": "openai_compatible", "checked_at": 2e9,
+                                              "models": [first, second]}}}
+                accounts["accounts"]["acct"]["bundles"] = auto_bundles.derive(accounts, cat, 2e9)["bundles"]["acct"]
+
+            with mock.patch.object(provider_inventory, "discover", return_value={"accounts": {}}),                     mock.patch.object(provider_inventory, "apply", discovered):
+                lines = doctor.choice_conflicts(home, doctor.pinned_environ(home))
+            self.assertEqual(len(lines), 1, lines)
+            self.assertIn(f"{old}, {new} disagree", lines[0])
+            self.assertEqual((state / "accounts-override.json").read_text(encoding="utf-8"), stored)
+
     @pytest.mark.slow
     def test_collect_on_an_isolated_home_does_not_create_files(self):
         with TemporaryDirectory() as directory:

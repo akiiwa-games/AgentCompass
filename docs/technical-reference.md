@@ -71,11 +71,12 @@ that enumerates the callable model ids, the file's `id_lists`; a moving `-latest
 maker's dated notice), is a printed report, never a failure. The same check refuses an alias whose two names the saved
 models.dev listings tell apart (`audit/models-dev-names.json`, written by `audit/magpie_catalog.py --names-out`; rule in
 [`calibration/README.md`](../skills/agent-compass/calibration/README.md), To add a model), and does not count as covered a pair
-whose provider's own listing gives the name another canonical id than the row it resolves to (known-gap kind
+whose provider's own listing gives the name another canonical id than the ids of the row it resolves to (its own, and the
+undated ids of the names moved to it: a listing repeating a moved name is that row; known-gap kind
 `other_weights_on_provider`, both ids on the entry), the row being the one `accounts.json` `provider_names` makes it on
 that provider (the rule in [router-internals.md](../skills/agent-compass/references/router-internals.md), One resolver);
 every `provider_names` declaration must agree with the saved models.dev listings, and a listing of a maker's default name
-on a provider that declares nothing must be the default's row (`declaration_violations`), counted on each run as listings
+on a provider that declares nothing must be the default's row or repeat the name (`declaration_violations`), counted on each run as listings
 under a default, under a provider's declaration and under neither. `quota_cost` is the quota economy: the part of the
 task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. The window's
 price comes from a value ladder built over the demand grid `quota_economy.FIVE_AXIS_DEMAND_GRID` (levels 0–3 on the thinking

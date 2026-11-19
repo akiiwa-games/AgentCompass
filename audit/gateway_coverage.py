@@ -12,8 +12,9 @@ id or credential. Its `provider_kind` says what `provider` names:
   not apply: a row that lists no efforts is the model's one configuration, offered at `default`.
 
 The model name resolves the way the router and the Magpie port resolve a candidate (model_resolution.resolve_in: the
-serving providers' `provider_names` declarations first, then exact, alias and family pattern); only an `exact`, `alias` or
-`provider` match names a row, and a name its serving provider declares `retired` names none.
+serving providers' `provider_names` declarations first, then the maker's default, then the row of that spelling, read for
+each undecorated spelling in turn, then family pattern); only an `exact`, `alias`, `provider` or `default` match names a
+row, and a name its serving provider declares with no row (`retired`, `other_weights`) names none.
 
 A catalog may declare `gate` (`{makers, statement}`): its rows then carry `maker`, the model's maker, and only a row whose
 maker is its provider's (`gate.makers[provider]`) is gated; the others are reported (`not first-party`, or `maker unknown`
@@ -37,7 +38,9 @@ maker does not offer for chat) is reported, not gated, in every catalog. The rul
   (`identity`);
 - every `provider_names` declaration agrees with the names file (declaration_violations): the name is in the file, and
   where the file lists it on the declaring provider the canonical ids include the declared row's own (or its
-  `canonical_id`); a `retired` declaration cites the maker. A declaration the file contradicts (the maker moved the name,
+  `canonical_id`); a `retired` declaration cites the maker; and a listing of a default's name on a provider that declares
+  nothing for it gives the default's row or the moved name's own undated id (row_ids: such a listing repeats the name),
+  never another dated snapshot. A declaration the file contradicts (the maker moved the name,
   models.dev followed) fails the check until the maintainer corrects and publishes it;
 - the same for every (row, effort) the shipped launch table offers (catalog id `shipped-launch-table`: each
   `dispatch_efforts[harness][row]` entry, and each account bundle at its effort, an effort-less bundle at `default`);
@@ -221,20 +224,28 @@ def own_ids(listings, row):
     return {x[1] for x in listings.get(row) or () if x[1] and x[1].rsplit('/', 1)[-1] == row}
 
 
+def row_ids(listings, accounts, row):
+    """The canonical ids that name `row`: its own (own_ids), and the undated ids of the names whose maker moved them to
+    `row` (`provider_names` `defaults` naming it: the row of the moved name's own id, owner 2026-11-19, round 2): a listing
+    that gives a moved name's undated id repeats the name and says nothing about the snapshot behind it."""
+    defaults = model_resolution.provider_name_table(accounts)['defaults']
+    return own_ids(listings, row).union(*(own_ids(listings, n) for n, d in defaults.items() if d.get('model') == row))
+
+
 def identity_conflict(names, accounts, served, model, row):
     """{provider, listed, row} for the first (provider, name) of `served` (model_resolution.serving_providers) the
     models.dev names file identifies as other weights than `row` (both have a canonical id and they differ, the pair's
     `provider_names` declaration giving no `canonical_id` the file lists, and `model` is not an alias citing the maker's
     statement), else None: every provider the file knows for the pair is checked, not one of them."""
     listings = (names or {}).get('names') or {}
-    own = own_ids(listings, row)
+    own = row_ids(listings, accounts, row)
     source = (((accounts.get('alias_sources') or {}).get('rows') or {}).get(model) or {})
     if not own or ((accounts.get('aliases') or {}).get(model) == row and source.get('kind') == 'vendor'):
         return None
     rows = model_resolution.provider_name_table(accounts)['rows']
     for provider, name in served:
-        listed = sorted({x[1] for x in listings.get(name) or () if x[0] == provider and x[1]})
-        declared = ((rows.get(provider) or {}).get(name.lower()) or {})
+        listed = sorted({x[1] for x in listings.get(name) or () if x[0].lower() == provider.lower() and x[1]})
+        declared = ((rows.get(provider.lower()) or {}).get(name.lower()) or {})
         accepted = own | ({declared['canonical_id']} if declared.get('model') == row and declared.get('canonical_id') else set())
         if listed and not set(listed) & accepted:
             return {'provider': provider, 'listed': listed, 'row': sorted(accepted)}
@@ -245,15 +256,16 @@ def declaration_violations(accounts, listed):
     """(violation lines, counts): where a `provider_names` declaration of `accounts` disagrees with the models.dev names
     file (`listed`). A declared name the file does not hold (rebuild it); a provider's declaration whose row's canonical
     ids (or its `canonical_id`) are not among those the file lists for the name on that provider; a `retired` declaration
-    that does not cite the maker; a listing of a default's name, on a provider that declares nothing for it, that is not
-    the default's row (the provider's listing beats the maker's default, so it needs its own declaration). `counts`: the
+    that does not cite the maker; a listing of a default's name, on a provider that declares nothing for it, that names
+    another id than the default's row or the moved name's own undated id (row_ids: a listing repeating the name is
+    read as the default; one naming a different dated snapshot needs the provider's declaration). `counts`: the
     (provider, name) listings of the file under a default, under a provider's declaration, and under neither."""
     names = (listed or {}).get('names') or {}
     table = model_resolution.provider_name_table(accounts)
     out = []
 
     def accepted(d):
-        return own_ids(names, d['model']) | ({d['canonical_id']} if d.get('canonical_id') else set())
+        return row_ids(names, accounts, d['model']) | ({d['canonical_id']} if d.get('canonical_id') else set())
 
     for name in sorted(set(table['defaults']) | {n for r in table['rows'].values() for n in r}):
         if name not in names:
@@ -261,7 +273,7 @@ def declaration_violations(accounts, listed):
     for provider, rows in sorted(table['rows'].items()):
         for name, d in sorted(rows.items()):
             where = f'provider_names rows[{provider}][{name}]'
-            ids = {x[1] for x in names.get(name) or () if x[0] == provider and x[1]}
+            ids = {x[1] for x in names.get(name) or () if x[0].lower() == provider and x[1]}
             if d.get('model') is None:
                 if d.get('status') == 'retired' and d.get('kind') != 'vendor':
                     out.append(f"{where}: a retired declaration cites the maker's notice (kind vendor)")
@@ -272,15 +284,15 @@ def declaration_violations(accounts, listed):
     counts = {'default': 0, 'provider': 0, 'neither': 0}
     for name, listings in names.items():
         for provider, canonical, *_ in listings:
-            if name.lower() in (table['rows'].get(provider) or {}):
+            if name.lower() in (table['rows'].get(provider.lower()) or {}):
                 counts['provider'] += 1
             elif name.lower() in table['defaults']:
                 counts['default'] += 1
                 d = table['defaults'][name.lower()]
                 if canonical and canonical not in accepted(d):
                     out.append(f"provider_names defaults[{name}] is {d['model']}, and {provider} lists the name as "
-                               f'{canonical} with no declaration of its own: declare the row it serves there '
-                               '(provider_names rows) and publish it')
+                               f'{canonical}, another snapshot, with no declaration of its own: declare what it serves '
+                               'there (provider_names rows) and publish it')
             else:
                 counts['neither'] += 1
     return out, counts

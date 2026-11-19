@@ -117,6 +117,39 @@ class ResolutionRules(unittest.TestCase):
         self.assertEqual(account_fleet.resolve_model(f'acme/{a}', doc)['key'], b)
         self.assertNotEqual(account_fleet.resolve_model(f'acme/{a}', doc, ('relay',))['key'], b)
 
+    def test_a_decorated_spelling_reads_the_declarations_of_the_name_it_reaches(self):
+        """Rule (resolve_model: declarations read for each undecorated spelling before its row): the spellings catalogs
+        use (case, a dash or colon effort, -latest, -preview, a date tag, a provider prefix) read what the plain name
+        reads, the maker's default and a provider's declaration alike; the effort the name asked for is kept."""
+        for name, entry in SHIPPED['provider_names']['defaults'].items():
+            for spelling, effort in ((name.upper(), None), (f'{name}-high', 'high'), (f'{name}:high', 'high'),
+                                     (f'{name}-latest', None), (f'{name}-preview', None), (f'{name}@20261017', None),
+                                     (f'vendor/{name}-xhigh', 'xhigh')):
+                with self.subTest(spelling=spelling):
+                    found = account_fleet.resolve_model(spelling, SHIPPED)
+                    self.assertEqual((found['key'], found['source'], found['effort']), (entry['model'], 'default', effort))
+        a, b = two_rows()
+        doc = doc_with(rows={'acme': {a.lower(): decl(b)}})
+        for spelling in (f'{a}-latest', f'{a}-high', f'acme/{a}-latest'):
+            with self.subTest(spelling=spelling):
+                providers = () if spelling.startswith('acme/') else ('acme',)
+                self.assertEqual(account_fleet.resolve_model(spelling, doc, providers)['key'], b)
+
+    def test_a_spelling_that_is_a_row_itself_is_that_row(self):
+        """Rule: the declarations of an undecorated spelling are read only where resolution would reach that spelling's
+        row: a decorated spelling that is a row of its own (a dated snapshot) stays that row."""
+        for entry in SHIPPED['provider_names']['defaults'].values():
+            with self.subTest(row=entry['model']):
+                self.assertEqual(account_fleet.resolve_model(entry['model'], SHIPPED)['source'], 'exact')
+
+    def test_provider_ids_are_matched_lowercase(self):
+        a, b = two_rows()
+        doc = doc_with(rows={'acme': {a.lower(): decl(b)}})
+        for name, providers in ((a, ('ACME',)), (a, ('Acme',)), (f'AcMe/{a}', ())):
+            with self.subTest(name=name, providers=providers):
+                found = account_fleet.resolve_model(name, doc, providers)
+                self.assertEqual((found['key'], found['provider']), (b, 'acme'))
+
     def test_a_document_without_the_table_is_a_named_error_not_an_empty_table(self):
         """Rule: no silent fallback on a missing key."""
         doc = {k: v for k, v in SHIPPED.items() if k != 'provider_names'}
@@ -133,7 +166,9 @@ class ShippedDeclarations(unittest.TestCase):
         name, entry = next(iter(table['defaults'].items()))
         provider, rows = next(iter(table['rows'].items()))
         breaks = {
-            'default not the maker': {'defaults': {name: {**entry, 'kind': 'community'}}},
+            'default not the maker or the maintainer': {'defaults': {name: {**entry, 'kind': 'community'}}},
+            'default whose name is no row': {'defaults': {'no-row-name': dict(entry)}},
+            'provider id not lowercase': {'rows': {provider.upper(): dict(rows)}},
             'default with no row': {'defaults': {name: {**entry, 'model': None}}},
             'row the catalog lacks': {'rows': {provider: {'x-name': decl('no-such-row')}}},
             'no row without status': {'rows': {provider: {'x-name': decl(None)}}},
@@ -256,6 +291,21 @@ class StoredStateIsKept(unittest.TestCase):
         self.assertEqual(layer, before)
         self.assertEqual(user_scores.unresolved_models({'scores': layer}, SHIPPED), [])
 
+
+    def test_a_name_stored_for_an_account_reads_what_its_bundles_of_that_name_read(self):
+        """Rule (account_fleet.stored_model): a temporary priority stored for an account under a bare name (v0.7.1 stored
+        the row key) is read with the account's providers, so it matches the account's bundle of that name, whether the
+        provider declares the name (no row there) or the maker's default applies."""
+        a, b = two_rows()
+        acc = doc_with(defaults={'moved-name': decl(b)}, rows={'host': {a.lower(): decl(None, status='other_weights')}})
+        acc['accounts'] = {'host': {'bundles': {
+            'x': {'provider': 'host', 'model': auto_bundles.default_profile(f'host/{a}', acc)['model']},
+            'y': {'provider': 'host', 'model': auto_bundles.default_profile('host/moved-name', acc)['model']}}}}
+        bundles = acc['accounts']['host']['bundles']
+        for stored, bid in ((a, 'x'), ('moved-name', 'y'), (f'host/{a}', 'x')):
+            with self.subTest(stored=stored):
+                self.assertEqual(account_fleet.stored_model(stored, acc, 'host'), account_fleet.canonical(bundles[bid]['model'], acc))
+        self.assertNotEqual(account_fleet.stored_model(a, acc, 'host'), account_fleet.canonical(bundles['y']['model'], acc))
 
 ENTRY = {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'user'}
 

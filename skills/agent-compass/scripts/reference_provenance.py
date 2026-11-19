@@ -109,8 +109,10 @@ def _validate_provider_names(doc):
     """`provider_names` (model_resolution.provider_name_table): each declaration cites its source with its date and
     statement (a maker's page, models.dev, or a dated maintainer declaration) and names a served name lowercase, with no
     provider part or effort. A provider's declaration (`rows`) names a row the catalog has, or none with a status
-    (model_resolution.PROVIDER_NAME_STATUSES; `retired` cites the maker); a default (`defaults`) is the maker's statement
-    (kind vendor) and names a row. A shipped account bundle whose launch name a declaration makes another row runs that
+    (model_resolution.PROVIDER_NAME_STATUSES; `retired` cites the maker), under a provider id written lowercase (as
+    every lookup reads it); a default (`defaults`) is the maker's statement (kind vendor) or the owner's rule applied by
+    the maintainer (kind maintainer, citing the maker's page it rests on), names a row, and its name is itself a row of
+    the catalog: the moved name's own undated id, the one a listing that only repeats the name gives. A shipped account bundle whose launch name a declaration makes another row runs that
     row (a name with no row there has no bundle)."""
     table = model_resolution.provider_name_table(doc)
     models = doc.get('models') or {}
@@ -125,8 +127,10 @@ def _validate_provider_names(doc):
             return f'{where}: a served name is lowercase, without a provider part or an effort'
         if 'canonical_id' in d and not str(d['canonical_id'] or '').strip():
             return f'{where}: canonical_id is the id models.dev gives the pair'
-        if default and (d.get('kind') != 'vendor' or 'status' in d or d.get('model') not in models):
-            return f"{where}: a default is the maker's statement (kind vendor) and names a row the catalog has"
+        if default and (d.get('kind') not in ('vendor', 'maintainer') or 'status' in d or d.get('model') not in models
+                        or name not in models):
+            return (f"{where}: a default is the maker's statement (kind vendor) or a maintainer declaration, names a row "
+                    'the catalog has, and its name is a row of the catalog (the undated id the name repeats)')
         if d.get('model') is None and (d.get('status') not in model_resolution.PROVIDER_NAME_STATUSES
                                        or (d['status'] == 'retired' and d.get('kind') != 'vendor') or 'canonical_id' in d):
             return (f"{where}: no row only with a status of {', '.join(model_resolution.PROVIDER_NAME_STATUSES)} "
@@ -138,8 +142,9 @@ def _validate_provider_names(doc):
     for name, d in sorted(table['defaults'].items()):
         problems.append(check(f'defaults/{name}', name, d, True))
     for provider, names in sorted(table['rows'].items()):
-        if not isinstance(names, dict) or not str(provider).strip():
-            problems.append(f'rows/{provider!r}: {{served name: declaration}}')
+        if not isinstance(names, dict) or not str(provider).strip() or provider != provider.lower() or '/' in provider:
+            problems.append(f'rows/{provider!r}: {{served name: declaration}} under a lowercase provider id (lookups read '
+                            'provider ids lowercase)')
             continue
         for name, d in sorted(names.items()):
             problems.append(check(f'rows/{provider}/{name}', name, d, False))

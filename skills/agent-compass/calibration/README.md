@@ -344,19 +344,29 @@ maintainer declaration; changing it rescales every score. Every written value na
 source like an alias (`kind`, `url`, `as_of`, `statement`); no name or date rule exists in code.
 
 - **The maker moved a name to a newer dated snapshot** (DeepSeek's `deepseek-v4-pro` now serves `DeepSeek-V4-Pro-0813`):
-  `defaults["<name>"] = {"model": "<snapshot row>", "kind": "vendor", ...}` citing the maker's page. The undated row stays a
-  row with its own readings; only what the served name resolves to changes. The snapshot needs a row (step 1 above).
-- **A provider's listing identifies the name as other weights** (models.dev's `canonical_model_id` for that provider):
-  `rows["<provider>"]["<name>"]` with the row it is (`kind: "community"` citing models.dev, or the maker), or
-  `"model": null, "status": "other_weights"` when no row exists. Where the listing spells the row's model another way,
-  `canonical_id` gives that spelling (Mistral lists `ministral-14b-2512` as `mistral/ministral-3-14b-instruct-2512`).
+  `defaults["<name>"] = {"model": "<snapshot row>", "kind": "vendor", ...}` citing the maker's page. Where the maker's page
+  describes the model but names no API id of that name (DeepSeek's `deepseek-v4.1-flash`), the declaration is the owner's
+  rule applied by the maintainer: `"kind": "maintainer"`, dated, its statement citing the maker's line it rests on. The
+  name must be a row (the undated id it repeats), which stays a row with its own readings; only what the served name
+  resolves to changes. The snapshot needs a row (step 1 above).
+- **A provider's listing names a different dated snapshot** (models.dev's `canonical_model_id` for that provider is
+  neither the default's row nor the moved name's own undated id): `rows["<provider>"]["<name>"]` with the row it is
+  (`kind: "community"` citing models.dev, or the maker), or `"model": null, "status": "other_weights"` when no row exists
+  (OpenCode's and Vivgrid's `deepseek-v4-flash`, listed as `deepseek-v4-flash-0731`). A listing that gives the moved name's
+  own undated id only repeats the name: it gets no declaration and reads the default. Where a listing spells the row's
+  model another way, `canonical_id` gives that spelling (Mistral lists `ministral-14b-2512` as
+  `mistral/ministral-3-14b-instruct-2512`).
+
+Known cost: a host that serves the earlier open weights under the undated name is read as the new snapshot until its
+listing names that snapshot or the maintainer declares it (`rows`).
 - **The maker shut the name down on its own endpoint**: `rows["<maker>"]["<name>"] = {"model": null, "status": "retired",
   "kind": "vendor", ...}` with the maker's notice, and the name's entry in `audit/gateway-out-of-scope.json`.
 
 A moving name changes when the maker moves it: between releases the maintainer corrects the declaration and publishes it
 (`agentcompass data publish`, below), as for any launch row. `audit/gateway_coverage.py` fails while the saved models.dev
 listings (`audit/models-dev-names.json`) disagree with a declaration, or list a default's name on a provider that declares
-nothing with another canonical id than the default's row; it prints how many listings fall under each. A default also
+nothing with a canonical id that is neither the default's row nor the moved name's own undated id; it prints how many
+listings fall under each. A default also
 moves where a score keyed by the name lands (router-internals.md, Score keys): rebuild and check what moved.
 
 ## Publishing a model between releases

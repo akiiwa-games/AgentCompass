@@ -243,7 +243,7 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
         half = lambda name: int(hashlib.sha256(name.encode()).hexdigest(), 16) % 2 == 0
         policies = {'all enabled': lambda name: False, 'all disabled': lambda name: True,
                     'mixed': half, 'mixed, the complement': lambda name: not half(name)}
-        checked = tagged = moved = conflicts = 0
+        checked = tagged = moved = 0
         for setup, groups in frozen['ids'].items():
             acc = self.accounts(frozen['setups'][setup], ref)
             for group, pairs in groups.items():
@@ -262,15 +262,15 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
                                 self.assertEqual((disabled, direct), (True, True))
                                 # a conflict is names that are one model now holding values that disagree
                                 self.assertEqual({value(held[c]) for c in bundle['_choice_conflict']}, {True, False})
-                                conflicts += 1
                             else:
+                                # and names that are one model now holding values that disagree are a conflict
+                                self.assertLessEqual(len({value(held[c]) for c in bundle['_choice_ids'] if c in held}), 1)
                                 self.assertEqual((disabled, direct), (value(name), value(name)))
                         checked += 1
                         moved += policy == 'all enabled' and bid != ids[name]
         self.assertEqual(tagged, 92)              # the second names of a row on an account: the case that was wrong
         self.assertGreater(checked, 14000)        # four policies over both shapes and every name: not vacuous
         self.assertGreater(moved, 100)            # many of them under an id that is not the one derived now
-        self.assertGreater(conflicts, 0)          # the mixed policies reach names that are one model now
 
     def test_a_v070_id_stored_alone_is_read_only_by_the_model_its_name_is_now(self):
         """Rule (round 10 item 1; auto_bundles.choice_for `owners`, derive): an id the replay gives an advertised name is

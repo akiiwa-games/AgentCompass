@@ -1319,7 +1319,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
     accounts = account_fleet.load_accounts()
     if account not in accounts["accounts"]:
         raise ValueError(_tr("未知账号"))
-    model = account_fleet.canonical(model, accounts) if model else None
+    model = account_fleet.stored_model(model, accounts, account) if model else None
     path = quota_overrides.overrides_path()
     with override_store.locked(path):
         document = router_priority.read_document(path)
@@ -1332,7 +1332,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
         if overlapping:
             ui_rules = [r for r in overlapping if r.get("intent") in (PANEL_INTENT, router_priority.INTENT)
                         and not r.get("expires_at")]
-            if not ui_rules or any(r.get("until") == new_until and (account_fleet.canonical(r["model"], accounts) if r.get("model") else None) == model
+            if not ui_rules or any(r.get("until") == new_until and (account_fleet.stored_model(r["model"], accounts, account) if r.get("model") else None) == model
                                    for r in ui_rules):
                 return _tr("该账号/模型已有临时规则；未叠加权重")
             existing = ui_rules[0]
@@ -1999,7 +1999,7 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
                 raw = model.get("id") if isinstance(model, dict) else model
                 if not isinstance(raw, str):
                     continue
-                served = (provider,) if (entry or {}).get("type") in auto_bundles.ENDPOINT_TYPES else ()
+                served = auto_bundles.endpoint_providers(entry, provider, row.get("account"))
                 key = raw if exact_catalog else canonical(raw, served)
                 label = (model.get("label") or model.get("model") or raw) if isinstance(model, dict) else raw
                 label = re.sub(r"\s*\((Low|Medium|High|XHigh|Max)\)$", "", label, flags=re.I)
