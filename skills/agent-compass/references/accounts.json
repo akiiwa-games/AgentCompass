@@ -789,6 +789,27 @@
     "as_of": "2026-11-19",
     "statement": "xAI publishes no speed ratio for Grok 4.7 Fast (\"the same model served on faster infrastructure\"): the base's speed is a stated lower bound"
    }
+  },
+  "gpt-6-pro": {
+   "model": "gpt-6-astra",
+   "carries": [
+    "creativity",
+    "coding",
+    "aesthetics",
+    "tool_operation",
+    "duration"
+   ],
+   "kind": "vendor",
+   "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+   "as_of": "2026-11-19",
+   "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+   "not_carried": "usd_per_hour: the ChatGPT Web path is priced by its cadence windows, the row's own",
+   "at_effort": {
+    "effort": "ultra",
+    "kind": "maintainer",
+    "as_of": "2026-11-19",
+    "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
+   }
   }
  },
  "calibration_panel": {
@@ -1784,7 +1805,7 @@
     "kind": "maintainer",
     "as_of": "2026-11-19",
     "min_seconds": 600,
-    "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+    "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
    },
    "label": "GPT 6 Pro",
    "advisor_only": true,

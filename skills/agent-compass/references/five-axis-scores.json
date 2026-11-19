@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.five-axis-scores/12",
- "generated_at": "2026-11-19T03:39:02+00:00",
+ "generated_at": "2026-11-19T04:14:21+00:00",
  "measurements_sha256": "928043c0a5dd93c6c34fccb7d32b05015f67d50277b13ecc13e9ae8632d1d052",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
@@ -15563,406 +15563,195 @@
     "creativity": {
      "facets": {
       "creative_writing": {
-       "value": -3.3541,
+       "value": -1.5848,
        "by_effort": {
-        "none": -4.4903,
-        "minimal": -4.4903,
-        "low": -4.1983,
-        "medium": -3.7265,
-        "high": -3.3541,
-        "xhigh": -3.1555,
-        "max": -2.4852,
-        "ultra": -2.2126
+        "none": -1.5848,
+        "minimal": -1.5848,
+        "low": -1.5848,
+        "medium": -1.5848,
+        "high": -1.5848,
+        "xhigh": -1.5848,
+        "max": -1.5848,
+        "ultra": -1.5848
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
-        "base_model": [
-         "gpt-6-astra",
-         "gpt-6-luna",
-         "gpt-6-sol"
-        ],
-        "base_value": [
-         -2.1306,
-         -3.449,
-         -3.3541
-        ],
-        "base_tier": [
-         0.0583,
-         -0.6414,
-         -0.2915
-        ],
-        "tier": -0.2915,
-        "tier_source": "sibling",
-        "shift": [
-         -1.5079,
-         1.5083,
-         0.0
-        ],
-        "fit": "creativity.creative_writing~tier",
-        "r": 0.95,
-        "skill": 0.8991,
-        "loo_rmse": 0.5136,
-        "n": 72,
-        "slope": 4.3107,
-        "version_distance": 0,
-        "tie": "median of the tied relatives"
+        "method": "same_model",
+        "base_model": "gpt-6-astra",
+        "base_status": "measured",
+        "at_effort": "ultra",
+        "base_effort_method": "other_facets_median",
+        "at_effort_declaration": {
+         "kind": "maintainer",
+         "as_of": "2026-11-19",
+         "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
+        },
+        "kind": "vendor",
+        "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+        "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+        "as_of": "2026-11-19"
        },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "minimal": {
-         "method": "other_facets_median",
-         "from_effort": "low",
-         "from_value": -4.1983,
-         "step": -0.292,
-         "n": 3
-        },
-        "ultra": {
-         "method": "other_facets_median",
-         "from_effort": "max",
-         "from_value": -2.4852,
-         "step": 0.2726,
-         "n": 3
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -3.3541,
-         "step": 0.0,
-         "n": 4,
-         "bounded_from": -3.3541
-        }
-       }
+       "measured_efforts": []
       }
      },
      "missing_facets": [],
-     "value": -3.3541,
+     "value": -1.5848,
      "by_effort": {
-      "none": -4.4903,
-      "minimal": -4.4903,
-      "low": -4.1983,
-      "medium": -3.7265,
-      "high": -3.3541,
-      "xhigh": -3.1555,
-      "max": -2.4852,
-      "ultra": -2.2126
+      "none": -1.5848,
+      "minimal": -1.5848,
+      "low": -1.5848,
+      "medium": -1.5848,
+      "high": -1.5848,
+      "xhigh": -1.5848,
+      "max": -1.5848,
+      "ultra": -1.5848
      },
      "status": "estimated"
     },
     "coding": {
      "facets": {
       "execution": {
-       "value": -1.13,
+       "value": 0.5209,
        "by_effort": {
-        "none": -2.7155,
-        "minimal": -2.7155,
-        "low": -2.1949,
-        "medium": -1.4668,
-        "high": -1.13,
-        "xhigh": -0.9945,
-        "max": -0.7737,
-        "ultra": -0.5011
+        "none": 0.5209,
+        "minimal": 0.5209,
+        "low": 0.5209,
+        "medium": 0.5209,
+        "high": 0.5209,
+        "xhigh": 0.5209,
+        "max": 0.5209,
+        "ultra": 0.5209
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
-        "base_model": [
-         "gpt-6-astra",
-         "gpt-6-luna"
-        ],
-        "base_value": [
-         0.0071,
-         -2.2675
-        ],
-        "base_tier": [
-         0.0583,
-         -0.6414
-        ],
-        "tier": -0.2915,
-        "tier_source": "sibling",
-        "shift": [
-         -0.9699,
-         0.9702
-        ],
-        "fit": "coding.execution~tier",
-        "r": 0.7576,
-        "skill": 0.5206,
-        "loo_rmse": 0.8808,
-        "n": 58,
-        "slope": 2.7727,
-        "version_distance": 0,
-        "tie": "median of the tied relatives"
+        "method": "same_model",
+        "base_model": "gpt-6-astra",
+        "base_status": "measured",
+        "at_effort": "ultra",
+        "base_effort_method": "fleet_highest_step",
+        "at_effort_declaration": {
+         "kind": "maintainer",
+         "as_of": "2026-11-19",
+         "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
+        },
+        "kind": "vendor",
+        "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+        "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+        "as_of": "2026-11-19"
        },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": -2.1949,
-         "step": -0.5206,
-         "n": 38
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": -0.7737,
-         "step": 0.2726,
-         "n": 31
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -1.13,
-         "step": 0.0,
-         "n": 15,
-         "bounded_from": -1.13
-        }
-       }
+       "measured_efforts": []
       },
       "faithfulness": {
-       "value": 0.7918,
+       "value": 1.375,
        "by_effort": {
-        "none": -1.6028,
-        "minimal": -1.6028,
-        "low": -1.3108,
-        "medium": 0.3273,
-        "high": 0.7918,
-        "xhigh": 1.039,
-        "max": 1.6244,
-        "ultra": 1.897
+        "none": 1.375,
+        "minimal": 1.375,
+        "low": 1.375,
+        "medium": 1.375,
+        "high": 1.375,
+        "xhigh": 1.375,
+        "max": 1.375,
+        "ultra": 1.375
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
-        "base_model": [
-         "gpt-6-astra",
-         "gpt-6-luna",
-         "gpt-6-sol"
-        ],
-        "base_value": [
-         0.7918,
-         0.7918,
-         0.7574
-        ],
-        "base_tier": [
-         0.0583,
-         -0.6414,
-         -0.2915
-        ],
-        "tier": -0.2915,
-        "tier_source": "sibling",
-        "shift": [
-         0.0,
-         0.0,
-         0.0
-        ],
-        "shift_basis": "shift 0: no fit, out-of-sample skill -0.056 (leave-one-out error not below the mean predictor's)",
-        "version_distance": 0,
-        "tie": "median of the tied relatives"
+        "method": "same_model",
+        "base_model": "gpt-6-astra",
+        "base_status": "measured",
+        "at_effort": "ultra",
+        "base_effort_method": "other_facets_median",
+        "at_effort_declaration": {
+         "kind": "maintainer",
+         "as_of": "2026-11-19",
+         "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
+        },
+        "kind": "vendor",
+        "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+        "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+        "as_of": "2026-11-19"
        },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": 0.7918,
-         "step": -2.1026,
-         "n": 8
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": 0.7918,
-         "step": -0.4645,
-         "n": 7
-        },
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": 0.7918,
-         "step": 0.2472,
-         "n": 7
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": 0.7918,
-         "step": 0.8326,
-         "n": 6
-        },
-        "minimal": {
-         "method": "other_facets_median",
-         "from_effort": "low",
-         "from_value": -1.3108,
-         "step": -0.292,
-         "n": 3
-        },
-        "ultra": {
-         "method": "other_facets_median",
-         "from_effort": "max",
-         "from_value": 1.6244,
-         "step": 0.2726,
-         "n": 3
-        },
-        "none": {
-         "method": "other_facets_median",
-         "from_effort": "high",
-         "from_value": 0.7918,
-         "step": 0.0,
-         "n": 4,
-         "bounded_from": 0.7918
-        }
-       }
+       "measured_efforts": []
       }
      },
      "missing_facets": [],
-     "value": -1.13,
+     "value": 0.5209,
      "by_effort": {
-      "none": -2.7155,
-      "minimal": -2.7155,
-      "low": -2.1949,
-      "medium": -1.4668,
-      "high": -1.13,
-      "xhigh": -0.9945,
-      "max": -0.7737,
-      "ultra": -0.5011
+      "none": 0.5209,
+      "minimal": 0.5209,
+      "low": 0.5209,
+      "medium": 0.5209,
+      "high": 0.5209,
+      "xhigh": 0.5209,
+      "max": 0.5209,
+      "ultra": 0.5209
      },
      "status": "estimated"
     },
     "aesthetics": {
      "facets": {
       "design": {
-       "value": -1.1114,
+       "value": 0.9288,
        "by_effort": {
-        "none": -1.9454,
-        "minimal": -1.9454,
-        "low": -1.7797,
-        "medium": -1.3473,
-        "high": -1.1114,
-        "xhigh": -0.9484,
-        "max": -0.7447,
-        "ultra": -0.4205
+        "none": 0.9288,
+        "minimal": 0.9288,
+        "low": 0.9288,
+        "medium": 0.9288,
+        "high": 0.9288,
+        "xhigh": 0.9288,
+        "max": 0.9288,
+        "ultra": 0.9288
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
-        "base_model": [
-         "gpt-6-astra",
-         "gpt-6-luna",
-         "gpt-6-sol"
-        ],
-        "base_value": [
-         0.2195,
-         -2.1655,
-         -1.3026
-        ],
-        "base_tier": [
-         0.0583,
-         -0.6414,
-         -0.2915
-        ],
-        "tier": -0.2915,
-        "tier_source": "sibling",
-        "shift": [
-         -1.3309,
-         1.3313,
-         0.0
-        ],
-        "fit": "aesthetics.design~tier",
-        "r": 0.8002,
-        "skill": 0.6287,
-        "loo_rmse": 0.8981,
-        "n": 76,
-        "slope": 3.8047,
-        "version_distance": 0,
-        "tie": "median of the tied relatives"
+        "method": "same_model",
+        "base_model": "gpt-6-astra",
+        "base_status": "measured",
+        "at_effort": "ultra",
+        "base_effort_method": "fleet_highest_step",
+        "at_effort_declaration": {
+         "kind": "maintainer",
+         "as_of": "2026-11-19",
+         "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
+        },
+        "kind": "vendor",
+        "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+        "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+        "as_of": "2026-11-19"
        },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.1114,
-         "step": -0.6683,
-         "n": 8
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.1114,
-         "step": -0.2359,
-         "n": 7
-        },
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.1114,
-         "step": 0.163,
-         "n": 7
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.1114,
-         "step": 0.3667,
-         "n": 6
-        },
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": -1.7797,
-         "step": -0.1657,
-         "n": 6
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": -0.7447,
-         "step": 0.3242,
-         "n": 6
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -1.1114,
-         "step": 0.0,
-         "n": 8,
-         "bounded_from": -1.1114
-        }
-       }
+       "measured_efforts": []
       }
      },
      "missing_facets": [],
-     "value": -1.1114,
+     "value": 0.9288,
      "by_effort": {
-      "none": -1.9454,
-      "minimal": -1.9454,
-      "low": -1.7797,
-      "medium": -1.3473,
-      "high": -1.1114,
-      "xhigh": -0.9484,
-      "max": -0.7447,
-      "ultra": -0.4205
+      "none": 0.9288,
+      "minimal": 0.9288,
+      "low": 0.9288,
+      "medium": 0.9288,
+      "high": 0.9288,
+      "xhigh": 0.9288,
+      "max": 0.9288,
+      "ultra": 0.9288
      },
      "status": "estimated"
     },
     "tool_operation": {
      "facets": {
       "responsiveness": {
-       "value": -4.425,
+       "value": -4.4367,
        "by_effort": {
-        "none": -4.425,
-        "minimal": -4.425,
-        "low": -4.425,
-        "medium": -4.425,
-        "high": -4.425,
-        "xhigh": -4.425,
-        "max": -4.425,
-        "ultra": -4.425
+        "none": -4.4367,
+        "minimal": -4.4367,
+        "low": -4.4367,
+        "medium": -4.4367,
+        "high": -4.4367,
+        "xhigh": -4.4367,
+        "max": -4.4367,
+        "ultra": -4.4367
        },
        "status": "estimated",
        "sources": {},
@@ -15972,72 +15761,43 @@
         "min_seconds": 600,
         "floor_value": -4.425,
         "binds_by_effort": {
-         "none": "floor",
-         "minimal": "floor",
-         "low": "floor",
-         "medium": "floor",
-         "high": "floor",
-         "xhigh": "floor",
-         "max": "floor",
-         "ultra": "floor"
+         "none": "estimate",
+         "minimal": "estimate",
+         "low": "estimate",
+         "medium": "estimate",
+         "high": "estimate",
+         "xhigh": "estimate",
+         "max": "estimate",
+         "ultra": "estimate"
         },
         "estimate_input": {
-         "value": 0.8927,
+         "value": -4.4367,
          "by_effort": {
-          "none": 3.496,
-          "minimal": 3.496,
-          "low": 2.7538,
-          "medium": 1.8233,
-          "high": 0.8927,
-          "xhigh": 0.3497,
-          "max": -1.5668,
-          "ultra": -3.1029
+          "none": -4.4367,
+          "minimal": -4.4367,
+          "low": -4.4367,
+          "medium": -4.4367,
+          "high": -4.4367,
+          "xhigh": -4.4367,
+          "max": -4.4367,
+          "ultra": -4.4367
          },
          "status": "estimated",
          "estimate": {
-          "method": "cross_line_median",
-          "base_model": [
-           "gpt-6-astra",
-           "gpt-6-luna",
-           "gpt-6-sol"
-          ],
-          "base_value": [
-           -0.8866,
-           0.8927,
-           1.6484
-          ],
-          "base_tier": [
-           0.0583,
-           -0.6414,
-           -0.2915
-          ],
-          "tier": -0.2915,
-          "tier_source": "sibling",
-          "shift": [
-           0.0,
-           0.0,
-           0.0
-          ],
-          "shift_basis": "shift 0: no fit, slope -0.263 is not positive",
-          "version_distance": 0,
-          "tie": "median of the tied relatives",
-          "lines": {
-           "gpt-6-astra": {
-            "line": "astra",
-            "n": 0,
-            "pairs": []
-           },
-           "gpt-6-luna": {
-            "line": "luna",
-            "n": 0,
-            "pairs": []
-           },
-           "gpt-6-sol": {
-            "line": "sol",
-            "n": 0,
-            "pairs": []
-           }
-          }
+          "method": "same_model",
+          "base_model": "gpt-6-astra",
+          "base_status": "measured",
+          "at_effort": "ultra",
+          "base_effort_method": "fleet_highest_step",
+          "at_effort_declaration": {
+           "kind": "maintainer",
+           "as_of": "2026-11-19",
+           "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
+          },
+          "kind": "vendor",
+          "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+          "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+          "as_of": "2026-11-19"
          }
         },
         "bound": "upper: no faster than the declared floor",
@@ -16045,95 +15805,55 @@
         "declaration": {
          "kind": "maintainer",
          "as_of": "2026-11-19",
-         "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+         "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
         }
        }
       },
       "image_recognition": {
-       "value": -2.1782,
+       "value": -0.2294,
        "by_effort": {
-        "none": -3.687,
-        "minimal": -3.0344,
-        "low": -2.7424,
-        "medium": -2.4913,
-        "high": -2.1782,
-        "xhigh": -1.9977,
-        "max": -1.6058,
-        "ultra": -1.385
+        "none": -0.2294,
+        "minimal": -0.2294,
+        "low": -0.2294,
+        "medium": -0.2294,
+        "high": -0.2294,
+        "xhigh": -0.2294,
+        "max": -0.2294,
+        "ultra": -0.2294
        },
-       "status": "estimated",
        "sources": {},
+       "status": "estimated",
        "estimate": {
-        "method": "sibling_shift",
-        "base_model": [
-         "gpt-6-astra",
-         "gpt-6-luna",
-         "gpt-6-sol"
-        ],
-        "base_value": [
-         -0.6518,
-         -2.8495,
-         -2.1782
-        ],
-        "base_tier": [
-         0.0583,
-         -0.6414,
-         -0.2915
-        ],
-        "tier": -0.2915,
-        "tier_source": "sibling",
-        "shift": [
-         -1.5413,
-         1.5418,
-         0.0
-        ],
-        "fit": "tool_operation.image_recognition~tier",
-        "r": 0.8796,
-        "skill": 0.7436,
-        "loo_rmse": 0.7528,
-        "n": 55,
-        "slope": 4.4063,
-        "version_distance": 0,
-        "tie": "median of the tied relatives"
+        "method": "same_model",
+        "base_model": "gpt-6-astra",
+        "base_status": "measured",
+        "at_effort": "ultra",
+        "base_effort_method": "fleet_highest_step",
+        "at_effort_declaration": {
+         "kind": "maintainer",
+         "as_of": "2026-11-19",
+         "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
+        },
+        "kind": "vendor",
+        "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+        "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+        "as_of": "2026-11-19"
        },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": -2.7424,
-         "step": -0.292,
-         "n": 19
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": -1.6058,
-         "step": 0.2208,
-         "n": 12
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -2.1782,
-         "step": -1.5088,
-         "n": 43
-        }
-       }
+       "measured_efforts": []
       }
      },
      "missing_facets": [],
      "by_level": {
       "2": {
        "by_effort": {
-        "none": -4.425,
-        "minimal": -4.425,
-        "low": -4.425,
-        "medium": -4.425,
-        "high": -4.425,
-        "xhigh": -4.425,
-        "max": -4.425,
-        "ultra": -4.425
+        "none": -4.4367,
+        "minimal": -4.4367,
+        "low": -4.4367,
+        "medium": -4.4367,
+        "high": -4.4367,
+        "xhigh": -4.4367,
+        "max": -4.4367,
+        "ultra": -4.4367
        },
        "facets": [
         "responsiveness"
@@ -16141,14 +15861,14 @@
       },
       "3": {
        "by_effort": {
-        "none": -4.425,
-        "minimal": -4.425,
-        "low": -4.425,
-        "medium": -4.425,
-        "high": -4.425,
-        "xhigh": -4.425,
-        "max": -4.425,
-        "ultra": -4.425
+        "none": -4.4367,
+        "minimal": -4.4367,
+        "low": -4.4367,
+        "medium": -4.4367,
+        "high": -4.4367,
+        "xhigh": -4.4367,
+        "max": -4.4367,
+        "ultra": -4.4367
        },
        "facets": [
         "responsiveness",
@@ -16156,25 +15876,25 @@
        ]
       }
      },
-     "value": -4.425,
+     "value": -4.4367,
      "by_effort": {
-      "none": -4.425,
-      "minimal": -4.425,
-      "low": -4.425,
-      "medium": -4.425,
-      "high": -4.425,
-      "xhigh": -4.425,
-      "max": -4.425,
-      "ultra": -4.425
+      "none": -4.4367,
+      "minimal": -4.4367,
+      "low": -4.4367,
+      "medium": -4.4367,
+      "high": -4.4367,
+      "xhigh": -4.4367,
+      "max": -4.4367,
+      "ultra": -4.4367
      },
      "status": "estimated"
     }
    },
    "scores": {
-    "creativity": -3.3541,
-    "coding": -1.13,
-    "aesthetics": -1.1114,
-    "tool_operation": -4.425
+    "creativity": -1.5848,
+    "coding": 0.5209,
+    "aesthetics": 0.9288,
+    "tool_operation": -4.4367
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -16188,294 +15908,198 @@
     "status": "ok",
     "anchor_minutes": 9.289,
     "by_effort": {
-     "none": 1.0765,
-     "minimal": 1.0765,
-     "low": 1.0765,
-     "medium": 1.0765,
-     "high": 1.0765,
-     "xhigh": 1.0765,
-     "max": 1.3058,
-     "ultra": 2.1967
+     "none": 3.6154,
+     "minimal": 3.6154,
+     "low": 3.6154,
+     "medium": 3.6154,
+     "high": 3.6154,
+     "xhigh": 3.6154,
+     "max": 3.6154,
+     "ultra": 3.6154
     },
     "minutes_by_effort": {
-     "none": 10.0,
-     "minimal": 10.0,
-     "low": 10.0,
-     "medium": 10.0,
-     "high": 10.0,
-     "xhigh": 10.0,
-     "max": 12.13,
-     "ultra": 20.405
+     "none": 33.583,
+     "minimal": 33.583,
+     "low": 33.583,
+     "medium": 33.583,
+     "high": 33.583,
+     "xhigh": 33.583,
+     "max": 33.583,
+     "ultra": 33.583
     },
     "basis_by_effort": {
      "none": {
       "method": "declared_response_floor",
-      "binds": "floor",
+      "binds": "estimate",
       "min_seconds": 600,
       "floor_minutes": 10.0,
       "estimate": {
-       "minutes": 0.625,
-       "method": "cross_line_median",
-       "base_model": [
-        "gpt-6-astra",
-        "gpt-6-luna",
-        "gpt-6-sol"
-       ],
-       "version_distance": 0,
-       "base_minutes": [
-        1.612,
-        0.625,
-        0.621
-       ],
-       "source": "aa.cost_time",
-       "lines": {
-        "gpt-6-astra": {
-         "line": "astra",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-luna": {
-         "line": "luna",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-sol": {
-         "line": "sol",
-         "n": 0,
-         "pairs": []
-        }
+       "minutes": 33.583,
+       "method": "same_model",
+       "base_model": "gpt-6-astra",
+       "at_effort": "ultra",
+       "base_minutes": 33.583,
+       "base_method": "fleet_highest_step",
+       "kind": "vendor",
+       "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+       "as_of": "2026-11-19",
+       "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+       "at_effort_declaration": {
+        "kind": "maintainer",
+        "as_of": "2026-11-19",
+        "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
        }
       },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
        "as_of": "2026-11-19",
-       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
       }
      },
      "minimal": {
       "method": "declared_response_floor",
-      "binds": "floor",
+      "binds": "estimate",
       "min_seconds": 600,
       "floor_minutes": 10.0,
       "estimate": {
-       "minutes": 0.625,
-       "method": "cross_line_median",
-       "base_model": [
-        "gpt-6-astra",
-        "gpt-6-luna",
-        "gpt-6-sol"
-       ],
-       "version_distance": 0,
-       "base_minutes": [
-        1.612,
-        0.625,
-        0.621
-       ],
-       "source": "aa.cost_time",
-       "lines": {
-        "gpt-6-astra": {
-         "line": "astra",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-luna": {
-         "line": "luna",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-sol": {
-         "line": "sol",
-         "n": 0,
-         "pairs": []
-        }
+       "minutes": 33.583,
+       "method": "same_model",
+       "base_model": "gpt-6-astra",
+       "at_effort": "ultra",
+       "base_minutes": 33.583,
+       "base_method": "fleet_highest_step",
+       "kind": "vendor",
+       "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+       "as_of": "2026-11-19",
+       "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+       "at_effort_declaration": {
+        "kind": "maintainer",
+        "as_of": "2026-11-19",
+        "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
        }
       },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
        "as_of": "2026-11-19",
-       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
       }
      },
      "low": {
       "method": "declared_response_floor",
-      "binds": "floor",
+      "binds": "estimate",
       "min_seconds": 600,
       "floor_minutes": 10.0,
       "estimate": {
-       "minutes": 0.625,
-       "method": "cross_line_median",
-       "base_model": [
-        "gpt-6-astra",
-        "gpt-6-luna",
-        "gpt-6-sol"
-       ],
-       "version_distance": 0,
-       "base_minutes": [
-        3.341,
-        0.625,
-        0.621
-       ],
-       "source": "aa.cost_time",
-       "lines": {
-        "gpt-6-astra": {
-         "line": "astra",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-luna": {
-         "line": "luna",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-sol": {
-         "line": "sol",
-         "n": 0,
-         "pairs": []
-        }
+       "minutes": 33.583,
+       "method": "same_model",
+       "base_model": "gpt-6-astra",
+       "at_effort": "ultra",
+       "base_minutes": 33.583,
+       "base_method": "fleet_highest_step",
+       "kind": "vendor",
+       "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+       "as_of": "2026-11-19",
+       "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+       "at_effort_declaration": {
+        "kind": "maintainer",
+        "as_of": "2026-11-19",
+        "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
        }
       },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
        "as_of": "2026-11-19",
-       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
       }
      },
      "medium": {
       "method": "declared_response_floor",
-      "binds": "floor",
+      "binds": "estimate",
       "min_seconds": 600,
       "floor_minutes": 10.0,
       "estimate": {
-       "minutes": 3.467,
-       "method": "cross_line_median",
-       "base_model": [
-        "gpt-6-astra",
-        "gpt-6-luna",
-        "gpt-6-sol"
-       ],
-       "version_distance": 0,
-       "base_minutes": [
-        6.523,
-        3.467,
-        1.415
-       ],
-       "source": "aa.cost_time",
-       "lines": {
-        "gpt-6-astra": {
-         "line": "astra",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-luna": {
-         "line": "luna",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-sol": {
-         "line": "sol",
-         "n": 0,
-         "pairs": []
-        }
+       "minutes": 33.583,
+       "method": "same_model",
+       "base_model": "gpt-6-astra",
+       "at_effort": "ultra",
+       "base_minutes": 33.583,
+       "base_method": "fleet_highest_step",
+       "kind": "vendor",
+       "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+       "as_of": "2026-11-19",
+       "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+       "at_effort_declaration": {
+        "kind": "maintainer",
+        "as_of": "2026-11-19",
+        "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
        }
       },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
        "as_of": "2026-11-19",
-       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
       }
      },
      "high": {
       "method": "declared_response_floor",
-      "binds": "floor",
+      "binds": "estimate",
       "min_seconds": 600,
       "floor_minutes": 10.0,
       "estimate": {
-       "minutes": 5.822,
-       "method": "cross_line_median",
-       "base_model": [
-        "gpt-6-astra",
-        "gpt-6-luna",
-        "gpt-6-sol"
-       ],
-       "version_distance": 0,
-       "base_minutes": [
-        8.815,
-        5.822,
-        2.442
-       ],
-       "source": "aa.cost_time",
-       "lines": {
-        "gpt-6-astra": {
-         "line": "astra",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-luna": {
-         "line": "luna",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-sol": {
-         "line": "sol",
-         "n": 0,
-         "pairs": []
-        }
+       "minutes": 33.583,
+       "method": "same_model",
+       "base_model": "gpt-6-astra",
+       "at_effort": "ultra",
+       "base_minutes": 33.583,
+       "base_method": "fleet_highest_step",
+       "kind": "vendor",
+       "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+       "as_of": "2026-11-19",
+       "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+       "at_effort_declaration": {
+        "kind": "maintainer",
+        "as_of": "2026-11-19",
+        "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
        }
       },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
        "as_of": "2026-11-19",
-       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
       }
      },
      "xhigh": {
       "method": "declared_response_floor",
-      "binds": "floor",
+      "binds": "estimate",
       "min_seconds": 600,
       "floor_minutes": 10.0,
       "estimate": {
-       "minutes": 7.316,
-       "method": "cross_line_median",
-       "base_model": [
-        "gpt-6-astra",
-        "gpt-6-luna",
-        "gpt-6-sol"
-       ],
-       "version_distance": 0,
-       "base_minutes": [
-        10.201,
-        7.316,
-        3.081
-       ],
-       "source": "aa.cost_time",
-       "lines": {
-        "gpt-6-astra": {
-         "line": "astra",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-luna": {
-         "line": "luna",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-sol": {
-         "line": "sol",
-         "n": 0,
-         "pairs": []
-        }
+       "minutes": 33.583,
+       "method": "same_model",
+       "base_model": "gpt-6-astra",
+       "at_effort": "ultra",
+       "base_minutes": 33.583,
+       "base_method": "fleet_highest_step",
+       "kind": "vendor",
+       "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+       "as_of": "2026-11-19",
+       "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+       "at_effort_declaration": {
+        "kind": "maintainer",
+        "as_of": "2026-11-19",
+        "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
        }
       },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
        "as_of": "2026-11-19",
-       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
       }
      },
      "max": {
@@ -16484,43 +16108,27 @@
       "min_seconds": 600,
       "floor_minutes": 10.0,
       "estimate": {
-       "minutes": 12.13,
-       "method": "cross_line_median",
-       "base_model": [
-        "gpt-6-astra",
-        "gpt-6-luna",
-        "gpt-6-sol"
-       ],
-       "version_distance": 0,
-       "base_minutes": [
-        19.964,
-        12.13,
-        7.678
-       ],
-       "source": "aa.cost_time",
-       "lines": {
-        "gpt-6-astra": {
-         "line": "astra",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-luna": {
-         "line": "luna",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-sol": {
-         "line": "sol",
-         "n": 0,
-         "pairs": []
-        }
+       "minutes": 33.583,
+       "method": "same_model",
+       "base_model": "gpt-6-astra",
+       "at_effort": "ultra",
+       "base_minutes": 33.583,
+       "base_method": "fleet_highest_step",
+       "kind": "vendor",
+       "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+       "as_of": "2026-11-19",
+       "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+       "at_effort_declaration": {
+        "kind": "maintainer",
+        "as_of": "2026-11-19",
+        "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
        }
       },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
        "as_of": "2026-11-19",
-       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
       }
      },
      "ultra": {
@@ -16529,43 +16137,27 @@
       "min_seconds": 600,
       "floor_minutes": 10.0,
       "estimate": {
-       "minutes": 20.405,
-       "method": "cross_line_median",
-       "base_model": [
-        "gpt-6-astra",
-        "gpt-6-luna",
-        "gpt-6-sol"
-       ],
-       "version_distance": 0,
-       "base_minutes": [
-        33.583,
-        20.405,
-        12.916
-       ],
-       "source": "aa.cost_time",
-       "lines": {
-        "gpt-6-astra": {
-         "line": "astra",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-luna": {
-         "line": "luna",
-         "n": 0,
-         "pairs": []
-        },
-        "gpt-6-sol": {
-         "line": "sol",
-         "n": 0,
-         "pairs": []
-        }
+       "minutes": 33.583,
+       "method": "same_model",
+       "base_model": "gpt-6-astra",
+       "at_effort": "ultra",
+       "base_minutes": 33.583,
+       "base_method": "fleet_highest_step",
+       "kind": "vendor",
+       "url": "https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt",
+       "as_of": "2026-11-19",
+       "statement": "OpenAI Help Center, \"GPT-6 and other models in ChatGPT\": \"Use the Thinking slider to choose your effort. When GPT-6 is selected, GPT-6 Sol powers Instant, Medium, High, and Extra High; Pro uses GPT-6 Pro, powered by GPT-6 Astra.\" and \"Pro effort remains GPT-6 Pro, powered by GPT-6 Astra\": the row is GPT-6 Astra's weights at the Pro effort of the ChatGPT slider, which has no effort inside it",
+       "at_effort_declaration": {
+        "kind": "maintainer",
+        "as_of": "2026-11-19",
+        "statement": "maintainer (owner, 2026-11-19): \"我理解网页版的6pro应该是astra的max之上的一个档位 而不是一个独立模型\": ChatGPT Web's GPT-6 Pro is GPT-6 Astra at the level directly above max (ultra on the scale)"
        }
       },
       "bound": "lower: a task takes at least one response of at least the declared time",
       "declaration": {
        "kind": "maintainer",
        "as_of": "2026-11-19",
-       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\")"
+       "statement": "maintainer (owner, 2026-11-19): a GPT-6 Pro response through ChatGPT Web takes 10 minutes or more from sending the request to the complete answer. The row is that path only: OpenAI API docs have no gpt-6-pro page (developers.openai.com/api/docs/models/gpt-6-pro: 404, 2026-11-19) and the Help Center names GPT-6 Pro as a ChatGPT option (\"GPT-6 Pro, powered by GPT-6 Astra, is available in ChatGPT for Pro $100, Pro $200, Business, and Enterprise plans\"). Community reports of the predecessor, corroborating the order of magnitude only (not readings of this row, in no fit): TechRadar, \"I compared ChatGPT-5 Pro with ChatGPT-5\" (2025-08-19, https://www.techradar.com/ai-platforms-assistants/chatgpt/i-compared-chatgpt-5-pro-with-chatgpt-5-and-theres-a-reason-its-usd200): GPT-5 Pro \"requires around five minutes per prompt to respond\""
       }
      }
     },
@@ -16593,12 +16185,9 @@
    "price": null,
    "intelligence_index": null,
    "tier": {
-    "value": -0.2915,
+    "value": 0.0583,
     "method": "sibling",
-    "base_model": [
-     "gpt-6-astra",
-     "gpt-6-luna"
-    ],
+    "base_model": "gpt-6-astra",
     "version_distance": 0,
     "sources": []
    },

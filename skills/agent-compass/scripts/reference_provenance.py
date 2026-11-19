@@ -8,6 +8,7 @@ before it writes and after it rebuilds, `data publish` and every install run the
 (public_data.accept); axis_scores.py applies the declaration checks to the entries it reads.
 """
 import json
+import math
 from pathlib import Path
 import re
 
@@ -70,6 +71,9 @@ def validate_accounts_provenance(doc):
             raise ValueError(f'same_model[{row!r}] requires an https url or dated kind="maintainer" (with as_of)')
         if 'capacity' in entry:
             raise ValueError(f'same_model[{row!r}].capacity may not hard-code a plan or price; use rule-only capacity_rule')
+        if 'at_effort' in entry and (not isinstance(entry['at_effort'], dict) or not isinstance(entry['at_effort'].get('effort'), str)
+                                     or not valid_public_declaration(entry['at_effort'])):
+            raise ValueError(f'same_model[{row!r}].at_effort requires an effort and an https url or dated kind="maintainer"')
         if 'capacity_rule' in entry and not valid_capacity_rule(entry.get('capacity_rule')):
             raise ValueError(
                 f'same_model[{row!r}].capacity_rule requires dated kind="maintainer" (or https url) and family/window rule fields without plan or price literals'
@@ -292,6 +296,35 @@ def validate_five_axis_provenance(doc, measurements):
         raise ValueError('; '.join(bad))
 
 
+FLOOR_TARGETS = ('tool_operation.responsiveness', 'tool_operation')
+
+
+def validate_scores_against_floors(scores, accounts, five_axis, measurements):
+    """A shipped maintainer score on a row's responsiveness never contradicts a declared floor of the same row's response
+    time (owner, 2026-11-19, round 7): the score's level read on the facet's level scale is no faster than the floor read
+    through the time-to-first-answer transform (`models.<id>.response_time_source`). A later declaration supersedes an
+    older score; the error names both. A local user's score is the user's and is not checked."""
+    scale = ((((measurements or {}).get('sources') or {}).get('aa.ttfa') or {}).get('scale') or {})
+    targets = ((five_axis or {}).get('anchor') or {}).get('targets') or {}
+    bad = []
+    for model, spec in sorted(((accounts or {}).get('models') or {}).items()):
+        floor = (spec or {}).get('response_time_source') if isinstance(spec, dict) else None
+        if not isinstance(floor, dict) or not scale.get('sd_panel'):
+            continue
+        z_floor = (-math.log(floor['min_seconds']) - scale['anchor_raw']) / scale['sd_panel']
+        for target in FLOOR_TARGETS:
+            rec = (((scores or {}).get('scores') or {}).get(model) or {}).get(target)
+            if not isinstance(rec, dict):
+                continue
+            z = user_scores.level_to_z(rec['level'], *user_scores.target_triad(targets, 'tool_operation', 'responsiveness'))
+            if z > z_floor + 1e-9:
+                bad.append(f"user-scores.json {model} {target} level {rec['level']} ({rec.get('kind')}, {rec.get('as_of')}) reads "
+                           f"responsiveness z {z:.3f}, faster than the declared floor accounts.json "
+                           f"models.{model}.response_time_source ({floor['min_seconds']} s, {floor.get('as_of')}: z {z_floor:.3f})")
+    if bad:
+        raise ValueError('; '.join(bad))
+
+
 def validate_references(directory=REFERENCES):
     """Raise ValueError naming the file and the field when a shipped reference file breaks the provenance rule."""
     directory = Path(directory)
@@ -312,5 +345,6 @@ def validate_references(directory=REFERENCES):
             validate_measurements_provenance(meas)
             if (directory / 'five-axis-scores.json').is_file():
                 validate_five_axis_provenance(read('five-axis-scores.json'), meas)
+                validate_scores_against_floors(read('user-scores.json'), read('accounts.json'), read('five-axis-scores.json'), meas)
         except ValueError as exc:
             raise ValueError(f'{directory} measurements or five-axis scores are invalid: {exc}') from None

@@ -238,6 +238,19 @@ def estimation_order(acc):
     return doc
 
 
+def same_model_point(entry):
+    """The effort of a `same_model` row's declared operating point on its model (`at_effort`, owner 2026-11-19: a ChatGPT
+    effort that is the model at one level, with no effort inside it), or None. The declaration names the effort and is
+    cited (dated maintainer or https url); an effort off the scale refuses the build."""
+    point = (entry or {}).get('at_effort')
+    if point is None:
+        return None
+    if not isinstance(point, dict) or point.get('effort') not in LADDER or not valid_public_declaration(point):
+        raise ValueError(f"same_model at_effort {point!r}: an effort of {', '.join(LADDER)} with a citation (https url or "
+                         'dated maintainer)')
+    return point['effort']
+
+
 def operating_points(acc):
     """{row: its `operating_point` declaration}: a model whose vendor documents no reasoning control (accounts.json
     `models.<id>.operating_point`, cited; `reasoning` says whether its one configuration reasons). Its one board listing
@@ -1300,11 +1313,21 @@ class Scorer:
         the model). A facet it already has (its own measurement, or one copied before) stands."""
         for m in declared:
             entry = self.same[m]
+            at = same_model_point(entry)
             for key, rec in facets[entry['model']].items():
                 if key in facets[m] or not self.carried(m, key):
                     continue
-                facets[m][key] = {'value': rec['value'], 'by_effort': dict(rec['by_effort']), 'sources': {}, 'status': 'estimated',
+                if at is not None and rec['by_effort'].get(at) is None:
+                    continue        # the model has no value at the declared point: the facet stays missing
+                by = dict.fromkeys(LADDER, rec['by_effort'][at]) if at is not None else dict(rec['by_effort'])
+                point = ({'at_effort': at, 'base_effort_method': ('measured' if at in (rec.get('measured_efforts') or ()) else
+                                                                  ((rec.get('filled_efforts') or {}).get(at) or {}).get('method')
+                                                                  or rec['status']),
+                          'at_effort_declaration': {k: v for k, v in entry['at_effort'].items() if k != 'effort'}}
+                         if at is not None else {})
+                facets[m][key] = {'value': by.get('high'), 'by_effort': by, 'sources': {}, 'status': 'estimated',
                                   'estimate': {'method': 'same_model', 'base_model': entry['model'], 'base_status': rec['status'],
+                                               **point,
                                                **{k: entry[k] for k in ('kind', 'statement', 'url', 'as_of') if entry.get(k)}},
                                   'measured_efforts': []}
                 facet = '.'.join(key)
@@ -1339,9 +1362,9 @@ class Scorer:
         self.size_down(facets, keys, 'nearest')
         self.bound_across_size(facets)
         self.speed_variants(facets)
-        self.response_floors(facets)
         self.flatten_points(facets, rows)
         self.copy_same_model(facets, declared)
+        self.response_floors(facets)
 
     def flatten_points(self, facets, rows):
         for m in self.points:
@@ -1865,7 +1888,7 @@ def durations(scorer, rows, acc):
     same = release_same_model(acc, scorer.entries)
     for m, entry in same.items():
         base = entry.get('model')
-        if m in rows and 'duration' in (entry.get('carries') or ()) and base in rows:
+        if m in rows and 'duration' in (entry.get('carries') or ()) and base in rows and same_model_point(entry) is None:
             for e, t in list(minutes[base].items()):
                 if e not in minutes[m]:
                     minutes[m][e] = t
@@ -2085,6 +2108,20 @@ def durations(scorer, rows, acc):
             t = minutes[m][at]
             minutes[m] = {e: t for e in LADDER}
             basis[m] = {**{e: {'method': 'operating_point', 'from_effort': at} for e in LADDER if e != at}, at: basis[m][at]}
+    # a same_model row with a declared point reads its model's time at that effort at every effort, after every step of
+    # the model's own times
+    for m, entry in sorted(same.items()):
+        at = same_model_point(entry)
+        base = entry.get('model')
+        if at is None or m not in rows or 'duration' not in (entry.get('carries') or ()) or at not in minutes.get(base, {}):
+            continue
+        t, how = minutes[base][at], basis[base][at]
+        minutes[m] = dict.fromkeys(LADDER, t)
+        basis[m] = {e: {'method': 'same_model', 'base_model': base, 'at_effort': at, 'base_minutes': t,
+                        'base_method': how['method'], 'kind': entry.get('kind'), 'url': entry.get('url'),
+                        'as_of': entry.get('as_of'), 'statement': entry.get('statement'),
+                        'at_effort_declaration': {k: v for k, v in entry['at_effort'].items() if k != 'effort'}}
+                    for e in LADDER}
     # the maker's other lines, after every step of the row's own line and of the fleet's effort conversion
     cross_line_times(scorer, rows, acc, same, minutes, basis, set(speed) | set(scorer.points))
     for m in floored:   # the floor bounds: the longer of it and the other steps' time, then bounded along effort

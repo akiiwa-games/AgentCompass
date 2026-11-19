@@ -157,6 +157,14 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   bounded with the facet's own readings pinned, so it never moves one. A reading the rule moves is no longer a measurement
   (`bound_moved`; a Time/Task listing it moves becomes method `effort_bound`).
 - **`same_model` declarations.** A row `accounts.json` `same_model` declares to be another row's underlying model (`dot` -> `gpt-6-astra`, `grok-bot` -> `claude-opus-5-5`) inherits that model's facet curves, `duration_multiplier`, and `usd_per_hour` when listed in `carries` (`creativity`, `coding`, `aesthetics`, `duration`, `usd_per_hour`), while channel-specific `tool_operation` stays `missing`. When a `same_model` row also declares a `capacity_rule`, `axis_scores.five_axis_overlay` resolves the detected target subscription plan's monthly price from `plan-templates.json` at runtime and matches the same-price (or price-ratio-scaled nearest) reference subscription on the capacity ladder.
+- **One operating point on its model (owner, 2026-11-19).** A `same_model` row that also declares `at_effort` (an effort
+  of the scale with its dated citation) is its model's weights at that one effort, with no effort inside it (ChatGPT
+  Web's GPT-6 Pro: GPT-6 Astra at `ultra`, the Help Center's "Pro effort remains GPT-6 Pro, powered by GPT-6 Astra" and
+  the owner's placement directly above `max`): every effort of the row reads the model's cell at that effort, facets and
+  Time/Task, whatever method gave the model that cell (method `same_model`, `at_effort` and the model cell's method on the
+  cell); a declared response floor then bounds it (Speed without a reading, below). A shipped maintainer score never
+  reads a row's responsiveness faster than its declared floor: the refresh refuses one, naming both
+  (`reference_provenance.validate_scores_against_floors`); a local user's score is not checked.
 - **Speed variants (owner, 2026-11-19).** A `same_model` row that also declares `speed` is a speed variant of its
   model: the same weights served faster (the relation is the cited declaration, never the name). Its ability facets are
   the model's (`carries`). Its responsiveness, Time/Task and cost per hour are its own: a board reading of the row where

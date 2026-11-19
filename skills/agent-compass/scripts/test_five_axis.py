@@ -2884,6 +2884,98 @@ class ResponseFloorTests(unittest.TestCase):
                     self.assertTrue(all(v <= z + 2e-4 for v in resp['by_effort'].values()), resp['by_effort'])
 
 
+class SameModelPointTests(unittest.TestCase):
+    """Rule (accounts.json same_model `at_effort`, owner 2026-11-19, round 7): a row declared the same weights as its model
+    at one operating point reads the model's cell at that effort at every effort (facets and Time/Task), then its declared
+    response floor: Time at least the floor, responsiveness at most the floor's. Never below the model at max on an
+    ability facet, never faster than the model at max."""
+    FLOOR = {'kind': 'maintainer', 'as_of': '2026-11-19', 'min_seconds': 600, 'statement': 'synthetic'}
+    POINT = {'effort': 'ultra', 'kind': 'maintainer', 'as_of': '2026-11-19', 'statement': 'synthetic'}
+
+    def scorer(self, floor=True):
+        s = five_axis.Scorer.__new__(five_axis.Scorer)
+        s.same = {'pro': {'model': 'base', 'carries': ['coding', 'tool_operation'], 'kind': 'vendor',
+                          'url': 'https://example.test/help', 'statement': 's', 'at_effort': self.POINT}}
+        s.response_floor = {'pro': self.FLOOR} if floor else {}
+        s.fill_refused = []
+        s.meas = {'sources': {'aa.ttfa': {'scale': {'anchor_raw': -3.0, 'sd_panel': 1.0}}}}
+        return s
+
+    @staticmethod
+    def curve(values):
+        by = dict(zip(five_axis.LADDER, values))
+        return {'value': by['high'], 'by_effort': by, 'status': 'measured', 'sources': {}, 'measured_efforts': list(by)}
+
+    def facets(self, resp):
+        return {'base': {('coding', 'execution'): self.curve([-1, -0.8, -0.5, -0.2, 0.0, 0.3, 0.5, 0.7]),
+                         five_axis.SPEED_KEY: self.curve(resp)}, 'pro': {}}
+
+    def test_every_effort_reads_the_models_point_and_never_falls_below_the_model_at_max(self):
+        s, f = self.scorer(floor=False), self.facets([2, 1.8, 1.5, 1.0, 0.5, 0.0, -0.5, -1.0])
+        s.copy_same_model(f, ['pro'])
+        ex, resp = f['pro'][('coding', 'execution')], f['pro'][five_axis.SPEED_KEY]
+        self.assertEqual(set(ex['by_effort'].values()), {0.7})
+        self.assertEqual((ex['estimate']['method'], ex['estimate']['at_effort']), ('same_model', 'ultra'))
+        self.assertGreaterEqual(min(ex['by_effort'].values()), f['base'][('coding', 'execution')]['by_effort']['max'])
+        self.assertLessEqual(max(resp['by_effort'].values()), f['base'][five_axis.SPEED_KEY]['by_effort']['max'])
+
+    def test_the_floor_bounds_the_point_both_ways(self):
+        z = round(-math.log(600) + 3.0, 4)
+        for point, binds in ((-1.0, 'floor'), (-5.0, 'estimate')):
+            with self.subTest(point=point):
+                s, f = self.scorer(), self.facets([2, 1.8, 1.5, 1.0, 0.5, 0.0, -0.5, point])
+                s.copy_same_model(f, ['pro'])
+                s.response_floors(f)
+                resp = f['pro'][five_axis.SPEED_KEY]
+                self.assertEqual(set(resp['estimate']['binds_by_effort'].values()), {binds})
+                self.assertEqual(resp['value'], min(z, point))
+                self.assertEqual(resp['estimate']['estimate_input']['estimate']['at_effort'], 'ultra')
+
+    def test_time_reads_the_models_point_then_at_least_the_floor(self):
+        def tp(e, t):
+            return {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': e, 'time_per_task_min': t,
+                    'listed_as': f'x ({e})', 'as_of': '2026-11-19', 'url': 'https://example.test/aa'}
+        point = {**self.POINT, 'effort': 'max'}        # a measured effort: the board lists no ultra
+        for top, binds in ((6.0, 'floor'), (30.0, 'estimate')):
+            with self.subTest(top=top):
+                fields = {five_axis.measurements.ANCHOR: [tp('high', 10.0)],
+                          'base': [tp('high', 4.0), tp('xhigh', 5.0), tp('max', top)], 'pro': []}
+                acc = {**READINGS, 'models': {'pro': {'response_time_source': self.FLOOR}, 'base': {},
+                                              five_axis.measurements.ANCHOR: {}}, 'aliases': {}, 'families': {'rows': []},
+                       'same_model': {'pro': {'model': 'base', 'carries': ['duration'], 'kind': 'vendor',
+                                              'url': 'https://example.test/help', 'statement': 's', 'at_effort': point}}}
+                rows = {m: {'fields': {'throughput': v}} for m, v in fields.items()}
+                out, _, _ = five_axis.durations(five_axis.Scorer({'models': fields}, acc), rows, acc)
+                pro = out['pro']
+                self.assertEqual(set(pro['minutes_by_effort'].values()), {max(10.0, top)})
+                self.assertEqual({b['binds'] for b in pro['basis_by_effort'].values()}, {binds})
+                self.assertEqual(pro['basis_by_effort']['high']['estimate']['at_effort'], 'max')
+                self.assertGreaterEqual(min(pro['minutes_by_effort'].values()), out['base']['minutes_by_effort']['max'])
+
+
+class FloorScoreProvenanceTests(unittest.TestCase):
+    """Rule (reference_provenance.validate_scores_against_floors, owner 2026-11-19, round 7): a shipped maintainer score on
+    responsiveness that reads faster than the same row's declared response floor refuses the references, naming both; a
+    score at or slower than the floor passes."""
+
+    def test_a_maintainer_score_faster_than_the_floor_is_refused_and_one_slower_passes(self):
+        import reference_provenance
+        acc = {'models': {'pro': {'response_time_source': {'kind': 'maintainer', 'as_of': '2026-11-19', 'min_seconds': 600,
+                                                            'statement': 's'}}}}
+        meas = {'sources': {'aa.ttfa': {'scale': {'anchor_raw': -3.0, 'sd_panel': 1.0}}}}
+        levels = {str(k): {'target': t} for k, t in ((1, -5.0), (2, -1.0), (3, 1.0))}
+        five = {'anchor': {'targets': {'tool_operation': {'facets': {'responsiveness': {'levels': levels}}}}}}
+
+        def scores(level):
+            return {'scores': {'pro': {'tool_operation.responsiveness': {'level': level, 'kind': 'maintainer',
+                                                                          'as_of': '2026-11-11'}}}}
+        z_floor = -math.log(600) + 3.0                    # -3.397: level 1.4 on this scale
+        with self.assertRaisesRegex(ValueError, 'pro tool_operation.responsiveness level 2.*response_time_source'):
+            reference_provenance.validate_scores_against_floors(scores(2.0), acc, five, meas)
+        reference_provenance.validate_scores_against_floors(scores(1.0), acc, five, meas)
+        self.assertLess(-5.0, z_floor)
+
+
 class CrossLineTimeTests(unittest.TestCase):
     """Rule (five_axis.cross_line_times; calibration/README.md, Speed without a reading; owner 2026-11-19): a row with no
     Time/Task of its own or of its line takes the maker's other lines of the same size, nearest version up to the declared

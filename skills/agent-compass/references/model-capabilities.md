@@ -85,7 +85,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gpt-5.6-terra` | -0.21 | -2.84 | -2.80~ | -2.41 | -1.88 | 12.828 | yes |
 | `gpt-6-astra` | 0.06 | -2.13 | 0.01u | -0.19u | -0.89 | 26.304 | yes |
 | `gpt-6-luna` | -0.64 | -3.45 | -2.27u | -2.17 | -2.85u | 0.774 | yes |
-| `gpt-6-pro` | -0.29 | 0.00u | 0.03u | 0.10u | -2.78u | - | yes |
+| `gpt-6-pro` | 0.06 | 0.00u | 0.03u | 0.10u | -4.44u | - | yes |
 | `gpt-6-sol` | -0.29 | -2.66u | -0.53u | -1.30 | -1.16u | 20.036 | yes |
 | `gpt-6.1-sol` | -0.01 | -2.13 | -0.21u | -0.34 | -0.74 | 7.546 | yes |
 | `gpt-6.1-terra` | -0.04 | -2.27~ | -0.47u | -1.25 | -0.57 | 5.412 | yes |
