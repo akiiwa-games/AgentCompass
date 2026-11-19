@@ -49,9 +49,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import override_store  # noqa: E402
 import public_data  # noqa: E402
+import released_names  # noqa: E402
 import state_upgrade  # noqa: E402
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 FILE_NAME = 'user-scores.json'
 ENV_VAR = 'ROUTER_USER_SCORES'
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
@@ -186,7 +187,7 @@ def normalize_date(as_of: str | None = None) -> str:
 
 
 def validate_document(doc, *, expected_kind: str | None = None) -> dict:
-    """Validate and return a normalized `{schema_version: 3, scores: {model: {target: entry}}}` document."""
+    """Validate and return a normalized `{schema_version: 4, scores: {model: {target: entry}}}` document."""
     if not isinstance(doc, dict):
         raise ValueError('user-scores document must be a JSON object')
     ver = doc.get('schema_version')
@@ -322,8 +323,25 @@ def _local_schema_2_to_3(doc: dict) -> dict:
     return {**doc, 'schema_version': 3, 'scores': {**scores, **converted}}
 
 
+def _local_schema_3_to_4(doc: dict) -> dict:
+    """Schema 3 (v0.7.0) entries keyed by a name v0.7.0 resolved through an alias that this release removed or re-targeted
+    (`released_names.V0_7_0`) are rewritten to the row v0.7.0 resolved the name to, the model the user scored. Entries that
+    meet on one row merge in file order, a later one winning, as v0.7.0's overlay applied them."""
+    scores = doc.get('scores')
+    if not isinstance(scores, dict):
+        return {**doc, 'schema_version': 4}
+    out = {}
+    for model, targets in scores.items():
+        key = released_names.V0_7_0.get(model, model)
+        if isinstance(targets, dict) and isinstance(out.get(key), dict):
+            out[key] = {**out[key], **targets}
+        else:
+            out[key] = targets
+    return {**doc, 'schema_version': 4, 'scores': out}
+
+
 # The user's own scores are kept across updates: {schema a released version wrote: the step to the next schema}.
-LOCAL_UPGRADES = {1: _local_schema_1_to_2, 2: _local_schema_2_to_3}
+LOCAL_UPGRADES = {1: _local_schema_1_to_2, 2: _local_schema_2_to_3, 3: _local_schema_3_to_4}
 
 
 def upgrade_local_document(doc):
@@ -380,6 +398,13 @@ def load_public(path=None) -> dict:
         raise
     except ValueError as exc:                   # the reference layer's shape, not the user's input
         raise public_data.ReferenceDataError(f'user-scores.json: {exc}') from None
+
+
+def unresolved_models(doc: dict, accounts: dict) -> list[str]:
+    """The model names of a user-scores document (`doc`) that resolve to no row of `accounts`: kept in the file, never
+    turned into a row, ignored for scoring (`apply_overlay`); `agentcompass doctor` names them."""
+    models = (accounts or {}).get('models') or {}
+    return sorted(m for m in (doc.get('scores') or {}) if resolve_model_key(m, accounts) not in models)
 
 
 def resolve_model_key(model: str, accounts: dict | None = None) -> str:
@@ -882,7 +907,8 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
 def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dict | None = None,
                   local_scores: dict | None = None, aliases: dict | None = None, effort_steps: dict | None = None) -> None:
     """Apply `public_scores` (`maintainer`) then `local_scores` (`user`) onto `accounts['models'][m]['five_axis']`;
-    `effort_steps` is five-axis-scores.json `effort_steps` (`_manual_by_effort`)."""
+    `effort_steps` is five-axis-scores.json `effort_steps` (`_manual_by_effort`). An entry whose name resolves to no row of
+    `models_table` is ignored, never made a row (`unresolved_models` names it)."""
     pub = (public_scores or {}).get('scores') if isinstance(public_scores, dict) and 'scores' in public_scores else (public_scores or {})
     loc = (local_scores or {}).get('scores') if isinstance(local_scores, dict) and 'scores' in local_scores else (local_scores or {})
     if not pub and not loc:
@@ -915,7 +941,7 @@ def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dic
             canon = _canonical(raw_model)
             grouped.setdefault(canon, {}).update(entries)
         for canon, entries in grouped.items():
-            info = models_table.setdefault(canon, {})
+            info = (models_table or {}).get(canon)
             if not isinstance(info, dict):
                 continue
             five_state = info.setdefault('five_axis', {

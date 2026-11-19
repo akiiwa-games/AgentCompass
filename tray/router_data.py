@@ -1639,7 +1639,7 @@ def harness_model_rows() -> list[dict]:
     import provider_inventory
     accounts = _cached_accounts()
     policy = host_policy.load_policy()
-    preferences = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {"schema_version": 2}
+    preferences = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {"schema_version": accounts_override.SCHEMA_VERSION}
     inventory = (accounts.get("_discovery") or {}).get("accounts") or {}
     table = accounts.get("accounts") or {}
     groups = {}

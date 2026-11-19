@@ -1,0 +1,35 @@
+"""Model names a released version resolved through an alias that a later release removed or re-targeted, and the row
+that release resolved each to: what the user meant by the name when they wrote it into local state (AGENTS.md: what a
+released version wrote for the user is kept).
+
+`V0_7_0` is the diff of the `aliases` tables of `references/accounts.json` between the `v0.7.0` tag and this release:
+every name v0.7.0 resolved through an alias to one of its rows that this release resolves otherwise (the alias removed,
+the name now a row of its own, or the alias re-targeted). It is read by the upgrade steps of the local files keyed by a
+model name: `user_scores.LOCAL_UPGRADES` (schema 3 to 4) and `accounts_override.LOCAL_UPGRADES` (schema 2 to 3).
+test_released_names.py checks it against the tag.
+"""
+
+V0_7_0 = {
+    'claude-fable-5': 'claude-fable-5-2',           # now a row of its own
+    'claude-opus-5': 'claude-opus-5-5',             # now a row of its own
+    'claude-sonnet-5': 'claude-sonnet-5-5',         # now a row of its own
+    'deepseek-flash': 'deepseek-v4.1-flash-free',   # re-targeted to deepseek-v4.1-flash-1017
+    'deepseek-v4-flash': 'deepseek-v4.1-flash-free',    # now a row of its own
+    'deepseek-v4.1-flash': 'deepseek-v4.1-flash-free',  # now a row of its own
+    'gemini-4-pro': 'gemini-4-argon-high',          # alias removed
+    'gemini-4-ultra': 'gemini-4-argon-high',        # alias removed
+    'glm-5.3-flash': 'glm-5.3-flash-free',          # now a row of its own
+    'grok-4': 'grok-4.7',                           # alias removed
+    'kimi-k3.1-pro-highspeed': 'kimi-k3.1-pro',     # now a row of its own
+    'mimo-v2.6-pro-ultraspeed': 'mimo-v2.6-pro',    # now a row of its own
+}
+
+
+def current_key(name, accounts):
+    """The key a name resolves to under `accounts` (accounts.json) the way an auto bundle's id is keyed
+    (auto_bundles.derive: a row or an alias collapses to the row; any other name keeps its own advertised spelling)."""
+    models = (accounts or {}).get('models') or {}
+    aliases = (accounts or {}).get('aliases') or {}
+    if name in models:
+        return name
+    return aliases[name] if aliases.get(name) in models else name

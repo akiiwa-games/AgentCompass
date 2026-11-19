@@ -54,7 +54,8 @@ def settings(tmp_path, monkeypatch):
 def test_first_write_is_sparse_and_partial_model_toggle_is_harness_scoped(tmp_path, monkeypatch):
     target = settings(tmp_path, monkeypatch)
     router_data.toggle_bundle('codex', 'sol_high')
-    assert json.loads(target.read_text()) == {'schema_version': 2, 'accounts': {'codex': {'bundles': {'sol_high': {'disabled': True}}}}}
+    assert json.loads(target.read_text()) == {'schema_version': accounts_override.SCHEMA_VERSION,
+                                              'accounts': {'codex': {'bundles': {'sol_high': {'disabled': True}}}}}
     rows = router_data.harness_model_rows()
     codex = next(row for row in rows if row['harness'] == 'codex')
     assert codex['enabled'] is True  # verified=False must not uncheck user policy
@@ -186,7 +187,7 @@ def test_backup_and_tuning_restore_preserves_choices(tmp_path, monkeypatch):
     router_data.save_tuning({'safety_margin_pct': 7})
     assert any(path.read_bytes() == original for path in (target.parent / 'backups').iterdir())
     saved = json.loads(target.read_text())
-    assert saved['schema_version'] == 2 and 'models' not in saved
+    assert saved['schema_version'] == accounts_override.SCHEMA_VERSION and 'models' not in saved
     assert router_data.read_tuning()['safety_margin_pct'] == 7
     router_data.restore_tuning()
     assert router_data.read_tuning()['safety_margin_pct'] == 5

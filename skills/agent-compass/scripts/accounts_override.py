@@ -1,11 +1,16 @@
 """Sparse account preferences shared by the tray and allocator; no discovery or disk writes."""
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 import re
 
+import auto_bundles
 import cwd_policy
+import released_names
 import state_upgrade
+
+SCHEMA_VERSION = 3
 
 
 def normalize(document):
@@ -96,6 +101,55 @@ def _without_migration_record(document):
     return {key: value for key, value in document.items() if key != 'migration_ambiguous_enabled'}
 
 
+def _split_auto_id(bid):
+    """(account, harness, model key, '@effort' or '', '#hash' or '') of an auto bundle id (auto_bundles.auto_bundle_id:
+    auto:<account>:<harness>:<model key>[@<effort>], `#<sha256(name)[:8]>` added for a second name of one key), else None."""
+    prefix = auto_bundles.AUTO_PREFIX
+    if not isinstance(bid, str) or not bid.startswith(prefix):
+        return None
+    parts = bid[len(prefix):].split(':', 2)
+    if len(parts) != 3:
+        return None
+    account, harness, rest = parts
+    rest, _, tag = rest.partition('#')
+    model, at, effort = rest.partition('@')
+    return account, harness, model, (at + effort), ('#' + tag if tag else '')
+
+
+def _schema_2_to_3(doc, accounts=None):
+    """Schema 2 (through v0.7.0): an auto bundle's id holds the row its advertised name resolved to
+    (auto_bundles.auto_bundle_id). A name v0.7.0 resolved through an alias this release removed or re-targeted
+    (`released_names.V0_7_0`) now gets another id, so the checkbox the user set on the v0.7.0 id is also set on the id
+    the name gets now (`released_names.current_key` under the shipped catalog `accounts`), unless the user already set
+    that one. The v0.7.0 id keeps its choice: it still names that row. A v0.7.0 id with a `#hash` suffix was one
+    advertised name's own (the second name of the row on that account): it carries only to that name."""
+    if accounts is None:
+        import public_data
+        accounts = public_data.document(Path(__file__).resolve().parents[1] / 'references' / 'accounts.json')
+    names = {}
+    for name, row in released_names.V0_7_0.items():
+        names.setdefault(row, []).append(name)
+    out = deepcopy(doc)
+    for spec in (out.get('accounts') or {}).values():
+        bundles = spec.get('bundles') if isinstance(spec, dict) else None
+        if not isinstance(bundles, dict):
+            continue
+        for bid, pref in list(bundles.items()):
+            parts = _split_auto_id(bid)
+            if parts is None or not isinstance(pref, dict) or 'disabled' not in pref:
+                continue
+            account, harness, row, effort, tag = parts
+            for name in names.get(row, ()):
+                if tag and tag != '#' + hashlib.sha256(name.encode()).hexdigest()[:8]:
+                    continue
+                key = released_names.current_key(name, accounts)
+                new = auto_bundles.auto_bundle_id(account, harness, key, effort[1:] or None)
+                if key != row and new not in bundles:
+                    bundles[new] = {'disabled': pref['disabled']}
+    out['schema_version'] = SCHEMA_VERSION
+    return out
+
+
 # The user's own choices are kept across updates: {the shape an earlier release wrote: (does the document have it, the
 # step that carries it into the current shape)}. A shape that cannot be carried without guessing has no step and is
 # refused by `validate_document`: a file without `schema_version` (the full copy of the shipped file that v0.1.0
@@ -105,6 +159,7 @@ LOCAL_UPGRADES = {
     'allowed_cwd (v0.1.0 to v0.5.0)': (lambda doc: bool(_allowed_cwd_accounts(doc)), _allowed_cwd_to_regex),
     'migration_ambiguous_enabled (v0.2.0 to v0.5.0)': (lambda doc: 'migration_ambiguous_enabled' in doc,
                                                         _without_migration_record),
+    'schema 2 (v0.2.0 to v0.7.0)': (lambda doc: doc.get('schema_version') == 2, _schema_2_to_3),
 }
 
 
@@ -146,9 +201,10 @@ def validate_document(doc, path):
             path, 'invalid accounts-override format (expected JSON object)', _delete_fix(path),
         ))
     version = doc.get('schema_version')
-    if version != 2:
+    if version != SCHEMA_VERSION:
         raise ValueError(state_upgrade.format_issue(
-            path, f'accounts-override schema_version {version!r} has no upgrade step (expected 2)', _delete_fix(path),
+            path, f'accounts-override schema_version {version!r} has no upgrade step (expected {SCHEMA_VERSION})',
+            _delete_fix(path),
         ))
     accounts = doc.get('accounts')
     if accounts is not None:

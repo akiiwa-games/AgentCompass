@@ -67,6 +67,35 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
         with self.path.open('w', encoding='utf-8', newline='\n') as handle:
             json.dump(doc, handle)
 
+    def test_a_checkbox_on_a_name_whose_v070_alias_changed_is_kept_on_the_id_the_name_gets_now(self):
+        """Round 6 item 2: an auto bundle id holds the row its name resolved to. `LOCAL_UPGRADES` (schema 2 to 3) sets the
+        v0.7.0 id's checkbox also on the id each `released_names.V0_7_0` name of that row gets now, never over one the
+        user set, and keeps the v0.7.0 id's; a `#hash` id carries only to the name it hashes."""
+        import hashlib
+        accounts = {'models': {'gemini-4-argon-high': {}, 'claude-opus-5-5': {}, 'claude-opus-5': {},
+                               'deepseek-v4.1-flash-free': {}, 'deepseek-v4.1-flash-1017': {}, 'deepseek-v4-flash': {},
+                               'deepseek-v4.1-flash': {}},
+                    'aliases': {'deepseek-flash': 'deepseek-v4.1-flash-1017'}}
+        h = '#' + hashlib.sha256(b'claude-opus-5').hexdigest()[:8]
+        doc = {'schema_version': 2, 'accounts': {'acct-a': {'bundles': {
+            'auto:acct-a:agy:gemini-4-argon-high@high': {'disabled': True},
+            'auto:acct-a:claude:claude-opus-5-5' + h: {'disabled': True},
+            'auto:acct-a:opencode:deepseek-v4.1-flash-free': {'disabled': False},
+            'auto:acct-a:opencode:deepseek-v4-flash': {'disabled': True},
+            'manual_bundle': {'disabled': True}}}}}
+        got = accounts_override.LOCAL_UPGRADES['schema 2 (v0.2.0 to v0.7.0)'][1](doc, accounts)
+        self.assertEqual(got['schema_version'], accounts_override.SCHEMA_VERSION)
+        self.assertEqual(got['accounts']['acct-a']['bundles'], {
+            **doc['accounts']['acct-a']['bundles'],
+            'auto:acct-a:agy:gemini-4-pro@high': {'disabled': True},
+            'auto:acct-a:agy:gemini-4-ultra@high': {'disabled': True},
+            'auto:acct-a:claude:claude-opus-5': {'disabled': True},
+            'auto:acct-a:opencode:deepseek-v4.1-flash-1017': {'disabled': False},
+            'auto:acct-a:opencode:deepseek-v4.1-flash': {'disabled': False}})
+        self.assertEqual(doc['schema_version'], 2)                     # the step copies, it does not edit its input
+        self.write(doc)
+        self.assertEqual(accounts_override.load_override(self.path)['schema_version'], accounts_override.SCHEMA_VERSION)
+
     def test_a_reason_string_in_disabled_is_read_as_the_released_versions_read_it(self):
         # v0.1.0 to v0.5.0: a string (even an empty one) meant disabled, any other value kept its truth value.
         self.write({'schema_version': 2, 'accounts': {'acct-a': {'verified': True, 'bundles': {
@@ -138,7 +167,7 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
             'b1': {'disabled': True}}}}}
         self.write({**doc, 'migration_ambiguous_enabled': [{'account': 'acct-a', 'bundle': 'b2'}]})
         before = self.path.read_bytes()
-        self.assertEqual(accounts_override.load_override(self.path), doc)
+        self.assertEqual(accounts_override.load_override(self.path), {**doc, 'schema_version': accounts_override.SCHEMA_VERSION})
         self.assertEqual(self.path.read_bytes(), before)
         self.assertIsNone(state_upgrade.check_accounts_override(self.path))
 
@@ -152,7 +181,7 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
         router_data._atomic_json(self.path, loaded)
         written = json.loads(self.path.read_text(encoding='utf-8'))
         spec = written['accounts']['acct-a']
-        self.assertEqual((written['schema_version'], written['scoring']), (2, {'k': 1}))
+        self.assertEqual((written['schema_version'], written['scoring']), (accounts_override.SCHEMA_VERSION, {'k': 1}))
         self.assertEqual((spec['verified'], spec['bundles']), (True, {'b1': {'disabled': True}, 'b2': {'disabled': True}}))
         self.assertNotIn('allowed_cwd', spec)
         self.assertTrue(cwd_policy.matches(spec['cwd_regex'], 'D:/work/x'))
@@ -170,7 +199,7 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
         self.assertTrue(cwd_policy.matches(spec['cwd_regex'], 'D:/work/x'))
 
     def test_every_step_recognises_only_a_shape_the_current_one_cannot_have(self):
-        current = {'schema_version': 2, 'scoring': {'k': 1}, 'accounts': {'acct-a': {
+        current = {'schema_version': accounts_override.SCHEMA_VERSION, 'scoring': {'k': 1}, 'accounts': {'acct-a': {
             'verified': True, 'cwd_regex': '^D:/work', 'bundles': {'b1': {'disabled': True}}}}}
         for shape, (has_shape, _step) in accounts_override.LOCAL_UPGRADES.items():
             with self.subTest(shape=shape):
@@ -180,7 +209,7 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
     def test_a_shape_that_cannot_be_carried_without_guessing_is_refused(self):
         for doc in ({'accounts': {'acct-a': {'verified': True}}},                          # v0.1.0: no schema_version
                     {'schema_version': 1, 'accounts': {}},
-                    {'schema_version': 3, 'accounts': {}},
+                    {'schema_version': accounts_override.SCHEMA_VERSION + 1, 'accounts': {}},
                     {'schema_version': 2, 'accounts': {'acct-a': {'allowed_cwd': ['D:/work'], 'cwd_regex': 'game'}}},
                     {'schema_version': 2, 'accounts': {'acct-a': {'allowed_cwd': {'path': 'D:/work'}}}},
                     ['not', 'an', 'object']):

@@ -672,7 +672,7 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
                                'model-b': {'creativity.creative_writing': facet}}, loaded['scores'])
         self.assertEqual(self.local.read_bytes(), before)  # a read never writes
 
-    def test_a_schema_2_file_keeps_the_position_of_every_entry_and_the_next_save_writes_schema_3(self):
+    def test_a_schema_2_file_keeps_the_position_of_every_entry_and_the_next_save_writes_the_current_schema(self):
         """Owner 2026-11-18: level 3 moved from the anchor to the panel maximum; levels at or below 2 stay, levels above 2 keep
         their position (`LOCAL_UPGRADES[2]`, `level-3-conversion.json`), a facet entry beats a category entry, and a read writes nothing."""
         old = {
@@ -689,13 +689,13 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         self.write({'schema_version': 2, 'scores': old})
         before = self.local.read_bytes()
         loaded = user_scores.load_local(self.local)
-        self.assertEqual(loaded['schema_version'], 3)
+        self.assertEqual(loaded['schema_version'], user_scores.SCHEMA_VERSION)
         self.assert_converted(old, loaded['scores'])
         self.assertIn('coding', loaded['scores']['model-c'])                 # at or below 2 a category entry stays one entry
         self.assertEqual(self.local.read_bytes(), before)
         user_scores.set_score('model-d', 'coding', 2.0, local_path=self.local, as_of='2026-11-18')
         saved = json.loads(self.local.read_text(encoding='utf-8'))
-        self.assertEqual(saved['schema_version'], 3)
+        self.assertEqual(saved['schema_version'], user_scores.SCHEMA_VERSION)
         self.assertEqual(saved['scores']['model-a'], loaded['scores']['model-a'])          # converted once, kept as written
         self.assertEqual(user_scores.load_local(self.local)['scores']['model-a'], saved['scores']['model-a'])   # no second conversion
 
@@ -707,6 +707,22 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         self.assertEqual(saved['schema_version'], user_scores.SCHEMA_VERSION)
         self.assert_converted({'model-a': {'creativity': entry}}, saved['scores'])
         self.assertEqual(saved['scores']['model-b']['coding']['level'], 2.0)
+
+    def test_a_schema_3_entry_under_a_name_v070_resolved_through_a_changed_alias_moves_to_the_row_v070_meant(self):
+        """Round 6 item 2 (AGENTS.md: what a released version wrote for the user is kept): `LOCAL_UPGRADES[3]` rewrites a
+        name of `released_names.V0_7_0` to the row v0.7.0 resolved it to; entries meeting on one row merge in file order,
+        the later winning, as v0.7.0's overlay applied them; every other entry is kept as written."""
+        a = {'level': 2.5, 'as_of': '2026-11-12', 'kind': 'user'}
+        b = {'level': 1.5, 'as_of': '2026-11-13', 'kind': 'user'}
+        c = {'level': 2.2, 'as_of': '2026-11-14', 'kind': 'user'}
+        self.write({'schema_version': 3, 'scores': {
+            'gemini-4-pro': {'coding.execution': a}, 'claude-opus-5-5': {'creativity': b},
+            'claude-opus-5': {'creativity': c, 'coding': a}, 'unknown-model': {'coding': b}}})
+        loaded = user_scores.load_local(self.local)
+        self.assertEqual(loaded['schema_version'], user_scores.SCHEMA_VERSION)
+        self.assertEqual(loaded['scores'], {'gemini-4-argon-high': {'coding.execution': a},
+                                            'claude-opus-5-5': {'creativity': c, 'coding': a},
+                                            'unknown-model': {'coding': b}})
 
     def test_every_schema_below_the_current_one_has_an_upgrade_step(self):
         self.assertEqual(sorted(user_scores.LOCAL_UPGRADES), list(range(1, user_scores.SCHEMA_VERSION)))
@@ -1258,6 +1274,15 @@ class EffectiveSourceTests(unittest.TestCase):
             self.assertEqual(set(models), {'big', 'small'}, key)
             self.assertEqual(models['big']['five_axis']['categories']['coding']['facets']['faithfulness']['by_effort'],
                              direct, key)
+
+    def test_a_score_under_a_name_that_resolves_to_no_row_is_ignored_and_never_made_a_row(self):
+        """Round 6 item 2: apply_overlay leaves `models_table` with the rows it had; `unresolved_models` names the entry."""
+        entry = {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-18', 'kind': 'user'}}
+        models, shipped = self.table(), self.table()
+        local = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {'gone-model': entry}}
+        user_scores.apply_overlay(models, self.targets, local_scores=local, public_scores=local)
+        self.assertEqual(models, shipped)
+        self.assertEqual(user_scores.unresolved_models(local, {'models': models, 'aliases': {}}), ['gone-model'])
 
     def test_a_hand_written_score_on_the_derived_model_itself_wins(self):
         got = self.overlay({'big': {'coding.faithfulness': {'level': 1.0, 'as_of': '2026-11-18', 'kind': 'user'}},
