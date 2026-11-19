@@ -172,28 +172,30 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
     raw, effort = split_model_effort(raw_model_name)
     name = raw.rsplit('/', 1)[-1].lower()
 
-    def found(key, source, named_effort=None, provider=None):
-        return {'key': key, 'source': source, 'effort': effort or named_effort, 'bare': name, 'provider': provider}
+    def found(key, source, named_effort=None, provider=None, *, bare=None):
+        return {'key': key, 'source': source, 'effort': effort or named_effort,
+                'bare': name if bare is None else bare, 'provider': provider}
 
-    def declared_row(spelling, served, dash_effort):
+    def declared_row(full, spelling, served, dash_effort):
         """The `found` of the declarations of one spelling (served: [(provider, that provider's spelling)]), or None."""
         declared = _declared_at(served, provider_names)
         if len({(d.get('model'), d.get('status')) for _, d in declared}) > 1:
-            return found(None, 'conflict')
+            return found(None, 'conflict', dash_effort, bare=spelling)
         if declared:
             d, by = declared[0][1], min(p for p, _ in declared)
+            served_name = next((n.lower() for p, n in served if p.lower() == by), spelling)
             if d.get('model') is None:
-                return found(None, d.get('status'), dash_effort, provider=by)
+                return found(None, d.get('status'), dash_effort, provider=by, bare=served_name)
             if d['model'] not in known:
                 raise public_data.ReferenceDataError(f"provider_names rows[{by!r}] names row {d['model']!r}, which the "
                                                      'catalog does not have')
-            return found(d['model'], 'provider', dash_effort, provider=by)
-        default = default_for(spelling, provider_names)
+            return found(d['model'], 'provider', dash_effort, provider=by, bare=spelling)
+        default = default_for(full, provider_names)
         if isinstance(default, dict):
             if default.get('model') not in known:
-                raise public_data.ReferenceDataError(f"provider_names defaults[{spelling!r}] names row "
+                raise public_data.ReferenceDataError(f"provider_names defaults[{full!r}] names row "
                                                      f"{default.get('model')!r}, which the catalog does not have")
-            return found(default['model'], 'default', dash_effort)
+            return found(default['model'], 'default', dash_effort, bare=spelling)
         return None
 
     pairs = serving_providers(raw, providers)
@@ -204,7 +206,7 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
             name = spelling       # `bare`: the spelling reached so far (a dash effort is not stripped from it)
         served = [(p, steps[step][0]) for (p, _), steps in zip(pairs, served_steps) if step < len(steps)]
         full = full_steps[step][0] if step < len(full_steps) else spelling
-        if (hit := declared_row(full, served, dash_effort)) is not None:
+        if (hit := declared_row(full, spelling, served, dash_effort)) is not None:
             return hit
         if step == 0:
             if match := exact(raw):
@@ -213,7 +215,7 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
                 if match := exact(candidate):
                     return found(match, 'alias')
         elif match := exact(spelling):
-            return found(match, 'alias', dash_effort)
+            return found(match, 'alias', dash_effort, bare=spelling)
     row = next((f for f in families if re.search(f['pattern'], name)), None)
     if row is not None:
         target = next((t for t in row['models'] if t in known), None)

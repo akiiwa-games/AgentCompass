@@ -176,10 +176,9 @@ def default_profile(raw_model, accounts, providers=()):
         return {'model': model, 'source': 'calibrated', 'target': resolved['key'],
                 'basis': 'Calibrated row in accounts.models.'}
     if resolved['source'] in PROVIDER_NAME_STATUSES:
-        leaf = split_model_effort(raw_model)[0].rsplit('/', 1)[-1]
         why = ('no longer serves this name (retired)' if resolved['source'] == 'retired'
                else 'serves this name as weights the public data has no row for (other_weights)')
-        return {'model': f"{resolved['provider']}/{leaf}", 'source': resolved['source'], 'target': None,
+        return {'model': f"{resolved['provider']}/{resolved['bare']}", 'source': resolved['source'], 'target': None,
                 'basis': f"{resolved['provider']} {why}, by provider_names: no row, out of automatic routing; a route the "
                          'user names still launches.'}
     if resolved['source'] == 'conflict':

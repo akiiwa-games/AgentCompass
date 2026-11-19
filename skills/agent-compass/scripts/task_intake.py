@@ -413,9 +413,10 @@ def named_pin(constraints, task, accounts):
 # - force_fast: a named fast route (route_judge.record_constraint, prepare).
 ROUTE_FIELDS = ('pinned_bundle', 'user_named_bundle', 'unclassified', 'force_fast')
 # Keys a caller's task may not carry at all: the route fields, the state the allocator itself derives on the planned task
-# (`metered_fallback`, `worker`; a caller names its worker in chain.worker), the rows a record keeps for a listed model,
-# and `include_unverified`, which would lift the launch-evidence check (`verified` is discovery's fact).
-NOT_CALLER_INPUT = (*ROUTE_FIELDS, 'metered_fallback', 'worker', 'listed_rows', 'include_unverified')
+# (`metered_fallback`, `worker`, `constraint_raw_model`; a caller names its worker in chain.worker and its pin in
+# constraints/pinned_*), the rows a record keeps for a listed model, and `include_unverified`, which would lift the
+# launch-evidence check (`verified` is discovery's fact).
+NOT_CALLER_INPUT = (*ROUTE_FIELDS, 'metered_fallback', 'worker', 'listed_rows', 'include_unverified', 'constraint_raw_model')
 
 
 def router_fields(task):
@@ -506,6 +507,8 @@ def normalize_task(raw, policy, capabilities, accounts, route=None):
         raise ValueError('expected_hours is required: the caller gives it (--hours) or the classifier estimates it in task.profile')
     hours = float(task.get('expected_hours') or profile['expected_hours'])
     constraints = task.get('constraints') if isinstance(task.get('constraints'), dict) else {}
+    raw_pin_model = constraints.get('model') or task.get('pinned_model')
+    constraint_raw_model = raw_pin_model.strip() if isinstance(raw_pin_model, str) and raw_pin_model.strip() else None
     constraint_model, constraint_effort = named_pin(constraints, task, accounts)
     implies = (capabilities['routes'][kind].get('implies') or {}) if kind else {}
     # Caller false stands. The profile fills an unset flag. Route implies fill only what both left unset.
@@ -539,6 +542,7 @@ def normalize_task(raw, policy, capabilities, accounts, route=None):
             'local_only': bool(needs.get('local_only')),
             'file_transfer': bool(needs.get('file_transfer')), 'outbound_ok': needs.get('outbound_ok'),
             'constraint_bundle': constraints.get('bundle') if isinstance(constraints.get('bundle'), str) else None,
+            'constraint_raw_model': constraint_raw_model,
             'constraint_model': constraint_model, 'constraint_effort': constraint_effort,
             'metered_ok': bool(task.get('metered_ok')),
             'can_wait_hours': float(task.get('can_wait_hours') or 0), 'chain_id': chain.get('id'),

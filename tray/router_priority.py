@@ -64,9 +64,16 @@ def account_label(account):
     return _display()[0](account)
 
 
-def model_label(model, accounts=None):
+def model_label(model, accounts=None, account=None):
+    key = None
+    if accounts and account and model:
+        import account_fleet
+        key = account_fleet.stored_model(model, accounts, account)
     configured = next((t.get('label') for t in (accounts or {}).get('priority_targets') or ()
-                       if isinstance(t, dict) and t.get('model') == model and t.get('label')), None)
+                       if isinstance(t, dict) and t.get('label') and (
+                           t.get('model') == model or (key is not None and t.get('account') == account and t.get('model')
+                                                       and account_fleet.stored_model(t['model'], accounts, account) == key))),
+                      None)
     return configured or _display()[1](model)
 
 
@@ -120,20 +127,19 @@ def overlaps(row, account, model, now, accounts):
 
 
 def _candidates(accounts):
-    """(account, model) pairs with an enabled, launchable bundle on an allowed account, in fleet order."""
+    """Enabled, launchable bundles on allowed accounts, in fleet order."""
     import account_fleet
     import host_policy
     policy = host_policy.load_policy()
-    pairs = []
+    rows = []
     for bundle in account_fleet.bundles(accounts).values():
         account, model = bundle.get('account'), bundle.get('model')
         spec = (accounts.get('accounts') or {}).get(account) or {}
         if (not account or not model or bundle.get('disabled') or bundle.get('discovery_unavailable')
                 or spec.get('verified') is False or spec.get('_legacy_disabled_flag') or not host_policy.account_allowed(policy, account)):
             continue
-        if (account, model) not in pairs:
-            pairs.append((account, model))
-    return pairs
+        rows.append(bundle)
+    return rows
 
 
 def _weekly_window(accounts, account, model):
@@ -144,25 +150,27 @@ def _weekly_window(accounts, account, model):
 
 
 def targets(accounts):
-    """The configured targets with an enabled bundle. A target's model, read with its account's providers
-    (account_fleet.account_providers), is matched to a bundle's as the same row (account_fleet.row_key), so a target stored
-    under a name whose maker moved it to a newer dated snapshot reaches the bundle that now runs that snapshot, and one
-    stored under a name the account's provider declares reaches that provider's bundle."""
+    """The configured targets with an enabled bundle. A target's model matches a bundle through the one pin-identity rule
+    (account_fleet.pin_names_bundle), so a target stored under a name whose maker moved it to a newer dated snapshot
+    reaches the bundle that now runs that snapshot, and one stored under a name the account's provider declares reaches
+    that provider's bundle without crossing onto another provider's."""
     import account_fleet
     candidates = _candidates(accounts)
     configured = [t for t in accounts.get('priority_targets') or () if isinstance(t, dict)]
     pairs = []
     for target in configured:
         account, wanted = target.get('account'), target.get('model')
-        row = account_fleet.row_key(wanted, accounts, account_fleet.account_providers(accounts, account)) if wanted else None
-        model = next((m for a, m in candidates if a == account and (m == wanted or account_fleet.row_key(m, accounts) == row)), None)
+        matched = next((b for b in candidates if b['account'] == account and wanted
+                        and account_fleet.pin_names_bundle(wanted, b, accounts)), None)
+        model = matched['model'] if matched is not None else None
         if model is not None and (account, model) not in [(a, m) for a, m, _ in pairs]:
             pairs.append((account, model, target.get('label')))
     result = []
     for account, model, label in pairs:
         wid = _weekly_window(accounts, account, model)
         if wid:
-            result.append({'account': account, 'model': model, 'window': wid, 'label': label or model_label(model, accounts)})
+            result.append({'account': account, 'model': model, 'window': wid,
+                           'label': label or model_label(model, accounts, account)})
     labels = [t['label'] for t in result]
     for t in result:
         if labels.count(t['label']) > 1:
@@ -215,11 +223,13 @@ def enable(account, model, window, hours, now=None):
                    if (t['account'], t['model'], t['window']) == (account, model, window)), None)
     if target is None:
         raise ValueError(_tr('该账号、模型或窗口已不可用；请等待菜单刷新'))
+    stored = account_fleet.stored_form(model, accounts, account)
+    canonical_model = account_fleet.stored_model(model, accounts, account)
     path = quota_overrides.overrides_path()
     with override_store.locked(path):
         doc = read_document(path)
         new_until = (now+timedelta(hours=hours)).isoformat()
-        overlapping = [r for r in doc['overrides'] if overlaps(r, account, model, now, accounts)]
+        overlapping = [r for r in doc['overrides'] if overlaps(r, account, canonical_model, now, accounts)]
         if overlapping:
             ui_rules = [r for r in overlapping if r.get('intent') in (INTENT, 'panel:temporary-boost')
                         and r.get('stop_on_reset') and not r.get('expires_at')]
@@ -232,29 +242,31 @@ def enable(account, model, window, hours, now=None):
             doc.pop('last_reset', None)
             save(path, {**doc, 'v': 1})
             return _tr('已更新 {0}/{1} 预期重置时间；重置确认后撤销，最迟 {2} 失效').format(
-                f'{account_label(account)}', f'{model_label(model, accounts)}', f"{stamp(new_until)}")
+                f'{account_label(account)}', f'{model_label(model, accounts, account)}', f"{stamp(new_until)}")
         # Use ONE real observation for the baseline. Never synthesize a timestamp
         # for a cached older value and never fetch directly from provider APIs.
         usage = usage_reading.usage_snapshot(now=now)
         base = baseline(accounts, usage, target, now)
-        if quota_overrides.override_depleted({'account': account, 'model': model, 'window': window, 'boost': BOOST},
+        if quota_overrides.override_depleted({'account': account, 'model': stored, 'window': window, 'boost': BOOST},
                                        usage, accounts):
             raise ValueError(_tr('该窗口额度已不足 {0}%，router 不再派新任务，临时优先无意义').format(f"{accounts['scoring']['safety_margin_pct']}"))
-        row = {'id': uuid.uuid4().hex, 'intent': INTENT, 'account': account, 'model': model,
+        row = {'id': uuid.uuid4().hex, 'intent': INTENT, 'account': account, 'model': stored,
                'window': window, 'boost': BOOST, 'created_at': now.isoformat(),
                'until': (now+timedelta(hours=hours)).isoformat(), 'stop_on_reset': True,
                'reset_confirmation': 'replenishment', 'baseline_windows': {window: base},
                'basis': _tr('用户在托盘选择预计临时重置，优先 {0}/{1}；额度回升后 router 自动撤销').format(f'{account}', f'{model}')}
         # The compact chooser is single selection, not cumulative boosts.
         # Replace reset-only priorities for the chooser's models, not unrelated expiry constraints.
-        selected_models = {(t['account'], t['model']) for t in targets(accounts)}
+        selected_models = {(t['account'], account_fleet.stored_model(t['model'], accounts, t['account']))
+                           for t in targets(accounts)}
         doc['overrides'] = [r for r in doc['overrides'] if not (
-            r.get('stop_on_reset') and not r.get('expires_at')
-            and (r.get('account'), r.get('model')) in selected_models)]
+            r.get('stop_on_reset') and not r.get('expires_at') and r.get('model')
+            and (r.get('account'), account_fleet.stored_model(r['model'], accounts, r.get('account'))) in selected_models)]
         doc.pop('last_reset', None)
         doc['overrides'].append(row)
         save(path, {**doc, 'v': 1})
-    return _tr('已开启 {0}/{1} 临时优先；重置确认后撤销，最迟 {2} 失效').format(f'{account_label(account)}', f'{model_label(model, accounts)}', f"{stamp(row['until'])}")
+    return _tr('已开启 {0}/{1} 临时优先；重置确认后撤销，最迟 {2} 失效').format(
+        f'{account_label(account)}', f'{model_label(model, accounts, account)}', f"{stamp(row['until'])}")
 
 
 def cancel(entry_id, expected_revision):
@@ -300,7 +312,7 @@ def snapshot(now=None):
         doc = read_document(path)
     rows = [r for r in doc['overrides'] if active(r, now)
             and not quota_overrides.override_reset_landed(r, None, accounts, now)]
-    entries = [{'label': model_label(r['model'], accounts) if r.get('model') else account_label(r.get('account')) or _tr('其他'),
+    entries = [{'label': model_label(r['model'], accounts, r.get('account')) if r.get('model') else account_label(r.get('account')) or _tr('其他'),
                 'id': r['id'], 'revision': revision(r),
                 'boost': r.get('boost'), **countdown(r, now)} for r in rows]
     for entry in entries:
@@ -310,7 +322,8 @@ def snapshot(now=None):
             entry['label'] += _tr(' · 加成 +{0}').format(f"{entry['boost']:.2f}")
     choices = targets(accounts)
     for t in choices:
-        t['selected'] = any(overlaps(r, t['account'], t['model'], now, accounts) for r in rows)
+        key = account_fleet.stored_model(t['model'], accounts, t['account'])
+        t['selected'] = any(overlaps(r, t['account'], key, now, accounts) for r in rows)
     last = doc.get('last_reset') or {}
     reset_at = quota_pools.parse_time(last.get('at')) if isinstance(last, dict) else None
     recent = reset_at is not None and timedelta(0) <= now-reset_at < timedelta(hours=RESET_BADGE_HOURS)

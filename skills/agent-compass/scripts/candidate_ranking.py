@@ -76,9 +76,10 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     # R2-F7: when `--model` is named without `--effort` (and no bundle is pinned), never let an unscored effort beat a
     # scored effort of the same model via a silent 0.0 default. Only when ALL eligible candidates lack trusted scores
     # do they proceed together as an explicit `unscored_named_dispatch` with `fit = None`.
-    if task.get('constraint_model') and not task.get('constraint_effort') and not task.get('pinned_bundle'):
+    if task.get('constraint_model') and not task.get('constraint_effort') and not task.get('pinned_bundle') and not task.get('constraint_bundle'):
         elig_now = [c for c in candidates if not c['excluded']]
         if any(not c.get('_five_blind_msg') for c in elig_now):
+            shown_model = task.get('constraint_raw_model') or task['constraint_model']
             for c in elig_now:
                 msg = c.get('_five_blind_msg')
                 if msg:
@@ -89,7 +90,7 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
                         if not c['data_errors']:
                             c.pop('data_errors', None)
                     c['excluded'].append(
-                        f'data error: {msg} (excluded because another effort of {task["constraint_model"]} has trusted data)'
+                        f'data error: {msg} (excluded because another effort of {shown_model} has trusted data)'
                     )
     for c in candidates:
         if not c['excluded'] and c.get('_five_blind_msg'):
@@ -99,7 +100,8 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
     eligible = [c for c in candidates if not c['excluded']]
     pool_task = {**task, 'local_only': False, 'outbound_ok': None, 'file_transfer': False,
                  'needs_visual': False, 'needs_gui': False, 'wants_fast': False,
-                 'read_only_review': False, 'constraint_model': None, 'constraint_effort': None, 'pinned_bundle': None, 'user_named_bundle': None,
+                 'read_only_review': False, 'constraint_bundle': None, 'constraint_raw_model': None,
+                 'constraint_model': None, 'constraint_effort': None, 'pinned_bundle': None, 'user_named_bundle': None,
                  'metered_ok': True, 'metered_fallback': False, 'disable_fast': False, 'force_fast': False,
                  '_economy_pool': True}
     pool = [c for c in (candidate_eval.evaluate_bundle(b, pool_task, ctx) for b in pool_bundles.values()) if not c['excluded']]

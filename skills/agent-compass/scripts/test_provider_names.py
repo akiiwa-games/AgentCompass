@@ -458,5 +458,264 @@ class BundleModelsReadTheirRowAgain(unittest.TestCase):
                     self.assertEqual(account_fleet.row_key(bundle['model'], acc), want)
 
 
+class PinIdentityMatchesBundle(unittest.TestCase):
+    """Rule (account_fleet.pin_names_bundle, candidate_eval.model_pin_matches): a pin whose identity is bundle A's and
+    not bundle B's never selects B, whatever the order of the pool; every call site and neighbour reads the same rule."""
+
+    @classmethod
+    def setUpClass(cls):
+        from datetime import datetime, timezone
+        from router_test_support import profile, usage_windows
+        cls.at = datetime(2026, 11, 19, 3, 0, tzinfo=timezone.utc)
+        cls.prof = profile(primary_level=2, local_only=True, reason='pin identity rule')
+        cls.usage = usage_windows(cls.at, {
+            'codex': [('usage', 90, 100)],
+            'opencode': [('balance', 90, 100)],
+            'gw': [('balance', 90, 100)],
+        })
+
+    def subscription_fleet(self, account_bundles, extra_rows=None):
+        doc = copy.deepcopy(SHIPPED)
+        if extra_rows:
+            for prov, entries in extra_rows.items():
+                doc['provider_names']['rows'] = {**doc['provider_names']['rows'],
+                                                 prov: {**(doc['provider_names']['rows'].get(prov) or {}), **entries}}
+        doc['accounts'] = {}
+        for acct, (family, bundles, win) in account_bundles.items():
+            doc['accounts'][acct] = {
+                'billing': 'subscription', 'plan': 'pro', 'verified': True, 'family': family,
+                'windows': {win: {'hours': 168}}, 'capacity_usd': {win: 100.0},
+                'capacity_source': {win: {'evidence': 'test'}}, 'bundles': bundles,
+            }
+        return doc
+
+    def plan_pin(self, fleet, **constraints):
+        import allocator
+        task = {'objective': 'x', 'profile': self.prof, 'expected_hours': 0.5, 'disable_fast': True,
+                'constraints': constraints}
+        return allocator.plan(task, self.usage, self.at, accounts=copy.deepcopy(fleet), overrides=[],
+                              read_local_state=False)
+
+    def assert_pin_isolates(self, items, pin_constraints, mine_ids, other_ids, extra_rows=None):
+        """Across both pool orders, `pin_constraints` never leaves any bundle in `other_ids` eligible or selected, and
+        every bundle in `mine_ids` clears `explicit model constraint`."""
+        for ordered in (list(items), list(reversed(items))):
+            fleet = self.subscription_fleet({'codex': ('codex', dict(ordered), 'usage')}, extra_rows=extra_rows)
+            planned = self.plan_pin(fleet, **pin_constraints)
+            by_id = {c['id']: c for c in planned['ranking']}
+            for oid in other_ids:
+                self.assertIn('explicit model constraint', by_id[oid]['excluded'], (ordered, pin_constraints, oid))
+                self.assertNotEqual(planned['choice'], oid)
+            for mid in mine_ids:
+                self.assertNotIn('explicit model constraint', by_id[mid]['excluded'], (ordered, pin_constraints, mid))
+
+    def test_no_row_pairs_and_moved_names_never_cross_namespaces_in_any_pool_order(self):
+        """Defects 1 & 2 + retired pairs + uncalibrated provider/name pairs: no leaf-against-leaf or resolved-id-against-raw crossing."""
+        doc = copy.deepcopy(SHIPPED)
+        doc['provider_names']['rows'] = {**doc['provider_names']['rows'],
+                                         'acme': {'ministral-14b-2512': decl(None, status='retired')}}
+        doc['accounts'] = {'codex': {'billing': 'subscription', 'family': 'codex', 'windows': {'usage': {'hours': 168}}, 'bundles': {}}}
+        listed = [
+            'opencode/deepseek-v4-flash',
+            'deepseek/deepseek-v4-flash',
+            'deepseek-ai/DeepSeek-V4-Flash',
+            'deepseek-ai/DeepSeek-V4-Pro',
+            'deepseek-v4-pro',
+            'google/gemini-3.1-flash-lite-preview',
+            'openrouter/gemini-3.1-flash-lite-preview',
+            'acme/ministral-14b-2512',
+            'mistral/ministral-14b-2512',
+            'vendor-a/novel-unmeasured',
+            'vendor-b/novel-unmeasured',
+        ]
+        derived = auto_bundles.derive(doc, {'providers': {'codex': {'ok': True, 'type': 'paseo_provider',
+                                                                    'checked_at': NOW, 'models': listed}}}, NOW)['bundles']['codex']
+        # Also include a manual bundle whose raw `model` spelling is the moved name `deepseek-v4-pro` (reads `-0813`).
+        derived['manual_bare_pro'] = {'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-v4-pro',
+                                      'effort': 'high', 'draws': ['usage']}
+        id_of = lambda launch: next(bid for bid, b in derived.items() if b.get('launch_model') == launch)
+        items = list(derived.items())
+        extra = {'acme': {'ministral-14b-2512': decl(None, status='retired')}}
+
+        cases = [
+            ({'model': 'opencode/deepseek-v4-flash'}, [id_of('opencode/deepseek-v4-flash')],
+             [id_of('deepseek/deepseek-v4-flash'), id_of('deepseek-ai/DeepSeek-V4-Flash')]),
+            ({'model': 'OpenCode/DeepSeek-V4-Flash'}, [id_of('opencode/deepseek-v4-flash')],
+             [id_of('deepseek/deepseek-v4-flash'), id_of('deepseek-ai/DeepSeek-V4-Flash')]),
+            ({'model': 'opencode/deepseek-v4-flash:high'}, [id_of('opencode/deepseek-v4-flash')],
+             [id_of('deepseek/deepseek-v4-flash'), id_of('deepseek-ai/DeepSeek-V4-Flash')]),
+            ({'model': 'opencode/deepseek-v4-flash-high'}, [id_of('opencode/deepseek-v4-flash')],
+             [id_of('deepseek/deepseek-v4-flash'), id_of('deepseek-ai/DeepSeek-V4-Flash')]),
+            ({'model': 'deepseek-ai/DeepSeek-V4-Pro'}, [id_of('deepseek-ai/DeepSeek-V4-Pro')],
+             [id_of('deepseek-v4-pro'), 'manual_bare_pro']),
+            ({'model': 'DeepSeek-AI/DeepSeek-V4-Pro-high'}, [id_of('deepseek-ai/DeepSeek-V4-Pro')],
+             [id_of('deepseek-v4-pro'), 'manual_bare_pro']),
+            ({'model': 'deepseek-v4-pro'}, [id_of('deepseek-v4-pro'), 'manual_bare_pro'],
+             [id_of('deepseek-ai/DeepSeek-V4-Pro')]),
+            ({'model': 'google/gemini-3.1-flash-lite-preview'}, [id_of('google/gemini-3.1-flash-lite-preview')],
+             [id_of('openrouter/gemini-3.1-flash-lite-preview')]),
+            ({'model': 'acme/ministral-14b-2512'}, [id_of('acme/ministral-14b-2512')],
+             [id_of('mistral/ministral-14b-2512')]),
+            ({'model': 'mistral/ministral-14b-2512'}, [id_of('mistral/ministral-14b-2512')],
+             [id_of('acme/ministral-14b-2512')]),
+            ({'model': 'vendor-a/novel-unmeasured'}, [id_of('vendor-a/novel-unmeasured')],
+             [id_of('vendor-b/novel-unmeasured')]),
+        ]
+        for pin_constraints, mine, others in cases:
+            with self.subTest(pin=pin_constraints):
+                self.assert_pin_isolates(items, pin_constraints, mine, others, extra_rows=extra)
+
+    def test_unscored_named_pair_dispatches_unscored_even_beside_scored_same_leaf_bundle(self):
+        """candidate_ranking line 79 (R2-F7): a no-row pair pinned without --effort is not excluded by another provider's
+        scored bundle of the same leaf; it proceeds as unscored_named_dispatch."""
+        doc = copy.deepcopy(SHIPPED)
+        doc['accounts'] = {'codex': {'billing': 'subscription', 'family': 'codex', 'windows': {'usage': {'hours': 168}}, 'bundles': {}}}
+        derived = auto_bundles.derive(doc, {'providers': {'codex': {'ok': True, 'type': 'paseo_provider', 'checked_at': NOW,
+                                                                    'models': ['opencode/deepseek-v4-flash', 'deepseek-ai/DeepSeek-V4-Flash']}}},
+                                      NOW)['bundles']['codex']
+        for ordered in (list(derived.items()), list(reversed(list(derived.items())))):
+            fleet = self.subscription_fleet({'codex': ('codex', dict(ordered), 'usage')})
+            planned = self.plan_pin(fleet, model='opencode/deepseek-v4-flash')
+            self.assertEqual(planned['selected_bundle']['launch_model'], 'opencode/deepseek-v4-flash')
+            top = next(c for c in planned['ranking'] if c['id'] == planned['choice'])
+            self.assertTrue(top.get('unscored_named_dispatch'))
+
+    def test_bare_moved_name_on_endpoint_declaring_other_weights_reaches_its_bundle(self):
+        """A bare name pinned on an endpoint account (`_served`) reads as that endpoint serves it."""
+        doc = copy.deepcopy(SHIPPED)
+        doc['accounts'] = {'opencode': {'billing': 'subscription', 'family': 'codex', 'windows': {'balance': {'hours': 168}}, 'bundles': {}}}
+        derived = auto_bundles.derive(doc, {'providers': {'opencode': {'ok': True, 'type': 'openai_compatible', 'checked_at': NOW,
+                                                                       'models': [{'id': 'deepseek-v4-flash'}]}}},
+                                      NOW)['bundles']['opencode']
+        fleet = self.subscription_fleet({'opencode': ('codex', derived, 'balance')})
+        bid = next(iter(derived))
+        for pin, matches in (('deepseek-v4-flash', True), ('DeepSeek-V4-Flash:high', True),
+                             ('deepseek-v4-flash-high', True), ('opencode/deepseek-v4-flash', True),
+                             ('deepseek/deepseek-v4-flash', False), ('deepseek-v4.1-flash-1017', False)):
+            with self.subTest(pin=pin):
+                planned = self.plan_pin(fleet, model=pin)
+                self.assertEqual(planned['choice'] == bid, matches, (pin, planned['choice']))
+
+    def test_pin_by_bundle_id_never_selects_another_bundle_sharing_the_model_or_leaf(self):
+        """Pinning by bundle id (`constraints.bundle` or an `auto:...` id in `constraints.model`) matches only that id."""
+        fleet = self.subscription_fleet({
+            'codex': ('codex', {'gpt-6-astra': {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-6-astra',
+                                                'effort': 'high', 'draws': ['usage']}}, 'usage'),
+            'gw': ('codex', {'other_astra': {'provider': 'gw', 'harness': 'codex', 'model': 'gpt-6-astra',
+                                             'effort': 'high', 'draws': ['balance']}}, 'balance'),
+        })
+        planned = self.plan_pin(fleet, bundle='gpt-6-astra')
+        by_id = {c['id']: c for c in planned['ranking']}
+        self.assertEqual(planned['choice'], 'gpt-6-astra')
+        self.assertIn('explicit model constraint', by_id['other_astra']['excluded'])
+
+        auto_id = 'auto:gw:opencode:opencode/deepseek-v4-flash'
+        fleet2 = self.subscription_fleet({
+            'gw': ('opencode', {auto_id: {'provider': 'gw', 'harness': 'opencode', 'model': 'opencode/deepseek-v4-flash',
+                                          'draws': ['balance']}}, 'balance'),
+            'codex': ('codex', {'other_flash': {'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-v4.1-flash-1017',
+                                                'launch_model': 'deepseek/deepseek-v4-flash', 'effort': 'high', 'draws': ['usage']}}, 'usage'),
+        })
+        for constraints in ({'bundle': auto_id}, {'model': auto_id}):
+            with self.subTest(constraints=constraints):
+                planned2 = self.plan_pin(fleet2, **constraints)
+                by_id2 = {c['id']: c for c in planned2['ranking']}
+                self.assertEqual(planned2['choice'], auto_id)
+                self.assertIn('explicit model constraint', by_id2['other_flash']['excluded'])
+
+    def test_qualified_pin_matches_bare_bundle_and_case_and_efforts_and_all_seven_eval_sites(self):
+        """What leaf matching existed for: `openai/gpt-5.5` on bare `gpt-5.5`, case, `:effort` / `-effort`, family stays
+        itself, `named_effort_bundles`, `exact_pin`, `disabled_by_default`, `metered`, and rule-B `named`."""
+        bundles = {
+            'bare55': {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-5.5', 'effort': 'high',
+                       'efforts': ['medium', 'high'], 'disabled': True, 'disabled_by_default': True, 'draws': ['usage']},
+            'fam25': {'provider': 'codex', 'harness': 'codex', 'model': 'gemini-2.5-pro', 'effort': 'high', 'draws': ['usage']},
+            'oc_flash': {'provider': 'codex', 'harness': 'codex', 'model': 'opencode/deepseek-v4-flash',
+                         'launch_model': 'opencode/deepseek-v4-flash', 'effort': 'high', 'efforts': ['medium', 'high'],
+                         'disabled': True, 'disabled_by_default': True, 'draws': ['usage']},
+            'ds_flash': {'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-v4.1-flash-1017',
+                         'launch_model': 'deepseek/deepseek-v4-flash', 'effort': 'high', 'efforts': ['medium', 'high'],
+                         'disabled': True, 'disabled_by_default': True, 'draws': ['usage']},
+        }
+        fleet = self.subscription_fleet({'codex': ('codex', bundles, 'usage')})
+        fleet['accounts']['codex']['billing'] = 'metered'
+        fleet['dispatch_efforts']['codex']['gpt-5.5'] = ['medium', 'high']
+        for pin, want_id, want_effort in (
+            ('openai/gpt-5.5', 'bare55', 'high'),
+            ('OpenAI/GPT-5.5:medium', 'bare55@medium', 'medium'),
+            ('openai/gpt-5.5-medium', 'bare55@medium', 'medium'),
+            ('GEMINI-2.5-PRO', 'fam25', 'high'),
+            ('opencode/deepseek-v4-flash:medium', 'oc_flash@medium', 'medium'),
+        ):
+            with self.subTest(pin=pin):
+                planned = self.plan_pin(fleet, model=pin)
+                self.assertEqual((planned['choice'], planned['selected_bundle']['effort']), (want_id, want_effort))
+                # Other bundles stay excluded on disabled_by_default / metered / model constraint:
+                if want_id.startswith('oc_flash'):
+                    self.assertFalse([c for c in planned['ranking'] if c['id'].startswith('ds_flash') and not c['excluded']])
+
+    def test_named_pin_block_reports_what_the_user_named_when_only_moved_target_exists(self):
+        """allocator.named_pin_block: naming `deepseek-ai/DeepSeek-V4-Pro` on a pool with only bare `deepseek-v4-pro` (`-0813`)
+        blocks and names `deepseek-ai/DeepSeek-V4-Pro`, never `deepseek-v4-pro`."""
+        fleet = self.subscription_fleet({'codex': ('codex', {
+            'bare_pro': {'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-v4-pro-0813',
+                         'launch_model': 'deepseek-v4-pro', 'effort': 'high', 'draws': ['usage']},
+        }, 'usage')})
+        planned = self.plan_pin(fleet, model='deepseek-ai/DeepSeek-V4-Pro')
+        self.assertEqual(planned['choice'], 'none')
+        self.assertEqual(planned['decision']['blocked'], 'named_model_unavailable')
+        self.assertIn('deepseek-ai/DeepSeek-V4-Pro: no configured bundle offers it', planned['decision']['reason'])
+
+    def test_record_prepare_and_roll_conflict_preserve_identity_across_same_leaf_bundles(self):
+        """Neighbours: route_judge.record_constraint -> dispatch_registry.issue -> prepare, and roll.named_route_conflict."""
+        import argparse
+        import os
+        import tempfile
+        from unittest.mock import patch
+        import dispatch_registry
+        import live_models
+        import roll
+        import route_judge
+        import usage_reading
+
+        listed = ['opencode/deepseek-v4-flash', 'deepseek/deepseek-v4-flash',
+                  'deepseek-ai/DeepSeek-V4-Pro', 'deepseek-v4-pro']
+        doc = copy.deepcopy(SHIPPED)
+        doc['accounts'] = {'codex': {'billing': 'subscription', 'plan': 'pro', 'verified': True, 'family': 'codex',
+                                     'windows': {'usage': {'hours': 168}}, 'capacity_usd': {'usage': 100.0},
+                                     'capacity_source': {'usage': {'evidence': 'test'}}, 'bundles': {}}}
+        derived = auto_bundles.derive(doc, {'providers': {'codex': {'ok': True, 'type': 'paseo_provider', 'checked_at': NOW,
+                                                                    'models': listed}}}, NOW)
+        fleet = auto_bundles.merge_into(doc, derived)
+        fetch = lambda providers, **kw: {'ok': True, 'providers': {'codex': {'ok': True, 'models': [{'id': m} for m in listed]}}}
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as directory, \
+                patch.dict(os.environ, {'ROUTER_DISPATCH_DB': os.path.join(directory, 'db.sqlite3'),
+                                        'ROUTER_LEDGER': os.path.join(directory, 'ledger.jsonl')}), \
+                patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(fleet)), \
+                patch.object(usage_reading, 'usage_snapshot', return_value=copy.deepcopy(self.usage)), \
+                patch.object(live_models, 'fetch_from_paseo', side_effect=fetch):
+            for pin in ('opencode/deepseek-v4-flash', 'deepseek-ai/DeepSeek-V4-Pro'):
+                task = {'objective': 'x', 'profile': self.prof, 'expected_hours': 0.5,
+                        'parent_agent_id': 'parent-1', 'task_id': 't-' + pin}
+                args = argparse.Namespace(basis='user named it', account='codex', provider='codex', model=pin,
+                                          effort='high', input=None, usage_cache=None, accounts=None,
+                                          constraint='user_override', specialty=None, reason_category=None,
+                                          fast=False, parent_id='parent-1')
+                res = route_judge.record_constraint(args, task)
+                prep = dispatch_registry.prepare(res['decision_id'], task, {'title': 'x', 'initialPrompt': 'go'},
+                                                 copy.deepcopy(self.usage), accounts=copy.deepcopy(fleet), now=self.at)
+                self.assertEqual(prep['request']['provider'], f'codex/{pin}')
+
+        # roll.named_route_conflict on an endpoint worker and on a launcher worker:
+        ep_bundle = {'provider': 'opencode', 'account': 'opencode', 'model': 'opencode/deepseek-v4-flash',
+                     'launch_model': 'deepseek-v4-flash', 'effort': 'high', '_served': ['opencode']}
+        ns = lambda m, e=None: argparse.Namespace(provider='opencode', account='opencode', model=m, effort=e, fast=False)
+        self.assertIsNone(roll.named_route_conflict(ns('deepseek-v4-flash'), ep_bundle, fleet))
+        self.assertIsNone(roll.named_route_conflict(ns('opencode/deepseek-v4-flash:high'), ep_bundle, fleet))
+        self.assertIn('--model', roll.named_route_conflict(ns('deepseek/deepseek-v4-flash'), ep_bundle, fleet) or '')
+        self.assertIn('--model', roll.named_route_conflict(ns('deepseek-v4-flash-medium'), ep_bundle, fleet) or '')
+
+
 if __name__ == '__main__':
     unittest.main()

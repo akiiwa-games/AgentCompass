@@ -89,21 +89,24 @@ def recent_route_lock(task, records, now, bundle_id, window_seconds):
 def match_bundle(accounts, args, include_disabled=False):
     """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle.
 
-    A name that only a family guess could place matches its own rows, never the flagship's. With no effort named, the
-    model's default effort (else High) leads, not whichever row the document lists first."""
+    A name matches a bundle by identity (account_fleet.pin_names_bundle); a family guess matches its own rows, never the
+    flagship's. With no effort named, the model's default effort (else High) leads, not whichever row the document lists first."""
     import account_fleet
+    import model_resolution
     matches = []
     for bundle in account_fleet.bundles(accounts).values():
         if not include_disabled and bundle.get('disabled'):
             continue
-        same = account_fleet.row_key(bundle['model'], accounts) == account_fleet.row_key(args.model, accounts)
+        same = account_fleet.pin_names_bundle(args.model, bundle, accounts)
         if (bundle['account'] == args.account and bundle['provider'] == args.provider and same
                 and (args.effort is None or bundle.get('effort') == args.effort)):
             matches.append(bundle)
     if not matches:
         return None
-    default = account_fleet.model_spec(accounts, args.model).get('default_effort') or 'high'
-    return next((b for b in matches if b.get('effort') == default), matches[0])['id']
+    spelled = model_resolution.split_model_effort(args.model)[0].lower()
+    ordered = [b for b in matches if account_fleet.advertised_model(b).lower() == spelled] or matches
+    default = account_fleet.model_spec(accounts, ordered[0]['model']).get('default_effort') or 'high'
+    return next((b for b in ordered if b.get('effort') == default), ordered[0])['id']
 
 
 NAMED_ROW_FIELDS = ('modeId', 'draws', 'launch_model', 'harness', 'billing')
@@ -135,14 +138,14 @@ def record_constraint(args, task=None, classified=None):
     # `model:effort` and `model-effort` name an effort; --effort, when given too, wins.
     pin = copy.copy(args)
     pin.model, named_effort = model_resolution.split_model_effort(args.model)
-    resolved = account_fleet.resolve_model(pin.model, accounts)
+    served = account_fleet.account_providers(accounts, args.account) if '/' not in pin.model else ()
+    resolved = account_fleet.resolve_model(pin.model, accounts, served)
     pin.effort = args.effort or named_effort or resolved['effort']
     direct = resolved['source'] in model_resolution.DIRECT_SOURCES
-    own_model = account_fleet.row_key(pin.model, accounts)
 
     def rows_of_model():
         return [b for b in account_fleet.bundles(accounts).values() if b['account'] == args.account
-                and b['provider'] == args.provider and account_fleet.row_key(b['model'], accounts) == own_model]
+                and b['provider'] == args.provider and account_fleet.pin_names_bundle(args.model, b, accounts)]
     own_rows = rows_of_model()
     listed = None
     if not own_rows:
@@ -195,7 +198,9 @@ def record_constraint(args, task=None, classified=None):
         )
     # External runners dispatch directly after record; apply the same registered
     # window protection used by prepared dispatches.
-    quota_bundle = {**discovered, **inherited, 'account': args.account, 'provider': args.provider, 'model': pin.model,
+    base_b = account_fleet.bundles(accounts).get(chosen) or {}
+    row_model = base_b.get('model') or sibling.get('model') or account_fleet.stored_form(pin.model, accounts, args.account)
+    quota_bundle = {**discovered, **inherited, 'account': args.account, 'provider': args.provider, 'model': row_model,
                     'effort': pin.effort or discovered.get('effort')}
     if chosen:
         quota_bundle['id'] = chosen
@@ -203,11 +208,11 @@ def record_constraint(args, task=None, classified=None):
     _check_record_launch(args, pin, quota_bundle, accounts, usage, now)
     # A model the user names on a held account or model is the probe that can lift the hold: it goes, with a warning.
     retrying = provider_retry.reason(quota_bundle, provider_retry.active(now=now))
-    c_model = resolved['key'] if direct else account_fleet.model_leaf(pin.model)
+    c_model = account_fleet.canonical(row_model, accounts)
     fast_requested = bool(getattr(args, 'fast', False))
     if fast_requested:
-        fast_modes.validate(account_fleet.bundle_harness(discovered or {'provider': args.provider}, args.account),
-                                      c_model, account_fleet.model_spec(accounts, pin.model))
+        fast_modes.validate(account_fleet.bundle_harness(discovered or sibling or {'provider': args.provider}, args.account),
+                                      c_model, account_fleet.model_spec(accounts, row_model))
     warnings = []
     effort = pin.effort or discovered.get('effort')
     reviewed_task = task
@@ -216,8 +221,7 @@ def record_constraint(args, task=None, classified=None):
         task = {**classified['task'], **({'parent_agent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {})}
     if effort is None and not sibling:
         effort = auto_bundles.HARNESS_DEFAULT_EFFORT.get(account_fleet.bundle_harness({'provider': args.provider, 'model': c_model}, args.account))
-    base_b = account_fleet.bundles(accounts).get(chosen) or {}
-    bundle = {**inherited, **base_b, 'provider': args.provider, 'account': args.account, 'model': c_model,
+    bundle = {**inherited, **base_b, 'provider': args.provider, 'account': args.account, 'model': row_model,
               'effort': effort, **({'bundle_id': chosen} if chosen else {}), **({'fast': True} if fast_requested else {})}
     if not direct:
         bundle.setdefault('launch_model', pin.model)
@@ -272,7 +276,7 @@ def record_constraint(args, task=None, classified=None):
         result['_route'] = route
     if fast_requested:
         # A verified fast contract with no cited price launches (candidate_eval), carrying that data error.
-        fast_gap = fast_modes.price_gap(c_model, account_fleet.model_spec(overlaid_accounts, pin.model))
+        fast_gap = fast_modes.price_gap(c_model, account_fleet.model_spec(overlaid_accounts, row_model))
         if fast_gap:
             result['data_errors'] = [*result.get('data_errors', []), fast_gap]
             result['warnings'] = [*result.get('warnings', []), f"data error: {fast_gap}; launched fast because the user "

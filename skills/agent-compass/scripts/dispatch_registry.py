@@ -169,9 +169,9 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
     if bundle.get('fast'):
         fast_modes.validate(account_fleet.bundle_harness(bundle, bundle.get('account')), model,
                                       account_fleet.model_spec(accounts, model))
-    own_model = account_fleet.row_key(bundle.get('model') or '', accounts)
     siblings = [b for b in account_fleet.bundles(accounts).values()
-                if account_fleet.row_key(b.get('model') or '', accounts) == own_model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
+                if all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))
+                and account_fleet.pin_names_bundle(bundle.get('model') or '', b, accounts)]
     bid = bundle.get('bundle_id') or bundle.get('id')
     by_id = next((b for b in siblings if bid and b.get('id') == bid), None)
     carrier = next((b for b in siblings if bundle.get('pin_carrier') and b.get('id') == bundle['pin_carrier']), None)
@@ -203,7 +203,7 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
             contract | {s.get('effort') for s in siblings}))
     base = next((b for b in siblings if not b.get('disabled')), siblings[0])
     identity = {k: bundle.get(k) for k in ('provider', 'account', 'effort')}
-    identity['model'] = own_model
+    identity['model'] = account_fleet.row_key(base.get('model') or '', accounts)
     key = 'user_override_' + digest(identity)[:24]
     mode = base.get('modeId') or auto_bundles.HARNESS_MODE.get(base.get('harness'))
     return dict(base, id=key, bundle_id=key, effort=bundle['effort'], **({'modeId': mode} if mode else {}),

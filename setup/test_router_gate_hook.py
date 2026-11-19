@@ -2424,3 +2424,62 @@ def test_the_quota_verdict_is_decided_on_the_shipped_set_when_the_fetched_one_fa
     assert reason and 'codex:weekly' in reason
     assert public_data.read_state()['set_aside_version'] == 'abc123def456'
     public_data.release()
+
+
+def test_gate_matches_bundle_wire_launch_model_without_crossing_provider_identities(tmp_path, monkeypatch):
+    """Rule (router-internals Pins): a ledger row's bundle launches as its catalog launch_model (else model), for both
+    plan and user_override record rows; same-leaf or undated-row-id siblings never cross in resolve_target or match_route."""
+    real_accounts = gate.load_dispatch_accounts()
+    accounts = json.loads(json.dumps(real_accounts))
+    accounts["accounts"]["codex"]["bundles"].update({
+        "auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro": {
+            "provider": "codex", "model": "deepseek-v4-pro", "launch_model": "deepseek-ai/DeepSeek-V4-Pro", "effort": "high"},
+        "auto:codex:codex:deepseek-v4-pro-0813": {
+            "provider": "codex", "model": "deepseek-v4-pro-0813", "launch_model": "deepseek-v4-pro", "effort": "high"},
+        "auto:codex:codex:opencode/deepseek-v4-flash": {
+            "provider": "codex", "model": "opencode/deepseek-v4-flash", "launch_model": "opencode/deepseek-v4-flash", "effort": "high"},
+        "auto:codex:codex:deepseek-v4.1-flash-1017": {
+            "provider": "codex", "model": "deepseek-v4.1-flash-1017", "launch_model": "deepseek/deepseek-v4-flash", "effort": "high"},
+    })
+    monkeypatch.setattr(gate, "load_dispatch_accounts", lambda: accounts)
+
+    for wire_model, expected_id in (
+        ("deepseek-ai/DeepSeek-V4-Pro", "auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro"),
+        ("deepseek-v4-pro", "auto:codex:codex:deepseek-v4-pro-0813"),
+        ("opencode/deepseek-v4-flash", "auto:codex:codex:opencode/deepseek-v4-flash"),
+        ("deepseek/deepseek-v4-flash", "auto:codex:codex:deepseek-v4.1-flash-1017"),
+    ):
+        acct, found = gate.resolve_target({"provider": "codex", "model": wire_model, "effort": "high"}, accounts)
+        assert (acct, [b["bundle_id"] for b in found]) == ("codex", [expected_id])
+
+    pairs = (
+        ("auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro", "deepseek-v4-pro",
+         "deepseek-ai/DeepSeek-V4-Pro", ("deepseek-v4-pro", "deepseek-v4-pro-0813")),
+        ("auto:codex:codex:deepseek-v4-pro-0813", "deepseek-v4-pro-0813",
+         "deepseek-v4-pro", ("deepseek-ai/DeepSeek-V4-Pro", "deepseek-v4-pro-0813")),
+        ("auto:codex:codex:opencode/deepseek-v4-flash", "opencode/deepseek-v4-flash",
+         "opencode/deepseek-v4-flash", ("deepseek/deepseek-v4-flash", "deepseek-v4.1-flash-1017")),
+        ("auto:codex:codex:deepseek-v4.1-flash-1017", "deepseek-v4.1-flash-1017",
+         "deepseek/deepseek-v4-flash", ("opencode/deepseek-v4-flash", "deepseek-v4.1-flash-1017")),
+    )
+    ledger_path = tmp_path / "ledger.jsonl"
+    for bid, row_model, own_wire, rival_wires in pairs:
+        for stage, choice, extra in (
+            ("plan", bid, {}),
+            ("record", "constraint", {"constraint": "user_override"}),
+        ):
+            ledger_path.write_text(json.dumps({
+                "at": (T0 - dt.timedelta(minutes=1)).isoformat(), "stage": stage, "choice": choice, **extra,
+                "bundle": {"provider": "codex", "account": "codex", "model": row_model, "effort": "high", "bundle_id": bid},
+            }) + "\n", encoding="utf-8")
+            ok = gate.evaluate_payload({
+                "tool_name": "delegate_task",
+                "tool_input": {"provider": f"codex/{own_wire}", "settings": {"thinkingOptionId": "high"}},
+            }, ledger_path=ledger_path, now=T0)
+            assert ok == {}, (bid, stage, ok)
+            for wrong in rival_wires:
+                denied = gate.evaluate_payload({
+                    "tool_name": "delegate_task",
+                    "tool_input": {"provider": f"codex/{wrong}", "settings": {"thinkingOptionId": "high"}},
+                }, ledger_path=ledger_path, now=T0)
+                assert "model:" in denied.get("reason", ""), (bid, stage, wrong, denied)

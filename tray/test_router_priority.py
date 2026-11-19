@@ -176,11 +176,15 @@ class PriorityTests(unittest.TestCase):
     def test_a_target_stored_under_a_moved_name_reaches_the_bundle_of_its_row(self):
         """Rule (router_priority.targets): a target's model matches a bundle's as the same row (account_fleet.row_key),
         so a name whose maker moved it reaches the bundle that runs the row it means now."""
+        decl = lambda m: {'model': m, 'kind': 'vendor', 'url': 'https://example.com/x', 'as_of': '2026-11-19', 'statement': 's'}
         accounts = account_fleet.load_accounts()
+        accounts['models'] = {**accounts['models'], 'deepseek-v4-pro': {}, 'deepseek-v4-pro-0813': {}}
         accounts['provider_names'] = {**accounts['provider_names'], 'defaults': {
-            **accounts['provider_names']['defaults'], 'astra-moved-name': {
-                'model': 'gpt-6-astra', 'kind': 'vendor', 'url': 'https://example.com/x', 'as_of': '2026-11-19',
-                'statement': 's'}}}
+            **accounts['provider_names']['defaults'],
+            'deepseek-ai/deepseek-v4-pro': decl('deepseek-v4-pro'),
+            'deepseek-v4-pro': decl('deepseek-v4-pro-0813'),
+            'astra-moved-name': decl('gpt-6-astra'),
+        }}
         accounts['priority_targets'] = [{'account': 'codex', 'model': 'astra-moved-name', 'label': 'Moved'}]
         with patch.object(host_policy, 'load_policy', return_value=None):
             choices = priority.targets(accounts)
@@ -255,6 +259,57 @@ class PriorityTests(unittest.TestCase):
             messages = list(pool.map(lambda _: self.enable(), range(4)))
         self.assertEqual(len(self.rows()), 1)
         self.assertEqual(sum('已开启' in m for m in messages), 1)
+
+    def test_repository_id_and_moved_name_targets_keep_identity_selection_and_labels(self):
+        """Rule (router_priority + pin_names_bundle): a repository-id target matches only its own bundle beside the
+        moved bare spelling (-0813), stays selected and non-stacking across enable/snapshot, and a moved-name target
+        keeps its configured label in active entries."""
+        decl = lambda m: {'model': m, 'kind': 'vendor', 'url': 'https://example.com/x', 'as_of': '2026-11-19', 'statement': 's'}
+        accounts = account_fleet.load_accounts()
+        accounts['models'] = {**accounts['models'], 'deepseek-v4-pro': {}, 'deepseek-v4-pro-0813': {}}
+        accounts['provider_names'] = {**accounts['provider_names'], 'defaults': {
+            **accounts['provider_names']['defaults'],
+            'deepseek-ai/deepseek-v4-pro': decl('deepseek-v4-pro'),
+            'deepseek-v4-pro': decl('deepseek-v4-pro-0813'),
+            'astra-moved-name': decl('gpt-6-astra'),
+        }}
+        accounts['accounts']['codex']['bundles'] = {
+            **accounts['accounts']['codex']['bundles'],
+            'auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro': {
+                'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-ai/DeepSeek-V4-Pro',
+                'launch_model': 'deepseek-ai/DeepSeek-V4-Pro', 'effort': 'high', 'draws': ['usage']},
+            'auto:codex:codex:deepseek-v4-pro-0813': {
+                'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-v4-pro-0813',
+                'launch_model': 'deepseek-v4-pro', 'effort': 'high', 'draws': ['usage']},
+        }
+        accounts['priority_targets'] = [
+            {'account': 'codex', 'model': 'deepseek-ai/DeepSeek-V4-Pro', 'label': 'Repo V4 Pro'},
+            {'account': 'codex', 'model': 'deepseek-v4-pro', 'label': 'Moved V4 Pro'},
+            {'account': 'codex', 'model': 'astra-moved-name', 'label': 'Moved Astra'},
+        ]
+        with patch.object(account_fleet, 'load_accounts', return_value=accounts):
+            choices = priority.targets(accounts)
+            self.assertEqual([(t['model'], t['label']) for t in choices], [
+                ('deepseek-ai/DeepSeek-V4-Pro', 'Repo V4 Pro'),
+                ('deepseek-v4-pro-0813', 'Moved V4 Pro'),
+                ('gpt-6-astra', 'Moved Astra'),
+            ])
+            self.assertIn('已开启', priority.enable('codex', 'deepseek-ai/DeepSeek-V4-Pro', 'usage', 24, self.now))
+            self.assertEqual([r['model'] for r in self.rows()], ['deepseek-ai/DeepSeek-V4-Pro'])
+            view = priority.snapshot(self.now)
+            by_label = {t['label']: t['selected'] for t in view['targets']}
+            self.assertEqual(by_label, {'Repo V4 Pro': True, 'Moved V4 Pro': False, 'Moved Astra': False})
+            self.assertTrue(view['entries'][0]['label'].startswith('Repo V4 Pro · '))
+            self.assertIn('未叠加', priority.enable('codex', 'deepseek-ai/DeepSeek-V4-Pro', 'usage', 24, self.now))
+            self.assertIn('已更新', priority.enable('codex', 'deepseek-ai/DeepSeek-V4-Pro', 'usage', 6, self.now))
+            self.assertEqual(len(self.rows()), 1)
+
+            self.assertIn('已开启', priority.enable('codex', 'gpt-6-astra', 'usage', 12, self.now))
+            self.assertEqual([r['model'] for r in self.rows()], ['gpt-6-astra'])
+            moved_view = priority.snapshot(self.now)
+            self.assertTrue(moved_view['entries'][0]['label'].startswith('Moved Astra · '))
+            self.assertEqual({t['label']: t['selected'] for t in moved_view['targets']},
+                             {'Repo V4 Pro': False, 'Moved V4 Pro': False, 'Moved Astra': True})
 
 
 if __name__ == '__main__':

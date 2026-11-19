@@ -164,7 +164,7 @@ def canonical(model, accounts, providers=()):
     gives it."""
     resolved = resolve_in(model, accounts, providers)
     if resolved['source'] in PROVIDER_NAME_STATUSES:
-        return f"{resolved['provider']}/{model_leaf(model)}".lower()
+        return f"{resolved['provider']}/{resolved['bare']}".lower()
     return resolved['key'] or model
 
 
@@ -177,6 +177,23 @@ def account_providers(accounts, account):
     spec = ((accounts or {}).get('accounts') or {}).get(account) or {}
     return tuple(dict.fromkeys(p for b in (spec.get('bundles') or {}).values() if isinstance(b, dict)
                                for p in b.get('_served') or ()))
+
+
+def bundle_providers(bundle, accounts=None):
+    """The serving providers `bundle` reads a bare model name with: `_served` from endpoint derivation, else the
+    account's endpoint providers (none for a launcher's list or a manual bundle)."""
+    served = (bundle or {}).get('_served')
+    if served:
+        return tuple(dict.fromkeys(p for p in served if p))
+    if (bundle or {}).get('auto') is False:
+        return ()
+    account = (bundle or {}).get('account')
+    return account_providers(accounts, account) if accounts and account else ()
+
+
+def advertised_model(bundle):
+    """The model spelling `bundle` advertises on its provider (no `:effort` suffix)."""
+    return split_model_effort((bundle or {}).get('launch_model') or (bundle or {}).get('model') or '')[0]
 
 
 def stored_form(model, accounts, account):
@@ -214,20 +231,55 @@ def row_key(model, accounts, providers=()):
     never the same name elsewhere."""
     resolved = resolve_model(model, accounts, providers)
     if resolved['source'] in PROVIDER_NAME_STATUSES:
-        return f"{resolved['provider']}/{model_leaf(model)}".lower()
+        return f"{resolved['provider']}/{resolved['bare']}".lower()
     return resolved['key'] if resolved['source'] in DIRECT_SOURCES else model_leaf(model).lower()
+
+
+def pin_names_bundle(pin, bundle, accounts):
+    """Whether a user's model pin names `bundle`: the bundle's id, its advertised spelling as the user typed it, or the
+    user's name read as this bundle reads it (its serving providers for a bare name on an endpoint account; the prefix
+    for a launcher's `provider/name`; the default with no provider) having `bundle`'s own `row_key`."""
+    from auto_bundles import split_id
+    text = str(pin or '').strip()
+    if not text or not isinstance(bundle, dict):
+        return False
+    bid = bundle.get('id') or bundle.get('bundle_id')
+    if bid and text == bid:
+        return True
+    if split_id(text) is not None:
+        return False
+    spelled = split_model_effort(text)[0]
+    if bid and spelled == bid:
+        return True
+    advertised = advertised_model(bundle)
+    if advertised and spelled.lower() == advertised.lower():
+        return True
+    own = row_key(bundle.get('model') or '', accounts)
+    if not own:
+        return False
+    providers = bundle_providers(bundle, accounts) if '/' not in spelled else ()
+    resolved = resolve_model(text, accounts, providers)
+    if resolved['source'] not in DIRECT_SOURCES and resolved['source'] not in PROVIDER_NAME_STATUSES:
+        if '/' in spelled and '/' in advertised and not advertised.lower().endswith('/' + spelled.lower()):
+            if spelled.split('/', 1)[0].lower() != advertised.split('/', 1)[0].lower():
+                return False
+    return row_key(text, accounts, providers) == own
 
 
 def lookup_names(model, accounts=None):
     """Names a table may hold this model under: its resolved key, then its raw spellings. A family guess never answers
-    for the flagship it folded to, so its key is left out."""
+    for the flagship it folded to, so its key is left out; a name with no row on its provider never borrows the bare
+    name's row."""
     raw = split_model_effort(model)[0]
-    names = [raw, model_leaf(model)]
     if accounts:
         resolved = resolve_model(model, accounts)
+        if resolved['source'] in PROVIDER_NAME_STATUSES:
+            return list(dict.fromkeys(n for n in (f"{resolved['provider']}/{resolved['bare']}".lower(), raw) if n))
+        names = [raw, model_leaf(model)]
         if resolved['source'] in DIRECT_SOURCES:
             names.insert(0, resolved['key'])
-    return list(dict.fromkeys(name for name in names if name))
+        return list(dict.fromkeys(name for name in names if name))
+    return list(dict.fromkeys(name for name in (raw, model_leaf(model)) if name))
 
 
 def bundle_harness(bundle, account=None, bundle_id=None, *, family=None):
@@ -278,7 +330,7 @@ def bundles(accounts):
                               'model': model_name, 'effort': bundle.get('effort') or fixed,
                               **({'effort_fixed': True} if fixed else {}),
                               **{k: bundle[k] for k in ('modeId', 'disabled', 'disabled_by_default', 'efforts', 'launch_model',
-                                                        'discovery_unavailable', 'draws',
+                                                        'discovery_unavailable', 'draws', '_served',
                                                         'auto', 'billing', 'score_source', 'score_basis',
                                                         'availability', 'compatibility', 'compatibility_reason') if k in bundle}}
     return out

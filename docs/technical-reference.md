@@ -94,7 +94,7 @@ Hard gates run first: sign-in and credential health, host policy, modality (text
 `local_only`, a demanded category with no data, and per-window safety reserves net of in-flight work. A bundle that draws from
 several pools must clear every window; the tightest window binds. The same model on a different harness keeps its score
 (Codex vs Pi is only a tie-break step for read-heavy vs. edit-heavy work). Unknown capacity stays unknown: the account stays
-out of automatic routing until public data has it.
+out of automatic routing until public data has it. A named model matches a bundle by identity (`account_fleet.pin_names_bundle`: its bundle id, its advertised spelling as typed, or the bundle's `row_key` when the name is read as that bundle reads it, never by leaf name or by comparing a resolved row id against a raw spelling; [Pins](../skills/agent-compass/references/router-internals.md#model-names-efforts-and-pins)).
 A metered USD account is not one of those resetting windows. The account, the spend reading, the balance, and the leftover-field cleanup are defined in [Metered USD](#metered-usd).
 Panel membership is declared (owner, 2026-11-18): `calibration_panel.members` in `accounts.json`, a dated maintainer list only
 the owner changes (definition: [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). A new row, even one
