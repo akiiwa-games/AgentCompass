@@ -2428,32 +2428,41 @@ def test_the_quota_verdict_is_decided_on_the_shipped_set_when_the_fetched_one_fa
 
 def test_gate_matches_bundle_wire_launch_model_without_crossing_provider_identities(tmp_path, monkeypatch):
     """Rule (router-internals Pins): a ledger row's bundle launches as its catalog launch_model (else model), for both
-    plan and user_override record rows; same-leaf or undated-row-id siblings never cross in resolve_target or match_route."""
+    plan and user_override record rows; resolve_target applies account_fleet.pin_matching_bundles over the constrained pool."""
     real_accounts = gate.load_dispatch_accounts()
     accounts = json.loads(json.dumps(real_accounts))
     accounts["accounts"]["codex"]["bundles"].update({
         "auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro": {
-            "provider": "codex", "model": "deepseek-v4-pro", "launch_model": "deepseek-ai/DeepSeek-V4-Pro", "effort": "high"},
+            "provider": "codex", "model": "deepseek-ai/DeepSeek-V4-Pro", "launch_model": "deepseek-ai/DeepSeek-V4-Pro", "effort": "high"},
         "auto:codex:codex:deepseek-v4-pro-0813": {
             "provider": "codex", "model": "deepseek-v4-pro-0813", "launch_model": "deepseek-v4-pro", "effort": "high"},
         "auto:codex:codex:opencode/deepseek-v4-flash": {
             "provider": "codex", "model": "opencode/deepseek-v4-flash", "launch_model": "opencode/deepseek-v4-flash", "effort": "high"},
         "auto:codex:codex:deepseek-v4.1-flash-1017": {
             "provider": "codex", "model": "deepseek-v4.1-flash-1017", "launch_model": "deepseek/deepseek-v4-flash", "effort": "high"},
+        "auto:codex:codex:vendor-b/novel-unmeasured": {
+            "provider": "codex", "model": "vendor-b/novel-unmeasured", "launch_model": "vendor-b/novel-unmeasured", "effort": "high"},
+        "auto:codex:codex:vendor-a/novel-unmeasured": {
+            "provider": "codex", "model": "vendor-a/novel-unmeasured", "launch_model": "vendor-a/novel-unmeasured", "effort": "high"},
+        "auto:codex:codex:codex/novel-gpt-9": {
+            "provider": "codex", "model": "codex/novel-gpt-9", "launch_model": "codex/novel-gpt-9", "effort": "high"},
     })
     monkeypatch.setattr(gate, "load_dispatch_accounts", lambda: accounts)
 
     for wire_model, expected_id in (
         ("deepseek-ai/DeepSeek-V4-Pro", "auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro"),
+        ("DeepSeek-AI/DeepSeek-V4-Pro", "auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro"),
         ("deepseek-v4-pro", "auto:codex:codex:deepseek-v4-pro-0813"),
         ("opencode/deepseek-v4-flash", "auto:codex:codex:opencode/deepseek-v4-flash"),
         ("deepseek/deepseek-v4-flash", "auto:codex:codex:deepseek-v4.1-flash-1017"),
+        ("vendor-a/novel-unmeasured", "auto:codex:codex:vendor-a/novel-unmeasured"),
+        ("openai/novel-gpt-9", "auto:codex:codex:codex/novel-gpt-9"),
     ):
         acct, found = gate.resolve_target({"provider": "codex", "model": wire_model, "effort": "high"}, accounts)
         assert (acct, [b["bundle_id"] for b in found]) == ("codex", [expected_id])
 
     pairs = (
-        ("auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro", "deepseek-v4-pro",
+        ("auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro", "deepseek-ai/DeepSeek-V4-Pro",
          "deepseek-ai/DeepSeek-V4-Pro", ("deepseek-v4-pro", "deepseek-v4-pro-0813")),
         ("auto:codex:codex:deepseek-v4-pro-0813", "deepseek-v4-pro-0813",
          "deepseek-v4-pro", ("deepseek-ai/DeepSeek-V4-Pro", "deepseek-v4-pro-0813")),

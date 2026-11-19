@@ -1151,14 +1151,20 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
     candidates = []
     if target.get("bundle_id") and table:
         candidates = router_owner("account_fleet", "bundle_rows")(accounts, target["bundle_id"])
-    elif not target.get("bundle_id"):
-        for name, spec in table.items():
-            for bundle_id, bundle in (spec.get("bundles") or {}).items():
-                if bool(target.get("model")) and account in (None, name) and (
-                        same_launch_value("model", target["model"], bundle_launch_model(bundle, name))
-                        and target.get("effort") in (None, bundle.get("effort"))
-                        and (not provider or (bundle.get("provider") == "pi") == (provider == "pi"))):
-                    candidates.append(dict(bundle, account=name, bundle_id=bundle_id))
+    elif not target.get("bundle_id") and bool(target.get("model")):
+        pool = [
+            dict(bundle, account=name, id=bundle_id, bundle_id=bundle_id,
+                 launch_model=bundle_launch_model(bundle, name) or "")
+            for name, spec in table.items()
+            if account in (None, name)
+            for bundle_id, bundle in (spec.get("bundles") or {}).items()
+            if target.get("effort") in (None, bundle.get("effort"))
+            and (not provider or (bundle.get("provider") == "pi") == (provider == "pi"))
+        ]
+        if target["model"] in CLAUDE_MODEL_FAMILIES:
+            candidates = [c for c in pool if same_launch_value("model", target["model"], c.get("launch_model"))]
+        else:
+            candidates = router_owner("account_fleet", "pin_matching_bundles")(target["model"], pool, accounts)
     if not account and len({c["account"] for c in candidates}) == 1:
         account = candidates[0]["account"]
     return account, [c for c in candidates if c["account"] == account]

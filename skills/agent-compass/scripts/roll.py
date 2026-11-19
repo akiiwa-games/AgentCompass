@@ -216,7 +216,7 @@ def named_route_conflict(args, bundle, accounts=None):
     conflicting = [flag for flag, differs in (
         ('--provider', args.provider and args.provider != bundle.get('provider')),
         ('--account', args.account and args.account != bundle.get('account')),
-        ('--model', model and not account_fleet.pin_names_bundle(args.model, bundle, accounts)),
+        ('--model', model and not account_fleet.pin_matching_bundles(args.model, (bundle,), accounts)),
         ('--effort' if args.effort else '--model', effort and effort != bundle.get('effort')),
         ('--fast', getattr(args, 'fast', False) and not bundle.get('fast'))) if differs]
     if not conflicting:

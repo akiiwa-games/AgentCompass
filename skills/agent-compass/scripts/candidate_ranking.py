@@ -67,6 +67,7 @@ def rank(task, usage, policy, accounts, capabilities, now, unavailable=(), overr
            ) if read_local_state else {'accounts': {}}}
     pool_bundles = dict(ctx['bundles'])         # the catalog, before a task-named effort adds bundles to it
     ctx['bundles'].update(candidate_eval.named_effort_bundles(task, ctx))
+    ctx['_pin_matched_ids'] = candidate_eval.pin_matched_ids(task, ctx)
     five = ctx['five_axis'] = axis_scores.five_axis_config(policy)
     demand = axis_scores.five_axis_demand(task)
     panel_targets = accounts['_five_axis']['targets']

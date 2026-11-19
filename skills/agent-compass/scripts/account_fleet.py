@@ -235,35 +235,87 @@ def row_key(model, accounts, providers=()):
     return resolved['key'] if resolved['source'] in DIRECT_SOURCES else model_leaf(model).lower()
 
 
-def pin_names_bundle(pin, bundle, accounts):
-    """Whether a user's model pin names `bundle`: the bundle's id, its advertised spelling as the user typed it, or the
-    user's name read as this bundle reads it (its serving providers for a bare name on an endpoint account; the prefix
-    for a launcher's `provider/name`; the default with no provider) having `bundle`'s own `row_key`."""
+def _pin_spellings(pin, accounts, providers=()):
+    """(`(base_or_raw_spellings)`, `named_effort`) for a model pin or advertised model spelling, case-folded."""
+    text = str(pin or '').strip()
+    spelled, colon_effort = split_model_effort(text)
+    if not spelled:
+        return (), None
+    low = spelled.lower()
+    if colon_effort:
+        eff = colon_effort.strip().lower()
+        return (low, f'{low}-{eff}'), eff
+    dash = resolve_model(spelled, accounts, providers)['effort']
+    if dash and low.endswith('-' + dash):
+        return (low, low[:-len(dash) - 1]), dash
+    return (low,), None
+
+
+def _advertises_pin(bundle, text, spelled, accounts):
+    adv = advertised_model(bundle)
+    if not adv:
+        return False
+    b_prov = bundle_providers(bundle, accounts)
+    pin_forms, pin_eff = _pin_spellings(text, accounts, b_prov if '/' not in spelled else ())
+    if not pin_forms:
+        return False
+    if adv.lower() in pin_forms:
+        return True
+    if pin_eff is None:
+        adv_forms, _ = _pin_spellings(adv, accounts, b_prov if '/' not in adv else ())
+        return any(form in pin_forms for form in adv_forms)
+    return False
+
+
+def pin_matches_identity(pin, bundle, accounts):
+    """Whether `pin` names `bundle` by bundle id or by row identity as `bundle` reads names (no prefix test)."""
     from auto_bundles import split_id
     text = str(pin or '').strip()
     if not text or not isinstance(bundle, dict):
         return False
     bid = bundle.get('id') or bundle.get('bundle_id')
-    if bid and text == bid:
+    spelled = split_model_effort(text)[0]
+    if bid and (text == bid or spelled == bid):
         return True
     if split_id(text) is not None:
         return False
-    spelled = split_model_effort(text)[0]
-    if bid and spelled == bid:
-        return True
-    advertised = advertised_model(bundle)
-    if advertised and spelled.lower() == advertised.lower():
-        return True
     own = row_key(bundle.get('model') or '', accounts)
     if not own:
         return False
     providers = bundle_providers(bundle, accounts) if '/' not in spelled else ()
-    resolved = resolve_model(text, accounts, providers)
-    if resolved['source'] not in DIRECT_SOURCES and resolved['source'] not in PROVIDER_NAME_STATUSES:
-        if '/' in spelled and '/' in advertised and not advertised.lower().endswith('/' + spelled.lower()):
-            if spelled.split('/', 1)[0].lower() != advertised.split('/', 1)[0].lower():
-                return False
     return row_key(text, accounts, providers) == own
+
+
+def pin_matching_bundles(pin, pool, accounts):
+    """Subset of `pool` (order kept) named by `pin`: if `pin` is an auto-bundle id, only that id; else if any bundle in
+    `pool` matches by bundle id or advertises the spelling the user typed (effort dropped, case-insensitive), those
+    bundles and no other; otherwise every bundle in `pool` matching by row identity as that bundle reads names."""
+    from auto_bundles import split_id
+    text = str(pin or '').strip()
+    items = [b for b in (pool or ()) if isinstance(b, dict)]
+    if not text or not items:
+        return []
+    if split_id(text) is not None:
+        return [b for b in items if (b.get('id') or b.get('bundle_id')) == text]
+    spelled = split_model_effort(text)[0]
+    exact = [
+        b for b in items
+        if ((bid := (b.get('id') or b.get('bundle_id'))) and (text == bid or spelled == bid))
+        or _advertises_pin(b, text, spelled, accounts)
+    ]
+    if exact:
+        return exact
+    return [b for b in items if pin_matches_identity(text, b, accounts)]
+
+
+def pin_names_bundle(pin, bundle, accounts, pool=None):
+    """Whether `pin` names `bundle` in `pool` (or on its own when `pool` is omitted): reads `pin_matching_bundles`."""
+    if not isinstance(bundle, dict):
+        return False
+    items = (bundle,) if pool is None else pool
+    matched = pin_matching_bundles(pin, items, accounts)
+    bid = bundle.get('id') or bundle.get('bundle_id')
+    return any((m is bundle) or (bid and (m.get('id') or m.get('bundle_id')) == bid) for m in matched)
 
 
 def lookup_names(model, accounts=None):

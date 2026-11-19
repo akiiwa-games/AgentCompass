@@ -160,8 +160,8 @@ def targets(accounts):
     pairs = []
     for target in configured:
         account, wanted = target.get('account'), target.get('model')
-        matched = next((b for b in candidates if b['account'] == account and wanted
-                        and account_fleet.pin_names_bundle(wanted, b, accounts)), None)
+        pool = [b for b in candidates if b['account'] == account]
+        matched = next(iter(account_fleet.pin_matching_bundles(wanted, pool, accounts)), None) if wanted else None
         model = matched['model'] if matched is not None else None
         if model is not None and (account, model) not in [(a, m) for a, m, _ in pairs]:
             pairs.append((account, model, target.get('label')))

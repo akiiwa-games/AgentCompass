@@ -89,24 +89,22 @@ def recent_route_lock(task, records, now, bundle_id, window_seconds):
 def match_bundle(accounts, args, include_disabled=False):
     """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle.
 
-    A name matches a bundle by identity (account_fleet.pin_names_bundle); a family guess matches its own rows, never the
-    flagship's. With no effort named, the model's default effort (else High) leads, not whichever row the document lists first."""
+    A name matches over the account/provider/effort pool (account_fleet.pin_matching_bundles): exact advertised spellings
+    first, else identity; a family guess matches its own rows, never the flagship's. With no effort named, the model's
+    default effort (else High) leads, not whichever row the document lists first."""
     import account_fleet
-    import model_resolution
-    matches = []
-    for bundle in account_fleet.bundles(accounts).values():
-        if not include_disabled and bundle.get('disabled'):
-            continue
-        same = account_fleet.pin_names_bundle(args.model, bundle, accounts)
-        if (bundle['account'] == args.account and bundle['provider'] == args.provider and same
-                and (args.effort is None or bundle.get('effort') == args.effort)):
-            matches.append(bundle)
+    pool = [
+        bundle for bundle in account_fleet.bundles(accounts).values()
+        if (include_disabled or not bundle.get('disabled'))
+        and bundle['account'] == args.account
+        and bundle['provider'] == args.provider
+        and (args.effort is None or bundle.get('effort') == args.effort)
+    ]
+    matches = account_fleet.pin_matching_bundles(args.model, pool, accounts)
     if not matches:
         return None
-    spelled = model_resolution.split_model_effort(args.model)[0].lower()
-    ordered = [b for b in matches if account_fleet.advertised_model(b).lower() == spelled] or matches
-    default = account_fleet.model_spec(accounts, ordered[0]['model']).get('default_effort') or 'high'
-    return next((b for b in ordered if b.get('effort') == default), ordered[0])['id']
+    default = account_fleet.model_spec(accounts, matches[0]['model']).get('default_effort') or 'high'
+    return next((b for b in matches if b.get('effort') == default), matches[0])['id']
 
 
 NAMED_ROW_FIELDS = ('modeId', 'draws', 'launch_model', 'harness', 'billing')
@@ -144,8 +142,9 @@ def record_constraint(args, task=None, classified=None):
     direct = resolved['source'] in model_resolution.DIRECT_SOURCES
 
     def rows_of_model():
-        return [b for b in account_fleet.bundles(accounts).values() if b['account'] == args.account
-                and b['provider'] == args.provider and account_fleet.pin_names_bundle(args.model, b, accounts)]
+        pool = [b for b in account_fleet.bundles(accounts).values()
+                if b['account'] == args.account and b['provider'] == args.provider]
+        return account_fleet.pin_matching_bundles(args.model, pool, accounts)
     own_rows = rows_of_model()
     listed = None
     if not own_rows:
