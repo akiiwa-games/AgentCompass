@@ -25,6 +25,12 @@ maker does not offer for chat) is reported, not gated, in every catalog. The rul
   facet (creativity, coding execution and faithfulness, aesthetics design, tool_operation responsiveness and image
   recognition) and Time/Task has a value at that effort, maintainer scores applied (axis_scores.five_axis_overlay without
   local state); an effort off the scale is read where the data declares (axis_scores.reading_effort: `default` reads High);
+  and the name is that row's weights on that provider: a pair is not covered by a row the provider's own listing identifies
+  as other weights (owner, 2026-11-19), where the models.dev names file gives (provider, name) a canonical id and the row
+  has one (a canonical id the file lists whose last segment is the row's id) and they differ, unless the name is an alias
+  citing the maker's own statement that it is that row (as for the alias check below). Such a pair is a known gap of kind
+  `other_weights_on_provider`, its entry carrying both canonical ids (`identity`); the data has no provider-scoped identity
+  yet;
 - the same for every (row, effort) the shipped launch table offers (catalog id `shipped-launch-table`: each
   `dispatch_efforts[harness][row]` entry, and each account bundle at its effort, an effort-less bundle at `default`);
 - every alias of the shipped `accounts.json` names one model (round 5 review A): where models.dev (the snapshot Magpie
@@ -64,7 +70,7 @@ OUT_OF_SCOPE_SCHEMA = 'agent-compass.gateway-out-of-scope/2'
 CATALOGS = Path(__file__).resolve().parent / 'gateway-catalogs'
 KNOWN_GAPS = Path(__file__).resolve().parent / 'gateway-coverage-known-gaps.json'
 NAMES = Path(__file__).resolve().parent / 'models-dev-names.json'
-NAMES_SCHEMA = 'agent-compass.models-dev-names/1'
+NAMES_SCHEMA = 'agent-compass.models-dev-names/2'
 OUT_OF_SCOPE = Path(__file__).resolve().parent / 'gateway-out-of-scope.json'
 REFERENCES = ROOT / 'skills' / 'agent-compass' / 'references'
 LAUNCH_TABLE = 'shipped-launch-table'
@@ -77,7 +83,10 @@ ROW_KEYS = {'provider', 'model', 'efforts'}
 GAP_KEYS = {'catalog', 'model', 'efforts', 'row', 'kind', 'detail'}
 # The closed set of missing inputs a known gap may name (round 5 review G); the gaps file states for each what closes it.
 GAP_KINDS = ('no_public_measurement', 'no_fleet_reading_at_effort', 'no_time_reading_in_series', 'no_relative_statement',
-             'anchor_reading_moved')
+             'anchor_reading_moved', 'other_weights_on_provider')
+# An entry of kind other_weights_on_provider also carries `identity`: {provider, listed (the provider's canonical id for
+# the name), row (the row's canonical ids)}.
+IDENTITY_KIND = 'other_weights_on_provider'
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 FACETS = (('creativity', 'creative_writing'), ('coding', 'execution'), ('coding', 'faithfulness'),
           ('aesthetics', 'design'), ('tool_operation', 'responsiveness'), ('tool_operation', 'image_recognition'))
@@ -191,9 +200,24 @@ def ungated_reason(doc, row, out_of_scope):
     return None
 
 
-def pairs(accounts, catalogs, five_axis, public_scores, out_of_scope=None):
-    """[{catalog, provider, model, effort, resolves_to, source, missing, ungated}] for every offered pair of every catalog;
-    `ungated` is None for a gated pair, else why it is only reported."""
+def identity_conflict(names, accounts, provider, model, row):
+    """{provider, listed, row} when the models.dev names file identifies `model` on `provider` as other weights than `row`
+    (both have a canonical id and they differ, and `model` is not an alias citing the maker's statement), else None."""
+    listings = (names or {}).get('names') or {}
+    listed = sorted({x[1] for x in listings.get(model) or () if x[0] == provider and x[1]})
+    own = sorted({x[1] for x in listings.get(row) or () if x[1] and x[1].rsplit('/', 1)[-1] == row})
+    if not listed or not own or set(listed) & set(own):
+        return None
+    source = (((accounts.get('alias_sources') or {}).get('rows') or {}).get(model) or {})
+    if (accounts.get('aliases') or {}).get(model) == row and source.get('kind') == 'vendor':
+        return None
+    return {'provider': provider, 'listed': listed, 'row': own}
+
+
+def pairs(accounts, catalogs, five_axis, public_scores, out_of_scope=None, names=None):
+    """[{catalog, provider, model, effort, resolves_to, source, missing, ungated, identity}] for every offered pair of every
+    catalog; `ungated` is None for a gated pair, else why it is only reported; `identity` the conflict of identity_conflict
+    (`names`: the models.dev names file), which leaves the pair uncovered."""
     overlay = axis_scores.five_axis_overlay(accounts, data=five_axis, read_local_state=False, public_scores=public_scores)
     rows = {k: v for k, v in (accounts.get('models') or {}).items() if isinstance(v, dict)}
     families = model_resolution.family_patterns(accounts)
@@ -211,6 +235,7 @@ def pairs(accounts, catalogs, five_axis, public_scores, out_of_scope=None):
             elif efforts is None:                          # a Magpie row without efforts: the model's one configuration
                 efforts = ['default']
             ungated = None if cid == LAUNCH_TABLE else ungated_reason(doc, row, out_of_scope or {})
+            identity = identity_conflict(names, accounts, row['provider'], row['model'], key) if key else None
             for effort in efforts:
                 if key is None:
                     missing = [f"no row ({found['source']})"]
@@ -218,8 +243,12 @@ def pairs(accounts, catalogs, five_axis, public_scores, out_of_scope=None):
                     missing = [f"not in dispatch_efforts[{row['provider']}]"]
                 else:
                     missing = missing_at(overlay['models'].get(key), effort)
+                if identity:
+                    missing = [f"other weights on {identity['provider']}: {', '.join(identity['listed'])} "
+                               f"(row {key}: {', '.join(identity['row'])})", *missing]
                 out.append({'catalog': cid, 'provider': row['provider'], 'model': row['model'], 'effort': effort,
-                            'resolves_to': key, 'source': found['source'], 'missing': missing, 'ungated': ungated})
+                            'resolves_to': key, 'source': found['source'], 'missing': missing, 'ungated': ungated,
+                            'identity': identity})
     return out
 
 
@@ -240,6 +269,13 @@ def check(found, gaps, out_of_scope=None):
         if uncovered and k not in listed:
             violations.append(f"uncovered, not on the known-gap list: {k[0]} {k[1]} @ {k[2]} "
                               f"({uncovered[0]['provider']}: {', '.join(uncovered[0]['missing'])})")
+        conflicts = [p['identity'] for p in gated if p.get('identity')]
+        if k in listed and conflicts and (listed[k]['kind'] != IDENTITY_KIND or listed[k].get('identity') not in conflicts):
+            violations.append(f"other weights on a provider, not listed as {IDENTITY_KIND} with that identity: "
+                              f"{k[0]} {k[1]} @ {k[2]} ({conflicts[0]})")
+        elif k in listed and listed[k]['kind'] == IDENTITY_KIND and not conflicts:
+            violations.append(f"listed as {IDENTITY_KIND} but no provider's listing identifies other weights: "
+                              f"{k[0]} {k[1]} @ {k[2]}")
         if k in listed and not uncovered:
             violations.append(f"on the known-gap list but {'covered' if gated else 'not gated'}: {k[0]} {k[1]} @ {k[2]}")
     for k in sorted(set(listed) - set(offered)):
@@ -330,7 +366,8 @@ def load_gaps(path=KNOWN_GAPS):
                        for v in kinds.values())):
         raise ValueError(f'{path}: kinds must state {{missing, closes_when}} for exactly {", ".join(GAP_KINDS)}')
     for e in gaps['entries']:
-        if (not isinstance(e, dict) or set(e) != GAP_KEYS or not e['efforts'] or e['kind'] not in GAP_KINDS
+        keys = GAP_KEYS | ({'identity'} if isinstance(e, dict) and e.get('kind') == IDENTITY_KIND else set())
+        if (not isinstance(e, dict) or set(e) != keys or not e['efforts'] or e['kind'] not in GAP_KINDS
                 or not str(e['detail'] or '').strip()):
             raise ValueError(f'{path}: every entry is {{{", ".join(sorted(GAP_KEYS))}}} with efforts, a kind of '
                              f'{", ".join(GAP_KINDS)} and its detail: {e!r}'[:400])
@@ -343,11 +380,12 @@ def run(references=REFERENCES, catalogs=CATALOGS, known_gaps=KNOWN_GAPS, out_of_
     out_of_scope = load_out_of_scope(out_of_scope_path)
     accounts = read_json(references / 'accounts.json')
     saved = load_catalogs(catalogs)
+    listed_names = read_json(names)
     found = pairs(accounts, {**saved, LAUNCH_TABLE: {'provider_kind': 'harness', 'rows': launch_rows(accounts)}},
                   read_json(references / 'five-axis-scores.json'),
-                  user_scores.load_public(references / 'user-scores.json'), out_of_scope)
+                  user_scores.load_public(references / 'user-scores.json'), out_of_scope, listed_names)
     violations, counts = check(found, gaps, out_of_scope)
-    violations += alias_violations(accounts, read_json(names), saved)
+    violations += alias_violations(accounts, listed_names, saved)
     return found, violations, counts
 
 

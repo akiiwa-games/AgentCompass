@@ -34,10 +34,12 @@ the snapshot's listings of the same id (then of the same bare id) agree on, else
 maker (`gate.makers`) is declared in `audit/magpie-makers.json`, each entry with the Magpie source line it reads (a vendor
 preset's `Name`, the accounts' lists); a relay, local or remote preset has none.
 
-It also writes `audit/models-dev-names.json` (schema `agent-compass.models-dev-names/1`): for every alias name and alias
-target of the shipped `accounts.json`, each listing of that exact id in the bundled snapshot as `[provider, canonical id,
-input price, output price]` (the canonical id is the listing's `canonical_model_id`, else `<provider>/<id>` on a provider
-whose id is a maker namespace, else null). audit/gateway_coverage.py checks the aliases against it.
+It also writes `audit/models-dev-names.json` (schema `agent-compass.models-dev-names/2`): for every alias name and alias
+target and every row of the shipped `accounts.json`, and every model name a saved gateway catalog or the shipped launch
+table offers, each listing of that exact id in the bundled snapshot as `[provider, canonical id, input price, output
+price]` (the canonical id is the listing's `canonical_model_id`, else `<provider>/<id>` on a provider whose id is a maker
+namespace, else null). audit/gateway_coverage.py checks the aliases against it, and whether an offered name is, on its
+provider, the weights of the row it resolves to.
 """
 from __future__ import annotations
 
@@ -52,7 +54,7 @@ from pathlib import Path
 
 SCHEMA = 'agent-compass.gateway-catalog/3'
 MAKERS_SCHEMA = 'agent-compass.magpie-makers/1'
-NAMES_SCHEMA = 'agent-compass.models-dev-names/1'
+NAMES_SCHEMA = 'agent-compass.models-dev-names/2'
 OUT_DIR = Path(__file__).resolve().parent / 'gateway-catalogs'
 MAKERS = Path(__file__).resolve().parent / 'magpie-makers.json'
 NAMES = Path(__file__).resolve().parent / 'models-dev-names.json'
@@ -429,11 +431,12 @@ def build(src, version, commit, makers_path=MAKERS):
     }
 
 
-def names(src, version, commit, accounts):
-    """The models.dev listings of every alias name and target of `accounts` (see the module text)."""
+def names(src, version, commit, accounts, offered=()):
+    """The models.dev listings of every alias name and target and every row of `accounts`, and of every `offered` model
+    name (see the module text)."""
     snap = Snapshot(src, Rules(src))
     aliases = accounts.get('aliases') or {}
-    out = {n: [] for n in sorted(set(aliases) | set(aliases.values()))}
+    out = {n: [] for n in sorted(set(aliases) | set(aliases.values()) | set(accounts.get('models') or {}) | set(offered))}
     for pid in sorted(snap.all):
         for mid, m in sorted(snap.all[pid].get('models', {}).items()):
             if mid in out:
@@ -445,9 +448,11 @@ def names(src, version, commit, accounts):
     return {'schema': NAMES_SCHEMA,
             'source': {'repository': 'https://github.com/yetone/magpie', 'version': version, 'commit': commit,
                        'models_dev_bundled_at': re.sub(r'\s+', ' ', bundled)},
-            'statement': ("every listing of each alias name and alias target of accounts.json in the models.dev snapshot "
-                          "Magpie bundles, as [provider, canonical id, input price, output price]; built by "
-                          "audit/magpie_catalog.py, read by audit/gateway_coverage.py's alias check"),
+            'statement': ("every listing, in the models.dev snapshot Magpie bundles, of each alias name and alias target "
+                          "and each row of accounts.json and each model name a saved gateway catalog or the shipped launch "
+                          "table offers, as [provider, canonical id, input price, output price]; built by "
+                          "audit/magpie_catalog.py, read by audit/gateway_coverage.py (the alias check and the identity of "
+                          "an offered name on its provider)"),
             'names': out}
 
 
@@ -486,9 +491,15 @@ def main(argv=None):
     doc = build(src, version, commit, args.makers)
     out = Path(args.out) if args.out else OUT_DIR / f'magpie-{version}.json'
     out.write_text(dumps(doc), encoding='utf-8', newline='\n')
-    listed = names(src, version, commit, json.loads(ACCOUNTS.read_text(encoding='utf-8')))
+    import gateway_coverage     # the shipped launch table's rows, read as the coverage check reads them
+    accounts = json.loads(ACCOUNTS.read_text(encoding='utf-8'))
+    offered = {r['model'] for r in doc['rows']} | {r['model'] for r in gateway_coverage.launch_rows(accounts)}
+    for path in sorted(OUT_DIR.glob('*.json')):
+        if path.resolve() != out.resolve():
+            offered |= {r['model'] for r in json.loads(path.read_text(encoding='utf-8')).get('rows') or ()}
+    listed = names(src, version, commit, accounts, offered)
     Path(args.names_out).write_text(dumps_names(listed), encoding='utf-8', newline='\n')
-    print(f"{args.names_out}: {len(listed['names'])} alias names and targets, "
+    print(f"{args.names_out}: {len(listed['names'])} names (aliases, targets, rows and offered names), "
           f"{sum(1 for v in listed['names'].values() if v)} listed by models.dev")
     print(f"{out}: {len(doc['rows'])} rows, {sum(1 for r in doc['rows'] if r['efforts'])} with efforts, "
           f"{sum(1 for r in doc['rows'] if r['maker'] and doc['gate']['makers'].get(r['provider']) == r['maker'])} gated")

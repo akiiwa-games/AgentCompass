@@ -184,6 +184,51 @@ class CheckRuleTests(unittest.TestCase):
         shipped = {**acc, 'models': {**acc['models'], 'short': {}}}
         self.assertIn('shorthand short is a shipped row', gc.alias_violations(shipped, listed, catalogs))
 
+    def test_a_name_the_providers_own_listing_identifies_as_other_weights_is_not_covered_by_the_row(self):
+        """Rule (owner, 2026-11-19): a pair is not covered by a row the provider's own listing identifies as other weights
+        (the names file gives (provider, name) a canonical id, the row has one, they differ), unless the name is an alias
+        citing the maker's statement; it is a known gap of kind other_weights_on_provider carrying both ids. Every pair,
+        not one name."""
+        accounts = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        five = gc.read_json(gc.REFERENCES / 'five-axis-scores.json')
+        scores = {'schema_version': 3, 'scores': {}}
+        row = next(m for m in accounts['models']
+                   if not gc.missing_at(gc.axis_scores.five_axis_overlay(accounts, data=five, read_local_state=False,
+                                                                         public_scores=scores)['models'].get(m), 'high'))
+        names = {'schema': gc.NAMES_SCHEMA, 'names': {row: [['own', f'mk/{row}', 1, 2], ['relay', f'mk/{row}', 1, 2]]}}
+        catalogs = {'c': {'provider_kind': 'magpie_preset', 'rows': [{'provider': p, 'model': row, 'efforts': ['high']}
+                                                                    for p in ('own', 'relay', 'unlisted')]}}
+
+        def found(listing, acc=accounts):
+            return {p['provider']: p for p in gc.pairs(acc, catalogs, five, scores, names=listing)}
+        same = found(names)
+        self.assertEqual({k: (v['missing'], v['identity']) for k, v in same.items()},
+                         {k: ([], None) for k in ('own', 'relay', 'unlisted')})
+        other = {**names, 'names': {row: [['own', f'mk/{row}-0813', 1, 2], ['relay', f'mk/{row}', 1, 2]]}}
+        moved = found(other)
+        self.assertEqual(moved['own']['identity'], {'provider': 'own', 'listed': [f'mk/{row}-0813'], 'row': [f'mk/{row}']})
+        self.assertIn('other weights on own', moved['own']['missing'][0])
+        self.assertEqual((moved['relay']['missing'], moved['unlisted']['missing']), ([], []))
+        entry = {'catalog': 'c', 'model': row, 'efforts': ['high'], 'row': row, 'detail': 'd'}
+        identity = moved['own']['identity']
+        listed = list(moved.values())
+        self.assertEqual(gc.check(listed, {'entries': [{**entry, 'kind': gc.IDENTITY_KIND, 'identity': identity}]})[0], [])
+        self.assertIn('not listed as other_weights_on_provider',
+                      gc.check(listed, {'entries': [{**entry, 'kind': gc.GAP_KINDS[0]}]})[0][0])
+        self.assertIn('uncovered, not on the known-gap list', gc.check(listed, {'entries': []})[0][0])
+        stale = gc.check(list(same.values()), {'entries': [{**entry, 'kind': gc.IDENTITY_KIND, 'identity': identity}]})[0]
+        self.assertTrue(any("no provider's listing identifies other weights" in v for v in stale), stale)
+        # The maker's own statement that an alias is that row outweighs the provider's separate canonical id.
+        alias = {**accounts, 'aliases': {**accounts['aliases'], 'nick': row},
+                 'alias_sources': {**accounts['alias_sources'], 'rows': {**accounts['alias_sources']['rows'],
+                                                                         'nick': {'kind': 'vendor'}}}}
+        nick = {'schema': gc.NAMES_SCHEMA, 'names': {**other['names'], 'nick': [['own', 'mk/nick-dated', 1, 2]]}}
+        catalogs['c']['rows'] = [{'provider': 'own', 'model': 'nick', 'efforts': ['high']}]
+        self.assertIsNone(found(nick, alias)['own']['identity'])
+        community = {**alias, 'alias_sources': {**alias['alias_sources'], 'rows': {**alias['alias_sources']['rows'],
+                                                                                   'nick': {'kind': 'community'}}}}
+        self.assertEqual(found(nick, community)['own']['identity']['listed'], ['mk/nick-dated'])
+
     def test_a_row_without_efforts_takes_the_launch_table_at_a_harness_and_default_at_a_magpie_preset(self):
         """Rule (`pairs`): a harness row that lists no efforts is offered at the launch table's efforts, and is a gap off
         it; a Magpie row that lists none is the model's one configuration, offered at `default`."""

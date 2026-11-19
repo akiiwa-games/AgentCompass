@@ -70,7 +70,9 @@ entry that is covered or ungated fails too; each entry names its missing input a
 that enumerates the callable model ids, the file's `id_lists`; a moving `-latest` pointer; special-purpose; each with the
 maker's dated notice), is a printed report, never a failure. The same check refuses an alias whose two names the saved
 models.dev listings tell apart (`audit/models-dev-names.json`, written by `audit/magpie_catalog.py --names-out`; rule in
-[`calibration/README.md`](../skills/agent-compass/calibration/README.md), To add a model). `quota_cost` is the quota economy: the part of the
+[`calibration/README.md`](../skills/agent-compass/calibration/README.md), To add a model), and does not count as covered a pair
+whose provider's own listing gives the name another canonical id than the row it resolves to (known-gap kind
+`other_weights_on_provider`, both ids on the entry; the data has no identity per provider yet). `quota_cost` is the quota economy: the part of the
 task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. The window's
 price comes from a value ladder built over the demand grid `quota_economy.FIVE_AXIS_DEMAND_GRID` (levels 0–3 on the thinking
 categories), and its level-3 points read the fit with the ceiling as cap. So a model that raises a ceiling moves quota prices
