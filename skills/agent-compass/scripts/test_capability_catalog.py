@@ -15,6 +15,7 @@ class CatalogueTests(unittest.TestCase):
         self.accounts = {
             'models': {'custom-model': {}},
             'capability_policy': {'routes': {'custom-route': {'implies': {'visual': True}}}},
+            'provider_names': {'statement': 'synthetic: nothing declared', 'defaults': {}, 'rows': {}},
         }
         self.five = {'models': {'custom-model': {
             'tier': {'value': 3.8, 'method': 'arena_overall'}, 'usd_per_hour': {'value': 12.5},
