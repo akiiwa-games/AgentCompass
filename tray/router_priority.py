@@ -74,7 +74,7 @@ def model_label(model, accounts=None, account=None):
                            t.get('model') == model or (key is not None and t.get('account') == account and t.get('model')
                                                        and account_fleet.stored_model(t['model'], accounts, account) == key))),
                       None)
-    return configured or _display()[1](model)
+    return configured or _display()[1](key or model)
 
 
 def window_label(wid, spec):
@@ -142,16 +142,19 @@ def _candidates(accounts):
     return rows
 
 
-def _weekly_window(accounts, account, model):
+def _weekly_window(accounts, account, model, bundle=None):
+    import account_fleet
     import quota_pools
+    resolved = model if (isinstance(model, str) and model in (accounts.get('models') or {})) else (
+        account_fleet.stored_model(model, accounts, account) if model else None)
     windows = [(wid, spec) for wid, spec, _ in quota_pools.applicable_windows(
-        accounts['accounts'][account], model, {}, accounts=accounts) if spec.get('hours', 0) >= 24]
+        accounts['accounts'][account], resolved, {}, bundle=bundle, accounts=accounts) if spec.get('hours', 0) >= 24]
     return max(windows, key=lambda w: w[1]['hours'])[0] if windows else None
 
 
 def targets(accounts):
-    """The configured targets with an enabled bundle. A target's model matches a bundle through the one pin-identity rule
-    (account_fleet.pin_names_bundle), so a target stored under a name whose maker moved it to a newer dated snapshot
+    """The configured targets with an enabled bundle. A target's model matches a bundle over that account's pool
+    (account_fleet.pin_matching_bundles), so a target stored under a name whose maker moved it to a newer dated snapshot
     reaches the bundle that now runs that snapshot, and one stored under a name the account's provider declares reaches
     that provider's bundle without crossing onto another provider's."""
     import account_fleet
@@ -163,11 +166,11 @@ def targets(accounts):
         pool = [b for b in candidates if b['account'] == account]
         matched = next(iter(account_fleet.pin_matching_bundles(wanted, pool, accounts)), None) if wanted else None
         model = matched['model'] if matched is not None else None
-        if model is not None and (account, model) not in [(a, m) for a, m, _ in pairs]:
-            pairs.append((account, model, target.get('label')))
+        if model is not None and (account, model) not in [(a, m) for a, m, _, _ in pairs]:
+            pairs.append((account, model, target.get('label'), matched))
     result = []
-    for account, model, label in pairs:
-        wid = _weekly_window(accounts, account, model)
+    for account, model, label, matched in pairs:
+        wid = _weekly_window(accounts, account, model, bundle=matched)
         if wid:
             result.append({'account': account, 'model': model, 'window': wid,
                            'label': label or model_label(model, accounts, account)})

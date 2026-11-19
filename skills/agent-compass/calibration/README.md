@@ -352,10 +352,11 @@ source like an alias (`kind`, `url`, `as_of`, `statement`); no name or date rule
 - **A provider's listing names a different dated snapshot** (models.dev's `canonical_model_id` for that provider is
   neither the default's row nor the moved name's own undated id): `rows["<provider>"]["<name>"]` with the row it is
   (`kind: "community"` citing models.dev, or the maker), or `"model": null, "status": "other_weights"` when no row exists
-  (OpenCode's and Vivgrid's `deepseek-v4-flash`, listed as `deepseek-v4-flash-0731`; Tencent TokenHub's `hy3-preview`,
-  listed as `tencent/hy3-preview`). Where a host's provider id differs from the models.dev catalog id it serves (Magpie
-  preset `opencode-zen` serving `opencode`, `tencent-cloud` serving `tencent-tokenhub`), `provider_names.providers` maps
-  the host id to those catalog ids (`audit/magpie_catalog.py` `preset_providers`), never duplicating `rows`. A listing that gives the moved name's
+  (OpenCode's and Vivgrid's `deepseek-v4-flash`, listed as `deepseek-v4-flash-0731`; providers listing `hy3-preview` as
+  `tencent/hy3-preview`). Where Magpie's preset id differs from the models.dev catalog id(s) it serves (`opencode-zen`
+  serving `opencode`, `tencent-cloud` serving `tencent-tokenhub`), `provider_names.host_providers.magpie` maps that
+  Magpie preset id to those catalog ids (`audit/magpie_catalog.py` `preset_providers`), applied only to Magpie preset
+  ids and never duplicating `rows`. A listing that gives the moved name's
   own undated id only repeats the name: it gets no declaration and reads the default. Where a listing spells the row's
   model another way, `canonical_id` gives that spelling (Mistral lists `ministral-14b-2512` as
   `mistral/ministral-3-14b-instruct-2512`).

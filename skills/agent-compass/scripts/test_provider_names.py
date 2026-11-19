@@ -912,6 +912,65 @@ class PinIdentityMatchesBundle(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'provider_names'):
                 reference_provenance.validate_accounts_provenance(broken)
 
+    def test_row_key_functions_never_re_resolve_row_ids_that_are_also_declared_names(self):
+        """Rule (R2-F4: account_fleet.row_spec, quota_pools.applicable_windows, quota_overrides.override_depleted):
+        over every row id in `accounts.models` whose id is also a declared name in `provider_names`, a function that
+        takes a resolved row key answers for that row and never reads it again as the moved name."""
+        import quota_overrides
+        import quota_pools
+
+        pn = SHIPPED['provider_names']
+        declared_names = set(pn.get('defaults') or {}) | {
+            name for entries in (pn.get('rows') or {}).values() for name in (entries or {})
+        }
+        declared_row_ids = sorted(rid for rid in SHIPPED['models'] if rid.lower() in declared_names)
+        moved_row_ids = [rid for rid in declared_row_ids if model_resolution.resolve_in(rid, SHIPPED)['key'] != rid]
+        self.assertTrue(moved_row_ids)
+
+        for rid in declared_row_ids:
+            with self.subTest(row_id=rid):
+                self.assertIs(account_fleet.row_spec(SHIPPED, rid), SHIPPED['models'][rid])
+                spec = {
+                    'billing': 'subscription',
+                    'windows': {
+                        'w_own': {'hours': 168, 'models': [rid]},
+                        'w_other': {'hours': 168, 'models_except': [rid]},
+                    },
+                }
+                acc = {**SHIPPED, 'accounts': {'codex': spec}}
+                bound = [wid for wid, _, _ in quota_pools.applicable_windows(spec, rid, {}, accounts=acc)]
+                self.assertEqual(bound, ['w_own'])
+
+        # Windowless override on repository id `deepseek-ai/DeepSeek-V4-Pro` (`stored_model == 'deepseek-v4-pro'`)
+        # checks `w_repo` (80% remaining -> healthy) and never `w_moved` (`deepseek-v4-pro-0813`, 2% remaining -> depleted):
+        split_spec = {
+            'billing': 'subscription',
+            'windows': {
+                'w_repo': {'hours': 168, 'models_except': ['deepseek-v4-pro-0813']},
+                'w_moved': {'hours': 168, 'models': ['deepseek-v4-pro-0813']},
+            },
+        }
+        split_acc = {**SHIPPED, 'accounts': {'codex': split_spec}}
+        split_usage = {
+            'accounts': {
+                'codex': {
+                    'account': 'codex', 'status': 'fresh', 'stale': False, 'available': True,
+                    'fetched_at': self.at.isoformat(),
+                    'windows': [
+                        {'id': 'w_repo', 'used_pct': 20.0, 'resets_at': '2026-11-25T00:00:00+00:00'},
+                        {'id': 'w_moved', 'used_pct': 98.0, 'resets_at': '2026-11-25T00:00:00+00:00'},
+                    ],
+                },
+            },
+        }
+        stored_repo = account_fleet.stored_form('deepseek-ai/DeepSeek-V4-Pro', split_acc, 'codex')
+        stored_moved = account_fleet.stored_form('deepseek-v4-pro', split_acc, 'codex')
+        self.assertEqual((stored_repo, stored_moved), ('deepseek-ai/DeepSeek-V4-Pro', 'deepseek-v4-pro-0813'))
+        self.assertFalse(quota_overrides.override_depleted(
+            {'account': 'codex', 'model': stored_repo, 'boost': 0.1}, split_usage, split_acc))
+        self.assertTrue(quota_overrides.override_depleted(
+            {'account': 'codex', 'model': stored_moved, 'boost': 0.1}, split_usage, split_acc))
+
 
 if __name__ == '__main__':
     unittest.main()

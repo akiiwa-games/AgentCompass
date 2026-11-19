@@ -311,6 +311,38 @@ class PriorityTests(unittest.TestCase):
             self.assertEqual({t['label']: t['selected'] for t in moved_view['targets']},
                              {'Repo V4 Pro': False, 'Moved V4 Pro': False, 'Moved Astra': True})
 
+            # Without explicit `draws`, model-scoped weekly windows bind `deepseek-ai/DeepSeek-V4-Pro` to `w_repo`
+            # (`deepseek-v4-pro`) and `deepseek-v4-pro` to `w_moved` (`deepseek-v4-pro-0813`) without double-resolving:
+            split_accounts = json.loads(json.dumps(accounts))
+            split_accounts['accounts']['codex']['windows'] = {
+                'w_repo': {'hours': 168, 'models_except': ['deepseek-v4-pro-0813']},
+                'w_moved': {'hours': 168, 'models': ['deepseek-v4-pro-0813']},
+            }
+            for bid in ('auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro', 'auto:codex:codex:deepseek-v4-pro-0813'):
+                split_accounts['accounts']['codex']['bundles'][bid].pop('draws', None)
+            self.assertEqual([(t['label'], t['window']) for t in priority.targets(split_accounts)[:2]],
+                             [('Repo V4 Pro', 'w_repo'), ('Moved V4 Pro', 'w_moved')])
+
+            import router_data
+            rows = [{
+                'account': 'codex',
+                'providers': ['codex'],
+                'models': [
+                    {'model': 'deepseek-v4-pro', 'model_label': 'Repo V4 Pro', 'enabled': True, 'partial': False,
+                     'bundle_ids': ['b1'], 'bundle_refs': [], 'tags': [], 'auto': True, 'auto_stale': False,
+                     'efforts_on': ['high'], 'efforts_off': []},
+                    {'model': 'deepseek-v4-pro-0813', 'model_label': 'Moved V4 Pro', 'enabled': True, 'partial': False,
+                     'bundle_ids': ['b2'], 'bundle_refs': [], 'tags': [], 'auto': True, 'auto_stale': False,
+                     'efforts_on': ['high'], 'efforts_off': []},
+                ],
+            }]
+            decorated = router_data.decorate_model_rows(rows, {'providers': {
+                'codex': {'ok': True, 'type': 'paseo_provider', 'checked_at': 100.0,
+                          'models': ['deepseek-ai/DeepSeek-V4-Pro']}
+            }}, split_accounts)
+            by_model = {g['model']: g['availability'] for g in decorated[0]['models']}
+            self.assertEqual(by_model, {'deepseek-v4-pro': 'detected', 'deepseek-v4-pro-0813': 'missing'})
+
 
 if __name__ == '__main__':
     unittest.main()

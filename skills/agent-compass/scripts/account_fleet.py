@@ -220,6 +220,13 @@ def model_spec(accounts, model, providers=()):
     return value if isinstance(value, dict) else {}
 
 
+def row_spec(accounts, key):
+    """The model row for an already-resolved row key (`canonical`, `row_key`, `stored_model`), without reading `key`
+    again as a model name."""
+    value = ((accounts or {}).get('models') or {}).get(key) if isinstance(key, str) and key else None
+    return value if isinstance(value, dict) else {}
+
+
 def model_leaf(model):
     return split_model_effort(model)[0].rsplit('/', 1)[-1]
 

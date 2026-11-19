@@ -154,8 +154,11 @@ def applicable_windows(account_spec, model, usage_row, bundle=None, accounts=Non
     configured = (account_spec or {}).get('windows') or {}
     windows = {**configured, **{wid: {} for wid in observed if wid not in configured}}
     if bundle is None:
-        ids = bundle_pools({'account': '_billing', 'model': model or ''},
-                           {**(accounts or {}), 'accounts': {'_billing': account_spec}}, observed)
+        if isinstance(model, str) and model and model in ((accounts or {}).get('models') or {}):
+            ids = [wid for wid, wspec in windows.items() if window_scope.binds_any((model,), wspec, observed.get(wid))]
+        else:
+            ids = bundle_pools({'account': '_billing', 'model': model or ''},
+                               {**(accounts or {}), 'accounts': {'_billing': account_spec}}, observed)
     else:
         if accounts is None:
             acct = bundle.get('account') if isinstance(bundle, dict) and isinstance(bundle.get('account'), str) else '_billing'
@@ -317,7 +320,7 @@ def launch_blockers(bundle, accounts, usage, now, latched=None, records=None):
             margin = policy.get('safety_margin_pct', 5)
             if state['known'] and state['remaining'] <= margin and (
                     quota_economy.capacity_usd(spec, wid) is None
-                    or quota_economy.unit_rate(spec, wid, model, account_fleet.model_spec(accounts, model))):
+                    or quota_economy.unit_rate(spec, wid, model, account_fleet.row_spec(accounts, model))):
                 if state['reset_hours'] == float('inf'):
                     reason = (f"{wid} has {state['remaining']:.1f}% left, within the {margin:g}% safety margin "
                               "(this balance does not reset)")

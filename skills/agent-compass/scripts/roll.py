@@ -935,7 +935,7 @@ def provider_definition(provider, bundle=None):
                 import account_fleet
                 accounts_doc = account_fleet.load_accounts()
                 canon = account_fleet.canonical((bundle or {}).get('model'), accounts_doc)
-                api_family = str(account_fleet.model_spec(accounts_doc, canon).get('api_family') or '').strip().lower()
+                api_family = str(account_fleet.row_spec(accounts_doc, canon).get('api_family') or '').strip().lower()
                 if api_family in CLI_RUNS:
                     family = api_family
             if not family:
@@ -1011,8 +1011,8 @@ def cli(args, out, bundle, text):
         from fast_modes import validate
         import account_fleet
         accounts = account_fleet.load_accounts()
-        model = account_fleet.canonical(bundle['model'], accounts)
-        validate(family, model, account_fleet.model_spec(accounts, model))
+        c_model = account_fleet.canonical(bundle['model'], accounts)
+        validate(family, c_model, account_fleet.row_spec(accounts, c_model))
     executable, flags = CLI_RUNS[family]
     env = {k: v for k, v in subscription_cli.subscription_env().items() if not k.startswith(HOST_SESSION_ENV)}
     env.update(provider_env)
