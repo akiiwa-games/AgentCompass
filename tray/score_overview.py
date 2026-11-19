@@ -119,7 +119,7 @@ def category_overview(data: dict, models: dict) -> list[dict]:
     anchor = data.get("anchor") or {}
     targets = anchor.get("targets") or {}
     links = data.get("links") or {}
-    ages = data.get("source_ages") or {}
+    ages = data.get("source_dates") or {}
     out = []
     for key, label in CATEGORIES:
         facets = []
@@ -241,6 +241,12 @@ def evidence_lines(cell: dict) -> list[str]:
         lines.append(_tr("手动 {0}：等级 {1} · {2}").format(source_label(manual.get("kind")), manual.get("level"),
                                                      manual.get("as_of") or "—")
                      + (f" · {manual['note']}" if manual.get("note") else ""))
+        floor = cell.get("operating_point_floor")      # the overlay's record: both inputs and which binds, per effort
+        if isinstance(floor, dict) and EFFORT in (floor.get("binds_by_effort") or {}):
+            lines.append(_tr("操作点下限：{0} 在 {1} 的格子 {2:+.3f}，手动分 {3:+.3f}，{4}").format(
+                floor.get("base_model"), floor.get("at_effort"), floor["base_by_effort"][EFFORT],
+                floor["score_by_effort"][EFFORT],
+                _tr("下限生效") if floor["binds_by_effort"][EFFORT] == "base" else _tr("手动分生效")))
         ref = manual.get("data_reference")
         if isinstance(ref, dict) and _number(ref.get("level")) and ref.get("status") not in ("missing", None):
             srcs = ", ".join(ref.get("sources") or ())

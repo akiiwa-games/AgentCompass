@@ -198,7 +198,7 @@ def test_partial_category_shows_existing_facet_level_and_marks_missing_facet_in_
 def test_category_overview_lists_boards_dates_targets_and_continuity():
     data = {'anchor': {'targets': TARGETS},
             'links': {'coding.execution': {'boards': ['aa.a', 'arena.b'], 'panel_n': 12}},
-            'source_ages': {'aa.a': {'as_of': '2026-11-09'}, 'arena.b': {'as_of': '2026-10-16'}}}
+            'source_dates': {'aa.a': {'as_of': '2026-11-09'}, 'arena.b': {'as_of': '2026-10-16'}}}
     blocks = {b['key']: b for b in so.category_overview(data, {'m': model(-2.0), 'n': model(-1.0, 'estimated')})}
     execution = blocks['coding']['facets'][0]
     assert execution['boards'] == ['aa.a', 'arena.b']
@@ -391,3 +391,23 @@ def test_live_economy_windows_reports_active_priced_windows(monkeypatch):
     assert {'claude/seven_day', 'codex/usage'} <= labels
     text = so.economy_text(windows)
     assert 'claude/seven_day' in text and 'codex/usage' in text
+
+
+def test_the_hover_of_a_score_its_operating_point_bounds_names_both_inputs_and_which_binds():
+    """Rule (round 9 item 1): where a declared operating point bounds a maintainer score, the hover reads the overlay's
+    record (`operating_point_floor`) at the overview effort: the base row and its effort, both values, which binds."""
+    def cell(binds):
+        return {"value": 0.5, "by_effort": {"high": 0.5}, "status": "maintainer",
+                "manual": {"kind": "maintainer", "level": 3.1, "as_of": "2026-11-11"},
+                "operating_point_floor": {"base_model": "astra", "at_effort": "xhigh", "base_by_effort": {"high": 0.5},
+                                          "score_by_effort": {"high": 0.1 if binds == "base" else 0.9},
+                                          "binds_by_effort": {"high": binds}}}
+    prev = i18n.get_language()
+    try:
+        i18n.set_language("en")
+        base, score = so.evidence_lines(cell("base")), so.evidence_lines(cell("score"))
+    finally:
+        i18n.set_language(prev)
+    assert "Operating-point floor: astra at xhigh, cell +0.500; manual score +0.100; the floor binds" in base
+    assert "Operating-point floor: astra at xhigh, cell +0.500; manual score +0.900; the manual score binds" in score
+    assert not any("Operating-point" in line for line in so.evidence_lines({**cell("base"), "operating_point_floor": None}))

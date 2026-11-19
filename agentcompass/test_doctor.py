@@ -35,6 +35,37 @@ class DoctorTests(unittest.TestCase):
         self.assertNotIn("credential_key", text)
         self.assertNotIn("api_key", text)
 
+    def test_stored_choices_that_fold_into_one_bundle_and_disagree_are_listed_once(self):
+        """Round 8 item 1: two stored ids whose names resolve now to one model (k3 and kimi-k3, an alias) and disagree
+        leave its bundles disabled; doctor lists the set of ids once, with every bundle it leaves out (both advertised
+        names fold into it), and rewrites nothing."""
+        import json
+        from unittest import mock
+        import auto_bundles
+        old, new = "auto:acct:codex:k3@high", "auto:acct:codex:kimi-k3@high"
+        with TemporaryDirectory() as directory:
+            home = Path(directory)
+            state = home / ".agent-compass"
+            state.mkdir()
+            stored = json.dumps({"schema_version": 2, "accounts": {"acct": {"bundles": {
+                old: {"disabled": True}, new: {"disabled": False}}}}})
+            (state / "accounts-override.json").write_text(stored, encoding="utf-8")
+
+            def discovered(accounts, inventory, **_):
+                accounts["accounts"]["acct"] = {"billing": "metered", "family": "codex", "windows": {}, "bundles": {}}
+                cat = {"providers": {"acct": {"ok": True, "checked_at": 2e9, "models": ["k3", "k3-256k"]}}}
+                accounts["accounts"]["acct"]["bundles"] = auto_bundles.derive(accounts, cat, 2e9)["bundles"]["acct"]
+
+            with mock.patch.object(provider_inventory, "discover", return_value={"accounts": {}}), \
+                    mock.patch.object(provider_inventory, "apply", discovered):
+                lines = doctor.choice_conflicts(home, doctor.pinned_environ(home))
+            self.assertEqual(len(lines), 1, lines)
+            self.assertIn(f"{old}, {new} disagree", lines[0])
+            self.assertEqual(lines[0].count("auto:acct:codex:kimi-k3@high"), 3)   # the stored id, and two bundles
+            self.assertEqual((state / "accounts-override.json").read_text(encoding="utf-8"), stored)
+            text = doctor.render({"choice_conflicts": lines})
+            self.assertIn("Model choices: 1 set(s) of stored choices disagree", text)
+
     @pytest.mark.slow
     def test_collect_on_an_isolated_home_does_not_create_files(self):
         with TemporaryDirectory() as directory:

@@ -16,7 +16,6 @@ def capacity_usd(spec, wid):
     return float(value) if value else None
 
 
-EFFORT_ORDER = ('low', 'medium', 'high', 'xhigh', 'max', 'ultra')
 
 
 def scoring_effort(bundle, info):
@@ -46,10 +45,12 @@ def bundle_task_usd(spec, model, hours, info=None, context_burn=1.0):
 def duration_at(info, effort):
     """(multiplier, basis) of the time a task takes this model at `effort`, a multiple of the anchor's Artificial Analysis
     Time/Task at High: the data's `duration.by_effort` and the basis of that entry (a listing at the effort, a fitted arena
-    listing, a series effort conversion or a declared same model). A bundle that names no effort runs the model's single
-    configuration, which the data keys High. (None, None) when the data has no time at that effort: nothing stands in."""
-    five = ((info or {}).get('five_axis') or {}).get('duration') or {}
-    key = effort or 'high'
+    listing, a series effort conversion or a declared same model). An effort off the scale, and a bundle that names no
+    effort, read the effort the data declares (axis_scores.reading_effort). (None, None) when the data has no time at that
+    effort: nothing stands in."""
+    state = (info or {}).get('five_axis') or {}
+    five = state.get('duration') or {}
+    key = axis_scores.reading_effort(state, effort)
     mult = (five.get('by_effort') or {}).get(key)
     if isinstance(mult, (int, float)) and not isinstance(mult, bool) and mult > 0:
         return float(mult), (five.get('basis_by_effort') or {}).get(key) or {}

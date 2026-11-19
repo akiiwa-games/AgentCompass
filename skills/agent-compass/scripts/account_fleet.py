@@ -54,11 +54,12 @@ def configured_quota_sources(environ=None):
 
 def reference_fleet_document():
     """The offline reference fleet (`plan --demo`, the acceptance of a reference set), never read from the user home: the
-    checked-in fixtures/reference-accounts.json completed with the `families` declaration of the reference set this
-    process holds, so the family patterns have one source and the fleet never pairs one set's families with another's
-    scores."""
+    checked-in fixtures/reference-accounts.json completed with the `families` and `effort_readings` declarations of the
+    reference set this process holds, so each has one source and the fleet never pairs one set's declarations with
+    another's scores."""
     doc = json.loads((Path(__file__).resolve().parent / 'fixtures' / 'reference-accounts.json').read_text(encoding='utf-8-sig'))
-    doc['families'] = public_data.document(REFERENCES / 'accounts.json')['families']
+    shipped = public_data.document(REFERENCES / 'accounts.json')
+    doc.update({k: shipped[k] for k in ('families', 'effort_readings')})
     return doc
 
 

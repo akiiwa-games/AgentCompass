@@ -49,9 +49,10 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import override_store  # noqa: E402
 import public_data  # noqa: E402
+import released_names  # noqa: E402
 import state_upgrade  # noqa: E402
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 FILE_NAME = 'user-scores.json'
 ENV_VAR = 'ROUTER_USER_SCORES'
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
@@ -65,7 +66,30 @@ CATEGORY_FACETS = {
     'tool_operation': ('responsiveness', 'image_recognition'),
 }
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
-EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+# The effort order, its one owner: every effort a curve carries and a launch can name on the scale, lowest first. `none` is
+# reasoning switched off (its evidence: accounts.json `effort_readings`); `minimal` and `ultra` lie beyond what boards
+# measure (MEASURED_EFFORTS, Low .. Max). An effort name off the scale (`default`) reads the effort five-axis-scores.json
+# `effort_readings` names.
+EFFORTS = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
+MEASURED_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')     # the efforts boards measure at a reasoning level
+# The anchor of `none`: a model's lowest measured reasoning effort, else High (`edge_anchor`).
+LOWEST_REASONING = 'lowest_reasoning'
+# {effort a model may lack: (the effort it is filled from, (the pair of efforts whose fleet difference is the step))}, in fill
+# order (calibration/five_axis.py fill_edge, _manual_by_effort): `minimal` Low plus value(low) - value(medium), `ultra` Max
+# plus value(max) - value(xhigh), `none` the model's lowest measured reasoning effort plus the fleet's value(none) -
+# value(lowest measured reasoning effort) over the models with a reasoning-off reading (round 5 review: the fleet's own
+# readings at none, not a borrowed step).
+EDGES = {'minimal': ('low', ('low', 'medium')), 'ultra': ('max', ('max', 'xhigh')),
+         'none': (LOWEST_REASONING, ('none', LOWEST_REASONING))}
+
+
+def edge_anchor(edge: str, values, measured) -> str | None:
+    """The effort edge effort `edge` is filled from (EDGES): its neighbour, or for `none` the lowest reasoning effort among
+    `measured` that `values` holds, else High when `values` holds it; None when there is none."""
+    near = EDGES[edge][0]
+    if near != LOWEST_REASONING:
+        return near if near in values else None
+    return next((e for e in EFFORTS[1:] if e in measured and e in values), 'high' if 'high' in values else None)
 SUGGEST_DEFAULT_THRESHOLD = 0.4
 MEASURED_DATA_STATUSES = ('measured', 'measured_partial', 'interpolated')
 VALID_TARGETS = tuple(
@@ -163,7 +187,7 @@ def normalize_date(as_of: str | None = None) -> str:
 
 
 def validate_document(doc, *, expected_kind: str | None = None) -> dict:
-    """Validate and return a normalized `{schema_version: 3, scores: {model: {target: entry}}}` document."""
+    """Validate and return a normalized `{schema_version: 4, scores: {model: {target: entry}}}` document."""
     if not isinstance(doc, dict):
         raise ValueError('user-scores document must be a JSON object')
     ver = doc.get('schema_version')
@@ -299,8 +323,27 @@ def _local_schema_2_to_3(doc: dict) -> dict:
     return {**doc, 'schema_version': 3, 'scores': {**scores, **converted}}
 
 
+def _local_schema_3_to_4(doc: dict) -> dict:
+    """Schema 3 (v0.7.0) entries keyed by a name v0.7.0 resolved through an alias that this release removed or re-targeted,
+    as v0.7.0 resolved it (`released_names.v0_7_0_row`: the name, else its last `/` segment, so `anthropic/claude-opus-5`
+    too), are rewritten to the row v0.7.0 resolved the name to, the model the user scored. A name v0.7.0 did not resolve
+    stays (ignored, named by `doctor`). Entries that meet on one row merge in file order, a later one winning, as v0.7.0's
+    overlay applied them."""
+    scores = doc.get('scores')
+    if not isinstance(scores, dict):
+        return {**doc, 'schema_version': 4}
+    out = {}
+    for model, targets in scores.items():
+        key = released_names.v0_7_0_row(model) or model
+        if isinstance(targets, dict) and isinstance(out.get(key), dict):
+            out[key] = {**out[key], **targets}
+        else:
+            out[key] = targets
+    return {**doc, 'schema_version': 4, 'scores': out}
+
+
 # The user's own scores are kept across updates: {schema a released version wrote: the step to the next schema}.
-LOCAL_UPGRADES = {1: _local_schema_1_to_2, 2: _local_schema_2_to_3}
+LOCAL_UPGRADES = {1: _local_schema_1_to_2, 2: _local_schema_2_to_3, 3: _local_schema_3_to_4}
 
 
 def upgrade_local_document(doc):
@@ -357,6 +400,13 @@ def load_public(path=None) -> dict:
         raise
     except ValueError as exc:                   # the reference layer's shape, not the user's input
         raise public_data.ReferenceDataError(f'user-scores.json: {exc}') from None
+
+
+def unresolved_models(doc: dict, accounts: dict) -> list[str]:
+    """The model names of a user-scores document (`doc`) that resolve to no row of `accounts`: kept in the file, never
+    turned into a row, ignored for scoring (`apply_overlay`); `agentcompass doctor` names them."""
+    models = (accounts or {}).get('models') or {}
+    return sorted(m for m in (doc.get('scores') or {}) if resolve_model_key(m, accounts) not in models)
 
 
 def resolve_model_key(model: str, accounts: dict | None = None) -> str:
@@ -626,45 +676,76 @@ def _recompute_category_from_facets(category: str, cat_cell: dict, status: str) 
 
 
 def _measured_efforts(cell: dict | None) -> list[str]:
-    """The efforts of a facet cell that hold a board measurement: every effort of a `measured*` cell, else the cell's own
-    `measured_efforts` (a High filled by five_axis.fill_high, or a lower manual layer), else none."""
+    """The efforts of a facet cell that hold a board measurement: the cell's own `measured_efforts` when it lists them (every
+    five-axis-scores.json facet does since schema /7: the efforts five_axis filled or bounded are not among them), else every
+    effort of a `measured*` cell, else none."""
     if not isinstance(cell, dict):
         return []
     by = cell.get('by_effort') or {}
+    if 'measured_efforts' in cell:
+        return [e for e in cell.get('measured_efforts') or () if by.get(e) is not None]
     if str(cell.get('status') or '').startswith('measured'):
         return [e for e in EFFORTS if by.get(e) is not None]
-    return [e for e in cell.get('measured_efforts') or () if by.get(e) is not None]
-
-
-def _pav(values: list[float]) -> list[float]:
-    """`values` made non-decreasing by pooling adjacent violators."""
-    blocks = [[v, 1] for v in values]
-    i = 0
-    while i < len(blocks) - 1:
-        if blocks[i][0] / blocks[i][1] > blocks[i + 1][0] / blocks[i + 1][1]:
-            blocks[i] = [blocks[i][0] + blocks[i + 1][0], blocks[i][1] + blocks[i + 1][1]]
-            blocks.pop(i + 1)
-            i = max(i - 1, 0)
-        else:
-            i += 1
-    return [s / n for s, n in blocks for _ in range(n)]
+    return []
 
 
 def rises_with_effort(cat: str, facet: str) -> bool:
-    """The direction of a facet's curve in effort, as the calibration declares it (`calibration/five_axis.py`: ability facets are
-    pooled to never decrease with effort; `tool_operation.responsiveness` falls as effort rises and is left unpooled)."""
+    """The direction of a facet's curve in effort, the one statement of it (calibration/five_axis.py and this module read it):
+    an ability facet never decreases as effort rises; `tool_operation.responsiveness` never rises."""
     return (cat, facet) != ('tool_operation', 'responsiveness')
 
 
+def anchor_effort(efforts) -> str | None:
+    """The effort a curve is anchored at: High when the curve has it, else its effort nearest High (the lower on a tie)."""
+    present = [e for e in EFFORTS if e in efforts]
+    if not present:
+        return None
+    at = EFFORTS.index('high')
+    return min(present, key=lambda e: (abs(EFFORTS.index(e) - at), EFFORTS.index(e)))
+
+
+def bound_along_effort(by: dict, rises: bool, pinned=None) -> dict:
+    """`by` ({effort: value}) with no inversion along EFFORTS (owner 2026-11-18), the one rule for every value along the
+    efforts of one model, measured, filled, estimated or manual: a curve that `rises` never decreases as effort rises, any
+    other never increases. The `pinned` efforts present in `by` keep their values and must already be in order (default: the
+    anchor, `anchor_effort`). An effort between two pinned ones is held between them; below the lowest pinned effort each
+    effort is capped by the next higher effort's bounded value, above the highest each is floored by the next lower one's
+    (the mirror image for a falling curve). A curve already in order is returned unchanged."""
+    sign = 1.0 if rises else -1.0
+    order = [e for e in EFFORTS if e in by]
+    if not order:
+        return {}
+    pinned = set(pinned if pinned is not None else (anchor_effort(by),))
+    s = {e: sign * float(by[e]) for e in order}
+    pins = [i for i, e in enumerate(order) if e in pinned]
+    if not pins:
+        raise ValueError(f'bound_along_effort: none of the pinned efforts {sorted(pinned)} is in the curve {order}')
+    for a, b in zip(pins, pins[1:]):
+        if s[order[b]] < s[order[a]]:
+            raise ValueError(f'bound_along_effort: the pinned efforts {order[a]} and {order[b]} are themselves inverted')
+    for i in range(pins[0] - 1, -1, -1):
+        s[order[i]] = min(s[order[i]], s[order[i + 1]])
+    for i in range(pins[-1] + 1, len(order)):
+        s[order[i]] = max(s[order[i]], s[order[i - 1]])
+    for a, b in zip(pins, pins[1:]):
+        for i in range(a + 1, b):
+            s[order[i]] = min(max(s[order[i]], s[order[i - 1]]), s[order[b]])
+    return {e: (by[e] if s[e] == sign * float(by[e]) else round(sign * s[e], 4)) for e in order}
+
+
 def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
-                      fixed_effort: str | None = None) -> tuple[dict[str, float], list[str]]:
+                      fixed_effort: str | None = None, steps: dict | None = None) -> tuple[dict[str, float], list[str]]:
     """(`by_effort`, measured efforts) of a facet a manual score sets to `z_val` (user 2026-11-12). The score sets High,
     and also the model's `fixed_effort` when it declares one (its only configuration, which the score judges). Efforts
-    the facet measured keep their values; its other efforts follow the facet's own curve moved to `z_val` at High, and
-    stay missing when it has none. The curve is then made monotone in the facet's direction (`rises_with_effort`) with the
-    set efforts held at `z_val`: a facet that rises with effort is non-decreasing (efforts below the set ones isotonic and at
-    most `z_val`, above them isotonic and at least `z_val`), one that falls is non-increasing (below: at least `z_val`, above:
-    at most `z_val`); efforts between two set ones are `z_val`. An effort that bound moves is no longer listed as measured."""
+    the facet measured keep their values; its other efforts follow the facet's own curve moved to `z_val` at High; an effort
+    the facet has no value at takes `z_val` plus the panel's median own step from High to it (`steps`: the facet's entry of
+    five-axis-scores.json `effort_steps`; owner 2026-11-18, every effort gets a value, also after a hand-written score) and
+    stays missing only where the panel gives no step; an edge effort is its anchor plus the fleet's edge step (EDGES;
+    `minimal`: Low plus `effort_steps.<facet>.low.minimal`; `ultra`: Max plus `effort_steps.<facet>.max.ultra`; `none`: the
+    lowest measured reasoning effort, else High, plus `effort_steps.<facet>.lowest_reasoning.none`). The curve is then bounded in the facet's direction
+    (`rises_with_effort`, `bound_along_effort`): first the measured efforts with the set efforts pinned at `z_val` (a measured
+    effort that bound moves is no longer listed as measured), then the other efforts with those pinned, so a followed or
+    filled value never moves a measured one."""
     pinned = [e for e in EFFORTS if e in ('high', fixed_effort)]
     by = {e: float(v) for e, v in ((own_cell or {}).get('by_effort') or {}).items() if e in EFFORTS and v is not None}
     measured = [e for e in _measured_efforts(own_cell) if e not in pinned]
@@ -672,17 +753,17 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
     out.update(dict.fromkeys(pinned, z_val))
     if 'high' in by:
         out.update({e: z_val + v - by['high'] for e, v in by.items() if e not in out})
-    out = {e: out[e] for e in EFFORTS if e in out}
-    sign = 1.0 if rises else -1.0       # a falling facet is bounded as its mirror image
-    signed = {e: sign * v for e, v in out.items()}
-    held = sign * z_val
-    lo, hi = EFFORTS.index(pinned[0]), EFFORTS.index(pinned[-1])
-    below = [e for e in signed if EFFORTS.index(e) < lo]
-    above = [e for e in signed if EFFORTS.index(e) > hi]
-    signed.update({e: min(v, held) for e, v in zip(below, _pav([signed[e] for e in below]))})
-    signed.update({e: max(v, held) for e, v in zip(above, _pav([signed[e] for e in above]))})
-    signed.update({e: held for e in signed if lo < EFFORTS.index(e) < hi})
-    out = {e: round(sign * signed[e], 4) for e in signed}
+    for e, step in ((steps or {}).get('high') or {}).items():
+        if e in EFFORTS and e not in out and isinstance(step, dict) and step.get('step') is not None:
+            out[e] = z_val + float(step['step'])
+    for edge, (key, _) in EDGES.items():
+        near = edge_anchor(edge, out, [*measured, *pinned])
+        step = ((steps or {}).get(key) or {}).get(edge)
+        if edge not in out and near is not None and isinstance(step, dict) and step.get('step') is not None:
+            out[edge] = out[near] + float(step['step'])
+    held = bound_along_effort({e: out[e] for e in EFFORTS if e in out and (e in pinned or e in measured)}, rises, pinned)
+    out = bound_along_effort({e: held.get(e, out[e]) for e in EFFORTS if e in out}, rises, held)
+    out = {e: round(float(v), 4) for e, v in out.items()}
     return out, [e for e in measured if out[e] == round(by[e], 4)]
 
 
@@ -747,9 +828,75 @@ def _category_data_reference(facet_refs: dict[str, dict], manual_level: float) -
     }
 
 
-def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed_effort: str | None = None) -> None:
+def operating_point_floor(cell: dict, own_cell: dict | None, status: str, cat: str, facet: str) -> dict:
+    """`cell` (a manual score's facet cell) bounded below by the row's operating point (owner 2026-11-19, round 8): a
+    row declared as another row at an operating point (accounts.json `same_model` with `at_effort`; its facet is that
+    row's cell at the point, five-axis-scores.json estimate `same_model` with `at_effort`) never reads below it on an
+    ability facet under a shipped maintainer score, so what routing reads is max(score, base cell) at each effort and
+    the cell records both inputs and which binds (`operating_point_floor`). A local user's score is the user's and is
+    not bounded; responsiveness keeps its own rule (the base cell, then the declared response floor)."""
+    est = (own_cell or {}).get('estimate') or {}
+    if (status != 'maintainer' or est.get('method') != 'same_model' or 'at_effort' not in est
+            or (cat, facet) == ('tool_operation', 'responsiveness')):
+        return cell
+    base = {e: float(v) for e, v in ((own_cell or {}).get('by_effort') or {}).items() if v is not None}
+    score = cell['by_effort']
+    by = {e: (max(v, base[e]) if e in base else v) for e, v in score.items()}
+    return {**cell, 'value': by.get('high', cell['value']), 'by_effort': by,
+            'operating_point_floor': {'base_model': est.get('base_model'), 'at_effort': est['at_effort'],
+                                      'base_by_effort': {e: base[e] for e in score if e in base},
+                                      'score_by_effort': dict(score),
+                                      'binds_by_effort': {e: 'base' if e in base and base[e] > v else 'score'
+                                                          for e, v in score.items()}}}
+
+
+def applied_scores(five_state: dict, effort: str | None) -> dict:
+    """{target: the manual score entry with `reads` ({cat.facet: what routing reads at `effort`, from the overlay's facet
+    cell} and, on a facet with a declared operating point, `operating_point_floor` ({cat.facet: {base_model, at_effort,
+    base, score, binds}}))}: what the overlay applied, read from its cells, never computed again. `effort` is the effort
+    the candidate reads (axis_scores.reading_effort); None reads High, or a cell's lone value."""
+    cats = (five_state or {}).get('categories') or {}
+    out = {}
+    for target, rec in sorted(((five_state or {}).get('manual_scores') or {}).items()):
+        cat, facet = parse_target(target)
+        reads, floors = {}, {}
+        for f in ((facet,) if facet else CATEGORY_FACETS[cat]):
+            cell = (((cats.get(cat) or {}).get('facets') or {}).get(f)) or {}
+            by = cell.get('by_effort') if isinstance(cell.get('by_effort'), dict) else {}
+            key = effort if effort else ('high' if 'high' in by else None)
+            value = by.get(key) if by else cell.get('value')
+            reads[f'{cat}.{f}'] = None if value is None else float(value)
+            floor = cell.get('operating_point_floor')
+            if isinstance(floor, dict) and key in (floor.get('binds_by_effort') or {}):
+                floors[f'{cat}.{f}'] = {'base_model': floor.get('base_model'), 'at_effort': floor.get('at_effort'),
+                                        'base': floor['base_by_effort'][key], 'score': floor['score_by_effort'][key],
+                                        'binds': floor['binds_by_effort'][key]}
+        out[target] = {**rec, 'reads': reads, **({'operating_point_floor': floors} if floors else {})}
+    return out
+
+
+def applied_note(applied: dict, effort: str | None) -> str | None:
+    """The candidate note of `applied_scores`: each manual score, then what routing reads on each of its facets at
+    `effort`; on a facet with a declared operating point, both inputs (the score and the base row's cell at its effort)
+    and which one binds."""
+    def facet_text(name, value, floor):
+        text = f"{name.split('.')[1]} {'missing' if value is None else f'{value:+.4f}'}"
+        if floor:
+            point = f"{floor['base_model']} at {floor['at_effort']} {floor['base']:+.4f}"
+            text += (f" (the operating point binds: {point} above the score {floor['score']:+.4f})" if floor['binds'] == 'base'
+                     else f" (the score binds: {floor['score']:+.4f} at or above the operating point {point})")
+        return text
+    parts = [f"{t}={r['level']:g} (z={r['z']:+.4f}, {r['kind']}, {r['as_of']}): "
+             + ', '.join(facet_text(n, v, (r.get('operating_point_floor') or {}).get(n)) for n, v in r['reads'].items())
+             for t, r in applied.items()]
+    return (f"manual capability scores applied, read at {effort or 'its single configuration'}: " + '; '.join(parts)
+            if parts else None)
+
+
+def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed_effort: str | None = None,
+                     effort_steps: dict | None = None) -> None:
     """Mutate `five_state` (`info['five_axis']`) in place with one layer (`maintainer` or `user`) of manual scores;
-    `fixed_effort` is the model's declared only effort, if any."""
+    `fixed_effort` is the model's declared only effort, if any; `effort_steps` the scores file's `effort_steps`."""
     if not entries:
         return
     cats = five_state.setdefault('categories', {})
@@ -771,14 +918,15 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                 z_map[f] = zf
                 f_ref = _facet_data_reference(facets.get(f), cat, f, rec['level'], targets_table)
                 facet_refs[f] = f_ref
-                by_eff, measured = _manual_by_effort(zf, facets.get(f), rises_with_effort(cat, f), fixed_effort)
-                facets[f] = {
+                by_eff, measured = _manual_by_effort(zf, facets.get(f), rises_with_effort(cat, f), fixed_effort,
+                                                 (effort_steps or {}).get(f'{cat}.{f}'))
+                facets[f] = operating_point_floor({
                     'value': zf,
                     'by_effort': by_eff,
                     'measured_efforts': measured,
                     'status': status,
                     'manual': {**rec, 'target': target, 'z': zf, 'data_reference': f_ref},
-                }
+                }, facets.get(f), status, cat, f)
                 estimates.pop(f'{cat}.{f}', None)
             z_val = round(min(z_map.values()), 4)
             cat_ref = _category_data_reference(facet_refs, rec['level'])
@@ -803,14 +951,15 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
                         }
             z_val = round(level_to_z(rec['level'], *target_triad(targets_table, cat, facet)), 4)
             f_ref = _facet_data_reference(facets.get(facet), cat, facet, rec['level'], targets_table)
-            by_eff, measured = _manual_by_effort(z_val, facets.get(facet), rises_with_effort(cat, facet), fixed_effort)
-            facets[facet] = {
+            by_eff, measured = _manual_by_effort(z_val, facets.get(facet), rises_with_effort(cat, facet), fixed_effort,
+                                             (effort_steps or {}).get(f'{cat}.{facet}'))
+            facets[facet] = operating_point_floor({
                 'value': z_val,
                 'by_effort': by_eff,
                 'measured_efforts': measured,
                 'status': status,
                 'manual': {**rec, 'target': target, 'z': z_val, 'data_reference': f_ref},
-            }
+            }, facets.get(facet), status, cat, facet)
             estimates.pop(f'{cat}.{facet}', None)
             cat_cell = _recompute_category_from_facets(cat, cat_cell, status)
             manual[target] = {**rec, 'z': z_val, 'data_reference': f_ref}
@@ -823,8 +972,10 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
 
 
 def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dict | None = None,
-                  local_scores: dict | None = None, aliases: dict | None = None) -> None:
-    """Apply `public_scores` (`maintainer`) then `local_scores` (`user`) onto `accounts['models'][m]['five_axis']`."""
+                  local_scores: dict | None = None, aliases: dict | None = None, effort_steps: dict | None = None) -> None:
+    """Apply `public_scores` (`maintainer`) then `local_scores` (`user`) onto `accounts['models'][m]['five_axis']`;
+    `effort_steps` is five-axis-scores.json `effort_steps` (`_manual_by_effort`). An entry whose name resolves to no row of
+    `models_table` is ignored, never made a row (`unresolved_models` names it)."""
     pub = (public_scores or {}).get('scores') if isinstance(public_scores, dict) and 'scores' in public_scores else (public_scores or {})
     loc = (local_scores or {}).get('scores') if isinstance(local_scores, dict) and 'scores' in local_scores else (local_scores or {})
     if not pub and not loc:
@@ -848,6 +999,7 @@ def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dic
             return alias_to_canonical[leaf]
         return raw
 
+    shipped = {name: _facet_curves(info) for name, info in (models_table or {}).items() if isinstance(info, dict)}
     for layer in (pub, loc):
         grouped: dict[str, dict] = {}
         for raw_model, entries in (layer or {}).items():
@@ -856,7 +1008,7 @@ def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dic
             canon = _canonical(raw_model)
             grouped.setdefault(canon, {}).update(entries)
         for canon, entries in grouped.items():
-            info = models_table.setdefault(canon, {})
+            info = (models_table or {}).get(canon)
             if not isinstance(info, dict):
                 continue
             five_state = info.setdefault('five_axis', {
@@ -867,7 +1019,49 @@ def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dic
                 'usd_status': 'missing', 'image_input': {'status': 'missing'},
                 'fast_mode': {'status': 'not_offered'}, 'duration': {},
             })
-            _apply_one_layer(five_state, entries, targets_table, info.get('fixed_effort'))
+            _apply_one_layer(five_state, entries, targets_table, info.get('fixed_effort'), effort_steps)
+    _follow_effective_sources(models_table, shipped)
+
+
+DERIVED_FROM_LARGER = ('tier_down', 'size_step')     # calibration/five_axis.py: a small row's facet from its larger model
+
+
+def _facet_curves(info: dict) -> dict:
+    """{(category, facet): by_effort} of a model row's five-axis facets as they stand."""
+    cats = ((info or {}).get('five_axis') or {}).get('categories') or {}
+    return {(c, f): dict(cell.get('by_effort') or {}) for c, cat in cats.items() if isinstance(cat, dict)
+            for f, cell in (cat.get('facets') or {}).items() if isinstance(cell, dict)}
+
+
+def _follow_effective_sources(models_table: dict, shipped: dict) -> None:
+    """Derived cells follow the effective source (owner 2026-11-18): a facet five_axis derived from a larger model
+    (`DERIVED_FROM_LARGER`) whose source facet a hand-written score (shipped or local) changed moves by the source's change
+    at each effort, derived(e) + effective(e) - shipped(e), and the curve is bounded along effort. No cap at the effective
+    source is needed: five_axis's `bound_across_size` ships every such ability cell at or below its source at each effort,
+    so derived + change stays at or below the effective source (no inversion across size). A hand-written score on the derived model's own
+    facet wins: the cell it writes carries no estimate, so it is left alone. The category is recomputed from its facets."""
+    for name, info in (models_table or {}).items():
+        state = (info or {}).get('five_axis') if isinstance(info, dict) else None
+        for cat, cat_cell in ((state or {}).get('categories') or {}).items():
+            changed = False
+            for facet, cell in ((cat_cell or {}).get('facets') or {}).items():
+                est = (cell or {}).get('estimate') or {}
+                base = est.get('base_model')
+                if est.get('method') not in DERIVED_FROM_LARGER or base not in shipped:
+                    continue
+                now = _facet_curves(models_table.get(base) or {}).get((cat, facet)) or {}
+                was = shipped[base].get((cat, facet)) or {}
+                if now == was:
+                    continue
+                rises = rises_with_effort(cat, facet)
+                by = {e: v + now[e] - was[e] for e, v in (cell.get('by_effort') or {}).items() if e in now and e in was}
+                by = {e: round(float(v), 4) for e, v in bound_along_effort(by, rises).items()} if by else {}
+                cell.update(by_effort=by, value=by.get('high'), follows={'base_model': base, 'base_status': (
+                    ((models_table[base]['five_axis']['categories'].get(cat) or {}).get('facets') or {}).get(facet) or {}).get('status')})
+                changed = True
+            if changed:
+                state['categories'][cat] = _recompute_category_from_facets(cat, cat_cell, cat_cell.get('status') or 'estimated')
+                state.setdefault('scores', {})[cat] = state['categories'][cat].get('value')
 
 
 def suggest_scores(model: str | None = None, *, scope: str = 'all',

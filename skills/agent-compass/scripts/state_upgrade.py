@@ -287,14 +287,26 @@ def check_host_policy(path: Path) -> str | None:
 
 
 def check_user_scores(path: Path) -> str | None:
+    """The file's shape, and the names in it that resolve to no row of the shipped catalog: those entries are kept and
+    ignored for scoring (user_scores.apply_overlay), and named here once."""
     if not path.exists():
         return None
+    import public_data
     import user_scores
     try:
-        user_scores.load_local(path)
+        doc = user_scores.load_local(path)
     except ValueError as exc:
         return str(exc)
-    return None
+    try:
+        accounts = public_data.document(user_scores.REFERENCES / 'accounts.json')
+    except (OSError, ValueError):
+        return None
+    unknown = user_scores.unresolved_models(doc, accounts)
+    if not unknown:
+        return None
+    return format_issue(path, 'scores kept but ignored: no model of this name in the catalog (' + ', '.join(unknown) + ')',
+                        "move each score to the model's current name with `agentcompass score set` and clear the old one "
+                        'with `agentcompass score clear`, or leave it until the model is in the catalog')
 
 
 def upgrade_host_rule_text(text: str) -> str:

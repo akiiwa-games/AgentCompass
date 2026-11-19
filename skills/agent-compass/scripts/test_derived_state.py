@@ -254,7 +254,8 @@ class RefusalFixesWorkWhenFollowedTests(unittest.TestCase):
         self.assertNotIn('nothing else is lost', str(caught.exception))
         del doc['accounts']['acct-a']['allowed_cwd']       # follow it
         path.write_text(json.dumps(doc), encoding='utf-8')
-        self.assertEqual(accounts_override.load_override(path), doc)
+        # read through the upgrade step (accounts_override.LOCAL_UPGRADES): the schema-2 file in the current shape
+        self.assertEqual(accounts_override.load_override(path), {**doc, 'schema_version': accounts_override.SCHEMA_VERSION})
 
     def test_an_allowed_cwd_entry_that_is_not_carried_names_the_cwd_regex_to_write_and_the_edit_works(self):
         path = self.state / 'accounts-override.json'
@@ -264,7 +265,8 @@ class RefusalFixesWorkWhenFollowedTests(unittest.TestCase):
             accounts_override.load_override(path)
         doc['accounts']['acct-a'] = {'verified': True, 'cwd_regex': '^D:/work/proj(/|$)'}                 # follow it
         path.write_text(json.dumps(doc), encoding='utf-8')
-        self.assertEqual(accounts_override.load_override(path), doc)
+        # read through the upgrade step (accounts_override.LOCAL_UPGRADES): the schema-2 file in the current shape
+        self.assertEqual(accounts_override.load_override(path), {**doc, 'schema_version': accounts_override.SCHEMA_VERSION})
 
     def test_host_policy_fix_by_editing_by_creating_or_by_deleting_works(self):
         path = self.state / 'host-policy.json'

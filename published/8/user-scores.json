@@ -1,0 +1,284 @@
+{
+  "schema_version": 4,
+  "scores": {
+    "claude-fable-5-2": {
+      "aesthetics": {
+        "level": 3.1,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.execution": {
+        "level": 3.2,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 2.28,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "creativity": {
+        "level": 3.1,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 2.93,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.responsiveness": {
+        "level": 2.4,
+        "as_of": "2026-11-18",
+        "kind": "maintainer"
+      }
+    },
+    "deepseek-v4-pro": {
+      "coding.faithfulness": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
+    },
+    "dot": {
+      "aesthetics": {
+        "level": 2.73,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 2.31,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer: image reading is fine"
+      },
+      "tool_operation.responsiveness": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer: extremely slow"
+      }
+    },
+    "doubao-seed-2-1-pro-260628": {
+      "coding": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "creativity": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.image_recognition": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.responsiveness": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
+    },
+    "flint-40b-free": {
+      "aesthetics": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "coding": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "creativity": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.image_recognition": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.responsiveness": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
+    },
+    "gemini-4-argon-high": {
+      "tool_operation.image_recognition": {
+        "level": 2.93,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gemini-4-carbon": {
+      "coding.faithfulness": {
+        "level": 2.24,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 3.02,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6-astra": {
+      "aesthetics": {
+        "level": 2.73,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 2.31,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6-luna": {
+      "coding.faithfulness": {
+        "level": 2.12,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.responsiveness": {
+        "level": 2.8,
+        "as_of": "2026-11-18",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6-pro": {
+      "aesthetics": {
+        "level": 2.92,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.execution": {
+        "level": 3.1,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 2.26,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "creativity": {
+        "level": 3.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 2.93,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6-sol": {
+      "coding.execution": {
+        "level": 2.4,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "coding.faithfulness": {
+        "level": 2.24,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "creativity": {
+        "level": 1.6,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.image_recognition": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      },
+      "tool_operation.responsiveness": {
+        "level": 1.5,
+        "as_of": "2026-11-18",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6.1-sol": {
+      "coding.faithfulness": {
+        "level": 2.35,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "gpt-6.1-terra": {
+      "coding.faithfulness": {
+        "level": 2.28,
+        "as_of": "2026-11-11",
+        "kind": "maintainer"
+      }
+    },
+    "grok-bot": {
+      "tool_operation.image_recognition": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.responsiveness": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
+    },
+    "qwen3-flash-2025-07-28": {
+      "aesthetics": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "coding": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "creativity": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.image_recognition": {
+        "level": 1.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      },
+      "tool_operation.responsiveness": {
+        "level": 2.0,
+        "as_of": "2026-11-11",
+        "kind": "maintainer",
+        "note": "maintainer impression"
+      }
+    }
+  }
+}

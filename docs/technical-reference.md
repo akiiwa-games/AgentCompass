@@ -50,8 +50,29 @@ that does not give `t1 < t2 < t3` is a build error). The anchor is the origin of
 is the panel's best. A value above `t3` is a level above 3, extrapolated by `t3 - t2` and shown as that number; the manual scores
 (`agentcompass score set`, the Scoring page) speak this scale. `tool_operation.responsiveness` at demand level 3 asks what level 2
 asks, the panel median: a level-3 task adds image recognition, not more responsiveness. `continuity` is `t3 - t2`. A model's category scores are panel standard scores (`z`)
-from public cited boards; a facet a model lacks is estimated from its same-series sibling or its `arena.ai` Overall tier fit (see
-[`calibration/README.md`](../skills/agent-compass/calibration/README.md)). `quota_cost` is the quota economy: the part of the
+from public cited boards; a facet a model lacks is estimated from its same-series sibling (same declared size) or its
+`arena.ai` Overall tier fit, and a small row's facet that has neither from its larger model (its own gap for the same
+version, else the fleet's size step, used only where the measured pairs agree in direction; an ability value never above the
+larger model's), and, last, an ability facet with no source from the model's own other ability facets. Every facet then has a
+value at every effort (own-curve interpolation, else the panel's median effort step; `minimal` and `ultra` from the fleet's step
+next to them, `none`, reasoning switched off, from the fleet's own readings at none; `default` reads the declared effort, High), and no curve
+inverts along effort: High is the anchor, ability never falls and responsiveness never rises as effort rises, Time/Task never
+shortens (rules and formulas in [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). Release
+verification checks the result against saved gateway catalogs (`audit/gateway_coverage.py`; `audit/gateway-catalogs/*.json`, rows
+`{provider, model, efforts}` only; the Magpie catalog is built from Magpie's source by `audit/magpie_catalog.py`, one documented
+command, the same bytes for the same checkout): every gated offered (model, effort) is scored at that effort or is on
+`audit/gateway-coverage-known-gaps.json` with the input that is missing (the shipped launch table and bundles too), and a listed
+entry that is covered or ungated fails too; each entry names its missing input as one kind of a closed set, the file's
+`kinds` table stating what would close it. A catalog's `gate` is decided per pair: a row is gated when its model's maker
+(`maker`, the namespace of its models.dev `canonical_model_id`) is its provider's maker (`gate.makers`, declared in
+`audit/magpie-makers.json` with the Magpie source line it reads). The rest of the catalog, and every model on
+`audit/gateway-out-of-scope.json` (retired; deprecated, with the vendor's shutdown date; unlisted, absent from a maker page
+that enumerates the callable model ids, the file's `id_lists`; a moving `-latest` pointer; special-purpose; each with the
+maker's dated notice), is a printed report, never a failure. The same check refuses an alias whose two names the saved
+models.dev listings tell apart (`audit/models-dev-names.json`, written by `audit/magpie_catalog.py --names-out`; rule in
+[`calibration/README.md`](../skills/agent-compass/calibration/README.md), To add a model), and does not count as covered a pair
+whose provider's own listing gives the name another canonical id than the row it resolves to (known-gap kind
+`other_weights_on_provider`, both ids on the entry; the data has no identity per provider yet). `quota_cost` is the quota economy: the part of the
 task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. The window's
 price comes from a value ladder built over the demand grid `quota_economy.FIVE_AXIS_DEMAND_GRID` (levels 0–3 on the thinking
 categories), and its level-3 points read the fit with the ceiling as cap. So a model that raises a ceiling moves quota prices
@@ -69,10 +90,12 @@ several pools must clear every window; the tightest window binds. The same model
 (Codex vs Pi is only a tie-break step for read-heavy vs. edit-heavy work). Unknown capacity stays unknown: the account stays
 out of automatic routing until public data has it.
 A metered USD account is not one of those resetting windows. The account, the spend reading, the balance, and the leftover-field cleanup are defined in [Metered USD](#metered-usd).
-Panel membership is derived from the rule above, never a hand list. Adding a non-panel model moves no panel score and no
-target (it can raise a ceiling). A change of members moves `sd_panel`, `t1` and `t2`, and with them the level-2 cap and the
-exchange rate between ability and quota cost, so `agentcompass data refresh` (and `five_axis.py`) compares the panel it computed
-with the shipped `five-axis-scores.json`: when the members differ it prints the added and removed models and, per category and
+Panel membership is declared (owner, 2026-11-18): `calibration_panel.members` in `accounts.json`, a dated maintainer list only
+the owner changes (definition: [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). A new row, even one
+every board lists, is scored against the panel and never joins it, so it moves no panel score and no target (it can raise a
+ceiling). A change of members moves `sd_panel`, `t1` and `t2`, and with them the level-2 cap and the exchange rate between
+ability and quota cost, so `agentcompass data refresh` (and `five_axis.py`) compares the declared panel with the shipped
+`five-axis-scores.json`: when the members differ it prints the added and removed models and, per category and
 facet, the old and new `sd_panel`, `t1`, `t2` and ceiling, then exits 3 (refused) and writes nothing unless `--accept-panel-change` is
 passed. An accepted change is recorded in `anchor.panel_change` (date, added, removed, shifts) and carried forward until the next.
 Category scores live in [`skills/agent-compass/references/five-axis-scores.json`](../skills/agent-compass/references/five-axis-scores.json),
@@ -178,7 +201,7 @@ Companion repositories and runtime directories are separate local checkouts or i
 | `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`), including the split allocator modules (`allocator`, `account_fleet`, `task_intake`, `axis_scores`, `quota_economy`, `quota_pools`, `quota_overrides`, `candidate_eval`, `candidate_ranking`, `ledger_snapshot`, `worker_sessions`), the CLI stages (`route_judge`) with their owner modules (`scorer_client`, `decision_ledger`, `subscription_judge`, `subscription_cli`, `usage_reading`, `env_vars`), dispatch/usage scripts, and `calibration/` (`agentcompass data refresh`). |
 | `setup/` | Onboarding (`onboard.py`), global host rule and skill sync (`sync_host_globals.py`, `host_rules.py`), `PreToolUse` / `tool_call` spawn and rotation gate (`router_gate_hook.py`), and Paseo SDK dispatch bridge (`paseo_dispatch_bridge.mjs`). |
 | `tray/` | Windows tray (`app.pyw`), decision console shell (`router_window.py`) and page mixins (`panel_scoring.py`, `panel_quota.py`, `panel_policy.py`, `panel_models.py`, `panel_strategy.py`, `panel_system.py`, `panel_plugins.py`, `panel_widgets.py`), Tk-free view model (`router_data.py`), `radar_chart.py`, `quota_line.py`, `decision_theatre.py`, updaters, and service supervisor. |
-| `packaging/` & `audit/` | Wheel/PyInstaller/Inno Setup bundling (`app_bundle.py`, `app_bootstrap.py`, `check_payload.py`), behavioral harnesses (`verify_release.py`, `sandbox_check.py`, `foreign_machine_check.py`, `zero_dispatch_check.py`), read-only ledger compliance audit (`audit/router_audit.py`), and the maintainer calibration report (`audit/calibration_report.py`). |
+| `packaging/` & `audit/` | Wheel/PyInstaller/Inno Setup bundling (`app_bundle.py`, `app_bootstrap.py`, `check_payload.py`), behavioral harnesses (`verify_release.py`, `sandbox_check.py`, `foreign_machine_check.py`, `zero_dispatch_check.py`), read-only ledger compliance audit (`audit/router_audit.py`), the maintainer calibration report (`audit/calibration_report.py`), and the gateway coverage check (`audit/gateway_coverage.py` over `audit/gateway-catalogs/`, the known-gap and out-of-scope lists; `audit/magpie_catalog.py` builds the Magpie catalog). |
 | `usage-float/`, `gemini-web/`, `dot2api/`, `codex-chatgpt-web/`, `easytier/` | Optional companion checkouts and runtime state; see [usage-float](https://github.com/akiiwa-games/usage-float#readme) and [gemini-web](https://github.com/akiiwa-games/gemini-web#readme). |
 
 ---

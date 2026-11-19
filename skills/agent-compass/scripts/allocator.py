@@ -32,6 +32,7 @@ import quota_economy
 import quota_overrides
 import quota_pools
 import task_intake
+import user_scores
 import worker_sessions
 
 
@@ -215,7 +216,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     decision.setdefault('reason', explain(top, system))
     # No required ability: the fit and the economy chose this effort.
     chosen = top['bundle'].get('effort')
-    decision['task']['max_recommended_effort'] = chosen if chosen in quota_economy.EFFORT_ORDER else None
+    decision['task']['max_recommended_effort'] = chosen if chosen in user_scores.EFFORTS else None
     result['choice'] = top['id']
     result['selected_bundle'] = dict(top['bundle'], bundle_id=top.get('base_id') or top['id'], expected_usd=top.get('expected_usd'),
                                      expected_hours=top.get('expected_hours'))

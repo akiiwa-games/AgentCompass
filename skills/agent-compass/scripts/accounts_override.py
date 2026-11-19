@@ -4,8 +4,11 @@ import json
 from pathlib import Path
 import re
 
+import auto_bundles
 import cwd_policy
 import state_upgrade
+
+SCHEMA_VERSION = 2
 
 
 def normalize(document):
@@ -146,9 +149,10 @@ def validate_document(doc, path):
             path, 'invalid accounts-override format (expected JSON object)', _delete_fix(path),
         ))
     version = doc.get('schema_version')
-    if version != 2:
+    if version != SCHEMA_VERSION:
         raise ValueError(state_upgrade.format_issue(
-            path, f'accounts-override schema_version {version!r} has no upgrade step (expected 2)', _delete_fix(path),
+            path, f'accounts-override schema_version {version!r} has no upgrade step (expected {SCHEMA_VERSION})',
+            _delete_fix(path),
         ))
     accounts = doc.get('accounts')
     if accounts is not None:
@@ -186,6 +190,18 @@ def load_override(path):
     doc = upgrade_document(doc)
     validate_document(doc, target)
     return doc
+
+
+def set_bundle_choice(document, owner, bundle_id, disabled, folded=()):
+    """Store the user's checkbox of one bundle under its id. The stored ids it was read from (`folded`, the bundle's
+    `_choice_ids`: auto_bundles.choice_for) go first, wherever they are stored, so the bundle reads this one choice."""
+    for spec in (document.get('accounts') or {}).values():
+        bundles = spec.get('bundles') if isinstance(spec, dict) else None
+        for sid in folded:
+            if isinstance(bundles, dict) and sid != bundle_id:
+                bundles.pop(sid, None)
+    document.setdefault('accounts', {}).setdefault(owner, {}).setdefault('bundles', {}).setdefault(
+        bundle_id, {})['disabled'] = bool(disabled)
 
 
 def harness(bundle, account, bundle_id, resolver):
@@ -253,6 +269,8 @@ def apply(accounts, document):
         if 'cwd_regex' in spec:
             target['cwd_regex'] = spec['cwd_regex']
         for bid, bundle in (spec.get('bundles') or {}).items():
+            if auto_bundles.split_id(bid) is not None:
+                continue  # an auto bundle's choice is read below, by the name it holds
             target_bundle = (target.get('bundles') or {}).get(bid)
             if target_bundle is None:
                 target_bundle = next((entry for account in accounts.get('accounts', {}).values()
@@ -260,3 +278,20 @@ def apply(accounts, document):
                                       if key == bid and entry.get('provider') == name), None)
             if isinstance(bundle, dict) and isinstance(target_bundle, dict) and 'disabled' in bundle:
                 target_bundle['disabled'] = bundle['disabled']
+    choices = auto_bundles.stored_choices(document, accounts)
+    for account, target in (accounts.get('accounts') or {}).items():
+        bundles = target.get('bundles') if isinstance(target, dict) else None
+        if not isinstance(bundles, dict) or account not in choices:
+            continue
+        by_model = auto_bundles.harness_by_model(bundles)
+        owners = auto_bundles.replayed_owners(bundles)
+        for bundle in bundles.values():
+            if not isinstance(bundle, dict) or not bundle.get('auto'):
+                continue
+            chosen, ids, disagree = auto_bundles.choice_for(choices[account], bundle, accounts, by_model, owners)
+            if chosen is None:
+                continue
+            # The user's checkbox replaces the public default; a model the provider stopped listing stays off.
+            bundle['disabled'] = chosen or bundle.get('availability') == 'expired'
+            bundle.pop('disabled_by_default', None)
+            auto_bundles.mark_choice(bundle, ids, disagree)

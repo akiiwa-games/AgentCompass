@@ -32,7 +32,7 @@ import numpy as np
 import sources
 
 EFFORT_TAG = re.compile(
-    r'^(max|xhigh|high|medium|low|minimal|non-reasoning|none|default|default fallback|with fallback|'
+    r'^(max|xhigh|high|medium|low|minimal|non-reasoning|none|default|[a-z0-9. ]+ fallback|'
     r'thinking|non-thinking|reasoning|instant|thinking\s+\d+k|\d+k|\d{2,4}|\d{6}|\d{8}|'
     r'\d{2,4}-\d{2}(?:-\d{2})?|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4})$'
 )
@@ -101,14 +101,14 @@ def _variant_rank_key(listed_name, value):
     return (thinking, len(date_key), date_key, float(value))
 
 
-def arena_high_rows(rows):
+def arena_high_rows(rows, readings):
     """{base model name: (value, lower, upper, listed name, publish date)} restricted to High or effort-less rows."""
     grouped = {}
     for row in rows:
         listed = row[3]
         if not listed or not _valid_variant_tag(listed):
             continue
-        eff = sources.aa_effort(listed) or ''
+        eff = sources.aa_effort(listed, readings) or ''
         if eff not in ('high', ''):
             continue
         grouped.setdefault(sources.base_name(listed), {}).setdefault(eff, []).append(row)
@@ -120,7 +120,7 @@ def arena_high_rows(rows):
     return out
 
 
-def aa_high_index(records):
+def aa_high_index(records, readings):
     """{base model name: intelligenceIndex} restricted strictly to High or effort-less single-configuration rows."""
     grouped = {}
     for rec in records:
@@ -130,10 +130,13 @@ def aa_high_index(records):
             continue
         if not _valid_variant_tag(name):
             continue
-        eff = sources.aa_effort(name) or ''
-        if eff not in ('high', ''):
+        eff, rank = sources.aa_effort(name, readings) or '', sources.listing_rank(name, readings)
+        if eff not in ('high', '') or rank is None:
             continue
-        grouped.setdefault(sources.base_name(name), {})[eff] = float(idx)
+        at = grouped.setdefault(sources.base_name(name), {})
+        if eff not in at or rank <= at[eff][1]:
+            at[eff] = (float(idx), rank)
+    grouped = {base: {e: v for e, (v, _) in by.items()} for base, by in grouped.items()}
     out = {}
     for base, by_eff in grouped.items():
         if 'high' in by_eff:
@@ -162,6 +165,20 @@ class Interpolation:
                 grouped.setdefault(x, []).append(n)
             self.who = [grouped[x] for x in self.x]
         self.n = len(raw_x)
+        self.raw = list(zip(raw_x, raw_y))
+
+    def spread(self):
+        """{'residual_sd', 'loo_rmse'}: the root mean square of the shared models' tiers around the map, in sample and
+        leaving each model out of the map that predicts it (None under three distinct points left)."""
+        res = [y - self(x) for x, y in self.raw]
+        loo = []
+        for i, (x, y) in enumerate(self.raw):
+            rest = self.raw[:i] + self.raw[i + 1:]
+            m = Interpolation([p[0] for p in rest], [p[1] for p in rest])
+            if len(m.x) >= 2:
+                loo.append(y - m(x))
+        rms = (lambda v: round(float(np.sqrt(np.mean(np.square(v)))), 4) if v else None)
+        return {'residual_sd': rms(res), 'loo_rmse': rms(loo)}
 
     def __call__(self, x):
         xs, ys = self.x, self.y
@@ -195,14 +212,14 @@ class Interpolation:
 
 
 class Fitter:
-    def __init__(self, target, anchor_name, aa_records):
+    def __init__(self, target, anchor_name, aa_records, readings):
         self.anchor_name = anchor_name
         read = datetime.fromtimestamp((target / 'aa-models.html').stat().st_mtime, timezone.utc).date().isoformat() \
             if (target / 'aa-models.html').exists() else None
         self.aa_read = read
-        self.overall = arena_high_rows(sources.arena_rows(target, 'text_style_control', 'overall'))
+        self.overall = arena_high_rows(sources.arena_rows(target, 'text_style_control', 'overall'), readings)
         self.anchor_raw, self.sd = self.overall_scale(self.overall, anchor_name)
-        self.aa = aa_high_index(aa_records)
+        self.aa = aa_high_index(aa_records, readings)
         self.maps = {'aa.index': self.board_map(self.aa)}
 
     @staticmethod
@@ -244,7 +261,9 @@ class Fitter:
             low, high = mapping.neighbours(x)
             out[board] = {'board': OVERALL_BOARDS[board][0], 'source': board, 'url': OVERALL_BOARDS[board][1],
                           'as_of': self.aa_read, 'listed_as': name, 'value': x, 'tier': round(float(mapping(x)), 4),
-                          'neighbours': {'below': low, 'above': high}, 'n': mapping.n}
+                          'neighbours': {'below': low, 'above': high}, 'n': mapping.n, 'status': 'estimated',
+                          'fit': 'monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models '
+                                 'both list at High', **mapping.spread()}
         return out
 
 
@@ -264,7 +283,8 @@ def main():
     models = acc['models']
     import measurements     # measurements imports this module: the records it reads (release pages included) are its to choose
     data = sources.data_dir(args.data)
-    fitter = Fitter(data, panel(acc)[2], measurements.aa_records_read(data, models)[0])
+    readings = sources.effort_readings(acc)
+    fitter = Fitter(data, panel(acc)[2], measurements.aa_records_read(data, models, readings)[0], readings)
     for board, mapping in fitter.maps.items():
         print(f'{board}: {mapping.n if mapping else 0} models common with arena Overall at High')
     result = {}

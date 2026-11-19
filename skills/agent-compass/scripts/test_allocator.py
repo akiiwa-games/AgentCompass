@@ -189,7 +189,10 @@ class AllocatorTests(unittest.TestCase):
                 res = self.plan(dict(base_task, chain=self.chain(**chain_kw)), roomy)
                 self.assertEqual(res['decision']['action'], expected_action)
                 if expected_action == 'rotate':
-                    self.assertNotEqual(res['choice'], 'sol_xhigh')
+                    # Rule (candidate_eval: continuity only on `resume`): a rotated owner is re-allocated as a fresh start,
+                    # with no continuity value; which bundle then wins is the ranking's, not pinned here.
+                    owner = next(c for c in res['ranking'] if c['id'] == 'sol_xhigh')
+                    self.assertEqual((owner['action'], owner['components']['continuity']), ('rotate', 0.0))
 
 
     def test_session_log_compaction_telemetry(self):

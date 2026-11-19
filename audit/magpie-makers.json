@@ -1,0 +1,196 @@
+{
+ "schema": "agent-compass.magpie-makers/1",
+ "statement": "The maker of each Magpie vendor preset and account that offers models (a models.dev canonical-id namespace, or null when no model of the maker has one), each read from the Magpie source line named; audit/magpie_catalog.py gates a (provider, model) pair when the model's maker is the provider's maker",
+ "magpie": {
+  "repository": "https://github.com/yetone/magpie",
+  "version": "0.1.4470",
+  "commit": "9314999a4a771eccda4888d3fa7cde84e8bef855"
+ },
+ "makers": {
+  "account:antigravity": {
+   "maker": "google",
+   "source": "internal/provider/google.go:1015",
+   "reads": "var antigravityModels: the Antigravity (Google) account fallback list"
+  },
+  "account:claude": {
+   "maker": "anthropic",
+   "source": "internal/provider/claude_code_models.go:204",
+   "reads": "claudeModels is the Claude provider's list: models.dev's anthropic list"
+  },
+  "account:gemini-cli": {
+   "maker": "google",
+   "source": "internal/provider/google.go:870",
+   "reads": "var geminiModels: the Gemini CLI (Google) account fallback list"
+  },
+  "alibaba-token-plan": {
+   "maker": "alibaba",
+   "source": "internal/provider/presets.go:468",
+   "reads": "Name: \"Alibaba Cloud Token Plan\""
+  },
+  "anthropic": {
+   "maker": "anthropic",
+   "source": "internal/provider/presets.go:200",
+   "reads": "Name: \"Anthropic\""
+  },
+  "azure": {
+   "maker": "microsoft",
+   "source": "internal/provider/presets.go:559",
+   "reads": "Name: \"Azure OpenAI\""
+  },
+  "baidu-qianfan": {
+   "maker": "baidu",
+   "source": "internal/provider/presets.go:333",
+   "reads": "Name: \"Baidu Qianfan\""
+  },
+  "bailian-token-plan": {
+   "maker": "alibaba",
+   "source": "internal/provider/presets.go:458",
+   "reads": "Name: \"Bailian Token Plan\""
+  },
+  "bedrock": {
+   "maker": "amazon",
+   "source": "internal/provider/presets.go:524",
+   "reads": "Name: \"Amazon Bedrock\""
+  },
+  "deepseek": {
+   "maker": "deepseek",
+   "source": "internal/provider/presets.go:234",
+   "reads": "Name: \"DeepSeek\""
+  },
+  "google": {
+   "maker": "google",
+   "source": "internal/provider/presets.go:208",
+   "reads": "Name: \"Google Gemini\""
+  },
+  "google-vertex": {
+   "maker": "google",
+   "source": "internal/provider/presets.go:224",
+   "reads": "Name: \"Google Vertex AI\""
+  },
+  "groq": {
+   "maker": null,
+   "source": "internal/provider/presets.go:511",
+   "reads": "Name: \"Groq\"; no model of its maker carries a models.dev canonical id in the snapshot"
+  },
+  "huaweicloud": {
+   "maker": null,
+   "source": "internal/provider/presets.go:396",
+   "reads": "Name: \"Huawei Cloud MaaS\"; no model of its maker carries a models.dev canonical id in the snapshot"
+  },
+  "kimi-code": {
+   "maker": "moonshotai",
+   "source": "internal/provider/presets.go:250",
+   "reads": "Name: \"Kimi Code\""
+  },
+  "kimi-code-cn": {
+   "maker": "moonshotai",
+   "source": "internal/provider/presets.go:254",
+   "reads": "Name: \"Kimi Code (China)\""
+  },
+  "longcat": {
+   "maker": "meituan",
+   "source": "internal/provider/presets.go:323",
+   "reads": "Name: \"LongCat\""
+  },
+  "minimax": {
+   "maker": "minimax",
+   "source": "internal/provider/presets.go:276",
+   "reads": "Name: \"MiniMax\""
+  },
+  "minimax-cn": {
+   "maker": "minimax",
+   "source": "internal/provider/presets.go:279",
+   "reads": "Name: \"MiniMax (China)\""
+  },
+  "mistral": {
+   "maker": "mistral",
+   "source": "internal/provider/presets.go:494",
+   "reads": "Name: \"Mistral\""
+  },
+  "moonshot": {
+   "maker": "moonshotai",
+   "source": "internal/provider/presets.go:242",
+   "reads": "Name: \"Kimi\""
+  },
+  "moonshot-cn": {
+   "maker": "moonshotai",
+   "source": "internal/provider/presets.go:245",
+   "reads": "Name: \"Kimi (China)\""
+  },
+  "ollama-cloud": {
+   "maker": null,
+   "source": "internal/provider/presets.go:567",
+   "reads": "Name: \"Ollama Cloud\"; no model of its maker carries a models.dev canonical id in the snapshot"
+  },
+  "openai": {
+   "maker": "openai",
+   "source": "internal/provider/presets.go:205",
+   "reads": "Name: \"OpenAI\""
+  },
+  "qwen": {
+   "maker": "alibaba",
+   "source": "internal/provider/presets.go:430",
+   "reads": "Name: \"Qwen\""
+  },
+  "qwen-cn": {
+   "maker": "alibaba",
+   "source": "internal/provider/presets.go:434",
+   "reads": "Name: \"Qwen (China)\""
+  },
+  "qwen-token-plan": {
+   "maker": "alibaba",
+   "source": "internal/provider/presets.go:448",
+   "reads": "Name: \"Qwen Token Plan\""
+  },
+  "qwencloud": {
+   "maker": "alibaba",
+   "source": "internal/provider/presets.go:489",
+   "reads": "Name: \"Qwen Cloud\""
+  },
+  "qwencloud-token-plan": {
+   "maker": "alibaba",
+   "source": "internal/provider/presets.go:482",
+   "reads": "Name: \"Qwen Cloud Token Plan\""
+  },
+  "stepfun": {
+   "maker": "stepfun",
+   "source": "internal/provider/presets.go:284",
+   "reads": "Name: \"StepFun\""
+  },
+  "stepfun-cn": {
+   "maker": "stepfun",
+   "source": "internal/provider/presets.go:291",
+   "reads": "Name: \"StepFun (China)\""
+  },
+  "tencent-cloud": {
+   "maker": "tencent",
+   "source": "internal/provider/presets.go:372",
+   "reads": "Name: \"Tencent Cloud\""
+  },
+  "volcengine": {
+   "maker": "bytedance-seed",
+   "source": "internal/provider/presets.go:414",
+   "reads": "Name: \"Volcengine Ark\""
+  },
+  "xai": {
+   "maker": "xai",
+   "source": "internal/provider/presets.go:237",
+   "reads": "Name: \"xAI\""
+  },
+  "xiaomi": {
+   "maker": "xiaomi",
+   "source": "internal/provider/presets.go:306",
+   "reads": "Name: \"Xiaomi MiMo\""
+  },
+  "zai": {
+   "maker": "zhipuai",
+   "source": "internal/provider/presets.go:269",
+   "reads": "Name: \"Z.ai\""
+  },
+  "zhipu": {
+   "maker": "zhipuai",
+   "source": "internal/provider/presets.go:258",
+   "reads": "Name: \"Zhipu GLM\""
+  }
+ }
+}

@@ -76,13 +76,15 @@ def load_five_axis(path=None):
     return public_data.document(account_fleet.REFERENCES / 'five-axis-scores.json')
 
 
-FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/6'
+FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/12'
 
 
 def require_current_schema(data):
     """Fail fast on a five-axis-scores.json of another schema than the one this code reads. Schema /6 changed what level 3
-    means (the panel maximum, no longer the anchor), so an older file would be read with the wrong scale; a shipped file
-    always matches its code, so there is no reader for the older one."""
+    means (the panel maximum, no longer the anchor), so an older file would be read with the wrong scale; schema /7 adds a
+    value at every effort and the `effort_steps` table manual scores fill from; /8 adds `minimal` and `size_steps`; /9 adds
+    `ultra`, the declared `effort_readings` and size steps per pair; /10 adds `none`. A shipped file always matches its code, so there is no
+    reader for the older one."""
     schema = data.get('schema')
     if schema != FIVE_AXIS_SCHEMA:
         raise ValueError(
@@ -209,15 +211,15 @@ def _resolve_rule_capacity(accounts, community, cap_family, raw_plan, plan, src_
     target_tpl = provider_inventory.plan_defaults(accounts, cap_family, plan, shipped=shipped) if plan and plan in table else None
     if target_tpl is None:
         reason = _plan_unknown_text(src_spec, raw_plan)
-        return None, {'status': 'plan_unknown', 'age_days': None, 'plan': None, 'reason': reason}, reason
+        return None, {'status': 'plan_unknown', 'as_of': None, 'plan': None, 'reason': reason}, reason
     target_price = target_tpl.get('price_usd_per_month')
     target_psrc = target_tpl.get('price_source')
     if isinstance(target_price, bool) or not isinstance(target_price, (int, float)) or target_price <= 0:
         reason = f'plan {plan!r} has no paid monthly price (${target_price or 0:g}/mo)'
-        return None, {'status': 'unpriced_plan', 'age_days': None, 'plan': plan, 'reason': reason}, reason
+        return None, {'status': 'unpriced_plan', 'as_of': None, 'plan': plan, 'reason': reason}, reason
     if not reference_provenance.valid_vendor_price_source(target_psrc):
         reason = f'plan {plan!r} has no cited vendor price_source'
-        return None, {'status': 'uncited_plan_price', 'age_days': None, 'plan': plan, 'reason': reason}, reason
+        return None, {'status': 'uncited_plan_price', 'as_of': None, 'plan': plan, 'reason': reason}, reason
     ref_family = rule['reference_family'].strip()
     ref_window = rule['reference_window'].strip()
     candidates = []
@@ -243,7 +245,7 @@ def _resolve_rule_capacity(accounts, community, cap_family, raw_plan, plan, src_
             'row': ref_row,
         })
     if not candidates:
-        return None, {'status': 'missing', 'age_days': None, 'plan': plan}, None
+        return None, {'status': 'missing', 'as_of': None, 'plan': plan}, None
     target_p = float(target_price)
     exact_matches = [c for c in candidates if abs(c['price'] - target_p) < 1e-9]
     if exact_matches:
@@ -272,7 +274,7 @@ def _resolve_rule_capacity(accounts, community, cap_family, raw_plan, plan, src_
         )
     meta = {
         'status': chosen['row'].get('status', 'ok'),
-        'age_days': chosen['row'].get('age_days'),
+        'as_of': chosen['row'].get('as_of'),
         'plan': plan,
         'detected_tier': raw_plan,
         'plan_price_usd_per_month': target_p,
@@ -319,7 +321,8 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
         dur_row = (row or {}).get('duration_multiplier') or {}
         price = (row or {}).get('price')       # public list price, USD per million tokens (aa.price, else openrouter.price)
         cats = (row or {}).get('axes') or {}
-        info['five_axis'] = {'categories': {a: cats[a] for a in FIVE_AXES if isinstance(cats.get(a), dict)},
+        info['five_axis'] = {'effort_readings': dict(data['effort_readings']),
+                             'categories': {a: cats[a] for a in FIVE_AXES if isinstance(cats.get(a), dict)},
                              'scores': {a: (cats.get(a) or {}).get('value') for a in FIVE_AXES},
                              'missing': list(FIVE_AXES) if row is None else list(row.get('missing_axes') or ()),
                              'estimates': {} if row is None else estimate_summary(row),
@@ -424,7 +427,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
         caps = {wid: float(rows_[wid]['capacity_usd']) for wid in spec['windows']
                 if isinstance((rows_.get(wid) or {}).get('capacity_usd'), (int, float))}
         cap_sources = {wid: {'status': (rows_.get(wid) or {}).get('status', 'missing'),
-                             'age_days': (rows_.get(wid) or {}).get('age_days'), 'plan': plan or None}
+                             'as_of': (rows_.get(wid) or {}).get('as_of'), 'plan': plan or None}
                        for wid in spec['windows']}
         plan_unknown_reason = None
         for wid in spec['windows']:
@@ -445,7 +448,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
             caps = {wid: float(v) for wid, v in explicit_caps.items()
                     if wid in spec['windows'] and isinstance(v, (int, float)) and v > 0}
             for wid in caps:
-                cap_sources[wid] = {'status': 'explicit', 'age_days': None, 'plan': plan or None}
+                cap_sources[wid] = {'status': 'explicit', 'as_of': None, 'plan': plan or None}
         spec['capacity_usd'] = caps
         unknown = [wid for wid in spec['windows'] if wid not in caps]
         if (unknown and not plan_unknown_reason and not is_free_pool
@@ -456,7 +459,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
                 plan_unknown_reason = _plan_unknown_text(src_spec, raw_plan)
                 for wid in unknown:
                     if cap_sources.get(wid, {}).get('status') == 'missing':
-                        cap_sources[wid] = {'status': 'plan_unknown', 'age_days': None, 'plan': None, 'reason': plan_unknown_reason}
+                        cap_sources[wid] = {'status': 'plan_unknown', 'as_of': None, 'plan': None, 'reason': plan_unknown_reason}
         spec['capacity_source'] = cap_sources
         if unknown:
             spec['capacity_unknown'] = True
@@ -485,6 +488,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     user_scores.apply_overlay(
         out.setdefault('models', {}), targets,
         public_scores=pub_manual, local_scores=loc_manual, aliases=out.get('aliases'),
+        effort_steps=data.get('effort_steps'),
     )
     for info in (out.get('models') or {}).values():
         if isinstance(info, dict) and isinstance(info.get('five_axis'), dict):
@@ -532,9 +536,20 @@ def _facet_at_effort(cats, category, facet, effort):
     return None
 
 
+def reading_effort(state, effort):
+    """The effort whose stored values a launch at `effort` reads (owner 2026-11-18): an effort name off the scale reads the
+    effort five-axis-scores.json `effort_readings` declares for it (`default`: High, where the calibration stores a board's
+    effort-less listing); a bundle that names no effort runs its single configuration, the `default` reading; an effort on
+    the scale (user_scores.EFFORTS) reads itself. `state` is a model's `five_axis` (five_axis_overlay)."""
+    key = effort or 'default'
+    return (state or {}).get('effort_readings', {}).get(key, key)
+
+
 def five_axis_values(state, effort):
     """{category: z}, with aesthetics and tool_operation as {facet: z}: this model's panel standard scores at `effort`
-    (None where it has no value). Aesthetics shares `tool_operation.image_recognition` alongside its own `design` facet."""
+    (None where it has no value; an effort off the scale reads its declared effort, `reading_effort`). Aesthetics shares
+    `tool_operation.image_recognition` alongside its own `design` facet."""
+    effort = reading_effort(state, effort)
     cats = (state or {}).get('categories') or {}
     out = {a: _at_effort(cats.get(a), effort) for a in FIVE_AXES if a not in LEVEL_FACETS}
     for a, by_lvl in LEVEL_FACETS.items():

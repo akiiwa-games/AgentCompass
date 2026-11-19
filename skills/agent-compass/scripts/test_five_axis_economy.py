@@ -784,7 +784,8 @@ class DurationKeyTests(unittest.TestCase):
 
     def info(self, model):
         dur = self.record(model)
-        return {'five_axis': {'duration': {k: copy.deepcopy(dur[k]) for k in ('status', 'by_effort', 'basis_by_effort')}}}
+        return {'five_axis': {'effort_readings': dict(self.data['effort_readings']),
+                              'duration': {k: copy.deepcopy(dur[k]) for k in ('status', 'by_effort', 'basis_by_effort')}}}
 
     def minutes(self, model, effort):
         return self.record(model)['minutes_by_effort'][effort]
@@ -832,6 +833,20 @@ class DurationKeyTests(unittest.TestCase):
         self.assertEqual(quota_economy.duration_at(opus, 'high')[1]['method'], 'aa')
         self.assertEqual(quota_economy.duration_at(opus, None), quota_economy.duration_at(opus, 'high'))    # no effort: the single configuration
         self.assertEqual(quota_economy.duration_at({}, 'high'), (None, None))
+
+    def test_an_effort_off_the_scale_reads_the_effort_the_data_declares(self):
+        """Rule (axis_scores.reading_effort, accounts.json `effort_readings`): a launch at `default`, and a bundle that names
+        no effort, read the stored values at the declared effort, for the time and for the scores alike."""
+        opus = self.info('claude-opus-5-5')
+        reads = self.data['effort_readings']['default']
+        self.assertEqual(quota_economy.duration_at(opus, 'default'), quota_economy.duration_at(opus, reads))
+        opus['five_axis']['effort_readings'] = {'default': 'medium'}
+        self.assertEqual(quota_economy.duration_at(opus, 'default'), quota_economy.duration_at(opus, 'medium'))
+        self.assertEqual(quota_economy.duration_at(opus, None), quota_economy.duration_at(opus, 'medium'))
+        state = {'effort_readings': {'default': 'xhigh'},
+                 'categories': copy.deepcopy(self.data['models']['claude-opus-5-5']['axes'])}
+        self.assertEqual(axis_scores.five_axis_values(state, 'default'), axis_scores.five_axis_values(state, 'xhigh'))
+        self.assertNotEqual(axis_scores.five_axis_values(state, 'default'), axis_scores.five_axis_values(state, 'low'))
 
     def test_a_fast_variant_shortens_the_candidates_hours_and_keeps_the_source(self):
         d = self.fleet.plan(0.6, 0.5, ec=1 - 2 / WEEK)
@@ -1412,9 +1427,12 @@ class DurationUnknownTests(unittest.TestCase):
         # fleet's. Which of the two applies depends on the shipped data, so the test accepts either estimate.
         self.assertIsNotNone(ranking['flash_low']['score'])
         self.assertIn(ranking['flash_low']['components']['duration_source'], ('series_effort', 'fleet_effort_ratio'))
-        # Grok 4.7 also gets its Max duration from fleet_effort_ratio, while Mode B excludes Max for missing Max capability data (R2-F5).
+        # Grok 4.7 also gets its Max duration from fleet_effort_ratio. Rule (R2-F5): Mode B excludes Max exactly when a demanded
+        # value is missing at Max; since every facet is filled at every effort (owner 2026-11-18), that follows the data.
         self.assertEqual(ranking['grok_max']['components']['duration_source'], 'fleet_effort_ratio')
-        self.assertIsNone(ranking['grok_max']['score'])
+        facets = axis_scores.load_five_axis()['models']['grok-4.7']['axes']
+        complete = all('max' in c['by_effort'] for ax in facets.values() for c in (ax.get('facets') or {}).values())
+        self.assertEqual(ranking['grok_max']['score'] is None, not complete)
 
     def test_a_named_dispatch_keeps_the_bundle_with_the_tasks_own_hours_and_the_data_error(self):
         with self.without_time('gpt-oss-120b'):
@@ -1460,6 +1478,12 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.accounts = sim.fresh_accounts(shipped_template(), snapshot())
+        # The precondition of these tests, set here: ChatGPT Web's model carries a Time/Task, so its bundle is a routable
+        # candidate whose cadence price can be read. These tests are about the cadence window, not about data coverage;
+        # whether the shipped data has a Time for gpt-6-pro is the coverage check's (audit/gateway_coverage.py).
+        five = copy.deepcopy(axis_scores.load_five_axis())
+        five['models']['gpt-6-pro']['duration_multiplier'] = copy.deepcopy(five['models']['gpt-6-astra']['duration_multiplier'])
+        cls.five = five
 
     def _plan(self, *, claude_plan='pro', codex_plan='plus', claude_used=0.15, codex_used=0.15,
               claude_reset_h=84.0, codex_reset_h=84.0, seats_used=0, cadence_reset_h=9.0,
@@ -1503,11 +1527,12 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
             'wants_fast': False, 'task_count': '1',
             'expected_hours': hours,
         }
-        return allocator.plan(
-            {'objective': 'research', 'hours': hours, 'profile': profile},
-            usage, NOW, accounts=acc, overrides=[], records=recs,
-            host_policy_config={'allowed_accounts': ['claude', 'codex', 'chatgpt-web', 'dot']},
-        )
+        with patch.object(axis_scores, 'load_five_axis', return_value=self.five):
+            return allocator.plan(
+                {'objective': 'research', 'hours': hours, 'profile': profile},
+                usage, NOW, accounts=acc, overrides=[], records=recs,
+                host_policy_config={'allowed_accounts': ['claude', 'codex', 'chatgpt-web', 'dot']},
+            )
 
     def test_l1_local_research_with_4_of_5_seats_used_does_not_pick_pro_max_and_c_rises_with_used_seats(self):
         costs = []

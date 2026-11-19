@@ -208,7 +208,7 @@ class StrategyTab:
         data = self.score_data
         raw_anchor = str(data.get("anchor") or "")
         anchor_name = self.data_module().model_label(raw_anchor) if raw_anchor else "—"
-        self.categories_meta.configure(text=_tr("数据生成于 {0} · 锚点 {1} · 面板 {2} 个模型").format(
+        self.categories_meta.configure(text=_tr("数据截至 {0} · 锚点 {1} · 面板 {2} 个模型").format(
             str(data.get("generated_at") or "—")[:10], anchor_name, data.get("panel_n") or "—"))
         self.categories_meta._tooltip_text = f"{anchor_name} ({raw_anchor})" if raw_anchor and anchor_name != raw_anchor else raw_anchor
         ttk = self.ttk

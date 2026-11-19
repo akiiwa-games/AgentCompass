@@ -218,6 +218,17 @@ class StateUpgradeContractTests(unittest.TestCase):
         self.assertEqual(str(ctx.exception), expected_scores)
         scores_path.unlink()
 
+        # 3b. a score under a name the catalog has no row for: kept, ignored, named once (round 6 item 2)
+        scores_path.write_text(json.dumps({'schema_version': user_scores.SCHEMA_VERSION, 'scores': {
+            'no-such-model-x': {'coding': {'level': 2.0, 'as_of': '2026-11-01', 'kind': 'user'}},
+            'claude-opus-5-5': {'coding': {'level': 2.0, 'as_of': '2026-11-01', 'kind': 'user'}}}}), encoding='utf-8')
+        named = state_upgrade.check_user_scores(scores_path)
+        self.assertIn('no-such-model-x', named)
+        self.assertNotIn('claude-opus-5-5', named)
+        self.assertEqual(sum('no-such-model-x' in issue for issue in state_upgrade.collect_issues(self.home, env)), 1)
+        self.assertIn('no-such-model-x', user_scores.load_local(scores_path)['scores'])      # kept in the file
+        scores_path.unlink()
+
         # 4. host-rules overlay
         rules_dir = self.state / 'host-rules'
         rules_dir.mkdir(parents=True, exist_ok=True)

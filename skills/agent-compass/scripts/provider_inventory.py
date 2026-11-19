@@ -2033,16 +2033,17 @@ def unavailable_reason(inventory, account, provider=None):
     return None
 
 
-def _auto_catalog(inventory, live, now_epoch):
+def _auto_catalog(inventory, live, now_epoch, environ=None):
     """Advertised models per provider: configured/discovered lists, plus the tray model-catalog cache when live."""
+    env = os.environ if environ is None else environ
     providers = {}
     for name, row in (inventory.get('accounts') or {}).items():
         models = [m for m in (row.get('models') or []) if isinstance(m, str)]
         if models and row.get('status', 'ready') == 'ready':
             providers[name] = {'ok': True, 'type': 'configured', 'checked_at': now_epoch, 'models': models}
     if live:
-        home = Path(os.environ.get('ROUTER_PROVIDER_HOME') or Path.home())
-        cache, _ = read_json(Path(os.environ.get('ROUTER_STATE_DIR') or home / '.agent-compass') / 'model-catalog.json')
+        home = Path(env.get('ROUTER_PROVIDER_HOME') or Path.home())
+        cache, _ = read_json(Path(env.get('ROUTER_STATE_DIR') or home / '.agent-compass') / 'model-catalog.json')
         for name, entry in obj(cache.get('providers')).items():
             if not isinstance(entry, dict) or entry.get('type') == 'static':
                 continue
@@ -2054,7 +2055,7 @@ def _auto_catalog(inventory, live, now_epoch):
     return {'providers': providers}
 
 
-def _apply_auto_bundles(accounts, inventory, live):
+def _apply_auto_bundles(accounts, inventory, live, environ=None):
     """Runtime-derived bundles (auto_bundles) replace the retired per-proxy `__high` synthesis.
 
     Read-only: the `seen` file is read when live; the tray model refresh is the writer.
@@ -2063,10 +2064,11 @@ def _apply_auto_bundles(accounts, inventory, live):
     import auto_bundles
     now_epoch = time.time()
     families = {name: row.get('family') for name, row in (inventory.get('accounts') or {}).items()}
-    home = Path(os.environ.get('ROUTER_PROVIDER_HOME') or Path.home())
-    state = Path(os.environ.get('ROUTER_STATE_DIR') or home / '.agent-compass')
+    env = os.environ if environ is None else environ
+    home = Path(env.get('ROUTER_PROVIDER_HOME') or Path.home())
+    state = Path(env.get('ROUTER_STATE_DIR') or home / '.agent-compass')
     seen = auto_bundles.read_seen(state / 'auto-bundles-seen.json') if live else {}
-    derived = auto_bundles.derive(accounts, _auto_catalog(inventory, live, now_epoch), now_epoch,
+    derived = auto_bundles.derive(accounts, _auto_catalog(inventory, live, now_epoch, environ), now_epoch,
                                   seen=seen, account_families=families)
     for account, rows in derived['bundles'].items():
         for bundle in rows.values():
@@ -2181,7 +2183,9 @@ def account_state_label(row):
     return status
 
 
-def apply(accounts, inventory=None, *, live=None):
+def apply(accounts, inventory=None, *, live=None, environ=None):
+    """Discovery's accounts and the bundles derived from what their providers advertise, into `accounts`. `environ`
+    locates the tray's model catalog and the `seen` file of another home (`agentcompass doctor`); default os.environ."""
     if live is None:
         live = inventory is None
     inventory = current() if inventory is None else inventory
@@ -2214,7 +2218,7 @@ def apply(accounts, inventory=None, *, live=None):
         template, plan, quota_family = _settle_plan(spec, row, accounts, shipped_templates)
         _settle_unknown_tier(spec, row, template, plan, quota_family)
         _settle_bundles(spec, name, row, inventory, known_models, aliases, model_families)
-    _apply_auto_bundles(accounts, inventory, live)
+    _apply_auto_bundles(accounts, inventory, live, environ)
     _fold_into_quota_owners(accounts, inventory, known_models, aliases, model_families)
     apply_shared_quota(accounts)
     return accounts

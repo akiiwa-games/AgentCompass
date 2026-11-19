@@ -1639,7 +1639,7 @@ def harness_model_rows() -> list[dict]:
     import provider_inventory
     accounts = _cached_accounts()
     policy = host_policy.load_policy()
-    preferences = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {"schema_version": 2}
+    preferences = accounts_override.load_override(STATE_DIR / "accounts-override.json") or {"schema_version": accounts_override.SCHEMA_VERSION}
     inventory = (accounts.get("_discovery") or {}).get("accounts") or {}
     table = accounts.get("accounts") or {}
     groups = {}
@@ -1690,7 +1690,8 @@ def harness_model_rows() -> list[dict]:
             flags = [not bool(b.get("_model_disabled", b.get("disabled"))) for _, _, b in bundles]
             group = {"model": model, "model_label": model_label(model), "enabled": all(flags),
                      "partial": any(flags) and not all(flags), "bundle_ids": [bid for _, bid, _ in bundles],
-                     "bundle_refs": [(owner, bid) for owner, bid, _ in bundles]}
+                     "bundle_refs": [(owner, bid) for owner, bid, _ in bundles],
+                     "choice_ids": sorted({sid for _, _, b in bundles for sid in b.get("_choice_ids") or ()})}
             group.update(_model_group_tags([b for _, _, b in bundles], flags))
             unavailable = (launch_unavailable_text(latches, account, bundles)
                            or retry_model_text(retry_holds, account, bundles)
@@ -2068,14 +2069,14 @@ def set_harness_models(account: str, harness: str, action: str) -> str:
     row = next((row for row in harness_model_rows() if (row["account"], row["harness"]) == (account, harness)), None)
     if row is None:
         raise ValueError("Unknown harness/account")
+    import accounts_override
     def change(document):
         for group in row["models"]:
             if not group.get("routed", True):
                 continue
             enabled = action == "all" or (action == "invert" and not group["enabled"])
             for owner, bid in group["bundle_refs"]:
-                document.setdefault("accounts", {}).setdefault(owner, {}).setdefault("bundles", {}).setdefault(
-                    bid, {})["disabled"] = not enabled
+                accounts_override.set_bundle_choice(document, owner, bid, not enabled, group.get("choice_ids", ()))
     _edit_preferences(change)
     return _tr("模型选择已保存")
 
@@ -2115,10 +2116,10 @@ def toggle_harness_model(account: str, harness: str, model: str, enabled: bool |
     if group is None or not group.get("routed", True):
         raise ValueError(f"Unknown harness/model: {account}/{harness}/{model}")
     enable = not group["enabled"] if enabled is None else bool(enabled)
+    import accounts_override
     def change(document):
         for owner, bid in group.get("bundle_refs", [(account, bid) for bid in group["bundle_ids"]]):
-            bundles = document.setdefault("accounts", {}).setdefault(owner, {}).setdefault("bundles", {})
-            bundles.setdefault(bid, {})["disabled"] = not enable
+            accounts_override.set_bundle_choice(document, owner, bid, not enable, group.get("choice_ids", ()))
     _edit_preferences(change)
     return enable
 
@@ -2151,20 +2152,19 @@ def toggle_harness(harness: str, account: str, enabled: bool) -> str:
 
 def toggle_bundle(account: str, bundle_id: str, path: Path | None = None) -> str:
     """Toggle exactly one effort bundle; harnesses never change together."""
+    modules()
+    import accounts_override
     if path is None:
-        modules()
         import account_fleet
         bundles = ((account_fleet.load_accounts().get("accounts") or {}).get(account) or {}).get("bundles") or {}
         if bundle_id not in bundles:
             raise ValueError(_tr('未知档位 {0}').format(bundle_id))
         enable_now = bool(bundles[bundle_id].get("_model_disabled", bundles[bundle_id].get("disabled")))
-        _edit_preferences(lambda doc: doc.setdefault("accounts", {}).setdefault(account, {}).setdefault(
-            "bundles", {}).setdefault(bundle_id, {}).update(disabled=not enable_now))
+        _edit_preferences(lambda doc: accounts_override.set_bundle_choice(
+            doc, account, bundle_id, not enable_now, bundles[bundle_id].get("_choice_ids") or ()))
         return _tr('{0} · {1}：{2}').format(account_label(account), bundle_id,
                                             _tr('参与自动派发') if enable_now else _tr('不参与自动派发'))
     target = path or _user_accounts_path(create=True)
-    modules()
-    import accounts_override
     doc = accounts_override.normalize(accounts_override.upgrade_document(json.loads(target.read_text(encoding="utf-8-sig"))))
     bundles = ((doc.get("accounts") or {}).get(account) or {}).get("bundles") or {}
     if bundle_id not in bundles:

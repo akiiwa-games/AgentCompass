@@ -307,7 +307,12 @@ class FixRoundRegressionTests(unittest.TestCase):
                                 'z_by_effort': {'high': 0.2}}],
         }
         rows, _, _, _, _, _ = fa.Scorer({'panel': {'models': panel}, 'models': models},
-                                        {'models': {m: {} for m in models}, 'families': {'rows': []}}).score()
+                                        {'models': {m: {} for m in models}, 'families': {'rows': []},
+                                         'effort_readings': {'reads': {'default': 'high'}},
+                                         'estimation_order': {'order': list(fa.ESTIMATION_ORDER),
+                                                              'sibling_first_up_to_distance': 1,
+                                                              'speed_cross_line_before_fit': True,
+                                                              'evidence': 'synthetic'}}).score()
         self.assertIsNone(rows['partial_coder']['axes']['coding']['value'])
         self.assertEqual(rows['partial_coder']['axes']['coding']['missing_facets'], ['faithfulness'])
         self.assertEqual(rows['partial_coder']['axes']['tool_operation']['by_level']['2']['by_effort']['high'], 0.2)
@@ -351,7 +356,9 @@ class FixRoundRegressionTests(unittest.TestCase):
             ('GPT-6 Astra (Low)', 42.0, {}),
             ('Claude Opus 5.5 (High)', 56.0, {}),
         ]
-        high, names, _, variants = ms.Builder.select_variants(items)
+        readings = cal['sources'].effort_readings({'effort_readings': {
+            'labels': {'non-reasoning': 'none', 'reasoning': 'default'}, 'reads': {'default': 'high'}}})
+        high, names, _, variants = ms.Builder.select_variants(items, readings)
         self.assertEqual(high['GPT-6 Astra'], 55.0)
         self.assertEqual(names['GPT-6 Astra'], 'GPT-6 Astra (High)')
         self.assertEqual(variants['GPT-6 Astra']['xhigh'], 59.0)
@@ -363,12 +370,14 @@ class FixRoundRegressionTests(unittest.TestCase):
         self.assertGreater(corrs['lmarena.creative_writing']['r'], 0.5)
         opus_div = scores['models']['claude-opus-5-5']['axes']['creativity']['by_effort']
         self.assertGreater(opus_div['high'], opus_div['low'])
-        # F4: every full-panel board has sd_panel == 1.0 on High rows, and partial-panel secondary boards carry scale != 1.0
+        # F4 (five_axis link): every full-panel board has sd 1.0 on the panel's High rows; a facet with no full-panel board
+        # leaves each board on its own panel scale (scale 1, offset 0 before the anchor centring), whatever boards it has
         for facet_key, link in scores['links'].items():
             for src in link['full_panel_boards']:
                 self.assertEqual(link['sd_at_high'][src], 1.0, (facet_key, src))
-        self.assertNotEqual(scores['links']['tool_operation.image_recognition']['scales']['aa.mmmu_pro'], 1.0)
-        self.assertNotEqual(scores['links']['aesthetics.design']['scales']['designarena.svg'], 1.0)
+            if not link['full_panel_boards']:
+                self.assertEqual(set(link['scales'].values()), {1.0}, facet_key)
+                self.assertEqual(len(set(link['offsets'].values())), 1, facet_key)
 
     def test_f3_economy_cost_is_inside_net_score_without_score_rounding(self):
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
@@ -664,7 +673,7 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
                                'model-b': {'creativity.creative_writing': facet}}, loaded['scores'])
         self.assertEqual(self.local.read_bytes(), before)  # a read never writes
 
-    def test_a_schema_2_file_keeps_the_position_of_every_entry_and_the_next_save_writes_schema_3(self):
+    def test_a_schema_2_file_keeps_the_position_of_every_entry_and_the_next_save_writes_the_current_schema(self):
         """Owner 2026-11-18: level 3 moved from the anchor to the panel maximum; levels at or below 2 stay, levels above 2 keep
         their position (`LOCAL_UPGRADES[2]`, `level-3-conversion.json`), a facet entry beats a category entry, and a read writes nothing."""
         old = {
@@ -681,13 +690,13 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         self.write({'schema_version': 2, 'scores': old})
         before = self.local.read_bytes()
         loaded = user_scores.load_local(self.local)
-        self.assertEqual(loaded['schema_version'], 3)
+        self.assertEqual(loaded['schema_version'], user_scores.SCHEMA_VERSION)
         self.assert_converted(old, loaded['scores'])
         self.assertIn('coding', loaded['scores']['model-c'])                 # at or below 2 a category entry stays one entry
         self.assertEqual(self.local.read_bytes(), before)
         user_scores.set_score('model-d', 'coding', 2.0, local_path=self.local, as_of='2026-11-18')
         saved = json.loads(self.local.read_text(encoding='utf-8'))
-        self.assertEqual(saved['schema_version'], 3)
+        self.assertEqual(saved['schema_version'], user_scores.SCHEMA_VERSION)
         self.assertEqual(saved['scores']['model-a'], loaded['scores']['model-a'])          # converted once, kept as written
         self.assertEqual(user_scores.load_local(self.local)['scores']['model-a'], saved['scores']['model-a'])   # no second conversion
 
@@ -699,6 +708,36 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
         self.assertEqual(saved['schema_version'], user_scores.SCHEMA_VERSION)
         self.assert_converted({'model-a': {'creativity': entry}}, saved['scores'])
         self.assertEqual(saved['scores']['model-b']['coding']['level'], 2.0)
+
+    def test_a_schema_3_entry_under_a_name_v070_resolved_through_a_changed_alias_moves_to_the_row_v070_meant(self):
+        """Round 6 item 2 (AGENTS.md: what a released version wrote for the user is kept): `LOCAL_UPGRADES[3]` rewrites a
+        name of `released_names.V0_7_0` to the row v0.7.0 resolved it to; entries meeting on one row merge in file order,
+        the later winning, as v0.7.0's overlay applied them; every other entry is kept as written."""
+        a = {'level': 2.5, 'as_of': '2026-11-12', 'kind': 'user'}
+        b = {'level': 1.5, 'as_of': '2026-11-13', 'kind': 'user'}
+        c = {'level': 2.2, 'as_of': '2026-11-14', 'kind': 'user'}
+        self.write({'schema_version': 3, 'scores': {
+            'gemini-4-pro': {'coding.execution': a}, 'claude-opus-5-5': {'creativity': b},
+            'claude-opus-5': {'creativity': c, 'coding': a}, 'unknown-model': {'coding': b}}})
+        loaded = user_scores.load_local(self.local)
+        self.assertEqual(loaded['schema_version'], user_scores.SCHEMA_VERSION)
+        self.assertEqual(loaded['scores'], {'gemini-4-argon-high': {'coding.execution': a},
+                                            'claude-opus-5-5': {'creativity': c, 'coding': a},
+                                            'unknown-model': {'coding': b}})
+
+    def test_a_provider_qualified_schema_3_key_is_resolved_as_v070_resolved_it(self):
+        """Round 7 item 4 (AGENTS.md: what a released version wrote for the user is kept): v0.7.0 read a key by its last
+        `/` segment and then the alias table, so `anthropic/claude-opus-5` scored claude-opus-5-5 and `x-ai/grok-4`
+        scored grok-4.7; the upgrade rewrites such keys to that row, is idempotent, and keeps a key v0.7.0 did not resolve."""
+        a = {'level': 2.5, 'as_of': '2026-11-01', 'kind': 'user'}
+        b = {'level': 2.6, 'as_of': '2026-11-01', 'kind': 'user'}
+        c = {'level': 1.5, 'as_of': '2026-11-01', 'kind': 'user'}
+        self.write({'schema_version': 3, 'scores': {'anthropic/claude-opus-5': {'creativity': a}, 'x-ai/grok-4': {'creativity': b},
+                                                     'vendor/no-such-model-x': {'creativity': c}}})
+        loaded = user_scores.load_local(self.local)
+        self.assertEqual(loaded['scores'], {'claude-opus-5-5': {'creativity': a}, 'grok-4.7': {'creativity': b},
+                                            'vendor/no-such-model-x': {'creativity': c}})
+        self.assertEqual(user_scores.upgrade_local_document(loaded), loaded)
 
     def test_every_schema_below_the_current_one_has_an_upgrade_step(self):
         self.assertEqual(sorted(user_scores.LOCAL_UPGRADES), list(range(1, user_scores.SCHEMA_VERSION)))
@@ -795,8 +834,8 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         cx['gpt6_sol_high'] = {**cx['sol_high'], 'model': 'gpt-6-sol', 'effort': 'high'}
         cx['gpt6_sol_max'] = {**cx['sol_high'], 'model': 'gpt-6-sol', 'effort': 'max'}
         cx['gpt56_sol_high'] = {**cx['sol_high'], 'model': 'gpt-5.6-sol', 'effort': 'high'}
-        cx['ds_v4_high'] = {**cx['sol_high'], 'model': 'deepseek-v4-pro', 'effort': 'high'}
-        cx['ds_v4_max'] = {**cx['sol_high'], 'model': 'deepseek-v4-pro', 'effort': 'max'}
+        cx['ds_v4_high'] = {**cx['sol_high'], 'model': 'glm-5.3', 'effort': 'high'}
+        cx['ds_v4_max'] = {**cx['sol_high'], 'model': 'glm-5.3', 'effort': 'max'}
         usage = usage_windows(self.now, {'codex': [('usage', 90, 84)]})
 
         code_task = {
@@ -813,10 +852,10 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         empty_pub = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {}}
 
         # The precondition is set here, not read from the shipped coverage: gpt-6-sol has no faithfulness at Max and
-        # deepseek-v4-pro none at all.
+        # glm-5.3 none at all.
         five = keep_efforts(copy.deepcopy(axis_scores.load_five_axis()), 'gpt-6-sol', 'coding', 'faithfulness',
                             ('low', 'medium', 'high', 'xhigh'))
-        five = drop_facet(five, 'deepseek-v4-pro', 'coding', 'faithfulness')
+        five = drop_facet(five, 'glm-5.3', 'coding', 'faithfulness')
 
         def excluded():
             with patch.object(user_scores, 'load_public', return_value=empty_pub), \
@@ -826,7 +865,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             return {c['id']: c['excluded'] for c in d['ranking']}
 
         # High filled from one-sided effort data (five_axis.fill_high) routes gpt-6-sol and gpt-5.6-sol at High; Max of
-        # gpt-6-sol (no faithfulness at Max) and deepseek-v4-pro (no faithfulness at all) stay in Mode B with the hint.
+        # gpt-6-sol (no faithfulness at Max) and glm-5.3 (no faithfulness at all) stay in Mode B with the hint.
         before = excluded()
         self.assertEqual((before['gpt6_sol_high'], before['gpt56_sol_high']), ([], []))
         for bid in ('gpt6_sol_max', 'ds_v4_high', 'ds_v4_max'):
@@ -834,19 +873,30 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
 
         user_scores.set_score('gpt-6-sol', 'coding.faithfulness', 3.0, public=False, accounts=accounts)
         user_scores.set_score('gpt-6-sol', 'coding.execution', 2.4, public=False, accounts=accounts)
-        user_scores.set_score('deepseek-v4-pro', 'coding.faithfulness', 2.5, public=False, accounts=accounts)
-        user_scores.set_score('deepseek-v4-pro', 'coding.execution', 2.2, public=False, accounts=accounts)
+        user_scores.set_score('glm-5.3', 'coding.faithfulness', 2.5, public=False, accounts=accounts)
+        user_scores.set_score('glm-5.3', 'coding.execution', 2.2, public=False, accounts=accounts)
         after = excluded()
         self.assertEqual((after['gpt6_sol_high'], after['ds_v4_high']), ([], []))
-        # A manual score sets High only: faithfulness has no Max of its own, so Max stays missing (no borrowed curve).
+        # Rule (owner 2026-11-18, `_manual_by_effort`): an effort the facet has no value at takes the manual High plus the
+        # panel's median own step from High to it (`effort_steps`), so Max routes; never another model's curve.
+        step = five['effort_steps']['coding.faithfulness']['high']['max']['step']
         for bid in ('gpt6_sol_max', 'ds_v4_max'):
-            self.assertTrue(any('no trusted data' in e for e in after[bid]), after[bid])
+            self.assertFalse(any('no trusted data' in e for e in after[bid]), after[bid])
+        with patch.object(axis_scores, 'load_five_axis', return_value=copy.deepcopy(five)):
+            ov = axis_scores.five_axis_overlay(copy.deepcopy(accounts), read_local_state=True, public_scores=empty_pub)
+        for model in ('gpt-6-sol', 'glm-5.3'):
+            faith = ov['models'][model]['five_axis']['categories']['coding']['facets']['faithfulness']
+            # bounded by the effort below it (`bound_along_effort`): never under Xhigh
+            self.assertAlmostEqual(faith['by_effort']['max'],
+                                   max(faith['value'] + step, faith['by_effort'].get('xhigh', faith['value'])), places=4)
 
         overlay = axis_scores.five_axis_overlay(copy.deepcopy(accounts), read_local_state=True, public_scores=empty_pub)
         shipped = axis_scores.load_five_axis()['models']['gpt-6-sol']['axes']['coding']['facets']['execution']
         execution = overlay['models']['gpt-6-sol']['five_axis']['categories']['coding']['facets']['execution']
-        self.assertEqual(execution['by_effort']['max'], shipped['by_effort']['max'])    # the measured Max stands
-        self.assertEqual(execution['measured_efforts'], ['max'])
+        # The measured Max stands unless it is below the manual High, which floors it (and it is no longer measured).
+        self.assertIn('max', shipped['measured_efforts'])
+        self.assertEqual(execution['by_effort']['max'], max(shipped['by_effort']['max'], execution['value']))
+        self.assertEqual('max' in execution['measured_efforts'], shipped['by_effort']['max'] >= execution['value'])
         self.assertEqual(execution['by_effort']['high'], execution['value'])
 
     def test_manual_by_effort_keeps_measured_efforts_follows_own_curve_and_never_borrows(self):
@@ -1074,6 +1124,340 @@ class IsolatedEntryTests(unittest.TestCase):
                                   encoding='utf-8', timeout=60)
             self.assertEqual(done.returncode, 0, done.stderr)
             json.loads(done.stdout)
+
+
+class EffortBoundAndManualFillTests(unittest.TestCase):
+    """Owner 2026-11-18: one rule against inversion along effort (`bound_along_effort`) for every value, and every effort
+    filled after a hand-written score; a hand-written score wins over any estimate, the downward one included."""
+
+    def test_bound_never_inverts_keeps_the_pinned_efforts_and_leaves_an_ordered_curve_alone(self):
+        curves = [{'low': 0.2, 'medium': 1.4, 'high': 0.5, 'xhigh': 0.9, 'max': -0.3},
+                  {'low': -1.0, 'medium': 0.0, 'high': 0.5, 'xhigh': 1.0, 'max': 2.0},
+                  {'medium': 3.0, 'high': 0.5, 'max': 1.0}, {'low': 1.0, 'max': 0.0}]
+        efforts = list(user_scores.EFFORTS)
+        for by in curves:
+            for rises in (True, False):
+                sign = 1.0 if rises else -1.0
+                out = user_scores.bound_along_effort(by, rises)
+                anchor = user_scores.anchor_effort(by)
+                self.assertEqual(out[anchor], by[anchor])                       # High (else nearest) never moves
+                vals = [sign * out[e] for e in efforts if e in out]
+                self.assertEqual(vals, sorted(vals), (by, rises))
+                self.assertEqual(user_scores.bound_along_effort(out, rises), out)     # an ordered curve stays as it is
+                at = efforts.index(anchor)
+                for e in out:          # a moved effort takes its neighbour's value toward the anchor
+                    if out[e] != by[e]:
+                        i = efforts.index(e)
+                        toward = [k for k in out if (efforts.index(k) > i if i < at else efforts.index(k) < i)]
+                        near = min(toward, key=lambda k: abs(efforts.index(k) - i))
+                        self.assertEqual(out[e], out[near], (by, rises, e))
+        with self.assertRaises(ValueError):
+            user_scores.bound_along_effort({'low': 1.0, 'high': 0.0}, True, ('low', 'high'))
+
+    def test_a_manual_score_without_a_curve_fills_every_effort_from_the_panel_steps(self):
+        steps = {'high': {'low': {'step': -1.0, 'n': 3}, 'medium': {'step': -0.4, 'n': 3}, 'xhigh': {'step': 0.3, 'n': 2},
+                          'max': {'step': 0.2, 'n': 2}}}
+        out, measured = user_scores._manual_by_effort(0.5, None, True, None, steps)
+        self.assertEqual(out, {'low': -0.5, 'medium': 0.1, 'high': 0.5, 'xhigh': 0.8, 'max': 0.8})    # max held at xhigh
+        self.assertEqual(measured, [])
+        # an effort the panel gives no step for stays empty; nothing is borrowed
+        out, _ = user_scores._manual_by_effort(0.5, None, True, None, {'high': {'low': {'step': -1.0, 'n': 2}}})
+        self.assertEqual(out, {'low': -0.5, 'high': 0.5})
+        # `minimal` is Low plus the fleet's step below Low (effort_steps.<facet>.low.minimal), bounded in the facet's direction
+        below = {**steps, 'low': {'minimal': {'step': -0.7, 'n': 12}}}
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, below)[0]['minimal'], -1.2)
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, False, None,
+                                                       {'low': {'minimal': {'step': -0.7, 'n': 12}},
+                                                        'high': {'low': {'step': 0.9, 'n': 3}}})[0]['minimal'], 1.4)
+        # `none` (reasoning off) is the lowest measured reasoning effort, else High, plus the fleet's own off step
+        # (effort_steps.<facet>.lowest_reasoning.none, round 5 review B), bounded in the facet's direction; without the step
+        # there is no `none`
+        L = user_scores.LOWEST_REASONING
+        off = {**below, L: {'none': {'step': -2.0, 'n': 7}}}
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, off)[0]['none'], -1.5)        # from High
+        own = {'by_effort': {'low': -0.3, 'high': 0.0}, 'status': 'measured', 'measured_efforts': ['low', 'high']}
+        self.assertEqual(user_scores._manual_by_effort(0.5, own, True, None, off)[0]['none'], -2.3)         # from Low
+        self.assertNotIn('none', user_scores._manual_by_effort(0.5, None, True, None, below)[0])
+        # `ultra` is Max plus the fleet's step above Max (effort_steps.<facet>.max.ultra), bounded the same way
+        above = {**steps, 'max': {'ultra': {'step': 0.25, 'n': 5}}}
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, above)[0]['ultra'], 0.95)   # Max 0.7 held at XHigh 0.8 after
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None,
+                                                       {**steps, 'max': {'ultra': {'step': -0.25, 'n': 5}}})[0]['ultra'], 0.8)
+
+    def test_a_hand_written_score_wins_over_a_derived_value(self):
+        """Rule (calibration/README.md, order of methods): a hand-written score wins over every estimate, the downward
+        derivation (`tier_down`) and the size step (`size_step`) included, and fills `minimal` from Low and `none` from the
+        lowest measured reasoning effort (else High)."""
+        five = axis_scores.load_five_axis()
+        derived = [(m, a, f) for m, r in five['models'].items() for a, ax in r['axes'].items()
+                   for f, c in (ax.get('facets') or {}).items()
+                   if (c.get('estimate') or {}).get('method') in ('tier_down', 'size_step')]
+        self.assertEqual({five['models'][m]['axes'][a]['facets'][f]['estimate']['method'] for m, a, f in derived},
+                         {'tier_down', 'size_step'})
+        accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
+        tested = [(m, a, f) for m, a, f in derived if m in accounts['models']]
+        self.assertTrue(tested)
+        for m, a, f in tested:
+            pub = {'schema_version': user_scores.SCHEMA_VERSION,
+                   'scores': {m: {f'{a}.{f}': {'level': 1.5, 'as_of': '2026-11-18', 'kind': 'maintainer'}}}}
+            ov = axis_scores.five_axis_overlay(copy.deepcopy(accounts), data=copy.deepcopy(five), read_local_state=False,
+                                               public_scores=pub)
+            cell = ov['models'][m]['five_axis']['categories'][a]['facets'][f]
+            z = round(user_scores.level_to_z(1.5, *user_scores.target_triad(five['anchor']['targets'], a, f)), 4)
+            self.assertEqual((cell['status'], cell['value'], cell['by_effort']['high']), ('maintainer', z, z), (m, a, f))
+            self.assertNotIn(f'{a}.{f}', ov['models'][m]['five_axis']['estimates'])
+            steps = five['effort_steps'][f'{a}.{f}']
+            below = steps['low']['minimal']['step']
+            low, minimal = cell['by_effort']['low'], cell['by_effort']['minimal']
+            self.assertEqual(minimal, round(min(low + below, low) if user_scores.rises_with_effort(a, f)
+                                            else max(low + below, low), 4), (m, a, f))
+            off = (steps.get(user_scores.LOWEST_REASONING) or {}).get('none')
+            if off is None:         # no fleet reading at none for this facet: none stays empty
+                self.assertNotIn('none', cell['by_effort'], (m, a, f))
+                continue
+            near = user_scores.edge_anchor('none', cell['by_effort'], cell.get('measured_efforts') or ['high'])
+            v, lowest = cell['by_effort'][near] + off['step'], min(cell['by_effort'][e] for e in cell['by_effort'] if e != 'none')
+            self.assertEqual(cell['by_effort']['none'], round(min(v, lowest) if user_scores.rises_with_effort(a, f)
+                                                              else max(v, lowest), 4), (m, a, f))
+
+    def test_the_effort_order_puts_none_below_minimal_and_none_is_filled_from_the_lowest_reasoning_effort(self):
+        """Rule (round 4, vendor documents; round 5 review B): `none` is reasoning switched off, below `minimal`; `minimal`
+        and `ultra` take their neighbour plus the fleet's step at that end; `none` takes the lowest measured reasoning
+        effort (else High) plus the fleet's own (none - lowest reasoning) step."""
+        L = user_scores.LOWEST_REASONING
+        self.assertEqual(user_scores.EFFORTS, ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'))
+        self.assertEqual(user_scores.MEASURED_EFFORTS, ('low', 'medium', 'high', 'xhigh', 'max'))
+        self.assertEqual(user_scores.EDGES, {'minimal': ('low', ('low', 'medium')), 'ultra': ('max', ('max', 'xhigh')),
+                                             'none': (L, ('none', L))})
+        anchor = user_scores.edge_anchor
+        self.assertEqual(anchor('none', {'low': 0, 'medium': 0, 'high': 0}, ['medium', 'high']), 'medium')
+        self.assertEqual(anchor('none', {'low': 0, 'high': 0}, []), 'high')         # nothing measured below: High
+        self.assertIsNone(anchor('none', {'max': 0}, []))                           # no High to fall back on
+        self.assertEqual(anchor('minimal', {'low': 0}, []), 'low')
+        self.assertIsNone(anchor('ultra', {'high': 0}, ['high']))
+
+
+class OperatingPointFloorTests(unittest.TestCase):
+    """Rule (user_scores.operating_point_floor; owner 2026-11-19, round 8; calibration/README.md, One operating point on its
+    model): on a row declared as another row at an operating point, the model's cell at the point is a floor under a
+    shipped maintainer score on every ability facet: routing reads max(score, base) at each effort and the cell records
+    both inputs and which binds. A local user's score and responsiveness are not bounded."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.targets = axis_scores.load_five_axis()['anchor']['targets']
+        triad = user_scores.target_triad(cls.targets, 'coding', 'execution')
+        cls.z1, cls.z3 = user_scores.level_to_z(1.0, *triad), user_scores.level_to_z(3.0, *triad)
+        cls.base = round((cls.z1 + cls.z3) / 2, 4)
+
+    def table(self, point=True):
+        estimate = {'method': 'same_model', 'base_model': 'astra', **({'at_effort': 'ultra'} if point else {})}
+
+        def cell(value):
+            return {'value': value, 'by_effort': dict.fromkeys(('low', 'high', 'max', 'ultra'), value),
+                    'status': 'estimated', 'measured_efforts': [], 'estimate': dict(estimate)}
+        return {'pro': {'five_axis': {'scores': {}, 'categories': {
+            'coding': {'facets': {'execution': cell(self.base), 'faithfulness': cell(self.base)}, 'value': None, 'by_effort': {}},
+            'tool_operation': {'facets': {'responsiveness': cell(self.base)}, 'value': None, 'by_effort': {}}}}}}
+
+    def overlay(self, scores, kind='maintainer', point=True):
+        models = self.table(point)
+        doc = {'schema_version': user_scores.SCHEMA_VERSION,
+               'scores': {'pro': {t: {'level': lv, 'as_of': '2026-11-19', 'kind': kind} for t, lv in scores.items()}}}
+        user_scores.apply_overlay(models, self.targets, **({'public_scores': doc} if kind == 'maintainer' else {'local_scores': doc}))
+        cats = models['pro']['five_axis']['categories']
+        return {f: c for cat in cats.values() for f, c in cat['facets'].items()}
+
+    def test_the_base_binds_a_maintainer_score_below_it_and_the_score_binds_above_it(self):
+        got = self.overlay({'coding.execution': 1.0, 'coding.faithfulness': 3.0})
+        low, high = got['execution'], got['faithfulness']
+        for e in ('low', 'high', 'max', 'ultra'):
+            self.assertEqual(low['by_effort'][e], self.base)
+            self.assertEqual(high['by_effort'][e], max(high['operating_point_floor']['score_by_effort'][e], self.base))
+            self.assertGreater(high['by_effort'][e], self.base)
+        self.assertEqual(set(low['operating_point_floor']['binds_by_effort'].values()), {'base'})
+        self.assertEqual(set(high['operating_point_floor']['binds_by_effort'].values()), {'score'})
+        self.assertLess(low['operating_point_floor']['score_by_effort']['high'], self.base)
+        self.assertEqual((low['operating_point_floor']['base_model'], low['operating_point_floor']['at_effort']),
+                         ('astra', 'ultra'))
+        self.assertEqual(low['value'], low['by_effort']['high'])
+
+    def test_the_note_reads_the_value_the_candidate_is_scored_with_both_ways(self):
+        """Rule (round 9 item 1; user_scores.applied_scores / applied_note): the candidate note names what routing reads
+        at the candidate's effort, from the overlay's cells: where a floor is declared both inputs and which binds."""
+        models = self.table()
+        cell = models['pro']['five_axis']['categories']['coding']['facets']['execution']
+        models['pro']['five_axis']['categories']['aesthetics'] = {'facets': {'design': copy.deepcopy(cell)}, 'value': None,
+                                                                  'by_effort': {}}
+        doc = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {'pro': {
+            t: {'level': lv, 'as_of': '2026-11-19', 'kind': 'maintainer'}
+            for t, lv in (('coding.execution', 1.0), ('coding.faithfulness', 3.0), ('aesthetics', 3.0))}}}
+        user_scores.apply_overlay(models, self.targets, public_scores=doc)
+        state = models['pro']['five_axis']
+        for eff in ('low', 'high', 'ultra'):
+            with self.subTest(effort=eff):
+                applied = user_scores.applied_scores(state, eff)
+                note = user_scores.applied_note(applied, eff)
+                values = axis_scores.five_axis_values(state, eff)      # what evaluate_bundle scores the candidate with
+                reads = {n: v for r in applied.values() for n, v in r['reads'].items()}
+                floors = {n: f for r in applied.values() for n, f in (r.get('operating_point_floor') or {}).items()}
+                self.assertEqual(reads['aesthetics.design'], values['aesthetics']['design'])
+                self.assertEqual(min(reads['coding.execution'], reads['coding.faithfulness']), values['coding'])
+                self.assertEqual((floors['coding.execution']['binds'], floors['coding.faithfulness']['binds']),
+                                 ('base', 'score'))
+                for name, value in reads.items():
+                    self.assertIn(f"{name.split('.')[1]} {value:+.4f}", note)
+                self.assertIn(f"execution {reads['coding.execution']:+.4f} (the operating point binds: astra at ultra "
+                              f"{floors['coding.execution']['base']:+.4f} above the score "
+                              f"{floors['coding.execution']['score']:+.4f})", note)
+                self.assertIn(f"faithfulness {reads['coding.faithfulness']:+.4f} (the score binds: "
+                              f"{floors['coding.faithfulness']['score']:+.4f} at or above the operating point astra at ultra",
+                              note)
+
+    def test_a_planned_candidates_note_and_ledger_row_carry_the_value_it_was_scored_with(self):
+        """End to end on the shipped fleet and scores (demo_plan): for every candidate whose manual score a declared
+        operating point bounds, the note's coding facets give the coding score the candidate was scored with."""
+        import demo_plan
+        fleet = json.loads((REFERENCES_DIR / 'accounts.json').read_text(encoding='utf-8-sig'))
+        task = {'title': 'design a system', 'profile': {
+            'work_kind': 'architecture_reasoning', 'primary_level': 3, 'secondary_kind': 'none', 'secondary_level': 0,
+            'needs_visual': False, 'local_only': False, 'wants_fast': False, 'access': 'read-only', 'expected_hours': 1.0,
+            'task_count': '1'}}
+        decision = demo_plan.plan({'task': task}, fleet=fleet)
+        bounded = [c for c in decision['ranking']
+                   if any(r.get('operating_point_floor') for r in (c.get('manual_scores') or {}).values())]
+        self.assertTrue(bounded)
+        rows = {r['id']: r for r in ledger_snapshot.decision_snapshot(decision)['ranking']}
+        for c in bounded:
+            reads = {n: v for r in c['manual_scores'].values() for n, v in r['reads'].items()}
+            coding = [reads[n] for n in ('coding.execution', 'coding.faithfulness') if n in reads]
+            with self.subTest(candidate=c.get('id')):
+                note = next(n for n in c['notes'] if n.startswith('manual capability scores applied'))
+                self.assertEqual(len(coding), 2)
+                self.assertEqual(round(min(coding), 4), c['components']['coding'])
+                self.assertIn(f"{min(coding):+.4f}", note)
+                if c['id'] in rows:                                    # the ledger keeps the top rows only
+                    self.assertEqual({t: r['reads'] for t, r in rows[c['id']]['manual_scores'].items()},
+                                     {t: r['reads'] for t, r in c['manual_scores'].items()})
+
+    def test_the_note_reads_the_value_at_the_candidates_own_effort(self):
+        """Rule (round 10 item 2; candidate_eval reads `applied_scores` at `axis_scores.reading_effort` of the candidate):
+        on a row whose manual-score cell differs between the candidate's effort and High (synthetic: the faithfulness cell
+        of a model a candidate scores at another effort, far below every other coding facet there and above them at
+        High), the note gives the value the candidate is scored with at its own effort, not the High value."""
+        import demo_plan
+        task = {'title': 'design a system', 'profile': {
+            'work_kind': 'architecture_reasoning', 'primary_level': 3, 'secondary_kind': 'none', 'secondary_level': 0,
+            'needs_visual': False, 'local_only': False, 'wants_fast': False, 'access': 'read-only', 'expected_hours': 1.0,
+            'task_count': '1'}}
+        loaded = demo_plan.reference_accounts()
+        candidate = next(c for c in demo_plan.plan({'task': task})['ranking']
+                         if (c['bundle'].get('effort') or 'high') != 'high')
+        model, effort = account_fleet.row_key(candidate['bundle']['model'], loaded), candidate['bundle']['effort']
+        low, high = -3.0, 3.0
+        original = axis_scores.five_axis_overlay
+
+        def synthetic(*args, **kwargs):
+            accounts = original(*args, **kwargs)
+            state = accounts['models'][model]['five_axis']
+            cell = state['categories']['coding']['facets']['faithfulness']
+            cell['by_effort'] = {e: (high if e == 'high' else low) for e in (cell.get('by_effort') or {})}
+            cell['by_effort'].update({effort: low, 'high': high})
+            coding = state['categories']['coding']                     # the category is the min of its facets
+            coding['by_effort'] = {e: min(f['by_effort'][e] for f in coding['facets'].values() if e in f['by_effort'])
+                                   for e in cell['by_effort']}
+            state['manual_scores'] = {'coding.faithfulness': {'level': 0.5, 'z': low, 'kind': 'maintainer',
+                                                              'as_of': '2026-11-19'}}
+            return accounts
+        with patch.object(axis_scores, 'five_axis_overlay', synthetic):
+            got = next(c for c in demo_plan.plan({'task': task})['ranking'] if c['id'] == candidate['id'])
+        reads = got['manual_scores']['coding.faithfulness']['reads']['coding.faithfulness']
+        note = next(n for n in got['notes'] if n.startswith('manual capability scores applied'))
+        self.assertEqual(reads, low)
+        self.assertEqual(got['components']['coding'], round(low, 4))       # what the candidate is scored with there
+        self.assertIn(f'read at {effort}', note)
+        self.assertIn(f'faithfulness {low:+.4f}', note)
+        self.assertNotIn(f'faithfulness {high:+.4f}', note)
+
+    def test_a_local_user_score_responsiveness_and_a_row_without_a_point_are_not_bounded(self):
+        cases = ((self.overlay({'coding.execution': 1.0}, kind='user'), 'execution'),
+                 (self.overlay({'tool_operation.responsiveness': 1.0}), 'responsiveness'),
+                 (self.overlay({'coding.execution': 1.0}, point=False), 'execution'))
+        for got, facet in cases:
+            with self.subTest(facet=facet):
+                self.assertNotIn('operating_point_floor', got[facet])
+                self.assertLess(got[facet]['by_effort']['high'], self.base)
+
+
+class EffectiveSourceTests(unittest.TestCase):
+    """Rule (owner 2026-11-18, user_scores._follow_effective_sources): a facet derived from a larger model follows that
+    model's effective value after hand-written scores, shipped and local, and is never above it; a hand-written score on the
+    derived model itself wins."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.targets = axis_scores.load_five_axis()['anchor']['targets']
+
+    def table(self):
+        def cell(by, **extra):
+            return {'value': by['high'], 'by_effort': dict(by), 'status': 'estimated', 'measured_efforts': [], **extra}
+        big = {'faithfulness': cell({'low': -1.0, 'high': 0.0, 'max': 0.3}), 'execution': cell({'low': -1.0, 'high': 0.0, 'max': 0.3})}
+        small = {'faithfulness': cell({'low': -1.5, 'high': -0.5, 'max': -0.2},
+                                      estimate={'method': 'size_step', 'base_model': 'big', 'move': -0.5}),
+                 'execution': cell({'low': -2.0, 'high': -1.0, 'max': -0.5})}
+        return {m: {'five_axis': {'categories': {'coding': {'facets': f, 'value': None, 'by_effort': {}}}, 'scores': {}}}
+                for m, f in (('big', big), ('small', small))}
+
+    def overlay(self, scores):
+        models = self.table()
+        user_scores.apply_overlay(models, self.targets, local_scores={'schema_version': user_scores.SCHEMA_VERSION,
+                                                                      'scores': scores})
+        return {m: models[m]['five_axis']['categories']['coding'] for m in models}
+
+    def test_a_derived_facet_moves_with_its_sources_hand_written_score_and_never_rises_above_it(self):
+        for level in (1.0, 3.0):
+            got = self.overlay({'big': {'coding.faithfulness': {'level': level, 'as_of': '2026-11-18', 'kind': 'user'}}})
+            eff = got['big']['facets']['faithfulness']['by_effort']
+            small = got['small']['facets']['faithfulness']
+            shipped_small, shipped_big = self.table()['small'], self.table()['big']
+            for e, v in small['by_effort'].items():
+                was = shipped_small['five_axis']['categories']['coding']['facets']['faithfulness']['by_effort'][e]
+                base = shipped_big['five_axis']['categories']['coding']['facets']['faithfulness']['by_effort'][e]
+                self.assertAlmostEqual(v, was + eff[e] - base, places=4, msg=(level, e))
+                self.assertLessEqual(v, eff[e] + 1e-9, (level, e))
+            self.assertEqual(small['follows']['base_model'], 'big')
+            self.assertEqual(got['small']['by_effort']['high'],
+                             min(small['by_effort']['high'], got['small']['facets']['execution']['by_effort']['high']))
+
+    def test_a_local_score_keyed_by_an_alias_or_a_provider_path_applies_to_the_canonical_row(self):
+        """Rule (apply_overlay `_canonical`): a score written under an alias (accounts.json `aliases`) or under a
+        provider-qualified id reaches the row the alias names; it never creates a row of the alias's name."""
+        entry = {'coding.faithfulness': {'level': 1.0, 'as_of': '2026-11-18', 'kind': 'user'}}
+        direct = self.overlay({'big': entry})['big']['facets']['faithfulness']['by_effort']
+        for key in ('big-alias', 'provider/big-alias', 'provider/big'):
+            models = self.table()
+            user_scores.apply_overlay(models, self.targets, aliases={'big-alias': 'big'},
+                                      local_scores={'schema_version': user_scores.SCHEMA_VERSION, 'scores': {key: entry}})
+            self.assertEqual(set(models), {'big', 'small'}, key)
+            self.assertEqual(models['big']['five_axis']['categories']['coding']['facets']['faithfulness']['by_effort'],
+                             direct, key)
+
+    def test_a_score_under_a_name_that_resolves_to_no_row_is_ignored_and_never_made_a_row(self):
+        """Round 6 item 2: apply_overlay leaves `models_table` with the rows it had; `unresolved_models` names the entry."""
+        entry = {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-18', 'kind': 'user'}}
+        models, shipped = self.table(), self.table()
+        local = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {'gone-model': entry}}
+        user_scores.apply_overlay(models, self.targets, local_scores=local, public_scores=local)
+        self.assertEqual(models, shipped)
+        self.assertEqual(user_scores.unresolved_models(local, {'models': models, 'aliases': {}}), ['gone-model'])
+
+    def test_a_hand_written_score_on_the_derived_model_itself_wins(self):
+        got = self.overlay({'big': {'coding.faithfulness': {'level': 1.0, 'as_of': '2026-11-18', 'kind': 'user'}},
+                            'small': {'coding.faithfulness': {'level': 2.0, 'as_of': '2026-11-18', 'kind': 'user'}}})
+        z = round(user_scores.level_to_z(2.0, *user_scores.target_triad(self.targets, 'coding', 'faithfulness')), 4)
+        small = got['small']['facets']['faithfulness']
+        self.assertEqual((small['status'], small['by_effort']['high']), ('user', z))
+        self.assertNotIn('follows', small)
 
 
 if __name__ == '__main__':
