@@ -1340,6 +1340,45 @@ class OperatingPointFloorTests(unittest.TestCase):
                     self.assertEqual({t: r['reads'] for t, r in rows[c['id']]['manual_scores'].items()},
                                      {t: r['reads'] for t, r in c['manual_scores'].items()})
 
+    def test_the_note_reads_the_value_at_the_candidates_own_effort(self):
+        """Rule (round 10 item 2; candidate_eval reads `applied_scores` at `axis_scores.reading_effort` of the candidate):
+        on a row whose manual-score cell differs between the candidate's effort and High (synthetic: the faithfulness cell
+        of a model a candidate scores at another effort, far below every other coding facet there and above them at
+        High), the note gives the value the candidate is scored with at its own effort, not the High value."""
+        import demo_plan
+        task = {'title': 'design a system', 'profile': {
+            'work_kind': 'architecture_reasoning', 'primary_level': 3, 'secondary_kind': 'none', 'secondary_level': 0,
+            'needs_visual': False, 'local_only': False, 'wants_fast': False, 'access': 'read-only', 'expected_hours': 1.0,
+            'task_count': '1'}}
+        loaded = demo_plan.reference_accounts()
+        candidate = next(c for c in demo_plan.plan({'task': task})['ranking']
+                         if (c['bundle'].get('effort') or 'high') != 'high')
+        model, effort = account_fleet.row_key(candidate['bundle']['model'], loaded), candidate['bundle']['effort']
+        low, high = -3.0, 3.0
+        original = axis_scores.five_axis_overlay
+
+        def synthetic(*args, **kwargs):
+            accounts = original(*args, **kwargs)
+            state = accounts['models'][model]['five_axis']
+            cell = state['categories']['coding']['facets']['faithfulness']
+            cell['by_effort'] = {e: (high if e == 'high' else low) for e in (cell.get('by_effort') or {})}
+            cell['by_effort'].update({effort: low, 'high': high})
+            coding = state['categories']['coding']                     # the category is the min of its facets
+            coding['by_effort'] = {e: min(f['by_effort'][e] for f in coding['facets'].values() if e in f['by_effort'])
+                                   for e in cell['by_effort']}
+            state['manual_scores'] = {'coding.faithfulness': {'level': 0.5, 'z': low, 'kind': 'maintainer',
+                                                              'as_of': '2026-11-19'}}
+            return accounts
+        with patch.object(axis_scores, 'five_axis_overlay', synthetic):
+            got = next(c for c in demo_plan.plan({'task': task})['ranking'] if c['id'] == candidate['id'])
+        reads = got['manual_scores']['coding.faithfulness']['reads']['coding.faithfulness']
+        note = next(n for n in got['notes'] if n.startswith('manual capability scores applied'))
+        self.assertEqual(reads, low)
+        self.assertEqual(got['components']['coding'], round(low, 4))       # what the candidate is scored with there
+        self.assertIn(f'read at {effort}', note)
+        self.assertIn(f'faithfulness {low:+.4f}', note)
+        self.assertNotIn(f'faithfulness {high:+.4f}', note)
+
     def test_a_local_user_score_responsiveness_and_a_row_without_a_point_are_not_bounded(self):
         cases = ((self.overlay({'coding.execution': 1.0}, kind='user'), 'execution'),
                  (self.overlay({'tool_operation.responsiveness': 1.0}), 'responsiveness'),
