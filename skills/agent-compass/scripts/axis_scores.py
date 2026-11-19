@@ -76,7 +76,7 @@ def load_five_axis(path=None):
     return public_data.document(account_fleet.REFERENCES / 'five-axis-scores.json')
 
 
-FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/11'
+FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/12'
 
 
 def require_current_schema(data):
@@ -211,15 +211,15 @@ def _resolve_rule_capacity(accounts, community, cap_family, raw_plan, plan, src_
     target_tpl = provider_inventory.plan_defaults(accounts, cap_family, plan, shipped=shipped) if plan and plan in table else None
     if target_tpl is None:
         reason = _plan_unknown_text(src_spec, raw_plan)
-        return None, {'status': 'plan_unknown', 'age_days': None, 'plan': None, 'reason': reason}, reason
+        return None, {'status': 'plan_unknown', 'as_of': None, 'plan': None, 'reason': reason}, reason
     target_price = target_tpl.get('price_usd_per_month')
     target_psrc = target_tpl.get('price_source')
     if isinstance(target_price, bool) or not isinstance(target_price, (int, float)) or target_price <= 0:
         reason = f'plan {plan!r} has no paid monthly price (${target_price or 0:g}/mo)'
-        return None, {'status': 'unpriced_plan', 'age_days': None, 'plan': plan, 'reason': reason}, reason
+        return None, {'status': 'unpriced_plan', 'as_of': None, 'plan': plan, 'reason': reason}, reason
     if not reference_provenance.valid_vendor_price_source(target_psrc):
         reason = f'plan {plan!r} has no cited vendor price_source'
-        return None, {'status': 'uncited_plan_price', 'age_days': None, 'plan': plan, 'reason': reason}, reason
+        return None, {'status': 'uncited_plan_price', 'as_of': None, 'plan': plan, 'reason': reason}, reason
     ref_family = rule['reference_family'].strip()
     ref_window = rule['reference_window'].strip()
     candidates = []
@@ -245,7 +245,7 @@ def _resolve_rule_capacity(accounts, community, cap_family, raw_plan, plan, src_
             'row': ref_row,
         })
     if not candidates:
-        return None, {'status': 'missing', 'age_days': None, 'plan': plan}, None
+        return None, {'status': 'missing', 'as_of': None, 'plan': plan}, None
     target_p = float(target_price)
     exact_matches = [c for c in candidates if abs(c['price'] - target_p) < 1e-9]
     if exact_matches:
@@ -274,7 +274,7 @@ def _resolve_rule_capacity(accounts, community, cap_family, raw_plan, plan, src_
         )
     meta = {
         'status': chosen['row'].get('status', 'ok'),
-        'age_days': chosen['row'].get('age_days'),
+        'as_of': chosen['row'].get('as_of'),
         'plan': plan,
         'detected_tier': raw_plan,
         'plan_price_usd_per_month': target_p,
@@ -427,7 +427,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
         caps = {wid: float(rows_[wid]['capacity_usd']) for wid in spec['windows']
                 if isinstance((rows_.get(wid) or {}).get('capacity_usd'), (int, float))}
         cap_sources = {wid: {'status': (rows_.get(wid) or {}).get('status', 'missing'),
-                             'age_days': (rows_.get(wid) or {}).get('age_days'), 'plan': plan or None}
+                             'as_of': (rows_.get(wid) or {}).get('as_of'), 'plan': plan or None}
                        for wid in spec['windows']}
         plan_unknown_reason = None
         for wid in spec['windows']:
@@ -448,7 +448,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
             caps = {wid: float(v) for wid, v in explicit_caps.items()
                     if wid in spec['windows'] and isinstance(v, (int, float)) and v > 0}
             for wid in caps:
-                cap_sources[wid] = {'status': 'explicit', 'age_days': None, 'plan': plan or None}
+                cap_sources[wid] = {'status': 'explicit', 'as_of': None, 'plan': plan or None}
         spec['capacity_usd'] = caps
         unknown = [wid for wid in spec['windows'] if wid not in caps]
         if (unknown and not plan_unknown_reason and not is_free_pool
@@ -459,7 +459,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
                 plan_unknown_reason = _plan_unknown_text(src_spec, raw_plan)
                 for wid in unknown:
                     if cap_sources.get(wid, {}).get('status') == 'missing':
-                        cap_sources[wid] = {'status': 'plan_unknown', 'age_days': None, 'plan': None, 'reason': plan_unknown_reason}
+                        cap_sources[wid] = {'status': 'plan_unknown', 'as_of': None, 'plan': None, 'reason': plan_unknown_reason}
         spec['capacity_source'] = cap_sources
         if unknown:
             spec['capacity_unknown'] = True

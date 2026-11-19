@@ -56,7 +56,7 @@ SCHEMA_VERSION = 8
 # Schema 7 (2026-11-18, v0.7.0): level 3 is the panel maximum. five-axis-scores.json is `agent-compass.five-axis-scores/6`
 # and user-scores.json `schema_version = 3`.
 # Schema 8 (2026-11-19, v0.7.1): a value at every (model, effort) a host offers, `none` to `ultra`. five-axis-scores.json
-# is `agent-compass.five-axis-scores/11` (`effort_steps`, `size_steps`, `effort_readings`, cells that may carry
+# is `agent-compass.five-axis-scores/12` (`effort_steps`, `size_steps`, `effort_readings`, cells that may carry
 # `drift_correction`); accounts.json gains `effort_readings`, `series_versions`, `estimation_order`, the `listed_as`
 # and `listed_as_source` board identities and the panel `members`. A schema-7 reader refuses the scores file.
 UPDATE_APP = 'update AgentCompass to the latest release to receive new reference data'

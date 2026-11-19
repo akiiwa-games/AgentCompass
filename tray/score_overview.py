@@ -119,7 +119,7 @@ def category_overview(data: dict, models: dict) -> list[dict]:
     anchor = data.get("anchor") or {}
     targets = anchor.get("targets") or {}
     links = data.get("links") or {}
-    ages = data.get("source_ages") or {}
+    ages = data.get("source_dates") or {}
     out = []
     for key, label in CATEGORIES:
         facets = []

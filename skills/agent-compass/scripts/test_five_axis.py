@@ -5,15 +5,18 @@ time-to-exhaust, vendor multiplier; an empty ladder is a data error that still p
 charges burn x a pacing shadow price, ties go to the lower opportunity cost then the higher level, and the classifier may
 answer the axis demand itself."""
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
+import shutil
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 import numpy as np
 
 import allocator
+import data_age
 import account_fleet
 import axis_scores
 import candidate_ranking
@@ -143,8 +146,8 @@ def document(models, **override):
             'effort_readings': {'default': 'high'}}
 
 
-def window(usd, age=3, ref=None):
-    return {'unit': 'usd', 'capacity_usd': usd, 'status': 'ok', 'age_days': age, 'reference_model': ref}
+def window(usd, as_of='2026-11-10', ref=None):
+    return {'unit': 'usd', 'capacity_usd': usd, 'status': 'ok', 'as_of': as_of, 'reference_model': ref}
 
 
 # Community capacity per family / plan / window, as five_axis.capacity writes it (Max 20x weekly_fable left out).
@@ -1396,15 +1399,22 @@ class AnchorRelativeTests(unittest.TestCase):
         self.assertEqual(rows['m1']['axes']['coding']['status'], 'measured_partial')
 
     def test_a_stale_capability_source_is_a_surfaced_yellow_error(self):
-        """Advisor taxonomy report, bug 4: staleness is checked for every capability source, not only capacity."""
+        """Advisor taxonomy report, bug 4: staleness is checked for every capability source, not only capacity. The scores
+        file holds the date; the refresh's report ages it on the day it runs (data_age)."""
+        import refresh
         src = next(iter(self.ms.CAPABILITY_SOURCES))
-        ages = {src: {'as_of': '2026-08-01', 'age_days': 100, 'stale': True},
-                'aa.price': {'as_of': '2026-08-01', 'age_days': 100, 'stale': True},           # not a capability source
-                'metr.x': {'missing': True, 'reason': 'not used'}}
-        errors = self.fa.source_errors(ages)
-        self.assertEqual([(e['source'], e['level'], e['reason'], e['field']) for e in errors],
-                         [(src, 'yellow', 'stale_source', 'capability')])
-        self.assertEqual(errors[0]['threshold_days'], self.fa.STALE_DAYS)
+        dated = {src: {'kind': 'benchmark', 'as_of': '2026-08-01'},
+                 'aa.price': {'kind': 'vendor', 'as_of': '2026-08-01'},                       # not a capability source
+                 'metr.x': {'missing': True, 'reason': 'not used'}}
+        now = datetime(2026, 11, 9, tzinfo=timezone.utc)
+        rows, worst = refresh.staleness({'source_dates': dated}, now)
+        by = {r['what']: r for r in rows}
+        self.assertEqual((by[src]['status'], by[src]['age_days']), ('stale', 100))
+        self.assertIn('stale capability source', by[src]['note'])
+        self.assertEqual(by['aa.price']['status'], 'stale')
+        self.assertNotIn('capability', by['aa.price']['note'])
+        self.assertEqual((by['metr.x']['status'], worst), ('unused', 'stale'))
+        self.assertEqual(refresh.staleness({'source_dates': dated}, datetime(2026, 8, 10, tzinfo=timezone.utc))[1], 'ok')
 
     def test_a_new_non_panel_top_model_moves_no_panel_score_and_no_target(self):
         members = self.panel_models()
@@ -2139,20 +2149,23 @@ class CommunityCapacityTests(unittest.TestCase):
                         'max5': {'windows': {'five_hour': {}, 'seven_day': {}}},
                         'max': {'alias': 'max5'}}}
 
-    def test_capacity_merges_flags_stale_and_derives_fable(self):
+    def test_capacity_merges_dates_and_derives_fable(self):
         now = datetime(2026, 11, 9, tzinfo=timezone.utc)
-        caps, errors = self.fa.capacity(self.meas(), self.PLANS, {'claude-opus-5-5': {'value': 20.0}}, now)
+        caps, errors = self.fa.capacity(self.meas(), self.PLANS, {'claude-opus-5-5': {'value': 20.0}})
         week = caps['claude']['max20']['seven_day']
         self.assertEqual(week['capacity_usd'], 1700.0)
-        self.assertEqual((week['status'], week['age_days']), ('ok', 7))
+        self.assertEqual((week['status'], week['as_of']), ('ok', '2026-11-02'))        # the newest date it rests on
         self.assertEqual(week['ref_hours'], 85.0)
-        self.assertEqual({e['source']: e['stale'] for e in week['sources']}, {'community.a': False, 'community.b': True})
+        # The file holds dates, never ages: staleness is the reader's, on the day it reads.
+        self.assertFalse([e for e in week['sources'] if 'stale' in e or 'age_days' in e])
+        self.assertEqual({e['source']: data_age.is_stale(e['as_of'], now) for e in week['sources']},
+                         {'community.a': False, 'community.b': True})
         fable = caps['claude']['max20']['weekly_fable']
         self.assertEqual(fable['capacity_usd'], 850.0)
         self.assertEqual(fable['sources'][0]['kind'], 'derived')
         self.assertEqual(len(fable['sources'][0]['derived_from']), 2)
-        stale = [e for e in errors if e['reason'] == 'stale_source']
-        self.assertEqual([(e['source'], e['level'], e['age_days']) for e in stale], [('community.b', 'yellow', 39)])
+        self.assertEqual(fable['sources'][0]['rests_on_as_of'], '2026-11-02')
+        self.assertFalse([e for e in errors if e['reason'] == 'stale_source'])
         # Max 5x has nothing on any rung: a red data error, and the `max` alias shows the same without a second error.
         self.assertIsNone(caps['claude']['max5']['seven_day']['capacity_usd'])
         self.assertEqual(caps['claude']['max5']['seven_day']['status'], 'error')
@@ -2171,7 +2184,7 @@ class CommunityCapacityTests(unittest.TestCase):
         meas['capacity']['exhaust'] = [{'family': 'claude', 'plan': 'max5', 'window': 'five_hour', 'model': 'claude-opus-5-5',
                                         'hours': 4.0, 'source': 'community.c', 'kind': 'community',
                                         'url': 'https://example.org/c', 'as_of': '2026-11-05', 'quote': 'ran out after 4h'}]
-        caps, errors = self.fa.capacity(meas, self.PLANS, {'claude-opus-5-5': {'value': 20.0}}, now)
+        caps, errors = self.fa.capacity(meas, self.PLANS, {'claude-opus-5-5': {'value': 20.0}})
         five = caps['claude']['max5']['five_hour']
         self.assertEqual((five['rung'], five['capacity_usd'], five['sources'][0]['kind']), (2, 80.0, 'derived'))
         self.assertEqual(five['cross_check']['value'], round(0.25 * 270.0, 2))
@@ -2181,11 +2194,11 @@ class CommunityCapacityTests(unittest.TestCase):
         self.assertNotIn('cross_check', week)
         self.assertFalse([e for e in errors if e['reason'] == 'capacity_ladder_empty'])
         # An exhaust report of a model with no usd gives no value: the vendor rung takes over.
-        caps, _ = self.fa.capacity(meas, self.PLANS, {}, now)
+        caps, _ = self.fa.capacity(meas, self.PLANS, {})
         self.assertEqual(caps['claude']['max5']['five_hour']['rung'], 3)
         # A multiplier derives only the windows it names: the vendor statement covers no other quota track.
         meas['capacity']['rules'][-1]['windows'] = ['five_hour']
-        caps, errors = self.fa.capacity(meas, self.PLANS, {}, now)
+        caps, errors = self.fa.capacity(meas, self.PLANS, {})
         self.assertEqual(caps['claude']['max5']['five_hour']['rung'], 3)
         self.assertEqual((caps['claude']['max5']['seven_day']['capacity_usd'], caps['claude']['max5']['seven_day']['status']),
                          (None, 'error'))
@@ -2195,27 +2208,29 @@ class CommunityCapacityTests(unittest.TestCase):
         # A window the maintainers declared unmeasured is a listed gap, not a failed refresh; its capacity stays unknown.
         meas['capacity']['unmeasured'] = [{'family': 'claude', 'plan': 'max5', 'window': 'seven_day', 'kind': 'maintainer',
                                            'as_of': '2026-11-13', 'statement': 'no public measurement'}]
-        caps, errors = self.fa.capacity(meas, self.PLANS, {}, now)
+        caps, errors = self.fa.capacity(meas, self.PLANS, {})
         self.assertIsNone(caps['claude']['max5']['seven_day']['capacity_usd'])
         self.assertIn(('max5', 'seven_day', 'yellow'), gap(errors, 'capacity_unmeasured'))
         self.assertNotIn(('max5', 'seven_day', 'red'), gap(errors, 'capacity_ladder_empty'))
 
-    def test_all_sources_stale_turns_the_window_stale_and_refresh_exits_yellow_or_red(self):
+    def test_all_sources_stale_makes_the_window_stale_on_reading_and_refresh_exits_yellow_or_red(self):
         now = datetime(2026, 12, 15, tzinfo=timezone.utc)
-        caps, errors = self.fa.capacity(self.meas(), self.PLANS, {}, now)
-        self.assertEqual(caps['claude']['max20']['seven_day']['status'], 'stale')
+        caps, errors = self.fa.capacity(self.meas(), self.PLANS, {})
+        week = caps['claude']['max20']['seven_day']
+        self.assertEqual(week['status'], 'ok')                                         # the file holds no calendar
+        self.assertTrue(data_age.is_stale(week['as_of'], now))
+        self.assertFalse(data_age.is_stale(week['as_of'], datetime(2026, 11, 9, tzinfo=timezone.utc)))
         meas = self.meas()
         meas['sources'] = {'community.a': {'kind': 'community', 'as_of': '2026-11-02'}}
-        doc = {'source_ages': self.fa.source_ages(meas, datetime(2026, 11, 9, tzinfo=timezone.utc)), 'capacity_errors': []}
-        self.assertEqual(self.rf.staleness(doc)[1], 'ok')
-        doc['source_ages'] = self.fa.source_ages(meas, now)
-        self.assertEqual(self.rf.staleness(doc)[1], 'stale')
+        doc = {'source_dates': self.fa.source_dates(meas), 'capacity_errors': []}
+        self.assertEqual(self.rf.staleness(doc, datetime(2026, 11, 9, tzinfo=timezone.utc))[1], 'ok')
+        self.assertEqual(self.rf.staleness(doc, now)[1], 'stale')
         doc['capacity_errors'] = errors
-        rows, worst = self.rf.staleness(doc)
+        rows, worst = self.rf.staleness(doc, now)
         self.assertEqual(worst, 'missing')
         self.assertIn('claude/max5/seven_day', {r['what'] for r in rows})
         meas['missing_sources'] = {'metr.time_horizon_p50': {'reason': 'not used: the anchor is not listed'}}
-        unused = self.rf.staleness({'source_ages': self.fa.source_ages(meas, datetime(2026, 11, 9, tzinfo=timezone.utc))})
+        unused = self.rf.staleness({'source_dates': self.fa.source_dates(meas)}, datetime(2026, 11, 9, tzinfo=timezone.utc))
         self.assertEqual(unused[1], 'ok')
 
 
@@ -2636,8 +2651,8 @@ class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
         refs = account_fleet.REFERENCES
         raw = (refs / 'public-measurements.json').read_bytes()
         shipped = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))
-        # The run's own options, as the document records them: its time (source ages are counted to it), the sources
-        # it was told to leave out, and the document it replaces (`refresh` passes it; with the same panel members it
+        # The run's own options, as the document records them: its time (the stamp of an accepted panel change), the
+        # sources it was told to leave out, and the document it replaces (`refresh` passes it; with the same panel members it
         # carries `anchor.panel_change`, the record of an accepted change, forward).
         built = five_axis.build(json.loads(raw.decode('utf-8-sig')),
                                 json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig')),
@@ -2657,6 +2672,39 @@ class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
         found = differences(built, shipped)
         self.assertEqual(found[:10], [], f'five-axis-scores.json does not match its inputs ({len(found)} difference(s)): '
                                          'run `agentcompass data refresh --no-fetch`')
+
+    def test_a_rebuild_on_another_day_writes_the_same_file(self):
+        """Rule (owner, 2026-11-19): the shipped file holds facts with their dates only, so a rebuild 40 days later from the
+        same inputs writes the same bytes, and a published set does not change its sha256 with the calendar. Age and
+        staleness are the reader's (data_age); `generated_at` moves only with the content (refresh._preserve_generated_at)."""
+        from unittest.mock import patch
+        import five_axis
+        import refresh
+        refs = account_fleet.REFERENCES
+        raw = (refs / 'public-measurements.json').read_bytes()
+        shipped = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))
+        day = datetime.fromisoformat(shipped['generated_at'])
+
+        def written(now, previous_path=None):
+            doc = five_axis.build(json.loads(raw.decode('utf-8-sig')),
+                                  json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig')),
+                                  json.loads((refs / 'plan-templates.json').read_text(encoding='utf-8-sig')),
+                                  distrust=shipped['distrusted_sources'], meas_bytes=raw, now=now, previous=shipped)
+            if previous_path is not None:
+                doc = refresh._preserve_generated_at(previous_path, doc)
+            return json.dumps(doc, indent=1, ensure_ascii=False) + '\n'     # as refresh.rebuild writes it
+        folder = Path(tempfile.mkdtemp(prefix='five-axis-day-'))
+        self.addCleanup(shutil.rmtree, folder, True)
+        first = folder / 'five-axis-scores.json'
+        first.write_text(written(day), encoding='utf-8', newline='\n')
+
+        class Later(datetime):                      # the clock itself 40 days ahead, for any reader of today's date
+            @classmethod
+            def now(cls, tz=None):
+                return datetime.now(tz) + timedelta(days=40)
+        with patch.object(five_axis, 'datetime', Later), patch.object(data_age, 'datetime', Later):
+            later = written(day + timedelta(days=40), first)
+        self.assertEqual(later, first.read_text(encoding='utf-8'))
 
 
 class EffortCoverageRuleTests(unittest.TestCase):

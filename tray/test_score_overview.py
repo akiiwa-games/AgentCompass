@@ -198,7 +198,7 @@ def test_partial_category_shows_existing_facet_level_and_marks_missing_facet_in_
 def test_category_overview_lists_boards_dates_targets_and_continuity():
     data = {'anchor': {'targets': TARGETS},
             'links': {'coding.execution': {'boards': ['aa.a', 'arena.b'], 'panel_n': 12}},
-            'source_ages': {'aa.a': {'as_of': '2026-11-09'}, 'arena.b': {'as_of': '2026-10-16'}}}
+            'source_dates': {'aa.a': {'as_of': '2026-11-09'}, 'arena.b': {'as_of': '2026-10-16'}}}
     blocks = {b['key']: b for b in so.category_overview(data, {'m': model(-2.0), 'n': model(-1.0, 'estimated')})}
     execution = blocks['coding']['facets'][0]
     assert execution['boards'] == ['aa.a', 'arena.b']

@@ -23,6 +23,7 @@ for _p in (str(CAL_DIR), str(SCRIPTS_DIR)):
 
 import arena_capture  # noqa: E402
 import capability_catalog  # noqa: E402
+import data_age  # noqa: E402
 import five_axis  # noqa: E402
 import measurements  # noqa: E402
 import reference_provenance  # noqa: E402
@@ -1041,7 +1042,7 @@ class AaReleasePageTests(unittest.TestCase):
         built = self.build(data)
         self.assertEqual(built['sources']['aa.index']['as_of'], older[:10])
         self.assertEqual(built['sources']['aa.index']['fetched_at'], self.now.isoformat(timespec='seconds'))
-        self.assertGreaterEqual(five_axis.source_ages(built, self.now)['aa.index']['age_days'], 30)
+        self.assertGreaterEqual(data_age.age_days(five_axis.source_dates(built)['aa.index']['as_of'], self.now), 30)
         gpt6 = next(e for e in built['models']['gpt-6-astra']['price'] if e['source'] == 'aa.price')
         self.assertEqual((gpt6['url'], gpt6['fetched_at'], gpt6['as_of']), (self.page_url('gpt-6-astra'), older, older[:10]))
 
@@ -1066,7 +1067,7 @@ class AaReleasePageTests(unittest.TestCase):
                 built = self.build(data)
                 row = built['missing_sources'][page]
                 self.assertEqual(row['url'], self.page_url('gpt-6-astra'))
-                self.assertTrue(five_axis.source_ages(built, self.now)[page]['missing'])
+                self.assertTrue(five_axis.source_dates(built)[page]['missing'])
                 self.assertEqual(row['reason'], {'fetch failed': 'URLError: offline',
                                                  'never fetched': 'not fetched; run `agentcompass data refresh`',
                                                  'no record of its release': 'the page carries no record of its release for '

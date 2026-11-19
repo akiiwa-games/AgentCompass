@@ -132,6 +132,7 @@ import series
 import sources
 
 sys.path.insert(0, str(sources.REPO / 'scripts'))
+import data_age  # noqa: E402
 import user_scores  # noqa: E402
 
 OUT = sources.REPO / 'references' / 'five-axis-scores.json'
@@ -152,7 +153,11 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # /11 (2026-11-19): measured `none` readings; `none` from the fleet's own pairs (`effort_steps.<facet>.lowest_reasoning.none`,
 # method `fleet_off_step`), operating-point rows, `clipped_to_fleet_range`, fit `residual_sd` / `loo_rmse`, relatives by
 # declared version distance. Levels unchanged.
-SCHEMA = 'agent-compass.five-axis-scores/11'
+# /12 (2026-11-19): facts with their dates only, so a rebuild on another day writes the same file: `source_dates` replaces
+# `source_ages` (no `age_days` / `stale`), capacity rows carry `as_of` (derived entries `rests_on_as_of`) in place of
+# `age_days`, no `stale` status, no `stale_source` errors and no `capacity_stale_days`; age and staleness are the
+# reader's (scripts/data_age.py). Levels unchanged.
+SCHEMA = 'agent-compass.five-axis-scores/12'
 AXES = measurements.AXES
 EFFORTS = user_scores.MEASURED_EFFORTS                   # the efforts boards measure and the panel steps reach
 LADDER = user_scores.EFFORTS                              # every effort a curve carries: the edge efforts too (fill_edge)
@@ -1801,20 +1806,20 @@ def durations(scorer, rows, acc):
     return out, fit_rec, why
 
 
-STALE_DAYS = 21         # a community value older than this (data date, else fetch date) is a yellow note
+def cite(o, **extra):
+    """An entry of a capacity row: the fact with its date (`as_of`); its age is the reader's (data_age), never stored."""
+    return {k: o.get(k) for k in ('source', 'kind', 'value', 'url', 'as_of', 'fetched_at', 'method')} | extra
 
 
-def age_days(as_of, now):
-    try:
-        return (now.date() - datetime.fromisoformat(str(as_of)[:10]).date()).days
-    except ValueError:
-        return None
+def entry_date(e):
+    """The date an entry rests on: a derived entry its oldest input's (`rests_on_as_of`), any other its own `as_of`."""
+    return data_age.data_date(e.get('rests_on_as_of') or e.get('as_of'))
 
 
-def cite(o, now, **extra):
-    age = age_days(o.get('as_of'), now)
-    return ({k: o.get(k) for k in ('source', 'kind', 'value', 'url', 'as_of', 'fetched_at', 'method')} |
-            {'age_days': age, 'stale': age is None or age > STALE_DAYS} | extra)
+def oldest_as_of(*dates):
+    """The oldest of ISO dates as written; None when one is not a date (then the result cannot be dated either)."""
+    parsed = [(data_age.data_date(d), d) for d in dates]
+    return None if any(day is None for day, _ in parsed) else min(parsed)[1]
 
 
 def window_capacity(fam, plan, wid, ctx, rung_max=3):
@@ -1822,23 +1827,22 @@ def window_capacity(fam, plan, wid, ctx, rung_max=3):
     ratio a community source states, rung 1 derived), rung 2 time-to-exhaust reports x the reported model's usd, rung 3
     a vendor plan multiplier x the sibling plan's value. The first rung with a value wins; rung 3 is also recorded as a
     cross-check where a lower rung won."""
-    now, usd = ctx['now'], ctx['usd']
-    entries, rung = [cite(o, now, rung=1) for o in ctx['obs'].get((fam, plan, wid), ())], 1
+    usd = ctx['usd']
+    entries, rung = [cite(o, rung=1) for o in ctx['obs'].get((fam, plan, wid), ())], 1
     rule = ctx['ratios'].get((fam, wid))
     if not entries and rule:
         base = window_capacity(fam, plan, rule['of_window'], {**ctx, 'ratios': {}}, rung_max)
         if base['capacity_usd'] is not None:
-            age = max(age_days(rule.get('as_of'), now) or 0, base['age_days'])
             entries, rung = [{'source': rule['source'], 'kind': 'derived', 'value': round(rule['ratio'] * base['capacity_usd'], 2),
                               'url': rule['url'], 'as_of': rule['as_of'], 'fetched_at': rule.get('fetched_at'),
                               'method': f"{rule['ratio']:g} x the {rule['of_window']} ({rule['statement']}; {rule['original']})",
-                              'derived_from': base['sources'], 'age_days': age, 'stale': age > STALE_DAYS,
-                              'rung': base['rung']}], base['rung']
+                              'derived_from': base['sources'],
+                              'rests_on_as_of': oldest_as_of(rule.get('as_of'), base['as_of']), 'rung': base['rung']}], base['rung']
     if not entries and rung_max >= 2:
         for r in ctx['exhaust'].get((fam, plan, wid), ()):
             rate = (usd.get(r['model']) or {}).get('value')
             if rate:
-                entries.append(cite(r, now, rung=2, kind='derived', value=round(r['hours'] * rate, 2),
+                entries.append(cite(r, rung=2, kind='derived', value=round(r['hours'] * rate, 2),
                                     method=f"{r['hours']:g} h of {r['model']} until the window ran out x its usd {rate:g}/h "
                                            "(usd_per_hour)", report=r.get('quote')))
         rung = 2
@@ -1847,22 +1851,23 @@ def window_capacity(fam, plan, wid, ctx, rung_max=3):
     if mult and wid in mult['windows'] and rung_max >= 3:
         base = window_capacity(fam, mult['of_plan'], wid, {**ctx, 'mults': {}}, 2)
         if base['capacity_usd'] is not None:
-            age = max(age_days(mult.get('as_of'), now) or 0, base['age_days'])
             sibling = {'source': mult['source'], 'kind': 'derived', 'value': round(mult['factor'] * base['capacity_usd'], 2),
                        'url': mult['url'], 'as_of': mult['as_of'], 'fetched_at': mult.get('fetched_at'),
                        'method': f"{mult['factor']:g} x {fam}/{mult['of_plan']} {wid} ({mult['statement']})",
-                       'derived_from': base['sources'], 'age_days': age, 'stale': age > STALE_DAYS, 'rung': 3}
+                       'derived_from': base['sources'], 'rests_on_as_of': oldest_as_of(mult.get('as_of'), base['as_of']),
+                       'rung': 3}
     if not entries and sibling:
         entries, rung, sibling = [sibling], 3, None
     ref = (REFERENCE_MODELS.get(fam) or {}).get(wid)
     ref_usd = ((usd.get(ref) or {}).get('value')) if ref else None
     if not entries:
         return {'unit': 'usd', 'capacity_usd': None, 'status': 'error', 'rung': None, 'sources': [], 'reference_model': ref,
-                'ref_hours': None, 'age_days': None}
+                'ref_hours': None, 'as_of': None}
     value = round(statistics.median(e['value'] for e in entries), 2)
-    newest = min(e['age_days'] if e['age_days'] is not None else 10 ** 6 for e in entries)
-    row = {'unit': 'usd', 'capacity_usd': value, 'status': 'stale' if newest > STALE_DAYS else 'ok', 'rung': rung,
-           'age_days': newest, 'merge': f'median of {len(entries)} value(s), rung {rung}', 'sources': entries,
+    dated = [(day, e.get('rests_on_as_of') or e['as_of']) for e in entries for day in [entry_date(e)] if day is not None]
+    # `as_of`: the newest date the value rests on (None when no entry is dated); how old that is is the reader's (data_age)
+    row = {'unit': 'usd', 'capacity_usd': value, 'status': 'ok', 'rung': rung,
+           'as_of': max(dated)[1] if dated else None, 'merge': f'median of {len(entries)} value(s), rung {rung}', 'sources': entries,
            'reference_model': ref, 'ref_hours': round(value / ref_usd, 1) if ref_usd else None}
     if sibling:
         row['cross_check'] = {'rung': 3, 'value': sibling['value'], 'method': sibling['method'],
@@ -1881,15 +1886,16 @@ def resolve_plan(table, plan):
     return target, alias
 
 
-def capacity(meas, plans, usd, now=None):
-    """({family: {plan: {window: capacity row}}}, data errors) down the capacity ladder from `meas`."""
-    now = now or datetime.now(timezone.utc)
+def capacity(meas, plans, usd):
+    """({family: {plan: {window: capacity row}}}, data errors) down the capacity ladder from `meas`. Facts and their dates
+    only: how old a source is, and whether that is stale, is computed where it is read (data_age), so the file does not
+    change with the calendar."""
     cap = meas.get('capacity') or {}
     obs = {}
     for o in cap.get('observations') or ():
         obs.setdefault((o['family'], o['plan'], o['window']), []).append(o)
     rules = cap.get('rules') or ()
-    ctx = {'now': now, 'usd': usd, 'obs': obs,
+    ctx = {'usd': usd, 'obs': obs,
            'ratios': {(r['family'], r['window']): r for r in rules if r.get('type', 'window_ratio') == 'window_ratio'},
            'mults': {(r['family'], r['plan']): r for r in rules if r.get('type') == 'plan_multiplier'},
            'exhaust': {}}
@@ -1897,7 +1903,7 @@ def capacity(meas, plans, usd, now=None):
         ctx['exhaust'].setdefault((r['family'], r['plan'], r['window']), []).append(r)
     errors = [{'field': 'capacity', **e} for e in cap.get('errors') or ()]
     unmeasured = {(u['family'], u['plan'], u['window']): u for u in cap.get('unmeasured') or ()}
-    out, stale = {}, {}
+    out = {}
     for fam, table in plans.items():
         if not isinstance(table, dict):
             continue
@@ -1924,37 +1930,19 @@ def capacity(meas, plans, usd, now=None):
                                        'reason': 'capacity_ladder_empty',
                                        'effect': 'no community measurement, time-to-exhaust report or vendor multiplier '
                                                  f'for this window: {effect}'})
-                for e in row['sources']:
-                    if e['stale'] and e['kind'] in ('community', 'vendor', 'maintainer'):
-                        stale.setdefault(e['source'], {'age_days': e['age_days'], 'as_of': e['as_of'], 'windows': []})
-                        stale[e['source']]['windows'].append(f'{fam}/{plan}/{wid}')
-    for src, row in sorted(stale.items()):
-        errors.append({'field': 'capacity', 'source': src, 'level': 'yellow', 'reason': 'stale_source',
-                       'age_days': row['age_days'], 'as_of': row['as_of'], 'threshold_days': STALE_DAYS,
-                       'windows': row['windows'], 'effect': 'still used in the median; refresh the source'})
     return out, errors
 
 
-def source_ages(meas, now=None):
-    """{source: {kind, as_of, fetched_at, age_days, stale}} for every source the measurements cite."""
-    now = now or datetime.now(timezone.utc)
+def source_dates(meas):
+    """{source: {kind, as_of, as_of_kind, fetched_at}} for every source the measurements cite (a source not fetched or not
+    used: {missing, reason, url}). Dates only; how old each is, and whether that is stale, is the reader's (data_age)."""
     out = {}
     for src, row in sorted((meas.get('sources') or {}).items()):
-        age = age_days(row.get('as_of'), now)
         out[src] = {'kind': row.get('kind'), 'as_of': row.get('as_of'), 'as_of_kind': row.get('as_of_kind'),
-                    'fetched_at': row.get('fetched_at'), 'age_days': age, 'stale': age is None or age > STALE_DAYS}
+                    'fetched_at': row.get('fetched_at')}
     for src, row in sorted((meas.get('missing_sources') or {}).items()):
         out[src] = {'kind': None, 'missing': True, 'reason': row.get('reason'), 'url': row.get('url')}
     return out
-
-
-def source_errors(ages):
-    """Yellow `stale_source` errors for every capability source (measurements.CAPABILITY_SOURCES) older than STALE_DAYS."""
-    return [{'field': 'capability', 'source': src, 'level': 'yellow', 'reason': 'stale_source',
-             'component': '.'.join(measurements.CAPABILITY_SOURCES[src][:2]), 'age_days': row['age_days'],
-             'as_of': row['as_of'], 'threshold_days': STALE_DAYS, 'effect': 'still used; refresh the source'}
-            for src, row in sorted(ages.items())
-            if src in measurements.CAPABILITY_SOURCES and not row.get('missing') and row.get('stale')]
 
 
 # --- usd per worker-hour ------------------------------------------------------------------------------------------
@@ -2214,8 +2202,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
     check_scales(targets)
     usd = usd_community_mix(scorer, rows, meas)
     convert_usd(usd, rows, scorer, meas, acc)
-    caps, cap_errors = capacity(meas, plans, usd, now)
-    ages = source_ages(meas, now)
+    caps, cap_errors = capacity(meas, plans, usd)
     dur, dur_fit, dur_rejected = durations(scorer, rows, acc)
     models, errors = {}, []
     for m, r in rows.items():
@@ -2288,9 +2275,9 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
            'duration_fit': dur_fit, 'duration_fit_rejected': dur_rejected,
            'tier_sources': {k: sum(1 for t in tier.values() if t['method'] == k)
                             for k in ('arena_overall', 'other_overall', 'sibling', 'none')},
-           'capacity': caps, 'capacity_stale_days': STALE_DAYS,
+           'capacity': caps,
            'capacity_not_found': (meas.get('capacity') or {}).get('not_found') or {},
-           'capacity_errors': cap_errors, 'source_ages': ages, 'source_errors': source_errors(ages),
+           'capacity_errors': cap_errors, 'source_dates': source_dates(meas),
            'usd_checks': [{**h, 'usd_per_hour': (usd.get(h['model']) or {}).get('value'),
                            'community_over_usd': (round(h['value'] / usd[h['model']]['value'], 2)
                                                     if (usd.get(h['model']) or {}).get('value') else None)}

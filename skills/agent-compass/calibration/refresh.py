@@ -41,8 +41,9 @@ Topological chain:
 5. Validate: provenance checks (`reference_provenance.validate_references`), `references/user-scores.json` maintainer
    schema, and generated capability views.
 6. Report: community usd-per-hour check rows against the `usd_per_hour` in use, then per source its kind, data date, age in
-   days and status: `ok`; `stale` (older than `five_axis.STALE_DAYS`, yellow: still used); `missing` (not fetched, or a
-   community sentence no longer on the page: red, no value). Capacity windows with an empty ladder are listed as red.
+   days on the day of the run and status: `ok`; `stale` (older than `data_age.STALE_DAYS`, yellow: still used); `missing`
+   (not fetched, or a community sentence no longer on the page: red, no value). Capacity windows with an empty ladder are
+   listed as red. The ages are computed here, from the dates the files hold: the files themselves hold no age.
 
 Exit status: 0 all fresh, 1 something stale (yellow), 2 something missing or invalid (red), so a scheduler or CI job can
 alert on it; 3 (`REFUSED`, never a staleness status) when the run refused and wrote nothing: a `--model` that is not a
@@ -66,6 +67,7 @@ for _folder in (str(CAL_DIR), str(SCRIPTS_DIR)):
         sys.path.insert(0, _folder)
 
 import capability_catalog  # noqa: E402
+import data_age  # noqa: E402
 import five_axis  # noqa: E402
 import measurements  # noqa: E402
 import reference_provenance  # noqa: E402
@@ -531,19 +533,23 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
     return meas, doc
 
 
-def staleness(doc):
-    """(rows, worst status): one row per source and per capacity window left without a value."""
+def staleness(doc, now=None):
+    """(rows, worst status): one row per source, aged on `now` (today) from the date the scores file holds
+    (`source_dates`; data_age), and one per capacity window left without a value."""
     rows = []
-    stale_capability = {e['source']: e for e in doc.get('source_errors') or () if e.get('reason') == 'stale_source'}
-    for src, row in sorted((doc.get('source_ages') or {}).items()):
+    for src, row in sorted((doc.get('source_dates') or {}).items()):
+        stale = False
         if row.get('missing'):
             status = 'unused' if str(row.get('reason') or '').startswith('not used') else 'missing'
         else:
-            status = 'stale' if row.get('stale') else 'ok'
-        rows.append({'what': src, 'kind': row.get('kind'), 'as_of': row.get('as_of'), 'age_days': row.get('age_days'),
+            stale = data_age.is_stale(row.get('as_of'), now)
+            status = 'stale' if stale else 'ok'
+        component = measurements.CAPABILITY_SOURCES.get(src) if stale else None
+        rows.append({'what': src, 'kind': row.get('kind'), 'as_of': row.get('as_of'),
+                     'age_days': None if row.get('missing') else data_age.age_days(row.get('as_of'), now),
                      'status': status, 'note': row.get('reason') or (
-                         f"stale capability source ({stale_capability[src]['component']}): "
-                         f"{stale_capability[src]['effect']}" if src in stale_capability else row.get('as_of_kind') or '')})
+                         f"stale capability source ({'.'.join(component[:2])}): still used; refresh the source"
+                         if component else row.get('as_of_kind') or '')})
     for e in doc.get('capacity_errors') or ():
         if e.get('level') != 'red':
             continue
@@ -565,7 +571,7 @@ def markdown(rows, generated_at, checks=()):
         out += [f"| {c['model']} | {c['value']} | {c['usd_per_hour']} | {c['community_over_usd']} | {c['source']} "
                 f"| {c['as_of']} |" for c in checks]
         out.append('')
-    out += [f'Source ages at {generated_at} (stale after {five_axis.STALE_DAYS} days)', '',
+    out += [f'Source ages at {generated_at} (stale after {data_age.STALE_DAYS} days)', '',
            '| Source / window | Kind | Data date | Age (days) | Status | Note |', '| :--- | :--- | :--- | ---: | :--- | :--- |']
     for r in rows:
         out.append(f"| {r['what']} | {r['kind'] or ''} | {r['as_of'] or ''} | {'' if r['age_days'] is None else r['age_days']} "
@@ -628,8 +634,9 @@ def main(argv=None, prog=None):
             print(f'  note: {note}')
         print(f"Blast radius: {merge['blast_radius']}")
         print()
-    rows, worst = staleness(doc)
-    text = markdown(rows, datetime.now(timezone.utc).isoformat(timespec='seconds'), doc.get('usd_checks') or ())
+    now = datetime.now(timezone.utc)
+    rows, worst = staleness(doc, now)
+    text = markdown(rows, now.isoformat(timespec='seconds'), doc.get('usd_checks') or ())
     ref_dir = Path(args.references) if args.references is not None else (sources.REPO / 'references')
     suggestions = user_scores.suggest_scores(scope='public', public_path=ref_dir / 'user-scores.json', five_data=doc,
                                              accounts=json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig')))
