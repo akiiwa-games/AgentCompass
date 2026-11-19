@@ -2344,6 +2344,33 @@ class DerivedUsdTests(unittest.TestCase):
         self.assertTrue(usd['b']['merge'].startswith('fallback ('))
         self.assertEqual((usd['c']['value'], usd['c']['status']), (None, 'missing'))
 
+    def test_a_value_on_the_fallback_source_alone_is_put_on_the_primary_scale_by_the_fleets_median_ratio(self):
+        """Owner 2026-11-19 (scale_fallback_usd): option B / arena over the rows with both (here 2, 3, 4 and 10: median 3.5),
+        a row with option B alone divided by it, the ratio, n and spread stated; a row with both keeps arena; fewer than
+        MIN_FLEET_RATIO_N rows with both leaves option B as it is."""
+        def row(arena, mix):
+            return {'usd_per_hour': ([{'source': 'arena.agent_sessions', 'kind': 'community', 'effort': 'high', 'value': arena}]
+                                     if arena else []) + [{'source': 'derived.community_mix', 'kind': 'derived',
+                                                           'effort': 'high', 'value': mix}]}
+        meas = {'models': {'a': row(1.0, 2.0), 'b': row(2.0, 6.0), 'c': row(1.0, 4.0), 'd': row(1.0, 10.0),
+                           'only-b': row(None, 7.0)}}
+        def run(models):
+            sub = {'models': {m: meas['models'][m] for m in models}}
+            scorer = self.fa.Scorer(sub, {**READINGS, 'models': dict.fromkeys(models, {})})
+            rows = {m: {'fields': f} for m, f in sub['models'].items()}
+            usd = self.fa.usd_community_mix(scorer, rows, sub)
+            self.fa.scale_fallback_usd(usd, rows, scorer)
+            return usd
+        usd = run(meas['models'])
+        cell = usd['only-b']
+        self.assertEqual((cell['value'], cell['estimated']), (round(7.0 / 3.5, 3), True))
+        self.assertEqual({k: cell['on_primary_scale'][k] for k in ('ratio', 'n', 'rows', 'fallback_value')},
+                         {'ratio': 3.5, 'n': 4, 'rows': ['a', 'b', 'c', 'd'], 'fallback_value': 7.0})
+        self.assertEqual((cell['on_primary_scale']['spread']['min'], cell['on_primary_scale']['spread']['max']), (2.0, 10.0))
+        self.assertEqual(usd['b']['value'], 2.0)
+        self.assertNotIn('on_primary_scale', usd['b'])
+        self.assertEqual(run(['a', 'b', 'only-b'])['only-b']['value'], 7.0)
+
 
 class ArenaCaptureTests(unittest.TestCase):
     """arena.ai boards transcribed from the user's browser (round 7): parsed from the page text, dated, and mapped."""

@@ -110,7 +110,9 @@ scores on the four categories and the quota economy together. Nothing else score
   mix at list prices); a model with a same-series sibling that has a direct value takes that sibling's times the ratio
   of the two cited API list prices over the full community token mix, both read on one price list where one lists both
   (`pair_prices`; `convert_usd`, `converted`), else, the same way,
-  its larger model (series.tier_up) when that has a direct value (`relation: size`).
+  its larger model (series.tier_up) when that has a direct value (`relation: size`). A value still resting on option B
+  alone is put on the arena-sessions scale by the fleet's median ratio of the two sources over the rows that have both
+  (`scale_fallback_usd`, `on_primary_scale` with n and spread, `estimated`).
 - Plan capacity comes down a ladder (rounds 4-5, user 2026-11-09: "都用社区真实使用量 且保持最新"; capacity is never
   left unknown), per window of each plan in plan-templates.json, recording the rung.
 - Each window's reference-model hours are its capacity over that model's usd_per_hour.
@@ -2089,6 +2091,36 @@ def convert_usd(usd, rows, scorer, meas, acc):
             }
 
 
+def scale_fallback_usd(usd, rows, scorer):
+    """A usd_per_hour that still rests on the fallback source alone (`derived.community_mix`, `fallback: True`, after
+    convert_usd) is put on the primary source's scale (owner 2026-11-19, round 6 review finding 11: the fallback runs high
+    against arena sessions): divided by the fleet's median ratio fallback / primary over the rows that have both
+    (`scorer.trusted`, each source read by pick_usd), when at least MIN_FLEET_RATIO_N rows do. The cell keeps the
+    fallback's own value and states the ratio with its n and spread (`on_primary_scale`), marked estimated."""
+    pairs = {}
+    for m, r in rows.items():
+        by_src = {}
+        for e in scorer.trusted(r['fields'].get('usd_per_hour') or ()):
+            by_src.setdefault(e['source'], []).append(e)
+        if all(src in by_src for src in USD_ORDER):
+            primary, fallback = (pick_usd(by_src[src])['value'] for src in USD_ORDER)
+            if primary and fallback and primary > 0 and fallback > 0:
+                pairs[m] = fallback / primary
+    if len(pairs) < MIN_FLEET_RATIO_N:
+        return
+    ratios = sorted(pairs.values())
+    scale = {'ratio': round(float(np.median(ratios)), 4), 'n': len(ratios),
+             'spread': {'min': round(ratios[0], 4), 'p10': round(float(np.percentile(ratios, 10)), 4),
+                        'p90': round(float(np.percentile(ratios, 90)), 4), 'max': round(ratios[-1], 4)},
+             'rows': sorted(pairs), 'of': f'{USD_ORDER[1]} / {USD_ORDER[0]}'}
+    for m, u in usd.items():
+        if u.get('fallback') and u.get('value') is not None and m not in pairs:
+            usd[m] = {**u, 'value': round(u['value'] / scale['ratio'], 3), 'estimated': True,
+                      'on_primary_scale': {**scale, 'fallback_value': u['value']},
+                      'merge': (f"{u['merge']}; put on the {USD_ORDER[0]} scale: divided by the fleet's median ratio "
+                                f"{scale['ratio']:.4f} of the two sources over the {scale['n']} rows that have both")}
+
+
 class PanelChangeRefused(ValueError):
     """The panel's members changed and the change was not accepted (`--accept-panel-change`): nothing is written."""
 
@@ -2202,6 +2234,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
     check_scales(targets)
     usd = usd_community_mix(scorer, rows, meas)
     convert_usd(usd, rows, scorer, meas, acc)
+    scale_fallback_usd(usd, rows, scorer)
     caps, cap_errors = capacity(meas, plans, usd)
     dur, dur_fit, dur_rejected = durations(scorer, rows, acc)
     models, errors = {}, []

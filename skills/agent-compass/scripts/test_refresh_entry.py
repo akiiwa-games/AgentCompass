@@ -877,7 +877,8 @@ class ModelEntryTests(unittest.TestCase):
 class BoardDriftTests(unittest.TestCase):
     """Rule (calibration/refresh.py board_drift, --model): a reading taken after the release snapshot is put on the
     shipped scale by the board's own drift, the median over the panel members the board lists in both fetches of
-    (raw now - raw then), and then converted with the shipped anchor and sd_panel; with fewer than two such members the
+    (raw now - raw then), and then converted with the shipped anchor and sd_panel, the drift applied only where the
+    members show a common shift (|drift| > their median absolute deviation); with fewer than two such members the
     reading is left out; on a board that did not move the merge is the plain one."""
     SCALE = {'anchor': 'anchor-m', 'anchor_raw': 50.0, 'sd_panel': 10.0, 'n_panel': 3}
     PANEL = {'anchor-m': 50.0, 'panel-m': 40.0, 'third-m': 45.0}
@@ -891,9 +892,10 @@ class BoardDriftTests(unittest.TestCase):
     def shipped(self):
         return self.doc(self.PANEL, self.SCALE, '2026-11-10')
 
-    def fresh(self, shift, members=None, new_raw=62.0):
-        """The board `shift` higher for every model; `new-m` measured at `new_raw` before the shift."""
-        listed = {m: r + shift for m, r in self.PANEL.items() if members is None or m in members}
+    def fresh(self, shift, members=None, new_raw=62.0, each=None):
+        """The board `shift` higher for every model (`each`: a member's own change instead); `new-m` measured at
+        `new_raw` before the shift."""
+        listed = {m: r + (each or {}).get(m, shift) for m, r in self.PANEL.items() if members is None or m in members}
         scale = dict(self.SCALE, anchor_raw=listed.get('anchor-m', self.SCALE['anchor_raw'] + shift))
         doc = self.doc(listed, scale, '2026-11-19')
         doc['models']['new-m'] = {'coding': [_board_entry(new_raw + shift, scale, {'low': 55.0 + shift, 'high': new_raw + shift},
@@ -909,8 +911,30 @@ class BoardDriftTests(unittest.TestCase):
         self.assertEqual(board['z_by_effort'], {'low': z(55.0), 'high': z(62.0)})
         self.assertEqual(board['drift_correction'], {
             'drift': 3.0, 'n': 3, 'members': sorted(self.PANEL), 'spread': {'min': 3.0, 'max': 3.0, 'mad': 0.0},
-            'snapshot_as_of': '2026-11-10', 'fetched_as_of': '2026-11-19'})
+            'common_shift': True, 'snapshot_as_of': '2026-11-10', 'fetched_as_of': '2026-11-19'})
         self.assertTrue(any('b.code moved since the release snapshot: drift 3' in n for n in notes))
+
+    def test_the_drift_is_the_members_median_change_when_they_show_a_common_shift(self):
+        # members moved 3, 3 and 9: median 3 (the mean would be 5), deviation median 0 < 3, so corrected by 3
+        each = {'anchor-m': 3.0, 'panel-m': 3.0, 'third-m': 9.0}
+        merged, _, _ = refresh.merge_model_rows(self.shipped(), self.fresh(3.0, each=each), ['new-m'])
+        board = merged['models']['new-m']['coding'][0]
+        self.assertEqual(board['value'], round((62.0 - 50.0) / 10.0, 4))
+        self.assertEqual((board['drift_correction']['drift'], board['drift_correction']['spread']['mad'],
+                          board['drift_correction']['common_shift']), (3.0, 0.0, True))
+
+    def test_without_a_common_shift_the_reading_is_merged_plain_and_the_spread_recorded(self):
+        # members moved -3, 0.5 and 4: median 0.5, deviation median 3.5 >= 0.5, so no common shift: shift 0
+        each = {'anchor-m': -3.0, 'panel-m': 0.5, 'third-m': 4.0}
+        merged, left_out, notes = refresh.merge_model_rows(self.shipped(), self.fresh(0.5, each=each), ['new-m'])
+        board = merged['models']['new-m']['coding'][0]
+        self.assertEqual(left_out, [])
+        self.assertEqual(board['value'], round((62.0 + 0.5 - 50.0) / 10.0, 4))      # its own raw, not corrected
+        self.assertEqual(board['drift_correction'], {
+            'drift': 0.5, 'n': 3, 'members': sorted(self.PANEL), 'spread': {'min': -3.0, 'max': 4.0, 'mad': 3.5},
+            'common_shift': False, 'snapshot_as_of': '2026-11-10', 'fetched_as_of': '2026-11-19'})
+        self.assertIn('no common shift', board['method'])
+        self.assertTrue(any('b.code moved' in n and 'not corrected' in n for n in notes))
 
     def test_with_one_panel_member_in_both_fetches_the_reading_is_left_out(self):
         merged, left_out, _ = refresh.merge_model_rows(self.shipped(), self.fresh(3.0, members={'anchor-m'}), ['new-m'])

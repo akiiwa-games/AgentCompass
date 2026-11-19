@@ -14,7 +14,8 @@ and takes each model that has an entry, in catalog order, from its own entry's p
 days). Rule: with the panel scale unchanged, the model's row and its five-axis block equal those of a full refresh over
 the same boards. A board z-score is put on the snapshot's scale by the board's own drift (board_drift: the median,
 over the panel members the board lists in both fetches, of the change of their raw readings; at least two members, else
-the entry is left out on a board that moved), z = (raw - drift - anchor_raw) / sd_panel, and states the correction in
+the entry is left out on a board that moved), z = (raw - drift - anchor_raw) / sd_panel, applied only where the members
+show a common shift (|drift| larger than their median absolute deviation around it; otherwise shift 0), and states it in
 `drift_correction` (calibration/README.md, To add a model); on a board that did not move this is the plain merge. The
 `tier` is standardized over the entry's board itself (tiers.py) and is kept as built. Otherwise an entry is left out
 only when its source has no scale in the snapshot, or, on a board that did not move, its anchor reading moved; anything
@@ -83,7 +84,7 @@ ENTRY_FILE = 'entry.json'
 ENTRY_SCHEMA = 'agent-compass.calibration-model-entry/1'
 MODEL_ID = re.compile(r'[a-z0-9][a-z0-9._-]*')     # a catalog id that is also a directory name
 MIN_DRIFT_MEMBERS = 2      # panel members a board's drift is measured on, at least
-DRIFT_FIELDS = ('drift', 'n', 'members', 'spread', 'snapshot_as_of', 'fetched_as_of')
+DRIFT_FIELDS = ('drift', 'n', 'members', 'spread', 'common_shift', 'snapshot_as_of', 'fetched_as_of')
 STAGING = '.fetching'       # the entry pages being fetched, under MODEL_ENTRIES; never read as an entry
 
 
@@ -193,9 +194,10 @@ def _member_raw(entry):
 
 def board_drift(src, shipped, fresh):
     """How the board `src` moved between the release snapshot (`shipped`) and this fetch (`fresh`), measured on the
-    declared panel (the shipped document's panel members): {drift, n, members, spread {min, max, mad}, snapshot_as_of,
-    fetched_as_of, moved}. drift is the median over the members the board lists in both of (raw now - raw then); moved
-    is whether any member's raw differs; n is how many members it used."""
+    declared panel (the shipped document's panel members): {drift, n, members, spread {min, max, mad}, common_shift,
+    snapshot_as_of, fetched_as_of, moved}. drift is the median over the members the board lists in both of (raw now - raw
+    then); moved is whether any member's raw differs; n is how many members it used; common_shift is whether the members
+    show one shift, |drift| > mad (the correction assumes one, so it is applied only then)."""
     diffs = {}
     for m in (shipped.get('panel') or {}).get('models') or ():
         then = next((e for items in ((shipped.get('models') or {}).get(m) or {}).values() for e in items
@@ -207,9 +209,11 @@ def board_drift(src, shipped, fresh):
             diffs[m] = b - a
     values = sorted(diffs.values())
     drift = statistics.median(values) if values else 0.0
+    mad = statistics.median(abs(v - drift) for v in values) if values else 0.0
     return {'drift': round(drift, 6), 'n': len(values), 'members': sorted(diffs),
             'spread': {'min': round(values[0], 6) if values else 0.0, 'max': round(values[-1], 6) if values else 0.0,
-                       'mad': round(statistics.median(abs(v - drift) for v in values), 6) if values else 0.0},
+                       'mad': round(mad, 6)},
+            'common_shift': round(abs(drift), 6) > round(mad, 6),
             'snapshot_as_of': ((shipped.get('sources') or {}).get(src) or {}).get('as_of'),
             'fetched_as_of': ((fresh.get('sources') or {}).get(src) or {}).get('as_of'),
             'moved': any(v != 0 for v in values)}
@@ -217,9 +221,11 @@ def board_drift(src, shipped, fresh):
 
 def _on_shipped_scale(field, entry, shipped_sources, fresh_sources, drift=None):
     """(entry as merged, how, None) or (None, None, why it is left out) for one freshly built measurement entry; `how`
-    is 'as built', 'rescaled' or 'drift corrected'. On a board that moved since the release snapshot (`drift`, from
-    board_drift: some panel member's reading differs) the raw readings are corrected by the board's drift and converted
-    with the shipped anchor and sd_panel; with fewer than two panel members to measure the drift the entry is left out.
+    is 'as built', 'rescaled', 'drift corrected' or 'no common shift'. On a board that moved since the release snapshot
+    (`drift`, from board_drift: some panel member's reading differs) the raw readings are corrected by the board's drift
+    where its members show a common shift (`common_shift`), else taken as they are (shift 0, the spread recorded), and
+    converted with the shipped anchor and sd_panel; with fewer than two panel members to measure the drift the entry is
+    left out.
     On a board that did not move: as built on the same scale, else rescaled, and left out when the anchor reading moved.
     A z-score whose source has no shipped scale is left out; anything else that cannot be merged raises, so nothing is
     written."""
@@ -242,7 +248,7 @@ def _on_shipped_scale(field, entry, shipped_sources, fresh_sources, drift=None):
                                 f"{fresh_scale['anchor_raw']} now)")
         if all(shipped_scale[k] == fresh_scale[k] for k in _SCALE_KEYS):
             return entry, 'as built', None      # the same scale: the full refresh's own value
-    shift = drift['drift'] if moved else 0.0
+    shift = drift['drift'] if moved and drift['common_shift'] else 0.0
     anchor_raw, sd = shipped_scale['anchor_raw'], shipped_scale['sd_panel']
     out = dict(entry)
     if 'raw' in entry:
@@ -262,9 +268,16 @@ def _on_shipped_scale(field, entry, shipped_sources, fresh_sources, drift=None):
                                                    f"{shipped_scale['n_panel']} panel models"), entry['method'])
     if moved:
         out['drift_correction'] = {k: drift[k] for k in DRIFT_FIELDS}
+        if not drift['common_shift']:
+            out['method'] += (f"; reading taken after the release snapshot on a board whose {drift['n']} panel members show "
+                              f"no common shift ({drift['snapshot_as_of']} -> {drift['fetched_as_of']}: median change "
+                              f"{drift['drift']:.6g}, not larger than their median absolute deviation "
+                              f"{drift['spread']['mad']:.6g}), so not corrected")
+            return out, 'no common shift', None
         out['method'] += (f"; reading taken after the release snapshot, corrected by the board's drift {shift:.6g} (median "
                           f"over {drift['n']} panel members of the change {drift['snapshot_as_of']} -> "
-                          f"{drift['fetched_as_of']}) before the conversion")
+                          f"{drift['fetched_as_of']}, larger than their median absolute deviation "
+                          f"{drift['spread']['mad']:.6g}) before the conversion")
         return out, 'drift corrected', None
     return out, 'rescaled', None
 
@@ -294,7 +307,7 @@ def merge_model_rows(shipped, fresh, names, now=None):
                     continue
                 row.setdefault(field, []).append(kept)
                 rescaled += how == 'rescaled'
-                if how == 'drift corrected':
+                if how in ('drift corrected', 'no common shift'):
                     corrected[src] = kept['drift_correction']
                 src = entry.get('source')
                 if src not in merged['sources'] and src in fresh_sources:
@@ -316,8 +329,9 @@ def merge_model_rows(shipped, fresh, names, now=None):
     for src, d in sorted(corrected.items()):
         notes.append(f"{src} moved since the release snapshot: drift {d['drift']:.6g} over {d['n']} panel members "
                      f"(spread {d['spread']['min']:.6g} .. {d['spread']['max']:.6g}, median absolute deviation "
-                     f"{d['spread']['mad']:.6g}; {d['snapshot_as_of']} -> {d['fetched_as_of']}), corrected before the "
-                     'conversion to the shipped scale')
+                     f"{d['spread']['mad']:.6g}; {d['snapshot_as_of']} -> {d['fetched_as_of']}), "
+                     + ('corrected before the conversion to the shipped scale' if d['common_shift'] else
+                        'not corrected: the members show no common shift (|drift| not above the median absolute deviation)'))
     for src in sorted(tier_boards):
         notes.append(f'the tier from {src} is computed on the fetched board, a different file from the shipped fetch; '
                      "the other models' tiers stay on the shipped one")

@@ -180,10 +180,11 @@ class ProvenanceTests(unittest.TestCase):
 
 class DriftCorrectionShapeTests(unittest.TestCase):
     """Rule (calibration/refresh.py board_drift): a measurement corrected by its board's drift states drift, n >= 2
-    named panel members, the spread {min, max, mad} around the drift and both dates, on a scaled source; a five-axis
+    named panel members, the spread {min, max, mad} around the drift, whether |drift| > mad (common_shift) and both
+    dates, on a scaled source; a five-axis
     cell source carries the same record as its measurement."""
     GOOD = {'drift': -0.04, 'n': 3, 'members': ['a-m', 'b-m', 'c-m'], 'spread': {'min': -0.1, 'max': 0.02, 'mad': 0.03},
-            'snapshot_as_of': '2026-11-18', 'fetched_as_of': '2026-11-19'}
+            'common_shift': True, 'snapshot_as_of': '2026-11-18', 'fetched_as_of': '2026-11-19'}
 
     def doc(self, correction, scaled=True):
         return {'sources': {'b.x': {'scale': {'anchor': 'a-m'}} if scaled else {}},
@@ -193,7 +194,8 @@ class DriftCorrectionShapeTests(unittest.TestCase):
         reference_provenance.validate_measurements_provenance(self.doc(self.GOOD))
         bad = [dict(self.GOOD, n=1, members=['a-m']), dict(self.GOOD, members=['a-m']),
                dict(self.GOOD, spread={'min': 0.0, 'max': 0.1, 'mad': 0.0}), dict(self.GOOD, fetched_as_of=None),
-               {k: v for k, v in self.GOOD.items() if k != 'spread'}]
+               {k: v for k, v in self.GOOD.items() if k != 'spread'}, dict(self.GOOD, common_shift=False),
+               dict(self.GOOD, drift=0.02, common_shift=True)]
         for correction in bad:
             with self.subTest(correction=correction), self.assertRaises(ValueError):
                 reference_provenance.validate_measurements_provenance(self.doc(correction))

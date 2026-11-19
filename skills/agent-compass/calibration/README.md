@@ -123,6 +123,13 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   bounded with the facet's own readings pinned, so it never moves one. A reading the rule moves is no longer a measurement
   (`bound_moved`; a Time/Task listing it moves becomes method `effort_bound`).
 - **`same_model` declarations.** A row `accounts.json` `same_model` declares to be another row's underlying model (`dot` -> `gpt-6-astra`, `grok-bot` -> `claude-opus-5-5`) inherits that model's facet curves, `duration_multiplier`, and `usd_per_hour` when listed in `carries` (`creativity`, `coding`, `aesthetics`, `duration`, `usd_per_hour`), while channel-specific `tool_operation` stays `missing`. When a `same_model` row also declares a `capacity_rule`, `axis_scores.five_axis_overlay` resolves the detected target subscription plan's monthly price from `plan-templates.json` at runtime and matches the same-price (or price-ratio-scaled nearest) reference subscription on the capacity ladder.
+- **Cost per hour from the fallback source (owner, 2026-11-19).** `usd_per_hour` is read from arena sessions
+  (`arena.agent_sessions`); a row arena does not price takes option B (`derived.community_mix`: Artificial Analysis output
+  speed priced at the community token mix), which runs high against arena sessions on the rows that have both. A row
+  whose value still rests on option B alone (no series or size conversion from a relative with a direct value) is put on
+  the arena-sessions scale: its option-B value divided by the fleet's median ratio option B / arena over the rows that
+  have both (at least three), the ratio, its `n`, its spread (`min`, `p10`, `p90`, `max`), the rows it rests on and the
+  option-B value stated on the cell (`on_primary_scale`), marked `estimated` (`five_axis.scale_fallback_usd`).
 
 ## Scripts
 
@@ -206,12 +213,14 @@ Every per-model fact is reference data under `references/`; adding a model or a 
      in both the release snapshot and this fetch, of (raw in this fetch - raw in the snapshot); `n` is how many members
      it used. The model's raw readings are corrected by the drift and converted with the shipped anchor and sd_panel
      like any reading, `(raw - drift - anchor_raw) / sd_panel` (the scale recorded at 6 significant digits, so such a z
-     can differ in the fourth decimal). The entry is still measured, and carries `drift_correction` {`drift`, `n`,
-     `members`, `spread` {`min`, `max`, `mad`}, `snapshot_as_of`, `fetched_as_of`} in `public-measurements.json` and in
-     its five-axis cell source (`scripts/reference_provenance.py` checks the shape). The rule assumes the board moved by
-     one common shift between the two dates; the spread says how far the members disagree with that: the range of the
-     members' own changes and their median absolute deviation from the drift, so a wide spread means the board did not
-     move as one and the corrected reading is as uncertain as that spread. With fewer than two members in both, a board
+     can differ in the fourth decimal). The correction assumes the board moved by one common shift between the two
+     dates, so it is applied only where the members show one (owner, 2026-11-19): the drift is larger in size than the
+     members' median absolute deviation around it (`common_shift`). Otherwise the board shows no common shift and the
+     reading is merged plain, `(raw - anchor_raw) / sd_panel`, with the spread recorded on the cell. Either way the
+     entry is still measured, and carries `drift_correction` {`drift`, `n`, `members`, `spread` {`min`, `max`, `mad`},
+     `common_shift`, `snapshot_as_of`, `fetched_as_of`} in `public-measurements.json` and in its five-axis cell source
+     (`scripts/reference_provenance.py` checks the shape): the range of the members' own changes and their median
+     absolute deviation from the drift say how uncertain the reading is. With fewer than two members in both, a board
      that moved leaves the entry out (the pair is a known gap of kind `anchor_reading_moved` until the next release's
      fetch). Where the board did not move (every member's raw the same) the merge is the plain one: the entry as built
      on the same scale, else recomputed on the shipped scale, and left out when the anchor's reading moved; a z-score

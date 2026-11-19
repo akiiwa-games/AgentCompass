@@ -27,7 +27,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `deepseek-v4-flash` | -0.58 | -3.05 | -2.24~ | -2.64 | -2.14~ | 1.544 | no |
 | `deepseek-v4-flash-promo` | -0.58 | -3.05~ | -2.24~ | -2.64~ | -2.14~ | - | unknown |
 | `deepseek-v4-pro` | -0.40 | -1.98 | -2.10u | -2.98 | -1.81~ | - | no |
-| `deepseek-v4-pro-0813` | -0.64 | -3.57~ | -3.17~ | -3.48~ | -2.87~ | 4.847 | no |
+| `deepseek-v4-pro-0813` | -0.64 | -3.57~ | -3.17~ | -3.48~ | -2.87~ | 2.882 | no |
 | `deepseek-v4.1-flash` | -0.48 | -2.40~ | -1.93~ | -1.20 | -2.16~ | 0.955 | yes |
 | `deepseek-v4.1-flash-1017` | -0.48 | -2.64~ | -1.96~ | -1.27 | -1.72 | 0.955 | yes |
 | `deepseek-v4.1-flash-economy` | -0.48 | -2.64~ | -1.96~ | -1.20~ | -1.72~ | - | unknown |
@@ -52,9 +52,9 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gemini-4-argon-high` | 0.12 | 0.15 | -0.76 | -0.58 | -1.12u | 6.0 | yes |
 | `gemini-4-carbon` | 0.16 | -0.03 | 0.00u | -0.03 | -1.70u | 8.463 | yes |
 | `gemini-4-hydrogen-high` | -0.13 | -0.71 | -1.27~ | -0.45 | -0.35~ | 17.094 | yes |
-| `gemini-4-neon` | 0.15 | -0.16~ | 0.18~ | -0.46~ | -0.90~ | 25.922 | yes |
-| `gemma-4-26b-a4b-it` | -0.57 | -3.28 | -4.10~ | -4.67 | -3.17 | 2.043 | yes |
-| `gemma-4-31b-it` | -0.45 | -2.76 | -3.76~ | -4.55 | -2.33 | 3.423 | yes |
+| `gemini-4-neon` | 0.15 | -0.16~ | 0.18~ | -0.46~ | -0.90~ | 15.41 | yes |
+| `gemma-4-26b-a4b-it` | -0.57 | -3.28 | -4.10~ | -4.67 | -3.17 | 1.215 | yes |
+| `gemma-4-31b-it` | -0.45 | -2.76 | -3.76~ | -4.55 | -2.33 | 2.035 | yes |
 | `glm-4.5` | -0.78 | -4.06 | -3.19~ | -3.33 | -5.09~ | 14.547 | no |
 | `glm-4.5-air` | -1.09 | -5.30 | -3.83~ | -3.76 | -6.45~ | - | no |
 | `glm-4.5-flash` | -1.16 | -5.81~ | -5.31~ | -5.45~ | -5.16~ | - | unknown |
@@ -73,12 +73,12 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `glm-5.3-flash-free` | -0.26 | -2.30 | -1.99~ | -1.58 | -1.87 | 1.139 | yes |
 | `glm-5.3-flashx` | -0.26 | -2.30~ | -1.99~ | -1.58~ | -1.87~ | 2.837 | yes |
 | `glm-5v-turbo` | -0.40 | -1.96~ | -2.95~ | -2.91 | -2.60~ | 30.538 | yes |
-| `gpt-5.2` | -0.57 | -3.66 | -3.12~ | -4.18 | -2.06 | 15.216 | yes |
+| `gpt-5.2` | -0.57 | -3.66 | -3.12~ | -4.18 | -2.06 | 9.046 | yes |
 | `gpt-5.2-pro` | - | missing! | missing! | missing! | missing! | - | yes |
-| `gpt-5.4` | -0.26 | -2.14 | -2.56~ | -4.23 | -0.61 | 19.145 | yes |
-| `gpt-5.4-mini` | -0.49 | -3.24 | -3.09~ | -4.26 | -2.09 | 14.469 | yes |
+| `gpt-5.4` | -0.26 | -2.14 | -2.56~ | -4.23 | -0.61 | 11.382 | yes |
+| `gpt-5.4-mini` | -0.49 | -3.24 | -3.09~ | -4.26 | -2.09 | 8.602 | yes |
 | `gpt-5.4-pro` | - | missing! | missing! | missing! | missing! | - | yes |
-| `gpt-5.5` | -0.21 | -1.86 | -2.42~ | -2.17 | -1.05 | 41.413 | yes |
+| `gpt-5.5` | -0.21 | -1.86 | -2.42~ | -2.17 | -1.05 | 24.62 | yes |
 | `gpt-5.5-pro` | - | missing! | missing! | missing! | missing! | - | yes |
 | `gpt-5.6-luna` | -0.64 | -3.03 | -2.75~ | -2.72 | -2.08 | 1.598 | yes |
 | `gpt-5.6-sol` | -0.01 | -1.49 | -1.74~ | -0.72 | -1.21 | 24.5 | yes |
@@ -91,7 +91,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gpt-6.1-terra` | -0.04 | -2.54~ | -0.47u | -1.25 | -0.57 | 5.412 | yes |
 | `gpt-6.2-astra` | 0.16 | -0.12~ | 0.79~ | -0.50~ | -0.10 | 43.296 | yes |
 | `gpt-6.2-sol` | 0.06 | -1.85~ | 0.33~ | -0.09~ | -0.45~ | 7.546 | yes |
-| `gpt-oss-120b` | -1.26 | -6.67 | -5.73~ | -5.86 | -5.60~ | 13.812 | no |
+| `gpt-oss-120b` | -1.26 | -6.67 | -5.73~ | -5.86 | -5.60~ | 8.211 | no |
 | `gpt-oss-20b` | -1.54 | -7.72 | -5.73~ | -5.85~ | -5.60~ | - | no |
 | `grok-4.20-0309-non-reasoning` | -0.53 | -2.66~ | -2.88~ | -4.11~ | -2.34~ | - | unknown |
 | `grok-4.20-0309-reasoning` | -0.53 | -2.66~ | -2.88~ | -4.11~ | -2.34~ | - | unknown |

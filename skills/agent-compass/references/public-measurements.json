@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-19T00:43:42+00:00",
+ "generated_at": "2026-11-19T01:46:02+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [
@@ -23302,7 +23302,7 @@
      "as_of": "2026-11-19",
      "fetched_at": "2026-11-19T00:35:50+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
-     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.763853 over 12 panel models; reading taken after the release snapshot, corrected by the board's drift 0 (median over 12 panel members of the change 2026-11-18 -> 2026-11-19) before the conversion",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.763853 over 12 panel models; reading taken after the release snapshot on a board whose 12 panel members show no common shift (2026-11-18 -> 2026-11-19: median change 0, not larger than their median absolute deviation 0), so not corrected",
      "facet": "responsiveness",
      "listed_as": "Gemini 4 Neon (High)",
      "raw": -3.704707,
@@ -23340,6 +23340,7 @@
        "max": 0.0,
        "mad": 0.0
       },
+      "common_shift": false,
       "snapshot_as_of": "2026-11-18",
       "fetched_as_of": "2026-11-19"
      }

@@ -228,7 +228,7 @@ def _validate_catalog_tables(doc):
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
 
 
-DRIFT_KEYS = {'drift', 'n', 'members', 'spread', 'snapshot_as_of', 'fetched_as_of'}
+DRIFT_KEYS = {'drift', 'n', 'members', 'spread', 'common_shift', 'snapshot_as_of', 'fetched_as_of'}
 
 
 def _drift_problem(where, d, scaled):
@@ -244,6 +244,8 @@ def _drift_problem(where, d, scaled):
     if not (isinstance(spread, dict) and set(spread) == {'min', 'max', 'mad'} and all(num(v) for v in spread.values())
             and spread['min'] <= d['drift'] <= spread['max'] and spread['mad'] >= 0):
         return f'{where}: drift_correction.spread is {{min, max, mad}} around the drift'
+    if d['common_shift'] is not (abs(d['drift']) > spread['mad']):
+        return f'{where}: drift_correction.common_shift is whether |drift| is above the median absolute deviation'
     if not (date(d['snapshot_as_of']) and date(d['fetched_as_of'])):
         return f'{where}: drift_correction names both dates (snapshot_as_of, fetched_as_of)'
     if not scaled:
