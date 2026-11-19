@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.five-axis-scores/12",
- "generated_at": "2026-11-19T04:14:21+00:00",
+ "generated_at": "2026-11-19T04:18:22+00:00",
  "measurements_sha256": "928043c0a5dd93c6c34fccb7d32b05015f67d50277b13ecc13e9ae8632d1d052",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
@@ -11642,92 +11642,71 @@
        }
       },
       "image_recognition": {
-       "value": -1.1034,
+       "value": -0.3492,
        "by_effort": {
-        "none": -1.8902,
-        "minimal": -1.8902,
-        "low": -1.7769,
-        "medium": -1.4016,
-        "high": -1.1034,
-        "xhigh": -0.939,
-        "max": -0.7693,
-        "ultra": -0.5485
+        "none": -1.858,
+        "minimal": -1.0717,
+        "low": -0.7797,
+        "medium": -0.5439,
+        "high": -0.3492,
+        "xhigh": -0.1848,
+        "max": -0.0151,
+        "ultra": 0.2057
        },
        "status": "estimated",
        "sources": {},
        "estimate": {
         "method": "sibling_shift",
-        "base_model": [
-         "gemma-4-26b-a4b-it",
-         "gemma-4-31b-it"
-        ],
-        "base_value": [
-         -3.172,
-         -2.3288
-        ],
-        "base_tier": [
-         -0.566,
-         -0.4486
-        ],
+        "base_model": "gemini-3.8-flash-high",
+        "base_value": -0.1249,
+        "base_tier": -0.0826,
         "tier": -0.1335,
         "tier_source": "arena_overall",
-        "shift": [
-         1.9057,
-         1.3884
-        ],
+        "shift": -0.2243,
         "fit": "tool_operation.image_recognition~tier",
         "r": 0.8796,
         "skill": 0.7436,
         "loo_rmse": 0.7528,
         "n": 55,
         "slope": 4.4063,
-        "version_distance": 0,
-        "tie": "median of the tied relatives"
+        "version_distance": 1
        },
        "measured_efforts": [],
        "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.1034,
-         "step": -0.6735,
-         "n": 9
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.1034,
-         "step": -0.2982,
-         "n": 9
-        },
         "xhigh": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -1.1034,
+         "from_value": -0.3492,
          "step": 0.1644,
          "n": 8
         },
         "max": {
          "method": "panel_effort_step",
          "from_effort": "high",
-         "from_value": -1.1034,
+         "from_value": -0.3492,
          "step": 0.3341,
          "n": 7
         },
         "minimal": {
          "method": "fleet_lowest_step",
          "from_effort": "low",
-         "from_value": -1.7769,
+         "from_value": -0.7797,
          "step": -0.292,
-         "n": 19,
-         "bounded_from": -2.0689
+         "n": 19
         },
         "ultra": {
          "method": "fleet_highest_step",
          "from_effort": "max",
-         "from_value": -0.7693,
+         "from_value": -0.0151,
          "step": 0.2208,
          "n": 12
+        },
+        "none": {
+         "method": "fleet_off_step",
+         "from_effort": "high",
+         "from_value": -0.3492,
+         "step": -1.5088,
+         "n": 43
         }
        }
       }
@@ -11751,11 +11730,11 @@
       },
       "3": {
        "by_effort": {
-        "none": -1.8902,
-        "minimal": -1.8902,
-        "low": -1.7769,
-        "medium": -1.4016,
-        "high": -1.1034,
+        "none": -1.858,
+        "minimal": -1.0717,
+        "low": -0.7797,
+        "medium": -0.5439,
+        "high": -0.3492,
         "xhigh": -0.961,
         "max": -2.3685,
         "ultra": -3.9046
@@ -11766,13 +11745,13 @@
        ]
       }
      },
-     "value": -1.1034,
+     "value": -0.3492,
      "by_effort": {
-      "none": -1.8902,
-      "minimal": -1.8902,
-      "low": -1.7769,
-      "medium": -1.4016,
-      "high": -1.1034,
+      "none": -1.858,
+      "minimal": -1.0717,
+      "low": -0.7797,
+      "medium": -0.5439,
+      "high": -0.3492,
       "xhigh": -0.961,
       "max": -2.3685,
       "ultra": -3.9046
@@ -11784,7 +11763,7 @@
     "creativity": -0.7075,
     "coding": -1.2737,
     "aesthetics": -0.4487,
-    "tool_operation": -1.1034
+    "tool_operation": -0.3492
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -78600,68 +78579,29 @@
        }
       },
       "faithfulness": {
-       "value": -1.2737,
+       "value": -3.6866,
        "by_effort": {
-        "none": -3.0465,
-        "minimal": -3.0465,
-        "low": -2.7545,
-        "medium": -1.5886,
-        "high": -1.2737,
-        "xhigh": -1.0265,
-        "max": -0.4411,
-        "ultra": -0.1685
+        "none": -4.902,
+        "minimal": -4.902,
+        "low": -4.579,
+        "medium": -3.9504,
+        "high": -3.6866,
+        "xhigh": -3.5255,
+        "max": -3.3428,
+        "ultra": -3.0702
        },
        "status": "estimated",
        "sources": {},
-       "estimate": {
-        "method": "sibling_shift",
-        "base_model": "gemini-3.8-flash-high",
-        "base_value": -1.2737,
-        "base_tier": -0.0826,
-        "tier": -0.566,
-        "tier_source": "arena_overall",
-        "shift": 0.0,
-        "shift_basis": "shift 0: no fit, out-of-sample skill -0.056 (leave-one-out error not below the mean predictor's)",
-        "version_distance": 1
-       },
        "measured_efforts": [],
-       "filled_efforts": {
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.2737,
-         "step": 0.2472,
-         "n": 7
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.2737,
-         "step": 0.8326,
-         "n": 6
-        },
-        "minimal": {
-         "method": "other_facets_median",
-         "from_effort": "low",
-         "from_value": -2.7545,
-         "step": -0.292,
-         "n": 3
-        },
-        "ultra": {
-         "method": "other_facets_median",
-         "from_effort": "max",
-         "from_value": -0.4411,
-         "step": 0.2726,
-         "n": 3
-        },
-        "none": {
-         "method": "other_facets_median",
-         "from_effort": "high",
-         "from_value": -1.2737,
-         "step": 0.0,
-         "n": 4,
-         "bounded_from": -1.2737
-        }
+       "estimate": {
+        "method": "own_ability_median",
+        "facets": [
+         "creativity.creative_writing",
+         "coding.execution",
+         "aesthetics.design",
+         "tool_operation.image_recognition"
+        ],
+        "n": 4
        }
       }
      },
@@ -79106,175 +79046,21 @@
     }
    },
    "duration_multiplier": {
-    "status": "ok",
+    "status": "missing",
     "anchor_minutes": 9.289,
-    "by_effort": {
-     "none": 0.0774,
-     "minimal": 0.0774,
-     "low": 0.1604,
-     "medium": 0.4355,
-     "high": 0.9114,
-     "xhigh": 1.6175,
-     "max": 2.7211,
-     "ultra": 4.5773
-    },
-    "minutes_by_effort": {
-     "none": 0.719,
-     "minimal": 0.719,
-     "low": 1.49,
-     "medium": 4.045,
-     "high": 8.466,
-     "xhigh": 15.025,
-     "max": 25.276,
-     "ultra": 42.519
-    },
-    "basis_by_effort": {
-     "none": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       0.719
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "minimal": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       0.719
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "low": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       1.49
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "medium": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       4.045
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "high": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       8.466
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "xhigh": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       15.025
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "max": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       25.276
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "ultra": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       42.519
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     }
-    },
-    "efforts_without_time": []
+    "by_effort": {},
+    "minutes_by_effort": {},
+    "basis_by_effort": {},
+    "efforts_without_time": [
+     "none",
+     "minimal",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max",
+     "ultra"
+    ]
    },
    "image_input": {
     "value": true,
@@ -79336,7 +79122,15 @@
     },
     "aa_only": false
    },
-   "data_errors": []
+   "data_errors": [
+    {
+     "model": "gemma-4-26b-a4b-it",
+     "field": "duration_multiplier",
+     "reason": "no_time_per_task",
+     "level": "red",
+     "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
+    }
+   ]
   },
   "gemma-4-31b-it": {
    "axes": {
@@ -79551,68 +79345,29 @@
        }
       },
       "faithfulness": {
-       "value": -1.2737,
+       "value": -3.2615,
        "by_effort": {
-        "none": -3.0465,
-        "minimal": -3.0465,
-        "low": -2.7545,
-        "medium": -1.5886,
-        "high": -1.2737,
-        "xhigh": -1.0265,
-        "max": -0.4411,
-        "ultra": -0.1685
+        "none": -4.5603,
+        "minimal": -4.5603,
+        "low": -4.154,
+        "medium": -3.5254,
+        "high": -3.2615,
+        "xhigh": -3.1004,
+        "max": -2.9178,
+        "ultra": -2.6452
        },
        "status": "estimated",
        "sources": {},
-       "estimate": {
-        "method": "sibling_shift",
-        "base_model": "gemini-3.8-flash-high",
-        "base_value": -1.2737,
-        "base_tier": -0.0826,
-        "tier": -0.4486,
-        "tier_source": "arena_overall",
-        "shift": 0.0,
-        "shift_basis": "shift 0: no fit, out-of-sample skill -0.056 (leave-one-out error not below the mean predictor's)",
-        "version_distance": 1
-       },
        "measured_efforts": [],
-       "filled_efforts": {
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.2737,
-         "step": 0.2472,
-         "n": 7
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.2737,
-         "step": 0.8326,
-         "n": 6
-        },
-        "minimal": {
-         "method": "other_facets_median",
-         "from_effort": "low",
-         "from_value": -2.7545,
-         "step": -0.292,
-         "n": 3
-        },
-        "ultra": {
-         "method": "other_facets_median",
-         "from_effort": "max",
-         "from_value": -0.4411,
-         "step": 0.2726,
-         "n": 3
-        },
-        "none": {
-         "method": "other_facets_median",
-         "from_effort": "high",
-         "from_value": -1.2737,
-         "step": 0.0,
-         "n": 4,
-         "bounded_from": -1.2737
-        }
+       "estimate": {
+        "method": "own_ability_median",
+        "facets": [
+         "creativity.creative_writing",
+         "coding.execution",
+         "aesthetics.design",
+         "tool_operation.image_recognition"
+        ],
+        "n": 4
        }
       }
      },
@@ -80056,175 +79811,21 @@
     }
    },
    "duration_multiplier": {
-    "status": "ok",
+    "status": "missing",
     "anchor_minutes": 9.289,
-    "by_effort": {
-     "none": 0.0774,
-     "minimal": 0.0774,
-     "low": 0.1604,
-     "medium": 0.4355,
-     "high": 0.9114,
-     "xhigh": 1.6175,
-     "max": 2.7211,
-     "ultra": 4.5773
-    },
-    "minutes_by_effort": {
-     "none": 0.719,
-     "minimal": 0.719,
-     "low": 1.49,
-     "medium": 4.045,
-     "high": 8.466,
-     "xhigh": 15.025,
-     "max": 25.276,
-     "ultra": 42.519
-    },
-    "basis_by_effort": {
-     "none": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       0.719
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "minimal": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       0.719
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "low": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       1.49
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "medium": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       4.045
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "high": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       8.466
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "xhigh": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       15.025
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "max": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       25.276
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     },
-     "ultra": {
-      "method": "cross_line_median",
-      "base_model": [
-       "gemini-4-hydrogen-high"
-      ],
-      "version_distance": 0,
-      "base_minutes": [
-       42.519
-      ],
-      "source": "aa.cost_time",
-      "lines": {
-       "gemini-4-hydrogen-high": {
-        "line": "hydrogen",
-        "n": 0,
-        "pairs": []
-       }
-      }
-     }
-    },
-    "efforts_without_time": []
+    "by_effort": {},
+    "minutes_by_effort": {},
+    "basis_by_effort": {},
+    "efforts_without_time": [
+     "none",
+     "minimal",
+     "low",
+     "medium",
+     "high",
+     "xhigh",
+     "max",
+     "ultra"
+    ]
    },
    "image_input": {
     "value": true,
@@ -80285,7 +79886,15 @@
     },
     "aa_only": false
    },
-   "data_errors": []
+   "data_errors": [
+    {
+     "model": "gemma-4-31b-it",
+     "field": "duration_multiplier",
+     "reason": "no_time_per_task",
+     "level": "red",
+     "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
+    }
+   ]
   },
   "glm-4.5": {
    "axes": {
@@ -128942,6 +128551,20 @@
    "reason": "aa_only",
    "level": "yellow",
    "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
+  },
+  {
+   "model": "gemma-4-26b-a4b-it",
+   "field": "duration_multiplier",
+   "reason": "no_time_per_task",
+   "level": "red",
+   "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
+  },
+  {
+   "model": "gemma-4-31b-it",
+   "field": "duration_multiplier",
+   "reason": "no_time_per_task",
+   "level": "red",
+   "effect": "no Artificial Analysis Time/Task, and no arena.ai Agent Time/Task with a fit that has skill: out of automatic routing at every effort; a named dispatch carries the task's own hours estimate unscaled"
   },
   {
    "model": "glm-4.5-air",

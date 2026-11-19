@@ -37,9 +37,9 @@ import five_axis  # noqa: E402
 
 # accounts.json's declarations the build reads (sources.effort_readings, five_axis.estimation_order)
 # declared family rows (series.identity) for the gpt-6 / gpt-5.6 luna and astra rows and the claude rows of the fixtures
-GPT_FAMILIES = {'rows': [{'pattern': '^gpt-(?:6|5\\.6).*luna', 'models': [], 'maker': 'openai', 'line': 'luna', 'size': 'full'},
-                         {'pattern': '^gpt', 'models': [], 'maker': 'openai', 'line': 'astra', 'size': 'full'},
-                         {'pattern': '^claude', 'models': [], 'maker': 'anthropic', 'line': 'claude', 'size': 'full'}]}
+GPT_FAMILIES = {'rows': [{'pattern': '^gpt-(?:6|5\\.6).*luna', 'models': [], 'maker': 'openai', 'product': 'openai', 'line': 'luna', 'size': 'full'},
+                         {'pattern': '^gpt', 'models': [], 'maker': 'openai', 'product': 'openai', 'line': 'astra', 'size': 'full'},
+                         {'pattern': '^claude', 'models': [], 'maker': 'anthropic', 'product': 'anthropic', 'line': 'claude', 'size': 'full'}]}
 READINGS = {'effort_readings': {'labels': {'non-reasoning': 'none', 'reasoning': 'default'}, 'reads': {'default': 'high'}},
             'estimation_order': {'order': list(five_axis.ESTIMATION_ORDER), 'sibling_first_up_to_distance': 1,
                                  'speed_cross_line_before_fit': True, 'evidence': 'synthetic'}}
@@ -1563,7 +1563,7 @@ class AnchorRelativeTests(unittest.TestCase):
 
     def score(self, meas):
         # The fable rows are relatives through this catalog's declared family row (series.identity: maker, line, size).
-        families = {'rows': [{'pattern': '^claude-fable', 'models': ['claude-fable-5-2'], 'maker': 'anthropic',
+        families = {'rows': [{'pattern': '^claude-fable', 'models': ['claude-fable-5-2'], 'maker': 'anthropic', 'product': 'anthropic',
                               'line': 'fable', 'size': 'full'}]}
         # their declared versions (accounts.json series_versions): one version apart, a sibling first (estimation_order)
         versions = {'series_versions': {'versions': {'claude-fable-5-1': 5.1, 'claude-fable-5-2': 5.2}}}
@@ -1702,7 +1702,7 @@ class AnchorRelativeTests(unittest.TestCase):
             'acme-a-1': self.tiered(4.2, coding=[{'source': 'arena.agent_alignment', 'facet': 'faithfulness', 'value': -0.2}],
                                     tool_operation=resp_entry(0.5)),
             'acme-b-1': self.tiered(4.0)})
-        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
+        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'product': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
         versions = {'series_versions': {'versions': {'acme-a-1': 1, 'acme-b-1': 1}}}
         rows, _, _, _, _, _ = self.fa.Scorer(meas, {**READINGS, **versions, 'models': {m: {} for m in meas['models']},
                                                     'families': fams}).score()
@@ -1725,7 +1725,7 @@ class AnchorRelativeTests(unittest.TestCase):
             'acme-a-2': self.tiered(4.0, tool_operation=resp_entry(0.7)), 'acme-b-2': self.tiered(4.0, tool_operation=resp_entry(0.3)),
             'acme-a-3': self.tiered(4.0, tool_operation=resp_entry(0.6)), 'acme-b-3': self.tiered(4.0),
             'acme-a-4': self.tiered(4.0, tool_operation=resp_entry(0.9)), 'acme-b-4': self.tiered(4.0)})
-        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
+        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'product': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
         versions = {'series_versions': {'versions': {m: int(m[-1]) for m in meas['models'] if m.startswith('acme')}}}
         rows, _, _, _, _, _ = self.fa.Scorer(meas, {**READINGS, **versions, 'models': {m: {} for m in meas['models']},
                                                     'families': fams}).score()
@@ -1748,7 +1748,7 @@ class AnchorRelativeTests(unittest.TestCase):
             tool_operation=[{'source': 'lmarena.vision', 'facet': 'image_recognition', 'value': -0.15}])
         meas['models']['channel'] = {}
         # astra's declared family row; the channel takes astra's identity through the declaration (series.identity)
-        astra = {'rows': [{'pattern': '^astra', 'models': [], 'maker': 'openai', 'line': 'astra', 'size': 'full'}]}
+        astra = {'rows': [{'pattern': '^astra', 'models': [], 'maker': 'openai', 'product': 'openai', 'line': 'astra', 'size': 'full'}]}
         acc = {**READINGS, 'models': {m: {} for m in meas['models']}, 'families': astra,
                'same_model': {'channel': {'model': 'astra', 'carries': ['coding'], 'url': 'https://openai.com/index/introducing-dots/'}}}
         rows, tier, _, _, _, _ = self.fa.Scorer(meas, acc).score()
@@ -2850,7 +2850,7 @@ class ResponseFloorTests(unittest.TestCase):
         meas = {**rel.calibration_set({'acme-a-1': rel.tiered(4.2, tool_operation=resp(relative_z)),
                                        'acme-b-1': rel.tiered(4.0)}),
                 'sources': {'aa.ttfa': {'scale': {'anchor_raw': -3.0, 'sd_panel': 1.0}}}}
-        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
+        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'product': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
         acc = {**READINGS, 'series_versions': {'versions': {'acme-a-1': 1, 'acme-b-1': 1}}, 'families': fams,
                'models': {m: ({'response_time_source': self.FLOOR} if m == 'acme-b-1' else {}) for m in meas['models']}}
         rows, _, _, _, _, _ = five_axis.Scorer(meas, acc).score()
@@ -2988,7 +2988,7 @@ class CrossLineTimeTests(unittest.TestCase):
         ({row: High minutes}, method series)."""
         models = {**read, **dict(estimated)}
         acc = {**READINGS, 'models': {m: {} for m in [*models, 'acme-b-4']},
-               'families': {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'line': x, 'size': 'full'}
+               'families': {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'product': 'acme', 'line': x, 'size': 'full'}
                                      for x in 'ab']},
                'series_versions': {'versions': versions or {m: int(m[-1]) for m in [*models, 'acme-b-4']}}}
         rows = dict.fromkeys(acc['models'])
@@ -3383,13 +3383,13 @@ class EffortCoverageRuleTests(unittest.TestCase):
                     self.assertEqual((ident[k]['maker'], ident[k]['size']), (ident[j]['maker'], ident[j]['size']), (k, j))
                     if scope == 'line':
                         self.assertEqual(ident[k]['line'], ident[j]['line'], (k, j))
-        row = lambda pattern, line, size: {'pattern': pattern, 'models': [], 'maker': 'acme', 'line': line, 'size': size}  # noqa: E731
+        row = lambda pattern, line, size: {'pattern': pattern, 'models': [], 'maker': 'acme', 'product': 'acme', 'line': line, 'size': size}  # noqa: E731
         synthetic = {'models': {m: {} for m in ('fam-1', 'fam-1-preview', 'fam-1-mini', 'fam-pro-1', 'zed-1', 'zed-2')},
                      'aliases': {'zed-2': 'fam-1'}, 'superseded': {'zed-1': {'by': 'zed-2'}},
                      'families': {'rows': [row('^fam.*mini', 'fam', 'small'),
                                            row('^fam-pro', 'pro', 'full'), row('^fam', 'fam', 'full'),
-                                           {**row('^zed-1', 'zed', 'full'), 'maker': 'other'},
-                                           {**row('^zed', 'zed', 'full'), 'maker': 'third'}]}}
+                                           {**row('^zed-1', 'zed', 'full'), 'maker': 'other', 'product': 'other'},
+                                           {**row('^zed', 'zed', 'full'), 'maker': 'third', 'product': 'third'}]}}
         ability, line = self.series.groups(synthetic, 'ability'), self.series.groups(synthetic, 'line')
         self.assertEqual(ability['fam-1'], ['fam-1-preview', 'fam-pro-1'])      # same maker and size, every line
         self.assertEqual(line['fam-1'], ['fam-1-preview'])                      # the bare name decides the row
@@ -3400,6 +3400,22 @@ class EffortCoverageRuleTests(unittest.TestCase):
         self.assertEqual(self.series.groups(synthetic, 'line')['fam-1'], ['fam-1-mini', 'fam-1-preview'])
         with self.assertRaises(ValueError):
             self.series.groups({**synthetic, 'families': {'rows': [{'pattern': '^fam', 'models': [], 'size': 'full'}]}})
+
+    def test_lines_of_one_product_only_are_relatives_and_version_distance_is_counted_within_it(self):
+        """Rule (series.groups, owner 2026-11-19 round 7): relatives of another line are rows of the same maker and the
+        same product (an open-weights product of the same maker is another product); version distance counts the
+        product's own versions only; a families row without a product stops the build."""
+        row = lambda pattern, product, line: {'pattern': pattern, 'models': [], 'maker': 'acme', 'product': product,  # noqa: E731
+                                              'line': line, 'size': 'small'}
+        acc = {'models': {m: {} for m in ('main-a-3', 'main-b-2', 'open-1', 'open-2')},
+               'series_versions': {'versions': {'main-a-3': 3, 'main-b-2': 2, 'open-1': 1, 'open-2': 2}},
+               'families': {'rows': [row('^main-a', 'Main', 'a'), row('^main-b', 'Main', 'b'), row('^open', 'Open', 'open')]}}
+        ability = self.series.groups(acc, 'ability')
+        self.assertEqual(ability['main-a-3'], ['main-b-2'])        # the other line of its product, not the open product
+        self.assertEqual(ability['open-2'], ['open-1'])
+        self.assertEqual(self.series.distance('main-a-3', 'main-b-2', ability['main-a-3'], self.series.versions(acc)), 1)
+        with self.assertRaisesRegex(ValueError, 'product'):
+            self.series.groups({**acc, 'families': {'rows': [{**row('^main', 'Main', 'a'), 'product': ''}]}})
 
     def test_another_lines_relative_is_used_only_up_to_the_declared_distance_and_after_the_own_line(self):
         """Rule (series.nearest `line_of`, `other_line_up_to`): at one version distance the own line comes first; a

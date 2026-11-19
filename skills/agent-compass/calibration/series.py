@@ -2,10 +2,12 @@
 先按照同系列的全分数进行折算，不要留下任何一个默认值或者fallback"; five_axis.py estimates through the tier on top of it).
 
 Relatives are declared (owner 2026-11-19, round 6 item 4), never read off a name or a member list: every `families` row
-declares its `maker`, its product `line` and its `size` (`small` or `full`), and a row takes those of the `families` row
-that decides its name (model_resolution.family_row; `identity`); a `same_model` row takes its declared model's (it is
-that model). A row's relatives for an **ability** facet (`groups(acc, 'ability')`) are the rows of the same maker and the
-same size, every product line, a row of another line only up to the declared version distance
+declares its `maker`, its `product` (the maker's product name the vendor releases its lines under: GPT, gpt-oss,
+Gemini, Gemma, Claude, ...; round 7), its `line` within the product and its `size` (`small` or `full`), and a row takes
+those of the `families` row that decides its name (model_resolution.family_row; `identity`); a `same_model` row takes its
+declared model's (it is that model). A row's relatives for an **ability** facet (`groups(acc, 'ability')`) are the rows of
+the same maker, product and size, every line of the product (an open-weights product of the same maker is another
+product, never a line of this one), a row of another line only up to the declared version distance
 (`estimation_order.sibling_first_up_to_distance`); for a **speed or price** facet (`groups(acc, 'line')`: responsiveness, Time/Task, cost per
 hour) only those of its own line (a Pro model does not have Astra's speed). A row whose deciding row declares no maker has
 no relatives.
@@ -45,19 +47,19 @@ def small_rows(acc):
             if isinstance(v, dict) and (model_resolution.family_row(k, fams) or {}).get('size') == 'small'}
 
 
-FAMILY_KEYS = ('maker', 'line', 'size')
+FAMILY_KEYS = ('maker', 'product', 'line', 'size')
 
 
 def identity(acc):
-    """{row: {'maker', 'line', 'size'}} (module docstring): the declaration of the `families` row that decides the row's
-    name, or, for a `same_model` row, its declared model's; a row no `families` row decides is left out. A `families` row
-    without a nonempty `maker` and `line` and a `size` of `small` or `full` stops the build."""
+    """{row: {'maker', 'product', 'line', 'size'}} (module docstring): the declaration of the `families` row that decides
+    the row's name, or, for a `same_model` row, its declared model's; a row no `families` row decides is left out. A
+    `families` row without a nonempty `maker`, `product` and `line` and a `size` of `small` or `full` stops the build."""
     models = {k: v for k, v in (acc.get('models') or {}).items() if isinstance(v, dict)}
     fams = model_resolution.family_patterns(acc)
     for f in fams:
-        if not (isinstance(f.get('maker'), str) and f['maker'].strip() and isinstance(f.get('line'), str)
-                and f['line'].strip() and f.get('size') in model_resolution.FAMILY_SIZES):
-            raise ValueError(f"accounts.json families row {f.get('pattern')!r} must declare maker, line and size "
+        if not (all(isinstance(f.get(k), str) and f[k].strip() for k in ('maker', 'product', 'line'))
+                and f.get('size') in model_resolution.FAMILY_SIZES):
+            raise ValueError(f"accounts.json families row {f.get('pattern')!r} must declare maker, product, line and size "
                              '(small or full)')
     out = {}
     for k in models:
@@ -71,8 +73,8 @@ def identity(acc):
 
 
 def groups(acc, scope='ability'):
-    """{row key: sorted relative keys} over the score rows of `acc` (module docstring): `ability` the same maker and size,
-    `line` also the same line."""
+    """{row key: sorted relative keys} over the score rows of `acc` (module docstring): `ability` the same maker, product
+    and size, `line` also the same line."""
     if scope not in ('ability', 'line'):
         raise ValueError(f'scope {scope!r}: ability or line')
     ident = identity(acc)
@@ -80,7 +82,7 @@ def groups(acc, scope='ability'):
 
     def key(k):
         i = ident[k]
-        return (i['maker'], i['size']) + ((i['line'],) if scope == 'line' else ())
+        return (i['maker'], i['product'], i['size']) + ((i['line'],) if scope == 'line' else ())
     return {k: sorted(j for j in ident if j != k and key(j) == key(k)) if k in ident else [] for k in rows}
 
 

@@ -857,12 +857,13 @@
  "families": {
   "kind": "maintainer",
   "as_of": "2026-11-19",
-  "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). Every row declares the `maker`, the product `line` and the `size` class of the names it decides (owner, 2026-11-19): a row's relatives for an ability facet are the same maker's rows of the same size, every line; for responsiveness, Time/Task and cost per hour only those of its own line (calibration/series.py). A line name shared by two rows is one line across versions (gpt-5.6 and gpt-6 `sol`, `terra`, `luna`; gpt-5.x and gpt-6 `pro`). `small` names are never relatives of `full` ones. `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down); tier_up_version says whether the larger row's first model is the same version as the small row's current members (`same`) or the nearest version of the same line (`nearest`), calibration/series.py. `tier_up_older` on such a row names, for an older member of the row's line that is not a current member, its larger model and whether it is the same version (`same`) or the nearest (`nearest`). Gemini 4 Neon (owner, 2026-11-19) has a row of its own, `size: full`, resting on two vendor sentences, not on its name: Google's model card (https://deepmind.google/models/model-cards/gemini-4-neon/, published 18 November 2026) \"Gemini 4 Neon is adapted from Gemini 4 Carbon\", and Google's choosing-a-model page (https://aistudio.google.com/docs/choosing-a-model) \"Sits between Hydrogen and Carbon, with deeper reasoning than Hydrogen\"; no Google page states its size. `^gemma` is `small` like the other open-weights rows of 26 to 35 billion parameters (`^qwen[\\d.]+-\\d+b`), and `^gpt-oss-20b` no longer matches gpt-oss-120b, which `^gpt-oss.*20b` did (owner, 2026-11-19: sizes declared uniformly).",
+  "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). Every row declares the `maker`, the `product` (the maker's product name the vendor releases its lines under: GPT, gpt-oss, Gemini, Gemma, Claude, ...; owner, 2026-11-19, round 7), the `line` within it and the `size` class of the names it decides (owner, 2026-11-19): a row's relatives for an ability facet are the same maker's rows of the same product and size, every line of the product; for responsiveness, Time/Task and cost per hour only those of its own line (calibration/series.py). A line name shared by two rows is one line across versions (gpt-5.6 and gpt-6 `sol`, `terra`, `luna`; gpt-5.x and gpt-6 `pro`). `small` names are never relatives of `full` ones. `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down); tier_up_version says whether the larger row's first model is the same version as the small row's current members (`same`) or the nearest version of the same line (`nearest`), calibration/series.py. `tier_up_older` on such a row names, for an older member of the row's line that is not a current member, its larger model and whether it is the same version (`same`) or the nearest (`nearest`). Gemini 4 Neon (owner, 2026-11-19) has a row of its own, `size: full`, resting on two vendor sentences, not on its name: Google's model card (https://deepmind.google/models/model-cards/gemini-4-neon/, published 18 November 2026) \"Gemini 4 Neon is adapted from Gemini 4 Carbon\", and Google's choosing-a-model page (https://aistudio.google.com/docs/choosing-a-model) \"Sits between Hydrogen and Carbon, with deeper reasoning than Hydrogen\"; no Google page states its size. `^gemma` is `small` like the other open-weights rows of 26 to 35 billion parameters (`^qwen[\\d.]+-\\d+b`), and `^gpt-oss-20b` no longer matches gpt-oss-120b, which `^gpt-oss.*20b` did (owner, 2026-11-19: sizes declared uniformly).",
   "rows": [
    {
     "pattern": "^grok-bot$",
     "models": [],
     "maker": "xai",
+    "product": "Grok",
     "line": "grok-bot",
     "size": "full"
    },
@@ -872,6 +873,7 @@
      "claude-opus-5-5"
     ],
     "maker": "anthropic",
+    "product": "Claude",
     "line": "opus",
     "size": "full"
    },
@@ -881,6 +883,7 @@
      "claude-sonnet-5-5"
     ],
     "maker": "anthropic",
+    "product": "Claude",
     "line": "sonnet",
     "size": "full"
    },
@@ -890,6 +893,7 @@
      "claude-fable-5-2"
     ],
     "maker": "anthropic",
+    "product": "Claude",
     "line": "fable",
     "size": "full"
    },
@@ -899,6 +903,7 @@
      "claude-haiku-5-5"
     ],
     "maker": "anthropic",
+    "product": "Claude",
     "line": "haiku",
     "size": "small",
     "tier_up": "^claude-sonnet",
@@ -916,6 +921,7 @@
      "gpt-6-luna"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "luna",
     "size": "full"
    },
@@ -926,6 +932,7 @@
      "gpt-6-astra"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "terra",
     "size": "full"
    },
@@ -937,6 +944,7 @@
      "gpt-6-astra"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "sol",
     "size": "full"
    },
@@ -947,6 +955,7 @@
      "gpt-6-astra"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "pro",
     "size": "full"
    },
@@ -957,6 +966,7 @@
      "gpt-6-astra"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "astra",
     "size": "full"
    },
@@ -966,6 +976,7 @@
      "gpt-oss-20b"
     ],
     "maker": "openai",
+    "product": "gpt-oss",
     "line": "oss",
     "size": "small",
     "tier_up": "^gpt-oss",
@@ -977,6 +988,7 @@
      "gpt-oss-120b"
     ],
     "maker": "openai",
+    "product": "gpt-oss",
     "line": "oss",
     "size": "full"
    },
@@ -986,6 +998,7 @@
      "gpt-5.6-sol"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "sol",
     "size": "full"
    },
@@ -995,6 +1008,7 @@
      "gpt-5.6-terra"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "terra",
     "size": "full"
    },
@@ -1004,6 +1018,7 @@
      "gpt-5.6-luna"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "luna",
     "size": "full"
    },
@@ -1013,6 +1028,7 @@
      "gpt-5.4-mini"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "mini",
     "size": "small"
    },
@@ -1024,6 +1040,7 @@
      "gpt-5.2-pro"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "pro",
     "size": "full"
    },
@@ -1035,6 +1052,7 @@
      "gpt-5.2"
     ],
     "maker": "openai",
+    "product": "GPT",
     "line": "gpt-5",
     "size": "full"
    },
@@ -1045,6 +1063,7 @@
      "gemini-3.8-flash-high"
     ],
     "maker": "google",
+    "product": "Gemini",
     "line": "hydrogen",
     "size": "small"
    },
@@ -1054,6 +1073,7 @@
      "gemini-3.8-flash-high"
     ],
     "maker": "google",
+    "product": "Gemini",
     "line": "flash",
     "size": "small"
    },
@@ -1063,6 +1083,7 @@
      "gemini-4-neon"
     ],
     "maker": "google",
+    "product": "Gemini",
     "line": "neon",
     "size": "full"
    },
@@ -1072,6 +1093,7 @@
      "gemini-4-argon-high"
     ],
     "maker": "google",
+    "product": "Gemini",
     "line": "gemini",
     "size": "full"
    },
@@ -1082,6 +1104,7 @@
      "grok-4.7"
     ],
     "maker": "xai",
+    "product": "Grok",
     "line": "grok-fast",
     "size": "full"
    },
@@ -1091,6 +1114,7 @@
      "grok-4.7"
     ],
     "maker": "xai",
+    "product": "Grok",
     "line": "grok",
     "size": "full"
    },
@@ -1100,6 +1124,7 @@
      "deepseek-v4.1-flash-free"
     ],
     "maker": "deepseek",
+    "product": "DeepSeek",
     "line": "flash",
     "size": "small"
    },
@@ -1109,6 +1134,7 @@
      "deepseek-v4-pro"
     ],
     "maker": "deepseek",
+    "product": "DeepSeek",
     "line": "deepseek",
     "size": "full"
    },
@@ -1119,6 +1145,7 @@
      "qwen3.8-omni-flash"
     ],
     "maker": "alibaba",
+    "product": "Qwen",
     "line": "flash",
     "size": "small",
     "tier_up": "^qwen",
@@ -1145,6 +1172,7 @@
      "qwen3.8-max"
     ],
     "maker": "alibaba",
+    "product": "Qwen",
     "line": "coder",
     "size": "full"
    },
@@ -1154,6 +1182,7 @@
      "qwen3.8-27b"
     ],
     "maker": "alibaba",
+    "product": "Qwen",
     "line": "open",
     "size": "small"
    },
@@ -1163,6 +1192,7 @@
      "qwen3.8-max"
     ],
     "maker": "alibaba",
+    "product": "Qwen",
     "line": "qwen",
     "size": "full"
    },
@@ -1172,6 +1202,7 @@
      "kimi-k3.1-pro"
     ],
     "maker": "moonshot",
+    "product": "Kimi",
     "line": "kimi",
     "size": "full"
    },
@@ -1182,6 +1213,7 @@
      "glm-5.3-flashx"
     ],
     "maker": "zhipu",
+    "product": "GLM",
     "line": "flash",
     "size": "small",
     "tier_up": "^glm",
@@ -1193,6 +1225,7 @@
      "glm-5.3"
     ],
     "maker": "zhipu",
+    "product": "GLM",
     "line": "glm",
     "size": "full"
    },
@@ -1202,6 +1235,7 @@
      "minimax-m3.1-flash"
     ],
     "maker": "minimax",
+    "product": "MiniMax",
     "line": "flash",
     "size": "small",
     "tier_up": "^minimax|^abab",
@@ -1213,6 +1247,7 @@
      "minimax-m3"
     ],
     "maker": "minimax",
+    "product": "MiniMax",
     "line": "minimax",
     "size": "full"
    },
@@ -1222,6 +1257,7 @@
      "doubao-seed-2-1-pro-260628"
     ],
     "maker": "bytedance",
+    "product": "Doubao",
     "line": "doubao",
     "size": "full"
    },
@@ -1231,6 +1267,7 @@
      "mimo-v2.6-flash-free"
     ],
     "maker": "xiaomi",
+    "product": "MiMo",
     "line": "flash",
     "size": "small",
     "tier_up": "^mimo",
@@ -1242,6 +1279,7 @@
      "mimo-v2.6-pro"
     ],
     "maker": "xiaomi",
+    "product": "MiMo",
     "line": "mimo",
     "size": "full"
    },
@@ -1252,6 +1290,7 @@
      "nemotron-3-ultra-free"
     ],
     "maker": "nvidia",
+    "product": "Nemotron",
     "line": "lightning",
     "size": "full"
    },
@@ -1262,6 +1301,7 @@
      "nemotron-3-ultra-free"
     ],
     "maker": "nvidia",
+    "product": "Nemotron",
     "line": "super",
     "size": "full"
    },
@@ -1271,6 +1311,7 @@
      "nemotron-3-ultra-free"
     ],
     "maker": "nvidia",
+    "product": "Nemotron",
     "line": "nemotron",
     "size": "full"
    },
@@ -1280,6 +1321,7 @@
      "hy4-flash"
     ],
     "maker": "tencent",
+    "product": "Hunyuan",
     "line": "flash",
     "size": "small",
     "tier_up": "^hy\\d",
@@ -1291,6 +1333,7 @@
      "hy4"
     ],
     "maker": "tencent",
+    "product": "Hunyuan",
     "line": "hy",
     "size": "full"
    },
@@ -1300,6 +1343,7 @@
      "muse-wonder-1.0"
     ],
     "maker": "meta",
+    "product": "Muse",
     "line": "muse",
     "size": "full"
    },
@@ -1307,6 +1351,7 @@
     "pattern": "^llama",
     "models": [],
     "maker": "meta",
+    "product": "Llama",
     "line": "llama",
     "size": "full"
    },
@@ -1316,6 +1361,7 @@
      "mistral-large-4"
     ],
     "maker": "mistral",
+    "product": "Mistral",
     "line": "mistral",
     "size": "full"
    },
@@ -1326,6 +1372,7 @@
      "gemma-4-26b-a4b-it"
     ],
     "maker": "google",
+    "product": "Gemma",
     "line": "gemma",
     "size": "small"
    },
@@ -1337,6 +1384,7 @@
      "step-3.5-flash-2603"
     ],
     "maker": "stepfun",
+    "product": "Step",
     "line": "flash",
     "size": "small",
     "tier_up": "^step",
@@ -1348,6 +1396,7 @@
      "step-5-preview"
     ],
     "maker": "stepfun",
+    "product": "Step",
     "line": "step",
     "size": "full"
    },
@@ -1359,6 +1408,7 @@
      "ministral-3b-2512"
     ],
     "maker": "mistral",
+    "product": "Ministral",
     "line": "ministral",
     "size": "small",
     "tier_up": "^mistral|^codestral|^devstral",
@@ -1370,6 +1420,7 @@
      "voxtral-small-2507"
     ],
     "maker": "mistral",
+    "product": "Voxtral",
     "line": "voxtral",
     "size": "full"
    }

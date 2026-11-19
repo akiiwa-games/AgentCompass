@@ -171,6 +171,26 @@
   },
   {
    "catalog": "magpie-0.1.4470",
+   "model": "gemma-4-26b-a4b-it",
+   "efforts": [
+    "default"
+   ],
+   "row": "gemma-4-26b-a4b-it",
+   "kind": "no_time_reading_in_series",
+   "detail": "gemma-4-26b-a4b-it: no cached board lists it with a Time/Task, and the Gemma product has no other row with one (a Gemini row is another product of the maker, never its relative: round 7)"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gemma-4-31b-it",
+   "efforts": [
+    "default"
+   ],
+   "row": "gemma-4-31b-it",
+   "kind": "no_time_reading_in_series",
+   "detail": "gemma-4-31b-it: no cached board lists it with a Time/Task, and the Gemma product has no other row with one (a Gemini row is another product of the maker, never its relative: round 7)"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
    "model": "voxtral-small-2507",
    "efforts": [
     "default"

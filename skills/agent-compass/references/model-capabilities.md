@@ -51,7 +51,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gemini-3.8-flash-high` | -0.08 | -0.80 | -2.12 | -1.42 | -0.12 | 5.294 | yes |
 | `gemini-4-argon-high` | 0.12 | 0.15 | -0.76 | -0.58 | -1.12u | 6.0 | yes |
 | `gemini-4-carbon` | 0.16 | -0.03 | 0.00u | -0.03 | -1.70u | 8.463 | yes |
-| `gemini-4-hydrogen-high` | -0.13 | -0.71 | -1.27~ | -0.45 | -1.10~ | 17.094 | yes |
+| `gemini-4-hydrogen-high` | -0.13 | -0.71 | -1.27~ | -0.45 | -0.35~ | 17.094 | yes |
 | `gemini-4-neon` | 0.15 | 0.11~ | -0.65~ | -0.26~ | -0.90~ | 15.41 | yes |
 | `gemma-4-26b-a4b-it` | -0.57 | -3.28 | -4.09~ | -4.67 | -3.17 | 1.215 | yes |
 | `gemma-4-31b-it` | -0.45 | -2.76 | -3.76~ | -4.55 | -2.33 | 2.035 | yes |

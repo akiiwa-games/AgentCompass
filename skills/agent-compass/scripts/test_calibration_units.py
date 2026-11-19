@@ -20,9 +20,9 @@ READINGS = {'effort_readings': {'labels': {'non-reasoning': 'none', 'reasoning':
 
 
 # declared family rows (series.identity) for the luna, astra and claude rows of the fixtures
-GPT_FAMILIES = {'rows': [{'pattern': '^gpt-(?:6|5\\.6).*luna', 'models': [], 'maker': 'openai', 'line': 'luna', 'size': 'full'},
-                         {'pattern': '^gpt', 'models': [], 'maker': 'openai', 'line': 'astra', 'size': 'full'},
-                         {'pattern': '^claude', 'models': [], 'maker': 'anthropic', 'line': 'claude', 'size': 'full'}]}
+GPT_FAMILIES = {'rows': [{'pattern': '^gpt-(?:6|5\\.6).*luna', 'models': [], 'maker': 'openai', 'product': 'openai', 'line': 'luna', 'size': 'full'},
+                         {'pattern': '^gpt', 'models': [], 'maker': 'openai', 'product': 'openai', 'line': 'astra', 'size': 'full'},
+                         {'pattern': '^claude', 'models': [], 'maker': 'anthropic', 'product': 'anthropic', 'line': 'claude', 'size': 'full'}]}
 
 
 class SeriesTests(unittest.TestCase):
@@ -277,11 +277,11 @@ class UsdConversionTests(unittest.TestCase):
         """Rule (series.tier_up): a current member of a small row gets the first model of its `tier_up` row; an older row of
         the line only through the row's `tier_up_older` declaration, with its declared version."""
         older = {'fam-0-mini': {'model': 'fam-1', 'version': 'nearest'}}
-        row = {'pattern': '^fam.*mini', 'models': ['fam-1-mini'], 'maker': 'acme', 'line': 'fam', 'size': 'small',
+        row = {'pattern': '^fam.*mini', 'models': ['fam-1-mini'], 'maker': 'acme', 'product': 'acme', 'line': 'fam', 'size': 'small',
                'tier_up': '^fam', 'tier_up_version': 'same'}
         acc = {'models': {m: {} for m in ('fam-1-mini', 'fam-0-mini', 'fam-1')},
                'families': {'rows': [{**row, 'tier_up_older': older},
-                                     {'pattern': '^fam', 'models': ['fam-1'], 'maker': 'acme', 'line': 'fam', 'size': 'full'}]}}
+                                     {'pattern': '^fam', 'models': ['fam-1'], 'maker': 'acme', 'product': 'acme', 'line': 'fam', 'size': 'full'}]}}
         self.assertEqual(series.tier_up(acc), {'fam-0-mini': older['fam-0-mini'],
                                                'fam-1-mini': {'model': 'fam-1', 'version': 'same'}})
         acc['families']['rows'][0] = row
@@ -298,10 +298,10 @@ class UsdConversionTests(unittest.TestCase):
         usd = {'fam-big': {'value': 10.0, 'status': 'ok', 'kind': 'community'},
                'fam-big-flash': {'value': None, 'status': 'missing', 'kind': 'none'}}
         acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {},
-               'families': {'rows': [{'pattern': '^fam.*flash', 'models': ['fam-big-flash'], 'maker': 'acme',
+               'families': {'rows': [{'pattern': '^fam.*flash', 'models': ['fam-big-flash'], 'maker': 'acme', 'product': 'acme',
                                       'line': 'fam', 'size': 'small',
                                       'tier_up': '^fam', 'tier_up_version': 'same'},
-                                     {'pattern': '^fam', 'models': ['fam-big'], 'maker': 'acme', 'line': 'fam',
+                                     {'pattern': '^fam', 'models': ['fam-big'], 'maker': 'acme', 'product': 'acme', 'line': 'fam',
                                       'size': 'full'}]}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc)
