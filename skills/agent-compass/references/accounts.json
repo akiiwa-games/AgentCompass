@@ -59,6 +59,7 @@
   "k3": "kimi-k3",
   "k3-256k": "kimi-k3",
   "k3.1-pro": "kimi-k3.1-pro",
+  "k3.1-pro-highspeed": "kimi-k3.1-pro-highspeed",
   "kimi-for-coding": "kimi-k2.8-preview",
   "zai-glm-5-3": "glm-5.3",
   "zai-glm-5-3-flash": "glm-5.3-flash",
@@ -326,6 +327,12 @@
     "url": "https://models.dev/api.json",
     "as_of": "2026-11-10",
     "statement": "models.dev lists kimi-code-plan-global/k3.1-pro with canonical_model_id moonshotai/kimi-k3.1-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "k3.1-pro-highspeed": {
+    "kind": "community",
+    "url": "https://models.dev/api.json",
+    "as_of": "2026-11-10",
+    "statement": "models.dev lists kimi-code-plan-global/k3.1-pro-highspeed with canonical_model_id moonshotai/kimi-k3.1-pro, as it lists moonshotai/kimi-k3.1-pro-highspeed (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10); Kimi Code names it Kimi K3.1 Pro Highspeed (https://www.kimi.com/coding/docs/en/kimi-code/models.html), the Kimi API platform's high-speed variant of kimi-k3.1-pro"
    },
    "kimi-for-coding": {
     "kind": "community",
@@ -649,35 +656,6 @@
     "reference_window": "seven_day"
    }
   },
-  "k3.1-pro-highspeed": {
-   "model": "kimi-k3.1-pro",
-   "carries": [
-    "creativity",
-    "coding",
-    "aesthetics",
-    "tool_operation.image_recognition"
-   ],
-   "kind": "vendor",
-   "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-   "as_of": "2026-11-18",
-   "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"",
-   "own_estimated": [
-    "tool_operation.responsiveness",
-    "duration",
-    "usd_per_hour"
-   ],
-   "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own. Its own board reading where one lists it; else its base's moved by the vendor's stated speed ratio (`speed`), else the base's as a stated lower bound; cost per hour only at its own list price (calibration/README.md, Speed variants).",
-   "speed": {
-    "ratio": [
-     2,
-     3
-    ],
-    "kind": "vendor",
-    "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-    "as_of": "2026-11-18",
-    "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" (a stated range: its geometric mean)"
-   }
-  },
   "kimi-for-coding-highspeed": {
    "model": "kimi-k2.7-code",
    "carries": [
@@ -715,10 +693,10 @@
     "aesthetics",
     "tool_operation.image_recognition"
    ],
-   "kind": "community",
-   "url": "https://models.dev/api.json",
-   "as_of": "2026-11-10",
-   "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed (\"Kimi K3.1 Pro Highspeed\") with canonical_model_id moonshotai/kimi-k3.1-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)",
+   "kind": "vendor",
+   "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+   "as_of": "2026-11-18",
+   "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"; the Kimi API platform names this variant `kimi-k3.1-pro-highspeed` (https://platform.kimi.ai/docs/introduction)",
    "own_estimated": [
     "tool_operation.responsiveness",
     "duration",
@@ -726,11 +704,14 @@
    ],
    "not_carried": "tool_operation.responsiveness, duration and usd_per_hour: a speed variant's speed and price are its own. Its own board reading where one lists it; else its base's moved by the vendor's stated speed ratio (`speed`), else the base's as a stated lower bound; cost per hour only at its own list price (calibration/README.md, Speed variants).",
    "speed": {
-    "ratio": null,
-    "kind": "community",
-    "url": "https://models.dev/api.json",
-    "as_of": "2026-11-10",
-    "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed with canonical_model_id moonshotai/kimi-k3.1-pro and states no speed ratio for this listing: the base's speed is a stated lower bound"
+    "ratio": [
+     2,
+     3
+    ],
+    "kind": "vendor",
+    "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+    "as_of": "2026-11-18",
+    "statement": "Kimi Code: Kimi K3.1 Pro Highspeed (`k3.1-pro-highspeed`, an alias of this row) \"delivers approximately 2–3× the speed of K3.1 Pro\" (a stated range: its geometric mean)"
    }
   },
   "mimo-v2.6-pro-ultraspeed": {
@@ -1518,7 +1499,6 @@
    "hy3": 3,
    "hy4": 4,
    "hy4-preview": 4,
-   "k3.1-pro-highspeed": 3.1,
    "kimi-k2.6": 2.6,
    "kimi-k2.7-code": 2.7,
    "kimi-k2.8-preview": 2.8,
@@ -2574,15 +2554,6 @@
     "statement": "bigmodel.cn lists GLM-5V-Turbo (\"多模态 Coding 基座\", 200K context); no price on the pages read"
    }
   },
-  "k3.1-pro-highspeed": {
-   "label": "K3.1 Pro Highspeed",
-   "model_source": {
-    "kind": "vendor",
-    "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-    "as_of": "2026-11-18",
-    "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\", about twice the quota; a speed variant, so a row of its own"
-   }
-  },
   "kimi-for-coding-highspeed": {
    "label": "Kimi for Coding Highspeed",
    "model_source": {
@@ -3159,10 +3130,10 @@
   "kimi-k3.1-pro-highspeed": {
    "label": "Kimi K3.1 Pro Highspeed",
    "model_source": {
-    "kind": "community",
-    "url": "https://models.dev/api.json",
-    "as_of": "2026-11-10",
-    "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed (\"Kimi K3.1 Pro Highspeed\") with canonical_model_id moonshotai/kimi-k3.1-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+    "kind": "vendor",
+    "url": "https://platform.kimi.ai/docs/introduction",
+    "as_of": "2026-11-19",
+    "statement": "Kimi API platform: \"`kimi-k3.1-pro` is Kimi's flagship model ...; when you need faster output, choose the high-speed variant `kimi-k3.1-pro-highspeed`\"; Kimi Code offers the same variant, Kimi K3.1 Pro Highspeed, as `k3.1-pro-highspeed` (an alias of this row), and models.dev gives both names the canonical_model_id moonshotai/kimi-k3.1-pro"
    }
   },
   "mimo-v2.6-pro-ultraspeed": {

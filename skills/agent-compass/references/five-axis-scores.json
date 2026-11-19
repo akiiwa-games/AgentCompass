@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/12",
- "generated_at": "2026-11-19T04:37:04+00:00",
- "measurements_sha256": "928043c0a5dd93c6c34fccb7d32b05015f67d50277b13ecc13e9ae8632d1d052",
+ "generated_at": "2026-11-19T04:48:15+00:00",
+ "measurements_sha256": "6a17951a790bc04ad598ac0d6a83814557984a9b0cce19b0f7eb3f51979295e1",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
  "estimate_fits": {
@@ -70,7 +70,7 @@
  "tier_sources": {
   "arena_overall": 65,
   "other_overall": 22,
-  "sibling": 57,
+  "sibling": 56,
   "none": 12
  },
  "capacity": {
@@ -50703,7 +50703,6 @@
       "source": "aa.cost_time",
       "base_method": "aa",
       "series": [
-       "k3.1-pro-highspeed",
        "kimi-for-coding-highspeed",
        "kimi-k2.6",
        "kimi-k2.7-code",
@@ -67162,7 +67161,6 @@
       "source": "aa.cost_time",
       "base_method": "aa",
       "series": [
-       "k3.1-pro-highspeed",
        "kimi-for-coding-highspeed",
        "kimi-k2.6",
        "kimi-k2.7-code",
@@ -91566,721 +91564,6 @@
     "aa_only": false
    },
    "data_errors": []
-  },
-  "k3.1-pro-highspeed": {
-   "axes": {
-    "creativity": {
-     "facets": {
-      "creative_writing": {
-       "value": -2.0623,
-       "by_effort": {
-        "none": -3.0743,
-        "minimal": -3.0743,
-        "low": -2.7823,
-        "medium": -2.2856,
-        "high": -2.0623,
-        "xhigh": -1.9257,
-        "max": -1.7891,
-        "ultra": -1.5165
-       },
-       "sources": {},
-       "status": "estimated",
-       "estimate": {
-        "method": "same_model",
-        "base_model": "kimi-k3.1-pro",
-        "base_status": "estimated",
-        "kind": "vendor",
-        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"",
-        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-        "as_of": "2026-11-18"
-       },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.0623,
-         "step": -0.72,
-         "n": 10
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -2.0623,
-         "step": -0.2233,
-         "n": 9
-        },
-        "xhigh": {
-         "method": "own_effort_interpolation",
-         "ladder": [
-          "low",
-          "medium",
-          "high",
-          "xhigh",
-          "max"
-         ],
-         "from": {
-          "high": -2.0623
-         },
-         "to": {
-          "max": -1.7891
-         },
-         "weight": 0.5
-        },
-        "minimal": {
-         "method": "other_facets_median",
-         "from_effort": "low",
-         "from_value": -2.7823,
-         "step": -0.292,
-         "n": 3
-        },
-        "ultra": {
-         "method": "other_facets_median",
-         "from_effort": "max",
-         "from_value": -1.7891,
-         "step": 0.2726,
-         "n": 3
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -2.0623,
-         "step": 0.0,
-         "n": 4,
-         "bounded_from": -2.0623
-        }
-       }
-      }
-     },
-     "missing_facets": [],
-     "value": -2.0623,
-     "by_effort": {
-      "none": -3.0743,
-      "minimal": -3.0743,
-      "low": -2.7823,
-      "medium": -2.2856,
-      "high": -2.0623,
-      "xhigh": -1.9257,
-      "max": -1.7891,
-      "ultra": -1.5165
-     },
-     "status": "estimated"
-    },
-    "coding": {
-     "facets": {
-      "execution": {
-       "value": -0.4077,
-       "by_effort": {
-        "none": -1.9932,
-        "minimal": -1.9932,
-        "low": -1.4726,
-        "medium": -0.7121,
-        "high": -0.4077,
-        "xhigh": -0.2345,
-        "max": 0.0066,
-        "ultra": 0.2792
-       },
-       "sources": {},
-       "status": "estimated",
-       "estimate": {
-        "method": "same_model",
-        "base_model": "kimi-k3.1-pro",
-        "base_status": "measured_partial",
-        "kind": "vendor",
-        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"",
-        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-        "as_of": "2026-11-18"
-       },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.4077,
-         "step": -1.0649,
-         "n": 8
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.4077,
-         "step": -0.3044,
-         "n": 7
-        },
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.4077,
-         "step": 0.1732,
-         "n": 7
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.4077,
-         "step": 0.4143,
-         "n": 6
-        },
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": -1.4726,
-         "step": -0.5206,
-         "n": 38
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": 0.0066,
-         "step": 0.2726,
-         "n": 31
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -0.4077,
-         "step": 0.0,
-         "n": 15,
-         "bounded_from": -0.4077
-        }
-       }
-      },
-      "faithfulness": {
-       "value": -1.4114,
-       "by_effort": {
-        "none": -3.806,
-        "minimal": -3.806,
-        "low": -3.514,
-        "medium": -1.8759,
-        "high": -1.4114,
-        "xhigh": -1.1642,
-        "max": -0.5788,
-        "ultra": -0.3062
-       },
-       "sources": {},
-       "status": "estimated",
-       "estimate": {
-        "method": "same_model",
-        "base_model": "kimi-k3.1-pro",
-        "base_status": "estimated",
-        "kind": "vendor",
-        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"",
-        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-        "as_of": "2026-11-18"
-       },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.4114,
-         "step": -2.1026,
-         "n": 8
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.4114,
-         "step": -0.4645,
-         "n": 7
-        },
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.4114,
-         "step": 0.2472,
-         "n": 7
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -1.4114,
-         "step": 0.8326,
-         "n": 6
-        },
-        "minimal": {
-         "method": "other_facets_median",
-         "from_effort": "low",
-         "from_value": -3.514,
-         "step": -0.292,
-         "n": 3
-        },
-        "ultra": {
-         "method": "other_facets_median",
-         "from_effort": "max",
-         "from_value": -0.5788,
-         "step": 0.2726,
-         "n": 3
-        },
-        "none": {
-         "method": "other_facets_median",
-         "from_effort": "high",
-         "from_value": -1.4114,
-         "step": 0.0,
-         "n": 4,
-         "bounded_from": -1.4114
-        }
-       }
-      }
-     },
-     "missing_facets": [],
-     "value": -1.4114,
-     "by_effort": {
-      "none": -3.806,
-      "minimal": -3.806,
-      "low": -3.514,
-      "medium": -1.8759,
-      "high": -1.4114,
-      "xhigh": -1.1642,
-      "max": -0.5788,
-      "ultra": -0.3062
-     },
-     "status": "estimated"
-    },
-    "aesthetics": {
-     "facets": {
-      "design": {
-       "value": -0.1081,
-       "by_effort": {
-        "none": -0.9421,
-        "minimal": -0.9421,
-        "low": -0.7764,
-        "medium": -0.344,
-        "high": -0.1081,
-        "xhigh": 0.0549,
-        "max": 0.2586,
-        "ultra": 0.5828
-       },
-       "sources": {},
-       "status": "estimated",
-       "estimate": {
-        "method": "same_model",
-        "base_model": "kimi-k3.1-pro",
-        "base_status": "measured_partial",
-        "kind": "vendor",
-        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"",
-        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-        "as_of": "2026-11-18"
-       },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.1081,
-         "step": -0.6683,
-         "n": 8
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.1081,
-         "step": -0.2359,
-         "n": 7
-        },
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.1081,
-         "step": 0.163,
-         "n": 7
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.1081,
-         "step": 0.3667,
-         "n": 6
-        },
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": -0.7764,
-         "step": -0.1657,
-         "n": 6
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": 0.2586,
-         "step": 0.3242,
-         "n": 6
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -0.1081,
-         "step": 0.0,
-         "n": 8,
-         "bounded_from": -0.1081
-        }
-       }
-      }
-     },
-     "missing_facets": [],
-     "value": -0.1081,
-     "by_effort": {
-      "none": -0.9421,
-      "minimal": -0.9421,
-      "low": -0.7764,
-      "medium": -0.344,
-      "high": -0.1081,
-      "xhigh": 0.0549,
-      "max": 0.2586,
-      "ultra": 0.5828
-     },
-     "status": "estimated"
-    },
-    "tool_operation": {
-     "facets": {
-      "responsiveness": {
-       "value": -1.4866,
-       "by_effort": {
-        "none": 1.0527,
-        "minimal": 1.0527,
-        "low": 0.3105,
-        "medium": -0.645,
-        "high": -1.4866,
-        "xhigh": -2.5759,
-        "max": -3.9461,
-        "ultra": -5.4822
-       },
-       "status": "estimated",
-       "sources": {},
-       "measured_efforts": [],
-       "estimate": {
-        "method": "speed_ratio",
-        "ratio": 2.4495,
-        "stated_ratio": [
-         2,
-         3
-        ],
-        "shift": 1.1728,
-        "shift_basis": "ln(ratio) / sd_panel of aa.ttfa (0.763853): the ratio divides the time to the first answer token",
-        "base_model": "kimi-k3.1-pro",
-        "base_value": -2.6594,
-        "base_status": "measured_partial",
-        "speed": {
-         "kind": "vendor",
-         "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-         "as_of": "2026-11-18",
-         "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" (a stated range: its geometric mean)"
-        }
-       }
-      },
-      "image_recognition": {
-       "value": -0.5516,
-       "by_effort": {
-        "none": -2.0604,
-        "minimal": -1.5171,
-        "low": -1.2251,
-        "medium": -0.8498,
-        "high": -0.5516,
-        "xhigh": -0.3872,
-        "max": -0.2175,
-        "ultra": 0.0033
-       },
-       "sources": {},
-       "status": "estimated",
-       "estimate": {
-        "method": "same_model",
-        "base_model": "kimi-k3.1-pro",
-        "base_status": "measured_partial",
-        "kind": "vendor",
-        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"",
-        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-        "as_of": "2026-11-18"
-       },
-       "measured_efforts": [],
-       "filled_efforts": {
-        "low": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.5516,
-         "step": -0.6735,
-         "n": 9
-        },
-        "medium": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.5516,
-         "step": -0.2982,
-         "n": 9
-        },
-        "xhigh": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.5516,
-         "step": 0.1644,
-         "n": 8
-        },
-        "max": {
-         "method": "panel_effort_step",
-         "from_effort": "high",
-         "from_value": -0.5516,
-         "step": 0.3341,
-         "n": 7
-        },
-        "minimal": {
-         "method": "fleet_lowest_step",
-         "from_effort": "low",
-         "from_value": -1.2251,
-         "step": -0.292,
-         "n": 19
-        },
-        "ultra": {
-         "method": "fleet_highest_step",
-         "from_effort": "max",
-         "from_value": -0.2175,
-         "step": 0.2208,
-         "n": 12
-        },
-        "none": {
-         "method": "fleet_off_step",
-         "from_effort": "high",
-         "from_value": -0.5516,
-         "step": -1.5088,
-         "n": 43
-        }
-       }
-      }
-     },
-     "missing_facets": [],
-     "by_level": {
-      "2": {
-       "by_effort": {
-        "none": 1.0527,
-        "minimal": 1.0527,
-        "low": 0.3105,
-        "medium": -0.645,
-        "high": -1.4866,
-        "xhigh": -2.5759,
-        "max": -3.9461,
-        "ultra": -5.4822
-       },
-       "facets": [
-        "responsiveness"
-       ]
-      },
-      "3": {
-       "by_effort": {
-        "none": -2.0604,
-        "minimal": -1.5171,
-        "low": -1.2251,
-        "medium": -0.8498,
-        "high": -1.4866,
-        "xhigh": -2.5759,
-        "max": -3.9461,
-        "ultra": -5.4822
-       },
-       "facets": [
-        "responsiveness",
-        "image_recognition"
-       ]
-      }
-     },
-     "value": -1.4866,
-     "by_effort": {
-      "none": -2.0604,
-      "minimal": -1.5171,
-      "low": -1.2251,
-      "medium": -0.8498,
-      "high": -1.4866,
-      "xhigh": -2.5759,
-      "max": -3.9461,
-      "ultra": -5.4822
-     },
-     "status": "estimated"
-    }
-   },
-   "scores": {
-    "creativity": -2.0623,
-    "coding": -1.4114,
-    "aesthetics": -0.1081,
-    "tool_operation": -1.4866
-   },
-   "missing_axes": [],
-   "usd_per_hour": {
-    "value": null,
-    "status": "missing",
-    "sources": {},
-    "merge": null,
-    "reason": "not listed on arena.ai Agent / Overall"
-   },
-   "duration_multiplier": {
-    "status": "ok",
-    "anchor_minutes": 9.289,
-    "by_effort": {
-     "high": 1.6882,
-     "low": 0.5625,
-     "medium": 1.1822,
-     "xhigh": 2.5011,
-     "max": 3.8388,
-     "minimal": 0.2714,
-     "ultra": 5.9553,
-     "none": 0.2714
-    },
-    "minutes_by_effort": {
-     "high": 15.682,
-     "low": 5.225,
-     "medium": 10.981,
-     "xhigh": 23.233,
-     "max": 35.659,
-     "minimal": 2.521,
-     "ultra": 55.319,
-     "none": 2.521
-    },
-    "basis_by_effort": {
-     "high": {
-      "method": "speed_ratio",
-      "base_model": "kimi-k3.1-pro",
-      "base_minutes": 38.412,
-      "base_method": "aa",
-      "source": "aa.cost_time",
-      "ratio": 2.4495,
-      "stated_ratio": [
-       2,
-       3
-      ],
-      "speed": {
-       "kind": "vendor",
-       "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
-       "as_of": "2026-11-18",
-       "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" (a stated range: its geometric mean)"
-      }
-     },
-     "low": {
-      "method": "fleet_effort_ratio",
-      "from_effort": "high",
-      "ratio": 0.3332,
-      "n": 14,
-      "iqr": [
-       0.2921,
-       0.3762
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio low/high, n=14, IQR 0.29-0.38"
-     },
-     "medium": {
-      "method": "fleet_effort_ratio",
-      "from_effort": "high",
-      "ratio": 0.7003,
-      "n": 16,
-      "iqr": [
-       0.5915,
-       0.7496
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio medium/high, n=16, IQR 0.59-0.75"
-     },
-     "xhigh": {
-      "method": "fleet_effort_ratio",
-      "from_effort": "high",
-      "ratio": 1.4815,
-      "n": 13,
-      "iqr": [
-       1.2566,
-       1.6187
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio xhigh/high, n=13, IQR 1.26-1.62"
-     },
-     "max": {
-      "method": "fleet_effort_ratio",
-      "from_effort": "high",
-      "ratio": 2.2739,
-      "n": 14,
-      "iqr": [
-       1.7003,
-       2.7334
-      ],
-      "source": "aa.cost_time",
-      "note": "fleet effort ratio max/high, n=14, IQR 1.70-2.73"
-     },
-     "minimal": {
-      "method": "fleet_lowest_step",
-      "from_effort": "low",
-      "ratio": 0.4825,
-      "n": 14,
-      "source": "aa.cost_time"
-     },
-     "ultra": {
-      "method": "fleet_highest_step",
-      "from_effort": "max",
-      "ratio": 1.6822,
-      "n": 12,
-      "source": "aa.cost_time",
-      "clipped_to_fleet_range": [
-       0.625,
-       55.319
-      ]
-     },
-     "none": {
-      "method": "fleet_off_step",
-      "from_effort": "high",
-      "ratio": 1.0,
-      "n": 5,
-      "source": "aa.cost_time",
-      "bounded_by": "minimal"
-     }
-    },
-    "efforts_without_time": []
-   },
-   "image_input": {
-    "value": null,
-    "status": "unknown",
-    "source": null,
-    "kind": null,
-    "sources": [],
-    "reason": "no cited public modality source"
-   },
-   "fast_mode": {
-    "status": "unsupported",
-    "price_multiplier": null,
-    "speed_multiplier": null,
-    "source": null
-   },
-   "price": null,
-   "intelligence_index": null,
-   "tier": {
-    "value": -0.0214,
-    "method": "sibling",
-    "base_model": "kimi-k3.1-pro",
-    "version_distance": 0,
-    "sources": []
-   },
-   "evidence": {
-    "independent_sources": {
-     "creativity": [],
-     "coding": [],
-     "aesthetics": [],
-     "tool_operation": []
-    },
-    "aa_only": true
-   },
-   "data_errors": [
-    {
-     "model": "k3.1-pro-highspeed",
-     "field": "usd_per_hour",
-     "reason": "no_cited_source",
-     "level": "red_if_metered",
-     "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-    },
-    {
-     "model": "k3.1-pro-highspeed",
-     "field": "image_input",
-     "reason": "no_cited_source",
-     "level": "red_if_vision_demanded",
-     "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-    },
-    {
-     "model": "k3.1-pro-highspeed",
-     "field": "axes",
-     "reason": "aa_only",
-     "level": "yellow",
-     "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
-    }
-   ]
   },
   "kimi-for-coding-highspeed": {
    "axes": {
@@ -127779,10 +127062,10 @@
         "method": "same_model",
         "base_model": "kimi-k3.1-pro",
         "base_status": "estimated",
-        "kind": "community",
-        "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed (\"Kimi K3.1 Pro Highspeed\") with canonical_model_id moonshotai/kimi-k3.1-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)",
-        "url": "https://models.dev/api.json",
-        "as_of": "2026-11-10"
+        "kind": "vendor",
+        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"; the Kimi API platform names this variant `kimi-k3.1-pro-highspeed` (https://platform.kimi.ai/docs/introduction)",
+        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+        "as_of": "2026-11-18"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -127876,10 +127159,10 @@
         "method": "same_model",
         "base_model": "kimi-k3.1-pro",
         "base_status": "measured_partial",
-        "kind": "community",
-        "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed (\"Kimi K3.1 Pro Highspeed\") with canonical_model_id moonshotai/kimi-k3.1-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)",
-        "url": "https://models.dev/api.json",
-        "as_of": "2026-11-10"
+        "kind": "vendor",
+        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"; the Kimi API platform names this variant `kimi-k3.1-pro-highspeed` (https://platform.kimi.ai/docs/introduction)",
+        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+        "as_of": "2026-11-18"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -127953,10 +127236,10 @@
         "method": "same_model",
         "base_model": "kimi-k3.1-pro",
         "base_status": "estimated",
-        "kind": "community",
-        "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed (\"Kimi K3.1 Pro Highspeed\") with canonical_model_id moonshotai/kimi-k3.1-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)",
-        "url": "https://models.dev/api.json",
-        "as_of": "2026-11-10"
+        "kind": "vendor",
+        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"; the Kimi API platform names this variant `kimi-k3.1-pro-highspeed` (https://platform.kimi.ai/docs/introduction)",
+        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+        "as_of": "2026-11-18"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -128047,10 +127330,10 @@
         "method": "same_model",
         "base_model": "kimi-k3.1-pro",
         "base_status": "measured_partial",
-        "kind": "community",
-        "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed (\"Kimi K3.1 Pro Highspeed\") with canonical_model_id moonshotai/kimi-k3.1-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)",
-        "url": "https://models.dev/api.json",
-        "as_of": "2026-11-10"
+        "kind": "vendor",
+        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"; the Kimi API platform names this variant `kimi-k3.1-pro-highspeed` (https://platform.kimi.ai/docs/introduction)",
+        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+        "as_of": "2026-11-18"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -128124,31 +127407,37 @@
     "tool_operation": {
      "facets": {
       "responsiveness": {
-       "value": -2.6594,
+       "value": -1.4866,
        "by_effort": {
-        "none": -0.1201,
-        "minimal": -0.1201,
-        "low": -0.8623,
-        "medium": -1.8178,
-        "high": -2.6594,
-        "xhigh": -3.7487,
-        "max": -5.1189,
-        "ultra": -6.655
+        "none": 1.0527,
+        "minimal": 1.0527,
+        "low": 0.3105,
+        "medium": -0.645,
+        "high": -1.4866,
+        "xhigh": -2.5759,
+        "max": -3.9461,
+        "ultra": -5.4822
        },
        "status": "estimated",
        "sources": {},
        "measured_efforts": [],
        "estimate": {
-        "method": "speed_lower_bound",
-        "bound": "lower: at least as fast as its base (no ratio stated)",
+        "method": "speed_ratio",
+        "ratio": 2.4495,
+        "stated_ratio": [
+         2,
+         3
+        ],
+        "shift": 1.1728,
+        "shift_basis": "ln(ratio) / sd_panel of aa.ttfa (0.763853): the ratio divides the time to the first answer token",
         "base_model": "kimi-k3.1-pro",
         "base_value": -2.6594,
         "base_status": "measured_partial",
         "speed": {
-         "kind": "community",
-         "url": "https://models.dev/api.json",
-         "as_of": "2026-11-10",
-         "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed with canonical_model_id moonshotai/kimi-k3.1-pro and states no speed ratio for this listing: the base's speed is a stated lower bound"
+         "kind": "vendor",
+         "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+         "as_of": "2026-11-18",
+         "statement": "Kimi Code: Kimi K3.1 Pro Highspeed (`k3.1-pro-highspeed`, an alias of this row) \"delivers approximately 2–3× the speed of K3.1 Pro\" (a stated range: its geometric mean)"
         }
        }
       },
@@ -128170,10 +127459,10 @@
         "method": "same_model",
         "base_model": "kimi-k3.1-pro",
         "base_status": "measured_partial",
-        "kind": "community",
-        "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed (\"Kimi K3.1 Pro Highspeed\") with canonical_model_id moonshotai/kimi-k3.1-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)",
-        "url": "https://models.dev/api.json",
-        "as_of": "2026-11-10"
+        "kind": "vendor",
+        "statement": "Kimi Code: k3.1-pro-highspeed \"delivers approximately 2–3× the speed of K3.1 Pro\" with \"identical model capabilities\"; the Kimi API platform names this variant `kimi-k3.1-pro-highspeed` (https://platform.kimi.ai/docs/introduction)",
+        "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+        "as_of": "2026-11-18"
        },
        "measured_efforts": [],
        "filled_efforts": {
@@ -128233,14 +127522,14 @@
      "by_level": {
       "2": {
        "by_effort": {
-        "none": -0.1201,
-        "minimal": -0.1201,
-        "low": -0.8623,
-        "medium": -1.8178,
-        "high": -2.6594,
-        "xhigh": -3.7487,
-        "max": -5.1189,
-        "ultra": -6.655
+        "none": 1.0527,
+        "minimal": 1.0527,
+        "low": 0.3105,
+        "medium": -0.645,
+        "high": -1.4866,
+        "xhigh": -2.5759,
+        "max": -3.9461,
+        "ultra": -5.4822
        },
        "facets": [
         "responsiveness"
@@ -128251,11 +127540,11 @@
         "none": -2.0604,
         "minimal": -1.5171,
         "low": -1.2251,
-        "medium": -1.8178,
-        "high": -2.6594,
-        "xhigh": -3.7487,
-        "max": -5.1189,
-        "ultra": -6.655
+        "medium": -0.8498,
+        "high": -1.4866,
+        "xhigh": -2.5759,
+        "max": -3.9461,
+        "ultra": -5.4822
        },
        "facets": [
         "responsiveness",
@@ -128263,16 +127552,16 @@
        ]
       }
      },
-     "value": -2.6594,
+     "value": -1.4866,
      "by_effort": {
       "none": -2.0604,
       "minimal": -1.5171,
       "low": -1.2251,
-      "medium": -1.8178,
-      "high": -2.6594,
-      "xhigh": -3.7487,
-      "max": -5.1189,
-      "ultra": -6.655
+      "medium": -0.8498,
+      "high": -1.4866,
+      "xhigh": -2.5759,
+      "max": -3.9461,
+      "ultra": -5.4822
      },
      "status": "estimated"
     }
@@ -128281,7 +127570,7 @@
     "creativity": -2.0623,
     "coding": -1.4114,
     "aesthetics": -0.1081,
-    "tool_operation": -2.6594
+    "tool_operation": -1.4866
    },
    "missing_axes": [],
    "usd_per_hour": {
@@ -128295,38 +127584,42 @@
     "status": "ok",
     "anchor_minutes": 9.289,
     "by_effort": {
-     "high": 4.1352,
-     "low": 1.3778,
-     "medium": 2.8957,
-     "xhigh": 6.1264,
-     "max": 9.4028,
-     "minimal": 0.6648,
-     "ultra": 9.4028,
-     "none": 0.6648
+     "high": 1.6882,
+     "low": 0.5625,
+     "medium": 1.1822,
+     "xhigh": 2.5011,
+     "max": 3.8388,
+     "minimal": 0.2714,
+     "ultra": 5.9553,
+     "none": 0.2714
     },
     "minutes_by_effort": {
-     "high": 38.412,
-     "low": 12.798,
-     "medium": 26.898,
-     "xhigh": 56.908,
-     "max": 87.343,
-     "minimal": 6.175,
-     "ultra": 87.343,
-     "none": 6.175
+     "high": 15.682,
+     "low": 5.225,
+     "medium": 10.981,
+     "xhigh": 23.233,
+     "max": 35.659,
+     "minimal": 2.521,
+     "ultra": 55.319,
+     "none": 2.521
     },
     "basis_by_effort": {
      "high": {
-      "method": "speed_lower_bound",
+      "method": "speed_ratio",
       "base_model": "kimi-k3.1-pro",
       "base_minutes": 38.412,
       "base_method": "aa",
       "source": "aa.cost_time",
-      "bound": "upper: no longer than its base (no ratio stated)",
+      "ratio": 2.4495,
+      "stated_ratio": [
+       2,
+       3
+      ],
       "speed": {
-       "kind": "community",
-       "url": "https://models.dev/api.json",
-       "as_of": "2026-11-10",
-       "statement": "models.dev lists moonshotai/kimi-k3.1-pro-highspeed with canonical_model_id moonshotai/kimi-k3.1-pro and states no speed ratio for this listing: the base's speed is a stated lower bound"
+       "kind": "vendor",
+       "url": "https://www.kimi.com/coding/docs/en/kimi-code/models.html",
+       "as_of": "2026-11-18",
+       "statement": "Kimi Code: Kimi K3.1 Pro Highspeed (`k3.1-pro-highspeed`, an alias of this row) \"delivers approximately 2–3× the speed of K3.1 Pro\" (a stated range: its geometric mean)"
       }
      },
      "low": {
@@ -129877,27 +129170,6 @@
   },
   {
    "model": "glm-4.7-flashx",
-   "field": "axes",
-   "reason": "aa_only",
-   "level": "yellow",
-   "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
-  },
-  {
-   "model": "k3.1-pro-highspeed",
-   "field": "usd_per_hour",
-   "reason": "no_cited_source",
-   "level": "red_if_metered",
-   "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-  },
-  {
-   "model": "k3.1-pro-highspeed",
-   "field": "image_input",
-   "reason": "no_cited_source",
-   "level": "red_if_vision_demanded",
-   "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-  },
-  {
-   "model": "k3.1-pro-highspeed",
    "field": "axes",
    "reason": "aa_only",
    "level": "yellow",
