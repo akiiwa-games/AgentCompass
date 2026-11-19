@@ -814,6 +814,10 @@ EN = {
     '候选成本 = 在约束长周期窗口上对本单花费 y 积分额度价格 λ(y)；λ 来自该账号价值阶梯（在 {0} 点需求网格上平均）与本周期需求概率 π。5 小时窗口只判断能否放下，不计价。净分 N = 契合 + 连续性 + 临时加成 − 成本。': "Candidate cost = quota price λ(y) integrated over spend y in its binding long window; λ comes from the account's value ladder (averaged over the {0}-point demand grid) and this period's need probability π. Five-hour windows only decide whether the task fits and are not priced. Net score N = fit + continuity + temporary boost − cost.",
     '手动 {0}：等级 {1} · {2}': 'Manual {0}: level {1} · {2}',
     '公开数据对照：{0}{1} · {2}': 'Public data reference: {0}{1} · {2}',
+    '操作点下限：{0} 在 {1} 的格子 {2:+.3f}，手动分 {3:+.3f}，{4}':
+        'Operating-point floor: {0} at {1}, cell {2:+.3f}; manual score {3:+.3f}; {4}',
+    '下限生效': 'the floor binds',
+    '手动分生效': 'the manual score binds',
     '估算：{0}': 'Estimate: {0}',
     '等级 {0}（决定项 {1} {2}）· {3} · 来源：{4}': 'Level {0} (decided by {1} {2}) · {3} · source: {4}',
     '等级 {0} · {1} · 来源：{2}': 'Level {0} · {1} · source: {2}',

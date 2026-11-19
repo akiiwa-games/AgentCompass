@@ -58,7 +58,11 @@ def markdown(accounts, five=None, references=None):
         for axis in ('creativity', 'coding', 'aesthetics', 'tool_operation'):
             cell = axes.get(axis) or {}
             status = cell.get('status')
-            mark = ('u' if status in ('user', 'maintainer')
+            floored = any(isinstance(fc, dict) and ((fc.get('operating_point_floor') or {}).get('binds_by_effort') or {})
+                          .get('high') == 'base' and (fc.get('by_effort') or {}).get('high') == cell.get('value')
+                          for fc in (cell.get('facets') or {}).values())
+            mark = ('f' if floored
+                    else 'u' if status in ('user', 'maintainer')
                     else '~' if status == 'estimated'
                     else '!' if cell.get('missing_facets') else '')
             cells.append(f"{cell['value']:.2f}{mark}" if cell.get('value') is not None else f"missing{mark}")
@@ -71,7 +75,9 @@ def markdown(accounts, five=None, references=None):
              'the Artificial Analysis Intelligence Index at High, or its same-series sibling tier); it is not a score '
              'and only estimates facets a model lacks when the panel regression has positive leave-one-out skill. '
              'A value marked `~` holds such an estimate (a same-series sibling, else an accepted fit of that facet on '
-             'the tier); `u` marks a manual score (`user-scores.json`); `!` marks a category with one or more missing '
+             'the tier); `u` marks a manual score (`user-scores.json`); `f` marks a maintainer score that its operating point bounds: '
+             'the row is declared as another row at an operating point and the cell of that row there, above the score, is the value '
+             '(`operating_point_floor` in the overlay); `!` marks a category with one or more missing '
              'facets (`tool_operation` keeps its level-2 responsiveness when `image_recognition` is missing; `coding` '
              'stays `missing!` so a missing facet is never silently skipped); `missing` excludes the model under mode B '
              'when a demanded level requires that facet. The record of each estimate is in `five-axis-scores.json` '

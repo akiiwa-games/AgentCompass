@@ -298,12 +298,11 @@ def evaluate_bundle(bundle, task, ctx):
             result.setdefault('data_errors', []).append(error)
         else:
             exclude(f'data error: {error} (out of automatic routing; name the model to dispatch it)')
-    manual_applied = state.get('manual_scores') or {}
+    # What the overlay applied, read at the effort this candidate is scored with (user_scores owns the text).
+    manual_applied = user_scores.applied_scores(state, axis_scores.reading_effort(state, eff))
     if manual_applied:
-        summary_parts = [f"{t}={r['level']:g} (z={r['z']:+.4f}, {r['kind']}, {r['as_of']})"
-                         for t, r in sorted(manual_applied.items())]
-        result['notes'].append('manual capability scores applied: ' + '; '.join(summary_parts))
-        result['manual_scores'] = dict(manual_applied)
+        result['notes'].append(user_scores.applied_note(manual_applied, axis_scores.reading_effort(state, eff)))
+        result['manual_scores'] = manual_applied
     estimated = state.get('estimates') or {}
     if estimated:
         result['notes'].append('facets estimated (same-series sibling or the fit on the tier; no board of their own): '

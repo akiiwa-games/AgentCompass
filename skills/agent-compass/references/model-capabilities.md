@@ -85,7 +85,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gpt-5.6-terra` | -0.21 | -2.84 | -2.80~ | -2.41 | -1.88 | 12.828 | yes |
 | `gpt-6-astra` | 0.06 | -2.13 | 0.01u | -0.19u | -0.89 | 26.304 | yes |
 | `gpt-6-luna` | -0.64 | -3.45 | -2.27u | -2.17 | -2.85u | 0.774 | yes |
-| `gpt-6-pro` | 0.06 | 0.00u | 0.52u | 0.93u | -4.44u | - | yes |
+| `gpt-6-pro` | 0.06 | 0.00u | 0.52f | 0.93f | -4.44u | - | yes |
 | `gpt-6-sol` | -0.29 | -2.66u | -0.53u | -1.30 | -1.16u | 20.036 | yes |
 | `gpt-6.1-sol` | -0.01 | -2.13 | -0.21u | -0.34 | -0.74 | 7.546 | yes |
 | `gpt-6.1-terra` | -0.04 | -2.27~ | -0.47u | -1.25 | -0.57 | 5.412 | yes |
@@ -164,7 +164,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `step-5-preview` | -0.48 | -2.92 | -2.23 | -2.42 | -2.13 | 3.894 | yes |
 | `voxtral-small-2507` | - | missing! | missing! | missing! | missing! | - | unknown |
 
-Tier is the arena.ai Overall position at High relative to the anchor (or its linear alignment from the Artificial Analysis Intelligence Index at High, or its same-series sibling tier); it is not a score and only estimates facets a model lacks when the panel regression has positive leave-one-out skill. A value marked `~` holds such an estimate (a same-series sibling, else an accepted fit of that facet on the tier); `u` marks a manual score (`user-scores.json`); `!` marks a category with one or more missing facets (`tool_operation` keeps its level-2 responsiveness when `image_recognition` is missing; `coding` stays `missing!` so a missing facet is never silently skipped); `missing` excludes the model under mode B when a demanded level requires that facet. The record of each estimate is in `five-axis-scores.json` (`estimate`).
+Tier is the arena.ai Overall position at High relative to the anchor (or its linear alignment from the Artificial Analysis Intelligence Index at High, or its same-series sibling tier); it is not a score and only estimates facets a model lacks when the panel regression has positive leave-one-out skill. A value marked `~` holds such an estimate (a same-series sibling, else an accepted fit of that facet on the tier); `u` marks a manual score (`user-scores.json`); `f` marks a maintainer score that its operating point bounds: the row is declared as another row at an operating point and the cell of that row there, above the score, is the value (`operating_point_floor` in the overlay); `!` marks a category with one or more missing facets (`tool_operation` keeps its level-2 responsiveness when `image_recognition` is missing; `coding` stays `missing!` so a missing facet is never silently skipped); `missing` excludes the model under mode B when a demanded level requires that facet. The record of each estimate is in `five-axis-scores.json` (`estimate`).
 
 ## Effective policy
 

@@ -391,3 +391,23 @@ def test_live_economy_windows_reports_active_priced_windows(monkeypatch):
     assert {'claude/seven_day', 'codex/usage'} <= labels
     text = so.economy_text(windows)
     assert 'claude/seven_day' in text and 'codex/usage' in text
+
+
+def test_the_hover_of_a_score_its_operating_point_bounds_names_both_inputs_and_which_binds():
+    """Rule (round 9 item 1): where a declared operating point bounds a maintainer score, the hover reads the overlay's
+    record (`operating_point_floor`) at the overview effort: the base row and its effort, both values, which binds."""
+    def cell(binds):
+        return {"value": 0.5, "by_effort": {"high": 0.5}, "status": "maintainer",
+                "manual": {"kind": "maintainer", "level": 3.1, "as_of": "2026-11-11"},
+                "operating_point_floor": {"base_model": "astra", "at_effort": "xhigh", "base_by_effort": {"high": 0.5},
+                                          "score_by_effort": {"high": 0.1 if binds == "base" else 0.9},
+                                          "binds_by_effort": {"high": binds}}}
+    prev = i18n.get_language()
+    try:
+        i18n.set_language("en")
+        base, score = so.evidence_lines(cell("base")), so.evidence_lines(cell("score"))
+    finally:
+        i18n.set_language(prev)
+    assert "Operating-point floor: astra at xhigh, cell +0.500; manual score +0.100; the floor binds" in base
+    assert "Operating-point floor: astra at xhigh, cell +0.500; manual score +0.900; the manual score binds" in score
+    assert not any("Operating-point" in line for line in so.evidence_lines({**cell("base"), "operating_point_floor": None}))

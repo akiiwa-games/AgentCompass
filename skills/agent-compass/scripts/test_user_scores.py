@@ -1282,6 +1282,64 @@ class OperatingPointFloorTests(unittest.TestCase):
                          ('astra', 'ultra'))
         self.assertEqual(low['value'], low['by_effort']['high'])
 
+    def test_the_note_reads_the_value_the_candidate_is_scored_with_both_ways(self):
+        """Rule (round 9 item 1; user_scores.applied_scores / applied_note): the candidate note names what routing reads
+        at the candidate's effort, from the overlay's cells: where a floor is declared both inputs and which binds."""
+        models = self.table()
+        cell = models['pro']['five_axis']['categories']['coding']['facets']['execution']
+        models['pro']['five_axis']['categories']['aesthetics'] = {'facets': {'design': copy.deepcopy(cell)}, 'value': None,
+                                                                  'by_effort': {}}
+        doc = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {'pro': {
+            t: {'level': lv, 'as_of': '2026-11-19', 'kind': 'maintainer'}
+            for t, lv in (('coding.execution', 1.0), ('coding.faithfulness', 3.0), ('aesthetics', 3.0))}}}
+        user_scores.apply_overlay(models, self.targets, public_scores=doc)
+        state = models['pro']['five_axis']
+        for eff in ('low', 'high', 'ultra'):
+            with self.subTest(effort=eff):
+                applied = user_scores.applied_scores(state, eff)
+                note = user_scores.applied_note(applied, eff)
+                values = axis_scores.five_axis_values(state, eff)      # what evaluate_bundle scores the candidate with
+                reads = {n: v for r in applied.values() for n, v in r['reads'].items()}
+                floors = {n: f for r in applied.values() for n, f in (r.get('operating_point_floor') or {}).items()}
+                self.assertEqual(reads['aesthetics.design'], values['aesthetics']['design'])
+                self.assertEqual(min(reads['coding.execution'], reads['coding.faithfulness']), values['coding'])
+                self.assertEqual((floors['coding.execution']['binds'], floors['coding.faithfulness']['binds']),
+                                 ('base', 'score'))
+                for name, value in reads.items():
+                    self.assertIn(f"{name.split('.')[1]} {value:+.4f}", note)
+                self.assertIn(f"execution {reads['coding.execution']:+.4f} (the operating point binds: astra at ultra "
+                              f"{floors['coding.execution']['base']:+.4f} above the score "
+                              f"{floors['coding.execution']['score']:+.4f})", note)
+                self.assertIn(f"faithfulness {reads['coding.faithfulness']:+.4f} (the score binds: "
+                              f"{floors['coding.faithfulness']['score']:+.4f} at or above the operating point astra at ultra",
+                              note)
+
+    def test_a_planned_candidates_note_and_ledger_row_carry_the_value_it_was_scored_with(self):
+        """End to end on the shipped fleet and scores (demo_plan): for every candidate whose manual score a declared
+        operating point bounds, the note's coding facets give the coding score the candidate was scored with."""
+        import demo_plan
+        fleet = json.loads((REFERENCES_DIR / 'accounts.json').read_text(encoding='utf-8-sig'))
+        task = {'title': 'design a system', 'profile': {
+            'work_kind': 'architecture_reasoning', 'primary_level': 3, 'secondary_kind': 'none', 'secondary_level': 0,
+            'needs_visual': False, 'local_only': False, 'wants_fast': False, 'access': 'read-only', 'expected_hours': 1.0,
+            'task_count': '1'}}
+        decision = demo_plan.plan({'task': task}, fleet=fleet)
+        bounded = [c for c in decision['ranking']
+                   if any(r.get('operating_point_floor') for r in (c.get('manual_scores') or {}).values())]
+        self.assertTrue(bounded)
+        rows = {r['id']: r for r in ledger_snapshot.decision_snapshot(decision)['ranking']}
+        for c in bounded:
+            reads = {n: v for r in c['manual_scores'].values() for n, v in r['reads'].items()}
+            coding = [reads[n] for n in ('coding.execution', 'coding.faithfulness') if n in reads]
+            with self.subTest(candidate=c.get('id')):
+                note = next(n for n in c['notes'] if n.startswith('manual capability scores applied'))
+                self.assertEqual(len(coding), 2)
+                self.assertEqual(round(min(coding), 4), c['components']['coding'])
+                self.assertIn(f"{min(coding):+.4f}", note)
+                if c['id'] in rows:                                    # the ledger keeps the top rows only
+                    self.assertEqual({t: r['reads'] for t, r in rows[c['id']]['manual_scores'].items()},
+                                     {t: r['reads'] for t, r in c['manual_scores'].items()})
+
     def test_a_local_user_score_responsiveness_and_a_row_without_a_point_are_not_bounded(self):
         cases = ((self.overlay({'coding.execution': 1.0}, kind='user'), 'execution'),
                  (self.overlay({'tool_operation.responsiveness': 1.0}), 'responsiveness'),

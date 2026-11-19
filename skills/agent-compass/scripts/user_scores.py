@@ -850,6 +850,49 @@ def operating_point_floor(cell: dict, own_cell: dict | None, status: str, cat: s
                                                           for e, v in score.items()}}}
 
 
+def applied_scores(five_state: dict, effort: str | None) -> dict:
+    """{target: the manual score entry with `reads` ({cat.facet: what routing reads at `effort`, from the overlay's facet
+    cell} and, on a facet with a declared operating point, `operating_point_floor` ({cat.facet: {base_model, at_effort,
+    base, score, binds}}))}: what the overlay applied, read from its cells, never computed again. `effort` is the effort
+    the candidate reads (axis_scores.reading_effort); None reads High, or a cell's lone value."""
+    cats = (five_state or {}).get('categories') or {}
+    out = {}
+    for target, rec in sorted(((five_state or {}).get('manual_scores') or {}).items()):
+        cat, facet = parse_target(target)
+        reads, floors = {}, {}
+        for f in ((facet,) if facet else CATEGORY_FACETS[cat]):
+            cell = (((cats.get(cat) or {}).get('facets') or {}).get(f)) or {}
+            by = cell.get('by_effort') if isinstance(cell.get('by_effort'), dict) else {}
+            key = effort if effort else ('high' if 'high' in by else None)
+            value = by.get(key) if by else cell.get('value')
+            reads[f'{cat}.{f}'] = None if value is None else float(value)
+            floor = cell.get('operating_point_floor')
+            if isinstance(floor, dict) and key in (floor.get('binds_by_effort') or {}):
+                floors[f'{cat}.{f}'] = {'base_model': floor.get('base_model'), 'at_effort': floor.get('at_effort'),
+                                        'base': floor['base_by_effort'][key], 'score': floor['score_by_effort'][key],
+                                        'binds': floor['binds_by_effort'][key]}
+        out[target] = {**rec, 'reads': reads, **({'operating_point_floor': floors} if floors else {})}
+    return out
+
+
+def applied_note(applied: dict, effort: str | None) -> str | None:
+    """The candidate note of `applied_scores`: each manual score, then what routing reads on each of its facets at
+    `effort`; on a facet with a declared operating point, both inputs (the score and the base row's cell at its effort)
+    and which one binds."""
+    def facet_text(name, value, floor):
+        text = f"{name.split('.')[1]} {'missing' if value is None else f'{value:+.4f}'}"
+        if floor:
+            point = f"{floor['base_model']} at {floor['at_effort']} {floor['base']:+.4f}"
+            text += (f" (the operating point binds: {point} above the score {floor['score']:+.4f})" if floor['binds'] == 'base'
+                     else f" (the score binds: {floor['score']:+.4f} at or above the operating point {point})")
+        return text
+    parts = [f"{t}={r['level']:g} (z={r['z']:+.4f}, {r['kind']}, {r['as_of']}): "
+             + ', '.join(facet_text(n, v, (r.get('operating_point_floor') or {}).get(n)) for n, v in r['reads'].items())
+             for t, r in applied.items()]
+    return (f"manual capability scores applied, read at {effort or 'its single configuration'}: " + '; '.join(parts)
+            if parts else None)
+
+
 def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed_effort: str | None = None,
                      effort_steps: dict | None = None) -> None:
     """Mutate `five_state` (`info['five_axis']`) in place with one layer (`maintainer` or `user`) of manual scores;
