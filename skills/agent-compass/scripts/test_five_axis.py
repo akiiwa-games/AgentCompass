@@ -35,6 +35,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'calibration'))
 import five_axis  # noqa: E402
 
 # accounts.json's declarations the build reads (sources.effort_readings, five_axis.estimation_order)
+# declared family rows (series.identity) for the gpt-6 / gpt-5.6 luna and astra rows and the claude rows of the fixtures
+GPT_FAMILIES = {'rows': [{'pattern': '^gpt-(?:6|5\\.6).*luna', 'models': [], 'maker': 'openai', 'line': 'luna', 'size': 'full'},
+                         {'pattern': '^gpt', 'models': [], 'maker': 'openai', 'line': 'astra', 'size': 'full'},
+                         {'pattern': '^claude', 'models': [], 'maker': 'anthropic', 'line': 'claude', 'size': 'full'}]}
 READINGS = {'effort_readings': {'labels': {'non-reasoning': 'none', 'reasoning': 'default'}, 'reads': {'default': 'high'}},
             'estimation_order': {'order': list(five_axis.ESTIMATION_ORDER), 'sibling_first_up_to_distance': 1,
                                  'evidence': 'synthetic'}}
@@ -1557,8 +1561,9 @@ class AnchorRelativeTests(unittest.TestCase):
         return {'panel': {'models': panel}, 'models': models}
 
     def score(self, meas):
-        # The fable rows form one series through this catalog's family pattern (model_resolution `families`).
-        families = {'rows': [{'pattern': '^claude-fable', 'models': ['claude-fable-5-2']}]}
+        # The fable rows are relatives through this catalog's declared family row (series.identity: maker, line, size).
+        families = {'rows': [{'pattern': '^claude-fable', 'models': ['claude-fable-5-2'], 'maker': 'anthropic',
+                              'line': 'fable', 'size': 'full'}]}
         # their declared versions (accounts.json series_versions): one version apart, a sibling first (estimation_order)
         versions = {'series_versions': {'versions': {'claude-fable-5-1': 5.1, 'claude-fable-5-2': 5.2}}}
         return self.fa.Scorer(meas, {**READINGS, **versions, 'models': {m: {} for m in meas['models']},
@@ -1685,6 +1690,23 @@ class AnchorRelativeTests(unittest.TestCase):
         self.assertEqual(est['shift'], 0.0)
         self.assertTrue(est['shift_basis'].startswith('shift 0: no fit,'), est['shift_basis'])
 
+    def test_responsiveness_reads_the_own_line_and_an_ability_facet_the_makers_other_lines(self):
+        """Rule (Scorer.complete, series.groups, round 6 item 4): a missing ability facet is estimated from a relative of
+        the same maker and size on another line (at version distance up to the declared cap); responsiveness never is."""
+        meas = self.calibration_set({
+            'acme-a-1': self.tiered(4.2, coding=[{'source': 'arena.agent_alignment', 'facet': 'faithfulness', 'value': -0.2}],
+                                    tool_operation=[{'source': 'aa.ttfa', 'facet': 'responsiveness', 'value': 0.5,
+                                                     'z_by_effort': dict.fromkeys(EFFORT_NAMES, 0.5)}]),
+            'acme-b-1': self.tiered(4.0)})
+        fams = {'rows': [{'pattern': f'^acme-{x}', 'models': [], 'maker': 'acme', 'line': x, 'size': 'full'} for x in 'ab']}
+        versions = {'series_versions': {'versions': {'acme-a-1': 1, 'acme-b-1': 1}}}
+        rows, _, _, _, _, _ = self.fa.Scorer(meas, {**READINGS, **versions, 'models': {m: {} for m in meas['models']},
+                                                    'families': fams}).score()
+        faith = rows['acme-b-1']['axes']['coding']['facets']['faithfulness']['estimate']
+        self.assertEqual((faith['method'], faith['base_model']), ('sibling_shift', 'acme-a-1'))
+        resp = rows['acme-b-1']['axes']['tool_operation']['facets'].get('responsiveness')
+        self.assertTrue(resp is None or resp['estimate'].get('base_model') != 'acme-a-1', resp)
+
     def test_a_same_model_row_takes_its_declared_models_scores_for_the_categories_it_carries(self):
         meas = self.calibration_set({})
         for name, fields in meas['models'].items():
@@ -1697,7 +1719,9 @@ class AnchorRelativeTests(unittest.TestCase):
              'z_by_effort': dict.fromkeys(EFFORT_NAMES, -0.1)}],
             tool_operation=[{'source': 'lmarena.vision', 'facet': 'image_recognition', 'value': -0.15}])
         meas['models']['channel'] = {}
-        acc = {**READINGS, 'models': {m: {} for m in meas['models']}, 'families': {'rows': []},
+        # astra's declared family row; the channel takes astra's identity through the declaration (series.identity)
+        astra = {'rows': [{'pattern': '^astra', 'models': [], 'maker': 'openai', 'line': 'astra', 'size': 'full'}]}
+        acc = {**READINGS, 'models': {m: {} for m in meas['models']}, 'families': astra,
                'same_model': {'channel': {'model': 'astra', 'carries': ['coding'], 'url': 'https://openai.com/index/introducing-dots/'}}}
         rows, tier, _, _, _, _ = self.fa.Scorer(meas, acc).score()
         self.assertEqual((tier['channel']['value'], tier['channel']['method'], tier['channel']['base_model']), (4.2, 'sibling', 'astra'))
@@ -1807,7 +1831,7 @@ class DurationTests(unittest.TestCase):
 
     def build(self, models, **acc_extra):
         rows = {m: {'fields': {'throughput': tps}} for m, tps in models.items()}
-        acc = {**READINGS, 'models': {m: {} for m in models}, 'aliases': {}, 'families': {'rows': []}, **acc_extra}
+        acc = {**READINGS, 'models': {m: {} for m in models}, 'aliases': {}, 'families': GPT_FAMILIES, **acc_extra}
         scorer = self.fa.Scorer({'models': {m: r['fields'] for m, r in rows.items()}}, acc)
         tier = {m: {'value': None, 'method': 'none'} for m in rows}
         return self.fa.durations(scorer, rows, acc)
@@ -1954,6 +1978,9 @@ class DurationTests(unittest.TestCase):
                          ('series', 'gpt-6-luna', aa, 'aa'))
         self.assertEqual(basis['series'], ['gpt-5.6-luna', 'gpt-6-luna'])
         self.assertEqual((out['lone']['status'], out['lone']['by_effort']), ('missing', {}))          # no sibling: mode B
+        # Time/Task reads the own line only (series.groups 'line', round 6 item 4): another line of the maker gives nothing
+        models = {self.anchor: [self.tp(aa, 'high', 10.0)], 'gpt-6-astra': [self.tp(aa, 'high', 20.0)], 'gpt-5.6-luna': []}
+        self.assertEqual(self.build(models)[0]['gpt-5.6-luna']['status'], 'missing')
 
     def test_a_channel_row_that_does_not_carry_the_time_does_not_take_a_series_time(self):
         aa = 'aa.cost_time'
@@ -3040,22 +3067,45 @@ class EffortCoverageRuleTests(unittest.TestCase):
                 self.assertAlmostEqual(v, by[e], places=3, msg=(m, key, e))
         self.assertGreater(seen, 0)
 
-    def test_small_rows_never_join_a_full_series_and_previews_join_their_row(self):
-        """Rule (series.groups): a `small` row (by its deciding `families` row) never shares a series with a non-small one; a
-        row `x-preview` joins row `x`."""
-        groups, small = self.series.groups(self.acc), self.series.small_rows(self.acc)
-        for k, sibs in groups.items():
-            for j in sibs:
-                self.assertEqual(k in small, j in small, (k, j))
-        fams = [{'pattern': '^fam', 'models': ['fam-1'], 'size': 'full'}]
-        synthetic = {'models': {'fam-1': {}, 'fam-1-preview': {}, 'fam-1-mini': {}, 'other': {}}, 'aliases': {},
-                     'families': {'rows': [{'pattern': '^fam.*mini', 'models': ['fam-1'], 'size': 'small'}, *fams]}}
-        got = self.series.groups(synthetic)
-        self.assertEqual(got['fam-1-preview'], ['fam-1'])
-        self.assertEqual(got['fam-1-mini'], [])
-        # the same family resolution with the mini's row declared full joins it
+    def test_relatives_are_the_declared_maker_and_size_and_a_line_for_speed(self):
+        """Rule (series.groups, owner 2026-11-19 round 6 item 4): ability relatives are the rows of the same declared maker
+        and size, every line; speed relatives also the same line; a `small` row is never a relative of a `full` one; no
+        name, alias, preview or superseded pair joins two rows."""
+        for scope in ('ability', 'line'):
+            groups, ident = self.series.groups(self.acc, scope), self.series.identity(self.acc)
+            for k, sibs in groups.items():
+                for j in sibs:
+                    self.assertEqual((ident[k]['maker'], ident[k]['size']), (ident[j]['maker'], ident[j]['size']), (k, j))
+                    if scope == 'line':
+                        self.assertEqual(ident[k]['line'], ident[j]['line'], (k, j))
+        row = lambda pattern, line, size: {'pattern': pattern, 'models': [], 'maker': 'acme', 'line': line, 'size': size}  # noqa: E731
+        synthetic = {'models': {m: {} for m in ('fam-1', 'fam-1-preview', 'fam-1-mini', 'fam-pro-1', 'zed-1', 'zed-2')},
+                     'aliases': {'zed-2': 'fam-1'}, 'superseded': {'zed-1': {'by': 'zed-2'}},
+                     'families': {'rows': [row('^fam.*mini', 'fam', 'small'),
+                                           row('^fam-pro', 'pro', 'full'), row('^fam', 'fam', 'full'),
+                                           {**row('^zed-1', 'zed', 'full'), 'maker': 'other'},
+                                           {**row('^zed', 'zed', 'full'), 'maker': 'third'}]}}
+        ability, line = self.series.groups(synthetic, 'ability'), self.series.groups(synthetic, 'line')
+        self.assertEqual(ability['fam-1'], ['fam-1-preview', 'fam-pro-1'])      # same maker and size, every line
+        self.assertEqual(line['fam-1'], ['fam-1-preview'])                      # the bare name decides the row
+        self.assertNotIn('zed-2', ability['fam-1'])                             # an alias joins nothing
+        self.assertEqual((ability['fam-1-mini'], line['fam-pro-1']), ([], []))  # small never joins full; pro its own line
+        self.assertEqual((ability['zed-1'], ability['zed-2']), ([], []))        # a superseded pair across makers: no join
         synthetic['families']['rows'][0]['size'] = 'full'
-        self.assertIn('fam-1-mini', self.series.groups(synthetic)['fam-1'])
+        self.assertEqual(self.series.groups(synthetic, 'line')['fam-1'], ['fam-1-mini', 'fam-1-preview'])
+        with self.assertRaises(ValueError):
+            self.series.groups({**synthetic, 'families': {'rows': [{'pattern': '^fam', 'models': [], 'size': 'full'}]}})
+
+    def test_another_lines_relative_is_used_only_up_to_the_declared_distance_and_after_the_own_line(self):
+        """Rule (series.nearest `line_of`, `other_line_up_to`): at one version distance the own line comes first; a
+        relative of another line beyond the cap, or without a declared version, is no candidate."""
+        versions = {'t': 3.0, 'own': 2.0, 'other': 2.0, 'far': 1.0}
+        line_of = {'t': 'a', 'own': 'a', 'other': 'b', 'far': 'b', 'blank': 'b'}
+        rows = ['own', 'other', 'far', 'blank']
+        got = self.series.nearest('t', rows, rows, versions, set(), line_of=line_of, other_line_up_to=1)
+        self.assertEqual(got, [(1, ['own']), (1, ['other'])])
+        got = self.series.nearest('t', rows, rows, versions, set(), line_of=line_of, other_line_up_to=2)
+        self.assertEqual(got, [(1, ['own']), (1, ['other']), (2, ['far'])])
 
 
 

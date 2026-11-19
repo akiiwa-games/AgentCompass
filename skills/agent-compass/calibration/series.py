@@ -1,13 +1,14 @@
 """Same-series siblings and the base a converted model takes (round 058, user 2026-11-10: "后续同系列新出，缺少实测数据的情况下，
 先按照同系列的全分数进行折算，不要留下任何一个默认值或者fallback"; five_axis.py estimates through the tier on top of it).
 
-Series membership is the router's own resolution of each row's name with the row itself left out
-(model_resolution.resolve_model): a `family` match joins the row to that family's row (auto_bundles.series_target), and
-an `alias` match joins it to the row it is a release of (a row `x-preview` joins row `x`: the resolver drops `-preview`
-and other vendor tags); plus the public data's `superseded` pairs and `same_model` rows, joined transitively. A
-small-size row is never in the series of a non-small one (`size`): the size of a row is the declared `size` of the
-`families` row that decides its name (model_resolution.family_row); a join between a `small` row and any other row is
-refused, whatever relation proposed it, except a `same_model` declaration (the very model). No name list here.
+Relatives are declared (owner 2026-11-19, round 6 item 4), never read off a name or a member list: every `families` row
+declares its `maker`, its product `line` and its `size` (`small` or `full`), and a row takes those of the `families` row
+that decides its name (model_resolution.family_row; `identity`); a `same_model` row takes its declared model's (it is
+that model). A row's relatives for an **ability** facet (`groups(acc, 'ability')`) are the rows of the same maker and the
+same size, every product line, a row of another line only up to the declared version distance
+(`estimation_order.sibling_first_up_to_distance`); for a **speed or price** facet (`groups(acc, 'line')`: responsiveness, Time/Task, cost per
+hour) only those of its own line (a Pro model does not have Astra's speed). A row whose deciding row declares no maker has
+no relatives.
 
 The downward relation (`tier_up`, owner 2026-11-18) is a second relation, not series membership: a small row listed in
 its `families` row's `models` (a current member of that family) whose `families` row declares `tier_up` (the pattern of
@@ -23,11 +24,11 @@ url): the declared model is that row's base before any other sibling, and the ro
 categories the row lists under `carries`; a category it does not list is the channel's own and stays missing (a
 property of the channel, not of the model behind it).
 
-The base for a score is the sibling that carries a direct value for it, nearest by the declared version distance
-(accounts.json `series_versions`: how many distinct declared versions of the series lie between the two, 0 the same
-version; a row without a declared version ranks after every declared distance), then by size equality (the `families`
-size class); relatives still tied form one group whose estimates the caller takes the median of. A name never decides
-(round 5 review D: an alphabetical tie-break moved estimates by whole levels when a row was added).
+The base for a score is the relative that carries a direct value for it, nearest by the declared version distance
+(accounts.json `series_versions`: the rank difference among the distinct declared versions of the row and its relatives,
+0 the same version; a row without a declared version ranks after every declared distance), then the same line before
+another line at equal distance; relatives still tied form one group whose estimates the caller takes the median of. A
+name never decides (round 5 review D: an alphabetical tie-break moved estimates by whole levels when a row was added).
 """
 import sys
 
@@ -44,37 +45,48 @@ def small_rows(acc):
             if isinstance(v, dict) and (model_resolution.family_row(k, fams) or {}).get('size') == 'small'}
 
 
-def groups(acc):
-    """{row key: sorted same-series sibling keys} over the score rows of `acc`."""
-    models = acc.get('models') or {}
-    rows = {k for k, v in models.items() if isinstance(v, dict)}
-    aliases = acc.get('aliases') or {}
+FAMILY_KEYS = ('maker', 'line', 'size')
+
+
+def identity(acc):
+    """{row: {'maker', 'line', 'size'}} (module docstring): the declaration of the `families` row that decides the row's
+    name, or, for a `same_model` row, its declared model's; a row no `families` row decides is left out. A `families` row
+    without a nonempty `maker` and `line` and a `size` of `small` or `full` stops the build."""
+    models = {k: v for k, v in (acc.get('models') or {}).items() if isinstance(v, dict)}
     fams = model_resolution.family_patterns(acc)
-    small = small_rows(acc)
-    parent = {k: k for k in rows}
+    for f in fams:
+        if not (isinstance(f.get('maker'), str) and f['maker'].strip() and isinstance(f.get('line'), str)
+                and f['line'].strip() and f.get('size') in model_resolution.FAMILY_SIZES):
+            raise ValueError(f"accounts.json families row {f.get('pattern')!r} must declare maker, line and size "
+                             '(small or full)')
+    out = {}
+    for k in models:
+        row = model_resolution.family_row(k, fams)
+        if row is not None:
+            out[k] = {key: row[key] for key in FAMILY_KEYS}
+    for row, entry in same_model(acc).items():
+        if row in models and entry.get('model') in out:
+            out[row] = dict(out[entry['model']])
+    return out
 
-    def find(k):
-        while parent[k] != k:
-            parent[k] = parent[parent[k]]
-            k = parent[k]
-        return k
 
-    def join(a, b):
-        if a in rows and b in rows and (a in small) == (b in small):
-            parent[find(a)] = find(b)
+def groups(acc, scope='ability'):
+    """{row key: sorted relative keys} over the score rows of `acc` (module docstring): `ability` the same maker and size,
+    `line` also the same line."""
+    if scope not in ('ability', 'line'):
+        raise ValueError(f'scope {scope!r}: ability or line')
+    ident = identity(acc)
+    rows = [k for k, v in (acc.get('models') or {}).items() if isinstance(v, dict)]
 
-    for k in sorted(rows):
-        rest = {j: v for j, v in models.items() if j != k and isinstance(v, dict)}
-        found = model_resolution.resolve_model(k, rest, {a: t for a, t in aliases.items() if t != k}, fams)
-        if found['source'] in ('family', 'alias') and found['key']:
-            join(k, found['key'])
-    for old, entry in sorted((acc.get('superseded') or {}).items()):
-        if isinstance(entry, dict):
-            join(old, entry.get('by'))
-    for row, entry in sorted(same_model(acc).items()):
-        if row in rows and entry.get('model') in rows:
-            parent[find(row)] = find(entry['model'])
-    return {k: sorted(j for j in rows if j != k and find(j) == find(k)) for k in rows}
+    def key(k):
+        i = ident[k]
+        return (i['maker'], i['size']) + ((i['line'],) if scope == 'line' else ())
+    return {k: sorted(j for j in ident if j != k and key(j) == key(k)) if k in ident else [] for k in rows}
+
+
+def lines(acc):
+    """{row: its declared line} (`identity`)."""
+    return {k: v['line'] for k, v in identity(acc).items()}
 
 
 def tier_up(acc):
@@ -131,14 +143,21 @@ def distance(target, other, series_rows, declared):
     return abs(ladder.index(declared[target]) - ladder.index(declared[other]))
 
 
-def nearest(target, candidates, series_rows, declared, small, same=None):
+def nearest(target, candidates, series_rows, declared, small, same=None, line_of=None, other_line_up_to=None):
     """[(version distance, [tied candidates])], nearest first (see the module docstring). `series_rows`: the target's
-    siblings; `declared`: `versions(acc)`; `small`: `small_rows(acc)`; `same`: `same_model(acc)`, whose declared model
-    for `target` comes first, alone. Candidates with one key form one group, in no order a name decides."""
+    relatives; `declared`: `versions(acc)`; `small`: `small_rows(acc)`; `same`: `same_model(acc)`, whose declared model
+    for `target` comes first, alone; `line_of`: `lines(acc)`, the same line first at equal distance;
+    `other_line_up_to`: a candidate of another line is used only up to that version distance (an ability facet's
+    relatives of every line, round 6 item 4). Candidates with one key form one group, in no order a name decides."""
     model = ((same or {}).get(target) or {}).get('model')
+    line_of = line_of or {}
     groups = {}
     for c in candidates:
         d = distance(target, c, series_rows, declared)
-        k = (-1, 0, 0) if c == model else (0 if d is not None else 1, d or 0, int((c in small) != (target in small)))
+        other_line = int(line_of.get(c) != line_of.get(target))
+        if other_line and c != model and other_line_up_to is not None and (d is None or d > other_line_up_to):
+            continue
+        k = ((-1, 0, 0, 0) if c == model else
+             (0 if d is not None else 1, d or 0, other_line, int((c in small) != (target in small))))
         groups.setdefault(k, []).append(c)
     return [(None if k[0] > 0 else 0 if k[0] < 0 else k[1], sorted(v)) for k, v in sorted(groups.items())]

@@ -21,7 +21,7 @@ FAMILY_SIZES = ('small', 'full')     # a families row's declared size class (ser
 
 
 def family_patterns(accounts):
-    """The catalog's ordered family patterns ([{'pattern', 'models', 'size', 'tier_up'?}]) from its `families` maintainer
+    """The catalog's ordered family patterns ([{'pattern', 'models', 'maker', 'line', 'size', 'tier_up'?}]) from its `families` maintainer
     declaration."""
     table = accounts.get('families') if isinstance(accounts, dict) else None
     if not isinstance(table, dict) or not isinstance(table.get('rows'), list):

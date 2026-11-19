@@ -19,9 +19,15 @@ READINGS = {'effort_readings': {'labels': {'non-reasoning': 'none', 'reasoning':
                                  'evidence': 'synthetic'}}
 
 
+# declared family rows (series.identity) for the luna, astra and claude rows of the fixtures
+GPT_FAMILIES = {'rows': [{'pattern': '^gpt-(?:6|5\\.6).*luna', 'models': [], 'maker': 'openai', 'line': 'luna', 'size': 'full'},
+                         {'pattern': '^gpt', 'models': [], 'maker': 'openai', 'line': 'astra', 'size': 'full'},
+                         {'pattern': '^claude', 'models': [], 'maker': 'anthropic', 'line': 'claude', 'size': 'full'}]}
+
+
 class SeriesTests(unittest.TestCase):
     ACC = {'models': {m: {} for m in ('gpt-6-luna', 'gpt-5.6-luna', 'gpt-6-astra', 'dot', 'claude-opus-5-5')},
-           'aliases': {}, 'families': {'rows': []},
+           'aliases': {}, 'families': GPT_FAMILIES,
            'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}},
            'same_model': {'dot': {'model': 'gpt-6-astra', 'carries': ['creativity'], 'url': 'https://example.test/dot'}}}
 
@@ -30,13 +36,14 @@ class SeriesTests(unittest.TestCase):
         self.assertEqual(series.same_model({'same_model': {'dot': 'gpt-6-astra'}}), {})
         self.assertEqual(series.same_model({}), {})
 
-    def test_superseded_pairs_and_same_model_rows_join_a_series(self):
-        groups = series.groups(self.ACC)
-        self.assertEqual(groups['gpt-6-luna'], ['gpt-5.6-luna'])
-        self.assertEqual(groups['gpt-5.6-luna'], ['gpt-6-luna'])
-        self.assertEqual(groups['dot'], ['gpt-6-astra'])
-        self.assertIn('dot', groups['gpt-6-astra'])
-        self.assertNotIn('claude-opus-5-5', groups['dot'] + groups['gpt-6-luna'])
+    def test_a_same_model_row_takes_its_models_identity_and_lines_split_speed_relatives(self):
+        """Rule (series.identity, groups): a `same_model` row is its declared model (its maker, line and size); ability
+        relatives span the maker's lines, speed relatives do not; another maker is never a relative."""
+        line, ability = series.groups(self.ACC, 'line'), series.groups(self.ACC, 'ability')
+        self.assertEqual(line['gpt-6-luna'], ['gpt-5.6-luna'])
+        self.assertEqual(line['dot'], ['gpt-6-astra'])
+        self.assertEqual(ability['gpt-6-luna'], ['dot', 'gpt-5.6-luna', 'gpt-6-astra'])
+        self.assertNotIn('claude-opus-5-5', ability['dot'] + ability['gpt-6-luna'])
 
     def test_a_same_model_row_to_a_row_that_is_not_scored_joins_nothing(self):
         acc = dict(self.ACC, same_model={'dot': {'model': 'not-a-row'}})
@@ -239,7 +246,7 @@ class UsdConversionTests(unittest.TestCase):
         usd = {'gpt-5.6-luna': {'value': 4.0, 'status': 'ok', 'kind': 'community'},
                'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'},
                'claude-opus-5-5': {'value': 7.0, 'status': 'ok', 'kind': 'community'}}
-        acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
+        acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {}, 'families': GPT_FAMILIES, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         scorer = fa.Scorer(meas, acc)
         fa.convert_usd(usd, rows, scorer, meas, acc)
@@ -248,12 +255,20 @@ class UsdConversionTests(unittest.TestCase):
                          (8.0, 'converted', 'gpt-5.6-luna', 2.0))
         self.assertEqual(usd['gpt-5.6-luna']['value'], 4.0)                          # direct values are not touched
         self.assertEqual(usd['claude-opus-5-5']['value'], 7.0)
+        # cost per hour reads the own line only (series.groups 'line', round 6 item 4): the maker's astra line gives nothing
+        rows = {'gpt-6-astra': {'fields': {'price': [entry(1.0, 5.0)]}}, 'gpt-6-luna': {'fields': {'price': [entry(2.0, 10.0)]}}}
+        usd = {'gpt-6-astra': {'value': 4.0, 'status': 'ok', 'kind': 'community'},
+               'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'}}
+        acc = {**acc, 'models': {m: {} for m in rows}}
+        meas = {**meas, 'models': {m: {} for m in rows}}
+        fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc)
+        self.assertIsNone(usd['gpt-6-luna']['value'])
 
     def test_no_price_means_no_conversion_and_no_default(self):
         rows = {'gpt-5.6-luna': {'fields': {'price': []}}, 'gpt-6-luna': {'fields': {'price': []}}}
         usd = {'gpt-5.6-luna': {'value': 4.0, 'status': 'ok', 'kind': 'community'},
                'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'}}
-        acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
+        acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {}, 'families': GPT_FAMILIES, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc)
         self.assertIsNone(usd['gpt-6-luna']['value'])
@@ -262,9 +277,11 @@ class UsdConversionTests(unittest.TestCase):
         """Rule (series.tier_up): a current member of a small row gets the first model of its `tier_up` row; an older row of
         the line only through the row's `tier_up_older` declaration, with its declared version."""
         older = {'fam-0-mini': {'model': 'fam-1', 'version': 'nearest'}}
-        row = {'pattern': '^fam.*mini', 'models': ['fam-1-mini'], 'size': 'small', 'tier_up': '^fam', 'tier_up_version': 'same'}
+        row = {'pattern': '^fam.*mini', 'models': ['fam-1-mini'], 'maker': 'acme', 'line': 'fam', 'size': 'small',
+               'tier_up': '^fam', 'tier_up_version': 'same'}
         acc = {'models': {m: {} for m in ('fam-1-mini', 'fam-0-mini', 'fam-1')},
-               'families': {'rows': [{**row, 'tier_up_older': older}, {'pattern': '^fam', 'models': ['fam-1'], 'size': 'full'}]}}
+               'families': {'rows': [{**row, 'tier_up_older': older},
+                                     {'pattern': '^fam', 'models': ['fam-1'], 'maker': 'acme', 'line': 'fam', 'size': 'full'}]}}
         self.assertEqual(series.tier_up(acc), {'fam-0-mini': older['fam-0-mini'],
                                                'fam-1-mini': {'model': 'fam-1', 'version': 'same'}})
         acc['families']['rows'][0] = row
@@ -281,9 +298,11 @@ class UsdConversionTests(unittest.TestCase):
         usd = {'fam-big': {'value': 10.0, 'status': 'ok', 'kind': 'community'},
                'fam-big-flash': {'value': None, 'status': 'missing', 'kind': 'none'}}
         acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {},
-               'families': {'rows': [{'pattern': '^fam.*flash', 'models': ['fam-big-flash'], 'size': 'small',
+               'families': {'rows': [{'pattern': '^fam.*flash', 'models': ['fam-big-flash'], 'maker': 'acme',
+                                      'line': 'fam', 'size': 'small',
                                       'tier_up': '^fam', 'tier_up_version': 'same'},
-                                     {'pattern': '^fam', 'models': ['fam-big'], 'size': 'full'}]}}
+                                     {'pattern': '^fam', 'models': ['fam-big'], 'maker': 'acme', 'line': 'fam',
+                                      'size': 'full'}]}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc)
         got = usd['fam-big-flash']

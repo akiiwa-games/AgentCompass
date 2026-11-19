@@ -622,6 +622,17 @@
      "mistral/ministral-8b-2512"
     ]
    }
+  },
+  {
+   "catalog": "shipped-launch-table",
+   "model": "gpt-6-pro",
+   "efforts": [
+    "high",
+    "max"
+   ],
+   "row": "gpt-6-pro",
+   "kind": "no_time_reading_in_series",
+   "detail": "gpt-6-pro: Artificial Analysis lists no Time/Task for it nor for any row of its declared line `pro` (gpt-5.x pro), and Time/Task reads only the row's own line (accounts.json families, round 6 item 4: a Pro model does not have Astra's speed)"
   }
  ]
 }

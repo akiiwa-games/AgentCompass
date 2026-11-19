@@ -187,6 +187,9 @@ def _validate_catalog_tables(doc):
         if entry.get('size') not in model_resolution.FAMILY_SIZES:
             raise ValueError(f'families.rows[{i}] ({entry["pattern"]}) needs a size, one of '
                              f'{", ".join(model_resolution.FAMILY_SIZES)} (calibration/series.py)')
+        if not all(isinstance(entry.get(k), str) and entry[k].strip() for k in ('maker', 'line')):
+            raise ValueError(f'families.rows[{i}] ({entry["pattern"]}) needs a maker and a product line '
+                             '(calibration/series.py: the relatives of a row)')
     by_pattern = {e['pattern']: e for e in families['rows']}
     for i, entry in enumerate(families['rows']):
         if 'tier_up' in entry and (entry['size'] != 'small' or (by_pattern.get(entry['tier_up']) or {}).get('size') != 'full'):

@@ -614,7 +614,7 @@ class Builder:
             self.checks.append({'model': model, 'source': src, 'check': check, 'level': 'structural', 'evidence': evidence})
             raw[src].pop(model, None)
             names[src].pop(model, None)
-        groups, same = series.groups(self.acc), series.same_model(self.acc)
+        groups, same = series.groups(self.acc, 'ability'), series.same_model(self.acc)
         for src, b in boards.items():
             for model, name in list(names[src].items()):
                 listed = b['listed'].get(name, name)

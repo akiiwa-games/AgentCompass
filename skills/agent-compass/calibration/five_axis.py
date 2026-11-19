@@ -48,8 +48,8 @@ scores on the four categories and the quota economy together. Nothing else score
   at levels 2 and 3 (sharing `tool_operation.image_recognition`); `tool_operation` asks no ability at level 1 (its
   image-input modality check sits at level 3), `responsiveness` at level 2, and `min(responsiveness, image_recognition)`
   at level 3.
-- A facet a model lacks is estimated: the nearest same-series relatives' value (series.nearest; the median of a tied
-  group) moved along the facet's fit on the tier by the tier difference, else the fit at the model's tier, in the order
+- A facet a model lacks is estimated: the nearest relatives' value (series.groups: for an ability facet the maker's
+  same-size rows, for responsiveness its own line; series.nearest, the median of a tied group) moved along the facet's fit on the tier by the tier difference, else the fit at the model's tier, in the order
   `estimation_order` declares (calibration/README.md). An estimate fit is accepted only when
   its slope is positive (`b > 0`) and its leave-one-out skill beats the panel mean (`skill > 0`); failing fits go to
   `rejected_fits`, leaving models without a measured sibling `missing` (mode B) and setting sibling shift to `0`.
@@ -98,7 +98,7 @@ scores on the four categories and the quota economy together. Nothing else score
 - Checks: structural ones drop a listing (a variant tag that is not an effort, a raw value out of range, one listing
   matched to two models, a duplicate board); statistical ones only note (`checks`).
 - The tier (calibration/tiers.py) is the model's overall level at High relative to the anchor (`tier.arena_overall`,
-  else `tier.aa_index`, else same-series sibling). Its one use is estimating a facet a model lacks.
+  else `tier.aa_index`, else the nearest ability relative). Its one use is estimating a facet a model lacks.
 - A row that `accounts.json` `same_model` declares to be the very model another row names (a cited vendor statement with
   its `url`, or a dated `kind: "maintainer"` declaration) takes that model's facets as they stand, measured or
   estimated (method `same_model`), for the categories the row `carries`, plus its Time/Task (`duration`) and
@@ -108,7 +108,7 @@ scores on the four categories and the quota economy together. Nothing else score
   real sessions, Cost/Task P50 / Time/Task P50 x 60, kind `community`), each source's value at High (else its effort-less
   listing, else the median of its listed efforts). For a model arena does not list with cost and time, the labelled
   option B (`derived.community_mix`, `fallback: True`: AA's measured output speed per hour priced at the community token
-  mix at list prices); a model with a same-series sibling that has a direct value takes that sibling's times the ratio
+  mix at list prices); a model with a same-line relative that has a direct value takes that relative's times the ratio
   of the two cited API list prices over the full community token mix, both read on one price list where one lists both
   (`pair_prices`; `convert_usd`, `converted`), else, the same way,
   its larger model (series.tier_up) when that has a direct value (`relation: size`). A value still resting on option B
@@ -446,12 +446,12 @@ class Scorer:
                 out[m] = {'value': round(float(np.mean([e['value'] for e in chosen])), 4), 'method': method, 'sources': cite,
                           **({'status': 'estimated'} if method == 'other_overall' else {})}
         direct_tier = {m: t['value'] for m, t in out.items()}
-        sibs, same = series.groups(self.acc), series.same_model(self.acc)
+        sibs, same = series.groups(self.acc, 'ability'), series.same_model(self.acc)
         for m in rows:
             if m in out:
                 continue
             groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in direct_tier], sibs.get(m, ()), self.versions,
-                                    self.small, same)
+                                    self.small, same, self.line_of, self.order['sibling_first_up_to_distance'])
             if groups:
                 group = groups[0][1]
                 out[m] = {'value': round(float(np.median([direct_tier[b] for b in group])), 4), 'method': 'sibling',
@@ -1112,8 +1112,9 @@ class Scorer:
         raw_same = series.same_model(self.acc)
         self.same = {k: v for k, v in raw_same.items() if valid_public_declaration(v)}
         self.speed = {m: sp for m, e in self.same.items() if (sp := speed_declaration(e)) is not None}
-        self.sibs = series.groups({**self.acc, 'same_model': self.same})
-        self.versions, self.small = series.versions(self.acc), series.small_rows(self.acc)
+        self.sibs = series.groups({**self.acc, 'same_model': self.same}, 'ability')
+        self.line_sibs = series.groups({**self.acc, 'same_model': self.same}, 'line')
+        self.versions, self.small, self.line_of = series.versions(self.acc), series.small_rows(self.acc), series.lines(self.acc)
         self.order = estimation_order(self.acc)
         tier = self.tier_records(rows)
         self.direct_tier = {m: t['value'] for m, t in tier.items() if t['method'] in ('arena_overall', 'other_overall')}
@@ -1153,10 +1154,13 @@ class Scorer:
                     continue
                 if m in self.speed and key == SPEED_KEY:
                     continue        # a speed variant's speed rests on its base and the stated ratio (speed_variants)
-                usable = [b for b in self.sibs.get(m, ())
+                # an ability facet reads the maker's same-size rows of every line; a speed facet its own line only
+                sibs = (self.sibs if rises(key) else self.line_sibs).get(m, ())
+                usable = [b for b in sibs
                           if (facets[b].get(key) or {}).get('status', '').startswith('measured')
                           and (facets[b].get(key) or {}).get('value') is not None and tier[b]['value'] is not None]
-                groups = series.nearest(m, usable, self.sibs.get(m, ()), self.versions, self.small, self.same)
+                groups = series.nearest(m, usable, sibs, self.versions, self.small, self.same, self.line_of,
+                                        self.order['sibling_first_up_to_distance'] if rises(key) else None)
                 d, group = groups[0] if groups else (None, [])
                 # the declared order (accounts.json estimation_order): a relative up to the declared version distance
                 # first; from there on, or without a declared distance, the tier fit first
@@ -1664,7 +1668,8 @@ def durations(scorer, rows, acc):
                     basis[m][e] = {'method': 'same_model', 'base_model': base, 'kind': entry.get('kind'),
                                    'url': entry.get('url'), 'as_of': entry.get('as_of'),
                                    'statement': entry.get('statement')}
-    sibs = series.groups({**acc, 'same_model': same})
+    sibs = series.groups({**acc, 'same_model': same}, 'line')       # Time/Task is a speed quantity: its own line only
+    line_of = series.lines(acc)
     measured = {m for m in rows if minutes[m]}
     speed = {m: sp for m, e in same.items() if m in rows and (sp := speed_declaration(e)) is not None}
     for m in rows:
@@ -1672,7 +1677,7 @@ def durations(scorer, rows, acc):
                                                                           *(same[m].get('own_estimated') or ())}):
             continue        # a row declared to be another model's channel that does not carry its time keeps the channel's own
         groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in measured], sibs.get(m, ()), series.versions(acc),
-                                series.small_rows(acc), same)
+                                series.small_rows(acc), same, line_of)
         if groups:
             d, group = groups[0]
             for e in [e for e in LADDER if all(e in minutes[b] for b in group)]:
@@ -1720,7 +1725,8 @@ def durations(scorer, rows, acc):
     for m, r in rows.items():
         direct = dict(minutes[m])
         if direct:
-            groups = series.nearest(m, sibs.get(m, ()), sibs.get(m, ()), series.versions(acc), series.small_rows(acc), same)
+            groups = series.nearest(m, sibs.get(m, ()), sibs.get(m, ()), series.versions(acc), series.small_rows(acc), same,
+                                    line_of)
             known = dict(direct)
 
             def side(effort, pool):
@@ -2105,14 +2111,15 @@ def convert_usd(usd, rows, scorer, meas, acc):
     `relation: size`) when that has a direct value."""
     direct = {m for m, u in usd.items() if u.get('value') is not None and u.get('kind') not in ('derived', 'converted')}
     same = {k: v for k, v in series.same_model(acc).items() if valid_public_declaration(v)}
-    sibs = series.groups({**acc, 'same_model': same})
+    sibs = series.groups({**acc, 'same_model': same}, 'line')       # cost per hour is a speed and price quantity
+    line_of = series.lines(acc)
     mix = token_mix(meas)
     larger = series.tier_up(acc)
     for m in rows:
         if m in direct:
             continue
         groups = series.nearest(m, [b for b in sibs.get(m, ()) if b in direct], sibs.get(m, ()), series.versions(acc),
-                                series.small_rows(acc), same)
+                                series.small_rows(acc), same, line_of)
         near = groups[0][1] if groups else []
         conv = []
         for b in near:

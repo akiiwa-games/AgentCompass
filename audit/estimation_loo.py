@@ -9,7 +9,11 @@ group gives its median), the tier fit, the downward derivation from the larger m
 the same or the nearest version, and the model's own ability median; each effort cell measured with High is estimated
 again by the panel effort step and, at an edge effort, by the fleet's edge step. It prints per method the number of
 cells, the median and 90th percentile absolute error and the mean error (panel z), and the sibling against the tier fit
-on the same cells by version distance, the comparison `estimation_order.sibling_first_up_to_distance` rests on.
+on the same cells by version distance, the comparison `estimation_order.sibling_first_up_to_distance` rests on. Relatives
+are those the build uses (series.groups: an ability facet the maker's same-size rows of every line, responsiveness its own
+line); each responsiveness cell is also estimated from the nearest relative of another line of the same maker and size
+(`other_line_shift`), and the same-line against other-line comparison on the cells both estimate is printed, the evidence
+that a speed facet reads its own line only (round 6 item 4).
 
 The release that re-measures this updates `estimation_order.evidence` by hand; the refresh never reorders by itself.
 """
@@ -45,14 +49,25 @@ def cell_estimates(scorer, facets, keys, rows, declared, tier, m, key):
     out = {}
     fits = {key: fit_without(scorer, facets, rows, key, m)}
     if tier[m]['value'] is not None and m not in declared:
-        usable = [b for b in scorer.sibs.get(m, ()) if b != m
-                  and (facets[b].get(key) or {}).get('status', '').startswith('measured')
-                  and (facets[b].get(key) or {}).get('value') is not None and tier[b]['value'] is not None]
-        groups = series.nearest(m, usable, scorer.sibs.get(m, ()), scorer.versions, scorer.small, scorer.same)
+        def usable(pool):
+            return [b for b in pool.get(m, ()) if b != m
+                    and (facets[b].get(key) or {}).get('status', '').startswith('measured')
+                    and (facets[b].get(key) or {}).get('value') is not None and tier[b]['value'] is not None]
+        ability = fa.rises(key)
+        pool = scorer.sibs if ability else scorer.line_sibs            # as the build reads them (Scorer.complete)
+        groups = series.nearest(m, usable(pool), pool.get(m, ()), scorer.versions, scorer.small, scorer.same,
+                                scorer.line_of, scorer.order['sibling_first_up_to_distance'] if ability else None)
         if groups:
             d, group = groups[0]
             e = scorer.group_estimate(m, group, d, key, facets, fits, {}, tier)
             out['sibling_shift'] = {'value': e['value'], 'base': group, 'distance': d}
+        if not ability:
+            other = [b for b in usable(scorer.sibs) if scorer.line_of.get(b) != scorer.line_of.get(m)]
+            groups = series.nearest(m, other, scorer.sibs.get(m, ()), scorer.versions, scorer.small, None, scorer.line_of)
+            if groups:
+                d, group = groups[0]
+                e = scorer.group_estimate(m, group, d, key, facets, fits, {}, tier)
+                out['other_line_shift'] = {'value': e['value'], 'base': group, 'distance': d}
         if fits[key]:
             out['tier_fit'] = {'value': scorer.estimate(m, None, key, facets, fits, {}, tier)['value']}
     rel = scorer.size_of.get(m)
@@ -185,6 +200,16 @@ def sibling_against_fit(cells):
     return out
 
 
+def own_line_against_other_line(cells):
+    """(n, median |error| own line, median |error| other line, n own line only, n other line only) over the
+    responsiveness cells, the first three on the cells both estimate."""
+    speed = [c for c in cells if c['facet'] == '.'.join(fa.SPEED_KEY) and c['effort'] == 'high']
+    both = [c for c in speed if 'sibling_shift' in c['est'] and 'other_line_shift' in c['est']]
+    med = lambda k: round(float(np.median([abs(c['est'][k]['value'] - c['truth']) for c in both])), 3) if both else None  # noqa: E731
+    return (len(both), med('sibling_shift'), med('other_line_shift'),
+            sum(1 for c in speed if 'sibling_shift' in c['est']), sum(1 for c in speed if 'other_line_shift' in c['est']))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--references', default=str(REFERENCES))
@@ -199,6 +224,9 @@ def main(argv=None):
     print('\nsibling against tier fit on the same cells (median |error|):')
     for d, n, sib, fit in sibling_against_fit(cells):
         print(f'  distance {d}: n={n} sibling {sib:.3f}, tier fit {fit:.3f}')
+    n, own, other, n_own, n_other = own_line_against_other_line(cells)
+    print('\nresponsiveness at High, own line against another line of the same maker and size (median |error|):')
+    print(f'  both: n={n} own line {own}, other line {other}; own line alone n={n_own}, other line alone n={n_other}')
     return 0
 
 
