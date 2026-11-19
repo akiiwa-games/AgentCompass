@@ -749,8 +749,8 @@
  },
  "families": {
   "kind": "maintainer",
-  "as_of": "2026-11-18",
-  "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). `size` is the size class of the names a row decides: `small` names are never in the series of a `full` one (calibration/series.py). `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down); tier_up_version says whether the larger row's first model is the same version as the small row's current members (`same`) or the nearest version of the same line (`nearest`), calibration/series.py. `tier_up_older` on such a row names, for an older member of the row's line that is not a current member, its larger model and whether it is the same version (`same`) or the nearest (`nearest`).",
+  "as_of": "2026-11-19",
+  "statement": "maintainer: ordered model-family patterns for names the catalog has no row or alias for; the first pattern matching the bare name decides, and the name resolves to the first listed model the catalog has (an empty list: unknown) (scripts/model_resolution.py). `size` is the size class of the names a row decides: `small` names are never in the series of a `full` one (calibration/series.py). `tier_up` on a small row names the pattern of the same line's next larger row, whose first catalogued model is, for a listed member of the small row, its larger model of the same version (calibration/series.py tier_up, five_axis.py tier_down); tier_up_version says whether the larger row's first model is the same version as the small row's current members (`same`) or the nearest version of the same line (`nearest`), calibration/series.py. `tier_up_older` on such a row names, for an older member of the row's line that is not a current member, its larger model and whether it is the same version (`same`) or the nearest (`nearest`). Gemini 4 Neon (owner, 2026-11-19) has a row of its own, `size: full`, resting on two vendor sentences, not on its name: Google's model card (https://deepmind.google/models/model-cards/gemini-4-neon/, published 18 November 2026) \"Gemini 4 Neon is adapted from Gemini 4 Carbon\", and Google's choosing-a-model page (https://aistudio.google.com/docs/choosing-a-model) \"Sits between Hydrogen and Carbon, with deeper reasoning than Hydrogen\"; no Google page states its size.",
   "rows": [
    {
     "pattern": "^grok-bot$",
@@ -888,6 +888,13 @@
      "gemini-3.8-flash-high"
     ],
     "size": "small"
+   },
+   {
+    "pattern": "^gemini.*neon",
+    "models": [
+     "gemini-4-neon"
+    ],
+    "size": "full"
    },
    {
     "pattern": "^gemini",
@@ -1181,6 +1188,7 @@
    "gemini-4-argon-high": 4,
    "gemini-4-carbon": 4,
    "gemini-4-hydrogen-high": 4,
+   "gemini-4-neon": 4,
    "gemma-4-26b-a4b-it": 4,
    "gemma-4-31b-it": 4,
    "glm-4.5": 4.5,
@@ -1903,6 +1911,15 @@
    "listed_as": {
     "arena": "Gemini 4 Carbon",
     "aa": "Gemini 4 Carbon"
+   }
+  },
+  "gemini-4-neon": {
+   "label": "Neon 4",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://aistudio.google.com/docs/changelog",
+    "as_of": "2026-11-19",
+    "statement": "Google's changelog, November 18, 2026: \"Gemini 4 Neon (`gemini-4-neon`) generally available (GA)\", which \"supports four thinking levels (`low`, `medium`, default `high`, and `xhigh`)\"; the model page (https://aistudio.google.com/docs/models/gemini-4-neon) lists \"Stable: `gemini-4-neon`\"; pricing $3.00 input, $0.15 caching, $15.00 output per 1M tokens"
    }
   },
   "step-5-preview": {
@@ -3369,6 +3386,34 @@
      "provider": "antigravity-resilient",
      "model": "gemini-4-hydrogen-high",
      "effort": "high",
+     "modeId": "full-access"
+    },
+    "neon_low": {
+     "provider": "antigravity-resilient",
+     "model": "gemini-4-neon",
+     "launch_model": "gemini-4-neon-low",
+     "effort": "low",
+     "modeId": "full-access"
+    },
+    "neon_medium": {
+     "provider": "antigravity-resilient",
+     "model": "gemini-4-neon",
+     "launch_model": "gemini-4-neon-medium",
+     "effort": "medium",
+     "modeId": "full-access"
+    },
+    "neon_high": {
+     "provider": "antigravity-resilient",
+     "model": "gemini-4-neon",
+     "launch_model": "gemini-4-neon-high",
+     "effort": "high",
+     "modeId": "full-access"
+    },
+    "neon_xhigh": {
+     "provider": "antigravity-resilient",
+     "model": "gemini-4-neon",
+     "launch_model": "gemini-4-neon-xhigh",
+     "effort": "xhigh",
      "modeId": "full-access"
     },
     "agy_opus55_low": {

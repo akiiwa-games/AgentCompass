@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-19T00:03:29+00:00",
+ "generated_at": "2026-11-19T00:43:42+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [
@@ -23203,6 +23203,357 @@
       "output": 20,
       "input": 4,
       "cache_read": 0.2
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    }
+   ]
+  },
+  "gemini-4-neon": {
+   "tier": [
+    {
+     "source": "tier.aa_index",
+     "kind": "benchmark",
+     "value": 0.1504,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis Intelligence Index 59.6189 at High interpolated onto the arena.ai Overall High scale between ['Claude Opus 5.5'] and ['Gemini 4 Carbon'] of the 22 models listed at High on both boards",
+     "listed_as": "Gemini 4 Neon",
+     "board_value": 59.6189441875232,
+     "neighbours": {
+      "below": {
+       "x": 51.8359958227294,
+       "tier": 0.0,
+       "models": [
+        "Claude Opus 5.5"
+       ]
+      },
+      "above": {
+       "x": 60.025738829526,
+       "tier": 0.1583,
+       "models": [
+        "Gemini 4 Carbon"
+       ]
+      }
+     },
+     "n": 22,
+     "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
+     "residual_sd": 0.3003,
+     "loo_rmse": 0.436,
+     "status": "estimated"
+    }
+   ],
+   "coding": [
+    {
+     "source": "aa.terminalbench_4",
+     "kind": "benchmark",
+     "value": 0.2571,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `terminalbench-4-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.565657 (claude-opus-5-5), sd_panel 0.196439 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Gemini 4 Neon (High)",
+     "raw": 0.616162,
+     "z_by_effort": {
+      "low": -1.2084,
+      "medium": -0.1028,
+      "xhigh": 0.3599,
+      "high": 0.2571
+     },
+     "raw_by_effort": {
+      "low": 0.328283,
+      "medium": 0.545455,
+      "xhigh": 0.636364,
+      "high": 0.616162
+     }
+    },
+    {
+     "source": "aa.frontiercode_2",
+     "kind": "benchmark",
+     "value": 0.9509,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis `frontiercode-2-0`, every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor 0.359279 (claude-opus-5-5), sd_panel 0.0772927 over 12 panel models",
+     "facet": "execution",
+     "listed_as": "Gemini 4 Neon (High)",
+     "raw": 0.432773,
+     "z_by_effort": {
+      "low": -1.1617,
+      "medium": 0.1292,
+      "xhigh": 1.0975,
+      "high": 0.9509
+     },
+     "raw_by_effort": {
+      "low": 0.26949,
+      "medium": 0.369268,
+      "xhigh": 0.444105,
+      "high": 0.432773
+     }
+    }
+   ],
+   "tool_operation": [
+    {
+     "source": "aa.ttfa",
+     "kind": "benchmark",
+     "value": -0.9005,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "Artificial Analysis time to first answer token, read as -ln(seconds), every listed effort; the score is the High row (else the only listing); z = (x - x_anchor) / sd_panel; x_anchor -3.01685 (claude-opus-5-5), sd_panel 0.763853 over 12 panel models; reading taken after the release snapshot, corrected by the board's drift 0 (median over 12 panel members of the change 2026-11-18 -> 2026-11-19) before the conversion",
+     "facet": "responsiveness",
+     "listed_as": "Gemini 4 Neon (High)",
+     "raw": -3.704707,
+     "z_by_effort": {
+      "low": 0.5015,
+      "medium": 0.0185,
+      "xhigh": -1.3321,
+      "high": -0.9005
+     },
+     "raw_by_effort": {
+      "low": -2.63375,
+      "medium": -3.002702,
+      "xhigh": -4.034374,
+      "high": -3.704707
+     },
+     "drift_correction": {
+      "drift": 0.0,
+      "n": 12,
+      "members": [
+       "claude-fable-5-1",
+       "claude-opus-5-5",
+       "claude-sonnet-5-5",
+       "gemini-3.8-flash-high",
+       "gpt-6-astra",
+       "gpt-6-luna",
+       "gpt-6-sol",
+       "gpt-6.1-sol",
+       "grok-4.6",
+       "grok-4.7",
+       "minimax-m3",
+       "muse-spark-1.3"
+      ],
+      "spread": {
+       "min": -0.045115,
+       "max": 0.0,
+       "mad": 0.0
+      },
+      "snapshot_as_of": "2026-11-18",
+      "fetched_as_of": "2026-11-19"
+     }
+    }
+   ],
+   "image_input": [
+    {
+     "source": "openrouter.modality",
+     "kind": "vendor",
+     "value": true,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:51+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "OpenRouter architecture.input_modalities (audio, file, image, text, video)",
+     "listed_as": "google/gemini-4-neon",
+     "input_modalities": [
+      "audio",
+      "file",
+      "image",
+      "text",
+      "video"
+     ]
+    }
+   ],
+   "throughput": [
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 14.815,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "high",
+     "listed_as": "Gemini 4 Neon (High)",
+     "time_per_task_s": 888.93,
+     "time_per_task_min": 14.815,
+     "output_tps": 101.46
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 3.729,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "low",
+     "listed_as": "Gemini 4 Neon (Low)",
+     "time_per_task_s": 223.72,
+     "time_per_task_min": 3.729,
+     "output_tps": 97.11
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 8.273,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "medium",
+     "listed_as": "Gemini 4 Neon (Medium)",
+     "time_per_task_s": 496.38,
+     "time_per_task_min": 8.273,
+     "output_tps": 100.73
+    },
+    {
+     "source": "aa.cost_time",
+     "kind": "benchmark",
+     "value": 21.487,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index Time/Task (s) and outputSpeed (tok/s)",
+     "effort": "xhigh",
+     "listed_as": "Gemini 4 Neon (Xhigh)",
+     "time_per_task_s": 1289.24,
+     "time_per_task_min": 21.487,
+     "output_tps": 109.86
+    }
+   ],
+   "price": [
+    {
+     "source": "aa.price",
+     "kind": "vendor",
+     "value": {
+      "input": 3,
+      "output": 15,
+      "cache_read": 0.15
+     },
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "USD per million tokens",
+     "listed_as": "Gemini 4 Neon (High)"
+    },
+    {
+     "source": "openrouter.price",
+     "kind": "vendor",
+     "value": {
+      "input": 3.0,
+      "output": 15.0,
+      "cache_read": 0.15
+     },
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:51+00:00",
+     "url": "https://openrouter.ai/api/v1/models",
+     "method": "USD per million tokens",
+     "listed_as": "google/gemini-4-neon"
+    }
+   ],
+   "intelligence_index": [
+    {
+     "source": "aa.index",
+     "kind": "benchmark",
+     "value": 59.62,
+     "as_of": "2026-11-19",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA Intelligence Index, every listed effort",
+     "listed_as": "Gemini 4 Neon (High)",
+     "raw_by_effort": {
+      "low": 44.0832,
+      "medium": 54.8623,
+      "xhigh": 61.3982,
+      "high": 59.6189
+     },
+     "z_by_effort": {
+      "low": -0.6625,
+      "medium": 0.2586,
+      "xhigh": 0.8172,
+      "high": 0.6651
+     },
+     "z": 0.6651
+    }
+   ],
+   "usd_per_hour": [
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 25.922,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "high",
+     "listed_as": "Gemini 4 Neon (High)",
+     "output_tokens_per_hour": 365245,
+     "usd_per_million_output_at_mix": 70.97,
+     "prices": {
+      "output": 15,
+      "input": 3,
+      "cache_read": 0.15
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 24.811,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "low",
+     "listed_as": "Gemini 4 Neon (Low)",
+     "output_tokens_per_hour": 349595,
+     "usd_per_million_output_at_mix": 70.97,
+     "prices": {
+      "output": 15,
+      "input": 3,
+      "cache_read": 0.15
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 25.736,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "medium",
+     "listed_as": "Gemini 4 Neon (Medium)",
+     "output_tokens_per_hour": 362629,
+     "usd_per_million_output_at_mix": 70.97,
+     "prices": {
+      "output": 15,
+      "input": 3,
+      "cache_read": 0.15
+     },
+     "mix_source": "community.wokey.claude",
+     "mix_as_of": "2026-11-16"
+    },
+    {
+     "source": "derived.community_mix",
+     "kind": "derived",
+     "value": 28.067,
+     "as_of": "2026-11-16",
+     "fetched_at": "2026-11-19T00:35:50+00:00",
+     "url": "https://artificialanalysis.ai/leaderboards/models",
+     "method": "AA output speed x community token mix at AA list prices",
+     "effort": "xhigh",
+     "listed_as": "Gemini 4 Neon (Xhigh)",
+     "output_tokens_per_hour": 395481,
+     "usd_per_million_output_at_mix": 70.97,
+     "prices": {
+      "output": 15,
+      "input": 3,
+      "cache_read": 0.15
      },
      "mix_source": "community.wokey.claude",
      "mix_as_of": "2026-11-16"
