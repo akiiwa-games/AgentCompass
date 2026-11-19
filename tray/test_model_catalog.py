@@ -153,3 +153,17 @@ def test_a_model_a_launch_reported_missing_is_marked_in_the_model_list_without_t
         'ok': True, 'type': 'paseo_provider', 'checked_at': at.timestamp() + 60, 'models': [{'id': 'gpt-6.1-sol'}]}}}))
     row = next(row for row in router_data.harness_model_rows() if row['harness'] == 'codex')
     assert not any(model.get('launch_unavailable') for model in row['models'])
+
+
+def test_the_background_refresh_is_rare_but_never_lets_a_discovered_model_expire():
+    """Rule (model_catalog.BACKGROUND_REFRESH_SECONDS): nobody watching, the tray asks the host far less often than the
+    on-view TTL, and always well inside the period after which auto_bundles stops offering a discovered model."""
+    import auto_bundles
+    import inspect
+    import panel_models
+    assert model_catalog.TTL_SECONDS * 6 <= model_catalog.BACKGROUND_REFRESH_SECONDS
+    assert model_catalog.BACKGROUND_REFRESH_SECONDS * 4 <= auto_bundles.STALE_LIMIT_SECONDS
+    # The page schedules its next unattended round by that constant, not by a number of its own.
+    source = inspect.getsource(panel_models.ModelsPage.refresh_model_availability) if hasattr(panel_models, 'ModelsPage')         else inspect.getsource(panel_models)
+    assert 'model_catalog.BACKGROUND_REFRESH_SECONDS * 1000' in source and 'after(600000' not in source
+

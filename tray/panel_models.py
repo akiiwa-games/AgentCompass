@@ -9,6 +9,7 @@ from i18n import translate as _tr
 import time
 from pathlib import Path
 
+import model_catalog
 import ui_theme as theme
 from panel_widgets import ScrollFrame, clip, fmt, freeze_redraw, short_badge
 import panel_widgets
@@ -86,7 +87,8 @@ class ModelsTab:
             self._catalog_refreshing = False
             self.model_refresh_button.state(["!disabled"])
             self.models_rows_loaded(rows)
-            self.root.after(600000, lambda: self.refresh_model_availability() if generation == self._generation else None)
+            self.root.after(model_catalog.BACKGROUND_REFRESH_SECONDS * 1000,
+                            lambda: self.refresh_model_availability() if generation == self._generation else None)
         self.run(work, done, long=True)
 
     def models_rows_loaded(self, rows):
