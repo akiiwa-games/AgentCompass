@@ -59,7 +59,7 @@ class GrokQuotaDisplayTests(unittest.TestCase):
                     self.assertEqual(cards[0]['host_enabled'], bool(allowed))
                     self.assertEqual(
                         panel_quota.card_title(cards[0]),
-                        'Grok' if allowed else 'Grok · 不自动派发',
+                        'Grok' if allowed else 'Grok · 不参与自动派发',
                     )
                     self.assertEqual(cards[0]['windows'][0]['remaining_pct'], 44)
                     self.assertEqual(cards[0]['windows'][0]['reset_in'], router_data.countdown(172800))

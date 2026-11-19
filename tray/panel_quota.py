@@ -36,7 +36,7 @@ def card_title(card: dict) -> str:
     """A quota card's name; an account in trouble or excluded from dispatch says so on the card itself, with the reason on the hover."""
     if (card.get("status") not in ("plan_inactive", "usage_failing", "auth_failed", "agy_account_flapping")
             and not card.get("retry_hold") and not card.get("plan_unknown_reason")):
-        return f'{card["label"]} · {_tr("不自动派发")}' if card.get("host_enabled") is False else card["label"]
+        return f'{card["label"]} · {_tr("不参与自动派发")}' if card.get("host_enabled") is False else card["label"]
     return f'{card["label"]} · {short_badge(card.get("badge")).split("，", 1)[0].split(", ", 1)[0]}'
 
 
@@ -637,7 +637,7 @@ class QuotaPage:
         dot = tk.Label(top, text="●", bg=theme.CARD, fg=theme.GREEN, font=(theme.FONT, 7), padx=0, pady=0)
         dot.grid(row=0, column=0, sticky="w", padx=(0, 4))
         name = tk.Label(top, text=card["label"], bg=theme.CARD, fg=theme.TEXT, font=(theme.FONT, 9, "bold"),
-                        anchor="w", padx=0, pady=0)
+                        anchor="w", justify="left", padx=0, pady=0)
         name.grid(row=0, column=1, sticky="w")
         read_at = tk.Label(top, text="", bg=theme.CARD, fg=theme.MUTED, font=(self.mono, 8),
                            anchor="e", padx=2, pady=0)
@@ -652,6 +652,17 @@ class QuotaPage:
         clear = self.retry_clear_button(top, card["account"])
         clear.grid(row=0, column=4, sticky="e")
         clear.grid_remove()
+
+        def fit_title(_event=None):
+            """The title wraps at the width the header row leaves it, so a long one is never cut."""
+            if top.winfo_width() <= 1:   # not laid out yet: the header's first <Configure> calls this again
+                return
+            beside = [w for w in (again, clear) if w is not None and w.winfo_manager()]
+            if read_at.winfo_manager() and int(read_at.grid_info()["row"]) == 0:
+                beside.append(read_at)
+            taken = dot.winfo_reqwidth() + 4 + sum(w.winfo_reqwidth() + 4 for w in beside)
+            name.configure(wraplength=max(theme.px(48), top.winfo_width() - taken))
+        top.bind("<Configure>", fit_title)
 
         win_widgets = []
         for _ in card["windows"]:
@@ -680,7 +691,7 @@ class QuotaPage:
             "clear": clear, "clear_layout": "grid",
             "read_at": read_at,
             "dot": dot,
-            "name": name,
+            "name": name, "fit_title": fit_title,
             "windows": win_widgets,
             "tooltip_text": "",
         }
@@ -759,24 +770,30 @@ class QuotaPage:
                   else theme.FAINT)
         if "dot" in widgets:
             widgets["dot"].configure(fg=dot_fg)
+        title = card_title(card)
+        # A title that says a state takes the header row; the reading stamp then goes under it, never beside it
+        # (beside it the two do not fit a card and the stamp is cut).
+        stamp_below = title != card["label"]
         if "name" in widgets:
-            widgets["name"].configure(text=card_title(card))
+            widgets["name"].configure(text=title)
             if widgets["name"].winfo_manager() == "grid":
-                widgets["name"].grid_configure(row=0, column=1, columnspan=2 if is_failing else 1, sticky="w")
+                widgets["name"].grid_configure(row=0, column=1, columnspan=2 if stamp_below else 1, sticky="w")
         if "read_at" in widgets:
             stamp = card_read_stamp(card)
             widgets["read_at"].configure(
                 text=stamp,
                 fg=theme.AMBER if is_failing else theme.MUTED,
-                anchor="w" if is_failing else "e",
+                anchor="w" if stamp_below else "e",
             )
             if widgets["read_at"].winfo_manager() in ("grid", ""):
                 if not stamp:
                     widgets["read_at"].grid_remove()
-                elif is_failing:
+                elif stamp_below:
                     widgets["read_at"].grid(row=1, column=1, columnspan=3, sticky="w", padx=0, pady=(1, 0))
                 else:
                     widgets["read_at"].grid(row=0, column=2, columnspan=1, sticky="e", padx=2, pady=0)
+        if "fit_title" in widgets:
+            widgets["fit_title"]()
         if not card.get("windows"):
             plan = card.get('usage_note') or clip(card.get("plan"), 14)
             badge = short_badge(card.get("badge"))

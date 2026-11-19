@@ -349,7 +349,6 @@ EN = {
     '集成已关闭': 'Plugin Off',
     '不参与自动派发': 'Out of auto routing',
     '参与自动派发': 'In auto routing',
-    '不自动派发': 'Not auto-routed',
     '未发现': 'Not Found',
     '已暂停：{0}': 'Paused: {0}',
     '{0}天{1}小时': '{0}d {1}h',

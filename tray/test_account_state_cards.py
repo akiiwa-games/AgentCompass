@@ -84,6 +84,30 @@ class AccountStateCardTests(unittest.TestCase):
                 self.assertEqual(panel_quota.card_title(card), title)
                 self.assertIn(badge, panel_quota.quota_tooltip_text(card))
 
+    def test_an_account_out_of_automatic_routing_reads_the_same_whatever_its_reading(self):
+        # 2026-11-19: a healthy card said "不自动派发" and a card with a failing reading "不参与自动派发", one fact in two wordings.
+        healthy = self.card({'family': 'codex', 'identity': 'i', 'status': 'ready'}, allowed=False)
+        failing = self.card(self.failing(), allowed=False)
+        self.assertEqual(healthy['host_enabled'], False)
+        self.assertEqual(panel_quota.card_title(healthy), 'Codex · 不参与自动派发')
+        self.assertEqual(panel_quota.card_title(failing), panel_quota.card_title(healthy))
+
+    def test_a_title_that_says_a_state_puts_the_reading_stamp_under_it(self):
+        # Beside a long title the stamp does not fit a card and was cut ("9 17:15").
+        def stamp_row(card):
+            name, read_at = Mock(), Mock()
+            name.winfo_manager.return_value = read_at.winfo_manager.return_value = 'grid'
+            panel_quota.QuotaPage.fill_quota_card(
+                {'name': name, 'read_at': read_at, 'windows': [], 'refreshable': False}, card)
+            return read_at.grid.call_args.kwargs['row'], name.grid_configure.call_args.kwargs['columnspan']
+        base = {'label': 'Codex', 'status': 'ready', 'badge': '就绪', 'kind': 'ok', 'windows': [],
+                'fetched_at': '2026-11-07T01:00:00+00:00'}
+        self.assertEqual(stamp_row(base), (0, 1))
+        for state in ({'host_enabled': False}, {'retry_hold': True, 'badge': '提供方报错'},
+                      {'status': 'usage_failing', 'badge': '读数失败：x'}):
+            with self.subTest(state=state):
+                self.assertEqual(stamp_row({**base, **state}), (1, 2))
+
     def test_a_grace_period_account_can_still_take_work(self):
         dispatchable = real_inventory.account_state.dispatchable
         self.assertTrue(dispatchable({'status': 'usage_failing', 'usage_excluded': False}))
