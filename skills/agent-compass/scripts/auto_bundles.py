@@ -146,7 +146,12 @@ def default_profile(raw_model, accounts, providers=()):
     base = _name_candidates(raw_model, accounts)[0]
     resolved = resolve_in(raw_model, accounts, providers)
     if resolved['source'] == 'provider':
-        return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
+        # A row whose own id reads as another row with no provider known (a name its maker moved: the undated row of a
+        # moved name) is kept qualified by the declaring provider, so a later resolution of the bundle's model reads
+        # the same declaration.
+        model = (resolved['key'] if resolve_in(resolved['key'], accounts)['key'] == resolved['key']
+                 else f"{resolved['provider']}/{split_model_effort(raw_model)[0].rsplit('/', 1)[-1]}")
+        return {'model': model, 'source': 'calibrated', 'target': resolved['key'],
                 'basis': f"Calibrated row in accounts.models: {resolved['provider']} serves this name as {resolved['key']} "
                          '(provider_names).'}
     if resolved['source'] == 'default':
@@ -154,7 +159,10 @@ def default_profile(raw_model, accounts, providers=()):
                 'basis': f"Calibrated row in accounts.models: the maker now serves this name as {resolved['key']} "
                          '(provider_names defaults).'}
     if resolved['source'] in DIRECT_SOURCES:
-        return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
+        # An alias of a row whose own id reads as another row (a name its maker moved) keeps the alias's spelling.
+        model = (resolved['key'] if resolve_in(resolved['key'], accounts)['key'] == resolved['key']
+                 else split_model_effort(raw_model)[0])
+        return {'model': model, 'source': 'calibrated', 'target': resolved['key'],
                 'basis': 'Calibrated row in accounts.models.'}
     if resolved['source'] in PROVIDER_NAME_STATUSES:
         leaf = split_model_effort(raw_model)[0].rsplit('/', 1)[-1]

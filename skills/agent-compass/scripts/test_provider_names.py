@@ -246,14 +246,84 @@ class StoredStateIsKept(unittest.TestCase):
                 self.assertEqual(bundle['disabled'], True in values)
                 self.assertEqual(bool(bundle.get('_choice_conflict')), len(values) > 1)
 
-    def test_a_user_score_entered_under_a_name_lands_where_v071_put_it(self):
-        """Rule (user_scores.resolve_model_key, unchanged): a score keyed by a name resolves to the row v0.7.1 resolved it
-        to (its name as a row, then an alias), whatever the name's provider declarations say now."""
-        bare = doc_with()
-        for name in [*SHIPPED['provider_names']['defaults'],
-                     *(f'{p}/{n}' for p, rows in SHIPPED['provider_names']['rows'].items() for n in rows)]:
-            with self.subTest(name=name):
+    def test_a_stored_score_file_keeps_its_keys(self):
+        """Rule (AGENTS.md, what a released version wrote is kept): reading a score file never rewrites or drops a key;
+        a key that is a moved name still names a row (unresolved_models lists none of them)."""
+        layer = {name: {'coding.faithfulness': {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'user'}}
+                 for name in SHIPPED['provider_names']['defaults']}
+        before = copy.deepcopy(layer)
+        user_scores.score_layer(layer, SHIPPED)
+        self.assertEqual(layer, before)
+        self.assertEqual(user_scores.unresolved_models({'scores': layer}, SHIPPED), [])
+
+
+ENTRY = {'level': 2.0, 'as_of': '2026-11-11', 'kind': 'user'}
+
+
+class ScoreKeys(unittest.TestCase):
+    """A score names a model, not a provider's offer; a name whose maker moved it means what it means now (owner,
+    2026-11-19): user_scores.resolve_model_key, score_layer."""
+
+    def test_a_moved_name_key_lands_on_the_row_its_maker_declares(self):
+        for name, entry in SHIPPED['provider_names']['defaults'].items():
+            for key in (name, f'some-gateway/{name}'):
+                with self.subTest(key=key):
+                    self.assertEqual(user_scores.resolve_model_key(key, SHIPPED), entry['model'])
+
+    def test_a_score_key_reads_no_providers_declaration(self):
+        no_rows = doc_with(defaults=SHIPPED['provider_names']['defaults'])
+        for provider, rows in SHIPPED['provider_names']['rows'].items():
+            for name in rows:
+                with self.subTest(key=f'{provider}/{name}'):
+                    self.assertEqual(user_scores.resolve_model_key(f'{provider}/{name}', SHIPPED),
+                                     user_scores.resolve_model_key(f'{provider}/{name}', no_rows))
+
+    def test_a_key_no_default_names_resolves_as_with_nothing_declared(self):
+        bare, defaults = doc_with(), SHIPPED['provider_names']['defaults']
+        names = [*SHIPPED['models'], *SHIPPED.get('aliases', {}), 'vendor/claude-opus-future', 'no-such-model']
+        for name in names:
+            if name.rsplit('/', 1)[-1].lower() in defaults:
+                continue
+            with self.subTest(key=name):
                 self.assertEqual(user_scores.resolve_model_key(name, SHIPPED), user_scores.resolve_model_key(name, bare))
+
+    def test_the_rows_own_key_wins_over_a_moved_name_for_each_target_whatever_the_order(self):
+        a, b = two_rows()
+        doc = doc_with(defaults={a.lower(): decl(b)})
+        moved = {'coding.faithfulness': {**ENTRY, 'level': 1.0}, 'creativity': {**ENTRY, 'level': 1.5}}
+        own = {'coding.faithfulness': {**ENTRY, 'level': 2.5}}
+        for layer in ({a: moved, b: own}, {b: own, a: moved}):
+            with self.subTest(order=list(layer)):
+                grouped = user_scores.score_layer(layer, doc)
+                self.assertEqual(set(grouped), {b})
+                self.assertEqual(grouped[b], {'coding.faithfulness': own['coding.faithfulness'],
+                                              'creativity': moved['creativity']})
+
+    def test_two_moved_names_of_one_row_merge_whatever_the_order(self):
+        a, b = two_rows()
+        doc = doc_with(defaults={'moved-one': decl(b), 'moved-two': decl(b)})
+        one, two = {'creativity': {**ENTRY, 'level': 1.0}}, {'creativity': {**ENTRY, 'level': 3.0}}
+        got = [user_scores.score_layer(layer, doc) for layer in ({'moved-one': one, 'moved-two': two},
+                                                                  {'moved-two': two, 'moved-one': one})]
+        self.assertEqual(got[0], got[1])
+
+
+class BundleModelsReadTheirRowAgain(unittest.TestCase):
+    def test_a_derived_bundles_model_reads_the_row_it_was_derived_for_with_no_provider_known(self):
+        """Rule (auto_bundles.default_profile): every later resolution of a bundle's model, which knows no provider,
+        reads the row the advertised name resolved to on its endpoint: an endpoint declaring the undated row of a moved
+        name, an alias of such a row and a moved name each keep their row."""
+        defaults = SHIPPED['provider_names']['defaults']
+        rows = {'gw': {name: decl(name) for name in defaults}}
+        acc = gateway_accounts({'statement': 't', 'defaults': defaults, 'rows': rows})
+        alias = next((al for al, row in SHIPPED.get('aliases', {}).items() if row in defaults), None)
+        names = [*defaults, *([alias] if alias else [])]
+        for kind, served in (('openai_compatible', ('gw',)), ('paseo_provider', ())):
+            out = auto_bundles.derive(acc, catalog(names, kind=kind), NOW)['bundles']['gw']
+            for bundle in out.values():
+                with self.subTest(kind=kind, launch=bundle['launch_model']):
+                    want = model_resolution.resolve_in(bundle['launch_model'], acc, served)['key']
+                    self.assertEqual(account_fleet.row_key(bundle['model'], acc), want)
 
 
 if __name__ == '__main__':

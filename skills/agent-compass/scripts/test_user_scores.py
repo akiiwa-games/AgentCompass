@@ -24,6 +24,8 @@ import route_judge
 import user_scores
 from router_test_support import isolated_router_state, usage_windows
 
+NO_DECLARATIONS = {'statement': 'none', 'defaults': {}, 'rows': {}}
+
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 CALIBRATION_DIR = SCRIPTS_DIR.parent / 'calibration'
@@ -1101,7 +1103,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             }}},
         }
         user_scores.apply_overlay(
-            minimal_models, targets,
+            minimal_models, targets, provider_names=NO_DECLARATIONS,
             public_scores={'schema_version': user_scores.SCHEMA_VERSION, 'scores': {
                 'm-whole': {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
                 'm-missing': {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-11', 'kind': 'maintainer'}},
@@ -1264,7 +1266,7 @@ class OperatingPointFloorTests(unittest.TestCase):
         models = self.table(point)
         doc = {'schema_version': user_scores.SCHEMA_VERSION,
                'scores': {'pro': {t: {'level': lv, 'as_of': '2026-11-19', 'kind': kind} for t, lv in scores.items()}}}
-        user_scores.apply_overlay(models, self.targets, **({'public_scores': doc} if kind == 'maintainer' else {'local_scores': doc}))
+        user_scores.apply_overlay(models, self.targets, provider_names=NO_DECLARATIONS, **({'public_scores': doc} if kind == 'maintainer' else {'local_scores': doc}))
         cats = models['pro']['five_axis']['categories']
         return {f: c for cat in cats.values() for f, c in cat['facets'].items()}
 
@@ -1292,7 +1294,7 @@ class OperatingPointFloorTests(unittest.TestCase):
         doc = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {'pro': {
             t: {'level': lv, 'as_of': '2026-11-19', 'kind': 'maintainer'}
             for t, lv in (('coding.execution', 1.0), ('coding.faithfulness', 3.0), ('aesthetics', 3.0))}}}
-        user_scores.apply_overlay(models, self.targets, public_scores=doc)
+        user_scores.apply_overlay(models, self.targets, provider_names=NO_DECLARATIONS, public_scores=doc)
         state = models['pro']['five_axis']
         for eff in ('low', 'high', 'ultra'):
             with self.subTest(effort=eff):
@@ -1410,7 +1412,7 @@ class EffectiveSourceTests(unittest.TestCase):
 
     def overlay(self, scores):
         models = self.table()
-        user_scores.apply_overlay(models, self.targets, local_scores={'schema_version': user_scores.SCHEMA_VERSION,
+        user_scores.apply_overlay(models, self.targets, provider_names=NO_DECLARATIONS, local_scores={'schema_version': user_scores.SCHEMA_VERSION,
                                                                       'scores': scores})
         return {m: models[m]['five_axis']['categories']['coding'] for m in models}
 
@@ -1436,7 +1438,7 @@ class EffectiveSourceTests(unittest.TestCase):
         direct = self.overlay({'big': entry})['big']['facets']['faithfulness']['by_effort']
         for key in ('big-alias', 'provider/big-alias', 'provider/big'):
             models = self.table()
-            user_scores.apply_overlay(models, self.targets, aliases={'big-alias': 'big'},
+            user_scores.apply_overlay(models, self.targets, provider_names=NO_DECLARATIONS, aliases={'big-alias': 'big'},
                                       local_scores={'schema_version': user_scores.SCHEMA_VERSION, 'scores': {key: entry}})
             self.assertEqual(set(models), {'big', 'small'}, key)
             self.assertEqual(models['big']['five_axis']['categories']['coding']['facets']['faithfulness']['by_effort'],
@@ -1447,9 +1449,9 @@ class EffectiveSourceTests(unittest.TestCase):
         entry = {'coding.faithfulness': {'level': 3.0, 'as_of': '2026-11-18', 'kind': 'user'}}
         models, shipped = self.table(), self.table()
         local = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {'gone-model': entry}}
-        user_scores.apply_overlay(models, self.targets, local_scores=local, public_scores=local)
+        user_scores.apply_overlay(models, self.targets, provider_names=NO_DECLARATIONS, local_scores=local, public_scores=local)
         self.assertEqual(models, shipped)
-        self.assertEqual(user_scores.unresolved_models(local, {'models': models, 'aliases': {}}), ['gone-model'])
+        self.assertEqual(user_scores.unresolved_models(local, {'models': models, 'aliases': {}, 'provider_names': NO_DECLARATIONS}), ['gone-model'])
 
     def test_a_hand_written_score_on_the_derived_model_itself_wins(self):
         got = self.overlay({'big': {'coding.faithfulness': {'level': 1.0, 'as_of': '2026-11-18', 'kind': 'user'}},

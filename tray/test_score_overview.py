@@ -296,6 +296,19 @@ def test_editor_prefill_is_never_lossy_and_category_clear_warns_when_facet_overr
     assert '1' in cleared
 
 
+def test_a_row_whose_id_is_a_moved_name_takes_no_manual_score(tmp_path, monkeypatch):
+    """Rule (router-internals.md, Score keys): a score keyed by a name its maker moved lands on the row the name means
+    now, so the row of the same id takes no hand-written score; the tray refuses instead of writing it to another row."""
+    local = tmp_path / 'user-scores.json'
+    monkeypatch.setenv(user_scores.ENV_VAR, str(local))
+    accounts = router_data._cached_accounts()
+    moved = [n for n, d in accounts['provider_names']['defaults'].items() if n in accounts['models'] and d['model'] != n]
+    assert moved
+    with pytest.raises(ValueError):
+        router_data.set_manual_score(moved[0], 'coding.faithfulness', 2.5)
+    assert not local.exists()
+
+
 def test_manual_score_goes_through_the_cli_writer_to_the_local_file_only(tmp_path, monkeypatch):
     local = tmp_path / 'user-scores.json'
     public = tmp_path / 'public.json'

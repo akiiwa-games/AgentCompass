@@ -356,7 +356,8 @@ source like an alias (`kind`, `url`, `as_of`, `statement`); no name or date rule
 A moving name changes when the maker moves it: between releases the maintainer corrects the declaration and publishes it
 (`agentcompass data publish`, below), as for any launch row. `audit/gateway_coverage.py` fails while the saved models.dev
 listings (`audit/models-dev-names.json`) disagree with a declaration, or list a default's name on a provider that declares
-nothing with another canonical id than the default's row; it prints how many listings fall under each.
+nothing with another canonical id than the default's row; it prints how many listings fall under each. A default also
+moves where a score keyed by the name lands (router-internals.md, Score keys): rebuild and check what moved.
 
 ## Publishing a model between releases
 

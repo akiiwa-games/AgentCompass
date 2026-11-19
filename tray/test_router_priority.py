@@ -173,6 +173,19 @@ class PriorityTests(unittest.TestCase):
         self.assertEqual({t['model'] for t in choices}, {'gpt-6-astra', 'gemini-4-argon-high', 'claude-opus-5-5'})
         self.assertEqual({t['account'] for t in choices}, {'codex', 'antigravity', 'claude'})
 
+    def test_a_target_stored_under_a_moved_name_reaches_the_bundle_of_its_row(self):
+        """Rule (router_priority.targets): a target's model matches a bundle's as the same row (account_fleet.row_key),
+        so a name whose maker moved it reaches the bundle that runs the row it means now."""
+        accounts = account_fleet.load_accounts()
+        accounts['provider_names'] = {**accounts['provider_names'], 'defaults': {
+            **accounts['provider_names']['defaults'], 'astra-moved-name': {
+                'model': 'gpt-6-astra', 'kind': 'vendor', 'url': 'https://example.com/x', 'as_of': '2026-11-19',
+                'statement': 's'}}}
+        accounts['priority_targets'] = [{'account': 'codex', 'model': 'astra-moved-name', 'label': 'Moved'}]
+        with patch.object(host_policy, 'load_policy', return_value=None):
+            choices = priority.targets(accounts)
+        self.assertEqual([(t['account'], t['model'], t['label']) for t in choices], [('codex', 'gpt-6-astra', 'Moved')])
+
     def test_switch_model_is_atomic_and_failed_baseline_preserves_current_choice(self):
         self.enable(); before = self.path.read_bytes()
         with patch.object(host_policy, 'load_policy', return_value=None):

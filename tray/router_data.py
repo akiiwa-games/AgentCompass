@@ -568,6 +568,10 @@ def set_manual_score(model: str, target: str, level: float) -> str:
     """A local manual score, through the same writer as `agentcompass score set` (never the public file)."""
     modules()
     import user_scores
+    landing = user_scores.resolve_model_key(model, _cached_accounts())
+    if landing != model:
+        # The row's own id is a name its maker moved: a score keyed by it lands on the row the name means now.
+        raise ValueError(_tr("{0} 没有可写评分的名字：这个名字现在指 {1}").format(model, landing))
     result = user_scores.set_score(model, target, level)
     return _tr("已为 {0} 的 {1} 写入本机评分 {2}").format(result["model"], result["target"], result["entry"]["level"])
 
@@ -1968,9 +1972,11 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
     """Union configured bundles with advertised models, without creating launchable bundles."""
     modules()
     import account_fleet
+    import auto_bundles
     inventory = (accounts.get("_discovery") or {}).get("accounts") or {}
-    def canonical(raw):
-        resolved = account_fleet.canonical(raw, accounts)
+    def canonical(raw, served=()):
+        # An endpoint's advertised name reads that endpoint's declaration, as auto_bundles.derive reads it.
+        resolved = account_fleet.canonical(raw, accounts, served)
         return re.sub(r"-(low|medium|high|xhigh|max|minimal|default|standard|extended)$", "", resolved)
     for row in rows:
         row['models'] = [group for group in row['models'] if group.get('routed', True)]
@@ -1993,7 +1999,8 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
                 raw = model.get("id") if isinstance(model, dict) else model
                 if not isinstance(raw, str):
                     continue
-                key = raw if exact_catalog else canonical(raw)
+                served = (provider,) if (entry or {}).get("type") in auto_bundles.ENDPOINT_TYPES else ()
+                key = raw if exact_catalog else canonical(raw, served)
                 label = (model.get("label") or model.get("model") or raw) if isinstance(model, dict) else raw
                 label = re.sub(r"\s*\((Low|Medium|High|XHigh|Max)\)$", "", label, flags=re.I)
                 detected[key] = display_names.catalog_labels().get(key, label)
@@ -2004,7 +2011,7 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
         for group in row["models"]:
             key = canonical(group["model"])
             configured[key] = group
-            matched = next((item for item in detected if canonical(item) == key and item not in consumed), None)
+            matched = next((item for item in detected if (item == key or canonical(item) == key) and item not in consumed), None)
             if matched is not None:
                 consumed.add(matched)
             group["routed"] = True

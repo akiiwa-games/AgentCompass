@@ -47,6 +47,7 @@ import sys
 # `agentcompass score` runs this file with python -I, which leaves the script directory off sys.path. Same insertion as
 # route_judge.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import model_resolution  # noqa: E402
 import override_store  # noqa: E402
 import public_data  # noqa: E402
 import released_names  # noqa: E402
@@ -410,12 +411,25 @@ def unresolved_models(doc: dict, accounts: dict) -> list[str]:
 
 
 def resolve_model_key(model: str, accounts: dict | None = None) -> str:
+    """The row a score keyed `model` lands on in `accounts` (accounts.json shape), or `model` itself when it names none.
+
+    A score names a model, not a provider's offer: no provider's declaration is read. A name its maker moved to a newer
+    dated snapshot means what the name means now (owner, 2026-11-19): the maker's declaration (`provider_names`
+    `defaults`, model_resolution.maker_default) is read first, so a score keyed by the moved name lands on the snapshot's
+    row. Else the name as a row, an alias, its last `/` segment as a row, that segment as an alias. Where two keys of one
+    document land on one row, the key that is the row's own id wins for it (`score_layer`)."""
     raw = str(model or '').strip()
     if not raw:
         raise ValueError('Model id must not be empty.')
     if isinstance(accounts, dict):
         models = accounts.get('models') or {}
         aliases = accounts.get('aliases') or {}
+        default = model_resolution.maker_default(raw, model_resolution.provider_name_table(accounts))
+        if default is not None:
+            if default.get('model') not in models:
+                raise public_data.ReferenceDataError(f"provider_names defaults names row {default.get('model')!r} for "
+                                                     f'{raw!r}, which the catalog does not have')
+            return default['model']
         if raw in models:
             return raw
         if raw in aliases and aliases[raw] in models:
@@ -426,6 +440,19 @@ def resolve_model_key(model: str, accounts: dict | None = None) -> str:
         if leaf in aliases and aliases[leaf] in models:
             return aliases[leaf]
     return raw
+
+
+def score_layer(layer: dict, accounts: dict) -> dict:
+    """{row: {target: entry}} of one user-scores layer ({key: {target: entry}}), each key read by resolve_model_key. Keys
+    landing on one row merge by target; a key that is the row's own id (`deepseek-v4-pro-0813`) wins over another
+    spelling or a moved name (`deepseek-v4-pro`) for each target both hold, and other spellings apply in name order, so
+    the result never depends on the order of the keys in the file. A key that lands on no row keeps its own name."""
+    keyed = [(resolve_model_key(key, accounts), key, entries) for key, entries in (layer or {}).items()
+             if isinstance(entries, dict) and entries]
+    grouped: dict[str, dict] = {}
+    for row, _, entries in sorted(keyed, key=lambda item: (item[0] == item[1], item[1])):
+        grouped.setdefault(row, {}).update(entries)
+    return grouped
 
 
 def target_triad(targets_table: dict, category: str, facet: str | None = None) -> tuple[float, float, float]:
@@ -971,43 +998,20 @@ def _apply_one_layer(five_state: dict, entries: dict, targets_table: dict, fixed
     five_state['user_scores'] = {k: v for k, v in manual.items() if v.get('kind') == 'user'}
 
 
-def apply_overlay(models_table: dict, targets_table: dict, *, public_scores: dict | None = None,
+def apply_overlay(models_table: dict, targets_table: dict, *, provider_names: dict, public_scores: dict | None = None,
                   local_scores: dict | None = None, aliases: dict | None = None, effort_steps: dict | None = None) -> None:
     """Apply `public_scores` (`maintainer`) then `local_scores` (`user`) onto `accounts['models'][m]['five_axis']`;
-    `effort_steps` is five-axis-scores.json `effort_steps` (`_manual_by_effort`). An entry whose name resolves to no row of
-    `models_table` is ignored, never made a row (`unresolved_models` names it)."""
+    `effort_steps` is five-axis-scores.json `effort_steps` (`_manual_by_effort`); `provider_names` is the catalog's
+    table (model_resolution.provider_name_table). Each key lands on its row as resolve_model_key reads it (score_layer).
+    An entry whose name resolves to no row of `models_table` is ignored, never made a row (`unresolved_models` names it)."""
     pub = (public_scores or {}).get('scores') if isinstance(public_scores, dict) and 'scores' in public_scores else (public_scores or {})
     loc = (local_scores or {}).get('scores') if isinstance(local_scores, dict) and 'scores' in local_scores else (local_scores or {})
     if not pub and not loc:
         return
-    alias_to_canonical = {}
-    for name, info in (models_table or {}).items():
-        if isinstance(info, dict):
-            alias_to_canonical[name] = name
-            for al in info.get('aliases') or ():
-                alias_to_canonical[str(al)] = name
-    for al, target in (aliases or {}).items():
-        if isinstance(target, str) and target in (models_table or {}):
-            alias_to_canonical[str(al)] = target
-
-    def _canonical(raw_model: str) -> str:
-        raw = str(raw_model or '').strip()
-        if raw in alias_to_canonical:
-            return alias_to_canonical[raw]
-        leaf = raw.rsplit('/', 1)[-1]
-        if leaf in alias_to_canonical:
-            return alias_to_canonical[leaf]
-        return raw
-
+    catalog = {'models': models_table or {}, 'aliases': aliases or {}, 'provider_names': provider_names}
     shipped = {name: _facet_curves(info) for name, info in (models_table or {}).items() if isinstance(info, dict)}
     for layer in (pub, loc):
-        grouped: dict[str, dict] = {}
-        for raw_model, entries in (layer or {}).items():
-            if not isinstance(entries, dict) or not entries:
-                continue
-            canon = _canonical(raw_model)
-            grouped.setdefault(canon, {}).update(entries)
-        for canon, entries in grouped.items():
+        for canon, entries in score_layer(layer, catalog).items():
             info = (models_table or {}).get(canon)
             if not isinstance(info, dict):
                 continue
@@ -1091,13 +1095,11 @@ def suggest_scores(model: str | None = None, *, scope: str = 'all',
     loc_scores = load_local(local_path)['scores'] if scope in ('all', 'local') else {}
     merged: dict[str, dict[str, tuple[str, dict]]] = {}
     if scope in ('all', 'public'):
-        for m, entries in pub_scores.items():
-            canon = resolve_model_key(m, base)
+        for canon, entries in score_layer(pub_scores, base).items():
             for t, rec in entries.items():
                 merged.setdefault(canon, {})[t] = ('public', rec)
     if scope in ('all', 'local'):
-        for m, entries in loc_scores.items():
-            canon = resolve_model_key(m, base)
+        for canon, entries in score_layer(loc_scores, base).items():
             if t_all := [k for k in merged.get(canon, {}) if any(t == k or k.startswith(t + '.') for t in entries if '.' not in t)]:
                 for k in t_all:
                     merged[canon].pop(k, None)

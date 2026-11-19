@@ -850,6 +850,7 @@ EN = {
     '当前 {0}（{1}）': 'Current {0} ({1})',
     '评分需为数字': 'The score must be a number',
     '已为 {0} 的 {1} 写入本机评分 {2}': 'Saved local score {2} for {0} {1}',
+    '{0} 没有可写评分的名字：这个名字现在指 {1}': '{0} has no name a score can be keyed by: the name now means {1}',
     '未设置整个类别的本机评分（已清除 0 条）；子维度本机评分仍保留：{0}': 'No whole-category local score was set (cleared 0); facet local score(s) remain: {0}',
     '已清除 {0} 条本机评分': 'Cleared {0} local score(s)',
     '这次决策没有候选从按额度计价的长周期窗口花费：额度经济项为 0（5 小时窗口只判断能否放下）': 'No candidate in this decision spends from a priced long window: the quota economy term is 0 (five-hour windows only decide fit)',

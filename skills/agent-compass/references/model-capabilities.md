@@ -26,8 +26,8 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `codestral-2508` | -0.70 | -4.85~ | -4.66~ | -4.67 | -4.66~ | 1.286 | no |
 | `deepseek-v4-flash` | -0.58 | -3.05 | -2.75~ | -2.64 | -2.87~ | 1.544 | no |
 | `deepseek-v4-flash-promo` | -0.58 | -3.05~ | -2.75~ | -2.64~ | -2.87~ | - | unknown |
-| `deepseek-v4-pro` | -0.40 | -1.98 | -2.11u | -2.98 | -1.81~ | - | no |
-| `deepseek-v4-pro-0813` | -0.64 | -3.05~ | -2.75~ | -2.64~ | -2.87~ | 2.882 | no |
+| `deepseek-v4-pro` | -0.40 | -1.98 | -2.11~ | -2.98 | -1.81~ | - | no |
+| `deepseek-v4-pro-0813` | -0.64 | -3.05~ | -2.53u | -2.64~ | -2.87~ | 2.882 | no |
 | `deepseek-v4.1-flash` | -0.48 | -2.40~ | -1.93~ | -1.20 | -2.16~ | 0.955 | yes |
 | `deepseek-v4.1-flash-1017` | -0.48 | -2.64~ | -1.96~ | -1.27 | -1.72 | 0.955 | yes |
 | `deepseek-v4.1-flash-economy` | -0.48 | -2.64~ | -1.96~ | -1.20~ | -1.72~ | - | unknown |
