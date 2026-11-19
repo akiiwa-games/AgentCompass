@@ -574,7 +574,7 @@ def set_manual_score(model: str, target: str, level: float) -> str:
         # The row's own id is a name its maker moved and no declared name reaches the row.
         raise ValueError(_tr("{0} 没有可写评分的名字：这个名字现在指 {1}").format(
             model, user_scores.resolve_model_key(model, accounts)))
-    result = user_scores.set_score(key, target, level)
+    result = user_scores.set_score(key, target, level, accounts=accounts)
     return _tr("已为 {0} 的 {1} 写入本机评分 {2}").format(result["model"], result["target"], result["entry"]["level"])
 
 
@@ -582,8 +582,9 @@ def clear_manual_score(model: str, target: str) -> str:
     """Clear a local manual score, through the same writer as `agentcompass score clear` (never the public file)."""
     modules()
     import user_scores
-    model = user_scores.score_key_for_row(model, _cached_accounts()) or model   # the key set_manual_score wrote
-    result = user_scores.clear_score(model, target)
+    accounts = _cached_accounts()
+    model = user_scores.score_key_for_row(model, accounts) or model   # a key landing on the row (set_manual_score's)
+    result = user_scores.clear_score(model, target, accounts=accounts)
     if "." not in target and result["removed"] == 0:
         local = user_scores.list_scores(model, scope="local").get("local") or {}
         remaining = sorted({k for entries in local.values() if isinstance(entries, dict)

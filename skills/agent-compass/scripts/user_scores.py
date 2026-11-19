@@ -442,6 +442,16 @@ def resolve_model_key(model: str, accounts: dict | None = None) -> str:
     return raw
 
 
+def write_key(model: str, accounts: dict | None) -> str:
+    """The one key every writer (`agentcompass score set`, the tray) stores a score for `model` under: score_key_for_row
+    of the row `model` resolves to, so any spelling of a row writes one key; a name that resolves to no row keeps its
+    own spelling."""
+    row = resolve_model_key(model, accounts)
+    if not isinstance(accounts, dict) or row not in (accounts.get('models') or {}):
+        return row
+    return score_key_for_row(row, accounts) or str(model).strip()
+
+
 def score_key_for_row(row: str, accounts: dict) -> str | None:
     """The key a score for `row` is written under: the row's id when a key of that id lands on it, else the first
     (in name order) `provider_names` `defaults` name declared to be the row that lands on it (a maker's repository id
@@ -539,9 +549,7 @@ def set_score(model: str, target: str, level: float, *, public: bool = False, no
     parse_target(target)
     lv = normalize_level(level)
     stamp = normalize_date(as_of)
-    model_key = resolve_model_key(model, accounts)
-    if isinstance(accounts, dict) and resolve_model_key(model_key, accounts) != model_key:
-        model_key = str(model).strip()      # the row's own id lands elsewhere (a moved name): keep the key that reaches it
+    model_key = write_key(model, accounts)
     kind = 'maintainer' if public else 'user'
     entry = {'level': lv, 'as_of': stamp, 'kind': kind}
     if note is not None and str(note).strip():
@@ -581,7 +589,9 @@ def clear_score(model: str | None = None, target: str | None = None, *, clear_al
             count = sum(len(ts) for ts in scores.values())
             doc['scores'] = {}
             return count
-        keys = [k for k in (model_key, str(model).strip()) if k and k in scores]
+        # Every stored key that lands on the row, whatever its spelling (one written before score_key_for_row, or by hand).
+        landing = [k for k in scores if isinstance(accounts, dict) and resolve_model_key(k, accounts) == model_key]
+        keys = [k for k in (model_key, str(model).strip(), *sorted(landing)) if k and k in scores]
         removed = 0
         for key in dict.fromkeys(keys):
             if target is None:

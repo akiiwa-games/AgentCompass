@@ -391,6 +391,34 @@ class ScoreKeys(unittest.TestCase):
             got = user_scores.set_score(b, 'creativity', 2.0, accounts=doc, local_path=local)
             self.assertEqual(got['model'], b)
 
+    def test_any_spelling_of_a_row_writes_one_key_and_clear_removes_every_key_landing_on_it(self):
+        """Rule (user_scores.write_key, clear_score): every writer stores score_key_for_row of the row the given spelling
+        resolves to, so two spellings leave one key; clearing a row removes every stored key that lands on it, also one
+        written before this rule or by hand; keys of other rows stay."""
+        a, b = two_rows()
+        doc = doc_with(defaults={a.lower(): decl(b), f'owner/{a.lower()}': decl(a)})
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            local = Path(tmp) / 'user-scores.json'
+            for spelling in (f'Owner/{a.upper()}', f'owner/{a.lower()}'):
+                user_scores.set_score(spelling, 'creativity', 2.0, accounts=doc, local_path=local)
+            self.assertEqual(list(user_scores.load_local(local)['scores']), [f'owner/{a.lower()}'])
+            hand = json.loads(local.read_text(encoding='utf-8'))
+            hand['scores'][f'Owner/{a.upper()}'] = {'creativity': dict(ENTRY)}
+            hand['scores'][b] = {'creativity': dict(ENTRY)}
+            local.write_text(json.dumps(hand), encoding='utf-8')
+            user_scores.clear_score(f'owner/{a.lower()}', 'creativity', accounts=doc, local_path=local)
+            left = user_scores.load_local(local)['scores']
+            self.assertEqual([k for k in left if user_scores.resolve_model_key(k, doc) == a], [])
+            self.assertEqual(list(left), [b])
+
+    def test_a_row_its_own_id_reaches_is_written_as_v071_wrote_it(self):
+        """Rule: for every row whose id lands on it, write_key is the key v0.7.1 wrote (resolve_model_key)."""
+        for row in SHIPPED['models']:
+            if user_scores.resolve_model_key(row, SHIPPED) == row:
+                with self.subTest(row=row):
+                    self.assertEqual(user_scores.write_key(row, SHIPPED), row)
+
     def test_the_rows_own_key_wins_over_a_moved_name_for_each_target_whatever_the_order(self):
         a, b = two_rows()
         doc = doc_with(defaults={a.lower(): decl(b)})
