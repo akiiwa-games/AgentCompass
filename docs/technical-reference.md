@@ -55,17 +55,22 @@ from public cited boards; a facet a model lacks is estimated from its same-serie
 version, else the fleet's size step, used only where the measured pairs agree in direction; an ability value never above the
 larger model's), and, last, an ability facet with no source from the model's own other ability facets. Every facet then has a
 value at every effort (own-curve interpolation, else the panel's median effort step; `minimal` and `ultra` from the fleet's step
-next to them, `none`, reasoning switched off, one more such step below `minimal`; `default` reads the declared effort, High), and no curve
+next to them, `none`, reasoning switched off, from the fleet's own readings at none; `default` reads the declared effort, High), and no curve
 inverts along effort: High is the anchor, ability never falls and responsiveness never rises as effort rises, Time/Task never
 shortens (rules and formulas in [`calibration/README.md`](../skills/agent-compass/calibration/README.md)). Release
 verification checks the result against saved gateway catalogs (`audit/gateway_coverage.py`; `audit/gateway-catalogs/*.json`, rows
 `{provider, model, efforts}` only; the Magpie catalog is built from Magpie's source by `audit/magpie_catalog.py`, one documented
 command, the same bytes for the same checkout): every gated offered (model, effort) is scored at that effort or is on
 `audit/gateway-coverage-known-gaps.json` with the input that is missing (the shipped launch table and bundles too), and a listed
-entry that is covered or ungated fails too. A catalog's `gate` names the providers it gates (Magpie: its own makers, presets of
-kind vendor without `Hosts`, plus the Claude and Google accounts); the rest of the catalog, and every model on
-`audit/gateway-out-of-scope.json` (retired, deprecated, off the maker's current list, or special-purpose, each with the maker's
-dated notice), is a printed report, never a failure. `quota_cost` is the quota economy: the part of the
+entry that is covered or ungated fails too; each entry names its missing input as one kind of a closed set, the file's
+`kinds` table stating what would close it. A catalog's `gate` is decided per pair: a row is gated when its model's maker
+(`maker`, the namespace of its models.dev `canonical_model_id`) is its provider's maker (`gate.makers`, declared in
+`audit/magpie-makers.json` with the Magpie source line it reads). The rest of the catalog, and every model on
+`audit/gateway-out-of-scope.json` (retired; deprecated, with the vendor's shutdown date; unlisted, absent from a maker page
+that enumerates the callable model ids, the file's `id_lists`; a moving `-latest` pointer; special-purpose; each with the
+maker's dated notice), is a printed report, never a failure. The same check refuses an alias whose two names the saved
+models.dev listings tell apart (`audit/models-dev-names.json`, written by `audit/magpie_catalog.py --names-out`; rule in
+[`calibration/README.md`](../skills/agent-compass/calibration/README.md), To add a model). `quota_cost` is the quota economy: the part of the
 task's spend that lands over the recovery line of the account's quota window, priced in panel-SD score units. The window's
 price comes from a value ladder built over the demand grid `quota_economy.FIVE_AXIS_DEMAND_GRID` (levels 0–3 on the thinking
 categories), and its level-3 points read the fit with the ceiling as cap. So a model that raises a ceiling moves quota prices

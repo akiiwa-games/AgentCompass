@@ -16,13 +16,18 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   - `tool_operation` — evaluated per demand level: level 1 imposes no ability requirement; level 2 evaluates `responsiveness` (`aa.ttfa`, `-ln(seconds)` per effort); level 3 evaluates `min(responsiveness, image_recognition)` (`aa.mmmu_pro`, `lmarena.vision`) plus image-input modality.
 - **Panel standard scores (`z`).** Every scoring board is scaled on the panel at High (their number is `anchor.panel_n` in `five-axis-scores.json`): `z = (x - x_anchor) / sd_panel`, putting `claude-opus-5-5` at High at `0.0` with one unit equal to one panel standard deviation. The panel is declared (owner, 2026-11-18): `calibration_panel.members` in `accounts.json`, a dated maintainer list that only the owner changes (the members of v0.7.0, the panel the owner's hand-written levels were set against). The core boards are the scoring boards that list every sentinel row (`calibration_panel.models`); every member must be listed on every core board, and a member one does not list stops the run with an error naming both, never a smaller panel. A new row, even one every board lists, is scored against the panel and never joins it, so it moves neither any panel score nor any demand target (it can raise a level-3 ceiling). Everything that reads the panel reads that list: `sd_panel` and the `MIN_PANEL` source check, the board link, the reference board of the effort shifts, the targets, `effort_steps`. A refresh whose panel members differ from the shipped `five-axis-scores.json` prints the added and removed models with the old and new `sd_panel`, `t1`, `t2` and ceiling per category and facet, and writes nothing unless `--accept-panel-change` is passed, which records the change in `anchor.panel_change`. Parallel boards of one facet are centered on the anchor at High, mean-sigma linked (`z_linked = scale * z + offset`) onto the full-panel primary board, averaged, and re-centered on the anchor. Non-AA boards without per-effort rows derive effort shifts from the same model's Artificial Analysis multi-effort curve on the most correlated AA board (`effort_correlations` records `(board, r, n)`); models without an AA multi-effort curve stay `measured_partial` at their single listed effort.
 - **Panel targets and fit zero point.** Demand targets come from the panel at High (`anchor.targets` in `five-axis-scores.json`): level 1 (`t1`) is the panel minimum, level 2 (`t2`) is the panel median, and level 3 (`t3`) is the panel maximum, all measured or interpolated High values of the panel (owner, 2026-11-18; the anchor is the origin of `z`, not a level; a facet whose panel does not give `t1 < t2 < t3` is a build error, and a level-3 row names the panel member that holds the maximum). `t1` is the zero point of `axis_scores.five_axis_fit`. Each level-3 row also carries its `ceiling` (value, model, status): the highest measured or interpolated High value among all catalogued models (no estimated, series-converted or manual value). Levels 1 and 2 cap the fit at their target; level 3 caps it at the ceiling, and `t3` is the radar's 1 and the upper end of `continuity` (formula in [`docs/technical-reference.md`](../../../docs/technical-reference.md#1-how-scoring--allocation-work)).
-- **Tier, facet estimation, and manual scores.** The **tier** is read only from the `arena.ai` Overall board (`lmarena.text_overall`) through the six anchor rows (else `tier.aa_index`, else nearest same-series sibling). The tier is never a score input; its sole capability use is estimating a facet a model has no direct measurement for: same-series sibling shifted along `facet~tier` by `b * delta_tier`, else the `facet~tier` line at the model's tier (clamped to the measured range), recording `r`, `skill`, `loo_rmse` and `n` without gating on `skill`, marked `estimated` (`~` in the catalog and tray), and replaced automatically when a direct board measurement arrives. When a required facet has no measurement, no estimate and no manual score, `coding` never skips it (`value: null`, Mode B excluded whenever `coding >= 1`), and `tool_operation` excludes the model at the demand levels that require that facet. Maintainer (`references/user-scores.json`, `kind: "maintainer"`) and local user (`~/.agent-compass/user-scores.json`, `kind: "user"`) manual scores on the demand-level scale (1 the panel's weakest, 3 its best) map dynamically onto `z` via `anchor.targets` with precedence `local user > maintainer > measured > estimated`.
+- **Tier, facet estimation, and manual scores.** The **tier** is read only from the `arena.ai` Overall board (`lmarena.text_overall`) through the six anchor rows (else `tier.aa_index`, else nearest same-series sibling). The tier is never a score input; its sole capability use is estimating a facet a model has no direct measurement for: the nearest same-series relatives (`series.nearest`) shifted along `facet~tier` by `b * delta_tier`, else the `facet~tier` line at the model's tier (clamped to the measured range), in the declared order of methods below, recording `r`, `skill`, `loo_rmse` and `n` without gating on `skill`, marked `estimated` (`~` in the catalog and tray), and replaced automatically when a direct board measurement arrives. When a required facet has no measurement, no estimate and no manual score, `coding` never skips it (`value: null`, Mode B excluded whenever `coding >= 1`), and `tool_operation` excludes the model at the demand levels that require that facet. Maintainer (`references/user-scores.json`, `kind: "maintainer"`) and local user (`~/.agent-compass/user-scores.json`, `kind: "user"`) manual scores on the demand-level scale (1 the panel's weakest, 3 its best) map dynamically onto `z` via `anchor.targets` with precedence `local user > maintainer > measured > estimated`.
 - **Series and size (owner, 2026-11-18).** Two rows are in one series when one's name resolves to the other with itself left
   out: a `family` match (the `families` pattern's row) or an `alias` match (a row `x-preview` joins row `x`), plus
   `superseded` pairs and `same_model` rows, joined transitively (`series.groups`). Every `families` row declares a `size`
   (`small` or `full`); a row's size is that of the `families` row that decides its name, and a `small` row never joins the
   series of a non-small one, whatever relation proposes the join (a `same_model` declaration excepted). Series conversion
-  stays within one size.
+  stays within one size. A row's relatives are ordered (`series.nearest`, round 5): the row its `same_model` declaration
+  names first, alone; then by version distance, how many distinct versions of the series lie between the two plus one (0:
+  the same version), from the version each row's vendor id carries as `accounts.json` `series_versions` declares it; then
+  same size before different size; a relative without a declared version comes last. Relatives still tied form one group
+  and contribute the median of their estimates: no name decides, so adding a row that is not the nearest relative of X
+  never changes X's estimate.
 - **Downward from the larger model (owner, 2026-11-18).** A second relation, used only when a small row's same-size series,
   the tier fit and its own boards leave a facet without any value: a small `families` row may declare `tier_up`, the
   pattern of the same line's next larger row, with `tier_up_version` `same` (that row's first model is the same version
@@ -48,33 +53,56 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   addition never above the larger model's at the same effort (`min(step, 0)`, and `bound_across_size` after the fill, the
   efforts it held listed as `held_at_larger`). Status `estimated`, method `size_step` with the base model, version, step,
   `n`, `agree` and the pairs; the table is published as `size_steps`.
-- **Edge efforts (owner, 2026-11-18).** No board measures `none`, `minimal` or `ultra`, the efforts below Low and above Max
-  (`user_scores.EDGES`, nearest first). Every curve with the neighbouring effort gets the edge as that neighbour plus the
+- **Edge efforts (owner, 2026-11-18; `none` round 5).** No board measures `minimal` or `ultra`, the efforts just below Low
+  and above Max (`user_scores.EDGES`). A curve with the neighbouring effort gets the edge as that neighbour plus the
   fleet's step at that end of the measured efforts, the median over the models measured at both of
-  `value(low) - value(medium)` for `minimal`, the same step again for `none` below `minimal`, and `value(max) - value(xhigh)`
-  for `ultra` (`five_axis.edge_step_table`, `n >= 2`, published as `effort_steps.<facet>.low.minimal`,
-  `effort_steps.<facet>.minimal.none` and `effort_steps.<facet>.max.ultra`, methods `fleet_lowest_step` and
-  `fleet_highest_step`), bounded by no inversion; Time/Task the neighbour times the fleet's median ratio at that end over the
-  Artificial Analysis listings with both (`effort_steps.time_per_task`, `n >= 3` as every fleet time ratio). A hand-written
-  score fills them the same way. `none` is reasoning switched off, one step below `minimal`, not the same point (round 4,
-  from the vendors' documents): OpenAI's reasoning guide gives `none` for "tasks that do not benefit from any reasoning",
-  MiniMax pairs `effort: "none"` with `thinking: disabled`, Magpie offers `none` as the off level of a model with a thinking
-  switch, and Google's thinking guide calls `minimal` "a near-off setting", a reasoning level above off.
+  `value(low) - value(medium)` for `minimal` and `value(max) - value(xhigh)` for `ultra` (`five_axis.edge_step_table`,
+  `n >= 2`, published as `effort_steps.<facet>.low.minimal` and `effort_steps.<facet>.max.ultra`, methods
+  `fleet_lowest_step` and `fleet_highest_step`), bounded by no inversion. `none` is reasoning switched off, below `minimal`
+  (the vendors' statements are quoted once, in `accounts.json` `effort_readings`). A board listing labelled as
+  non-reasoning is a measured reading at `none` and is used as measured. A curve without one takes `none` from its lowest
+  measured reasoning effort (High when nothing below High is measured; `user_scores.edge_anchor`) plus the fleet's own
+  step, read from the models measured at `none` and at a reasoning effort: one value per model, `none` minus its lowest
+  measured reasoning effort, and the step is their median only when there are at least two and all point one way
+  (`five_axis.pair_agreement`), else zero with the reason (`effort_steps.<facet>.lowest_reasoning.none`, method
+  `fleet_off_step`). A facet no fleet model is measured on at `none` gets no `none` (`effort_fill_refused`). Time/Task:
+  the neighbour times the fleet's median ratio at that end over the Artificial Analysis listings with both
+  (`effort_steps.time_per_task`, `n >= 3` as every fleet time ratio); for `none` the same pair rule on the log ratio
+  `time(none) / time(lowest measured effort)` (ratio 1 where the pairs disagree). An extrapolated Time/Task never leaves the
+  range of Time/Task the board measures for the fleet: it is clipped to it, and the cell says so
+  (`clipped_to_fleet_range`). A hand-written score fills the edges the same way.
 - **Own ability median (owner, 2026-11-18), the last and coarsest method.** An ability facet still without a value (no
   source and no larger model: `glm-5.2` faithfulness and image recognition) is, at each effort, the median of the model's
   own ability facets there (at least `MIN_OWN_FACETS = 2`, all on the panel-z scale); status `estimated`, method
   `own_ability_median` with the facets used. The tier fit would be better founded, but where it applies it has already run:
   this method serves the models it cannot (no tier, or a fit that failed its checks). A `same_model` row copies what its
   model gains this way, for the categories it carries.
+- **Labels (round 5).** A board's reasoning label reads as `accounts.json` `effort_readings.labels` declares, one rule for
+  every model: "Non-reasoning" is `none`, whatever effort the tag names besides; "Reasoning" without an effort is a
+  listing without an effort label. A tag part ending in "Fallback" is Artificial Analysis's note of the model its harness
+  falls back to on a refusal, not an effort.
+- **One operating point (round 5).** A model whose vendor documents no reasoning control (`accounts.json`
+  `models.<id>.operating_point`, cited, with `reasoning` true or false) has one configuration: its one board listing is
+  its only reading, and every effort reads that value with no effort step (method `operating_point`).
+- **Identity of a listing (round 5).** A dated listing ("Qwen-Max (0919)") names that snapshot: the date stays part of its
+  base name (`sources.base_name`), and a row reads it only when the row's own name carries the date. A row whose
+  `listed_as` names a board listing other than its own spelling needs `listed_as_source` with the public statement that
+  the listed name is that model (kind vendor, community or benchmark, https url, date, statement;
+  `measurements.listed_as_identity`); a dated maintainer declaration is not one.
 - **`default` (owner, 2026-11-18).** The boards list some models without an effort label. The measurements store such a
   listing under `default` (`calibration/measurements.py`); it is the model's one configuration, and the calibration keys it
   at the effort the dated declaration `accounts.json` `effort_readings.reads` names, High (`five_axis.aa_rows`,
   `five_axis.time_rows`). A launch at `default`, and a bundle that names no effort, read the values stored there
   (`five-axis-scores.json` `effort_readings`, `axis_scores.reading_effort`); `default` is not a point on the effort scale.
-- **Order of methods.** For each cell, the first that applies: a measurement; a hand-written score (run time, it wins over
-  every estimate below); own-curve interpolation; the panel effort step; the same-size series conversion; the tier fit;
-  the downward derivation with the row's own gap (same version only); the size step (same, then nearest version); for
-  `none`, `minimal` and `ultra`, the fleet's edge step; the own ability median. Every estimate is then bounded along effort and,
+- **Order of methods (round 5: by measured error).** For each cell, the first that applies: a measurement; a hand-written
+  score (run time, it wins over every estimate below); own-curve interpolation; the panel effort step; the same-size
+  series conversion from relatives up to version distance 1; the tier fit; the series conversion from farther relatives;
+  the downward derivation with the row's own gap (same version only); the size step from the same version; for `none`,
+  `minimal` and `ultra`, the fleet's edge step; the own ability median; last, the size step from the nearest version. The
+  order is declared once, with its leave-one-out evidence, in `accounts.json` `estimation_order` (`five_axis.ESTIMATION_ORDER`
+  refuses another), and the refresh never reorders it by itself: before a release, re-measure each method's error by
+  leaving every measured High cell out in turn, `python -X utf8 audit/estimation_loo.py` (read-only), and change the
+  order only by editing the declaration and the code together. Every estimate is then bounded along effort and,
   for an ability facet derived from a larger model, across size; at run time a derived facet follows its larger model's
   value after the hand-written scores, shipped and local (`user_scores._follow_effective_sources`: moved by the source's
   change at each effort, never above it; a hand-written score on the derived model itself wins).
@@ -100,9 +128,9 @@ The router scores a model on **four capability categories** (`creativity`, `codi
 
 | Script | What it does |
 | :--- | :--- |
-| `sources.py fetch` | Downloads LMArena (`lmarena-ai/leaderboard-dataset`), Design Arena (`website`, `3d`, `svg`), Artificial Analysis (`aa-models.html`), OpenRouter models, and the community capacity pages (`community.py`), writing `fetch-manifest.json` (url, fetch time, sha256 per file). `--only FILE` refetches single files. The Artificial Analysis leaderboard page embeds records only for releases it does not mark deprecated; `refresh.py` also fetches (`sources.fetch_releases`), one page each as `aa-release-<slug>.html`, the release page of every catalogue model that no leaderboard record matches but a deprecated release is listed under (`measurements.aa_release_plan`, derived from the fetched page and the `listed_as` names, never a list of models; the newest release of the base name a model is listed under, so every row of a base name reads the same release; releases whose newest cannot be told from their `releaseDate` are a missing source). `sources.aa_release_record` reads such a page's records into the leaderboard's record shape; each reading made from one cites that page's url. A page is read only when the plan chooses it, in every mode, and only for the base names the plan chose it for; a row the matcher resolves to another base name is a missing source. A page that cannot be fetched, whose file is gone from the data directory, whose record has a shape the reader does not know, or that gives its model no figure is a missing source, never an older copy. |
+| `sources.py fetch` | Downloads LMArena (`lmarena-ai/leaderboard-dataset`), Design Arena (`website`, `3d`, `svg`), Artificial Analysis (`aa-models.html`), OpenRouter models, and the community capacity pages (`community.py`), writing `fetch-manifest.json` (url, fetch time, sha256 per file). `--only FILE` refetches single files. The Artificial Analysis leaderboard page embeds records only for releases it does not mark deprecated; `refresh.py` also fetches (`sources.fetch_releases`), one page each as `aa-release-<slug>.html`, the release page of every catalogue model that no leaderboard record matches but a deprecated release is listed under (`measurements.aa_release_plan`, derived from the fetched page and the `listed_as` names, never a list of models; the newest release of the base name a model is listed under, so every row of a base name reads the same release; releases whose newest cannot be told from their `releaseDate` are a missing source). `sources.aa_release_record` reads such a page's records into the leaderboard's record shape; each reading made from one cites that page's url. A page is read only when the plan chooses it, in every mode, and only for the base names the plan chose it for; a row the matcher resolves to another base name is a missing source. A page that cannot be fetched, whose file is gone from the data directory, or whose record has a shape the reader does not know is a missing source, never an older copy; a page that lists the release without any figure is a source not used (its model is estimated by the declared methods). |
 | `tiers.py [ids]` | Reads each model's tier off the `arena.ai` Overall board through the six anchor rows; models that board does not list get `tier.aa_index`. |
-| `series.py` | Library: same-series siblings (family and alias matches, sizes from `families`), `same_model` links and the downward `tier_up` relation; picks the nearest base on the AA Intelligence Index, shared board readings, or tier. |
+| `series.py` | Library: same-series siblings (family and alias matches, sizes from `families`), `same_model` links, the downward `tier_up` relation, and `nearest`, a row's relatives ordered by the declared version distance, then size (Series and size, below). |
 | `measurements.py` | Writes `references/public-measurements.json`: panel standard scores (`z` and AA `z_by_effort`), structural and statistical data-hygiene checks, `usd_per_hour`, list prices, image input, and fast-mode multipliers. |
 | `five_axis.py [--distrust SOURCE] [--accept-panel-change]` | Writes `references/five-axis-scores.json`: per-effort facet curves, parallel-board link offsets, category scores, `estimate_fits` (`r`, `skill`, `loo_rmse`, `n`), `usd_per_hour`, `duration_multiplier`, community plan capacities, panel `anchor.targets` (`levels` 1..3 with the level-3 `ceiling`, `continuity = t3 - t2`), `anchor.sd_panel` and `anchor.panel_change`, and surfaced data errors. Refuses a panel change unless accepted. |
 | `arena_capture.py import CAPTURE.json ...` / `show` | Imports browser-captured `arena.ai` Agent / Code and Alignment boards and preserves their manifest entries across `sources.py fetch`. |
@@ -133,9 +161,11 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    ([fast-modes.md](../references/fast-modes.md)).
 2. **Board names.** `listed_as: {"arena": "...", "aa": "..."}` gives the name arena.ai / LMArena and Artificial Analysis list
    the model under, when the automatic matcher cannot derive it from the id (a dated listing, other wording). Leave out a
-   board that lists it under its id or does not list it. On Artificial Analysis a name is a base name: a listing's variant tag (an effort, a date such as `(0902)`) is not part of it, so
-   `"Qwen3.8 Max"` names every release listed as `Qwen3.8 Max` or `Qwen3.8 Max (0902)`, and when it lists several deprecated
-   releases under one base name the newest release is read. On arena.ai a full listing name matches as well as its base name.
+   board that lists it under its id or does not list it. On Artificial Analysis a name is a base name: an effort tag is not
+   part of it, a date tag is (`"Qwen3.8 Max"` names the listings `Qwen3.8 Max (High)` and `Qwen3.8 Max`, never
+   `Qwen3.8 Max (0902)`, another snapshot), and when it lists several deprecated releases under one base name the newest
+   release is read. On arena.ai a full listing name matches as well as its base name. A name that is not the row's own
+   spelling needs its cited identity statement in `listed_as_source` (Identity of a listing, above).
 3. **Prices (optional, cited).** `list_price` (`input`, `cache_write_5m`, `cache_write_1h`, `cache_read`, `output`, USD per
    million tokens) with `list_price_source` (`kind: "vendor"`, https `url`, `as_of`) prices local session logs in the tray;
    `vendor_fast_mode` (price and speed multipliers, fast and standard prices, `url`, `pricing_url`, `as_of`, `statement`)
@@ -147,9 +177,12 @@ Every per-model fact is reference data under `references/`; adding a model or a 
    matching pattern decides; `size` is `small` or `full`; `tier_up_version` `same` or `nearest` goes with `tier_up`;
    `tier_up_older` maps an older row of the line to `{model, version}`; move the declaration's `as_of` to the day of the edit) and the family's short `aliases` at it, and
    list the older model under `superseded`. A name the vendor states is served by another row is an alias, not a row:
-   every alias carries its dated statement in `alias_sources`, name by name (the maker's word; models.dev's
-   `canonical_model_id` with the snapshot's date; or a dated maintainer declaration), and an alias without one is refused
-   (`scripts/reference_provenance.py`). A name with `-pro`, a speed variant (`-highspeed`, `-ultraspeed`) or another marker
+   every alias carries its dated statement in `alias_sources`, name by name (the maker's word, or models.dev's
+   `canonical_model_id` with the snapshot's date, an https page), and an alias without one is refused
+   (`scripts/reference_provenance.py`); a dated maintainer declaration stands only for the maintainer's own shorthand
+   (`shorthand: true`, "short name for <row>"). Before a release, `audit/gateway_coverage.py` also refuses an alias whose
+   two names models.dev lists with different canonical ids (unless the maker states they are one model) or at different
+   prices from one provider, and a shorthand that is a row or a name a saved catalog offers. A name with `-pro`, a speed variant (`-highspeed`, `-ultraspeed`) or another marker
    of a different model is a row of its own, never an alias. A board that lists the row under another name gets it in
    `models.<id>.listed_as` (`arena`, `aa`).
 5. **Rebuild its row.** Run `agentcompass data refresh --model <id>` (repeatable for several new models). It fetches the
