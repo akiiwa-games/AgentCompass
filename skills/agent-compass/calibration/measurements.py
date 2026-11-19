@@ -285,9 +285,34 @@ def aa_records_read(target, models, readings):
     return [*sources.aa_records(target), *kept], plan, ambiguous, errors
 
 
+DATED = re.compile(r'^\d{4}-\d{2}-\d{2}(T\S+)?$')
+
+
+def inputs_date(doc):
+    """The date of a generated document: the latest date of a reading it holds (`fetched_at`, `as_of`; round 7, no clock
+    in a generated file), so the document is a function of its inputs; a build from inputs with no date stops."""
+    found = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k in ('fetched_at', 'as_of') and isinstance(v, str) and DATED.match(v):
+                    when = datetime.fromisoformat(v)
+                    found.append((when if when.tzinfo else when.replace(tzinfo=timezone.utc)).astimezone(timezone.utc))
+                else:
+                    walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(doc)
+    if not found:
+        raise ValueError('the measurements hold no dated reading (fetched_at, as_of): nothing dates the generated file')
+    return max(found).isoformat(timespec='seconds')
+
+
 class Builder:
-    def __init__(self, target, acc, now=None):
-        self.target, self.acc, self.now = target, acc, now
+    def __init__(self, target, acc):
+        self.target, self.acc = target, acc
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
         listed_as_identity(self.models)
         anchor, self.panel_ids, self.anchor_name = tiers.panel(acc)
@@ -984,13 +1009,14 @@ class Builder:
         for name, row in self.manifest.items():
             if row.get('status') != 'ok' and (name in self.release_files or not sources.AA_RELEASE_NAME.fullmatch(name)):
                 missing_sources.setdefault(name, {'file': name, 'url': row.get('url'), 'reason': row.get('error')})
-        stamp = (self.now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-        return {'schema': SCHEMA, 'generated_at': stamp.isoformat(timespec='seconds'),
+        doc = {'schema': SCHEMA, 'generated_at': None,
                 'conversion': f'z = (x - x_anchor) / sd_panel per board, anchor {ANCHOR}; see calibration/measurements.py',
                 'panel': self.panel_doc, 'checks': self.checks,
                 'sources': self.source_rows, 'missing_sources': missing_sources, 'conflicts': self.conflicts,
                 'axes': {a: list(c) for a, c in AXES.items()}, 'capacity': capacity,
                 'models': {m: f for m, f in self.out.items()}}
+        doc['generated_at'] = inputs_date(doc)
+        return doc
 
 
 def main():

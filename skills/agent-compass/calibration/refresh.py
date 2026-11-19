@@ -94,25 +94,6 @@ class Refused(ValueError):
     """A `--model` run that cannot go ahead; raised before anything is written."""
 
 
-def _preserve_generated_at(path, doc):
-    """Keep the existing `generated_at` when every other field in `doc` is unchanged, avoiding timestamp-only churn."""
-    target = Path(path)
-    if not target.is_file():
-        return doc
-    try:
-        previous = json.loads(target.read_text(encoding='utf-8-sig'))
-    except (OSError, ValueError):
-        return doc
-    if not isinstance(previous, dict):
-        return doc
-    old_stamp = previous.get('generated_at')
-    if not isinstance(old_stamp, str) or not old_stamp.strip():
-        return doc
-    if {k: v for k, v in previous.items() if k != 'generated_at'} == {k: v for k, v in doc.items() if k != 'generated_at'}:
-        return {**doc, 'generated_at': old_stamp}
-    return doc
-
-
 def validate_user_scores(path):
     """Validate `references/user-scores.json` strictly against the maintainer manual-score schema."""
     target = Path(path)
@@ -328,7 +309,7 @@ def _tier_on_release_scale(entry, shipped_sources, drift):
     return out, 'release scale', None
 
 
-def merge_model_rows(shipped, fresh, names, now=None):
+def merge_model_rows(shipped, fresh, names):
     """(measurements, left_out, notes): the shipped document with only the named models' rows, conflicts and checks
     taken from `fresh`, board z-scores on the shipped scale; every other row, the panel and the scales stay as shipped.
     left_out lists (model, field, source, reason) for each entry not merged; notes state what else the merge did.
@@ -384,7 +365,7 @@ def merge_model_rows(shipped, fresh, names, now=None):
                      "on the release snapshot's tier scale; the other models' tiers stay as shipped")
     # the rows a model entry gave: five_axis scores them by the release's fits and never fits over them (item 8)
     merged['model_entries'] = sorted({*(shipped.get('model_entries') or ()), *names})
-    merged['generated_at'] = (now or datetime.now(timezone.utc)).isoformat(timespec='seconds')
+    merged['generated_at'] = measurements.inputs_date(merged)
     return merged, left_out, notes
 
 
@@ -543,15 +524,15 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
             raise Refused(f'model entry {target / MODEL_ENTRIES / name}: accounts.json has no row {name}; remove the entry')
     refuse_panel_models(list(entries), acc, shipped or {})
     if (target / sources.MANIFEST).is_file():
-        built = measurements.Builder(target, acc, now=now).build()      # the release snapshot
+        built = measurements.Builder(target, acc).build()      # the release snapshot
     elif models and shipped is not None:
         built = copy.deepcopy(shipped)      # no release snapshot in the cache: the shipped document stands for it
     else:
         sources.manifest(target)            # raises: the cache has no fetch-manifest.json
     left_out, notes = [], []
     for name in (m for m in acc['models'] if m in entries):    # catalog order, so the result never depends on history
-        fresh = measurements.Builder(entries[name], acc, now=now).build()
-        built, out, said = merge_model_rows(built, fresh, [name], now=now)
+        fresh = measurements.Builder(entries[name], acc).build()
+        built, out, said = merge_model_rows(built, fresh, [name])
         if name in models:
             left_out += out
             notes += said
@@ -570,14 +551,11 @@ def rebuild(target, now=None, references=None, distrust=(), meas_out=None, score
                     'nothing written and no entry stored')
         before = json.loads(scores_path.read_text(encoding='utf-8-sig')) if scores_path.is_file() else None
         merge = {'left_out': left_out, 'notes': notes, 'before': before}
-    meas = _preserve_generated_at(meas_path, built)
+    meas = built
     raw = (json.dumps(meas, indent=1, ensure_ascii=False) + '\n').encode('utf-8')
     # Built before anything is written: a refused panel change (five_axis.PanelChangeRefused) leaves every file as it was.
-    doc = _preserve_generated_at(
-        scores_path,
-        five_axis.build(meas, acc, plans, distrust=distrust, meas_bytes=raw, now=now,
-                        previous=five_axis.previous_doc(scores_path), accept_panel_change=accept_panel_change),
-    )
+    doc = five_axis.build(meas, acc, plans, distrust=distrust, meas_bytes=raw, now=now,
+                          previous=five_axis.previous_doc(scores_path), accept_panel_change=accept_panel_change)
     if pages is not None:
         stamp = (now or datetime.now(timezone.utc)).isoformat(timespec='seconds')
         for name in models:

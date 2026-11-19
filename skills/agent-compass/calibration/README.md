@@ -358,7 +358,10 @@ its own set first, so `--check --release` holds when it is tagged.
 - **Dates, not ages (owner, 2026-11-19).** The generated files hold facts with their dates (`as_of`; a capacity row the
   newest date its value rests on, a derived entry `rests_on_as_of`, the oldest of its inputs), never an age, a `stale`
   flag or a warning computed from the day of the build: a rebuild on another day from the same inputs writes the same
-  bytes, so a published set does not change with the calendar. How old a date is and whether that is stale
+  bytes, so a published set does not change with the calendar. A generated file's own `generated_at` is the latest date
+  of a reading it was built from (`measurements.inputs_date`; five-axis-scores.json takes the measurements'), never the
+  time of the run, and `measurements_sha256` hashes that content: adding a model entry and retiring it gives back every
+  byte (round 7). How old a date is and whether that is stale
   (`STALE_DAYS`) is computed where it is read, by `scripts/data_age.py`: the refresh's printed report and its exit
   status, and any reader that shows or warns on an age.
 - Public cited data only. A value without a trusted source is missing, and missing is a surfaced data error, never a default.

@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-19T04:48:14+00:00",
+ "generated_at": "2026-11-19T00:35:51+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [

@@ -3097,22 +3097,20 @@ class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
     def test_a_rebuild_on_another_day_writes_the_same_file(self):
         """Rule (owner, 2026-11-19): the shipped file holds facts with their dates only, so a rebuild 40 days later from the
         same inputs writes the same bytes, and a published set does not change its sha256 with the calendar. Age and
-        staleness are the reader's (data_age); `generated_at` moves only with the content (refresh._preserve_generated_at)."""
+        staleness are the reader's (data_age); `generated_at` is the measurements' date, the latest date of a reading
+        (measurements.inputs_date), never the clock."""
         from unittest.mock import patch
         import five_axis
-        import refresh
         refs = account_fleet.REFERENCES
         raw = (refs / 'public-measurements.json').read_bytes()
         shipped = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))
         day = datetime.fromisoformat(shipped['generated_at'])
 
-        def written(now, previous_path=None):
+        def written(now):
             doc = five_axis.build(json.loads(raw.decode('utf-8-sig')),
                                   json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig')),
                                   json.loads((refs / 'plan-templates.json').read_text(encoding='utf-8-sig')),
                                   distrust=shipped['distrusted_sources'], meas_bytes=raw, now=now, previous=shipped)
-            if previous_path is not None:
-                doc = refresh._preserve_generated_at(previous_path, doc)
             return json.dumps(doc, indent=1, ensure_ascii=False) + '\n'     # as refresh.rebuild writes it
         folder = Path(tempfile.mkdtemp(prefix='five-axis-day-'))
         self.addCleanup(shutil.rmtree, folder, True)
@@ -3124,7 +3122,7 @@ class ShippedScoresMatchTheirInputsTests(unittest.TestCase):
             def now(cls, tz=None):
                 return datetime.now(tz) + timedelta(days=40)
         with patch.object(five_axis, 'datetime', Later), patch.object(data_age, 'datetime', Later):
-            later = written(day + timedelta(days=40), first)
+            later = written(day + timedelta(days=40))
         self.assertEqual(later, first.read_text(encoding='utf-8'))
 
 

@@ -2752,7 +2752,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
               'panel': (meas.get('panel') or {}).get('models') or [], 'panel_n': (meas.get('panel') or {}).get('n'),
               'targets': targets, 'sd_panel': panel_sd(meas)}
     anchor['panel_change'] = guard_panel(previous, anchor, accept_panel_change, stamp)
-    doc = {'schema': SCHEMA, 'generated_at': stamp.isoformat(timespec='seconds'),
+    doc = {'schema': SCHEMA, 'generated_at': meas['generated_at'],     # the measurements' date: no clock (round 7)
            'measurements_sha256': hashlib.sha256(meas_bytes).hexdigest() if meas_bytes else None,
            'distrusted_sources': sorted(distrust),
            'method': __doc__.strip().splitlines()[0],

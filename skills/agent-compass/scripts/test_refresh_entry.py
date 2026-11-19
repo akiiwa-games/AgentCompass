@@ -864,6 +864,18 @@ class ModelEntryTests(unittest.TestCase):
         self.assertEqual(refresh.retire_model_entries(self.cache), [self.ADDED])
         self.assertFalse((self.cache / refresh.MODEL_ENTRIES).exists())
 
+    def test_adding_an_entry_and_removing_it_again_writes_every_generated_file_as_it_was(self):
+        """Rule (round 7, no clock in a generated file): the generated files are a function of their inputs; their date
+        is the latest date of a reading (measurements.inputs_date) and measurements_sha256 hashes that content, so adding a
+        model entry and retiring it, on later runs, gives back every byte."""
+        start = self.generated()
+        refresh.rebuild(self.cache, now=self.now + timedelta(hours=1), references=self.refs, models=[self.ADDED],
+                        pages=self.pages)
+        self.assertNotEqual(self.generated(), start)
+        self.assertEqual(refresh.retire_model_entries(self.cache), [self.ADDED])
+        refresh.rebuild(self.cache, now=self.now + timedelta(days=3), references=self.refs)
+        self.assertEqual(self.generated(), start)
+
     def test_model_fetches_into_its_own_entry_and_never_writes_a_page_of_the_release_snapshot(self):
         before = self.snapshot()
 
@@ -1051,13 +1063,13 @@ class AaReleasePageTests(unittest.TestCase):
     def build(self, data):
         refs = data.parent / 'references'
         acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8'))
-        return measurements.Builder(data, acc, now=self.now).build()
+        return measurements.Builder(data, acc).build()
 
     def build_with(self, data, models):
         """The measurements of `data` for the catalogue `models` (the shipped one, with rows added)."""
         refs = data.parent / 'references'
         acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8'))
-        return measurements.Builder(data, {**acc, 'models': models}, now=self.now).build()
+        return measurements.Builder(data, {**acc, 'models': models}).build()
 
     @staticmethod
     def page_url(model):
