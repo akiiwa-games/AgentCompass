@@ -26,6 +26,17 @@ class ReleasedNamesTests(unittest.TestCase):
                 self.assertIn(row, self.now['models'])
                 self.assertNotEqual(released_names.current_key(name, self.now), row)
 
+    def test_the_view_as_v070_resolves_every_entry_to_the_row_it_meant_and_holds_none_as_a_row(self):
+        """`as_v0_7_0` (read where auto_bundles.derive replays a v0.7.0 id): v0.7.0 had no row of these names, so none
+        is one in the view, and each resolves there, bare or provider-qualified, to the row v0.7.0 meant."""
+        import auto_bundles
+        view = released_names.as_v0_7_0(self.now)
+        for name, row in released_names.V0_7_0.items():
+            with self.subTest(name=name):
+                self.assertNotIn(name, view['models'])
+                self.assertEqual(auto_bundles.default_profile(name, view)['model'], row)
+                self.assertEqual(auto_bundles.default_profile('provider/' + name.upper(), view)['model'], row)
+
     def test_the_table_is_the_alias_diff_against_the_v070_tag(self):
         try:
             raw = subprocess.run(['git', 'show', 'v0.7.0:skills/agent-compass/references/accounts.json'], cwd=REPO_ROOT,

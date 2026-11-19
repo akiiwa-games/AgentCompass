@@ -21,6 +21,7 @@ import re
 from pathlib import Path
 
 import public_data
+import released_names
 from model_resolution import DIRECT_SOURCES, family_patterns, resolve_canonical_model, resolve_model
 
 AUTO_PREFIX = 'auto:'
@@ -280,16 +281,17 @@ def stored_choices(document, accounts):
 
 
 def choice_for(choices, bundle, accounts, by_model):
-    """(disabled or None, [stored ids], whether they disagree) for an auto bundle: every stored choice of its account at its effort (and its
+    """(disabled or None, [stored ids], whether they disagree) for an auto bundle: the stored choice whose id is the one
+    v0.7.0 gave this bundle (`_v0_7_0_id`, `derive`), and every stored choice of its account at its effort (and its
     harness, unless the account takes the harness from the model) whose model name resolves now to the bundle's key or
     is the bundle's advertised name, a tagged one only for the name its tag hashes. Several that disagree leave the
     bundle disabled: the user took the model out of automatic routing under one of its names (a named route still
     launches)."""
     raw = bundle.get('launch_model') or bundle.get('model') or ''
     spelled, tag = _name_candidates(raw, accounts)[0], name_tag(raw)[1:]
-    hits = [c for c in choices or () if c['effort'] == bundle.get('effort')
-            and (by_model or c['harness'] == bundle.get('harness')) and c['tag'] in (None, tag)
-            and (c['key'] == bundle.get('model') or c['name'] == spelled)]
+    hits = [c for c in choices or () if c['id'] == bundle.get('_v0_7_0_id') or (
+            c['effort'] == bundle.get('effort') and (by_model or c['harness'] == bundle.get('harness'))
+            and c['tag'] in (None, tag) and (c['key'] == bundle.get('model') or c['name'] == spelled))]
     if not hits:
         return None, [], False
     values = {c['disabled'] for c in hits}
@@ -324,9 +326,16 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
         # Only exact ids/aliases collapse; a family guess keeps its own advertised name.
         return default_profile(model, accounts)['model']
 
+    released_accounts = released_names.as_v0_7_0(accounts)
+
     for account, spec in (accounts.get('accounts') or {}).items():
         if not isinstance(spec, dict):
             continue
+        # The id v0.7.0 gave each bundle, replayed in the same catalog order (owner review, round 9): the row v0.7.0
+        # resolved the advertised name to (`released_names.as_v0_7_0`), and the tag of that advertised spelling when an
+        # earlier name of the account already held the id. A choice the user stored under it is that name's own; the
+        # advertised spelling is known only here, where discovery lists it.
+        released = {}
         manual = {(h, base_key(b.get('model') or ''), b.get('effort')) for bid, b in (spec.get('bundles') or {}).items()
                   if isinstance(b, dict) for h in [_harness_of(b, account, bid)]}
         manual_models = {(h, m) for h, m, _ in manual}
@@ -361,13 +370,17 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 taken = out['bundles'].get(account, {}).get(bid)
                 if taken and taken['launch_model'] != raw:
                     bid += name_tag(raw)
+                released_id = auto_bundle_id(account, harness, default_profile(raw, released_accounts)['model'], effort)
+                if released.get(released_id, raw) != raw:
+                    released_id += name_tag(raw)
+                released[released_id] = raw
                 availability, last = _availability(entry, raw, now, seen.get(bid))
                 if availability == 'detected':
                     seen[bid] = now
                 model_name = profile['model'] if profile['source'] != 'calibrated' else key
                 chosen, chosen_ids, disagree = choice_for(
-                    choices.get(account), {'launch_model': raw, 'model': model_name, 'effort': effort, 'harness': harness},
-                    accounts, pair_harness == PER_MODEL)
+                    choices.get(account), {'launch_model': raw, 'model': model_name, 'effort': effort, 'harness': harness,
+                                           '_v0_7_0_id': released_id}, accounts, pair_harness == PER_MODEL)
                 # The checkbox default is public data alone: checked unless superseded there. The user's
                 # model-management checkbox (`choice_for`) overrides it. Metered stays a last resort in routing.
                 default_disabled = superseded_by(raw, accounts) is not None or superseded_by(key, accounts) is not None
@@ -384,6 +397,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                     'score_source': profile['source'], 'score_basis': profile['basis'],
                     'availability': availability, 'last_detected_at': last,
                     'compatibility': status, **({'compatibility_reason': reason} if reason else {}),
+                    '_v0_7_0_id': released_id,
                 }
                 if availability == 'expired':
                     bundle['discovery_unavailable'] = True

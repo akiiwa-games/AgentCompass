@@ -67,31 +67,15 @@ class AccountsOverrideKeptAcrossUpdatesTests(unittest.TestCase):
         with self.path.open('w', encoding='utf-8', newline='\n') as handle:
             json.dump(doc, handle)
 
-    def test_a_checkbox_on_a_name_whose_v070_alias_changed_is_also_stored_under_the_advertised_name(self):
-        """Round 6 item 2, round 8 item 1: an auto bundle id holds the row its name resolved to. `LOCAL_UPGRADES`
-        (schema 2 to 3) stores the v0.7.0 id's checkbox also under each `released_names.V0_7_0` name of that row, the
-        advertised spelling, which `auto_bundles.choice_for` resolves where it reads it; never over one the user set,
-        and the v0.7.0 id keeps its own; a `#hash` id carries only to the name it hashes, under the same suffix."""
-        import hashlib
-        h = '#' + hashlib.sha256(b'claude-opus-5').hexdigest()[:8]
+    def test_a_v070_document_is_read_as_written(self):
+        """Round 9 item 3: the ids v0.7.0 stored are read where discovery knows the advertised names
+        (`auto_bundles.derive` replays the id v0.7.0 gave each bundle), so loading copies no choice to another id."""
         doc = {'schema_version': 2, 'accounts': {'acct-a': {'bundles': {
             'auto:acct-a:agy:gemini-4-argon-high@high': {'disabled': True},
-            'auto:acct-a:claude:claude-opus-5-5' + h: {'disabled': True},
-            'auto:acct-a:opencode:deepseek-v4.1-flash-free': {'disabled': False},
-            'auto:acct-a:opencode:deepseek-v4-flash': {'disabled': True},
+            'auto:acct-a:opencode:deepseek-v4.1-flash-free@high#6d0dcdfb': {'disabled': False},
             'manual_bundle': {'disabled': True}}}}}
-        got = accounts_override.LOCAL_UPGRADES['schema 2 (v0.2.0 to v0.7.0)'][1](doc)
-        self.assertEqual(got['schema_version'], accounts_override.SCHEMA_VERSION)
-        self.assertEqual(got['accounts']['acct-a']['bundles'], {
-            **doc['accounts']['acct-a']['bundles'],
-            'auto:acct-a:agy:gemini-4-pro@high': {'disabled': True},
-            'auto:acct-a:agy:gemini-4-ultra@high': {'disabled': True},
-            'auto:acct-a:claude:claude-opus-5' + h: {'disabled': True},
-            'auto:acct-a:opencode:deepseek-flash': {'disabled': False},
-            'auto:acct-a:opencode:deepseek-v4.1-flash': {'disabled': False}})
-        self.assertEqual(doc['schema_version'], 2)                     # the step copies, it does not edit its input
         self.write(doc)
-        self.assertEqual(accounts_override.load_override(self.path)['schema_version'], accounts_override.SCHEMA_VERSION)
+        self.assertEqual(accounts_override.load_override(self.path), doc)
 
     def test_a_reason_string_in_disabled_is_read_as_the_released_versions_read_it(self):
         # v0.1.0 to v0.5.0: a string (even an empty one) meant disabled, any other value kept its truth value.
@@ -244,30 +228,68 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
         return {b['launch_model']: (b['disabled'], direct[bid]['disabled'], b, bid)
                 for bid, b in merged['accounts']['acct']['bundles'].items() if b.get('auto')}
 
-    def test_a_choice_stored_under_the_id_v070_derived_reaches_the_bundle_this_code_derives(self):
-        """Property over every model name of both saved gateway catalogs and the shipped launch table, on both account
-        shapes: the id v0.7.0's own code derived for the name (audit/v070_bundle_ids.py, from the tag), holding either
-        value, is what the bundle derived now reads, through both read points."""
+    def test_choices_stored_under_the_ids_v070_derived_reach_their_own_names_and_no_other(self):
+        """Rule (round 8 item 1, round 9 item 3; auto_bundles.derive `_v0_7_0_id`, choice_for): a choice stored under the
+        id v0.7.0 gave a bundle is that advertised name's own. Property over every provider group of both saved gateway
+        catalogs and the shipped launch table, on both account shapes: every id v0.7.0's own code derived for the group
+        (audit/v070_bundle_ids.py, from the tag, tagged ids included) is stored at once, all with one value, or a value
+        per name and its complement; through both read points each bundle derived now reads its own name's id and value,
+        or, where names that resolve now to one key hold choices that disagree, is disabled and lists them
+        (`_choice_conflict`). No bundle reads another name's value silently."""
+        import hashlib
         frozen = json.loads((REPO_ROOT / 'audit' / 'v070-bundle-ids.json').read_text(encoding='utf-8'))
         ref = json.loads((REPO_ROOT / 'skills' / 'agent-compass' / 'references' / 'accounts.json')
                          .read_text(encoding='utf-8-sig'))
-        moved = checked = 0
-        for setup, ids in frozen['ids'].items():
+        half = lambda name: int(hashlib.sha256(name.encode()).hexdigest(), 16) % 2 == 0
+        policies = {'all enabled': lambda name: False, 'all disabled': lambda name: True,
+                    'mixed': half, 'mixed, the complement': lambda name: not half(name)}
+        checked = tagged = moved = conflicts = 0
+        for setup, groups in frozen['ids'].items():
             acc = self.accounts(frozen['setups'][setup], ref)
-            for name, sid in ids.items():
-                if sid is None:
-                    continue                      # v0.7.0 derived no bundle (excluded), so it stored nothing
-                for value in (True, False):
-                    doc = {'schema_version': 2, 'accounts': {'acct': {'bundles': {sid: {'disabled': value}}}}}
-                    got = self.read(acc, [name], doc, frozen['now'])
-                    if name not in got:
-                        continue                  # excluded now: no bundle to carry the choice to
-                    with self.subTest(setup=setup, name=name, value=value):
-                        self.assertEqual(got[name][:2], (value, value))
-                    checked += 1
-                    moved += got[name][3] != sid
-        self.assertGreater(checked, 4000)         # both shapes, both values, over a thousand names: not vacuous
-        self.assertGreater(moved, 100)            # and many of them under an id that is not the one derived now
+            for group, pairs in groups.items():
+                ids = dict(pairs)                                        # catalog order: it decides which name is tagged
+                held = {sid: name for name, sid in pairs if sid}         # an excluded name stored nothing
+                tagged += sum('#' in sid for sid in held)
+                for policy, value in policies.items():
+                    doc = {'schema_version': 2, 'accounts': {'acct': {'bundles': {
+                        sid: {'disabled': value(name)} for sid, name in held.items()}}}}
+                    for name, (disabled, direct, bundle, bid) in self.read(acc, list(ids), doc, frozen['now']).items():
+                        if ids.get(name) is None:
+                            continue
+                        with self.subTest(setup=setup, group=group, policy=policy, name=name):
+                            self.assertIn(ids[name], bundle['_choice_ids'])
+                            if bundle.get('_choice_conflict'):
+                                self.assertEqual((disabled, direct), (True, True))
+                                conflicts += 1
+                            else:
+                                self.assertEqual((disabled, direct), (value(name), value(name)))
+                        checked += 1
+                        moved += policy == 'all enabled' and bid != ids[name]
+        self.assertEqual(tagged, 92)              # the second names of a row on an account: the case that was wrong
+        self.assertGreater(checked, 14000)        # four policies over both shapes and every name: not vacuous
+        self.assertGreater(moved, 100)            # many of them under an id that is not the one derived now
+        self.assertLess(conflicts, checked // 100)
+
+    def test_a_v070_id_is_read_by_the_advertised_name_it_was_derived_from(self):
+        """Round 9 item 3: v0.7.0 resolved `deepseek/deepseek-flash` and `deepseek/deepseek-v4-flash` to one row, so
+        the first advertised name held the id and the second the id tagged with the sha256 of its own advertised
+        spelling (not of the bare name). Each choice reaches the name that held it and no other, either way round."""
+        import hashlib
+        ref = json.loads((REPO_ROOT / 'skills' / 'agent-compass' / 'references' / 'accounts.json')
+                         .read_text(encoding='utf-8-sig'))
+        acc = self.accounts({'billing': 'subscription', 'family': 'codex', 'windows': {},
+                             'bundles': {'own': {'harness': 'codex', 'model': 'placeholder-own-model', 'effort': 'high'}}},
+                            ref)
+        first, second = 'deepseek/deepseek-flash', 'deepseek/deepseek-v4-flash'
+        untagged = 'auto:acct:codex:deepseek-v4.1-flash-free@high'
+        tagged = untagged + '#' + hashlib.sha256(second.encode()).hexdigest()[:8]
+        for a, b in ((True, False), (False, True)):
+            doc = {'schema_version': 2, 'accounts': {'acct': {'bundles': {untagged: {'disabled': a},
+                                                                          tagged: {'disabled': b}}}}}
+            got = self.read(acc, [first, second], doc, 2e9)
+            with self.subTest(first=a, second=b):
+                self.assertEqual((got[first][:2], got[first][2]['_choice_ids']), ((a, a), [untagged]))
+                self.assertEqual((got[second][:2], got[second][2]['_choice_ids']), ((b, b), [tagged]))
 
     def test_stored_choices_that_fold_into_one_bundle_and_disagree_disable_it_and_are_listed(self):
         """Two stored ids whose names resolve now to one bundle: agreeing, the bundle reads their value; disagreeing,
@@ -277,7 +299,7 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
                                      'bundles': {'own': {'harness': 'codex', 'model': 'other', 'effort': 'high'}}}}}
         old, new = 'auto:acct:codex:k3@high', 'auto:acct:codex:kimi-k3@high'
         for a, b, want in ((False, False, False), (True, True, True), (True, False, True), (False, True, True)):
-            doc = {'schema_version': 3, 'accounts': {'acct': {'bundles': {old: {'disabled': a}, new: {'disabled': b}}}}}
+            doc = {'schema_version': 2, 'accounts': {'acct': {'bundles': {old: {'disabled': a}, new: {'disabled': b}}}}}
             with self.subTest(old=a, new=b):
                 disabled, direct, bundle, _ = self.read(acc, ['k3'], doc, 2e9)['k3']
                 self.assertEqual((disabled, direct), (want, want))
@@ -291,7 +313,7 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
                'accounts': {'acct': {'billing': 'subscription', 'family': 'codex', 'windows': {},
                                      'bundles': {'own': {'harness': 'codex', 'model': 'other', 'effort': 'high'}}}}}
         old, new = 'auto:acct:codex:k3@high', 'auto:acct:codex:kimi-k3@high'
-        doc = {'schema_version': 3, 'accounts': {'acct': {'bundles': {old: {'disabled': True}, new: {'disabled': False}}},
+        doc = {'schema_version': 2, 'accounts': {'acct': {'bundles': {old: {'disabled': True}, new: {'disabled': False}}},
                                                  'payer': {'bundles': {old: {'disabled': True}}}}}
         _, _, bundle, bid = self.read(acc, ['k3'], doc, 2e9)['k3']
         self.assertTrue(bundle['disabled'])
@@ -309,11 +331,11 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
                                      'bundles': {'own': {'harness': 'codex', 'model': 'other', 'effort': 'high'}}}}}
         for sid in ('auto:acct:codex:kimi-k3@low', 'auto:acct:pi:kimi-k3@high',
                     'auto:acct:codex:kimi-k3@high' + auto_bundles.name_tag('another-name')):
-            doc = {'schema_version': 3, 'accounts': {'acct': {'bundles': {sid: {'disabled': True}}}}}
+            doc = {'schema_version': 2, 'accounts': {'acct': {'bundles': {sid: {'disabled': True}}}}}
             with self.subTest(sid=sid):
                 self.assertEqual(self.read(acc, ['kimi-k3'], doc, 2e9)['kimi-k3'][:2], (False, False))
         proxy = {**acc, 'accounts': {'acct': {'billing': 'metered', 'family': 'codex', 'windows': {}, 'bundles': {}}}}
-        doc = {'schema_version': 3, 'accounts': {'acct': {'bundles': {'auto:acct:claude:kimi-k3@high': {'disabled': True}}}}}
+        doc = {'schema_version': 2, 'accounts': {'acct': {'bundles': {'auto:acct:claude:kimi-k3@high': {'disabled': True}}}}}
         self.assertEqual(self.read(proxy, ['kimi-k3'], doc, 2e9)['kimi-k3'][:2], (True, True))
 
 

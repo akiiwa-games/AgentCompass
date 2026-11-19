@@ -5,7 +5,8 @@ released version wrote for the user is kept).
 `V0_7_0` is the diff of the `aliases` tables of `references/accounts.json` between the `v0.7.0` tag and this release:
 every name v0.7.0 resolved through an alias to one of its rows that this release resolves otherwise (the alias removed,
 the name now a row of its own, or the alias re-targeted). It is read by the upgrade steps of the local files keyed by a
-model name: `user_scores.LOCAL_UPGRADES` (schema 3 to 4) and `accounts_override.LOCAL_UPGRADES` (schema 2 to 3).
+model name (`user_scores.LOCAL_UPGRADES`, schema 3 to 4) and where an auto bundle's v0.7.0 id is replayed
+(`auto_bundles.derive`, `as_v0_7_0`).
 test_released_names.py checks it against the tag.
 """
 
@@ -33,6 +34,16 @@ def v0_7_0_row(name):
     v0.7.0's exactly."""
     leaf = str(name).rsplit('/', 1)[-1]
     return V0_7_0.get(name) or V0_7_0.get(leaf)
+
+
+def as_v0_7_0(accounts):
+    """`accounts` (accounts.json) with every name of `V0_7_0` resolving as v0.7.0 resolved it: an alias of the row it
+    meant, not a row or an alias of its own. A name resolved through it (auto_bundles.default_profile: the advertised
+    spelling, its last segment, case, effort and vendor suffixes) reaches the row v0.7.0 reached; read where the id
+    v0.7.0 gave an auto bundle is replayed (auto_bundles.derive)."""
+    models = {k: v for k, v in ((accounts or {}).get('models') or {}).items() if k not in V0_7_0}
+    aliases = {**{k: v for k, v in ((accounts or {}).get('aliases') or {}).items() if k not in V0_7_0}, **V0_7_0}
+    return {**(accounts or {}), 'models': models, 'aliases': aliases}
 
 
 def current_key(name, accounts):

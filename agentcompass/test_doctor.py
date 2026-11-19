@@ -47,7 +47,7 @@ class DoctorTests(unittest.TestCase):
             home = Path(directory)
             state = home / ".agent-compass"
             state.mkdir()
-            stored = json.dumps({"schema_version": 3, "accounts": {"acct": {"bundles": {
+            stored = json.dumps({"schema_version": 2, "accounts": {"acct": {"bundles": {
                 old: {"disabled": True}, new: {"disabled": False}}}}})
             (state / "accounts-override.json").write_text(stored, encoding="utf-8")
 

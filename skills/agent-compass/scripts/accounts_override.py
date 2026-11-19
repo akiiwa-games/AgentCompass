@@ -6,10 +6,9 @@ import re
 
 import auto_bundles
 import cwd_policy
-import released_names
 import state_upgrade
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 2
 
 
 def normalize(document):
@@ -100,37 +99,6 @@ def _without_migration_record(document):
     return {key: value for key, value in document.items() if key != 'migration_ambiguous_enabled'}
 
 
-def _schema_2_to_3(doc):
-    """Schema 2 (through v0.7.0): an auto bundle's id holds the row its advertised name resolved to
-    (auto_bundles.auto_bundle_id). Where the choice is read (`auto_bundles.choice_for`) a stored model name applies to
-    the bundle it resolves to now, which keeps every id whose name resolves now as it did then, or that is the
-    advertised name itself. What it cannot see is a name v0.7.0 resolved through an alias this release removed or
-    re-targeted (`released_names.V0_7_0`): the v0.7.0 id holds the old row, which still names that row. So the choice
-    is also stored under the advertised name, which is resolved where it is read like any other; the v0.7.0 id keeps its
-    choice. A v0.7.0 id with a `#hash` suffix was one advertised name's own (the second name of the row on that
-    account): it carries only to that name, under the same suffix."""
-    names = {}
-    for name, row in released_names.V0_7_0.items():
-        names.setdefault(row, []).append(name)
-    out = deepcopy(doc)
-    for spec in (out.get('accounts') or {}).values():
-        bundles = spec.get('bundles') if isinstance(spec, dict) else None
-        if not isinstance(bundles, dict):
-            continue
-        for bid, pref in list(bundles.items()):
-            parts = auto_bundles.split_id(bid)
-            if parts is None or not isinstance(pref, dict) or 'disabled' not in pref:
-                continue
-            account, harness, row, effort, tag = parts
-            for name in names.get(row, ()):
-                if tag and '#' + tag != auto_bundles.name_tag(name):
-                    continue
-                bundles.setdefault(auto_bundles.auto_bundle_id(account, harness, name, effort) + ('#' + tag if tag else ''),
-                                   {'disabled': pref['disabled']})
-    out['schema_version'] = SCHEMA_VERSION
-    return out
-
-
 # The user's own choices are kept across updates: {the shape an earlier release wrote: (does the document have it, the
 # step that carries it into the current shape)}. A shape that cannot be carried without guessing has no step and is
 # refused by `validate_document`: a file without `schema_version` (the full copy of the shipped file that v0.1.0
@@ -140,7 +108,6 @@ LOCAL_UPGRADES = {
     'allowed_cwd (v0.1.0 to v0.5.0)': (lambda doc: bool(_allowed_cwd_accounts(doc)), _allowed_cwd_to_regex),
     'migration_ambiguous_enabled (v0.2.0 to v0.5.0)': (lambda doc: 'migration_ambiguous_enabled' in doc,
                                                         _without_migration_record),
-    'schema 2 (v0.2.0 to v0.7.0)': (lambda doc: doc.get('schema_version') == 2, _schema_2_to_3),
 }
 
 
