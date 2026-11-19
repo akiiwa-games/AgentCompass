@@ -2,6 +2,16 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.7.1 - 2026-11-19
+
+- A route you name (`--provider/--account/--model/--effort --basis`) launches past the automatic-routing switches (`allowed_accounts`, an unchecked model); facts still refuse it. The gate governs dispatch, not messages to a running worker.
+- Reference data the maintainer publishes between releases reaches installs again: `published/<schema>/` on `main`, accepted before use, with the shipped set as fall-back. Off switch: `AGENTCOMPASS_PUBLIC_DATA=off`. The boards are still read once per release.
+- Every model and effort the launch table and the Cindy and Magpie gateways offer has a value by a declared method or is on a known-gap list of a closed set of kinds; no inversion across effort or size. Fleet fits are frozen per release, so adding a model changes only its own rows.
+- Gemini 4 Neon (Antigravity). `gpt-6-pro` is GPT-6 Astra at one operating point above Max with a 600 s response floor. The calibration panel takes `muse-spark-1.3` for `deepseek-v4.1-flash-free`. The aliases `gemini-4-pro` and `gemini-4-ultra` are removed.
+- Scores and model checkboxes written under a name v0.7.0 resolved differently are kept (manual scores schema 4).
+- On Windows no launch passes a value through `cmd.exe`: a `.cmd` launcher is started as the program it runs.
+- The tray asks the host for model lists every six hours in the background instead of every ten minutes.
+
 ## v0.7.0 - 2026-11-18
 
 - Level 3 of each facet's score scale is the calibration panel's best measured value instead of the anchor model; a level above 3 is shown as its number. Manual scores move to schema 3: the shipped ones and your own are converted by a declared rule so that each stands for the same value as before.
