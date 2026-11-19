@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import account_state
+import model_resolution
 import provider_inventory
 import public_data
 import reference_provenance
@@ -487,6 +488,7 @@ def five_axis_overlay(accounts, data=None, *, read_local_state=True, public_scor
     loc_manual = local_scores if local_scores is not None else (user_scores.load_local() if read_local_state else None)
     user_scores.apply_overlay(
         out.setdefault('models', {}), targets,
+        provider_names=model_resolution.provider_name_table(out),
         public_scores=pub_manual, local_scores=loc_manual, aliases=out.get('aliases'),
         effort_steps=data.get('effort_steps'),
     )

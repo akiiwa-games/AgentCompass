@@ -41,9 +41,7 @@ class ShippedCoverageTests(unittest.TestCase):
             billed = not (spec.get('unmetered') or spec.get('unlimited'))
             for bid, bundle in sorted((spec.get('bundles') or {}).items()):
                 effort = bundle.get('effort') or 'default'
-                info = overlay['models'].get(gc.model_resolution.resolve_model(
-                    bundle['model'], accounts['models'], accounts.get('aliases') or {},
-                    gc.model_resolution.family_patterns(accounts))['key'])
+                info = overlay['models'].get(gc.model_resolution.resolve_in(bundle['model'], accounts)['key'])
                 state = (info or {}).get('five_axis') or {}
                 miss = gc.missing_at(info, effort)
                 miss += [] if (state.get('image_input') or {}).get('status') in ('yes', 'no') else ['image_input']
@@ -282,9 +280,10 @@ class CheckRuleTests(unittest.TestCase):
         self.assertEqual(found(nick, community)['own']['identity']['listed'], ['mk/nick-dated'])
 
     def test_every_provider_serving_the_name_is_checked_the_id_prefix_and_the_accounts_provider_too(self):
-        """Rule (owner, 2026-11-19, round 7): a pair is identified by every provider that serves the name in that gateway's
-        own listing: the row's provider, the account's provider of a Magpie `account:<kind>` (gate.makers) and the provider
-        part of a `provider/name` id (with the name after it); one of them listing other weights leaves it uncovered."""
+        """Rule (owner, 2026-11-19; model_resolution.serving_providers): a pair is identified by every provider that serves
+        the name in that gateway's own listing: at a Magpie preset (an endpoint) the row's provider and the account's
+        provider of a Magpie `account:<kind>` (gate.makers); at a harness row (a launcher's catalog) the provider part of
+        a `provider/name` id (with the name after it); one of them listing other weights leaves it uncovered."""
         accounts = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
         five = gc.read_json(gc.REFERENCES / 'five-axis-scores.json')
         scores = {'schema_version': 3, 'scores': {}}
@@ -306,7 +305,46 @@ class CheckRuleTests(unittest.TestCase):
         conflict = {'provider': 'own', 'listed': [f'mk/{row}-0813'], 'row': [f'mk/{row}']}
         self.assertEqual((moved[('h', 'claude')]['identity'], moved[('m', 'account:x')]['identity']), (conflict, conflict))
         self.assertEqual((moved[('m', 'relay')]['identity'], moved[('m', 'relay')]['missing']), (None, []))
-        self.assertEqual(gc.serving_providers(catalogs['h'], catalogs['h']['rows'][0]), [('claude', f'own/{row}'), ('own', row)])
+        self.assertEqual(gc.model_resolution.serving_providers(f'own/{row}'), [('own', row)])
+        self.assertEqual(gc.model_resolution.serving_providers(f'own/{row}', gc.row_providers(catalogs['m'], catalogs['m']['rows'][0])),
+                         [('account:x', f'own/{row}'), ('own', f'own/{row}')])
+
+    def test_a_declaration_the_names_file_contradicts_fails_and_one_it_agrees_with_passes(self):
+        """Rule (declaration_violations; owner, 2026-11-19): a provider's declaration must be a row whose canonical ids (or
+        its canonical_id) the names file lists for the name on that provider; a listing of a default's name on a provider
+        with no declaration of its own gives the default's row or repeats the name (its own undated id, row_ids), and one
+        naming another dated id is a violation (round 2)."""
+        accounts = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        a, b = [m for m in accounts['models'] if isinstance(accounts['models'][m], dict)][:2]
+        accounts['provider_names'] = {'statement': 't', 'defaults': {}, 'rows': {
+            'p': {'n': {'model': a, 'kind': 'community', 'url': 'https://x', 'as_of': '2026-11-19', 'statement': 's'}}}}
+        agree = {'schema': gc.NAMES_SCHEMA, 'names': {a: [['q', f'mk/{a}', 1, 1]], 'n': [['p', f'mk/{a}', 1, 1]]}}
+        moved = {'schema': gc.NAMES_SCHEMA, 'names': {a: [['q', f'mk/{a}', 1, 1]], 'n': [['p', f'mk/{a}-0813', 1, 1]]}}
+        self.assertEqual(gc.declaration_violations(accounts, agree)[0], [])
+        self.assertEqual(len(gc.declaration_violations(accounts, moved)[0]), 1)
+        accounts['provider_names'] = {'statement': 't', 'rows': {}, 'defaults': {
+            'n': {'model': b, 'kind': 'vendor', 'url': 'https://x', 'as_of': '2026-11-19', 'statement': 's'}}}
+        names = {'schema': gc.NAMES_SCHEMA, 'names': {b: [['q', f'mk/{b}', 1, 1]],
+                                                      'n': [['maker', f'mk/{b}', 1, 1], ['host', 'mk/n', 1, 1],
+                                                            ['other', 'mk/n-0731', 1, 1]]}}
+        violations, counts = gc.declaration_violations(accounts, names)
+        self.assertEqual((len(violations), counts['default']), (1, 3))
+        self.assertIn('other', violations[0])
+
+    def test_a_community_declaration_on_a_listing_that_repeats_the_name_is_questioned(self):
+        """Rule (declaration_violations, round 3): a `community` declaration sending a provider to another row than the
+        name's default, where that provider's listing only repeats the name, is a violation (models.dev does not say it);
+        the same declaration by the maker or a dated maintainer statement passes."""
+        accounts = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        a, b = [m for m in accounts['models'] if isinstance(accounts['models'][m], dict)][:2]
+        default = {'model': b, 'kind': 'vendor', 'url': 'https://x', 'as_of': '2026-11-19', 'statement': 's'}
+        names = {'schema': gc.NAMES_SCHEMA, 'names': {a: [['q', f'mk/{a}', 1, 1], ['host', f'mk/{a}', 1, 1]],
+                                                      b: [['q', f'mk/{b}', 1, 1]]}}
+        for kind, bad in (('community', 1), ('vendor', 0), ('maintainer', 0)):
+            accounts['provider_names'] = {'statement': 't', 'defaults': {a: default}, 'rows': {'host': {a: {
+                'model': a, 'kind': kind, 'url': 'https://x', 'as_of': '2026-11-19', 'statement': 's'}}}}
+            with self.subTest(kind=kind):
+                self.assertEqual(len(gc.declaration_violations(accounts, names)[0]), bad)
 
     def test_a_row_without_efforts_takes_the_launch_table_at_a_harness_and_default_at_a_magpie_preset(self):
         """Rule (`pairs`): a harness row that lists no efforts is offered at the launch table's efforts, and is a gap off

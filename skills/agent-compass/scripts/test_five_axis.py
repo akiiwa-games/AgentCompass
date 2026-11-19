@@ -3022,7 +3022,8 @@ class FloorScoreProvenanceTests(unittest.TestCase):
     def test_a_maintainer_score_faster_than_the_floor_is_refused_and_one_slower_passes(self):
         import reference_provenance
         acc = {'models': {'pro': {'response_time_source': {'kind': 'maintainer', 'as_of': '2026-11-19', 'min_seconds': 600,
-                                                            'statement': 's'}}}}
+                                                            'statement': 's'}}},
+               'provider_names': {'statement': 'none', 'defaults': {}, 'rows': {}}}
         meas = {'sources': {'aa.ttfa': {'scale': {'anchor_raw': -3.0, 'sd_panel': 1.0}}}}
         levels = {str(k): {'target': t} for k, t in ((1, -5.0), (2, -1.0), (3, 1.0))}
         five = {'anchor': {'targets': {'tool_operation': {'facets': {'responsiveness': {'levels': levels}}}}}}
@@ -3042,7 +3043,7 @@ class FloorScoreProvenanceTests(unittest.TestCase):
         import reference_provenance
         acc = {'models': {'pro': {'response_time_source': {'kind': 'maintainer', 'as_of': '2026-11-19', 'min_seconds': 600,
                                                             'statement': 's'}}},
-               'aliases': {'Pro via consult': 'pro'}}
+               'aliases': {'Pro via consult': 'pro'}, 'provider_names': {'statement': 'none', 'defaults': {}, 'rows': {}}}
         meas = {'sources': {'aa.ttfa': {'scale': {'anchor_raw': -3.0, 'sd_panel': 1.0}}}}
         levels = {str(k): {'target': t} for k, t in ((1, -5.0), (2, -1.0), (3, 1.0))}
         five = {'anchor': {'targets': {'tool_operation': {'facets': {'responsiveness': {'levels': levels}}}}}}

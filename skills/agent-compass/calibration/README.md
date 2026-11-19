@@ -337,6 +337,48 @@ then run `agentcompass data refresh --no-fetch` and `agentcompass data publish`.
 scale itself (the anchor, the sentinel models and the panel members) is `calibration_panel` in `accounts.json`, a dated
 maintainer declaration; changing it rescales every score. Every written value names its sources and dates.
 
+## A name's row on a provider (`provider_names`)
+
+`accounts.json` `provider_names` says which row a served name is when that is not the row of the same name (rule:
+[router-internals.md](../references/router-internals.md), One resolver). Add or correct a declaration as data, citing its
+source like an alias (`kind`, `url`, `as_of`, `statement`); no name or date rule exists in code.
+
+- **The maker moved a name to a newer dated snapshot** (DeepSeek's `deepseek-v4-pro` now serves `DeepSeek-V4-Pro-0813`):
+  `defaults["<name>"] = {"model": "<snapshot row>", "kind": "vendor", ...}` citing the maker's page. Where the maker's page
+  describes the model but names no API id of that name (DeepSeek's `deepseek-v4.1-flash`), the declaration is the owner's
+  rule applied by the maintainer: `"kind": "maintainer"`, dated, its statement citing the maker's line it rests on. The
+  name must be a row (the undated id it repeats), which stays a row with its own readings; only what the served name
+  resolves to changes. The snapshot needs a row (step 1 above).
+- **A provider's listing names a different dated snapshot** (models.dev's `canonical_model_id` for that provider is
+  neither the default's row nor the moved name's own undated id): `rows["<provider>"]["<name>"]` with the row it is
+  (`kind: "community"` citing models.dev, or the maker), or `"model": null, "status": "other_weights"` when no row exists
+  (OpenCode's and Vivgrid's `deepseek-v4-flash`, listed as `deepseek-v4-flash-0731`). A listing that gives the moved name's
+  own undated id only repeats the name: it gets no declaration and reads the default. Where a listing spells the row's
+  model another way, `canonical_id` gives that spelling (Mistral lists `ministral-14b-2512` as
+  `mistral/ministral-3-14b-instruct-2512`).
+
+- **A full id names fixed weights** (a maker's repository id: `deepseek-ai/deepseek-v4-pro`, DeepSeek's Hugging Face
+  repository of the April preview weights, beside the separate `deepseek-ai/DeepSeek-V4-Pro-0813`): `defaults["<owner>/<name>"]`
+  with the row of those weights, citing the repository page. It is read before the last segment's default, on any provider.
+  A gateway's own id for the maker's API name (`deepseek/deepseek-v4-pro` on OpenRouter) is not a repository id and gets
+  none.
+
+Known cost: a host that serves the earlier open weights under the undated name is read as the new snapshot until its
+listing names that snapshot or the maintainer declares it. The maintainer can declare it three ways, each accepted by the
+provenance check and the release check: the host and the name (`rows["<host>"]["<name>"]`, kind `maintainer` or the
+maker, with a statement of its own; a `community` declaration resting on a listing that only repeats the name is refused
+by the release check), a full id on any provider (`defaults["<owner>/<name>"]`), or a full id on one host
+(`rows["<host>"]["<owner>/<name>"]`).
+- **The maker shut the name down on its own endpoint**: `rows["<maker>"]["<name>"] = {"model": null, "status": "retired",
+  "kind": "vendor", ...}` with the maker's notice, and the name's entry in `audit/gateway-out-of-scope.json`.
+
+A moving name changes when the maker moves it: between releases the maintainer corrects the declaration and publishes it
+(`agentcompass data publish`, below), as for any launch row. `audit/gateway_coverage.py` fails while the saved models.dev
+listings (`audit/models-dev-names.json`) disagree with a declaration, or list a default's name on a provider that declares
+nothing with a canonical id that is neither the default's row nor the moved name's own undated id; it prints how many
+listings fall under each. A default also
+moves where a score keyed by the name lands (router-internals.md, Score keys): rebuild and check what moved.
+
 ## Publishing a model between releases
 
 Installs read a set the maintainer published on `main` without a product update

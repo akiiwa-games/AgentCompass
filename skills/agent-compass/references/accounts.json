@@ -499,6 +499,111 @@
    }
   }
  },
+ "provider_names": {
+  "statement": "which row a served model name is (scripts/model_resolution.py, resolve_in): `rows` are a serving provider's own declarations, read first: its listing names a different dated snapshot than the maker's default (`status: other_weights` when the catalog has no row for it), its listing spells the row another way (`canonical_id`), or the maker shut the name down there (`status: retired`); `defaults` say what a name its maker moved to a newer dated snapshot serves now (the maker's statement, kind vendor, or the owner's rule applied by the maintainer to a name the maker's page describes, kind maintainer), read on any provider and with no provider known when no provider declares the name. A `defaults` key may be a full id with its owner part (a maker's repository id): it is read before the name's last segment, so it says what that id is whatever the moved name's default says (model_resolution.default_for). A listing that gives the moved name's own undated id (the row of the same id in `models`, or another name moved to the same snapshot) repeats the name and needs no declaration. A name neither declares resolves through `aliases` and `families`. Each declaration cites its source with its date (audit/gateway_coverage.py, declaration_violations)",
+  "defaults": {
+   "deepseek-ai/deepseek-v4-flash": {
+    "model": "deepseek-v4-flash",
+    "kind": "vendor",
+    "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash",
+    "as_of": "2026-11-19",
+    "statement": "DeepSeek's own Hugging Face repository deepseek-ai/DeepSeek-V4-Flash holds the preview weights of the April V4 series (same preview wording, 284B total, 13B activated) with no note of replaced weights; DeepSeek's later Flash weights are separate repositories (deepseek-ai/DeepSeek-V4.1-Flash, deepseek-ai/DeepSeek-V4.1-Flash-1017): the repository id names fixed weights, not the moved API name"
+   },
+   "deepseek-ai/deepseek-v4-pro": {
+    "model": "deepseek-v4-pro",
+    "kind": "vendor",
+    "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro",
+    "as_of": "2026-11-19",
+    "statement": "DeepSeek's own Hugging Face repository deepseek-ai/DeepSeek-V4-Pro holds the preview weights (\"We present a preview version of DeepSeek-V4 series\", 1.6T total, 49B activated; weights uploaded 2026-04-23, later commits change config, README, code and the report, none says the weights were replaced). The newer weights are a separate repository, deepseek-ai/DeepSeek-V4-Pro-0813 (\"the official release of DeepSeek-V4-Pro, superseding the preview version\", https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro-0813): the repository id names fixed weights, not the moved API name"
+   },
+   "deepseek-ai/deepseek-v4.1-flash": {
+    "model": "deepseek-v4.1-flash",
+    "kind": "vendor",
+    "url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+    "as_of": "2026-11-19",
+    "statement": "DeepSeek's own Hugging Face repository deepseek-ai/DeepSeek-V4.1-Flash (\"We introduce DeepSeek-V4.1-Flash, a multimodal Mixture-of-Experts (MoE) model\"; weights uploaded 2026-09-10, later commits change the README, encoding, chat template and indexer code, none says the weights were replaced); the update is a separate repository, deepseek-ai/DeepSeek-V4.1-Flash-1017 (\"a minor update to DeepSeek-V4.1-Flash\", https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017): the repository id names fixed weights, not the moved API name. NVIDIA lists the repository id lowercase (deepseek-ai/deepseek-v4.1-flash)"
+   },
+   "deepseek-v4-flash": {
+    "model": "deepseek-v4.1-flash-1017",
+    "kind": "vendor",
+    "url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "as_of": "2026-11-19",
+    "statement": "DeepSeek pricing, note (1): \"The legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp are still accepted, but the corresponding models have been retired\"; their requests \"are served by the DeepSeek-V4.1-Flash-1017 model and billed at the Flash price\"; the change log of 2026-09-10 (https://api-docs.deepseek.com/updates) routed the name to V4.1 Flash (\"temporarily routed to V4.1 Flash\"), and models.dev lists deepseek/deepseek-v4-flash on deepseek with canonical_model_id deepseek/deepseek-v4.1-flash-1017 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "deepseek-v4-pro": {
+    "model": "deepseek-v4-pro-0813",
+    "kind": "vendor",
+    "url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "as_of": "2026-11-19",
+    "statement": "DeepSeek pricing lists deepseek-v4-pro as \"MODEL VERSION DeepSeek-V4-Pro-0813\"; its change log of 2026-08-13 (https://api-docs.deepseek.com/updates): \"simply set the model name to deepseek-v4-pro to use the latest version\"; models.dev lists deepseek/deepseek-v4-pro on deepseek with canonical_model_id deepseek/deepseek-v4-pro-0813 (snapshot of 2026-11-10). The maker's pages disagree: its news of 2026-09-10 (https://api-docs.deepseek.com/news/news260910) says \"all deepseek-v4-pro requests will route to V4.1-Flash\" from 2026-09-14 until V4.1-Pro launches, while the change log entry of the same day says it will \"continue providing API services for DeepSeek V4 Pro after September 14, 2026\"; this declaration takes the later reversal and the current price list: V4-Pro-0813"
+   },
+   "deepseek-v4.1-flash": {
+    "model": "deepseek-v4.1-flash-1017",
+    "kind": "maintainer",
+    "url": "https://api-docs.deepseek.com/updates",
+    "as_of": "2026-11-19",
+    "statement": "Maintainer declaration of the owner's rule (2026-11-19: a name that stayed while the dated snapshot behind it changed reads as the new snapshot). DeepSeek names no API id deepseek-v4.1-flash (its API name is deepseek-flash); the fact the declaration rests on is the change log line of 2026-10-17, \"DeepSeek V4.1 Flash has been upgraded to DeepSeek-V4.1-Flash-1017\" with \"The API calling method and pricing remain unchanged\", and the pricing page (https://api-docs.deepseek.com/quick_start/pricing) lists the model version as DeepSeek-V4.1-Flash-1017: so a host serving the name deepseek-v4.1-flash is read as that snapshot"
+   }
+  },
+  "rows": {
+   "google": {
+    "gemini-3.1-flash-lite-preview": {
+     "model": null,
+     "status": "retired",
+     "kind": "vendor",
+     "url": "https://ai.google.dev/gemini-api/docs/deprecations",
+     "as_of": "2026-11-19",
+     "statement": "Google shut gemini-3.1-flash-lite-preview down on 2026-05-25: the deprecations table lists it released 2026-03-03, shut down 2026-05-25, replacement gemini-3.1-flash-lite; its model page (https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-preview) \"is deprecated and has been shut down on May 25, 2026\"; the changelog (https://ai.google.dev/gemini-api/docs/changelog), 2026-05-25: \"The gemini-3.1-flash-lite-preview model has been shut down. Use gemini-3.1-flash-lite instead.\" Google does not say whether the GA model has the preview's weights; models.dev (snapshot of 2026-11-10) still lists the name on google"
+    }
+   },
+   "mistral": {
+    "ministral-14b-2512": {
+     "model": "ministral-14b-2512",
+     "canonical_id": "mistral/ministral-3-14b-instruct-2512",
+     "kind": "vendor",
+     "url": "https://docs.mistral.ai/models/ministral-3-14b-25-12",
+     "as_of": "2026-11-19",
+     "statement": "Mistral's model page of Ministral 3 14B gives the API id ministral-14b-2512, version v25.12, the row's model; it does not name the variant. models.dev's mistral listing gives ministral-14b-2512 the canonical_model_id mistral/ministral-3-14b-instruct-2512 (snapshot of 2026-11-10), the instruct post-trained weights Mistral publishes as mistralai/Ministral-3-14B-Instruct-2512 (https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512 for 14B), while other providers list it as mistral/ministral-14b-2512: one model under two spellings"
+    },
+    "ministral-3b-2512": {
+     "model": "ministral-3b-2512",
+     "canonical_id": "mistral/ministral-3-3b-instruct-2512",
+     "kind": "vendor",
+     "url": "https://docs.mistral.ai/models/ministral-3-3b-25-12",
+     "as_of": "2026-11-19",
+     "statement": "Mistral's model page of Ministral 3 3B gives the API id ministral-3b-2512, version v25.12, the row's model; it does not name the variant. models.dev's mistral listing gives ministral-3b-2512 the canonical_model_id mistral/ministral-3-3b-instruct-2512 (snapshot of 2026-11-10), the instruct post-trained weights Mistral publishes as mistralai/Ministral-3-3B-Instruct-2512 (https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512 for 14B), while other providers list it as mistral/ministral-3b-2512: one model under two spellings"
+    },
+    "ministral-8b-2512": {
+     "model": "ministral-8b-2512",
+     "canonical_id": "mistral/ministral-3-8b-instruct-2512",
+     "kind": "vendor",
+     "url": "https://docs.mistral.ai/models/ministral-3-8b-25-12",
+     "as_of": "2026-11-19",
+     "statement": "Mistral's model page of Ministral 3 8B gives the API id ministral-8b-2512, version v25.12, the row's model; it does not name the variant. models.dev's mistral listing gives ministral-8b-2512 the canonical_model_id mistral/ministral-3-8b-instruct-2512 (snapshot of 2026-11-10), the instruct post-trained weights Mistral publishes as mistralai/Ministral-3-8B-Instruct-2512 (https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512 for 14B), while other providers list it as mistral/ministral-8b-2512: one model under two spellings"
+    }
+   },
+   "opencode": {
+    "deepseek-v4-flash": {
+     "model": null,
+     "status": "other_weights",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on opencode with canonical_model_id deepseek/deepseek-v4-flash-0731 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as weights the catalog has no row for, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "vivgrid": {
+    "deepseek-v4-flash": {
+     "model": null,
+     "status": "other_weights",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on vivgrid with canonical_model_id deepseek/deepseek-v4-flash-0731 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as weights the catalog has no row for, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   }
+  }
+ },
  "superseded": {
   "claude-fable-5": {
    "by": "claude-fable-5-2",

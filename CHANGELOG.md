@@ -2,6 +2,10 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## Unreleased
+
+- A model name reads the row its serving provider really serves (`accounts.json` `provider_names`, cited declarations): DeepSeek's `deepseek-v4-pro` reads `deepseek-v4-pro-0813`, and the legacy `deepseek-v4-flash` and `deepseek-v4.1-flash` read `deepseek-v4.1-flash-1017`. These are the maker's defaults, read on any provider and with no provider known. A spelling of these names with an effort, a date, `-latest` or `-preview` reads the same row. DeepSeek's own repository ids (`deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash`, `deepseek-ai/DeepSeek-V4.1-Flash`) keep the weights they hold, the earlier rows, and a score for those rows is written under the repository id. A provider whose own listing names a different dated snapshot keeps its own declaration (OpenCode's and Vivgrid's `deepseek-v4-flash`, listed as the `-0731` weights); a listing that only repeats the name reads the maker's default; Google's retired `gemini-3.1-flash-lite-preview` has no row; Mistral's two spellings of the Ministral 3 models are one row. A bundle whose model moves keeps the checkbox stored under its earlier id; names that became one model and hold different choices leave it unchecked, and `agentcompass doctor` lists them. A score keyed by a moved name (yours or the shipped maintainer score for `deepseek-v4-pro`) follows the name to the row it means now; a key naming the dated row itself wins for that row. Your files keep their keys. Temporary priorities and quick reset-priority targets stored under a moved name reach the bundle that now runs its row, and one stored for an account reads the name as that account's providers serve it.
+
 ## v0.7.1 - 2026-11-19
 
 - A route you name (`--provider/--account/--model/--effort --basis`) launches past the automatic-routing switches (`allowed_accounts`, an unchecked model); facts still refuse it. The gate governs dispatch, not messages to a running worker.

@@ -1038,6 +1038,16 @@
     "as_of": "2026-11-19",
     "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for voxtral-small-latest"
    }
+  },
+  "gemini-3.1-flash-lite-preview": {
+   "status": "retired",
+   "date": "2026-05-25",
+   "notice": {
+    "kind": "vendor",
+    "url": "https://ai.google.dev/gemini-api/docs/deprecations",
+    "as_of": "2026-11-19",
+    "statement": "Google's deprecations table: gemini-3.1-flash-lite-preview, released 2026-03-03, shut down 2026-05-25, replacement gemini-3.1-flash-lite; the changelog, 2026-05-25: \"The gemini-3.1-flash-lite-preview model has been shut down. Use gemini-3.1-flash-lite instead.\""
+   }
   }
  }
 }

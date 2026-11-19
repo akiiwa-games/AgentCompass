@@ -72,7 +72,7 @@ def override_depleted(override, usage, accounts):
         return False
     scoring = accounts.get('scoring') or {}
     margin, short = scoring.get('safety_margin_pct', 5), scoring.get('short_window_hours', 24)
-    model = account_fleet.canonical(override['model'], accounts) if override.get('model') else None
+    model = account_fleet.stored_model(override['model'], accounts, account) if override.get('model') else None
     binding = {wid: wspec for wid, wspec, _ in quota_pools.applicable_windows(spec, model, {}, accounts=accounts)} if model else spec.get('windows', {})
     for window in row.get('windows') or ():
         if not isinstance(window, dict):
@@ -235,7 +235,7 @@ def window_reset_expectation(overrides, account, model, wid, spec, accounts, now
         until = quota_pools.parse_time(rule.get('until'))
         if (rule.get('account') != account or reset is None or reset <= now
                 or (until is not None and until <= now)
-                or (rule.get('model') and account_fleet.canonical(rule['model'], accounts) != model)):
+                or (rule.get('model') and account_fleet.stored_model(rule['model'], accounts, account) != model)):
             continue
         if rule.get('window'):
             if quota_pools.canonical_window_id(spec, rule['window']) != wid:
@@ -362,7 +362,8 @@ def _manage_overrides_locked(args, now=None):
                 and not override_reset_landed(o, usage, accounts, now)
                 and not override_depleted(o, usage, accounts)]
         intent = (getattr(args, 'intent', None) or ' '.join(args.basis.split())).strip()
-        model = account_fleet.canonical(args.model, accounts) if args.model else None
+        model = account_fleet.stored_model(args.model, accounts, args.account) if args.model else None
+        stored = account_fleet.stored_form(args.model, accounts, args.account) if args.model else None
         boost = 0.1 if args.boost is None else args.boost
         if not expires and override_depleted({'account': args.account, 'model': model, 'window': args.window,
                                                         'boost': boost}, usage, accounts):
@@ -371,7 +372,8 @@ def _manage_overrides_locked(args, now=None):
         key = (intent, args.account, model, args.window)
         previous = next((o for o in rows if (
             o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'),
-            account_fleet.canonical(o.get('model'), accounts) if o.get('model') else None, o.get('window')) == key), None)
+            account_fleet.stored_model(o.get('model'), accounts, o.get('account')) if o.get('model') else None,
+            o.get('window')) == key), None)
         rebaseline = bool(getattr(args, 'rebaseline', False))
         if rebaseline:
             if previous is None:
@@ -389,7 +391,7 @@ def _manage_overrides_locked(args, now=None):
         if previous and previous.get('stop_on_reset'):
             stop_on_reset = True  # A boost-only update is not permission to disable reset retirement.
         entry = {'id': previous['id'] if previous else entry_id, 'intent': intent,
-                 'account': args.account, 'window': args.window, 'model': model,
+                 'account': args.account, 'window': args.window, 'model': stored,
                  'expected_reset_at': resets.isoformat() if resets else (previous or {}).get('expected_reset_at', (previous or {}).get('resets_at')),
                  'expires_at': expires.isoformat() if expires else (previous or {}).get('expires_at'),
                  'boost': boost, 'until': until.isoformat(),
@@ -407,7 +409,8 @@ def _manage_overrides_locked(args, now=None):
                 entry['baseline_repaired_at'] = previous['baseline_repaired_at']
         rows = [o for o in rows if (
             o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'),
-            account_fleet.canonical(o.get('model'), accounts) if o.get('model') else None, o.get('window')) != key]
+            account_fleet.stored_model(o.get('model'), accounts, o.get('account')) if o.get('model') else None,
+            o.get('window')) != key]
         rows.append({k: v for k, v in entry.items() if v is not None})
         removed = 0
     path.parent.mkdir(parents=True, exist_ok=True)

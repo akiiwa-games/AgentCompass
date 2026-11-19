@@ -568,7 +568,13 @@ def set_manual_score(model: str, target: str, level: float) -> str:
     """A local manual score, through the same writer as `agentcompass score set` (never the public file)."""
     modules()
     import user_scores
-    result = user_scores.set_score(model, target, level)
+    accounts = _cached_accounts()
+    key = user_scores.score_key_for_row(model, accounts)
+    if key is None:
+        # The row's own id is a name its maker moved and no declared name reaches the row.
+        raise ValueError(_tr("{0} 没有可写评分的名字：这个名字现在指 {1}").format(
+            model, user_scores.resolve_model_key(model, accounts)))
+    result = user_scores.set_score(key, target, level, accounts=accounts)
     return _tr("已为 {0} 的 {1} 写入本机评分 {2}").format(result["model"], result["target"], result["entry"]["level"])
 
 
@@ -576,7 +582,9 @@ def clear_manual_score(model: str, target: str) -> str:
     """Clear a local manual score, through the same writer as `agentcompass score clear` (never the public file)."""
     modules()
     import user_scores
-    result = user_scores.clear_score(model, target)
+    accounts = _cached_accounts()
+    model = user_scores.score_key_for_row(model, accounts) or model   # a key landing on the row (set_manual_score's)
+    result = user_scores.clear_score(model, target, accounts=accounts)
     if "." not in target and result["removed"] == 0:
         local = user_scores.list_scores(model, scope="local").get("local") or {}
         remaining = sorted({k for entries in local.values() if isinstance(entries, dict)
@@ -1315,7 +1323,8 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
     accounts = account_fleet.load_accounts()
     if account not in accounts["accounts"]:
         raise ValueError(_tr("未知账号"))
-    model = account_fleet.canonical(model, accounts) if model else None
+    stored = account_fleet.stored_form(model, accounts, account) if model else None
+    model = account_fleet.stored_model(model, accounts, account) if model else None
     path = quota_overrides.overrides_path()
     with override_store.locked(path):
         document = router_priority.read_document(path)
@@ -1328,14 +1337,14 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
         if overlapping:
             ui_rules = [r for r in overlapping if r.get("intent") in (PANEL_INTENT, router_priority.INTENT)
                         and not r.get("expires_at")]
-            if not ui_rules or any(r.get("until") == new_until and (account_fleet.canonical(r["model"], accounts) if r.get("model") else None) == model
+            if not ui_rules or any(r.get("until") == new_until and (account_fleet.stored_model(r["model"], accounts, account) if r.get("model") else None) == model
                                    for r in ui_rules):
                 return _tr("该账号/模型已有临时规则；未叠加权重")
             existing = ui_rules[0]
             existing["until"] = new_until
             existing["basis"] = _tr('用户设置 {0}/{1} 预计 {2} 小时后重置，越近消耗优先级越高').format(account, model or _tr('全部模型'), hours)
             if model:
-                existing["model"] = model
+                existing["model"] = stored
             else:
                 existing.pop("model", None)
             if boost is not None:
@@ -1350,7 +1359,7 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
         if boost is not None:
             row['boost'] = round(float(boost), 2)
         if model:
-            row["model"] = model
+            row["model"] = stored
         if stop_on_reset:
             windows = [(wid, spec) for wid, spec, _ in quota_pools.applicable_windows(accounts["accounts"][account], model, {}, accounts=accounts)
                        if spec.get("hours", 0) >= 24]
@@ -1968,9 +1977,11 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
     """Union configured bundles with advertised models, without creating launchable bundles."""
     modules()
     import account_fleet
+    import auto_bundles
     inventory = (accounts.get("_discovery") or {}).get("accounts") or {}
-    def canonical(raw):
-        resolved = account_fleet.canonical(raw, accounts)
+    def canonical(raw, served=()):
+        # An endpoint's advertised name reads that endpoint's declaration, as auto_bundles.derive reads it.
+        resolved = account_fleet.canonical(raw, accounts, served)
         return re.sub(r"-(low|medium|high|xhigh|max|minimal|default|standard|extended)$", "", resolved)
     for row in rows:
         row['models'] = [group for group in row['models'] if group.get('routed', True)]
@@ -1993,7 +2004,8 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
                 raw = model.get("id") if isinstance(model, dict) else model
                 if not isinstance(raw, str):
                     continue
-                key = raw if exact_catalog else canonical(raw)
+                served = auto_bundles.endpoint_providers(entry, provider, row.get("account"))
+                key = raw if exact_catalog else canonical(raw, served)
                 label = (model.get("label") or model.get("model") or raw) if isinstance(model, dict) else raw
                 label = re.sub(r"\s*\((Low|Medium|High|XHigh|Max)\)$", "", label, flags=re.I)
                 detected[key] = display_names.catalog_labels().get(key, label)
@@ -2004,7 +2016,7 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
         for group in row["models"]:
             key = canonical(group["model"])
             configured[key] = group
-            matched = next((item for item in detected if canonical(item) == key and item not in consumed), None)
+            matched = next((item for item in detected if (item == key or canonical(item) == key) and item not in consumed), None)
             if matched is not None:
                 consumed.add(matched)
             group["routed"] = True

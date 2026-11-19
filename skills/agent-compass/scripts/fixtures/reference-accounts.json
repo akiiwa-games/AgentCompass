@@ -61,6 +61,11 @@
     "deepseek-v4-flash": "deepseek-v4.1-flash-free",
     "qwen-flash": "qwen3-flash-2025-07-28"
   },
+  "provider_names": {
+    "statement": "the reference fleet's own: its model table holds none of the rows the shipped provider_names declarations name, so it declares none",
+    "defaults": {},
+    "rows": {}
+  },
   "superseded": {
     "claude-fable-5": {
       "by": "claude-fable-5-2",
