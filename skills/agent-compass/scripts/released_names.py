@@ -25,6 +25,16 @@ V0_7_0 = {
 }
 
 
+def v0_7_0_row(name):
+    """The row v0.7.0 resolved `name` to where this release resolves it otherwise, else None. v0.7.0
+    (user_scores.resolve_model_key) read a name as a row, then an alias, then its last `/` segment as a row, then that
+    segment as an alias; a name or segment in `V0_7_0` is one it resolved through an alias this release changed. No
+    provider-qualified alias of v0.7.0 has a last segment in `V0_7_0` (test_released_names.py), so the segment rule is
+    v0.7.0's exactly."""
+    leaf = str(name).rsplit('/', 1)[-1]
+    return V0_7_0.get(name) or V0_7_0.get(leaf)
+
+
 def current_key(name, accounts):
     """The key a name resolves to under `accounts` (accounts.json) the way an auto bundle's id is keyed
     (auto_bundles.derive: a row or an alias collapses to the row; any other name keeps its own advertised spelling)."""

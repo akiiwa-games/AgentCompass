@@ -725,6 +725,20 @@ class LocalScoresKeptAcrossUpdatesTests(unittest.TestCase):
                                             'claude-opus-5-5': {'creativity': c, 'coding': a},
                                             'unknown-model': {'coding': b}})
 
+    def test_a_provider_qualified_schema_3_key_is_resolved_as_v070_resolved_it(self):
+        """Round 7 item 4 (AGENTS.md: what a released version wrote for the user is kept): v0.7.0 read a key by its last
+        `/` segment and then the alias table, so `anthropic/claude-opus-5` scored claude-opus-5-5 and `x-ai/grok-4`
+        scored grok-4.7; the upgrade rewrites such keys to that row, is idempotent, and keeps a key v0.7.0 did not resolve."""
+        a = {'level': 2.5, 'as_of': '2026-11-01', 'kind': 'user'}
+        b = {'level': 2.6, 'as_of': '2026-11-01', 'kind': 'user'}
+        c = {'level': 1.5, 'as_of': '2026-11-01', 'kind': 'user'}
+        self.write({'schema_version': 3, 'scores': {'anthropic/claude-opus-5': {'creativity': a}, 'x-ai/grok-4': {'creativity': b},
+                                                     'vendor/no-such-model-x': {'creativity': c}}})
+        loaded = user_scores.load_local(self.local)
+        self.assertEqual(loaded['scores'], {'claude-opus-5-5': {'creativity': a}, 'grok-4.7': {'creativity': b},
+                                            'vendor/no-such-model-x': {'creativity': c}})
+        self.assertEqual(user_scores.upgrade_local_document(loaded), loaded)
+
     def test_every_schema_below_the_current_one_has_an_upgrade_step(self):
         self.assertEqual(sorted(user_scores.LOCAL_UPGRADES), list(range(1, user_scores.SCHEMA_VERSION)))
 

@@ -42,6 +42,26 @@ class ReleasedNamesTests(unittest.TestCase):
                 diff[name] = row
         self.assertEqual(released_names.V0_7_0, diff)
 
+    def test_the_segment_rule_is_v070s_resolution_of_a_provider_qualified_name(self):
+        """Round 7 item 4: v0.7.0 resolved a name as a row, an alias, its last `/` segment as a row, then as an alias;
+        `v0_7_0_row` gives that row for a provider-qualified name, because no provider-qualified alias of v0.7.0 has a
+        last segment in the table (it would have resolved before the segment)."""
+        try:
+            raw = subprocess.run(['git', 'show', 'v0.7.0:skills/agent-compass/references/accounts.json'], cwd=REPO_ROOT,
+                                 capture_output=True, text=True, encoding='utf-8', timeout=60)
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.skipTest(f'git unavailable: {exc}')
+        if raw.returncode != 0:
+            self.skipTest('the v0.7.0 tag is not in this checkout (a shallow clone)')
+        old = json.loads(raw.stdout.lstrip('﻿'))
+        self.assertEqual([a for a in old['aliases'] if '/' in a and a.rsplit('/', 1)[-1] in released_names.V0_7_0], [])
+        for name, row in released_names.V0_7_0.items():
+            with self.subTest(name=name):
+                leaf = f'vendor/{name}'.rsplit('/', 1)[-1]
+                self.assertEqual(v070_resolution(old, leaf), row)
+                self.assertEqual(released_names.v0_7_0_row(f'vendor/{name}'), row)
+        self.assertIsNone(released_names.v0_7_0_row('vendor/claude-opus-5-5'))
+
 
 if __name__ == '__main__':
     unittest.main()

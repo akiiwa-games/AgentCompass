@@ -324,15 +324,17 @@ def _local_schema_2_to_3(doc: dict) -> dict:
 
 
 def _local_schema_3_to_4(doc: dict) -> dict:
-    """Schema 3 (v0.7.0) entries keyed by a name v0.7.0 resolved through an alias that this release removed or re-targeted
-    (`released_names.V0_7_0`) are rewritten to the row v0.7.0 resolved the name to, the model the user scored. Entries that
-    meet on one row merge in file order, a later one winning, as v0.7.0's overlay applied them."""
+    """Schema 3 (v0.7.0) entries keyed by a name v0.7.0 resolved through an alias that this release removed or re-targeted,
+    as v0.7.0 resolved it (`released_names.v0_7_0_row`: the name, else its last `/` segment, so `anthropic/claude-opus-5`
+    too), are rewritten to the row v0.7.0 resolved the name to, the model the user scored. A name v0.7.0 did not resolve
+    stays (ignored, named by `doctor`). Entries that meet on one row merge in file order, a later one winning, as v0.7.0's
+    overlay applied them."""
     scores = doc.get('scores')
     if not isinstance(scores, dict):
         return {**doc, 'schema_version': 4}
     out = {}
     for model, targets in scores.items():
-        key = released_names.V0_7_0.get(model, model)
+        key = released_names.v0_7_0_row(model) or model
         if isinstance(targets, dict) and isinstance(out.get(key), dict):
             out[key] = {**out[key], **targets}
         else:
