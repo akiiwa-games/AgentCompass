@@ -23,7 +23,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `claude-sonnet-4-6` | -0.28 | -1.91 | -3.14~ | -2.49 | -1.08~ | 23.559 | yes |
 | `claude-sonnet-5` | -0.38 | -2.33 | -2.14 | -2.23 | -2.00~ | 15.706 | yes |
 | `claude-sonnet-5-5` | -0.04 | -2.14 | -0.89 | -0.59 | -1.69 | 20.25 | yes |
-| `codestral-2508` | -0.70 | -3.84~ | -3.50~ | -4.67 | -3.15~ | 1.286 | no |
+| `codestral-2508` | -0.70 | -4.85~ | -4.66~ | -4.67 | -4.66~ | 1.286 | no |
 | `deepseek-v4-flash` | -0.58 | -3.05 | -2.24~ | -2.64 | -2.14~ | 1.544 | no |
 | `deepseek-v4-flash-promo` | -0.58 | -3.05~ | -2.24~ | -2.64~ | -2.14~ | - | unknown |
 | `deepseek-v4-pro` | -0.40 | -1.98 | -2.10u | -2.98 | -1.81~ | - | no |
@@ -52,7 +52,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gemini-4-argon-high` | 0.12 | 0.15 | -0.76 | -0.58 | -1.12u | 6.0 | yes |
 | `gemini-4-carbon` | 0.16 | -0.03 | 0.00u | -0.03 | -1.70u | 8.463 | yes |
 | `gemini-4-hydrogen-high` | -0.13 | -0.71 | -1.27~ | -0.45 | -1.10~ | 17.094 | yes |
-| `gemini-4-neon` | 0.15 | 0.11~ | -0.65~ | -0.27~ | -0.90~ | 15.41 | yes |
+| `gemini-4-neon` | 0.15 | 0.11~ | -0.65~ | -0.26~ | -0.90~ | 15.41 | yes |
 | `gemma-4-26b-a4b-it` | -0.57 | -3.28 | -4.10~ | -4.67 | -3.17 | 1.215 | yes |
 | `gemma-4-31b-it` | -0.45 | -2.76 | -3.76~ | -4.55 | -2.33 | 2.035 | yes |
 | `glm-4.5` | -0.78 | -4.06 | -3.19~ | -3.33 | -5.09~ | 14.547 | no |
@@ -91,9 +91,9 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gpt-6.1-terra` | -0.04 | -2.27~ | -0.47u | -1.25 | -0.57 | 5.412 | yes |
 | `gpt-6.2-astra` | 0.16 | -1.42~ | 0.81~ | -0.10~ | -0.10 | 16.145 | yes |
 | `gpt-6.2-sol` | 0.06 | -1.85~ | 0.33~ | -0.09~ | 0.07~ | 7.546 | yes |
-| `gpt-oss-120b` | -1.26 | -6.67 | -5.73~ | -5.86 | -5.60~ | 8.211 | no |
+| `gpt-oss-120b` | -1.27 | -6.67 | -5.73~ | -5.86 | -5.60~ | 8.211 | no |
 | `gpt-oss-20b` | -1.54 | -7.72 | -5.73~ | -5.85~ | -5.60~ | - | no |
-| `grok-4.20-0309-non-reasoning` | -0.53 | -2.66~ | -2.88~ | -4.11~ | -2.34~ | - | unknown |
+| `grok-4.20-0309-non-reasoning` | -0.53 | -3.67~ | -2.88~ | -4.94~ | -6.07~ | - | unknown |
 | `grok-4.20-0309-reasoning` | -0.53 | -2.66~ | -2.88~ | -4.11~ | -2.34~ | - | unknown |
 | `grok-4.20-multi-agent-0309` | -0.53 | -2.66~ | -2.88~ | -4.11~ | -2.34~ | - | unknown |
 | `grok-4.3` | -0.53 | -2.66 | -2.88~ | -4.11 | -2.34 | 4.749 | yes |
@@ -134,13 +134,13 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `nemotron-3-ultra-free` | -0.64 | -3.57~ | -3.83~ | -3.74 | -2.87~ | 2.545 | unknown |
 | `nemotron-3.5-lightning-free` | -0.99 | -5.08~ | -4.74~ | -5.75~ | -4.41~ | 3.952 | no |
 | `nemotron-3.5-super-vl-free` | -0.64 | -3.57~ | -3.47~ | -4.42 | -2.87~ | 6.161 | yes |
-| `qwen-max` | -0.30 | -2.11~ | -1.82~ | -2.19~ | -1.38~ | - | unknown |
+| `qwen-max` | -0.30 | -3.12~ | -4.00~ | -3.02~ | -2.88~ | - | unknown |
 | `qwen-plus` | -0.30 | -2.11~ | -1.82~ | -2.19~ | -1.38~ | 1.715 | no |
-| `qwen3-coder-flash` | -0.90 | -5.01~ | -4.33~ | -5.88~ | missing! | - | no |
+| `qwen3-coder-flash` | -0.90 | -6.03~ | -5.63~ | -6.71~ | missing! | - | no |
 | `qwen3-coder-next` | - | missing! | missing! | missing! | missing! | 6.334 | no |
 | `qwen3-flash-2025-07-28` | -0.90 | -3.45u | -2.62u | -2.78u | -2.85u | - | unknown |
 | `qwen3-omni-flash` | -0.90 | -5.01~ | -4.33~ | -5.88~ | missing! | - | unknown |
-| `qwen3-vl-plus` | -0.52 | -3.06~ | -2.45~ | -3.03~ | -2.35~ | - | unknown |
+| `qwen3-vl-plus` | -0.52 | -3.06~ | -2.45~ | -3.03~ | -2.34~ | - | unknown |
 | `qwen3.5-122b-a10b` | -0.74 | -4.24 | -2.88~ | -4.65 | -2.57 | - | yes |
 | `qwen3.5-27b` | -0.80 | -4.46 | -3.36~ | -4.68 | -2.62 | - | yes |
 | `qwen3.5-35b-a3b` | -0.92 | -4.89 | -3.69~ | -5.78 | -3.70 | - | yes |
@@ -156,7 +156,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `qwen3.7-plus` | -0.42 | -2.40 | -3.12~ | -2.13 | -1.37 | 2.204 | yes |
 | `qwen3.8-27b` | -0.60 | -4.41 | -2.62 | -2.23 | -1.43 | 3.478 | yes |
 | `qwen3.8-flash` | -0.60 | -4.41~ | -2.62~ | -2.23~ | -2.17~ | 0.367 | yes |
-| `qwen3.8-max` | -0.18 | -1.27 | -2.04 | -1.45 | -2.17 | 5.299 | yes |
+| `qwen3.8-max` | -0.19 | -1.27 | -2.04 | -1.45 | -2.17 | 5.299 | yes |
 | `qwen3.8-omni-flash` | -0.60 | -4.41~ | -2.62~ | -2.23~ | -2.17~ | 0.367 | yes |
 | `qwen4-max` | -0.04 | -0.63~ | -1.60~ | -0.71~ | -2.60~ | 5.478 | yes |
 | `step-3.5-flash` | -0.93 | -4.83 | -3.72~ | -3.81~ | -2.95~ | 0.589 | unknown |

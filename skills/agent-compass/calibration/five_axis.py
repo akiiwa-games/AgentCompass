@@ -68,7 +68,8 @@ scores on the four categories and the quota economy together. Nothing else score
   (`directions disagree`, `fewer than 2 pairs`). Time/Task the same on the log ratio time(small) / time(large) at High
   (`time_size_step`). An ability value is then never above the larger model's (`min(step, 0)`, `bound_across_size`).
 - Edge efforts (`fill_edge`, `edge_step_table`, `durations`; `EDGES`, user_scores): `minimal` and `ultra` from the
-  fleet's step next to them, `none` from the fleet's own pairs at none (`fleet_off_step`), Time/Task clipped to the fleet's
+  boards' step next to them, `none` from the boards' own pairs at none (`fleet_off_step`), every listing a board holds at
+  both efforts counted (`edge_pairs`), an ability facet without a pair the other ability facets' median, Time/Task clipped to the fleet's
   measured range; the rule is stated in calibration/README.md (Edge efforts).
 - One operating point (`operating_points`, `flatten_point`): calibration/README.md.
 - Own ability median (`own_ability_median`, owner 2026-11-18), last and coarsest: an ability facet still without a value is,
@@ -160,7 +161,9 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # /12 (2026-11-19): facts with their dates only, so a rebuild on another day writes the same file: `source_dates` replaces
 # `source_ages` (no `age_days` / `stale`), capacity rows carry `as_of` (derived entries `rests_on_as_of`) in place of
 # `age_days`, no `stale` status, no `stale_source` errors and no `capacity_stale_days`; age and staleness are the
-# reader's (scripts/data_age.py). Levels unchanged.
+# reader's (scripts/data_age.py). Within /12 before its first release (round 6): every effort read on every board, edge
+# steps from the boards' listings (`sample`, `boards`; method `other_facets_median`), speed variants, relatives by maker,
+# line and size. Levels unchanged.
 SCHEMA = 'agent-compass.five-axis-scores/12'
 AXES = measurements.AXES
 EFFORTS = user_scores.MEASURED_EFFORTS                   # the efforts boards measure and the panel steps reach
@@ -521,11 +524,11 @@ class Scorer:
         if m in self.points:
             k = point_listing(z, self.points[m], self.readings)
             return {self.readings['default']: z[k]} if k is not None else {}
-        rows = {k: v for k, v in z.items() if k in EFFORTS or k in self.readings or k == 'none'}
+        rows = {k: v for k, v in z.items() if k in LADDER or k in self.readings}
         for name, reads in self.readings.items():
             if name in rows:
                 rows.setdefault(reads, rows.pop(name))
-        return {k: v for k, v in rows.items() if k in EFFORTS or k == 'none'}
+        return {k: v for k, v in rows.items() if k in LADDER}     # every effort of the one order (round 6 item 5)
 
     @staticmethod
     def _has_effort_curve(aa_map):
@@ -741,6 +744,9 @@ class Scorer:
             for key, srcs in c.items():
                 for rec in srcs.values():
                     moved = set()
+                    # a reading off the measured ladder (none, minimal) as listed: the facet bounds it against the
+                    # facet's own readings (facet_value), never against one board's alone
+                    rec['off_ladder'] = {e: v for e, v in rec['by_effort'].items() if e not in EFFORTS}
                     rec['by_effort'] = bound_curve(rec['by_effort'], rises(key), moved)
                     rec['bound_moved'] = sorted(moved, key=LADDER.index)
         return curves, links
@@ -849,15 +855,21 @@ class Scorer:
                 key=lambda e: (sum(1 for r in recs.values() if e in r['by_effort']), -abs(EFFORTS.index(e) - EFFORTS.index('high'))),
             )] if present_effs else []
         by = {e: round(float(np.mean([r['by_effort'][e] for r in recs.values() if e in r['by_effort']])), 4) for e in effs}
-        # A reasoning-off reading (`none`) is a measurement: each listing source's distance from its own High, added to the
-        # facet's High (only its value when no source has a High).
-        off = [r for r in recs.values() if 'none' in r['by_effort']]
-        if off:
-            moved_off = [r['by_effort']['none'] - r['by_effort']['high'] for r in off if 'high' in r['by_effort']]
-            by['none'] = (round(by['high'] + float(np.mean(moved_off)), 4) if moved_off and 'high' in by
-                          else round(float(np.mean([r['by_effort']['none'] for r in off])), 4))
-            effs = ['none', *effs]
-        moved = sorted({e for r in recs.values() for e in r.get('bound_moved') or () if e in by}, key=LADDER.index)
+        # A reading off the measured ladder (`none`, `minimal`, `ultra`) is a measurement: each listing source's distance
+        # of its reading as listed from its own High, added to the facet's High (only its value when no source has a High).
+        # One board's bound does not move it; the facet's bound does, against the facet's measured readings (score()).
+        for e in LADDER:
+            off = [r for r in recs.values() if e in (r.get('off_ladder') or {})]
+            if e in EFFORTS or not off:
+                continue
+            moved_off = [r['off_ladder'][e] - r['by_effort']['high'] for r in off if 'high' in r['by_effort']]
+            by[e] = (round(by['high'] + float(np.mean(moved_off)), 4) if moved_off and 'high' in by
+                     else round(float(np.mean([r['off_ladder'][e] for r in off])), 4))
+            effs = [*effs, e]
+        by = {e: by[e] for e in LADDER if e in by}
+        effs = [e for e in LADDER if e in effs]
+        moved = sorted({e for r in recs.values() for e in r.get('bound_moved') or () if e in by and e in EFFORTS},
+                       key=LADDER.index)
         partial_shift = [src for src, r in recs.items() if r.get('effort_shift') in ('none', 'single_aa')]
         disjoint = [src for src, r in recs.items() if not common and effs and effs[0] not in r['by_effort']]
         is_partial = bool(partial_shift or disjoint or by.get('high') is None)
@@ -946,9 +958,10 @@ class Scorer:
         for m, fs in facets.items():
             for key, rec in fs.items():
                 by = dict(rec['by_effort'])
-                if 'high' in by or not by or not rec.get('status', '').startswith('measured'):
+                ladder = {e: v for e, v in by.items() if e in EFFORTS}    # a reading off the ladder is not on the steps
+                if 'high' in by or not ladder or not rec.get('status', '').startswith('measured'):
                     continue
-                value, how = self.fill_one(m, key, by, 'high', by)
+                value, how = self.fill_one(m, key, ladder, 'high', ladder)
                 if value is None:
                     refused.append(how)
                     continue
@@ -1122,6 +1135,7 @@ class Scorer:
         self.effort_correlations = {}
         self._aa_cap_linked = {}
         curves, links = self.board_curves_and_link(rows, panel)
+        self.links = links
         facets = {m: {key: self.facet_value(key, recs) for key, recs in c.items()} for m, c in curves.items()}
         self.steps = self.effort_steps(facets, panel)
         self.fill_refused = self.fill_high(facets)
@@ -1171,8 +1185,13 @@ class Scorer:
                     facets[m][key] = self.estimate(m, None, key, facets, fits, rejected, tier)
                 if group or fits.get(key):
                     if kept is not None and 'none' in kept['by_effort']:      # its measured reasoning-off reading stays
-                        facets[m][key]['by_effort']['none'] = kept['by_effort']['none']
-                        facets[m][key]['measured_efforts'] = ['none']
+                        # and the estimate moves, not the measurement: bounded with the measured none pinned
+                        est = facets[m][key]
+                        held = {**est['by_effort'], 'none': kept['by_effort']['none']}
+                        est['by_effort'] = {e: round(float(v), 4) for e, v in
+                                            user_scores.bound_along_effort(held, rises(key), ['none']).items()}
+                        est['value'] = est['by_effort'].get('high')
+                        est['measured_efforts'] = ['none']
         self.copy_same_model(facets, declared)
         self.size_of = {m: rel for m, rel in series.tier_up(self.acc).items()
                         if m in rows and rel['model'] in rows and m not in declared}
@@ -1228,13 +1247,14 @@ class Scorer:
         for m in rows:
             for key, rec in facets[m].items():
                 self.fill_refused += self.fill_efforts(m, key, rec)
-        for key, by_edge in self.edge_step_table(facets).items():
+        for key, by_edge in self.edge_step_table(keys).items():
             for edge, step in by_edge.items():
                 self.steps.setdefault(key, {}).setdefault(EDGES[edge][0], {})[edge] = step
         for m in rows:
             for key, rec in facets[m].items():
                 for edge in EDGES:
                     self.fill_refused += self.fill_edge(m, key, rec, edge)
+        self.flatten_points(facets, rows)   # an operating point's one value, before the own median reads its facets
         self.bound_across_size(facets)
         for m in rows:
             if m not in declared:
@@ -1243,11 +1263,14 @@ class Scorer:
         self.size_down(facets, keys, 'nearest')
         self.bound_across_size(facets)
         self.speed_variants(facets)
+        self.flatten_points(facets, rows)
+        self.copy_same_model(facets, declared)
+
+    def flatten_points(self, facets, rows):
         for m in self.points:
             if m in rows:
                 for rec in facets[m].values():
                     self.flatten_point(m, rec)
-        self.copy_same_model(facets, declared)
 
     def speed_variants(self, facets):
         """A speed variant (`same_model` with `speed`, speed_declaration) without its own responsiveness reading: its base's
@@ -1280,6 +1303,8 @@ class Scorer:
         """An operating point row (`operating_points`): every effort reads its one value, the one at the effort `default`
         reads; no effort step (method `operating_point`)."""
         at = self.readings['default']
+        if not self.points[m]['reasoning'] and not rec.get('measured_efforts') and 'none' in rec['by_effort']:
+            at = 'none'     # no reading of its own, estimated from a relative that reasons: that relative's none point
         v = rec['by_effort'].get(at)
         if v is None:
             return
@@ -1413,30 +1438,51 @@ class Scorer:
                                          **({'reason': step['reason']} if 'reason' in step else {}), 'basis': step['basis'],
                                          'pairs': [[p['small'], p['large']] for p in step['pairs']]}}
 
-    def edge_step_table(self, facets):
-        """{facet id: {edge effort: {'step', 'n', 'sample', 'method'}}} (module docstring, edge efforts): for each edge
-        effort (`EDGES`: its neighbour, the next measured effort), the fleet's median of value(neighbour) - value(next) over
-        the models that measured the facet at both, n >= 2."""
+    def edge_step_table(self, keys):
+        """{facet id: {edge effort: {'step', 'n', 'sample', 'method', ...}}} (calibration/README.md, Edge efforts; round 6
+        item 5): for each edge effort (`EDGES`), the pairs of every listing a board of the facet holds at both efforts of
+        the edge's pair, catalog row or not (`public-measurements.json` `sources.<board>.edge_pairs`, the board's own readings
+        before any bound), each difference on the facet's linked scale (the board's link scale). `none`: `pair_agreement`
+        (n >= MIN_SIZE_PAIRS, one direction, else zero); the others: the median, n >= 2. An ability facet no board gives a
+        pair for takes the median of the other ability facets' steps for that edge (method `other_facets_median`, the
+        facets shown); a facet without either has no step (`effort_fill_refused`)."""
+        meas_sources = self.meas.get('sources') or {}
         out = {}
-        for edge, (_, (near, nxt)) in EDGES.items():
-            xs = {}
-            for fs in facets.values():
-                for key, rec in fs.items():
-                    got = set(rec.get('measured_efforts') or ())
-                    if edge_method(edge) == 'fleet_off_step':     # none against the lowest measured reasoning effort
-                        lo = next((e for e in LADDER[1:] if e in got), None) if near in got else None
-                        if lo is not None:
-                            xs.setdefault('.'.join(key), []).append(rec['by_effort'][near] - rec['by_effort'][lo])
-                    elif {near, nxt} <= got:
-                        xs.setdefault('.'.join(key), []).append(rec['by_effort'][near] - rec['by_effort'][nxt])
-            for k, v in sorted(xs.items()):
+        for key in keys:
+            fid = '.'.join(key)
+            link = self.links.get(fid) or {}
+            boards = [src for src in link.get('boards') or () if src not in self.distrust
+                      and measurements.CAPABILITY_SOURCES.get(src) == key]
+            for edge in EDGES:
+                pairs, used = [], {}
+                for src in boards:
+                    got = ((meas_sources.get(src) or {}).get('edge_pairs') or {}).get(edge) or ()
+                    scale = (link.get('scales') or {}).get(src, 1.0)
+                    for pr in got:
+                        pairs.append(pr['difference'] * scale)
+                    if got:
+                        used[src] = len(got)
                 if edge_method(edge) == 'fleet_off_step':
-                    # reasoning off: the fleet's own readings at none against the lowest measured effort, as the size step
-                    # (pair_agreement: n >= MIN_SIZE_PAIRS pairs, one direction, else zero)
-                    out.setdefault(k, {})[edge] = {**pair_agreement(v), 'sample': 'fleet', 'method': edge_method(edge)}
-                elif len(v) >= 2:
-                    out.setdefault(k, {})[edge] = {'step': round(float(np.median(v)), 4), 'n': len(v), 'sample': 'fleet',
-                                                   'method': edge_method(edge)}
+                    if pairs:
+                        out.setdefault(fid, {})[edge] = {**pair_agreement(pairs), 'sample': 'board listings',
+                                                         'boards': used, 'method': edge_method(edge)}
+                elif len(pairs) >= 2:
+                    out.setdefault(fid, {})[edge] = {'step': round(float(np.median(pairs)), 4), 'n': len(pairs),
+                                                     'sample': 'board listings', 'boards': used, 'method': edge_method(edge)}
+        for key in keys:
+            fid = '.'.join(key)
+            if not rises(key):
+                continue
+            for edge in EDGES:
+                if edge in out.get(fid, {}):
+                    continue
+                others = {'.'.join(k): out['.'.join(k)][edge]['step'] for k in keys
+                          if k != key and rises(k) and (out.get('.'.join(k)) or {}).get(edge, {}).get('sample') == 'board listings'}
+                if others:
+                    out.setdefault(fid, {})[edge] = {'step': round(float(np.median(list(others.values()))), 4),
+                                                     'n': len(others), 'sample': 'other ability facets',
+                                                     'facets': others, 'method': 'other_facets_median',
+                                                     'edge_method': edge_method(edge)}
         return out
 
     def fill_edge(self, m, key, rec, edge):
@@ -1450,8 +1496,8 @@ class Scorer:
         step = ((self.steps.get('.'.join(key)) or {}).get(anchor) or {}).get(edge)
         if step is None:
             return [{'model': m, 'facet': '.'.join(key), 'effort': edge, 'from': near,
-                     'reason': (f'fewer than 2 fleet models measured at {end} and {nxt}' if edge_method(edge) != 'fleet_off_step'
-                                else 'no fleet model measured at none and at a reasoning effort')}]
+                     'reason': (f'fewer than 2 board listings at {end} and {nxt}' if edge_method(edge) != 'fleet_off_step'
+                                else 'no board listing at none and at a reasoning effort')}]
         value = round(by[near] + step['step'], 4)
         held = round(float(user_scores.bound_along_effort({**by, edge: value}, rises(key), list(by))[edge]), 4)
         how = {'method': step['method'], 'from_effort': near, 'from_value': by[near], 'step': step['step'], 'n': step['n']}

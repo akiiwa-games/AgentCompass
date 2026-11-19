@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-19T01:46:02+00:00",
+ "generated_at": "2026-11-19T02:18:24+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [
@@ -488,6 +488,42 @@
     "sd_panel": 35.780774,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "none": [
+     {
+      "listed": "Grok 4 Fast",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.0333
+     },
+     {
+      "listed": "Kimi K2.5",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.8149
+     },
+     {
+      "listed": "MiMo-V2-Flash",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 0.4834
+     },
+     {
+      "listed": "Qwen3-235B-A22B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 1.2099
+     }
+    ]
    }
   },
   "lmarena.webdev": {
@@ -506,6 +542,36 @@
     "sd_panel": 94.84221,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "none": [
+     {
+      "listed": "Kimi K2.5",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.326
+     },
+     {
+      "listed": "MiMo-V2-Flash",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 0.417
+     }
+    ],
+    "ultra": [
+     {
+      "listed": "Muse Spark 1.3",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.3555
+     }
+    ]
    }
   },
   "lmarena.vision": {
@@ -524,6 +590,28 @@
     "sd_panel": 37.974288,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "none": [
+     {
+      "listed": "Kimi K2.5",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.4185
+     }
+    ],
+    "ultra": [
+     {
+      "listed": "Muse Spark 1.3",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2307
+     }
+    ]
    }
   },
   "arena.agent_code": {
@@ -542,6 +630,18 @@
     "sd_panel": 8.0458,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "minimal": [
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.527
+     }
+    ]
    }
   },
   "arena.agent_alignment": {
@@ -578,6 +678,18 @@
     "sd_panel": 33.839192,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "ultra": [
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.1478
+     }
+    ]
    }
   },
   "designarena.3d": {
@@ -596,6 +708,78 @@
     "sd_panel": 99.013429,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "minimal": [
+     {
+      "listed": "GPT-5.1",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.0505
+     },
+     {
+      "listed": "GPT-5.2",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.1212
+     },
+     {
+      "listed": "GPT-5.4",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.3737
+     }
+    ],
+    "none": [
+     {
+      "listed": "GPT-5.1",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.0808
+     },
+     {
+      "listed": "GPT-5.2",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.0606
+     },
+     {
+      "listed": "GPT-5.4",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -0.1717
+     }
+    ],
+    "ultra": [
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.7777
+     },
+     {
+      "listed": "Muse Spark 1.3",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.3333
+     }
+    ]
    }
   },
   "designarena.svg": {
@@ -614,6 +798,78 @@
     "sd_panel": 66.630767,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "minimal": [
+     {
+      "listed": "GPT-5.1",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.2101
+     },
+     {
+      "listed": "GPT-5.2",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.06
+     },
+     {
+      "listed": "GPT-5.4",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.7804
+     }
+    ],
+    "none": [
+     {
+      "listed": "GPT-5.1",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -0.1951
+     },
+     {
+      "listed": "GPT-5.2",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -0.075
+     },
+     {
+      "listed": "GPT-5.4",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -0.2401
+     }
+    ],
+    "ultra": [
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.1201
+     },
+     {
+      "listed": "Muse Spark 1.3",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.3152
+     }
+    ]
    }
   },
   "aa.terminalbench_4": {
@@ -919,6 +1175,422 @@
     "sd_panel": 0.196439,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "minimal": [
+     {
+      "listed": "Claude Fable 5.1",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.2314
+     },
+     {
+      "listed": "Claude Fable 5.2",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.0257
+     },
+     {
+      "listed": "Claude Haiku 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.1285
+     },
+     {
+      "listed": "Claude Opus 5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.4114
+     },
+     {
+      "listed": "Claude Opus 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.0798
+     },
+     {
+      "listed": "Claude Sonnet 5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.0257
+     },
+     {
+      "listed": "Claude Sonnet 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.4628
+     },
+     {
+      "listed": "GPT-5.6 Luna",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.0257
+     },
+     {
+      "listed": "GPT-5.6 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.6942
+     },
+     {
+      "listed": "GPT-5.6 Terra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.0257
+     },
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.3857
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.1286
+     },
+     {
+      "listed": "GPT-6 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.4885
+     },
+     {
+      "listed": "GPT-6.1 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.8742
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.8742
+     },
+     {
+      "listed": "GPT-6.2 Astra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.3857
+     },
+     {
+      "listed": "GPT-6.2 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.9256
+     },
+     {
+      "listed": "Gemini 3.8 Flash",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.4885
+     },
+     {
+      "listed": "Gemini 4 Carbon",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.1028
+     },
+     {
+      "listed": "Gemini 4 Hydrogen",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.157
+     },
+     {
+      "listed": "Grok 4.6",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.5142
+     },
+     {
+      "listed": "Qwen3.8 27B",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.1285
+     }
+    ],
+    "ultra": [
+     {
+      "listed": "Claude Fable 5.1",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.1543
+     },
+     {
+      "listed": "Claude Fable 5.2",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.1028
+     },
+     {
+      "listed": "Claude Haiku 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.18
+     },
+     {
+      "listed": "Claude Opus 5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.1286
+     },
+     {
+      "listed": "Claude Opus 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.0
+     },
+     {
+      "listed": "Claude Sonnet 5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.3599
+     },
+     {
+      "listed": "Claude Sonnet 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.3342
+     },
+     {
+      "listed": "GPT-5.6 Luna",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.4114
+     },
+     {
+      "listed": "GPT-5.6 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.7713
+     },
+     {
+      "listed": "GPT-5.6 Terra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 1.2855
+     },
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.0257
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2314
+     },
+     {
+      "listed": "GPT-6 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.6942
+     },
+     {
+      "listed": "GPT-6.1 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.1028
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.4628
+     },
+     {
+      "listed": "GPT-6.2 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.0
+     },
+     {
+      "listed": "GPT-6.2 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2057
+     },
+     {
+      "listed": "Muse Ember",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2828
+     },
+     {
+      "listed": "Muse Spark 1.3",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.8484
+     }
+    ],
+    "none": [
+     {
+      "listed": "DeepSeek V4 Pro 0813",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.2314
+     },
+     {
+      "listed": "DeepSeek V4.1 Flash",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": -1.0798
+     },
+     {
+      "listed": "DeepSeek V4.1 Flash 1017",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -1.0027
+     },
+     {
+      "listed": "GPT-5.6 Luna",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.0514
+     },
+     {
+      "listed": "GPT-5.6 Terra",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -0.0514
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.0771
+     },
+     {
+      "listed": "GPT-6 Sol",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.2057
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.5913
+     },
+     {
+      "listed": "Grok 4.3",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 0.0
+     },
+     {
+      "listed": "Qwen3.8 27B",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -0.1286
+     }
+    ]
    }
   },
   "aa.frontiercode_2": {
@@ -1224,6 +1896,270 @@
     "sd_panel": 0.077293,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "minimal": [
+     {
+      "listed": "Claude Fable 5.1",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.7676
+     },
+     {
+      "listed": "Claude Fable 5.2",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.3699
+     },
+     {
+      "listed": "Claude Haiku 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.0422
+     },
+     {
+      "listed": "Claude Opus 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -2.2307
+     },
+     {
+      "listed": "Claude Sonnet 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.4975
+     },
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.3405
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.368
+     },
+     {
+      "listed": "GPT-6.1 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.7119
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.3003
+     },
+     {
+      "listed": "GPT-6.2 Astra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.798
+     },
+     {
+      "listed": "GPT-6.2 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.2977
+     },
+     {
+      "listed": "Gemini 3.8 Flash",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.0877
+     },
+     {
+      "listed": "Gemini 4 Carbon",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.2722
+     },
+     {
+      "listed": "Gemini 4 Hydrogen",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -2.8771
+     },
+     {
+      "listed": "Qwen3.8 27B",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.112
+     }
+    ],
+    "ultra": [
+     {
+      "listed": "Claude Fable 5.1",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.5313
+     },
+     {
+      "listed": "Claude Fable 5.2",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.1525
+     },
+     {
+      "listed": "Claude Haiku 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.6468
+     },
+     {
+      "listed": "Claude Opus 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.3469
+     },
+     {
+      "listed": "Claude Sonnet 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.7827
+     },
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.1257
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.8734
+     },
+     {
+      "listed": "GPT-6.1 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2726
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.7065
+     },
+     {
+      "listed": "GPT-6.2 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.462
+     },
+     {
+      "listed": "GPT-6.2 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2106
+     },
+     {
+      "listed": "Muse Ember",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.6721
+     }
+    ],
+    "none": [
+     {
+      "listed": "DeepSeek V4 Pro 0813",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.8234
+     },
+     {
+      "listed": "DeepSeek V4.1 Flash 1017",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -1.3902
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -0.0793
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 1.1471
+     },
+     {
+      "listed": "Qwen3.8 27B",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -1.1192
+     }
+    ]
    }
   },
   "aa.mmmu_pro": {
@@ -1529,6 +2465,590 @@
     "sd_panel": 0.035629,
     "n_panel": 9,
     "core": false
+   },
+   "edge_pairs": {
+    "none": [
+     {
+      "listed": "Claude Opus 4.5",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.7949
+     },
+     {
+      "listed": "Claude Opus 4.6",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": -0.8112
+     },
+     {
+      "listed": "Claude Opus 4.7",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": -0.6976
+     },
+     {
+      "listed": "Claude Sonnet 4.6",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": -0.7625
+     },
+     {
+      "listed": "Claude Sonnet 5",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": -1.5088
+     },
+     {
+      "listed": "DeepSeek V4.1 Flash",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": -3.1961
+     },
+     {
+      "listed": "DeepSeek V4.1 Flash 1017",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -2.9527
+     },
+     {
+      "listed": "GLM-4.5V",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -2.1577
+     },
+     {
+      "listed": "GLM-4.6V",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -1.7846
+     },
+     {
+      "listed": "GPT-5.2",
+      "efforts": [
+       "none",
+       "medium"
+      ],
+      "difference": -2.4498
+     },
+     {
+      "listed": "GPT-5.4",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -2.0767
+     },
+     {
+      "listed": "GPT-5.4 mini",
+      "efforts": [
+       "none",
+       "medium"
+      ],
+      "difference": -3.0014
+     },
+     {
+      "listed": "GPT-5.5",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -2.1415
+     },
+     {
+      "listed": "GPT-5.6 Luna",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -3.8288
+     },
+     {
+      "listed": "GPT-5.6 Sol",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -2.5471
+     },
+     {
+      "listed": "GPT-5.6 Terra",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -2.6445
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -3.8937
+     },
+     {
+      "listed": "GPT-6 Sol",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -2.758
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -1.817
+     },
+     {
+      "listed": "Gemini 2.5 Flash-Lite",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -1.1843
+     },
+     {
+      "listed": "Gemini 3 Flash Preview",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.3894
+     },
+     {
+      "listed": "Gemma 4 12B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -2.1578
+     },
+     {
+      "listed": "Gemma 4 26B A4B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.7139
+     },
+     {
+      "listed": "Gemma 4 31B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.8599
+     },
+     {
+      "listed": "Gemma 4 E2B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.7787
+     },
+     {
+      "listed": "Gemma 4 E4B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.0487
+     },
+     {
+      "listed": "Grok 4.3",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -2.2389
+     },
+     {
+      "listed": "Mistral Small 4",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -2.904
+     },
+     {
+      "listed": "NVIDIA Nemotron Nano 12B v2 VL",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -2.3524
+     },
+     {
+      "listed": "Nova 2.0 Lite",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -2.5147
+     },
+     {
+      "listed": "Nova 2.0 Omni",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -2.7905
+     },
+     {
+      "listed": "Qwen3.5 0.8B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.0487
+     },
+     {
+      "listed": "Qwen3.5 122B A10B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -1.3141
+     },
+     {
+      "listed": "Qwen3.5 27B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -1.4115
+     },
+     {
+      "listed": "Qwen3.5 2B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.0973
+     },
+     {
+      "listed": "Qwen3.5 35B A3B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.9734
+     },
+     {
+      "listed": "Qwen3.5 397B A17B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -6.9113
+     },
+     {
+      "listed": "Qwen3.5 4B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.9248
+     },
+     {
+      "listed": "Qwen3.5 9B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.6976
+     },
+     {
+      "listed": "Qwen3.6 27B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.8112
+     },
+     {
+      "listed": "Qwen3.6 35B A3B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -1.1194
+     },
+     {
+      "listed": "Qwen3.8 27B",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": -1.0708
+     }
+    ],
+    "minimal": [
+     {
+      "listed": "Claude Opus 5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.5029
+     },
+     {
+      "listed": "Claude Opus 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.292
+     },
+     {
+      "listed": "GPT-5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.6003
+     },
+     {
+      "listed": "GPT-5.6 Luna",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.5192
+     },
+     {
+      "listed": "GPT-5.6 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.1136
+     },
+     {
+      "listed": "GPT-5.6 Terra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.1785
+     },
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.1298
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.5354
+     },
+     {
+      "listed": "GPT-6 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.0649
+     },
+     {
+      "listed": "GPT-6.1 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.2271
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.0811
+     },
+     {
+      "listed": "GPT-6.2 Astra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.292
+     },
+     {
+      "listed": "Gemini 3.7 Flash",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.0324
+     },
+     {
+      "listed": "Gemini 3.8 Flash",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.0811
+     },
+     {
+      "listed": "Grok 4.3",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.8599
+     },
+     {
+      "listed": "Nova 2.0 Lite",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -1.2817
+     },
+     {
+      "listed": "Nova 2.0 Omni",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.584
+     },
+     {
+      "listed": "Nova 2.0 Pro Preview",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.5029
+     },
+     {
+      "listed": "Qwen3.8 27B",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": -0.1136
+     }
+    ],
+    "ultra": [
+     {
+      "listed": "Claude Opus 5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2109
+     },
+     {
+      "listed": "Claude Opus 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.3083
+     },
+     {
+      "listed": "GPT-5.6 Luna",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.0
+     },
+     {
+      "listed": "GPT-5.6 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2109
+     },
+     {
+      "listed": "GPT-5.6 Terra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.3407
+     },
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.1785
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.0162
+     },
+     {
+      "listed": "GPT-6 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.1136
+     },
+     {
+      "listed": "GPT-6.1 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2434
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.2434
+     },
+     {
+      "listed": "GPT-6.2 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": 0.438
+     }
+    ]
    }
   },
   "aa.ttfa": {
@@ -1834,6 +3354,750 @@
     "sd_panel": 0.763853,
     "n_panel": 12,
     "core": true
+   },
+   "edge_pairs": {
+    "minimal": [
+     {
+      "listed": "Claude Fable 5.1",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.7535
+     },
+     {
+      "listed": "Claude Fable 5.2",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.408
+     },
+     {
+      "listed": "Claude Haiku 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.7497
+     },
+     {
+      "listed": "Claude Opus 5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.5873
+     },
+     {
+      "listed": "Claude Opus 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 1.1104
+     },
+     {
+      "listed": "Claude Sonnet 5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.8398
+     },
+     {
+      "listed": "Claude Sonnet 5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.9366
+     },
+     {
+      "listed": "GPT-5.5",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 1.2584
+     },
+     {
+      "listed": "GPT-5.6 Luna",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.3717
+     },
+     {
+      "listed": "GPT-5.6 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.5022
+     },
+     {
+      "listed": "GPT-5.6 Terra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.1791
+     },
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.7422
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.9835
+     },
+     {
+      "listed": "GPT-6.1 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.6303
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.5845
+     },
+     {
+      "listed": "GPT-6.2 Astra",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.1704
+     },
+     {
+      "listed": "GPT-6.2 Sol",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.5286
+     },
+     {
+      "listed": "Gemini 3.8 Flash",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 1.7147
+     },
+     {
+      "listed": "Gemini 4 Carbon",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 1.5151
+     },
+     {
+      "listed": "Gemini 4 Hydrogen",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.9386
+     },
+     {
+      "listed": "Grok 4.3",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.3957
+     },
+     {
+      "listed": "Grok 4.6",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.6664
+     },
+     {
+      "listed": "Nova 2.0 Lite",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 1.0361
+     },
+     {
+      "listed": "Nova 2.0 Pro Preview",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 1.2417
+     },
+     {
+      "listed": "Qwen3.8 27B",
+      "efforts": [
+       "low",
+       "medium"
+      ],
+      "difference": 0.7188
+     }
+    ],
+    "ultra": [
+     {
+      "listed": "Claude Fable 5.1",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.2014
+     },
+     {
+      "listed": "Claude Fable 5.2",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.8751
+     },
+     {
+      "listed": "Claude Haiku 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.8922
+     },
+     {
+      "listed": "Claude Opus 5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.7385
+     },
+     {
+      "listed": "Claude Opus 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -2.2702
+     },
+     {
+      "listed": "Claude Sonnet 5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -2.2389
+     },
+     {
+      "listed": "Claude Sonnet 5.5",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -3.0259
+     },
+     {
+      "listed": "GPT-5.6 Luna",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.9946
+     },
+     {
+      "listed": "GPT-5.6 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.1032
+     },
+     {
+      "listed": "GPT-5.6 Terra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.8009
+     },
+     {
+      "listed": "GPT-6 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.0532
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.9166
+     },
+     {
+      "listed": "GPT-6 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.2377
+     },
+     {
+      "listed": "GPT-6.1 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.1502
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -2.0618
+     },
+     {
+      "listed": "GPT-6.2 Astra",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.5361
+     },
+     {
+      "listed": "GPT-6.2 Sol",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.2021
+     },
+     {
+      "listed": "Muse Ember",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -0.3961
+     },
+     {
+      "listed": "Muse Spark 1.3",
+      "efforts": [
+       "max",
+       "xhigh"
+      ],
+      "difference": -1.5774
+     }
+    ],
+    "none": [
+     {
+      "listed": "Claude Opus 4.5",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 2.7575
+     },
+     {
+      "listed": "Claude Opus 4.6",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": 2.7017
+     },
+     {
+      "listed": "Claude Opus 4.7",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": 3.5372
+     },
+     {
+      "listed": "Claude Sonnet 4.6",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": 5.6589
+     },
+     {
+      "listed": "Claude Sonnet 5",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.3734
+     },
+     {
+      "listed": "DeepSeek V4 Pro 0813",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 4.4608
+     },
+     {
+      "listed": "DeepSeek V4.1 Flash",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": 4.8641
+     },
+     {
+      "listed": "DeepSeek V4.1 Flash 1017",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 3.5856
+     },
+     {
+      "listed": "GLM-4.5V",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 1.4174
+     },
+     {
+      "listed": "GLM-4.6",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 2.2248
+     },
+     {
+      "listed": "GLM-4.6V",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 1.0941
+     },
+     {
+      "listed": "GLM-4.7",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 2.9048
+     },
+     {
+      "listed": "GLM-4.7-Flash",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 1.3274
+     },
+     {
+      "listed": "GLM-5",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 3.4143
+     },
+     {
+      "listed": "GLM-5.1",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 1.4297
+     },
+     {
+      "listed": "GLM-5.2",
+      "efforts": [
+       "none",
+       "max"
+      ],
+      "difference": 3.8084
+     },
+     {
+      "listed": "GPT-5.2",
+      "efforts": [
+       "none",
+       "medium"
+      ],
+      "difference": 1.4341
+     },
+     {
+      "listed": "GPT-5.4",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.8569
+     },
+     {
+      "listed": "GPT-5.4 mini",
+      "efforts": [
+       "none",
+       "medium"
+      ],
+      "difference": 1.6128
+     },
+     {
+      "listed": "GPT-5.5",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.2176
+     },
+     {
+      "listed": "GPT-5.6 Luna",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.4168
+     },
+     {
+      "listed": "GPT-5.6 Sol",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.7815
+     },
+     {
+      "listed": "GPT-5.6 Terra",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.5911
+     },
+     {
+      "listed": "GPT-6 Luna",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.655
+     },
+     {
+      "listed": "GPT-6 Sol",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.3927
+     },
+     {
+      "listed": "GPT-6.1 Terra",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 0.1677
+     },
+     {
+      "listed": "Gemini 2.5 Flash-Lite",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 4.9065
+     },
+     {
+      "listed": "Gemini 3 Flash Preview",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 1.836
+     },
+     {
+      "listed": "Gemma 4 26B A4B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 3.8538
+     },
+     {
+      "listed": "Gemma 4 31B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 3.9472
+     },
+     {
+      "listed": "Gemma 4 E4B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 4.2464
+     },
+     {
+      "listed": "Grok 4.3",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 2.4959
+     },
+     {
+      "listed": "Hermes 4 - Llama-3.1 405B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 1.8357
+     },
+     {
+      "listed": "Kimi K2.6",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 3.3215
+     },
+     {
+      "listed": "Mistral Small 4",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 2.9874
+     },
+     {
+      "listed": "NVIDIA Nemotron 3 Nano 30B A3B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 3.4118
+     },
+     {
+      "listed": "NVIDIA Nemotron Nano 9B V2",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": -0.5453
+     },
+     {
+      "listed": "Nova 2.0 Lite",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 2.2528
+     },
+     {
+      "listed": "Nova 2.0 Pro Preview",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 1.9782
+     },
+     {
+      "listed": "Qwen3.5 122B A10B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 1.8107
+     },
+     {
+      "listed": "Qwen3.5 27B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 2.0024
+     },
+     {
+      "listed": "Qwen3.5 35B A3B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 1.6823
+     },
+     {
+      "listed": "Qwen3.5 397B A17B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 3.5453
+     },
+     {
+      "listed": "Qwen3.5 4B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 5.165
+     },
+     {
+      "listed": "Qwen3.5 9B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 4.9011
+     },
+     {
+      "listed": "Qwen3.6 27B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 2.1028
+     },
+     {
+      "listed": "Qwen3.6 35B A3B",
+      "efforts": [
+       "none",
+       "high"
+      ],
+      "difference": 2.3099
+     },
+     {
+      "listed": "Qwen3.8 27B",
+      "efforts": [
+       "none",
+       "low"
+      ],
+      "difference": 1.4015
+     }
+    ]
    }
   },
   "openrouter.modality": {
@@ -4071,8 +6335,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -4603,8 +6867,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -5089,7 +7353,7 @@
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Opus 5.5 (High) 1506.8 [1500.8,1512.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier 0.0000",
+     "method": "arena.ai Overall 2026-11-11 Claude Opus 5.5 (High) 1506.8 [1500.8,1512.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier 0.0000",
      "listed_as": "Claude Opus 5.5 (High)",
      "arena_value": 1506.8
     }
@@ -5734,8 +7998,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -6340,8 +8604,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -6681,7 +8945,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 0.0582,
+     "value": 0.0583,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:38:15+00:00",
      "url": "https://artificialanalysis.ai/models/gpt-6-astra",
@@ -6706,8 +8970,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -7298,8 +9562,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -7679,7 +9943,7 @@
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 4 Argon (High) 1521.7 [1516.3,1527.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier 0.1217",
+     "method": "arena.ai Overall 2026-11-11 Gemini 4 Argon (High) 1521.7 [1516.3,1527.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier 0.1217",
      "listed_as": "Gemini 4 Argon (High)",
      "arena_value": 1521.7
     }
@@ -8067,7 +10331,7 @@
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 4 Hydrogen (High) 1490.4 [1481.4,1499.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.1335",
+     "method": "arena.ai Overall 2026-11-11 Gemini 4 Hydrogen (High) 1490.4 [1481.4,1499.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1335",
      "listed_as": "Gemini 4 Hydrogen (High)",
      "arena_value": 1490.4
     }
@@ -8504,8 +10768,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -9082,8 +11346,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -9537,7 +11801,7 @@
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 3.8 Flash (High) 1496.7 [1492.5,1500.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.0826",
+     "method": "arena.ai Overall 2026-11-11 Gemini 3.8 Flash (High) 1496.7 [1492.5,1500.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.0826",
      "listed_as": "Gemini 3.8 Flash (High)",
      "arena_value": 1496.7
     }
@@ -10036,11 +12300,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.6986,
+     "value": -0.6988,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Haiku 5.5 (High) 1421.2 [1415.0,1427.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.6986",
+     "method": "arena.ai Overall 2026-11-11 Claude Haiku 5.5 (High) 1421.2 [1415.0,1427.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.6988",
      "listed_as": "Claude Haiku 5.5 (High)",
      "arena_value": 1421.2
     }
@@ -10532,8 +12796,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -11620,7 +13884,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.6412,
+     "value": -0.6414,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:37:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -11630,14 +13894,14 @@
      "neighbours": {
       "below": {
        "x": 18.8789083859255,
-       "tier": -0.6412,
+       "tier": -0.6414,
        "models": [
         "MiniMax-M3"
        ]
       },
       "above": {
        "x": 26.1249946754784,
-       "tier": -0.6412,
+       "tier": -0.6414,
        "models": [
         "Mistral Large 4"
        ]
@@ -11645,8 +13909,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -13842,11 +16106,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.3991,
+     "value": -0.3992,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 DeepSeek-V4-Pro 1457.9 [1454.0,1461.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.3991",
+     "method": "arena.ai Overall 2026-11-11 DeepSeek-V4-Pro 1457.9 [1454.0,1461.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3992",
      "listed_as": "DeepSeek-V4-Pro",
      "arena_value": 1457.9
     }
@@ -14284,11 +16548,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.2572,
+     "value": -0.2573,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-5.3-Flash 1475.3 [1470.8,1479.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2572",
+     "method": "arena.ai Overall 2026-11-11 GLM-5.3-Flash 1475.3 [1470.8,1479.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2573",
      "listed_as": "GLM-5.3-Flash",
      "arena_value": 1475.3
     }
@@ -14739,11 +17003,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.185,
+     "value": -0.1851,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Qwen3.8-Max 1484.1 [1479.5,1488.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.1850",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.8-Max 1484.1 [1479.5,1488.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1851",
      "listed_as": "Qwen3.8-Max",
      "arena_value": 1484.1
     }
@@ -15054,8 +17318,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -15752,11 +18016,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5795,
+     "value": -0.5797,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 MiniMax-M3 1435.8 [1432.1,1439.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5795",
+     "method": "arena.ai Overall 2026-11-11 MiniMax-M3 1435.8 [1432.1,1439.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5797",
      "listed_as": "MiniMax-M3",
      "arena_value": 1435.8
     }
@@ -16123,7 +18387,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.4837,
+     "value": -0.4838,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:37:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -16133,14 +18397,14 @@
      "neighbours": {
       "below": {
        "x": 28.5283090216016,
-       "tier": -0.4837,
+       "tier": -0.4838,
        "models": [
         "Step 5 Preview"
        ]
       },
       "above": {
        "x": 29.874315467743,
-       "tier": -0.4837,
+       "tier": -0.4838,
        "models": [
         "Claude Haiku 5.5"
        ]
@@ -16148,8 +18412,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -16457,11 +18721,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.2194,
+     "value": -0.2195,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 MiMo-V2.6-Pro 1479.9 [1470.4,1489.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2194",
+     "method": "arena.ai Overall 2026-11-11 MiMo-V2.6-Pro 1479.9 [1470.4,1489.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2195",
      "listed_as": "MiMo-V2.6-Pro",
      "arena_value": 1479.9
     }
@@ -16786,11 +19050,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.4765,
+     "value": -0.4766,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 MiMo-V2.6-Flash 1448.4 [1443.2,1453.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.4765",
+     "method": "arena.ai Overall 2026-11-11 MiMo-V2.6-Flash 1448.4 [1443.2,1453.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4766",
      "listed_as": "MiMo-V2.6-Flash",
      "arena_value": 1448.4
     }
@@ -17100,7 +19364,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.6412,
+     "value": -0.6414,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:37:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -17110,14 +19374,14 @@
      "neighbours": {
       "below": {
        "x": 11.6563462044212,
-       "tier": -0.6412,
+       "tier": -0.6414,
        "models": [
         "Gemini 3.5 Flash-Lite"
        ]
       },
       "above": {
        "x": 14.1589437644357,
-       "tier": -0.6412,
+       "tier": -0.6414,
        "models": [
         "Solar Pro 4"
        ]
@@ -17125,8 +19389,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -17342,7 +19606,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.6412,
+     "value": -0.6414,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:37:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -17352,14 +19616,14 @@
      "neighbours": {
       "below": {
        "x": 11.6563462044212,
-       "tier": -0.6412,
+       "tier": -0.6414,
        "models": [
         "Gemini 3.5 Flash-Lite"
        ]
       },
       "above": {
        "x": 14.1589437644357,
-       "tier": -0.6412,
+       "tier": -0.6414,
        "models": [
         "Solar Pro 4"
        ]
@@ -17367,8 +19631,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -17586,7 +19850,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.9908,
+     "value": -0.9911,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:37:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -17596,14 +19860,14 @@
      "neighbours": {
       "below": {
        "x": 5.09826495217051,
-       "tier": -1.1642,
+       "tier": -1.1646,
        "models": [
         "Granite 4.2 8B"
        ]
       },
       "above": {
        "x": 6.34128724913462,
-       "tier": -0.6703,
+       "tier": -0.6705,
        "models": [
         "Muse Glimmer"
        ]
@@ -17611,8 +19875,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -17781,11 +20045,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.7046,
+     "value": -0.7048,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Mistral Large 4 1420.4 [1412.0,1428.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.7046",
+     "method": "arena.ai Overall 2026-11-11 Mistral Large 4 1420.4 [1412.0,1428.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.7048",
      "listed_as": "Mistral Large 4",
      "arena_value": 1420.4
     }
@@ -18079,7 +20343,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.0446,
+     "value": -0.0447,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:37:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -18104,8 +20368,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -18473,11 +20737,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5905,
+     "value": -0.5907,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Beam 1.0 501B A23B 1434.4 [1424.8,1444.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5905",
+     "method": "arena.ai Overall 2026-11-11 Beam 1.0 501B A23B 1434.4 [1424.8,1444.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5907",
      "listed_as": "Beam 1.0 501B A23B",
      "arena_value": 1434.4
     }
@@ -18572,11 +20836,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.7572,
+     "value": -0.7574,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Haiku 4.5 (20251001) 1414.0 [1411.6,1416.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.7572",
+     "method": "arena.ai Overall 2026-11-11 Claude Haiku 4.5 (20251001) 1414.0 [1411.6,1416.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.7574",
      "listed_as": "Claude Haiku 4.5 (20251001)",
      "arena_value": 1414.0
     }
@@ -18692,7 +20956,7 @@
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Opus 4.6 (High) 1502.8 [1499.6,1506.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.0323",
+     "method": "arena.ai Overall 2026-11-11 Claude Opus 4.6 (High) 1502.8 [1499.6,1506.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.0323",
      "listed_as": "Claude Opus 4.6 (High)",
      "arena_value": 1502.8
     }
@@ -18969,11 +21233,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.283,
+     "value": -0.2831,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Sonnet 4.6 1472.1 [1468.6,1475.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2830",
+     "method": "arena.ai Overall 2026-11-11 Claude Sonnet 4.6 1472.1 [1468.6,1475.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2831",
      "listed_as": "Claude Sonnet 4.6",
      "arena_value": 1472.1
     }
@@ -19542,11 +21806,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -1.2648,
+     "value": -1.2652,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 gpt-oss-120b 1351.8 [1347.4,1356.2] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -1.2648",
+     "method": "arena.ai Overall 2026-11-11 gpt-oss-120b 1351.8 [1347.4,1356.2] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.2652",
      "listed_as": "gpt-oss-120b",
      "arena_value": 1351.8
     }
@@ -19789,7 +22053,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.7436,
+     "value": -0.7439,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:38:08+00:00",
      "url": "https://artificialanalysis.ai/models/gemini-3-1-flash-lite",
@@ -19799,14 +22063,14 @@
      "neighbours": {
       "below": {
        "x": 5.09826495217051,
-       "tier": -1.1642,
+       "tier": -1.1646,
        "models": [
         "Granite 4.2 8B"
        ]
       },
       "above": {
        "x": 6.34128724913462,
-       "tier": -0.6703,
+       "tier": -0.6705,
        "models": [
         "Muse Glimmer"
        ]
@@ -19814,8 +22078,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -20207,11 +22471,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5224,
+     "value": -0.5225,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Qwen3.6-Plus 1442.8 [1438.6,1446.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5224",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.6-Plus 1442.8 [1438.6,1446.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5225",
      "listed_as": "Qwen3.6-Plus",
      "arena_value": 1442.8
     }
@@ -20441,7 +22705,7 @@
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Opus 4.7 (High) 1501.1 [1497.4,1504.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.0461",
+     "method": "arena.ai Overall 2026-11-11 Claude Opus 4.7 (High) 1501.1 [1497.4,1504.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.0461",
      "listed_as": "Claude Opus 4.7 (High)",
      "arena_value": 1501.1
     }
@@ -20688,11 +22952,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.2032,
+     "value": -0.2033,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Opus 4.8 (High) 1481.9 [1478.0,1485.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2032",
+     "method": "arena.ai Overall 2026-11-11 Claude Opus 4.8 (High) 1481.9 [1478.0,1485.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2033",
      "listed_as": "Claude Opus 4.8 (High)",
      "arena_value": 1481.9
     }
@@ -20951,11 +23215,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.3347,
+     "value": -0.3348,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Grok 4.5 1465.8 [1461.4,1470.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.3347",
+     "method": "arena.ai Overall 2026-11-11 Grok 4.5 1465.8 [1461.4,1470.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3348",
      "listed_as": "Grok 4.5",
      "arena_value": 1465.8
     }
@@ -21229,11 +23493,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.409,
+     "value": -0.4091,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Grok 4.6 (High) 1456.7 [1452.0,1461.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.4090",
+     "method": "arena.ai Overall 2026-11-11 Grok 4.6 (High) 1456.7 [1452.0,1461.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4091",
      "listed_as": "Grok 4.6 (High)",
      "arena_value": 1456.7
     }
@@ -21686,11 +23950,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.1631,
+     "value": -0.1632,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 3.1 Pro Preview 1486.8 [1483.9,1489.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.1631",
+     "method": "arena.ai Overall 2026-11-11 Gemini 3.1 Pro Preview 1486.8 [1483.9,1489.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1632",
      "listed_as": "Gemini 3.1 Pro Preview",
      "arena_value": 1486.8
     }
@@ -22009,11 +24273,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.1428,
+     "value": -0.1429,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 3.7 Flash (High) 1489.3 [1484.6,1494.0] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.1428",
+     "method": "arena.ai Overall 2026-11-11 Gemini 3.7 Flash (High) 1489.3 [1484.6,1494.0] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1429",
      "listed_as": "Gemini 3.7 Flash (High)",
      "arena_value": 1489.3
     }
@@ -22283,11 +24547,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.3747,
+     "value": -0.3748,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Kimi K2.6 1460.9 [1456.4,1465.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.3747",
+     "method": "arena.ai Overall 2026-11-11 Kimi K2.6 1460.9 [1456.4,1465.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3748",
      "listed_as": "Kimi K2.6",
      "arena_value": 1460.9
     }
@@ -22801,7 +25065,7 @@
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 4 Carbon (High) 1526.2 [1516.6,1535.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier 0.1583",
+     "method": "arena.ai Overall 2026-11-11 Gemini 4 Carbon (High) 1526.2 [1516.6,1535.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier 0.1583",
      "listed_as": "Gemini 4 Carbon (High)",
      "arena_value": 1526.2
     }
@@ -23214,7 +25478,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": 0.1504,
+     "value": 0.1505,
      "as_of": "2026-11-19",
      "fetched_at": "2026-11-19T00:35:50+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -23239,8 +25503,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -23566,11 +25830,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.4752,
+     "value": -0.4753,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Step 5 Preview 1448.5 [1442.3,1454.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.4752",
+     "method": "arena.ai Overall 2026-11-11 Step 5 Preview 1448.5 [1442.3,1454.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4753",
      "listed_as": "Step 5 Preview",
      "arena_value": 1448.5
     }
@@ -23892,11 +26156,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.4308,
+     "value": -0.431,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Hy3 1454.0 [1448.3,1459.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.4308",
+     "method": "arena.ai Overall 2026-11-11 Hy3 1454.0 [1448.3,1459.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4310",
      "listed_as": "Hy3",
      "arena_value": 1454.0
     }
@@ -24149,7 +26413,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.068,
+     "value": -0.0681,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:37:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -24174,8 +26438,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -25674,11 +27938,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5958,
+     "value": -0.596,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Qwen3.8-27B 1433.8 [1429.2,1438.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5958",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.8-27B 1433.8 [1429.2,1438.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5960",
      "listed_as": "Qwen3.8-27B",
      "arena_value": 1433.8
     }
@@ -26157,8 +28421,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -26430,11 +28694,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.1971,
+     "value": -0.1972,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 3.6 Flash (High) 1482.6 [1478.2,1487.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.1971",
+     "method": "arena.ai Overall 2026-11-11 Gemini 3.6 Flash (High) 1482.6 [1478.2,1487.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1972",
      "listed_as": "Gemini 3.6 Flash (High)",
      "arena_value": 1482.6
     }
@@ -26708,11 +28972,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5675,
+     "value": -0.5677,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GPT-5.2 (High) 1437.2 [1433.7,1440.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5675",
+     "method": "arena.ai Overall 2026-11-11 GPT-5.2 (High) 1437.2 [1433.7,1440.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5677",
      "listed_as": "GPT-5.2 (High)",
      "arena_value": 1437.2
     }
@@ -26768,11 +29032,13 @@
      "battles": 342,
      "designarena_id": "honeycomb",
      "z_by_effort": {
+      "none": -4.1308,
       "low": -4.1914,
       "medium": -4.0702,
       "high": -4.3327
      },
      "raw_by_effort": {
+      "none": 1047.0,
       "low": 1041.0,
       "medium": 1053.0,
       "high": 1027.0
@@ -26793,10 +29059,12 @@
      "battles": 5056,
      "designarena_id": "rockhopper",
      "z_by_effort": {
+      "none": -3.0166,
       "low": -2.9416,
       "medium": -2.8816
      },
      "raw_by_effort": {
+      "none": 1120.0,
       "low": 1125.0,
       "medium": 1129.0
      },
@@ -27077,11 +29345,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.2584,
+     "value": -0.2585,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GPT-5.4 (High) 1475.1 [1471.3,1478.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2584",
+     "method": "arena.ai Overall 2026-11-11 GPT-5.4 (High) 1475.1 [1471.3,1478.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2585",
      "listed_as": "GPT-5.4 (High)",
      "arena_value": 1475.1
     }
@@ -27137,10 +29405,12 @@
      "battles": 2925,
      "designarena_id": "galapagos",
      "z_by_effort": {
+      "none": -4.3832,
       "low": -4.2115,
       "medium": -3.8379
      },
      "raw_by_effort": {
+      "none": 1022.0,
       "low": 1039.0,
       "medium": 1076.0
      },
@@ -27160,10 +29430,12 @@
      "battles": 3398,
      "designarena_id": "galapagos",
      "z_by_effort": {
+      "none": -3.0767,
       "low": -2.8365,
       "medium": -2.0561
      },
      "raw_by_effort": {
+      "none": 1116.0,
       "low": 1132.0,
       "medium": 1184.0
      },
@@ -27412,11 +29684,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.4851,
+     "value": -0.4853,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GPT-5.4 mini (High) 1447.3 [1443.6,1451.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.4851",
+     "method": "arena.ai Overall 2026-11-11 GPT-5.4 mini (High) 1447.3 [1443.6,1451.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4853",
      "listed_as": "GPT-5.4 mini (High)",
      "arena_value": 1447.3
     }
@@ -27768,11 +30040,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.2081,
+     "value": -0.2082,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GPT-5.5 (High) 1481.3 [1477.5,1485.0] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2081",
+     "method": "arena.ai Overall 2026-11-11 GPT-5.5 (High) 1481.3 [1477.5,1485.0] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2082",
      "listed_as": "GPT-5.5 (High)",
      "arena_value": 1481.3
     }
@@ -28219,11 +30491,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -1.5443,
+     "value": -1.5448,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 gpt-oss-20b 1317.5 [1311.1,1323.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -1.5443",
+     "method": "arena.ai Overall 2026-11-11 gpt-oss-20b 1317.5 [1311.1,1323.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.5448",
      "listed_as": "gpt-oss-20b",
      "arena_value": 1317.5
     }
@@ -28369,11 +30641,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.2703,
+     "value": -0.2704,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Opus 4.5 (High, 32K, 20251101) 1473.7 [1469.8,1477.5] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2703",
+     "method": "arena.ai Overall 2026-11-11 Claude Opus 4.5 (High, 32K, 20251101) 1473.7 [1469.8,1477.5] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2704",
      "listed_as": "Claude Opus 4.5 (High, 32K, 20251101)",
      "arena_value": 1473.7
     }
@@ -28798,11 +31070,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.2755,
+     "value": -0.2756,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 3 Flash 1473.0 [1468.7,1477.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2755",
+     "method": "arena.ai Overall 2026-11-11 Gemini 3 Flash 1473.0 [1468.7,1477.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2756",
      "listed_as": "Gemini 3 Flash",
      "arena_value": 1473.0
     }
@@ -28823,6 +31095,14 @@
       1446.9,
       1465.6
      ],
+     "z_by_effort": {
+      "minimal": -1.9616,
+      "high": -1.6998
+     },
+     "raw_by_effort": {
+      "minimal": 1446.886462,
+      "high": 1456.254782
+     },
      "listed_effort": null
     }
    ],
@@ -28842,6 +31122,14 @@
       1431.2,
       1448.6
      ],
+     "z_by_effort": {
+      "minimal": -4.5446,
+      "high": -3.9611
+     },
+     "raw_by_effort": {
+      "minimal": 1384.551744,
+      "high": 1439.89089
+     },
      "listed_effort": null
     },
     {
@@ -28876,6 +31164,14 @@
       1279.5,
       1289.8
      ],
+     "z_by_effort": {
+      "minimal": -1.539,
+      "high": -1.0312
+     },
+     "raw_by_effort": {
+      "minimal": 1265.357854,
+      "high": 1284.642621
+     },
      "listed_effort": null
     },
     {
@@ -29066,11 +31362,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.4234,
+     "value": -0.4236,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 3.5 Flash-Lite 1454.9 [1450.4,1459.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.4234",
+     "method": "arena.ai Overall 2026-11-11 Gemini 3.5 Flash-Lite 1454.9 [1450.4,1459.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4236",
      "listed_as": "Gemini 3.5 Flash-Lite",
      "arena_value": 1454.9
     }
@@ -29338,11 +31634,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5659,
+     "value": -0.566,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemma 4 26B A4B 1437.4 [1430.0,1444.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5659",
+     "method": "arena.ai Overall 2026-11-11 Gemma 4 26B A4B 1437.4 [1430.0,1444.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5660",
      "listed_as": "Gemma 4 26B A4B",
      "arena_value": 1437.4
     }
@@ -29589,11 +31885,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.4485,
+     "value": -0.4486,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemma 4 31B 1451.8 [1444.4,1459.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.4485",
+     "method": "arena.ai Overall 2026-11-11 Gemma 4 31B 1451.8 [1444.4,1459.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4486",
      "listed_as": "Gemma 4 31B",
      "arena_value": 1451.8
     }
@@ -29875,11 +32171,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.7819,
+     "value": -0.7822,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-4.5 1411.0 [1406.0,1415.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.7819",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.5 1411.0 [1406.0,1415.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.7822",
      "listed_as": "GLM-4.5",
      "arena_value": 1411.0
     }
@@ -29972,11 +32268,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -1.0917,
+     "value": -1.092,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-4.5-Air 1373.0 [1368.7,1377.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -1.0917",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.5-Air 1373.0 [1368.7,1377.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.0920",
      "listed_as": "GLM-4.5-Air",
      "arena_value": 1373.0
     }
@@ -30119,11 +32415,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -1.2612,
+     "value": -1.2616,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-4.5V 1352.2 [1343.8,1360.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -1.2612",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.5V 1352.2 [1343.8,1360.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.2616",
      "listed_as": "GLM-4.5V",
      "arena_value": 1352.2
     }
@@ -30350,11 +32646,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.6716,
+     "value": -0.6718,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-4.6 1424.5 [1420.6,1428.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.6716",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.6 1424.5 [1420.6,1428.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.6718",
      "listed_as": "GLM-4.6",
      "arena_value": 1424.5
     }
@@ -30572,11 +32868,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -1.048,
+     "value": -1.0484,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-4.6V 1378.3 [1367.1,1389.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -1.0480",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.6V 1378.3 [1367.1,1389.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.0484",
      "listed_as": "GLM-4.6V",
      "arena_value": 1378.3
     }
@@ -30805,11 +33101,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5339,
+     "value": -0.534,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-4.7 1441.4 [1435.3,1447.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5339",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.7 1441.4 [1435.3,1447.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5340",
      "listed_as": "GLM-4.7",
      "arena_value": 1441.4
     }
@@ -31027,11 +33323,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -1.1608,
+     "value": -1.1611,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-4.7-Flash 1364.5 [1358.8,1370.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -1.1608",
+     "method": "arena.ai Overall 2026-11-11 GLM-4.7-Flash 1364.5 [1358.8,1370.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.1611",
      "listed_as": "GLM-4.7-Flash",
      "arena_value": 1364.5
     }
@@ -31232,11 +33528,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.4034,
+     "value": -0.4036,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-5 1457.3 [1453.1,1461.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.4034",
+     "method": "arena.ai Overall 2026-11-11 GLM-5 1457.3 [1453.1,1461.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4036",
      "listed_as": "GLM-5",
      "arena_value": 1457.3
     }
@@ -31454,11 +33750,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.3412,
+     "value": -0.3413,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-5.1 1465.0 [1461.4,1468.5] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.3412",
+     "method": "arena.ai Overall 2026-11-11 GLM-5.1 1465.0 [1461.4,1468.5] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3413",
      "listed_as": "GLM-5.1",
      "arena_value": 1465.0
     }
@@ -31906,11 +34202,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.7374,
+     "value": -0.7377,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Qwen3.5-122B-A10B 1416.4 [1412.1,1420.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.7374",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-122B-A10B 1416.4 [1412.1,1420.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.7377",
      "listed_as": "Qwen3.5-122B-A10B",
      "arena_value": 1416.4
     }
@@ -32133,11 +34429,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.8024,
+     "value": -0.8026,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Qwen3.5-27B 1408.5 [1404.1,1412.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.8024",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-27B 1408.5 [1404.1,1412.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.8026",
      "listed_as": "Qwen3.5-27B",
      "arena_value": 1408.5
     }
@@ -32340,11 +34636,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.9208,
+     "value": -0.9211,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Qwen3.5-35B-A3B 1393.9 [1389.7,1398.2] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.9208",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-35B-A3B 1393.9 [1389.7,1398.2] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.9211",
      "listed_as": "Qwen3.5-35B-A3B",
      "arena_value": 1393.9
     }
@@ -32521,11 +34817,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5337,
+     "value": -0.5338,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Qwen3.5-397B-A17B 1441.4 [1438.3,1444.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5337",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-397B-A17B 1441.4 [1438.3,1444.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5338",
      "listed_as": "Qwen3.5-397B-A17B",
      "arena_value": 1441.4
     }
@@ -32779,11 +35075,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.9043,
+     "value": -0.9046,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Qwen3.5-Flash 1396.0 [1392.3,1399.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.9043",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.5-Flash 1396.0 [1392.3,1399.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.9046",
      "listed_as": "Qwen3.5-Flash",
      "arena_value": 1396.0
     }
@@ -33201,11 +35497,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.4199,
+     "value": -0.42,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Qwen3.7-Plus 1455.3 [1451.0,1459.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.4199",
+     "method": "arena.ai Overall 2026-11-11 Qwen3.7-Plus 1455.3 [1451.0,1459.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4200",
      "listed_as": "Qwen3.7-Plus",
      "arena_value": 1455.3
     }
@@ -34055,11 +36351,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5314,
+     "value": -0.5315,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Grok 4.3 1441.7 [1438.0,1445.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5314",
+     "method": "arena.ai Overall 2026-11-11 Grok 4.3 1441.7 [1438.0,1445.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5315",
      "listed_as": "Grok 4.3",
      "arena_value": 1441.7
     }
@@ -34484,11 +36780,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.9318,
+     "value": -0.9321,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Step-3.5-Flash 1392.6 [1389.0,1396.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.9318",
+     "method": "arena.ai Overall 2026-11-11 Step-3.5-Flash 1392.6 [1389.0,1396.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.9321",
      "listed_as": "Step-3.5-Flash",
      "arena_value": 1392.6
     }
@@ -34850,11 +37146,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5976,
+     "value": -0.5978,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 MiMo-V2.5 1433.6 [1429.3,1437.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5976",
+     "method": "arena.ai Overall 2026-11-11 MiMo-V2.5 1433.6 [1429.3,1437.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5978",
      "listed_as": "MiMo-V2.5",
      "arena_value": 1433.6
     }
@@ -35073,11 +37369,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.3297,
+     "value": -0.3298,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 MiMo-V2.5-Pro 1466.4 [1462.9,1469.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.3297",
+     "method": "arena.ai Overall 2026-11-11 MiMo-V2.5-Pro 1466.4 [1462.9,1469.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3298",
      "listed_as": "MiMo-V2.5-Pro",
      "arena_value": 1466.4
     }
@@ -35230,7 +37526,7 @@
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Fable 5 (High) 1504.0 [1499.8,1508.2] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.0229",
+     "method": "arena.ai Overall 2026-11-11 Claude Fable 5 (High) 1504.0 [1499.8,1508.2] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.0229",
      "listed_as": "Claude Fable 5 (High)",
      "arena_value": 1504.0
     }
@@ -35523,7 +37819,7 @@
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Opus 5 (High) 1489.7 [1486.1,1493.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.1396",
+     "method": "arena.ai Overall 2026-11-11 Claude Opus 5 (High) 1489.7 [1486.1,1493.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1396",
      "listed_as": "Claude Opus 5 (High)",
      "arena_value": 1489.7
     }
@@ -36066,11 +38362,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.3751,
+     "value": -0.3752,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Claude Sonnet 5 (High) 1460.8 [1456.8,1464.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.3751",
+     "method": "arena.ai Overall 2026-11-11 Claude Sonnet 5 (High) 1460.8 [1456.8,1464.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3752",
      "listed_as": "Claude Sonnet 5 (High)",
      "arena_value": 1460.8
     }
@@ -36608,11 +38904,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.5795,
+     "value": -0.5797,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 DeepSeek-V4-Flash 1435.8 [1431.7,1439.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.5795",
+     "method": "arena.ai Overall 2026-11-11 DeepSeek-V4-Flash 1435.8 [1431.7,1439.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5797",
      "listed_as": "DeepSeek-V4-Flash",
      "arena_value": 1435.8
     }
@@ -36722,7 +39018,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.6412,
+     "value": -0.6414,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:37:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -36732,14 +39028,14 @@
      "neighbours": {
       "below": {
        "x": 18.8789083859255,
-       "tier": -0.6412,
+       "tier": -0.6414,
        "models": [
         "MiniMax-M3"
        ]
       },
       "above": {
        "x": 26.1249946754784,
-       "tier": -0.6412,
+       "tier": -0.6414,
        "models": [
         "Mistral Large 4"
        ]
@@ -36747,8 +39043,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -37319,7 +39615,7 @@
     {
      "source": "tier.aa_index",
      "kind": "benchmark",
-     "value": -0.4837,
+     "value": -0.4838,
      "as_of": "2026-11-18",
      "fetched_at": "2026-11-18T12:37:49+00:00",
      "url": "https://artificialanalysis.ai/leaderboards/models",
@@ -37329,14 +39625,14 @@
      "neighbours": {
       "below": {
        "x": 28.5283090216016,
-       "tier": -0.4837,
+       "tier": -0.4838,
        "models": [
         "Step 5 Preview"
        ]
       },
       "above": {
        "x": 29.874315467743,
-       "tier": -0.4837,
+       "tier": -0.4838,
        "models": [
         "Claude Haiku 5.5"
        ]
@@ -37344,8 +39640,8 @@
      },
      "n": 22,
      "fit": "monotone piecewise-linear map of the board onto arena.ai Overall tiers through the models both list at High",
-     "residual_sd": 0.3003,
-     "loo_rmse": 0.436,
+     "residual_sd": 0.3004,
+     "loo_rmse": 0.4361,
      "status": "estimated"
     }
    ],
@@ -37739,11 +40035,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.2317,
+     "value": -0.2318,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 Gemini 3.5 Flash (High) 1478.4 [1474.5,1482.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2317",
+     "method": "arena.ai Overall 2026-11-11 Gemini 3.5 Flash (High) 1478.4 [1474.5,1482.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2318",
      "listed_as": "Gemini 3.5 Flash (High)",
      "arena_value": 1478.4
     }
@@ -38119,11 +40415,11 @@
     {
      "source": "tier.arena_overall",
      "kind": "benchmark",
-     "value": -0.2572,
+     "value": -0.2573,
      "as_of": "2026-11-11",
      "fetched_at": "2026-11-18T12:37:47+00:00",
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
-     "method": "arena.ai Overall 2026-11-11 GLM-5.3-Flash 1475.3 [1470.8,1479.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.55): tier -0.2572",
+     "method": "arena.ai Overall 2026-11-11 GLM-5.3-Flash 1475.3 [1470.8,1479.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2573",
      "listed_as": "GLM-5.3-Flash",
      "arena_value": 1475.3
     }

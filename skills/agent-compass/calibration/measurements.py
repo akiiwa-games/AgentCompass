@@ -40,10 +40,13 @@ listed on every core board: a member one does not list is an error naming both, 
 sample standard deviation of the board over the panel. A board that lists the
 anchor and at least MIN_PANEL panel members is a source; any other is recorded as missing with the reason. Nothing is
 capped or bridged: a new model at the top of a board moves no other model, and the anchor is 0 on every board.
-Artificial Analysis boards list every effort variant: each entry carries the score at High (else the effort-less
-listing) and `z_by_effort`, every listed effort on the same scale. Other boards list one variant per model (`listed_as`,
-its effort in `listed_effort` when the listing names one); five_axis.py moves it to other efforts on the same facet's AA
-board and links parallel boards.
+Every board's listings are read at every effort of the one order (user_scores.EFFORTS, `none` and `minimal` included;
+round 6 item 5): each entry carries the score at High (else the effort-less listing, else the effort nearest High) and,
+when the board lists the model at two efforts or more, `z_by_effort`, every listed effort on the same scale. A board's
+`edge_pairs` (Builder.edge_pairs) hold, for every listing with both efforts of an edge's pair, catalog row or not, the
+difference in panel z: the sample of the fleet's edge steps (five_axis.edge_step_table). An entry without
+`z_by_effort` (`listed_as`, its effort in `listed_effort` when the listing names one) is moved by five_axis.py to other
+efforts on the same facet's AA board, which also links parallel boards.
 
 Checks (`checks`, round 059 section 5): structural failures leave the (model, source) out, recorded as missing; a
 statistical failure is a yellow note and the value is used.
@@ -75,6 +78,7 @@ import community
 import series
 import sources
 import tiers
+import user_scores
 
 # Every capability score is relative to this model (0 on every board): accounts.json `calibration_panel.anchor`.
 ANCHOR = tiers.panel(sources.accounts())[0]
@@ -381,7 +385,8 @@ class Builder:
     @staticmethod
     def select_variants(items, readings):
         """Group `(listed_name, value, extra)` rows by base model name; select the model's own High row (never xHigh/Max
-        when High is listed; else an effort-less listing; else the effort nearest High) and keep multi-effort maps."""
+        when High is listed; else an effort-less listing; else the effort nearest High) and keep multi-effort maps over
+        every effort of the one order (none and minimal too)."""
         grouped = {}
         for listed_name, val, ext in items:
             if val is None or not listed_name:
@@ -413,12 +418,34 @@ class Builder:
                     min(routable, key=lambda e: (abs(EFFORT_RANK[e] - EFFORT_RANK['high']), -EFFORT_RANK[e])) if routable else
                     next(iter(vals)))
             board[base], listed[base], extra[base] = vals[pick][0], vals[pick][1], vals[pick][2]
-            eff_map = {e: round(vals[e][0], 6) for e in EFFORT_RANK if e in vals}
+            # every effort of the one effort order (user_scores.EFFORTS: none and minimal too, round 6 item 5)
+            eff_map = {e: round(vals[e][0], 6) for e in user_scores.EFFORTS if e in vals}
             if 'default' in vals and 'high' not in eff_map and eff_map:
                 eff_map['high'] = round(vals['default'][0], 6)
             if len(eff_map) >= 2:
                 by_effort[base] = eff_map
         return board, listed, extra, by_effort
+
+    @staticmethod
+    def edge_pairs(by_effort, anchor_raw, sd, reads):
+        """{edge effort: [{'listed', 'efforts', 'difference'}]} of one board (round 6 item 5): for every listing the board
+        holds at both efforts of an edge's pair (user_scores.EDGES: `minimal` low - medium, `ultra` max - xhigh, `none`
+        none - the lowest listed reasoning effort), catalog row or not, the difference in the board's panel z. A listing
+        without an effort label reads at the effort `reads` names (accounts.json effort_readings) unless that is listed.
+        The raw readings, before any bound: a step is a property of the board's readings."""
+        out = {}
+        for name, raw in sorted(by_effort.items()):
+            row = {e: v for e, v in raw.items() if e in user_scores.EFFORTS}
+            for label, effort in reads.items():
+                if label in raw and effort not in row:
+                    row[effort] = raw[label]
+            for edge, (_, (a, b)) in user_scores.EDGES.items():
+                if b == user_scores.LOWEST_REASONING:
+                    b = next((e for e in user_scores.EFFORTS[1:] if e in row), None)
+                if a in row and b in row:
+                    out.setdefault(edge, []).append({'listed': name, 'efforts': [a, b],
+                                                     'difference': round((row[a] - row[b]) / sd, 4)})
+        return out
 
     # --- capability boards ----------------------------------------------------------------------
     def boards(self):
@@ -530,6 +557,10 @@ class Builder:
             b = boards[src]
             self.source_rows[src]['scale'] = {'anchor': ANCHOR, 'anchor_raw': round(sc['anchor_raw'], 6),
                                               'sd_panel': round(sc['sd'], 6), 'n_panel': sc['n'], 'core': src in core}
+            if b.get('by_effort'):
+                pairs = self.edge_pairs(b['by_effort'], sc['anchor_raw'], sc['sd'], self.readings['reads'])
+                if pairs:
+                    self.source_rows[src]['edge_pairs'] = pairs
             how = (f"z = (x - x_anchor) / sd_panel; x_anchor {sc['anchor_raw']:.6g} ({ANCHOR}), sd_panel {sc['sd']:.6g} "
                    f"over {sc['n']} panel models")
             for model, x in raw[src].items():

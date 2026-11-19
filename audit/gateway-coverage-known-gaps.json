@@ -31,26 +31,6 @@
  "entries": [
   {
    "catalog": "magpie-0.1.4470",
-   "model": "deepseek-flash",
-   "efforts": [
-    "none"
-   ],
-   "row": "deepseek-v4.1-flash-1017",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "deepseek-v4.1-flash-1017 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "deepseek-v4-flash-vision-exp",
-   "efforts": [
-    "none"
-   ],
-   "row": "deepseek-v4.1-flash-1017",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "deepseek-v4.1-flash-1017 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
    "model": "doubao-seed-2.0-mini",
    "efforts": [
     "low",
@@ -107,16 +87,7 @@
    "catalog": "magpie-0.1.4470",
    "model": "gpt-5.2",
    "efforts": [
-    "none"
-   ],
-   "row": "gpt-5.2",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-5.2 at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair; Time/Task is missing too (Artificial Analysis lists it (GPT-5.2 (Medium), GPT-5.2 (Non-reasoning), GPT-5.2 (Xhigh)) without a Time/Task)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.2",
-   "efforts": [
+    "none",
     "low",
     "medium",
     "high",
@@ -142,16 +113,7 @@
    "catalog": "magpie-0.1.4470",
    "model": "gpt-5.4",
    "efforts": [
-    "none"
-   ],
-   "row": "gpt-5.4",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-5.4 at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair; Time/Task is missing too (Artificial Analysis lists it (GPT-5.4 (Low), GPT-5.4 (Non-reasoning), GPT-5.4 (Xhigh)) without a Time/Task)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.4",
-   "efforts": [
+    "none",
     "low",
     "medium",
     "high",
@@ -165,16 +127,7 @@
    "catalog": "magpie-0.1.4470",
    "model": "gpt-5.4-mini",
    "efforts": [
-    "none"
-   ],
-   "row": "gpt-5.4-mini",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-5.4-mini at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair; Time/Task is missing too (Artificial Analysis lists it (GPT-5.4 mini (Medium), GPT-5.4 mini (Non-reasoning), GPT-5.4 mini (Xhigh)) without a Time/Task)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.4-mini",
-   "efforts": [
+    "none",
     "low",
     "medium",
     "high",
@@ -200,16 +153,7 @@
    "catalog": "magpie-0.1.4470",
    "model": "gpt-5.5",
    "efforts": [
-    "none"
-   ],
-   "row": "gpt-5.5",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-5.5 at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair; Time/Task is missing too (Artificial Analysis lists it (GPT-5.5 (High), GPT-5.5 (Low), GPT-5.5 (Medium), GPT-5.5 (Non-reasoning), GPT-5.5 (Xhigh)) without a Time/Task)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.5",
-   "efforts": [
+    "none",
     "low",
     "medium",
     "high",
@@ -233,156 +177,6 @@
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.6",
-   "efforts": [
-    "none"
-   ],
-   "row": "gpt-5.6-sol",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-5.6-sol at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.6-luna",
-   "efforts": [
-    "none"
-   ],
-   "row": "gpt-5.6-luna",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-5.6-luna at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.6-sol",
-   "efforts": [
-    "none"
-   ],
-   "row": "gpt-5.6-sol",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-5.6-sol at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-5.6-terra",
-   "efforts": [
-    "none"
-   ],
-   "row": "gpt-5.6-terra",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-5.6-terra at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-6-luna",
-   "efforts": [
-    "none"
-   ],
-   "row": "gpt-6-luna",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-6-luna at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-6-sol",
-   "efforts": [
-    "none"
-   ],
-   "row": "gpt-6-sol",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-6-sol at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-6.1-terra",
-   "efforts": [
-    "none"
-   ],
-   "row": "gpt-6.1-terra",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-6.1-terra at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gpt-daybreak-blue-latest",
-   "efforts": [
-    "none"
-   ],
-   "row": "gpt-5.6-sol",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "gpt-5.6-sol at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "grok-4.3",
-   "efforts": [
-    "none"
-   ],
-   "row": "grok-4.3",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "grok-4.3 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "hy3",
-   "efforts": [
-    "none"
-   ],
-   "row": "hy3",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "hy3 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "hy4",
-   "efforts": [
-    "none"
-   ],
-   "row": "hy4",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "hy4 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "hy4-preview",
-   "efforts": [
-    "none"
-   ],
-   "row": "hy4-preview",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "hy4-preview at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "k3",
-   "efforts": [
-    "none"
-   ],
-   "row": "kimi-k3",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "kimi-k3 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "k3-256k",
-   "efforts": [
-    "none"
-   ],
-   "row": "kimi-k3",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "kimi-k3 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "kimi-for-coding",
-   "efforts": [
-    "none"
-   ],
-   "row": "kimi-k2.8-preview",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "kimi-k2.8-preview at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
    "model": "mimo-v2.5-pro-ultraspeed",
    "efforts": [
     "default"
@@ -390,16 +184,6 @@
    "row": null,
    "kind": "no_relative_statement",
    "detail": "mimo-v2.5-pro-ultraspeed resolves to no row (no row (family)); models.dev lists it under its maker, but no public statement relates it to a scored row"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "mistral-small-2603",
-   "efforts": [
-    "none"
-   ],
-   "row": "mistral-small-2603",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "mistral-small-2603 at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -430,46 +214,6 @@
    "row": "qwen3-omni-flash",
    "kind": "no_public_measurement",
    "detail": "qwen3-omni-flash: no cached board lists it with time_per_task, tool_operation.responsiveness"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "qwen3.6-flash",
-   "efforts": [
-    "none"
-   ],
-   "row": "qwen3.6-flash",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "qwen3.6-flash at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "qwen3.7-max",
-   "efforts": [
-    "none"
-   ],
-   "row": "qwen3.7-max",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "qwen3.7-max at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "qwen3.7-plus",
-   "efforts": [
-    "none"
-   ],
-   "row": "qwen3.7-plus",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "qwen3.7-plus at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "qwen3.8-omni-flash",
-   "efforts": [
-    "none"
-   ],
-   "row": "qwen3.8-omni-flash",
-   "kind": "no_fleet_reading_at_effort",
-   "detail": "qwen3.8-omni-flash at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
   },
   {
    "catalog": "magpie-0.1.4470",

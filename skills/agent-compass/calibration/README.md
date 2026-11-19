@@ -58,19 +58,28 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   addition never above the larger model's at the same effort (`min(step, 0)`, and `bound_across_size` after the fill, the
   efforts it held listed as `held_at_larger`). Status `estimated`, method `size_step` with the base model, version, step,
   `n`, `agree` and the pairs; the table is published as `size_steps`.
-- **Edge efforts (owner, 2026-11-18; `none` round 5).** No board measures `minimal` or `ultra`, the efforts just below Low
-  and above Max (`user_scores.EDGES`). A curve with the neighbouring effort gets the edge as that neighbour plus the
-  fleet's step at that end of the measured efforts, the median over the models measured at both of
-  `value(low) - value(medium)` for `minimal` and `value(max) - value(xhigh)` for `ultra` (`five_axis.edge_step_table`,
-  `n >= 2`, published as `effort_steps.<facet>.low.minimal` and `effort_steps.<facet>.max.ultra`, methods
-  `fleet_lowest_step` and `fleet_highest_step`), bounded by no inversion. `none` is reasoning switched off, below `minimal`
-  (the vendors' statements are quoted once, in `accounts.json` `effort_readings`). A board listing labelled as
-  non-reasoning is a measured reading at `none` and is used as measured. A curve without one takes `none` from its lowest
-  measured reasoning effort (High when nothing below High is measured; `user_scores.edge_anchor`) plus the fleet's own
-  step, read from the models measured at `none` and at a reasoning effort: one value per model, `none` minus its lowest
-  measured reasoning effort, and the step is their median only when there are at least two and all point one way
-  (`five_axis.pair_agreement`), else zero with the reason (`effort_steps.<facet>.lowest_reasoning.none`, method
-  `fleet_off_step`). A facet no fleet model is measured on at `none` gets no `none` (`effort_fill_refused`). Time/Task:
+- **Edge efforts (owner, 2026-11-18; `none` round 5; readings and steps round 6).** Every effort of the one order
+  (`user_scores.EFFORTS`, `none` and `minimal` included) is read on every board: a listing labelled Minimal is a measured
+  reading at `minimal`, one labelled None or with a thinking-off label (`accounts.json` `effort_readings.labels`:
+  Non-reasoning, Non-Thinking, Instant) a measured reading at `none` (`measurements.Builder.select_variants`,
+  `five_axis.Scorer.aa_rows`). `none` is reasoning switched off, below `minimal` (the vendors' statements are quoted once, in
+  `effort_readings`). A reading off the measured ladder enters the facet as listed, its distance from its board's own High
+  added to the facet's High (`Scorer.facet_value`), and is used as measured: one board's bound does not move it, the
+  facet's bound does, against the facet's own measured readings only (High the anchor), and an estimate next to a measured
+  `none` is bounded by it, never the other way round. A curve without an edge effort gets it from its neighbour plus the
+  fleet's step at that end (`user_scores.EDGES`): `value(low) - value(medium)` for `minimal`, `value(max) - value(xhigh)`
+  for `ultra`, and for `none` `value(none)` minus the lowest listed reasoning effort, anchored at the curve's lowest
+  measured reasoning effort (High when nothing below High is measured; `user_scores.edge_anchor`). The step is a property
+  of the boards' readings: one difference per listing a board of the facet holds at both efforts, catalog row or not
+  (`public-measurements.json` `sources.<board>.edge_pairs`, the raw readings in panel z, `Builder.edge_pairs`), times the
+  board's link scale; `minimal` and `ultra` take their median (`n >= 2`; methods `fleet_lowest_step`,
+  `fleet_highest_step`), `none` takes it only when there are at least two and all point one way (`five_axis.pair_agreement`),
+  else zero with the reason (method `fleet_off_step`); published as `effort_steps.<facet>.low.minimal`,
+  `.max.ultra` and `.lowest_reasoning.none` with the boards and their pair counts (`five_axis.edge_step_table`). An ability
+  facet no board gives a pair for takes the median of the other ability facets' board steps for that edge (method
+  `other_facets_median`, the facets and their steps shown); responsiveness never does. A facet without either gets no
+  edge (`effort_fill_refused`). An operating-point row that cannot reason and has no reading of its own reads its estimated
+  curve at `none`, the off point of the relative it was estimated from (`flatten_point`). Time/Task:
   the neighbour times the fleet's median ratio at that end over the Artificial Analysis listings with both
   (`effort_steps.time_per_task`, `n >= 3` as every fleet time ratio); for `none` the same pair rule on the log ratio
   `time(none) / time(lowest measured effort)` (ratio 1 where the pairs disagree). An extrapolated Time/Task never leaves the

@@ -346,6 +346,30 @@ class ListingIdentityTests(unittest.TestCase):
         self.assertEqual({e: r['v'] for e, r in got['M'].items()}, {'high': 1, 'low': 2})
         self.assertTrue(measurements.EFFORT_TAG.match('default fallback'))
 
+    def test_every_effort_of_the_one_order_is_read_on_a_board(self):
+        """Rule (Builder.select_variants, accounts.json effort_readings, round 6 item 5): Minimal, None and a thinking-off
+        label (Instant, Non-Thinking) are read at their effort on every board, never dropped."""
+        labels = sources.effort_readings({'effort_readings': {'labels': {'non-reasoning': 'none', 'non-thinking': 'none',
+                                                                         'instant': 'none', 'reasoning': 'default'},
+                                                              'reads': {'default': 'high'}}})
+        items = [('G (Minimal)', 1.0, {}), ('G (High)', 3.0, {}), ('K (Instant)', 2.0, {}), ('K (Thinking)', 4.0, {}),
+                 ('M (Non-Thinking)', 1.5, {}), ('M', 2.5, {}), ('N (None)', 0.5, {}), ('N (Low)', 1.0, {})]
+        board, _, _, by = measurements.Builder.select_variants(items, labels)
+        self.assertEqual(by, {'G': {'minimal': 1.0, 'high': 3.0}, 'K': {'none': 2.0, 'high': 4.0},
+                              'M': {'none': 1.5, 'high': 2.5}, 'N': {'none': 0.5, 'low': 1.0}})
+        self.assertEqual((board['K'], board['N']), (4.0, 1.0))      # the score is the High row, else nearest High
+
+    def test_edge_pairs_are_read_on_every_listing_of_the_board(self):
+        """Rule (Builder.edge_pairs, round 6 item 5): each listing with both efforts of an edge's pair gives one difference
+        in panel z, catalog row or not; `none` against its lowest listed reasoning effort, a label-less listing at the
+        effort `reads` names."""
+        by = {'A': {'none': 10.0, 'low': 14.0, 'medium': 16.0}, 'B': {'none': 9.0, 'default': 11.0},
+              'C': {'max': 20.0, 'xhigh': 19.0}, 'D': {'high': 5.0}}
+        got = measurements.Builder.edge_pairs(by, 0.0, 2.0, {'default': 'high'})
+        self.assertEqual({e: [(q['listed'], q['efforts'], q['difference']) for q in v] for e, v in got.items()},
+                         {'none': [('A', ['none', 'low'], -2.0), ('B', ['none', 'high'], -1.0)],
+                          'minimal': [('A', ['low', 'medium'], -1.0)], 'ultra': [('C', ['max', 'xhigh'], 0.5)]})
+
     def test_a_listed_as_under_another_name_needs_a_cited_identity_statement(self):
         """Rule (measurements.listed_as_identity): a row's own spellings need no citation; another name needs
         listed_as_source with kind vendor, community or benchmark, an https url, as_of and statement; a dated maintainer
