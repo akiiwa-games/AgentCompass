@@ -284,10 +284,11 @@ def apply(accounts, document):
         if not isinstance(bundles, dict) or account not in choices:
             continue
         by_model = auto_bundles.harness_by_model(bundles)
+        owners = auto_bundles.replayed_owners(bundles)
         for bundle in bundles.values():
             if not isinstance(bundle, dict) or not bundle.get('auto'):
                 continue
-            chosen, ids, disagree = auto_bundles.choice_for(choices[account], bundle, accounts, by_model)
+            chosen, ids, disagree = auto_bundles.choice_for(choices[account], bundle, accounts, by_model, owners)
             if chosen is None:
                 continue
             # The user's checkbox replaces the public default; a model the provider stopped listing stays off.

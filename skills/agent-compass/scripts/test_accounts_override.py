@@ -270,6 +270,96 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
         self.assertGreater(moved, 100)            # many of them under an id that is not the one derived now
         self.assertLess(conflicts, checked // 100)
 
+    def test_a_v070_id_stored_alone_is_read_only_by_the_model_its_name_is_now(self):
+        """Rule (round 10 item 1; auto_bundles.choice_for `owners`, derive): an id the replay gives an advertised name is
+        that name's own. Property over every provider group of both saved catalogs and the shipped launch table, on both
+        account shapes: each v0.7.0 id (audit/v070_bundle_ids.py) stored alone, with either value, is read by the bundle
+        of the name v0.7.0 gave it to, with that value, and by no bundle of another model (a name of the same model at
+        that effort may read it: one checkbox per model). Alone through `choice_for`, as `accounts_override.apply` reads
+        it; the reader sets of `derive(overrides=)` with all of a group's ids stored are the same."""
+        import auto_bundles
+        frozen = json.loads((REPO_ROOT / 'audit' / 'v070-bundle-ids.json').read_text(encoding='utf-8'))
+        ref = json.loads((REPO_ROOT / 'skills' / 'agent-compass' / 'references' / 'accounts.json')
+                         .read_text(encoding='utf-8-sig'))
+        checked = leaks = shared = 0
+        for setup, groups in frozen['ids'].items():
+            acc = self.accounts(frozen['setups'][setup], ref)
+            by_model = auto_bundles.harness_by_model(frozen['setups'][setup]['bundles'])
+            for group, pairs in groups.items():
+                names = [name for name, _ in pairs]
+                cat = {'providers': {'acct': {'ok': True, 'checked_at': frozen['now'],
+                                              'models': [{'id': n} for n in names]}}}
+                base = list((auto_bundles.derive(acc, cat, frozen['now'])['bundles'].get('acct') or {}).values())
+                owners = auto_bundles.replayed_owners({str(i): b for i, b in enumerate(base)})
+                held = {sid: name for name, sid in pairs if sid}
+                together = auto_bundles.derive(acc, cat, frozen['now'], overrides={'schema_version': 2, 'accounts': {
+                    'acct': {'bundles': {sid: {'disabled': True} for sid in held}}}})['bundles'].get('acct') or {}
+                for sid, name in held.items():
+                    holder = next((b for b in base if b['launch_model'] == name), None)
+                    if holder is None:
+                        continue                                     # excluded now: no bundle to read it
+                    own = {b['launch_model'] for b in base
+                           if (b['model'], b.get('effort')) == (holder['model'], holder.get('effort'))}
+                    for value in (True, False):
+                        choices = auto_bundles.stored_choices(
+                            {'accounts': {'acct': {'bundles': {sid: {'disabled': value}}}}}, acc)['acct']
+                        reads = {b['launch_model']: auto_bundles.choice_for(choices, b, acc, by_model, owners)
+                                 for b in base}
+                        readers = {n for n, (_, ids, _) in reads.items() if ids}
+                        with self.subTest(setup=setup, group=group, sid=sid, value=value):
+                            self.assertEqual(reads[name][:2], (value, [sid]))
+                            self.assertLessEqual(readers, own)
+                        checked += 1
+                        leaks += bool(readers - own)
+                        shared += len(readers) > 1
+                    self.assertEqual({b['launch_model'] for b in together.values() if sid in (b.get('_choice_ids') or ())},
+                                     readers)
+        self.assertGreater(checked, 7000)          # 1845 ids on each of the two shapes, both values: not vacuous
+        self.assertEqual(leaks, 0)
+        self.assertGreater(shared, 0)              # names of one model do share a checkbox
+
+    def test_two_models_whose_v070_ids_collide_now_keep_their_own_checkboxes_from_the_first_load(self):
+        """Round 10 item 1, end to end: v0.7.0 stored `claude-opus-5` (its alias then) under the id that is now
+        `claude-opus-5-5`'s untagged id, and gave `claude-opus-5-5` the tag of its advertised spelling. From the first
+        load each model reads its own choice: setting Opus 5.5, then Opus 5, then clearing Opus 5.5 again leaves the
+        other unchanged at every step, through both read points and a reload from the file in between."""
+        import auto_bundles
+        ref = json.loads((REPO_ROOT / 'skills' / 'agent-compass' / 'references' / 'accounts.json')
+                         .read_text(encoding='utf-8-sig'))
+        acc = self.accounts({'billing': 'metered', 'backend_kind': 'metered_usd', 'family': 'codex',
+                             'windows': {'balance': {}}, 'bundles': {}}, ref)
+        old, new = 'claude-opus-5', 'claude-opus-5-5'
+        stored = 'auto:acct:claude:claude-opus-5-5@high'
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / 'accounts-override.json'
+
+        def reload(doc):
+            path.write_text(json.dumps(doc), encoding='utf-8')
+            return accounts_override.load_override(path)
+
+        def state(doc):
+            got = self.read(acc, [old, new], doc, 2e9)
+            for name in (old, new):
+                self.assertEqual(got[name][0], got[name][1])         # apply and derive read the same
+                self.assertIsNone(got[name][2].get('_choice_conflict'))
+            return {name: got[name][0] for name in (old, new)}, got
+
+        doc = reload({'schema_version': 2, 'accounts': {'acct': {'bundles': {stored: {'disabled': True}}}}})
+        now, got = state(doc)
+        self.assertEqual(now, {old: True, new: False})                # v0.7.0: Opus 5 off, Opus 5.5 on
+        self.assertEqual(got[new][3], stored + auto_bundles.name_tag(new))   # Opus 5.5 keeps the id v0.7.0 gave it
+        for name, disabled in ((new, True), (old, False), (new, False)):
+            before = now
+            _, _, bundle, bid = got[name]
+            accounts_override.set_bundle_choice(doc, 'acct', bid, disabled, bundle.get('_choice_ids') or ())
+            doc = reload(doc)
+            now, got = state(doc)
+            with self.subTest(set=name, disabled=disabled):
+                self.assertEqual(now[name], disabled)
+                other = old if name == new else new
+                self.assertEqual(now[other], before[other])
+
     def test_a_v070_id_is_read_by_the_advertised_name_it_was_derived_from(self):
         """Round 9 item 3: v0.7.0 resolved `deepseek/deepseek-flash` and `deepseek/deepseek-v4-flash` to one row, so
         the first advertised name held the id and the second the id tagged with the sha256 of its own advertised
