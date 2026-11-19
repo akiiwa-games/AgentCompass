@@ -3652,10 +3652,11 @@ class CrossSizeAndEdgeRuleTests(unittest.TestCase):
                                                    'effort': 'high', 'value': 0.4, 'dominating_value': 0.0,
                                                    'measured': True, 'dominating_measured': True}])
 
-    def test_an_estimate_moves_within_what_its_own_measurements_allow_and_the_rest_is_listed(self):
+    def test_an_estimate_moves_within_what_its_own_measurements_allow_and_the_rest_is_listed_or_refused(self):
         """Rule (`bound_across_size` with `effort_floor`): a dominating estimate is raised to the floor a dominated row's
         measured efforts give it (not only to a measurement at that effort); a dominated estimate is held no lower than
-        its own floor; what measurements alone keep out of order is listed, the flags saying which value is measured."""
+        its own floor; what two measurements keep out of order is listed, and an estimate its own measurements keep out
+        of order stops the build, naming the pair (round 8)."""
         facets = {'small-2': {self.EXE: self.rec({'low': 0.3, 'high': 0.5, 'xhigh': 0.6}, 'measured', ['low', 'high'])},
                   'big-2': {self.EXE: self.rec({'low': -0.1, 'high': 0.0, 'xhigh': 0.2}, 'measured', ['low', 'high'])}}
         sc = self.dom_scorer(facets, {'small-2': 2, 'big-2': 2})
@@ -3668,10 +3669,9 @@ class CrossSizeAndEdgeRuleTests(unittest.TestCase):
         facets = {'small-2': {self.EXE: self.rec({'low': 0.3, 'medium': 0.6}, 'measured', ['low'])},
                   'big-2': {self.EXE: self.rec({'low': 0.0, 'medium': 0.1})}}
         sc = self.dom_scorer(facets, {'small-2': 2, 'big-2': 2})
-        sc.bound_across_size(facets)
-        self.assertEqual(facets['small-2'][self.EXE]['by_effort'], {'low': 0.3, 'medium': 0.3})
-        self.assertEqual([(i['effort'], i['measured'], i['dominating_measured']) for i in sc.measured_inversions],
-                         [('low', True, True), ('medium', False, True)])
+        with self.assertRaisesRegex(ValueError, r'small-2 coding\.execution at medium 0\.3 \(estimated\) above big-2 0\.1 '
+                                                r'\(measured\)'):
+            sc.bound_across_size(facets)
 
     def test_a_newer_smaller_row_and_an_older_larger_one_are_left_as_they_are(self):
         facets = {'small-3': {self.EXE: self.rec({'high': 0.4}, 'estimated', [])},
@@ -3682,16 +3682,28 @@ class CrossSizeAndEdgeRuleTests(unittest.TestCase):
                          ({'high': 0.4}, {'high': 0.0}))
 
     def test_a_model_entry_row_is_bounded_by_release_rows_and_never_moves_one(self):
-        """Rule (frozen fits, round 6): an entry is held by a release row; an entry's measurement never raises a release
-        row and an entry's value never holds one."""
+        """Rule (frozen fits, round 6; round 8): an entry is held by a release row, and an entry dominating a release row
+        is raised to its value, measured or estimated; an entry never moves a release row, so where only that would
+        restore the order (the entry's measurement above a release estimate, or a release estimate above an entry's
+        measurement) the build stops, naming the pair."""
         def run(entries, small, big):
             facets = {'small-2': {self.EXE: self.rec({'high': 0.4}, *small)},
                       'big-2': {self.EXE: self.rec({'high': 0.0}, *big)}}
             self.dom_scorer(facets, {'small-2': 2, 'big-2': 2}, entries).bound_across_size(facets)
-            return facets['small-2'][self.EXE]['by_effort']['high'], facets['big-2'][self.EXE]['by_effort']['high']
-        self.assertEqual(run(['small-2'], ('estimated', []), ()), (0.0, 0.0))        # the entry is held
-        self.assertEqual(run(['small-2'], (), ('estimated', [])), (0.4, 0.0))        # its measurement raises no release row
-        self.assertEqual(run(['big-2'], ('estimated', []), ()), (0.4, 0.0))          # an entry holds no release row
+            return facets['small-2'][self.EXE], facets['big-2'][self.EXE]
+        small, _ = run(['small-2'], ('estimated', []), ())                           # the entry is held
+        self.assertEqual(small['by_effort']['high'], 0.0)
+        for entries, est in ((['big-2'], ('estimated', [])), ([], ('estimated', []))):
+            small, big = run(entries, est, est)
+            with self.subTest(entries=entries):
+                if entries:                                  # an entry over a release estimate: raised to its value
+                    self.assertEqual((small['by_effort']['high'], big['by_effort']['high']), (0.4, 0.4))
+                    self.assertEqual(big['size_order']['raised']['high'], {'model': 'small-2', 'from': 0.0})
+                else:                                        # two release estimates: the dominated one is held
+                    self.assertEqual((small['by_effort']['high'], big['by_effort']['high']), (0.0, 0.0))
+        for entries, small_how, big_how in ((['small-2'], (), ('estimated', [])), (['big-2'], ('estimated', []), ())):
+            with self.subTest(entries=entries), self.assertRaisesRegex(ValueError, 'small-2 coding.execution at high 0.4'):
+                run(entries, small_how, big_how)
 
     def test_the_bound_across_size_reads_no_order_of_the_rows_and_leaves_speed_alone(self):
         """The raise reads measurements only and a dominating row is never dominated, so the result is one in any order

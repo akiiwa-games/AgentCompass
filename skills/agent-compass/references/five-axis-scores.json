@@ -53788,8 +53788,8 @@
        "value": 0.5381,
        "by_effort": {
         "none": -0.9707,
-        "minimal": -0.9234,
-        "low": -0.6314,
+        "minimal": -0.8474,
+        "low": -0.5554,
         "medium": 0.18,
         "high": 0.5381,
         "xhigh": 0.672,
@@ -53845,6 +53845,18 @@
          "step": -1.5088,
          "n": 43
         }
+       },
+       "size_order": {
+        "raised": {
+         "minimal": {
+          "model": "gemini-3.8-flash-high",
+          "from": -0.9234
+         },
+         "low": {
+          "model": "gemini-3.8-flash-high",
+          "from": -0.6314
+         }
+        }
        }
       }
      },
@@ -53868,8 +53880,8 @@
       "3": {
        "by_effort": {
         "none": -0.9707,
-        "minimal": -0.9234,
-        "low": -0.6314,
+        "minimal": -0.8474,
+        "low": -0.5554,
         "medium": 0.0185,
         "high": -0.9005,
         "xhigh": -1.3321,
@@ -53885,8 +53897,8 @@
      "value": -0.9005,
      "by_effort": {
       "none": -0.9707,
-      "minimal": -0.9234,
-      "low": -0.6314,
+      "minimal": -0.8474,
+      "low": -0.5554,
       "medium": 0.0185,
       "high": -0.9005,
       "xhigh": -1.3321,

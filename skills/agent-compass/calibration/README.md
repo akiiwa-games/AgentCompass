@@ -90,10 +90,12 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   dominated row can take there (its measurement, else the floor its own measured efforts give it, `effort_floor`; the
   cell's `size_order.raised`), a dominated estimate is bounded by the lowest dominating value (`size_order.held`), each
   with the value it had and the row that moved it, and each moved curve is bounded along effort with its measured efforts
-  kept (`bound_pinned`; an effort that moves only there is listed under `size_order.along_effort` with its value before). One pass is the fixpoint, in no order a name decides. What measurements alone keep out of order
-  is kept as read and listed (`measured_size_inversions`, printed by the refresh), a reading, not a defect, and no
-  known-gap entry. A newer smaller model above an older larger one is not dominated. A model-entry row is bounded by
-  release rows and never moves one. The speed facets have no bound across size.
+  kept (`bound_pinned`; an effort that moves only there is listed under `size_order.along_effort` with its value before). One pass is the fixpoint, in no order a name decides. A model-entry row is bounded by
+  release rows and never moves one: an entry dominating a release row is raised to that row's value, measured or
+  estimated (round 8). Afterwards the build checks the statement over every dominated pair, facet and effort: what is
+  still out of order must be two measurements, kept as read and listed (`measured_size_inversions`, printed by the
+  refresh), a reading, not a defect, and no known-gap entry; any other pair stops the build, naming it. A newer smaller
+  model above an older larger one is not dominated. The speed facets have no bound across size.
 - **Edge efforts (owner, 2026-11-18; `none` round 5; readings and steps round 6).** Every effort of the one order
   (`user_scores.EFFORTS`, `none` and `minimal` included) is read on every board: a listing labelled Minimal is a measured
   reading at `minimal`, one labelled None or with a thinking-off label (`accounts.json` `effort_readings.labels`:
