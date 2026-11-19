@@ -835,7 +835,7 @@ EN = {
     '等级 1 = 面板最弱，2 = 面板中位数，3 = 面板最强；High 档。悬停看来源与证据。': 'Level 1 = panel weakest, 2 = panel median, 3 = panel best; High effort. Hover for source and evidence.',
     '手动评分': 'Manual Score',
     '本机覆盖只写入你本机的 user-scores.json（与 agentcompass score set 相同的写入路径），不改公开数据。等级 3 = 面板最强；高于 3 的等级按 t3 − t2 外推，照实显示。': 'A local override is written only to your local user-scores.json (the same writer as agentcompass score set) and never changes public data. Level 3 = the panel\'s best; a level above 3 extrapolates by t3 − t2 and is shown as the number it is.',
-    '数据生成于 {0} · 锚点 {1} · 面板 {2} 个模型': 'Data generated {0} · anchor {1} · panel of {2} models',
+    '数据截至 {0} · 锚点 {1} · 面板 {2} 个模型': 'Data as of {0} · anchor {1} · panel of {2} models',
     '连续性 {0}': 'Continuity {0}',
     '连续性（只读，由数据推导）：{0}': 'Continuity (read-only, derived from the data): {0}',
     '覆盖：{0}': 'Coverage: {0}',
