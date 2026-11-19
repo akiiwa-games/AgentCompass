@@ -98,6 +98,66 @@ def validate_accounts_provenance(doc):
         _validate_model_data(model, spec)
     _validate_catalog_tables(doc)
     _validate_cited_tables(doc)
+    _validate_provider_names(doc)
+
+
+PROVIDER_NAME_KEYS = {'model', 'status', 'canonical_id', 'kind', 'url', 'as_of', 'statement'}
+PROVIDER_NAME_KINDS = ('vendor', 'community', 'maintainer')
+
+
+def _validate_provider_names(doc):
+    """`provider_names` (model_resolution.provider_name_table): each declaration cites its source with its date and
+    statement (a maker's page, models.dev, or a dated maintainer declaration) and names a served name lowercase, with no
+    provider part or effort. A provider's declaration (`rows`) names a row the catalog has, or none with a status
+    (model_resolution.PROVIDER_NAME_STATUSES; `retired` cites the maker); a default (`defaults`) is the maker's statement
+    (kind vendor) and names a row. A shipped account bundle whose launch name a declaration makes another row runs that
+    row (a name with no row there has no bundle)."""
+    table = model_resolution.provider_name_table(doc)
+    models = doc.get('models') or {}
+    problems = []
+
+    def check(where, name, d, default):
+        if (not isinstance(d, dict) or not set(d) <= PROVIDER_NAME_KEYS or d.get('kind') not in PROVIDER_NAME_KINDS
+                or not valid_public_declaration(d) or not _ISO_DATE.match(str(d.get('as_of') or ''))
+                or not str(d.get('statement') or '').strip()):
+            return f'{where}: {{model, kind ({", ".join(PROVIDER_NAME_KINDS)}), url, as_of, statement}}'
+        if name != name.lower() or '/' in name or model_resolution.split_model_effort(name)[1]:
+            return f'{where}: a served name is lowercase, without a provider part or an effort'
+        if 'canonical_id' in d and not str(d['canonical_id'] or '').strip():
+            return f'{where}: canonical_id is the id models.dev gives the pair'
+        if default and (d.get('kind') != 'vendor' or 'status' in d or d.get('model') not in models):
+            return f"{where}: a default is the maker's statement (kind vendor) and names a row the catalog has"
+        if d.get('model') is None and (d.get('status') not in model_resolution.PROVIDER_NAME_STATUSES
+                                       or (d['status'] == 'retired' and d.get('kind') != 'vendor') or 'canonical_id' in d):
+            return (f"{where}: no row only with a status of {', '.join(model_resolution.PROVIDER_NAME_STATUSES)} "
+                    "(retired: the maker's notice, kind vendor)")
+        if d.get('model') is not None and ('status' in d or d['model'] not in models):
+            return f"{where}: names row {d['model']!r}, which the catalog does not have (or carries a status)"
+        return None
+
+    for name, d in sorted(table['defaults'].items()):
+        problems.append(check(f'defaults/{name}', name, d, True))
+    for provider, names in sorted(table['rows'].items()):
+        if not isinstance(names, dict) or not str(provider).strip():
+            problems.append(f'rows/{provider!r}: {{served name: declaration}}')
+            continue
+        for name, d in sorted(names.items()):
+            problems.append(check(f'rows/{provider}/{name}', name, d, False))
+    problems = [x for x in problems if x]
+    for account, spec in sorted((doc.get('accounts') or {}).items()):
+        for bid, b in sorted(((spec or {}).get('bundles') or {}).items()):
+            if not isinstance(b, dict) or not b.get('model'):
+                continue
+            served = b.get('launch_model') or b['model']
+            found = model_resolution.resolve_model(served, models, doc.get('aliases') or {},
+                                                   model_resolution.family_patterns(doc), table)
+            declared = found['source'] in ('provider', 'default', 'conflict', *model_resolution.PROVIDER_NAME_STATUSES)
+            if declared and (found['key'] is None or model_resolution.split_model_effort(b['model'])[0] != found['key']):
+                problems.append(f"accounts[{account}].bundles[{bid}]: {served} is "
+                                f"{found['key'] or 'no row (' + str(found['source']) + ')'} by provider_names, the bundle "
+                                f"runs {b['model']}")
+    if problems:
+        raise ValueError('accounts.json provider_names: ' + '; '.join(problems[:8]))
 
 
 def _validate_cited_tables(doc):

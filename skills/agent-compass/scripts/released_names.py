@@ -40,10 +40,13 @@ def as_v0_7_0(accounts):
     """`accounts` (accounts.json) with every name of `V0_7_0` resolving as v0.7.0 resolved it: an alias of the row it
     meant, not a row or an alias of its own. A name resolved through it (auto_bundles.default_profile: the advertised
     spelling, its last segment, case, effort and vendor suffixes) reaches the row v0.7.0 reached; read where the id
-    v0.7.0 gave an auto bundle is replayed (auto_bundles.derive)."""
+    v0.7.0 gave an auto bundle is replayed (auto_bundles.derive). v0.7.0 and v0.7.1 declared no row of a served name
+    (`provider_names`, added after v0.7.1), so the replay declares none: the id v0.7.1 gave a bundle whose name a
+    provider or its maker now declares is the id v0.7.0 gave it."""
     models = {k: v for k, v in ((accounts or {}).get('models') or {}).items() if k not in V0_7_0}
     aliases = {**{k: v for k, v in ((accounts or {}).get('aliases') or {}).items() if k not in V0_7_0}, **V0_7_0}
-    return {**(accounts or {}), 'models': models, 'aliases': aliases}
+    return {**(accounts or {}), 'models': models, 'aliases': aliases,
+            'provider_names': {'statement': 'v0.7.0 and v0.7.1 declared none', 'defaults': {}, 'rows': {}}}
 
 
 def current_key(name, accounts):

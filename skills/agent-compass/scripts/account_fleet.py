@@ -15,7 +15,7 @@ import provider_inventory
 import public_data
 import accounts_override
 import cwd_policy
-from model_resolution import DIRECT_SOURCES, family_patterns, resolve_model as _resolve_model, resolve_canonical_model, split_model_effort
+from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, resolve_in, split_model_effort
 
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
@@ -152,20 +152,21 @@ def models_table(accounts):
     return {k: v for k, v in accounts['models'].items() if isinstance(v, dict)}
 
 
-def resolve_model(model, accounts):
-    """model_resolution.resolve_model against this document: {'key', 'source', 'effort', 'bare'}."""
-    return _resolve_model(model, accounts.get('models', {}), accounts.get('aliases', {}), family_patterns(accounts))
+def resolve_model(model, accounts, providers=()):
+    """model_resolution.resolve_in against this document: {'key', 'source', 'effort', 'bare', 'provider'}. `providers`:
+    the endpoints the caller knows serve the name (model_resolution.serving_providers)."""
+    return resolve_in(model, accounts, providers)
 
 
-def canonical(model, accounts):
-    return resolve_canonical_model(model, accounts.get('models', {}), accounts.get('aliases', {}),
-                                   family_patterns(accounts)) or model
+def canonical(model, accounts, providers=()):
+    return resolve_in(model, accounts, providers)['key'] or model
 
 
-def model_spec(accounts, model):
-    """The model row for a name: `exact`/`alias` read the row itself; a name that is not a row (a family guess, an unknown
-    name) has none, so it carries no scores and no price (rule B)."""
-    resolved = resolve_model(model, accounts)
+def model_spec(accounts, model, providers=()):
+    """The model row for a name: `exact`/`alias`/`provider`/`default` read the row itself; a name that is not a row (a
+    family guess, an unknown name, a name with no row on its serving provider) has none, so it carries no scores and no
+    price (rule B)."""
+    resolved = resolve_model(model, accounts, providers)
     value = accounts.get('models', {}).get(resolved['key']) if resolved['source'] in DIRECT_SOURCES else None
     return value if isinstance(value, dict) else {}
 
@@ -174,11 +175,14 @@ def model_leaf(model):
     return split_model_effort(model)[0].rsplit('/', 1)[-1]
 
 
-def row_key(model, accounts):
+def row_key(model, accounts, providers=()):
     """Which model a row runs: the resolved key for its calibrated id or another spelling of it, its own name for a family
     guess or an unknown model. `canonical` folds a family guess to its target for scoring; two rows are the same model
-    only when this says so."""
-    resolved = resolve_model(model, accounts)
+    only when this says so. A name with no row on its serving provider (PROVIDER_NAME_STATUSES) is that provider's own,
+    never the same name elsewhere."""
+    resolved = resolve_model(model, accounts, providers)
+    if resolved['source'] in PROVIDER_NAME_STATUSES:
+        return f"{resolved['provider']}/{model_leaf(model)}".lower()
     return resolved['key'] if resolved['source'] in DIRECT_SOURCES else model_leaf(model).lower()
 
 

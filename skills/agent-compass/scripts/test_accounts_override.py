@@ -213,7 +213,7 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
     @staticmethod
     def accounts(spec, ref):
         return {'models': ref['models'], 'aliases': ref.get('aliases', {}), 'superseded': ref.get('superseded', {}),
-                'families': ref.get('families'), 'accounts': {'acct': json.loads(json.dumps(spec))}}
+                'families': ref.get('families'), 'provider_names': ref.get('provider_names'), 'accounts': {'acct': json.loads(json.dumps(spec))}}
 
     @staticmethod
     def read(acc, names, doc, now):
@@ -260,6 +260,8 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
                             self.assertIn(ids[name], bundle['_choice_ids'])
                             if bundle.get('_choice_conflict'):
                                 self.assertEqual((disabled, direct), (True, True))
+                                # a conflict is names that are one model now holding values that disagree
+                                self.assertEqual({value(held[c]) for c in bundle['_choice_conflict']}, {True, False})
                                 conflicts += 1
                             else:
                                 self.assertEqual((disabled, direct), (value(name), value(name)))
@@ -268,7 +270,7 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
         self.assertEqual(tagged, 92)              # the second names of a row on an account: the case that was wrong
         self.assertGreater(checked, 14000)        # four policies over both shapes and every name: not vacuous
         self.assertGreater(moved, 100)            # many of them under an id that is not the one derived now
-        self.assertLess(conflicts, checked // 100)
+        self.assertGreater(conflicts, 0)          # the mixed policies reach names that are one model now
 
     def test_a_v070_id_stored_alone_is_read_only_by_the_model_its_name_is_now(self):
         """Rule (round 10 item 1; auto_bundles.choice_for `owners`, derive): an id the replay gives an advertised name is
@@ -384,7 +386,7 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
     def test_stored_choices_that_fold_into_one_bundle_and_disagree_disable_it_and_are_listed(self):
         """Two stored ids whose names resolve now to one bundle: agreeing, the bundle reads their value; disagreeing,
         it is disabled and `_choice_conflict` lists both ids (what `agentcompass doctor` prints once)."""
-        acc = {'models': {'kimi-k3': {}}, 'aliases': {'k3': 'kimi-k3'}, 'superseded': {}, 'families': {'rows': []},
+        acc = {'models': {'kimi-k3': {}}, 'aliases': {'k3': 'kimi-k3'}, 'superseded': {}, 'families': {'rows': []}, 'provider_names': {'defaults': {}, 'rows': {}},
                'accounts': {'acct': {'billing': 'subscription', 'family': 'codex', 'windows': {},
                                      'bundles': {'own': {'harness': 'codex', 'model': 'other', 'effort': 'high'}}}}}
         old, new = 'auto:acct:codex:k3@high', 'auto:acct:codex:kimi-k3@high'
@@ -399,7 +401,7 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
     def test_setting_the_checkbox_again_replaces_the_stored_ids_the_bundle_was_read_from(self):
         """The tray writes a bundle's checkbox through `set_bundle_choice`: the folded ids (`_choice_ids`) go, so a
         bundle left disabled by a disagreement takes the user's new choice."""
-        acc = {'models': {'kimi-k3': {}}, 'aliases': {'k3': 'kimi-k3'}, 'superseded': {}, 'families': {'rows': []},
+        acc = {'models': {'kimi-k3': {}}, 'aliases': {'k3': 'kimi-k3'}, 'superseded': {}, 'families': {'rows': []}, 'provider_names': {'defaults': {}, 'rows': {}},
                'accounts': {'acct': {'billing': 'subscription', 'family': 'codex', 'windows': {},
                                      'bundles': {'own': {'harness': 'codex', 'model': 'other', 'effort': 'high'}}}}}
         old, new = 'auto:acct:codex:k3@high', 'auto:acct:codex:kimi-k3@high'
@@ -416,7 +418,7 @@ class StoredChoiceFollowsTheNameTests(unittest.TestCase):
         """The id's effort always, its harness unless the account takes the harness from the model, and a `#tag` only
         for the advertised name it hashes."""
         import auto_bundles
-        acc = {'models': {'kimi-k3': {}}, 'aliases': {}, 'superseded': {}, 'families': {'rows': []},
+        acc = {'models': {'kimi-k3': {}}, 'aliases': {}, 'superseded': {}, 'families': {'rows': []}, 'provider_names': {'defaults': {}, 'rows': {}},
                'accounts': {'acct': {'billing': 'subscription', 'family': 'codex', 'windows': {},
                                      'bundles': {'own': {'harness': 'codex', 'model': 'other', 'effort': 'high'}}}}}
         for sid in ('auto:acct:codex:kimi-k3@low', 'auto:acct:pi:kimi-k3@high',

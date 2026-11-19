@@ -307,7 +307,7 @@ class FixRoundRegressionTests(unittest.TestCase):
                                 'z_by_effort': {'high': 0.2}}],
         }
         rows, _, _, _, _, _ = fa.Scorer({'panel': {'models': panel}, 'models': models},
-                                        {'models': {m: {} for m in models}, 'families': {'rows': []},
+                                        {'models': {m: {} for m in models}, 'families': {'rows': []}, 'provider_names': {'defaults': {}, 'rows': {}},
                                          'effort_readings': {'reads': {'default': 'high'}},
                                          'estimation_order': {'order': list(fa.ESTIMATION_ORDER),
                                                               'sibling_first_up_to_distance': 1,

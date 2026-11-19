@@ -4,7 +4,7 @@ import unittest
 import account_fleet
 import auto_bundles
 import axis_scores
-from model_resolution import family_patterns, resolve_canonical_model
+from model_resolution import family_patterns, provider_name_table, resolve_canonical_model
 
 from router_test_support import isolated_router_state
 
@@ -97,8 +97,9 @@ class ModelResolutionTests(unittest.TestCase):
         self.assertEqual(account_fleet.canonical('openai/gpt-5-custom@20251001', self.accounts), 'gpt-6.1-sol')
         self.assertEqual(account_fleet.canonical('vendor/gpt-5-custom-latest', self.accounts), 'gpt-5-custom')
         # Alias cycles and metadata strings must not become model specifications.
-        self.assertIsNone(resolve_canonical_model('loop', {}, {'loop': 'other', 'other': 'loop'}, []))
-        self.assertIsNone(resolve_canonical_model('basis', self.accounts['models'], {}, family_patterns(self.accounts)))
+        none = {'defaults': {}, 'rows': {}}
+        self.assertIsNone(resolve_canonical_model('loop', {}, {'loop': 'other', 'other': 'loop'}, [], none))
+        self.assertIsNone(resolve_canonical_model('basis', self.accounts['models'], {}, family_patterns(self.accounts), none))
 
     def test_a_document_without_a_families_table_is_a_named_error_not_an_empty_table(self):
         doc = {key: value for key, value in self.accounts.items() if key != 'families'}
@@ -135,7 +136,7 @@ class ModelResolutionTests(unittest.TestCase):
             self.assertNotIn(name, self.accounts['models'])
         for name in ['llama-future', 'gpt-4-future', 'unknown-vendor']:
             self.assertIsNone(resolve_canonical_model(name, self.accounts['models'], self.accounts['aliases'],
-                                                      family_patterns(self.accounts)))
+                                                      family_patterns(self.accounts), provider_name_table(self.accounts)))
 
     def test_current_frontier_tiers_and_context_windows(self):
         shipped = axis_scores.load_five_axis()['models']

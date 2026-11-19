@@ -11,6 +11,9 @@ A discovered name resolves, most specific first, to:
                     enters the public data, so until then it is out of automatic routing (rule B) and a named dispatch
                     carries the data error.
   3. unmeasured   - no row and no same-series row: the same, with no series to convert from.
+The catalog's provider_names table is read first (model_resolution.resolve_in): a name the account's endpoint declares
+is that provider's row (calibrated) or no row there (retired, other_weights: out of automatic routing, a named route
+still launches); else a name its maker moved to a newer dated snapshot is that snapshot's row (calibrated).
 No default row, score or price is supplied here.
 """
 import copy
@@ -22,7 +25,7 @@ from pathlib import Path
 
 import public_data
 import released_names
-from model_resolution import DIRECT_SOURCES, family_patterns, resolve_canonical_model, resolve_model
+from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, resolve_in, split_model_effort
 
 AUTO_PREFIX = 'auto:'
 STALE_LIMIT_SECONDS = 7 * 24 * 3600
@@ -33,6 +36,10 @@ HARNESS_DEFAULT_EFFORT = {'codex': 'high', 'pi': 'high', 'claude': 'high', 'open
                           'antigravity-resilient': None, 'grok': 'high'}
 HARNESS_MODE = {'codex': 'full-access', 'claude': 'bypassPermissions',
                 'opencode': 'build', 'antigravity-resilient': 'full-access'}
+# A model catalog entry of an endpoint (tray/model_catalog.py: an OpenAI-compatible base URL) lists ids in its own
+# namespace, so the endpoint is the name's serving provider; any other entry is a launcher's list, whose `provider/name`
+# ids name the provider it launches (model_resolution.serving_providers).
+ENDPOINT_TYPES = ('openai_compatible',)
 _PUBLIC_CATALOG_CACHE = None
 
 
@@ -49,6 +56,7 @@ def _public_catalog():
             'models': doc.get('models') if isinstance(doc.get('models'), dict) else {},
             'aliases': doc.get('aliases') if isinstance(doc.get('aliases'), dict) else {},
             'families': doc.get('families'),
+            'provider_names': doc.get('provider_names'),
         })
     return _PUBLIC_CATALOG_CACHE[1]
 
@@ -56,8 +64,7 @@ def _public_catalog():
 def _model_api_family(model, accounts=None):
     src = accounts if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict) else _public_catalog()
     models = src.get('models') or {}
-    aliases = src.get('aliases') if isinstance(src.get('aliases'), dict) else {}
-    canon = resolve_canonical_model(model, models, aliases, family_patterns(src)) or str(model or '')
+    canon = resolve_in(model, src)['key'] or str(model or '')
     return str((models.get(canon) or {}).get('api_family') or '').strip().lower()
 
 
@@ -81,14 +88,10 @@ def is_chat_model(raw):
     return not NON_CHAT.search(str(raw or ''))
 
 
-def series_target(raw_model, accounts):
+def series_target(raw_model, accounts, providers=()):
     """The same-series row model_resolution's family resolution gives this name (a name that is itself a row resolves
     exactly and has none), or None."""
-    raw_models = (accounts.get('models') if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict)
-                  else (accounts if isinstance(accounts, dict) else {}))
-    known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict)}
-    aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
-    resolved = resolve_model(raw_model, known, aliases, family_patterns(accounts))
+    resolved = resolve_in(raw_model, accounts, providers)
     return resolved['key'] if resolved['source'] == 'family' and resolved['key'] else None
 
 
@@ -111,14 +114,18 @@ def _name_candidates(raw_model, accounts):
     return base, (str(raw_model), base, name, stripped, aliases.get(stripped, stripped))
 
 
-def superseded_by(raw_model, accounts):
+def superseded_by(raw_model, accounts, providers=()):
     """The newer model id public data names for this model, or None (latest, or unknown to the data).
 
     The only source of a discovered model's default checkbox: `accounts['superseded']` maps an old model id
-    to {'by': newer id, 'basis': ...}. Efforts and harnesses of one model share its entry.
+    to {'by': newer id, 'basis': ...}. Efforts and harnesses of one model share its entry. A name its serving provider
+    declares is that row alone (or no row: retired), never the spellings of the row the name is elsewhere.
     """
     table = accounts.get('superseded') if isinstance(accounts.get('superseded'), dict) else {}
-    resolved = resolve_model(raw_model, accounts.get('models') or {}, accounts.get('aliases') or {}, family_patterns(accounts))
+    resolved = resolve_in(raw_model, accounts, providers)
+    if resolved['source'] in ('provider', 'default', 'conflict', *PROVIDER_NAME_STATUSES):
+        entry = table.get(resolved['key']) if resolved['key'] else None
+        return entry['by'] if isinstance(entry, dict) and entry.get('by') else None
     names = [*_name_candidates(raw_model, accounts)[1], resolved['bare']]
     if resolved['source'] in DIRECT_SOURCES:
         names.append(resolved['key'])
@@ -129,18 +136,37 @@ def superseded_by(raw_model, accounts):
     return None
 
 
-def default_profile(raw_model, accounts):
-    """How a model name resolves, with its source: {'model', 'source', 'target', 'basis'}. Never mutates accounts."""
-    raw_models = (accounts.get('models') if isinstance(accounts, dict) and isinstance(accounts.get('models'), dict)
-                  else (accounts if isinstance(accounts, dict) else {}))
-    known = {k: v for k, v in (raw_models or {}).items() if isinstance(v, dict)}
-    aliases = (accounts.get('aliases') if isinstance(accounts, dict) and isinstance(accounts.get('aliases'), dict) else {})
+def default_profile(raw_model, accounts, providers=()):
+    """How a model name resolves, with its source: {'model', 'source', 'target', 'basis'}. Never mutates accounts.
+
+    `providers`: the endpoints serving the name (model_resolution.serving_providers). A name a serving provider declares
+    with no row (retired, other_weights) has none there: its model is the name qualified by that provider
+    (`<provider>/<name>`), so every later resolution of the bundle's model reads the same declaration and never the row
+    the name is elsewhere."""
     base = _name_candidates(raw_model, accounts)[0]
-    resolved = resolve_model(raw_model, known, aliases, family_patterns(accounts))
+    resolved = resolve_in(raw_model, accounts, providers)
+    if resolved['source'] == 'provider':
+        return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
+                'basis': f"Calibrated row in accounts.models: {resolved['provider']} serves this name as {resolved['key']} "
+                         '(provider_names).'}
+    if resolved['source'] == 'default':
+        return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
+                'basis': f"Calibrated row in accounts.models: the maker now serves this name as {resolved['key']} "
+                         '(provider_names defaults).'}
     if resolved['source'] in DIRECT_SOURCES:
         return {'model': resolved['key'], 'source': 'calibrated', 'target': resolved['key'],
                 'basis': 'Calibrated row in accounts.models.'}
-    target = series_target(raw_model, accounts)
+    if resolved['source'] in PROVIDER_NAME_STATUSES:
+        leaf = split_model_effort(raw_model)[0].rsplit('/', 1)[-1]
+        why = ('no longer serves this name (retired)' if resolved['source'] == 'retired'
+               else 'serves this name as weights the public data has no row for (other_weights)')
+        return {'model': f"{resolved['provider']}/{leaf}", 'source': resolved['source'], 'target': None,
+                'basis': f"{resolved['provider']} {why}, by provider_names: no row, out of automatic routing; a route the "
+                         'user names still launches.'}
+    if resolved['source'] == 'conflict':
+        return {'model': base, 'source': 'unmeasured', 'target': None,
+                'basis': 'Its serving providers declare different rows (provider_names): no row, out of automatic routing.'}
+    target = series_target(raw_model, accounts, providers)
     if target:
         return {'model': base, 'source': 'family', 'target': target,
                 'basis': f'Same series as {target}; no scores of its own until calibration converts them from it.'}
@@ -201,7 +227,7 @@ def proxy_harness(family, model, accounts):
     family = str(family or 'codex')
     if family in ('claude', 'codex'):
         models = accounts.get('models') or {}
-        canon = resolve_canonical_model(model, models, accounts.get('aliases') or {}, family_patterns(accounts)) or str(model or '')
+        canon = resolve_in(model, accounts)['key'] or str(model or '')
         api_family = str((models.get(canon) or {}).get('api_family') or '').strip().lower()
         return 'claude' if api_family == 'claude' else 'codex'
     return family
@@ -216,8 +242,7 @@ def _metered_draws(spec):
 def _draws(spec, model, accounts):
     import window_scope
     windows = spec.get('windows') if isinstance(spec.get('windows'), dict) else {}
-    canonical = resolve_canonical_model(model, accounts.get('models') or {}, accounts.get('aliases') or {},
-                                        family_patterns(accounts)) or model
+    canonical = resolve_in(model, accounts)['key'] or model
     return [wid for wid, w in windows.items() if window_scope.binds_any((canonical, model), w)]
 
 
@@ -330,9 +355,9 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
     seen = dict(seen or {})
     out = {'bundles': {}, 'excluded': [], 'seen': seen}
 
-    def base_key(model):
-        # Only exact ids/aliases collapse; a family guess keeps its own advertised name.
-        return default_profile(model, accounts)['model']
+    def base_key(model, served):
+        # Only exact ids/aliases (and a row the serving provider declares) collapse; a family guess keeps its own name.
+        return default_profile(model, accounts, served)['model']
 
     released_accounts = released_names.as_v0_7_0(accounts)
 
@@ -345,7 +370,8 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
         # advertised spelling is known only here, where discovery lists it. Every name of the account is replayed
         # before any bundle takes its id or reads its choice: a later name may hold the id an earlier one would take.
         released, pending = {}, []
-        manual = {(h, base_key(b.get('model') or ''), b.get('effort')) for bid, b in (spec.get('bundles') or {}).items()
+        manual = {(h, base_key(b.get('model') or '', ()), b.get('effort'))     # a manual bundle is a launcher's row
+                  for bid, b in (spec.get('bundles') or {}).items()
                   if isinstance(b, dict) for h in [_harness_of(b, account, bid)]}
         manual_models = {(h, m) for h, m, _ in manual}
         metered = spec.get('billing') == 'metered'
@@ -360,15 +386,15 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 if '[' in raw:  # context-window variants (claude-opus-4-6[1m]) are the same model
                     continue
                 base, id_effort = split_effort(raw, accounts)
+                served = tuple(dict.fromkeys((provider, account))) if entry.get('type') in ENDPOINT_TYPES else ()
+                profile = default_profile(raw, accounts, served)
                 harness = pair_harness if pair_harness != PER_MODEL else \
-                    proxy_harness((account_families or {}).get(account) or spec.get('family'),
-                                  default_profile(raw, accounts)['model'], accounts)
-                profile = default_profile(raw, accounts)
+                    proxy_harness((account_families or {}).get(account) or spec.get('family'), profile['model'], accounts)
                 listed = (account, raw) in named
                 status, reason = harness_compatibility(harness, profile['model'], spec, accounts, listed=listed)
                 if status != 'excluded' and not is_chat_model(raw) and not listed:
                     status, reason = 'excluded', 'non-chat model (embedding/image/audio)'
-                key = base_key(raw)
+                key = base_key(raw, served)
                 if status == 'excluded':
                     out['excluded'].append({'account': account, 'harness': harness, 'model': raw, 'reason': reason})
                     continue
@@ -381,10 +407,10 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 released[released_id] = raw
                 model_name = profile['model'] if profile['source'] != 'calibrated' else key
                 pending.append((raw, harness, key, effort, released_id, model_name, provider, entry, profile, status,
-                                reason, pair_harness))
+                                reason, pair_harness, served))
         owners = {released_id: model_name for _, _, _, _, released_id, model_name, *_ in pending}
-        for raw, harness, key, effort, released_id, model_name, provider, entry, profile, status, reason, pair_harness \
-                in pending:
+        for raw, harness, key, effort, released_id, model_name, provider, entry, profile, status, reason, pair_harness, \
+                served in pending:
             bid = auto_bundle_id(account, harness, key, effort)
             taken = out['bundles'].get(account, {}).get(bid)
             # The id v0.7.0 gave another model's name stays that name's own: this one takes its tagged id.
@@ -398,7 +424,8 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                                        '_v0_7_0_id': released_id}, accounts, pair_harness == PER_MODEL, owners)
             # The checkbox default is public data alone: checked unless superseded there. The user's
             # model-management checkbox (`choice_for`) overrides it. Metered stays a last resort in routing.
-            default_disabled = superseded_by(raw, accounts) is not None or superseded_by(key, accounts) is not None
+            default_disabled = (superseded_by(raw, accounts, served) is not None
+                                or superseded_by(key, accounts, served) is not None)
             # Unchecked only by default, not by the user: naming this model still reaches it.
             by_default = default_disabled and chosen is None and availability != 'expired'
             bundle = {

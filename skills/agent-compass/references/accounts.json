@@ -499,6 +499,647 @@
    }
   }
  },
+ "provider_names": {
+  "statement": "which row a served model name is (scripts/model_resolution.py, resolve_in): `rows` are a serving provider's own declarations (its listing identifies the name as a row, or as weights with no row: `status: other_weights`, or the maker shut the name down there: `status: retired`), read first; `defaults` are the maker's declarations of what a name it moved to a newer dated snapshot serves now, read on any provider and with no provider known when no provider declares the name; a name neither declares resolves through `aliases` and `families`. Each declaration cites the maker (kind vendor) or models.dev (kind community) with its date; `canonical_id` is the id models.dev gives the pair when it differs from the row's own (audit/gateway_coverage.py, declaration_violations)",
+  "defaults": {
+   "deepseek-v4-pro": {
+    "model": "deepseek-v4-pro-0813",
+    "kind": "vendor",
+    "url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "as_of": "2026-11-19",
+    "statement": "DeepSeek pricing lists deepseek-v4-pro as \"MODEL VERSION DeepSeek-V4-Pro-0813\"; its change log of 2026-08-13 (https://api-docs.deepseek.com/updates): \"simply set the model name to deepseek-v4-pro to use the latest version\"; models.dev lists deepseek/deepseek-v4-pro on deepseek with canonical_model_id deepseek/deepseek-v4-pro-0813 (snapshot of 2026-11-10). The maker's pages disagree: its news of 2026-09-10 (https://api-docs.deepseek.com/news/news260910) says \"all deepseek-v4-pro requests will route to V4.1-Flash\" from 2026-09-14 until V4.1-Pro launches, while the change log entry of the same day says it will \"continue providing API services for DeepSeek V4 Pro after September 14, 2026\"; this declaration takes the later reversal and the current price list: V4-Pro-0813"
+   },
+   "deepseek-v4-flash": {
+    "model": "deepseek-v4.1-flash-1017",
+    "kind": "vendor",
+    "url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "as_of": "2026-11-19",
+    "statement": "DeepSeek pricing, note (1): \"The legacy names deepseek-v4-flash and deepseek-v4-flash-vision-exp are still accepted, but the corresponding models have been retired\"; their requests \"are served by the DeepSeek-V4.1-Flash-1017 model and billed at the Flash price\"; the change log of 2026-09-10 (https://api-docs.deepseek.com/updates) routed the name to V4.1 Flash (\"temporarily routed to V4.1 Flash\"), and models.dev lists deepseek/deepseek-v4-flash on deepseek with canonical_model_id deepseek/deepseek-v4.1-flash-1017 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   },
+   "deepseek-v4.1-flash": {
+    "model": "deepseek-v4.1-flash-1017",
+    "kind": "vendor",
+    "url": "https://api-docs.deepseek.com/updates",
+    "as_of": "2026-11-19",
+    "statement": "DeepSeek change log, 2026-10-17: \"DeepSeek V4.1 Flash has been upgraded to DeepSeek-V4.1-Flash-1017\" and \"The API calling method and pricing remain unchanged\" (the V4.1 Flash of 2026-09-10 upgraded in place under its name); the pricing page (https://api-docs.deepseek.com/quick_start/pricing) lists the model version as DeepSeek-V4.1-Flash-1017; models.dev gives neuralwatt's deepseek-v4.1-flash the canonical_model_id deepseek/deepseek-v4.1-flash-1017 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
+   }
+  },
+  "rows": {
+   "above": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on above with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on above with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "agentrouter": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on agentrouter with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "aihubmix": {
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on aihubmix with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "alibaba-cn": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on alibaba-cn with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on alibaba-cn with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on alibaba-cn with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "alibaba-token-plan": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on alibaba-token-plan with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on alibaba-token-plan with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on alibaba-token-plan with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "alibaba-token-plan-cn": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on alibaba-token-plan-cn with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on alibaba-token-plan-cn with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on alibaba-token-plan-cn with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "auriko": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on auriko with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on auriko with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "azure": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on azure with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on azure with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on azure with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "azure-cognitive-services": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on azure-cognitive-services with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on azure-cognitive-services with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on azure-cognitive-services with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "boundless": {
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on boundless with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "cortecs": {
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on cortecs with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on cortecs with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "digitalocean": {
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on digitalocean with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on digitalocean with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "empiriolabs": {
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on empiriolabs with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "engy": {
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on engy with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "frogbot": {
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on frogbot with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "google": {
+    "gemini-3.1-flash-lite-preview": {
+     "model": null,
+     "status": "retired",
+     "kind": "vendor",
+     "url": "https://ai.google.dev/gemini-api/docs/deprecations",
+     "as_of": "2026-11-19",
+     "statement": "Google shut gemini-3.1-flash-lite-preview down on 2026-05-25: the deprecations table lists it released 2026-03-03, shut down 2026-05-25, replacement gemini-3.1-flash-lite; its model page (https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-preview) \"is deprecated and has been shut down on May 25, 2026\"; the changelog (https://ai.google.dev/gemini-api/docs/changelog), 2026-05-25: \"The gemini-3.1-flash-lite-preview model has been shut down. Use gemini-3.1-flash-lite instead.\" Google does not say whether the GA model has the preview's weights; models.dev (snapshot of 2026-11-10) still lists the name on google"
+    }
+   },
+   "greenpt": {
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on greenpt with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "inferx": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on inferx with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "kenari": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on kenari with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on kenari with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "llmgateway": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on llmgateway with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on llmgateway with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on llmgateway with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "melious": {
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on melious with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "mistral": {
+    "ministral-14b-2512": {
+     "model": "ministral-14b-2512",
+     "canonical_id": "mistral/ministral-3-14b-instruct-2512",
+     "kind": "vendor",
+     "url": "https://docs.mistral.ai/models/ministral-3-14b-25-12",
+     "as_of": "2026-11-19",
+     "statement": "Mistral's model page of Ministral 3 14B gives the API id ministral-14b-2512, version v25.12, the row's model; it does not name the variant. models.dev's mistral listing gives ministral-14b-2512 the canonical_model_id mistral/ministral-3-14b-instruct-2512 (snapshot of 2026-11-10), the instruct post-trained weights Mistral publishes as mistralai/Ministral-3-14B-Instruct-2512 (https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512 for 14B), while other providers list it as mistral/ministral-14b-2512: one model under two spellings"
+    },
+    "ministral-3b-2512": {
+     "model": "ministral-3b-2512",
+     "canonical_id": "mistral/ministral-3-3b-instruct-2512",
+     "kind": "vendor",
+     "url": "https://docs.mistral.ai/models/ministral-3-3b-25-12",
+     "as_of": "2026-11-19",
+     "statement": "Mistral's model page of Ministral 3 3B gives the API id ministral-3b-2512, version v25.12, the row's model; it does not name the variant. models.dev's mistral listing gives ministral-3b-2512 the canonical_model_id mistral/ministral-3-3b-instruct-2512 (snapshot of 2026-11-10), the instruct post-trained weights Mistral publishes as mistralai/Ministral-3-3B-Instruct-2512 (https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512 for 14B), while other providers list it as mistral/ministral-3b-2512: one model under two spellings"
+    },
+    "ministral-8b-2512": {
+     "model": "ministral-8b-2512",
+     "canonical_id": "mistral/ministral-3-8b-instruct-2512",
+     "kind": "vendor",
+     "url": "https://docs.mistral.ai/models/ministral-3-8b-25-12",
+     "as_of": "2026-11-19",
+     "statement": "Mistral's model page of Ministral 3 8B gives the API id ministral-8b-2512, version v25.12, the row's model; it does not name the variant. models.dev's mistral listing gives ministral-8b-2512 the canonical_model_id mistral/ministral-3-8b-instruct-2512 (snapshot of 2026-11-10), the instruct post-trained weights Mistral publishes as mistralai/Ministral-3-8B-Instruct-2512 (https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512 for 14B), while other providers list it as mistral/ministral-8b-2512: one model under two spellings"
+    }
+   },
+   "model-oracle-ai": {
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on model-oracle-ai with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "modelis": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on modelis with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on modelis with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "nan": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on nan with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "neuralwatt": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on neuralwatt with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "ollama-cloud": {
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on ollama-cloud with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on ollama-cloud with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "opencode": {
+    "deepseek-v4-flash": {
+     "model": null,
+     "status": "other_weights",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on opencode with canonical_model_id deepseek/deepseek-v4-flash-0731 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as weights the catalog has no row for, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on opencode with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on opencode with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "opencode-go": {
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on opencode-go with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on opencode-go with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "opper": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on opper with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on opper with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "pendra": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on pendra with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "requesty": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on requesty with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on requesty with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on requesty with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "routing-run": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on routing-run with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on routing-run with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "sensenova": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on sensenova with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on sensenova with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "unorouter": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on unorouter with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on unorouter with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "vancine": {
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on vancine with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "venice": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on venice with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on venice with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "vivgrid": {
+    "deepseek-v4-flash": {
+     "model": null,
+     "status": "other_weights",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on vivgrid with canonical_model_id deepseek/deepseek-v4-flash-0731 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as weights the catalog has no row for, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on vivgrid with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on vivgrid with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "volcengine-coding-plan": {
+    "deepseek-v4-flash": {
+     "model": "deepseek-v4-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-flash on volcengine-coding-plan with canonical_model_id deepseek/deepseek-v4-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    },
+    "deepseek-v4-pro": {
+     "model": "deepseek-v4-pro",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4-pro on volcengine-coding-plan with canonical_model_id deepseek/deepseek-v4-pro (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4-pro, not deepseek-v4-pro-0813, the row DeepSeek now serves under the name"
+    }
+   },
+   "vultr": {
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on vultr with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   },
+   "wally": {
+    "deepseek-v4.1-flash": {
+     "model": "deepseek-v4.1-flash",
+     "kind": "community",
+     "url": "https://models.dev/api.json",
+     "as_of": "2026-11-10",
+     "statement": "models.dev lists deepseek-v4.1-flash on wally with canonical_model_id deepseek/deepseek-v4.1-flash (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as the weights of row deepseek-v4.1-flash, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
+    }
+   }
+  }
+ },
  "superseded": {
   "claude-fable-5": {
    "by": "claude-fable-5-2",

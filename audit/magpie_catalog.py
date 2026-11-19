@@ -432,11 +432,14 @@ def build(src, version, commit, makers_path=MAKERS):
 
 
 def names(src, version, commit, accounts, offered=()):
-    """The models.dev listings of every alias name and target and every row of `accounts`, and of every `offered` model
-    name (see the module text)."""
+    """The models.dev listings of every alias name and target, every row and every `provider_names` name of `accounts`,
+    and of every `offered` model name (see the module text)."""
     snap = Snapshot(src, Rules(src))
     aliases = accounts.get('aliases') or {}
-    out = {n: [] for n in sorted(set(aliases) | set(aliases.values()) | set(accounts.get('models') or {}) | set(offered))}
+    table = accounts['provider_names']
+    declared = set(table['defaults']) | {n for r in table['rows'].values() for n in r}
+    out = {n: [] for n in sorted(set(aliases) | set(aliases.values()) | set(accounts.get('models') or {}) | declared
+                                 | set(offered))}
     for pid in sorted(snap.all):
         for mid, m in sorted(snap.all[pid].get('models', {}).items()):
             if mid in out:

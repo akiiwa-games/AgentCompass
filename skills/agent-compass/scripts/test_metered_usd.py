@@ -73,7 +73,7 @@ def _accounts(budget):
     return {
         'models': {PROBE: {'usd_per_hour': 10, 'api_family': 'codex'}},
         'aliases': {},
-        'families': {'rows': []},
+        'families': {'rows': []}, 'provider_names': {'defaults': {}, 'rows': {}},
         'accounts': {'usd': spec},
         'scoring': {'safety_margin_pct': 5, 'short_window_hours': 24},
         # Already priced. launch_blockers would otherwise overlay public scores and drop this rate.
@@ -118,7 +118,7 @@ class BalanceGate(unittest.TestCase):
         accounts = {
             'models': {PROBE: {'usd_per_hour': 10}},
             'aliases': {},
-            'families': {'rows': []},
+            'families': {'rows': []}, 'provider_names': {'defaults': {}, 'rows': {}},
             'accounts': {'acme': {
                 'windows': {'seven_day': {'hours': 168}},
                 'capacity_usd': {'seven_day': 100},

@@ -2,6 +2,10 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## Unreleased
+
+- A model name reads the row its serving provider really serves (`accounts.json` `provider_names`, cited declarations): DeepSeek's `deepseek-v4-pro` reads `deepseek-v4-pro-0813`, and the legacy `deepseek-v4-flash` and `deepseek-v4.1-flash` read `deepseek-v4.1-flash-1017`. These are the maker's defaults, read on any provider and with no provider known. A provider whose own listing names other weights keeps its own declaration; Google's retired `gemini-3.1-flash-lite-preview` has no row; Mistral's two spellings of the Ministral 3 models are one row. A bundle whose model moves keeps the checkbox stored under its earlier id. Scores you entered under a name stay on the row they were entered for.
+
 ## v0.7.1 - 2026-11-19
 
 - A route you name (`--provider/--account/--model/--effort --basis`) launches past the automatic-routing switches (`allowed_accounts`, an unchecked model); facts still refuse it. The gate governs dispatch, not messages to a running worker.

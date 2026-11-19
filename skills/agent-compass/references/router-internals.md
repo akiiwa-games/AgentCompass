@@ -183,10 +183,21 @@ read-only and bounded in its own registry and quota reads, and loads the fleet t
 
 The same rules hold in the other repositories that port this router.
 
-**One resolver.** `model_resolution.resolve_model` is the only place a provider's spelling becomes a model. It returns `{key, source, effort, bare}`:
+**One resolver.** `model_resolution.resolve_model` is the only place a provider's spelling becomes a model. It returns `{key, source, effort, bare, provider}`.
+
+**Which row a served name is** (`accounts.json` `provider_names`, read first). Some providers serve a name with other weights than the row the name resolves to elsewhere, and makers move a name to a newer dated snapshot. Two levels of cited declarations say which row a served name is:
+
+1. `rows[<provider>][<name>]`, the serving provider's own: its listing identifies the name as a row (`model`), as weights with no row (`model: null`, `status: other_weights`), or the maker shut the name down there (`model: null`, `status: retired`). A declaration with no row leaves the pair with no scores: out of automatic routing with that reason, while a route the user names still launches.
+2. `defaults[<name>]`, the maker's statement of what a name it moved to a newer dated snapshot serves now (kind `vendor`): read on any provider and with no provider known, when no serving provider declares the name.
+
+A provider's declaration beats the maker's default, and the default beats the name's own row; a name neither declares resolves as below. Serving providers that declare different rows give `conflict` (no row). The serving provider of a name is the endpoint the caller knows serves it, whose ids are in its own namespace (an OpenAI-compatible gateway account, `auto_bundles.ENDPOINT_TYPES`; a Magpie preset or the provider of a Magpie `account:<kind>`), else the provider part of a `provider/name` id (a launcher's list: a Paseo provider's models, Cindy's harness rows, a name with no account): `model_resolution.serving_providers`. A bundle derived for a name with no row on its provider keeps the name qualified by that provider (`<provider>/<name>`) as its model, so every later resolution reads the same declaration. A user score keyed by a name (`user_scores.resolve_model_key`) reads no declaration. The release check reads the same functions (`audit/gateway_coverage.py`).
 
 | `source` | Meaning | Category scores |
 |---|---|---|
+| `provider` | the row the serving provider declares for the name | that row |
+| `default` | the row the maker declares the name serves now | that row |
+| `retired`, `other_weights` | the serving provider declares no row for the name | no scores |
+| `conflict` | serving providers declare different rows | no scores |
 | `exact` | the calibrated id itself | its own row |
 | `alias` | another spelling of it: prefix, date, `-latest`, `-preview`, `[1m]`, letter case, a listed alias | its own row |
 | `family` | a different model of a known family (`gemini-2.5-pro`, `claude-opus-4-20250514`) | no scores: a name without a row has none (`account_fleet.model_spec`); the calibration converts a same-series model only for a row of `accounts.json`, so a new family member is scored by adding its row |
@@ -196,7 +207,7 @@ The `family` patterns are data: `accounts.json` `families`, a dated maintainer d
 
 A trailing `:effort` or `-effort` is an effort, not a vendor tag (`:free` stays a tag). Local telemetry, quota window bindings, health and cooldown, worker continuity, harness factors, the rival for the margin and `superseded` all read the key and also accept the raw name, except that a family guess is never answered from its target's telemetry.
 
-`account_fleet.row_key` says which model a row runs: the key for `exact` and `alias`, the row's own name for `family` and `unknown`. A family guess never takes its target's scores. Wherever a row, a pin, a cooldown, a worker or a rival is matched, it is its own model, so naming the flagship never takes a family row. A cooldown recorded under any spelling of a model cools all its spellings. The rival for `needs_judgment` is the best row of a different model, never another effort, harness or account of the same model.
+`account_fleet.row_key` says which model a row runs: the key for `exact`, `alias`, `provider` and `default`, the row's own name for `family` and `unknown`, and `<provider>/<name>` for a name with no row on its serving provider. A family guess never takes its target's scores. Wherever a row, a pin, a cooldown, a worker or a rival is matched, it is its own model, so naming the flagship never takes a family row. A cooldown recorded under any spelling of a model cools all its spellings. The rival for `needs_judgment` is the best row of a different model, never another effort, harness or account of the same model.
 
 **Pins.** `constraints.model`, `constraints.effort`, `pinned_model` and `pinned_effort` hold in every mode and through `issue` and `prepare`:
 

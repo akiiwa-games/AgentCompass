@@ -120,13 +120,17 @@ class MagpieCatalogTests(unittest.TestCase):
                 mc.build(src, '0.0.1', 'abc', bad)
 
     def test_the_names_file_lists_every_alias_name_and_target_with_its_listings(self):
-        """Rule (round 5 review A): every alias name and target of accounts.json, each with every listing of that exact id
-        as [provider, canonical id, input, output] (a namespace provider's listing without canonical id is its own)."""
+        """Rule (round 5 review A; provider_names, 2026-11-19): every alias name and target and every provider_names name of
+        accounts.json, each with every listing of that exact id as [provider, canonical id, input, output] (a namespace
+        provider's listing without canonical id is its own)."""
         with tempfile.TemporaryDirectory() as tmp:
-            doc = mc.names(tree(tmp), '0.0.1', 'abc', {'aliases': {'m-1': 'maker-own', 'short': 'nowhere'}})
+            doc = mc.names(tree(tmp), '0.0.1', 'abc', {'aliases': {'m-1': 'maker-own', 'short': 'nowhere'},
+                                                       'provider_names': {'defaults': {'moved': {}},
+                                                                          'rows': {'cloud': {'served': {}}}}})
         self.assertEqual(doc['schema'], mc.NAMES_SCHEMA)
         self.assertEqual(doc['names'], {'m-1': [['cloud', 'maker/m-1', 1, 3], ['maker', 'maker/m-1', 1, 2]],
-                                        'maker-own': [['maker', 'maker/maker-own', None, None]], 'nowhere': [], 'short': []})
+                                        'maker-own': [['maker', 'maker/maker-own', None, None]], 'nowhere': [], 'short': [],
+                                        'moved': [], 'served': []})
 
     def test_rows_and_efforts_follow_magpies_own_rules(self):
         """Magpie's rules, as its source states them: `none` first for a model with a thinking switch at a provider of
