@@ -716,6 +716,48 @@ class PinIdentityMatchesBundle(unittest.TestCase):
         self.assertIn('--model', roll.named_route_conflict(ns('deepseek/deepseek-v4-flash'), ep_bundle, fleet) or '')
         self.assertIn('--model', roll.named_route_conflict(ns('deepseek-v4-flash-medium'), ep_bundle, fleet) or '')
 
+    def test_slash_suffixes_apply_uniformly_across_declaration_default_exact_and_alias(self):
+        """Rule (model_resolution.slash_suffixes): declaration, default, exact row and alias all try the full id, then
+        what follows each `/` in turn, then the last segment—both undecorated and after stripping decorations/dash effort."""
+        for full_id in (
+            'google-vertex/deepseek-ai/deepseek-v4.1-flash-maas',
+            'google-vertex/openai/gpt-oss-120b-maas',
+            'google-vertex/zai-org/glm-5.2-maas',
+        ):
+            head, tail = full_id.split('/', 1)
+            for variant, want_eff in ((full_id, None), (full_id.upper(), None), (f'{full_id}-high', 'high'),
+                                      (f'{full_id}@20260801', None)):
+                v_tail = variant.split('/', 1)[1]
+                r_full = model_resolution.resolve_in(variant, SHIPPED, ())
+                r_served = model_resolution.resolve_in(v_tail, SHIPPED, (head,))
+                self.assertEqual((r_full['key'], r_full['source'], r_full['effort']),
+                                 (r_served['key'], 'alias', want_eff), variant)
+            # Fixed-point on moved-name alias (`deepseek-v4.1-flash`): stored_form / default_profile re-resolves to the same row.
+            prof = auto_bundles.default_profile(full_id, SHIPPED, ())
+            self.assertEqual(prof['source'], 'calibrated')
+            self.assertEqual(model_resolution.resolve_in(prof['model'], SHIPPED)['key'], prof['target'])
+
+        # Longer suffix wins before shorter suffix across all four tables (declaration, default, exact row, alias):
+        custom = copy.deepcopy(SHIPPED)
+        custom['models'] = {**custom['models'], 'pub/exact-row': {}, 'exact-row': {}}
+        custom['aliases'] = {**custom['aliases'], 'pub/aliased-row': 'gpt-6-astra', 'aliased-row': 'gpt-6.1-sol'}
+        custom['provider_names'] = {
+            'statement': 's',
+            'defaults': {**custom['provider_names']['defaults'],
+                         'pub/def-row': decl('claude-opus-5-5'), 'def-row': decl('claude-sonnet-5-5')},
+            'rows': {'gw': {'pub/decl-row': decl('grok-4.7'), 'decl-row': decl('glm-5.2'),
+                            'deepseek-v4-flash': decl(None, status='other_weights')}},
+        }
+        self.assertEqual(model_resolution.resolve_in('gw/pub/exact-row', custom)['key'], 'pub/exact-row')
+        self.assertEqual(model_resolution.resolve_in('pub/exact-row', custom)['source'], 'exact')
+        self.assertEqual(model_resolution.resolve_in('gw/pub/aliased-row', custom)['key'], 'gpt-6-astra')
+        self.assertEqual(model_resolution.resolve_in('gw/pub/aliased-row-high', custom),
+                         {'key': 'gpt-6-astra', 'source': 'alias', 'effort': 'high', 'bare': 'aliased-row', 'provider': None})
+        self.assertEqual(model_resolution.resolve_in('gw/pub/def-row', custom)['key'], 'claude-opus-5-5')
+        self.assertEqual(model_resolution.resolve_in('pub/decl-row', custom, ('gw',))['key'], 'grok-4.7')
+        self.assertEqual(model_resolution.resolve_in('other/decl-row', custom, ('gw',))['key'], 'glm-5.2')
+        self.assertEqual(model_resolution.resolve_in('opencode/deepseek-v4-flash', custom, ('gw',))['source'], 'other_weights')
+
 
 if __name__ == '__main__':
     unittest.main()
