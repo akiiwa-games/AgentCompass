@@ -12,6 +12,11 @@ import urllib.parse
 import owned_process
 
 TTL_SECONDS = 600
+# How often an open tray asks again with nobody looking at the models page. Each round makes the host start the
+# provider CLIs, so it is rare; the models page refreshes on view (TTL above) and on its button. It must stay well
+# under auto_bundles.STALE_LIMIT_SECONDS, after which a discovered model without a shipped launch row is no longer
+# selectable.
+BACKGROUND_REFRESH_SECONDS = 6 * 3600
 QUERY_TIMEOUT = 25
 _refresh_lock = threading.Lock()
 
