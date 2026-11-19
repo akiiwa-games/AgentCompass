@@ -34,8 +34,6 @@
     "fable": "claude-fable-5-2",
     "gemini-3.8-flash": "gemini-3.8-flash-high",
     "gemini-4-argon": "gemini-4-argon-high",
-    "gemini-4-pro": "gemini-4-argon-high",
-    "gemini-4-ultra": "gemini-4-argon-high",
     "argon": "gemini-4-argon-high",
     "ChatGPT Pro via chatgpt-pro-consult": "gpt-6-pro",
     "grok-4.7-latest": "grok-4.7",
@@ -64,6 +62,18 @@
     "qwen-flash": "qwen3-flash-2025-07-28"
   },
   "superseded": {
+    "claude-fable-5": {
+      "by": "claude-fable-5-2",
+      "basis": "Claude Fable 5.2 is the newer Fable release."
+    },
+    "claude-fable-5-1": {
+      "by": "claude-fable-5-2",
+      "basis": "Claude Fable 5.2 is the newer Fable release."
+    },
+    "claude-haiku-4-5": {
+      "by": "claude-haiku-5-5",
+      "basis": "Claude Haiku 5.5 is the current Haiku generation (advertised by the same Claude accounts)."
+    },
     "claude-opus-4-6": {
       "by": "claude-opus-5-5",
       "basis": "Claude Opus 5.5 is the current Opus generation; 4.6 is the 4.x line."
@@ -76,37 +86,25 @@
       "by": "claude-opus-5-5",
       "basis": "Claude Opus 5.5 is the current Opus generation; 4.8 is the 4.x line."
     },
+    "claude-opus-5": {
+      "by": "claude-opus-5-5",
+      "basis": "Claude Opus 5.5 is the newer Opus release."
+    },
     "claude-sonnet-4-6": {
       "by": "claude-sonnet-5-5",
       "basis": "Claude Sonnet 5.5 is the current Sonnet generation."
     },
-    "claude-haiku-4-5": {
-      "by": "claude-haiku-5-5",
-      "basis": "Claude Haiku 5.5 is the current Haiku generation (advertised by the same Claude accounts)."
+    "claude-sonnet-5": {
+      "by": "claude-sonnet-5-5",
+      "basis": "Claude Sonnet 5.5 is the newer Sonnet release."
     },
-    "gpt-6-sol": {
-      "by": "gpt-6.1-sol",
-      "basis": "GPT-6.1 Sol is the newer Sol release."
+    "deepseek-v4-flash": {
+      "by": "deepseek-v4.1-flash-free",
+      "basis": "DeepSeek V4.1 Flash is the newer Flash release."
     },
-    "gpt-5.6-sol": {
-      "by": "gpt-6.1-sol",
-      "basis": "GPT-6.1 Sol is two releases newer in the Sol line."
-    },
-    "gpt-5.6-terra": {
-      "by": "gpt-6.1-terra",
-      "basis": "GPT-6.1 Terra is the newer Terra release."
-    },
-    "gpt-5.6-luna": {
-      "by": "gpt-6-luna",
-      "basis": "GPT-6 Luna is the newer Luna release."
-    },
-    "grok-4.5": {
-      "by": "grok-4.7",
-      "basis": "Grok 4.7 is the current Grok release."
-    },
-    "grok-4.6": {
-      "by": "grok-4.7",
-      "basis": "Grok 4.7 is the current Grok release."
+    "deepseek-v4.1-flash": {
+      "by": "deepseek-v4.1-flash-1017",
+      "basis": "DeepSeek's own price list names DeepSeek-V4.1-Flash-1017 as deepseek-flash; Artificial Analysis marks DeepSeek V4.1 Flash deprecated."
     },
     "gemini-3.1-pro-preview": {
       "by": "gemini-4-argon-high",
@@ -120,6 +118,30 @@
       "by": "glm-5.3",
       "basis": "GLM-5.3 is the newer GLM release."
     },
+    "gpt-5.6-luna": {
+      "by": "gpt-6-luna",
+      "basis": "GPT-6 Luna is the newer Luna release."
+    },
+    "gpt-5.6-sol": {
+      "by": "gpt-6.1-sol",
+      "basis": "GPT-6.1 Sol is two releases newer in the Sol line."
+    },
+    "gpt-5.6-terra": {
+      "by": "gpt-6.1-terra",
+      "basis": "GPT-6.1 Terra is the newer Terra release."
+    },
+    "gpt-6-sol": {
+      "by": "gpt-6.1-sol",
+      "basis": "GPT-6.1 Sol is the newer Sol release."
+    },
+    "grok-4.5": {
+      "by": "grok-4.7",
+      "basis": "Grok 4.7 is the current Grok release."
+    },
+    "grok-4.6": {
+      "by": "grok-4.7",
+      "basis": "Grok 4.7 is the current Grok release."
+    },
     "kimi-k2.6": {
       "by": "kimi-k3",
       "basis": "Kimi K3 is the newer Kimi generation."
@@ -127,14 +149,6 @@
     "qwen3.7-max": {
       "by": "qwen3.8-max",
       "basis": "Qwen3.8-Max is the newer Qwen Max release."
-    },
-    "deepseek-v4-flash": {
-      "by": "deepseek-v4.1-flash-free",
-      "basis": "DeepSeek V4.1 Flash is the newer Flash release."
-    },
-    "claude-fable-5-1": {
-      "by": "claude-fable-5-2",
-      "basis": "Claude Fable 5.2 is the newer Fable release."
     }
   },
   "same_model": {

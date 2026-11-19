@@ -1,5 +1,5 @@
 {
- "schema": "agent-compass.gateway-catalog/2",
+ "schema": "agent-compass.gateway-catalog/3",
  "host": "cindy",
  "version": "0.1.140",
  "captured": "2026-11-18",

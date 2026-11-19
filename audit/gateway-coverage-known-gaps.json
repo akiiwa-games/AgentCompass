@@ -1,16 +1,65 @@
 {
- "schema": "agent-compass.gateway-coverage-known-gaps/1",
- "as_of": "2026-11-18",
- "statement": "offered gateway pairs in a gated scope the shipped data does not cover, each with the input that is missing (no declared method gives the value without it); an entry that becomes covered, leaves the gated scope, or that no saved catalog offers, fails the check (audit/gateway_coverage.py)",
+ "schema": "agent-compass.gateway-coverage-known-gaps/2",
+ "as_of": "2026-11-19",
+ "statement": "offered gateway pairs in a gated scope the shipped data does not cover, each naming its missing input as one kind of the closed set `kinds` (what is missing and what closes it) and the detail for the model; an entry that becomes covered, leaves the gated scope, or that no saved catalog offers, fails the check (audit/gateway_coverage.py)",
+ "kinds": {
+  "no_public_measurement": {
+   "missing": "a board reading of the model: no cached Artificial Analysis, arena.ai or Design Arena board lists it (or not with the input named), and no tier reading or relative gives a declared estimate",
+   "closes_when": "a board lists the model, or a row of its series, at the next release's fetch"
+  },
+  "no_fleet_reading_at_effort": {
+   "missing": "a fleet reading at the effort: no model is measured on the facet at that effort and at a reasoning effort, so the fleet step that fills it (effort_steps) has no pair",
+   "closes_when": "a board lists any model on the facet at that effort (for none: a non-reasoning listing) beside a reasoning listing, giving the fleet step its pairs"
+  },
+  "no_time_reading_in_series": {
+   "missing": "an Artificial Analysis Time/Task of the model at some effort, or of its larger model of the same version: a same-series sibling gives only the ratio between efforts, never the time itself",
+   "closes_when": "Artificial Analysis publishes a Time/Task for the model, or for its larger model of the same version"
+  },
+  "no_relative_statement": {
+   "missing": "a row for the name: no public statement says which scored row it is (alias) or that it is the same model as one (same_model), and no board lists it",
+   "closes_when": "a vendor or catalog statement relates the name to a row, or a board lists it as a row of its own"
+  }
+ },
  "entries": [
   {
    "catalog": "magpie-0.1.4470",
-   "model": "deepseek-ai/deepseek-v4.1-flash-maas",
+   "model": "deepseek-flash",
    "efforts": [
-    "default"
+    "none"
    ],
-   "row": null,
-   "reason": "Missing input: a public statement of which model Vertex AI's deepseek-ai/deepseek-v4.1-flash-maas serves (models.dev has no entry for it and DeepSeek's and Google's pages read on 2026-11-18 name no version), so it is no row's alias."
+   "row": "deepseek-v4.1-flash-1017",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "deepseek-v4.1-flash-1017 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "deepseek-v4-flash",
+   "efforts": [
+    "none"
+   ],
+   "row": "deepseek-v4-flash",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "deepseek-v4-flash at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "deepseek-v4-flash-vision-exp",
+   "efforts": [
+    "none"
+   ],
+   "row": "deepseek-v4.1-flash-1017",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "deepseek-v4.1-flash-1017 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "deepseek-v4-pro",
+   "efforts": [
+    "none"
+   ],
+   "row": "deepseek-v4-pro",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "deepseek-v4-pro at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -21,16 +70,8 @@
     "high"
    ],
    "row": "doubao-seed-2.0-mini",
-   "reason": "Missing input: a tier reading (arena.ai Overall or the AA Intelligence Index) for the Doubao Seed rows or a row of its series. No cached board lists doubao-seed-2.0-mini, -2.1-lite, -2.1-pro or -evolving, and the series' only listed row (doubao-seed-2-1-pro-260628, arena.ai WebDev \"Seed2.1 Pro Preview\") has no tier. Without a tier no facet is estimated (series conversion and the tier fit both move along the tier)."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "doubao-seed-2.1-lite",
-   "efforts": [
-    "default"
-   ],
-   "row": "doubao-seed-2.1-lite",
-   "reason": "Missing input: a tier reading (arena.ai Overall or the AA Intelligence Index) for the Doubao Seed rows or a row of its series. No cached board lists doubao-seed-2.0-mini, -2.1-lite, -2.1-pro or -evolving, and the series' only listed row (doubao-seed-2-1-pro-260628, arena.ai WebDev \"Seed2.1 Pro Preview\") has no tier. Without a tier no facet is estimated (series conversion and the tier fit both move along the tier)."
+   "kind": "no_public_measurement",
+   "detail": "doubao-seed-2.0-mini: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -39,7 +80,8 @@
     "default"
    ],
    "row": "doubao-seed-2.1-pro",
-   "reason": "Missing input: a tier reading (arena.ai Overall or the AA Intelligence Index) for the Doubao Seed rows or a row of its series. No cached board lists doubao-seed-2.0-mini, -2.1-lite, -2.1-pro or -evolving, and the series' only listed row (doubao-seed-2-1-pro-260628, arena.ai WebDev \"Seed2.1 Pro Preview\") has no tier. Without a tier no facet is estimated (series conversion and the tier fit both move along the tier)."
+   "kind": "no_public_measurement",
+   "detail": "doubao-seed-2.1-pro: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -50,30 +92,8 @@
     "high"
    ],
    "row": "doubao-seed-evolving",
-   "reason": "Missing input: a tier reading (arena.ai Overall or the AA Intelligence Index) for the Doubao Seed rows or a row of its series. No cached board lists doubao-seed-2.0-mini, -2.1-lite, -2.1-pro or -evolving, and the series' only listed row (doubao-seed-2-1-pro-260628, arena.ai WebDev \"Seed2.1 Pro Preview\") has no tier. Without a tier no facet is estimated (series conversion and the tier fit both move along the tier)."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gemini-flash-latest",
-   "efforts": [
-    "low",
-    "medium",
-    "high"
-   ],
-   "row": null,
-   "reason": "Missing input: the model gemini-flash-latest points to. Google's models page says only \"Points to the latest release for a specific model variation\", and models.dev (Magpie v0.1.4470 snapshot) gives no canonical_model_id, so it is no row's alias."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gemini-flash-lite-latest",
-   "efforts": [
-    "minimal",
-    "low",
-    "medium",
-    "high"
-   ],
-   "row": null,
-   "reason": "Missing input: the model gemini-flash-lite-latest points to. Google's pages name no target, and models.dev (Magpie v0.1.4470 snapshot) gives no canonical_model_id, so it is no row's alias."
+   "kind": "no_public_measurement",
+   "detail": "doubao-seed-evolving: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -82,7 +102,8 @@
     "default"
    ],
    "row": "gemma-4-26b-a4b-it",
-   "reason": "Missing input: an Artificial Analysis reading of gemma-4-26b-a4b-it at a named reasoning effort. AA lists \"Gemma 4 26B A4B (Non-reasoning)\", the reasoning switched off, which the rules give no effort shift onto the curve (five-axis-scores.json measured_partial.no_effort_shift), and \"Gemma 4 26B A4B (Reasoning)\", whose tag names no effort (measurements.aa_variants reads effort or date tags only); the responsiveness stays without a value. No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value. Neither listing carries a Time/Task, so Time/Task has no source."
+   "kind": "no_time_reading_in_series",
+   "detail": "gemma-4-26b-a4b-it: Artificial Analysis lists it (Gemma 4 26B A4B (Non-reasoning), Gemma 4 26B A4B (Reasoning)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -91,101 +112,31 @@
     "default"
    ],
    "row": "gemma-4-31b-it",
-   "reason": "Missing input: an Artificial Analysis reading of gemma-4-31b-it at a named reasoning effort. AA lists \"Gemma 4 31B (Non-reasoning)\", the reasoning switched off, which the rules give no effort shift onto the curve (five-axis-scores.json measured_partial.no_effort_shift), and \"Gemma 4 31B (Reasoning)\", whose tag names no effort (measurements.aa_variants reads effort or date tags only); the responsiveness stays without a value. No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value. Neither listing carries a Time/Task, so Time/Task has no source."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "glm-4.5",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-4.5",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-4.5. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-4-5.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "glm-4.5-air",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-4.5-air",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-4.5-air. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-4-5-air.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "glm-4.5v",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-4.5v",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-4.5v. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-4-5v.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "glm-4.6",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-4.6",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-4.6. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-4-6.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "glm-4.6v",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-4.6v",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-4.6v. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-4-6v.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "glm-4.7",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-4.7",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-4.7. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-4-7.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "glm-5",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-5",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-5. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-5.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "glm-5.1",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-5.1",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-5.1. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-5-1.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "glm-5v-turbo",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-5v-turbo",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-5v-turbo. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-5v-turbo.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "kind": "no_time_reading_in_series",
+   "detail": "gemma-4-31b-it: Artificial Analysis lists it (Gemma 4 31B (Non-reasoning), Gemma 4 31B (Reasoning)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
    "model": "gpt-5.2",
    "efforts": [
-    "none",
+    "none"
+   ],
+   "row": "gpt-5.2",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-5.2 at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair; Time/Task is missing too (Artificial Analysis lists it (GPT-5.2 (Medium), GPT-5.2 (Non-reasoning), GPT-5.2 (Xhigh)) without a Time/Task)"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-5.2",
+   "efforts": [
     "low",
     "medium",
     "high",
     "xhigh"
    ],
    "row": "gpt-5.2",
-   "reason": "Missing input: Artificial Analysis's time to first answer token and Time/Task per effort for gpt-5.2. AA marks the release deprecated, so its readings sit on its release page aa-release-gpt-5-2.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "kind": "no_time_reading_in_series",
+   "detail": "gpt-5.2: Artificial Analysis lists it (GPT-5.2 (Medium), GPT-5.2 (Non-reasoning), GPT-5.2 (Xhigh)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -196,33 +147,54 @@
     "xhigh"
    ],
    "row": "gpt-5.2-pro",
-   "reason": "Missing input: a tier reading (arena.ai Overall or the AA Intelligence Index) for the GPT-5.x Pro rows or a row of its series. AA's cached page lists \"GPT-5.5 Pro (Xhigh)\" with no Intelligence Index, Time/Task or speed, no arena board lists a GPT-5.x Pro, and AA's GPT-5.4 Pro release page (aa-release-gpt-5-4-pro.html) is not cached; with it (a second fetch) gpt-5.4-pro has a tier and its series the estimates. Without a tier no facet is estimated (series conversion and the tier fit both move along the tier)."
+   "kind": "no_public_measurement",
+   "detail": "gpt-5.2-pro: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
   },
   {
    "catalog": "magpie-0.1.4470",
    "model": "gpt-5.4",
    "efforts": [
-    "none",
+    "none"
+   ],
+   "row": "gpt-5.4",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-5.4 at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair; Time/Task is missing too (Artificial Analysis lists it (GPT-5.4 (Low), GPT-5.4 (Non-reasoning), GPT-5.4 (Xhigh)) without a Time/Task)"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-5.4",
+   "efforts": [
     "low",
     "medium",
     "high",
     "xhigh"
    ],
    "row": "gpt-5.4",
-   "reason": "Missing input: Artificial Analysis's time to first answer token and Time/Task per effort for gpt-5.4. AA marks the release deprecated, so its readings sit on its release page aa-release-gpt-5-4.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "kind": "no_time_reading_in_series",
+   "detail": "gpt-5.4: Artificial Analysis lists it (GPT-5.4 (Low), GPT-5.4 (Non-reasoning), GPT-5.4 (Xhigh)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
    "model": "gpt-5.4-mini",
    "efforts": [
-    "none",
+    "none"
+   ],
+   "row": "gpt-5.4-mini",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-5.4-mini at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair; Time/Task is missing too (Artificial Analysis lists it (GPT-5.4 mini (Medium), GPT-5.4 mini (Non-reasoning), GPT-5.4 mini (Xhigh)) without a Time/Task)"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-5.4-mini",
+   "efforts": [
     "low",
     "medium",
     "high",
     "xhigh"
    ],
    "row": "gpt-5.4-mini",
-   "reason": "Missing input: Artificial Analysis's time to first answer token and Time/Task per effort for gpt-5.4-mini. AA marks the release deprecated, so its readings sit on its release page aa-release-gpt-5-4-mini.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "kind": "no_time_reading_in_series",
+   "detail": "gpt-5.4-mini: Artificial Analysis lists it (GPT-5.4 mini (Medium), GPT-5.4 mini (Non-reasoning), GPT-5.4 mini (Xhigh)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -233,20 +205,31 @@
     "xhigh"
    ],
    "row": "gpt-5.4-pro",
-   "reason": "Missing input: a tier reading (arena.ai Overall or the AA Intelligence Index) for the GPT-5.x Pro rows or a row of its series. AA's cached page lists \"GPT-5.5 Pro (Xhigh)\" with no Intelligence Index, Time/Task or speed, no arena board lists a GPT-5.x Pro, and AA's GPT-5.4 Pro release page (aa-release-gpt-5-4-pro.html) is not cached; with it (a second fetch) gpt-5.4-pro has a tier and its series the estimates. Without a tier no facet is estimated (series conversion and the tier fit both move along the tier)."
+   "kind": "no_public_measurement",
+   "detail": "gpt-5.4-pro: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
   },
   {
    "catalog": "magpie-0.1.4470",
    "model": "gpt-5.5",
    "efforts": [
-    "none",
+    "none"
+   ],
+   "row": "gpt-5.5",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-5.5 at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair; Time/Task is missing too (Artificial Analysis lists it (GPT-5.5 (High), GPT-5.5 (Low), GPT-5.5 (Medium), GPT-5.5 (Non-reasoning), GPT-5.5 (Xhigh)) without a Time/Task)"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-5.5",
+   "efforts": [
     "low",
     "medium",
     "high",
     "xhigh"
    ],
    "row": "gpt-5.5",
-   "reason": "Missing input: Artificial Analysis's time to first answer token and Time/Task per effort for gpt-5.5. AA marks the release deprecated, so its readings sit on its release page aa-release-gpt-5-5.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "kind": "no_time_reading_in_series",
+   "detail": "gpt-5.5: Artificial Analysis lists it (GPT-5.5 (High), GPT-5.5 (Low), GPT-5.5 (Medium), GPT-5.5 (Non-reasoning), GPT-5.5 (Xhigh)) without a Time/Task, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -257,16 +240,188 @@
     "xhigh"
    ],
    "row": "gpt-5.5-pro",
-   "reason": "Missing input: a tier reading (arena.ai Overall or the AA Intelligence Index) for the GPT-5.x Pro rows or a row of its series. AA's cached page lists \"GPT-5.5 Pro (Xhigh)\" with no Intelligence Index, Time/Task or speed, no arena board lists a GPT-5.x Pro, and AA's GPT-5.4 Pro release page (aa-release-gpt-5-4-pro.html) is not cached; with it (a second fetch) gpt-5.4-pro has a tier and its series the estimates. Without a tier no facet is estimated (series conversion and the tier fit both move along the tier)."
+   "kind": "no_public_measurement",
+   "detail": "gpt-5.5-pro: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "kimi-k2.6",
+   "model": "gpt-5.6",
+   "efforts": [
+    "none"
+   ],
+   "row": "gpt-5.6-sol",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-5.6-sol at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-5.6-luna",
+   "efforts": [
+    "none"
+   ],
+   "row": "gpt-5.6-luna",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-5.6-luna at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-5.6-sol",
+   "efforts": [
+    "none"
+   ],
+   "row": "gpt-5.6-sol",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-5.6-sol at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-5.6-terra",
+   "efforts": [
+    "none"
+   ],
+   "row": "gpt-5.6-terra",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-5.6-terra at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-6-luna",
+   "efforts": [
+    "none"
+   ],
+   "row": "gpt-6-luna",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-6-luna at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-6-sol",
+   "efforts": [
+    "none"
+   ],
+   "row": "gpt-6-sol",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-6-sol at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-6.1-terra",
+   "efforts": [
+    "none"
+   ],
+   "row": "gpt-6.1-terra",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-6.1-terra at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gpt-daybreak-blue-latest",
+   "efforts": [
+    "none"
+   ],
+   "row": "gpt-5.6-sol",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "gpt-5.6-sol at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "grok-4.3",
+   "efforts": [
+    "none"
+   ],
+   "row": "grok-4.3",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "grok-4.3 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "hy3",
+   "efforts": [
+    "none"
+   ],
+   "row": "hy3",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "hy3 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "hy4",
+   "efforts": [
+    "none"
+   ],
+   "row": "hy4",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "hy4 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "hy4-preview",
+   "efforts": [
+    "none"
+   ],
+   "row": "hy4-preview",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "hy4-preview at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "k3",
+   "efforts": [
+    "none"
+   ],
+   "row": "kimi-k3",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "kimi-k3 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "k3-256k",
+   "efforts": [
+    "none"
+   ],
+   "row": "kimi-k3",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "kimi-k3 at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "kimi-for-coding",
+   "efforts": [
+    "none"
+   ],
+   "row": "kimi-k2.8-preview",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "kimi-k2.8-preview at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "kimi-for-coding-highspeed",
    "efforts": [
     "default"
    ],
-   "row": "kimi-k2.6",
-   "reason": "Missing input: an Artificial Analysis reading of kimi-k2.6 at a named reasoning effort. AA lists \"Kimi K2.6 (Non-reasoning)\", the reasoning switched off, which the rules give no effort shift onto the curve (five-axis-scores.json measured_partial.no_effort_shift); the responsiveness stays without a value. No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "row": "kimi-for-coding-highspeed",
+   "kind": "no_time_reading_in_series",
+   "detail": "kimi-for-coding-highspeed: no cached board lists a Time/Task for it, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "mimo-v2.5-pro-ultraspeed",
+   "efforts": [
+    "default"
+   ],
+   "row": null,
+   "kind": "no_relative_statement",
+   "detail": "mimo-v2.5-pro-ultraspeed resolves to no row (no row (family)); models.dev lists it under its maker, but no public statement relates it to a scored row"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "mistral-small-2603",
+   "efforts": [
+    "none"
+   ],
+   "row": "mistral-small-2603",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "mistral-small-2603 at none: no fleet model is measured at none on aesthetics.design, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -275,7 +430,8 @@
     "default"
    ],
    "row": "qwen3-flash-2025-07-28",
-   "reason": "Missing input: a Time/Task for qwen3-flash-2025-07-28 (the row qwen-flash names). No cached board lists one, no same-series row has an AA Time/Task, and the row has no larger model of the same version with a row."
+   "kind": "no_time_reading_in_series",
+   "detail": "qwen3-flash-2025-07-28: no cached board lists a Time/Task for it, and it has no larger model of the same version with one (a sibling gives only the ratio between efforts)"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -284,7 +440,8 @@
     "default"
    ],
    "row": "qwen3-coder-flash",
-   "reason": "Missing input: an Artificial Analysis listing of qwen3-coder-flash (time to first answer token, Time/Task). No cached board lists it, no same-series row has a measured value, and it has no larger model of the same version with a row (qwen3-coder-plus is off Alibaba's current list; no Qwen3 Omni Plus has a row), so the size step does not apply. No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "kind": "no_public_measurement",
+   "detail": "qwen3-coder-flash: no cached board lists it with time_per_task, tool_operation.responsiveness"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -293,61 +450,48 @@
     "default"
    ],
    "row": "qwen3-omni-flash",
-   "reason": "Missing input: an Artificial Analysis listing of qwen3-omni-flash (time to first answer token, Time/Task). No cached board lists it, no same-series row has a measured value, and it has no larger model of the same version with a row (qwen3-coder-plus is off Alibaba's current list; no Qwen3 Omni Plus has a row), so the size step does not apply. No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "kind": "no_public_measurement",
+   "detail": "qwen3-omni-flash: no cached board lists it with time_per_task, tool_operation.responsiveness"
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "qwen3.5-122b-a10b",
+   "model": "qwen3.6-flash",
    "efforts": [
-    "default"
+    "none"
    ],
-   "row": "qwen3.5-122b-a10b",
-   "reason": "Missing input: an Artificial Analysis reading of qwen3.5-122b-a10b at a named reasoning effort. AA lists \"Qwen3.5 122B A10B (Non-reasoning)\", the reasoning switched off, which the rules give no effort shift onto the curve (five-axis-scores.json measured_partial.no_effort_shift), and \"Qwen3.5 122B A10B (Reasoning)\", whose tag names no effort (measurements.aa_variants reads effort or date tags only); the responsiveness stays without a value. No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "row": "qwen3.6-flash",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "qwen3.6-flash at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "qwen3.5-27b",
+   "model": "qwen3.7-max",
    "efforts": [
-    "default"
+    "none"
    ],
-   "row": "qwen3.5-27b",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for qwen3.5-27b. AA marks the release deprecated, so its readings sit on its release page aa-release-qwen3-5-27b.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "row": "qwen3.7-max",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "qwen3.7-max at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "qwen3.5-35b-a3b",
+   "model": "qwen3.7-plus",
    "efforts": [
-    "default"
+    "none"
    ],
-   "row": "qwen3.5-35b-a3b",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for qwen3.5-35b-a3b. AA marks the release deprecated, so its readings sit on its release page aa-release-qwen3-5-35b-a3b.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "row": "qwen3.7-plus",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "qwen3.7-plus at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "qwen3.5-397b-a17b",
+   "model": "qwen3.8-omni-flash",
    "efforts": [
-    "default"
+    "none"
    ],
-   "row": "qwen3.5-397b-a17b",
-   "reason": "Missing input: an Artificial Analysis reading of qwen3.5-397b-a17b at a named reasoning effort. AA lists \"Qwen3.5 397B A17B (Non-reasoning)\", the reasoning switched off, which the rules give no effort shift onto the curve (five-axis-scores.json measured_partial.no_effort_shift), and \"Qwen3.5 397B A17B (Reasoning)\", whose tag names no effort (measurements.aa_variants reads effort or date tags only); the responsiveness stays without a value. No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "qwen3.6-27b",
-   "efforts": [
-    "default"
-   ],
-   "row": "qwen3.6-27b",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for qwen3.6-27b. AA marks the release deprecated, so its readings sit on its release page aa-release-qwen3-6-27b.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "qwen3.6-35b-a3b",
-   "efforts": [
-    "default"
-   ],
-   "row": "qwen3.6-35b-a3b",
-   "reason": "Missing input: an Artificial Analysis reading of qwen3.6-35b-a3b at a named reasoning effort. AA lists \"Qwen3.6 35B A3B (Non-reasoning)\", the reasoning switched off, which the rules give no effort shift onto the curve (five-axis-scores.json measured_partial.no_effort_shift), and \"Qwen3.6 35B A3B (Reasoning)\", whose tag names no effort (measurements.aa_variants reads effort or date tags only); the responsiveness and image recognition stays without a value. No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "row": "qwen3.8-omni-flash",
+   "kind": "no_fleet_reading_at_effort",
+   "detail": "qwen3.8-omni-flash at none: no fleet model is measured at none on aesthetics.design, coding.faithfulness, creativity.creative_writing, so effort_steps.<facet>.lowest_reasoning.none has no pair"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -356,16 +500,8 @@
     "default"
    ],
    "row": "voxtral-small-2507",
-   "reason": "Missing input: a tier reading (arena.ai Overall or the AA Intelligence Index) for voxtral-small-2507 or a row of its series. No cached board (AA, arena.ai, Design Arena) lists Voxtral Small, and its series has no other row. Without a tier no facet is estimated (series conversion and the tier fit both move along the tier)."
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "zai.glm-5",
-   "efforts": [
-    "default"
-   ],
-   "row": "glm-5",
-   "reason": "Missing input: Artificial Analysis's time to first answer token (responsiveness) for glm-5. AA marks the release deprecated, so its readings sit on its release page aa-release-glm-5.html, which the cached boards do not hold (a second fetch adds it). No declared method fills it without that input: the responsiveness fit on the tier is rejected (slope not positive, five-axis-scores.json rejected_fits) and no same-series sibling has a measured value."
+   "kind": "no_public_measurement",
+   "detail": "voxtral-small-2507: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
   }
  ]
 }

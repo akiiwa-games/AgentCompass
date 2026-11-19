@@ -1,15 +1,49 @@
 {
- "schema": "agent-compass.gateway-out-of-scope/1",
- "as_of": "2026-11-18",
- "statement": "models a saved gateway catalog offers that are outside the coverage scope, each with its maker's notice: retired or deprecated (with the notice's date), no longer on the maker's own current list (unlisted, as read on the date), or a special-purpose model the maker does not offer for chat (music, speech, translation, OCR, role-play); such a row is reported, not gated (audit/gateway_coverage.py). An offered name that is another provider's spelling of the maker's model names that model with the public statement of identity (same_as).",
+ "schema": "agent-compass.gateway-out-of-scope/2",
+ "as_of": "2026-11-19",
+ "statement": "models a saved gateway catalog offers that are outside the coverage scope, each with its maker's notice: retired (with the date when the notice gives one), deprecated (with the vendor's shutdown date, null when the page states none), absent from a maker page that enumerates the callable model ids (unlisted; the pages are listed in id_lists), a moving `-latest` pointer with no dated vendor statement of its target (moving_alias), or a special-purpose model the maker does not offer for chat (music, speech, translation, OCR, role-play); such a row is reported, not gated (audit/gateway_coverage.py). An offered name that is another provider's spelling of the maker's model names that model with the public statement of identity (same_as).",
+ "id_lists": {
+  "https://www.alibabacloud.com/help/en/model-studio/model-pricing": {
+   "as_of": "2026-11-19",
+   "statement": "Alibaba Model Studio's pricing page names each model by its callable model id in its price tables"
+  },
+  "https://www.alibabacloud.com/help/en/model-studio/models": {
+   "as_of": "2026-11-19",
+   "statement": "Alibaba Model Studio's model list names each model by its callable model id"
+  },
+  "https://docs.mistral.ai/models.md": {
+   "as_of": "2026-11-19",
+   "statement": "Mistral's models overview: tables of current and of deprecated and retired models, each row with its \"API name\" column"
+  },
+  "https://longcat.chat/platform/docs/": {
+   "as_of": "2026-11-19",
+   "statement": "LongCat's API quick start: \"Supported Models\" table with a \"Model Name\" column (\"LongCat-2.5 | OpenAI/Anthropic | High-performance Agentic model\")"
+  },
+  "https://api-docs.deepseek.com/quick_start/pricing": {
+   "as_of": "2026-11-19",
+   "statement": "DeepSeek's Models & Pricing: \"MODEL deepseek-flash (1) deepseek-v4-pro\", the model names to call, with their model versions"
+  },
+  "https://developers.openai.com/api/docs/pricing": {
+   "as_of": "2026-11-19",
+   "statement": "OpenAI's pricing page names each model by its API model id in its price tables"
+  },
+  "https://aistudio.google.com/docs/models": {
+   "as_of": "2026-11-19",
+   "statement": "Google's Gemini API models page gives each model's endpoint model string"
+  },
+  "https://platform.stepfun.ai/docs/en/pricing/details": {
+   "as_of": "2026-11-19",
+   "statement": "StepFun's pricing details: price tables with a \"Model\" column of callable model ids"
+  }
+ },
  "entries": {
   "LongCat-2.0": {
    "status": "unlisted",
    "notice": {
     "kind": "vendor",
     "url": "https://longcat.chat/platform/docs/",
-    "as_of": "2026-11-18",
-    "statement": "LongCat's API docs list only LongCat-2.5 (\"Pay-As-You-Go currently supports LongCat-2.5.\")"
+    "as_of": "2026-11-19",
+    "statement": "LongCat's API quick start, \"Supported Models\": \"Model Name | API Format | Description — LongCat-2.5 | OpenAI/Anthropic | High-performance Agentic model\"; LongCat-2.0 is not listed"
    }
   },
   "LongCat-2.5-Preview": {
@@ -17,8 +51,8 @@
    "notice": {
     "kind": "vendor",
     "url": "https://longcat.chat/platform/docs/",
-    "as_of": "2026-11-18",
-    "statement": "LongCat's API docs list only LongCat-2.5 (\"Pay-As-You-Go currently supports LongCat-2.5.\")"
+    "as_of": "2026-11-19",
+    "statement": "LongCat's API quick start, \"Supported Models\": \"Model Name | API Format | Description — LongCat-2.5 | OpenAI/Anthropic | High-performance Agentic model\"; LongCat-2.5-Preview is not listed"
    }
   },
   "MiniMax-M2": {
@@ -26,20 +60,18 @@
    "notice": {
     "kind": "vendor",
     "url": "https://platform.minimax.io/docs/faq/models.md",
-    "as_of": "2026-11-18",
-    "statement": "MiniMax's retired models table: \"MiniMax-M2 | LLM | Retired\""
-   },
-   "date": "2026-10-19"
+    "as_of": "2026-11-19",
+    "statement": "MiniMax's \"Retired Models\" table: \"MiniMax-M2 | LLM | Retired\" (no date given)"
+   }
   },
   "MiniMax-M2.1": {
    "status": "retired",
    "notice": {
     "kind": "vendor",
     "url": "https://platform.minimax.io/docs/faq/models.md",
-    "as_of": "2026-11-18",
-    "statement": "MiniMax's retired models table: \"MiniMax-M2.1 | LLM | Retired\""
-   },
-   "date": "2026-10-19"
+    "as_of": "2026-11-19",
+    "statement": "MiniMax's \"Retired Models\" table: \"MiniMax-M2.1 | LLM | Retired\" (no date given)"
+   }
   },
   "MiniMax-M2.5": {
    "status": "retired",
@@ -53,13 +85,13 @@
   },
   "MiniMax-M2.5-highspeed": {
    "status": "retired",
+   "date": "2026-11-18",
    "notice": {
     "kind": "vendor",
     "url": "https://platform.minimax.io/docs/faq/models.md",
-    "as_of": "2026-11-18",
-    "statement": "MiniMax's retired models table: \"MiniMax-M2.5-highspeed | LLM | Retired\""
-   },
-   "date": "2026-10-19"
+    "as_of": "2026-11-19",
+    "statement": "MiniMax's \"Retired Models\" table: \"MiniMax-M2.5-highspeed | LLM | Retired\"; the notice for \"the MiniMax M2.5 and M2.7 model families\": \"November 18, 2026: These models will be retired.\""
+   }
   },
   "MiniMax-M2.7": {
    "status": "retired",
@@ -73,21 +105,21 @@
   },
   "MiniMax-M2.7-highspeed": {
    "status": "retired",
+   "date": "2026-11-18",
    "notice": {
     "kind": "vendor",
     "url": "https://platform.minimax.io/docs/faq/models.md",
-    "as_of": "2026-11-18",
-    "statement": "MiniMax's retired models table: \"MiniMax-M2.7-highspeed | LLM | Retired\""
-   },
-   "date": "2026-10-19"
+    "as_of": "2026-11-19",
+    "statement": "MiniMax's \"Retired Models\" table: \"MiniMax-M2.7-highspeed | LLM | Retired\"; the notice for \"the MiniMax M2.5 and M2.7 model families\": \"November 18, 2026: These models will be retired.\""
+   }
   },
   "ark-code-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
     "url": "https://docs.volcengine.com/docs/82379/1330310",
     "as_of": "2026-11-18",
-    "statement": "ark-code-latest is not on Volcengine Ark's model list or pricing page read on 2026-11-18"
+    "statement": "ark-code-latest is not on Volcengine Ark's model list read on 2026-11-18; no page names its target with a date"
    }
   },
   "auto": {
@@ -107,7 +139,8 @@
     "as_of": "2026-11-18",
     "statement": "Anthropic: \"claude-sonnet-4-5-20250929 | Deprecated | September 30, 2026 | November 30, 2026\"; \"This retirement includes claude-sonnet-4-5, the same model's ID without a date.\""
    },
-   "date": "2026-09-30"
+   "date": "2026-09-30",
+   "shutdown": "2026-11-30"
   },
   "claude-sonnet-4-5-20250929": {
    "status": "deprecated",
@@ -117,15 +150,16 @@
     "as_of": "2026-11-18",
     "statement": "Anthropic: \"claude-sonnet-4-5-20250929 | Deprecated | September 30, 2026 | November 30, 2026\"; \"This retirement includes claude-sonnet-4-5, the same model's ID without a date.\""
    },
-   "date": "2026-09-30"
+   "date": "2026-09-30",
+   "shutdown": "2026-11-30"
   },
   "codestral-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "codestral-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for codestral-latest"
    }
   },
   "deepseek-v3.2": {
@@ -163,31 +197,32 @@
    }
   },
   "devstral-2512": {
-   "status": "retired",
+   "status": "deprecated",
+   "date": "2026-05-22",
+   "shutdown": "2026-07-31",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "Mistral's models page: devstral-2512 retired 2026-07-31"
-   },
-   "date": "2026-07-31"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's \"Deprecated and retired models\" table: \"Devstral 2 | `devstral-2512` | Deprecated | ... | 2026-05-22 | 2026-07-31\" (columns Deprecation, Retirement)"
+   }
   },
   "devstral-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "devstral-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for devstral-latest"
    }
   },
   "devstral-medium-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "devstral-medium-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for devstral-medium-latest"
    }
   },
   "gemini-2.5-flash": {
@@ -198,7 +233,7 @@
     "as_of": "2026-11-18",
     "statement": "Google: gemini-2.5-flash is deprecated, shutdown December 1, 2026, from when \"all API requests to `gemini-2.5-flash` will automatically route to\" gemini-3.5-flash-lite"
    },
-   "date": "2026-12-01"
+   "shutdown": "2026-12-01"
   },
   "gemini-2.5-pro": {
    "status": "deprecated",
@@ -208,7 +243,7 @@
     "as_of": "2026-11-18",
     "statement": "Google: gemini-2.5-pro \"is deprecated and is no longer available to select in Google AI Studio\", shutdown December 1, 2026"
    },
-   "date": "2026-12-01"
+   "shutdown": "2026-12-01"
   },
   "gemini-3-pro-preview": {
    "status": "retired",
@@ -227,6 +262,24 @@
     "url": "https://aistudio.google.com/docs/models",
     "as_of": "2026-11-18",
     "statement": "gemini-3.1-pro-preview-customtools is on none of Google's models, pricing or deprecations pages read on 2026-11-18"
+   }
+  },
+  "gemini-flash-latest": {
+   "status": "moving_alias",
+   "notice": {
+    "kind": "vendor",
+    "url": "https://aistudio.google.com/docs/models",
+    "as_of": "2026-11-19",
+    "statement": "Google's models page, \"Latest\": \"Points to the latest release for a specific model variation. ... This alias will get hot-swapped with every new release of a specific model variation\" (\"For example: `gemini-flash-latest`\"); no page names its current target with a date"
+   }
+  },
+  "gemini-flash-lite-latest": {
+   "status": "moving_alias",
+   "notice": {
+    "kind": "vendor",
+    "url": "https://aistudio.google.com/docs/models",
+    "as_of": "2026-11-19",
+    "statement": "Google's models page, \"Latest\": \"Points to the latest release for a specific model variation. ... This alias will get hot-swapped with every new release of a specific model variation\"; no page names the current target of gemini-flash-lite-latest with a date"
    }
   },
   "gpt-3.5-turbo": {
@@ -267,7 +320,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice October 14, 2026, shutdown January 14, 2027): \"GPT-4.1 (gpt-4.1-2025-04-14) | Deprecated | gpt-6-luna\""
    },
-   "date": "2026-10-14"
+   "date": "2026-10-14",
+   "shutdown": "2027-01-14"
   },
   "gpt-4.1-mini": {
    "status": "deprecated",
@@ -277,7 +331,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice October 14, 2026, shutdown January 14, 2027): \"GPT-4.1 mini (gpt-4.1-mini-2025-04-14) | Deprecated | gpt-6-luna\""
    },
-   "date": "2026-10-14"
+   "date": "2026-10-14",
+   "shutdown": "2027-01-14"
   },
   "gpt-4.1-nano": {
    "status": "retired",
@@ -297,7 +352,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice October 14, 2026, shutdown January 14, 2027): \"GPT-4o (gpt-4o-2024-08-06, gpt-4o-2024-11-20) | Deprecated | gpt-6-luna\""
    },
-   "date": "2026-10-14"
+   "date": "2026-10-14",
+   "shutdown": "2027-01-14"
   },
   "gpt-4o-2024-05-13": {
    "status": "retired",
@@ -317,7 +373,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice October 14, 2026, shutdown January 14, 2027): \"GPT-4o (gpt-4o-2024-08-06, gpt-4o-2024-11-20) | Deprecated | gpt-6-luna\""
    },
-   "date": "2026-10-14"
+   "date": "2026-10-14",
+   "shutdown": "2027-01-14"
   },
   "gpt-4o-2024-11-20": {
    "status": "deprecated",
@@ -327,7 +384,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice October 14, 2026, shutdown January 14, 2027): \"GPT-4o (gpt-4o-2024-08-06, gpt-4o-2024-11-20) | Deprecated | gpt-6-luna\""
    },
-   "date": "2026-10-14"
+   "date": "2026-10-14",
+   "shutdown": "2027-01-14"
   },
   "gpt-4o-mini": {
    "status": "deprecated",
@@ -337,7 +395,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice October 14, 2026, shutdown January 14, 2027): \"GPT-4o mini (gpt-4o-mini-2024-07-18) | Deprecated | gpt-6-luna\""
    },
-   "date": "2026-10-14"
+   "date": "2026-10-14",
+   "shutdown": "2027-01-14"
   },
   "gpt-5": {
    "status": "deprecated",
@@ -347,7 +406,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice June 11, 2026, shutdown December 11, 2026): gpt-5 Deprecated"
    },
-   "date": "2026-06-11"
+   "date": "2026-06-11",
+   "shutdown": "2026-12-11"
   },
   "gpt-5-mini": {
    "status": "deprecated",
@@ -357,7 +417,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice June 11, 2026, shutdown December 11, 2026): gpt-5-mini Deprecated"
    },
-   "date": "2026-06-11"
+   "date": "2026-06-11",
+   "shutdown": "2026-12-11"
   },
   "gpt-5-nano": {
    "status": "deprecated",
@@ -367,7 +428,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice June 11, 2026, shutdown December 11, 2026): gpt-5-nano Deprecated"
    },
-   "date": "2026-06-11"
+   "date": "2026-06-11",
+   "shutdown": "2026-12-11"
   },
   "gpt-5-pro": {
    "status": "deprecated",
@@ -377,7 +439,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice June 11, 2026, shutdown December 11, 2026): gpt-5-pro Deprecated"
    },
-   "date": "2026-06-11"
+   "date": "2026-06-11",
+   "shutdown": "2026-12-11"
   },
   "gpt-5.1": {
    "status": "deprecated",
@@ -387,7 +450,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice October 1, 2026, shutdown April 1, 2027): gpt-5.1 Deprecated"
    },
-   "date": "2026-10-01"
+   "date": "2026-10-01",
+   "shutdown": "2027-04-01"
   },
   "gpt-5.3-codex": {
    "status": "deprecated",
@@ -397,7 +461,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice October 1, 2026, shutdown April 1, 2027): gpt-5.3-codex Deprecated"
    },
-   "date": "2026-10-01"
+   "date": "2026-10-01",
+   "shutdown": "2027-04-01"
   },
   "gpt-5.3-codex-spark": {
    "status": "unlisted",
@@ -416,44 +481,46 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice October 1, 2026, shutdown April 1, 2027): gpt-5.4-nano Deprecated"
    },
-   "date": "2026-10-01"
+   "date": "2026-10-01",
+   "shutdown": "2027-04-01"
   },
   "gpt-daybreak-red-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
     "url": "https://developers.openai.com/api/docs/pricing",
     "as_of": "2026-11-18",
-    "statement": "gpt-daybreak-red-latest is on none of OpenAI's models, pricing or deprecations pages read on 2026-11-18"
+    "statement": "gpt-daybreak-red-latest is on none of OpenAI's models, pricing or deprecations pages; no page names its target with a date"
    }
   },
   "kimi-k2.7-code-highspeed": {
    "status": "deprecated",
+   "shutdown": null,
    "notice": {
     "kind": "vendor",
     "url": "https://platform.kimi.ai/docs/models.md",
-    "as_of": "2026-11-18",
-    "statement": "Kimi: kimi-k2.7-code and -highspeed take no new registrations after November 1; \"Deprecation expected in late December 2026.\""
-   },
-   "date": "2026-11-01"
+    "as_of": "2026-11-19",
+    "statement": "Kimi's \"Deprecated Models\" table: \"`kimi-k2.7-code-highspeed` | No longer available to newly registered users; users registered before November 1 can continue using it. Deprecation expected in late December 2026.\" (no shutdown date given)"
+   }
   },
   "labs-devstral-small-2512": {
-   "status": "retired",
+   "status": "deprecated",
+   "date": "2026-02-27",
+   "shutdown": "2026-03-31",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "Mistral's models page: labs-devstral-small-2512 retired 2026-03-31"
-   },
-   "date": "2026-03-31"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's \"Deprecated and retired models\" table: \"Devstral Small 2 | `labs-devstral-small-2512` | Deprecated | ... | 2026-02-27 | 2026-03-31\" (columns Deprecation, Retirement)"
+   }
   },
   "labs-leanstral-1-5-1": {
    "status": "unlisted",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "labs-leanstral-1-5-1 is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's models overview: labs-leanstral-1-5-1 is not in the \"API name\" column; the table lists \"Leanstral 1.5 | `labs-leanstral-1-5` | Deprecated | ... | 2026-09-29 | 2026-09-30\""
    }
   },
   "lyria-3-clip-preview": {
@@ -475,21 +542,12 @@
    }
   },
   "magistral-medium-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "magistral-medium-latest is not on Mistral's models page read on 2026-11-18"
-   }
-  },
-  "mimo-v2.5-pro-ultraspeed": {
-   "status": "unlisted",
-   "notice": {
-    "kind": "vendor",
-    "url": "https://huggingface.co/XiaomiMiMo",
-    "as_of": "2026-11-18",
-    "statement": "mimo-v2.5-pro-ultraspeed is on none of Xiaomi's pages read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for magistral-medium-latest"
    }
   },
   "minimax.minimax-m2.5": {
@@ -510,98 +568,101 @@
    }
   },
   "ministral-3b-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "ministral-3b-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for ministral-3b-latest"
    }
   },
   "ministral-8b-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "ministral-8b-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for ministral-8b-latest"
    }
   },
   "mistral-large-2512": {
    "status": "deprecated",
+   "date": "2026-10-31",
+   "shutdown": "2027-04-30",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "Mistral's models page: Mistral Large 3, version 25.12, deprecated October 31, 2026, retirement April 30, 2027"
-   },
-   "date": "2026-10-31"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's \"Deprecated and retired models\" table: \"Mistral Large 3 | `mistral-large-2512` | Deprecated | ... | 2026-10-31 | 2027-04-30\" (columns Deprecation, Retirement)"
+   }
   },
   "mistral-large-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "mistral-large-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for mistral-large-latest"
    }
   },
   "mistral-medium-2505": {
-   "status": "retired",
+   "status": "deprecated",
+   "date": "2026-05-22",
+   "shutdown": "2026-08-31",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "Mistral's models page: mistral-medium-2505 retired 2026-08-31"
-   },
-   "date": "2026-08-31"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's \"Deprecated and retired models\" table: \"Mistral Medium 3 | `mistral-medium-2505` | Deprecated | ... | 2026-05-22 | 2026-08-31\" (columns Deprecation, Retirement)"
+   }
   },
   "mistral-medium-2508": {
-   "status": "retired",
+   "status": "deprecated",
+   "date": "2026-05-22",
+   "shutdown": "2026-08-31",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "Mistral's models page: mistral-medium-2508 retired 2026-08-31"
-   },
-   "date": "2026-08-31"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's \"Deprecated and retired models\" table: \"Mistral Medium 3.1 | `mistral-medium-2508` | Deprecated | ... | 2026-05-22 | 2026-08-31\" (columns Deprecation, Retirement)"
+   }
   },
   "mistral-medium-2604": {
-   "status": "deprecated",
-   "notice": {
-    "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "Mistral's models page: Mistral Medium 3.5, version 26.04 (the version mistral-medium-2604 names), deprecated October 31, 2026, retirement April 30, 2027"
-   },
-   "date": "2026-10-31"
-  },
-  "mistral-medium-latest": {
    "status": "unlisted",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "mistral-medium-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's models overview: mistral-medium-2604 is not in the \"API name\" column; the table lists \"Mistral Medium 3.5 | `mistral-medium-3-5` | Deprecated | ... | 2026-10-31 | 2027-04-30\""
+   }
+  },
+  "mistral-medium-latest": {
+   "status": "moving_alias",
+   "notice": {
+    "kind": "vendor",
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for mistral-medium-latest"
    }
   },
   "mistral-small-2506": {
-   "status": "retired",
+   "status": "deprecated",
+   "date": "2026-04-30",
+   "shutdown": "2026-07-31",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "Mistral's models page: mistral-small-2506 retired 2026-07-31"
-   },
-   "date": "2026-07-31"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's \"Deprecated and retired models\" table: \"Mistral Small 3.2 | `mistral-small-2506` | Deprecated | ... | 2026-04-30 | 2026-07-31\" (columns Deprecation, Retirement)"
+   }
   },
   "mistral-small-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "mistral-small-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for mistral-small-latest"
    }
   },
   "moonshotai.kimi-k2.5": {
@@ -609,17 +670,17 @@
    "notice": {
     "kind": "vendor",
     "url": "https://platform.kimi.ai/docs/models.md",
-    "as_of": "2026-11-18",
-    "statement": "Kimi: all K2-series models are to be retired by the end of December 2026, closed to new users from October 31, 2026"
+    "as_of": "2026-11-19",
+    "statement": "Kimi's \"Deprecated Models\" table: \"`kimi-k2.5` | Deprecated\" (no date given)"
    },
-   "date": "2026-10-31",
    "model": "kimi-k2.5",
    "same_as": {
     "kind": "community",
     "url": "https://models.dev/api.json",
     "as_of": "2026-11-10",
     "statement": "models.dev lists amazon-bedrock/moonshotai.kimi-k2.5 with canonical_model_id moonshotai/kimi-k2.5 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10)"
-   }
+   },
+   "shutdown": null
   },
   "o1": {
    "status": "retired",
@@ -649,7 +710,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice June 11, 2026, shutdown December 11, 2026): o3 Deprecated"
    },
-   "date": "2026-06-11"
+   "date": "2026-06-11",
+   "shutdown": "2026-12-11"
   },
   "o3-mini": {
    "status": "retired",
@@ -669,7 +731,8 @@
     "as_of": "2026-11-18",
     "statement": "OpenAI deprecations (notice June 11, 2026, shutdown December 11, 2026): o3-pro Deprecated"
    },
-   "date": "2026-06-11"
+   "date": "2026-06-11",
+   "shutdown": "2026-12-11"
   },
   "o4-mini": {
    "status": "retired",
@@ -685,27 +748,27 @@
    "status": "unlisted",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "open-mistral-nemo is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's models overview: open-mistral-nemo is not in the \"API name\" column; the table lists \"Mistral Nemo 12B | `open-mistral-nemo-2407` | Deprecated | ... | 2026-05-22 | 2026-07-31\""
    }
   },
   "pixtral-12b": {
    "status": "unlisted",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "pixtral-12b is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/models.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's models overview: pixtral-12b is not in the \"API name\" column; the table lists \"Pixtral 12B | `pixtral-12b-2409` | Deprecated | ... | 2025-12-02 | 2025-12-31\""
    }
   },
   "qianfan-code-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
     "url": "https://cloud.baidu.com/doc/qianfan/s/rmh4stp0j",
     "as_of": "2026-11-18",
-    "statement": "qianfan-code-latest is not in Baidu Qianfan's model tables (page updated 2026-11-11)"
+    "statement": "qianfan-code-latest is not in Baidu Qianfan's model tables (page updated 2026-11-11); no page names its target with a date"
    }
   },
   "qvq-max": {
@@ -940,15 +1003,6 @@
     "statement": "qwen3.6-max-preview is not on Alibaba Model Studio's international model list or pricing page read on 2026-11-18"
    }
   },
-  "qwen4-max-preview": {
-   "status": "unlisted",
-   "notice": {
-    "kind": "vendor",
-    "url": "https://www.alibabacloud.com/help/en/model-studio/model-pricing",
-    "as_of": "2026-11-18",
-    "statement": "qwen4-max-preview is not on Alibaba Model Studio's international model list or pricing page read on 2026-11-18"
-   }
-  },
   "qwq-plus": {
    "status": "unlisted",
    "notice": {
@@ -968,21 +1022,21 @@
    }
   },
   "voxtral-mini-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "voxtral-mini-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for voxtral-mini-latest"
    }
   },
   "voxtral-small-latest": {
-   "status": "unlisted",
+   "status": "moving_alias",
    "notice": {
     "kind": "vendor",
-    "url": "https://docs.mistral.ai/models",
-    "as_of": "2026-11-18",
-    "statement": "voxtral-small-latest is not on Mistral's models page read on 2026-11-18"
+    "url": "https://docs.mistral.ai/inference/pricing.md",
+    "as_of": "2026-11-19",
+    "statement": "Mistral's pricing and models pages (https://docs.mistral.ai/models.md) name dated API names only; neither names a target for voxtral-small-latest"
    }
   }
  }
