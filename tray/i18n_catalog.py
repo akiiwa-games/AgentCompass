@@ -854,6 +854,10 @@ EN = {
     '已清除 {0} 条本机评分': 'Cleared {0} local score(s)',
     '这次决策没有候选从按额度计价的长周期窗口花费：额度经济项为 0（5 小时窗口只判断能否放下）': 'No candidate in this decision spends from a priced long window: the quota economy term is 0 (five-hour windows only decide fit)',
     '此决策没有额度恢复线记录（记录早于额度经济）': 'No quota-line record for this decision (recorded before the quota economy)',
-    '套餐未知（Mode B），不参与自动路由：{0}': 'Plan unknown (Mode B), out of automatic routing: {0}',
-    '套餐未知（capacity_unknown：{0}），不参与自动路由': 'Plan unknown (capacity_unknown: {0}), out of automatic routing',
+    '套餐读取失败，不参与自动路由：{0}': 'Plan reading failed, out of automatic routing: {0}',
+    '套餐无额度数据，不参与自动路由：{0}': 'No capacity data for this plan, out of automatic routing: {0}',
+    '额度上限未知（不参与自动路由）': 'Quota limit unknown (out of automatic routing)',
+    '额度上限未知，不参与自动路由': 'Quota limit unknown, out of automatic routing',
+    '额度上限未知，不参与自动路由；本地累计消耗下界 U ≥ ${0:.2f}（{1:,} tokens，{2}）':
+        'Quota limit unknown, out of automatic routing; local spend so far at least ${0:.2f} ({1:,} tokens, {2})',
 }

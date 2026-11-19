@@ -765,6 +765,7 @@ def capacity_price_error() -> str | None:
 
 def account_cards() -> list[dict]:
     modules()
+    import account_state
     import axis_scores
     import host_policy
     import quota_economy
@@ -921,19 +922,20 @@ def account_cards() -> list[dict]:
                        else {"used_usd": float(raw_local), "tokens": int(spec.get("local_spend_tokens") or 0),
                              "source": spec.get("local_spend_source") or "opencode.db"}
                        if isinstance(raw_local, (int, float)) and not isinstance(raw_local, bool) else None)
+        # No tier was read (the reading failed or reported none), or a tier was read that no plan template sizes.
+        plan_gap_text = (_tr("套餐无额度数据，不参与自动路由：{0}") if account_state.plan_reported((row or {}).get("plan"))
+                         else _tr("套餐读取失败，不参与自动路由：{0}")).format(plan_unknown_reason)
         if free_unknown and kind == "ok":
             text, kind = _tr("额度上限未知（不参与自动路由）"), "warn"
         elif plan_mode_b and kind != "idle":
-            mode_b_text = _tr("套餐未知（Mode B），不参与自动路由：{0}").format(plan_unknown_reason)
-            text, kind = (mode_b_text if kind == "ok" else f"{text}；{mode_b_text}"), "warn"
+            text, kind = (plan_gap_text if kind == "ok" else f"{text}；{plan_gap_text}"), "warn"
         free_note = (
-            _tr("额度上限未知（capacity_unknown），不参与自动路由；本地累计消耗下界 U ≥ ${0:.2f}（{1:,} tokens，{2}）").format(
+            _tr("额度上限未知，不参与自动路由；本地累计消耗下界 U ≥ ${0:.2f}（{1:,} tokens，{2}）").format(
                 float(local_spend["used_usd"]), int(local_spend.get("tokens") or 0), local_spend.get("source") or "opencode.db")
             if free_unknown and local_spend and local_spend.get("used_usd") is not None else
-            _tr("额度上限未知（capacity_unknown），不参与自动路由")
+            _tr("额度上限未知，不参与自动路由")
             if free_unknown else
-            _tr("套餐未知（capacity_unknown：{0}），不参与自动路由").format(plan_unknown_reason)
-            if plan_mode_b else None
+            plan_gap_text if plan_mode_b else None
         )
         cards.append({"account": name, "label": spec.get("label") or account_label(name, account_family(name, row)),
                       "badge": text, "kind": kind,

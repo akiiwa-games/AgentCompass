@@ -276,13 +276,32 @@ class AccountStateCardTests(unittest.TestCase):
         self.assertEqual(card['kind'], 'warn')
         self.assertTrue(card.get('capacity_unknown'))
         self.assertIn('不参与自动路由', card['badge'])
-        self.assertIn('capacity_unknown', card['usage_note'])
+        self.assertIn('额度上限未知', card['usage_note'])
+        self.assertNotIn('capacity_unknown', card['usage_note'])   # an internal flag is not interface text
         self.assertIn('$1.85', card['usage_note'])
 
-    def test_plan_unknown_mode_b_card_shows_reason_and_excludes_auto_routing(self):
+    def test_a_plan_without_capacity_says_whether_the_tier_was_read(self):
+        # Owner, 2026-11-19: the card said "套餐未知（Mode B）", an internal name. No tier read is a failed reading;
+        # a tier that was read but that no plan template sizes is a plan without capacity data.
+        for row_plan, reason, words in (
+                (None, 'agy token expired', '套餐读取失败'),
+                ('Antigravity', 'subscription tier not reported', '套餐读取失败'),
+                ('standard-tier', "unrecognized Antigravity tier 'standard-tier'", '套餐无额度数据')):
+            with self.subTest(row_plan=row_plan):
+                card = self.plan_gap_card(row_plan, reason)
+                self.assertEqual(card['kind'], 'warn')
+                self.assertTrue(card.get('capacity_unknown'))
+                self.assertEqual(card.get('plan_unknown_reason'), reason)
+                self.assertEqual(panel_quota.card_title(card), f'Antigravity · {words}')
+                self.assertIn('不参与自动路由', card['badge'])
+                self.assertIn(reason, card['badge'])
+                self.assertIn(reason, card['usage_note'])
+                self.assertNotIn('Mode B', card['badge'] + card['usage_note'])
+                self.assertEqual(len(card['windows']), 2)
+
+    def plan_gap_card(self, row_plan, reason):
         fake, router = Mock(), Mock()
         inventory = Mock(quota_sources=real_inventory.quota_sources)
-        reason = "unrecognized Antigravity tier 'standard-tier'"
         spec = {
             'label': 'Antigravity',
             'plan': 'unknown',
@@ -293,7 +312,8 @@ class AccountStateCardTests(unittest.TestCase):
         }
         fake.load_accounts.return_value = {
             'accounts': {'antigravity': spec},
-            '_discovery': {'accounts': {'antigravity': {'family': 'antigravity', 'status': 'ready'}}},
+            '_discovery': {'accounts': {'antigravity': {'family': 'antigravity', 'status': 'ready',
+                                                        **({'plan': row_plan} if row_plan else {})}}},
         }
         fake.five_axis_overlay.side_effect = lambda doc, *a, **kw: doc
         fake.host_policy.load_policy.return_value = None
@@ -326,15 +346,7 @@ class AccountStateCardTests(unittest.TestCase):
              patch.object(router_data, 'pool_reservations', return_value={}), \
              patch.object(router_data.router_priority, 'targets', return_value=[]), \
              patch.object(router_data.plugins, 'load', return_value={}):
-            card = router_data.account_cards()[0]
-        self.assertEqual(card['kind'], 'warn')
-        self.assertTrue(card.get('capacity_unknown'))
-        self.assertEqual(card.get('plan_unknown_reason'), reason)
-        self.assertEqual(panel_quota.card_title(card), 'Antigravity · 套餐未知（Mode B）')
-        self.assertIn('不参与自动路由', card['badge'])
-        self.assertIn(reason, card['badge'])
-        self.assertIn(reason, card['usage_note'])
-        self.assertEqual(len(card['windows']), 2)
+            return router_data.account_cards()[0]
 
     def _usd_row(self, status='ready'):
         return {

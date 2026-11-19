@@ -79,6 +79,11 @@ def plan_without_vendor(label):
     return ' '.join(word for word in plan_words(label).split() if word not in PLAN_VENDOR_WORDS)
 
 
+def plan_reported(label):
+    """Whether a plan label names a tier: an empty label, 'unknown' or a bare 'subscription' reports none."""
+    return plan_without_vendor(str(label or '').strip()) not in ('', 'unknown', 'subscription')
+
+
 def plan_is_inactive(family, plan):
     if family not in SUBSCRIPTION_FAMILIES:
         return False

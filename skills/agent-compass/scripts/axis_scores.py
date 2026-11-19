@@ -200,7 +200,7 @@ def _plan_unknown_text(src_spec, raw_plan):
     if isinstance(src_spec, dict) and src_spec.get('plan_unknown'):
         return str(src_spec['plan_unknown'])
     raw_str = str(raw_plan or '').strip()
-    if account_state.plan_without_vendor(raw_str) in ('', 'unknown', 'subscription'):
+    if not account_state.plan_reported(raw_str):
         return 'subscription tier not reported'
     return f'unrecognized tier {raw_str!r}'
 

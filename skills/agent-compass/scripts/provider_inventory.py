@@ -2402,7 +2402,7 @@ def _settle_plan(spec, row, accounts, shipped_templates):
 
 def _mark_unknown_tier(spec, row, raw_label, not_reported, unrecognized):
     """A tier no plan template names: the plan is unknown, with the reader's own error or which label was not known."""
-    is_placeholder = account_state.plan_without_vendor(raw_label) in ('', 'unknown', 'subscription')
+    is_placeholder = not account_state.plan_reported(raw_label)
     spec['plan'] = 'unknown'
     spec['plan_unknown'] = str(row.get('plan_error') or (not_reported if is_placeholder else f'{unrecognized} {raw_label!r}'))
 
