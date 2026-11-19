@@ -228,11 +228,22 @@ Every per-model fact is reference data under `references/`; adding a model or a 
      retires the entries. Without a release snapshot in `DIR` (no `fetch-manifest.json`) it merges into the shipped
      measurements.
    - **Only the model's rows.** It writes to `public-measurements.json` only the named models' entries, conflicts and
-     checks, every entry the full refresh writes for them: with the panel scale unchanged, the model's row and its
-     five-axis block equal those of a full refresh over the same boards. It never changes another row's measured value:
-     when the release snapshot and the other entries do not give every other row and the panel exactly as shipped (a
-     cache that is not this release's, or a catalog edit that moved another row) it stops with nothing written and no
-     entry stored. The `tier` is standardized over the entry's board itself and kept as built.
+     checks, every entry the full refresh writes for them: with the panel scale unchanged, the model's measurement row
+     equals that of a full refresh over the same boards. It never changes another row's measured value: when the release
+     snapshot and the other entries do not give every other row and the panel exactly as shipped (a cache that is not
+     this release's, or a catalog edit that moved another row) it stops with nothing written and no entry stored.
+   - **Fleet fits are frozen per release (owner, 2026-11-19).** Everything fitted over the fleet is fitted on the release
+     snapshot's rows only: the tier scale (anchor rating and sd) and the index -> tier map, the tier fits, the effort,
+     edge and size steps, the effort correlations and links, the Time/Task fits and ratios, the usd cross-source ratio
+     and the fallback scale, the level targets, the level-3 ceilings and the panel. A row a model entry gave
+     (`public-measurements.json` `model_entries`) never enters a fit, a target, a ceiling or the panel, and is never a
+     relative of a release snapshot row; it is scored by the release's fits, and may itself be estimated from snapshot
+     relatives (`five_axis.without_entries`, `release_same_model`, `release_tier_up`). Its tier is its board reading put
+     on the release snapshot's tier scale (`sources.tier.arena_overall.tier_scale`) or through its index map
+     (`sources.tier.aa_index.tier_map`), after the board's drift as below. So adding a model changes only that model's
+     rows: every other row and every fit, step, link and target of `five-axis-scores.json` stays byte for byte; only the
+     per-model lists gain its records and the tier-source counts count it. The next release's full refresh reads every
+     row from the boards, fits over all of them and retires the entries.
    - **A reading taken after the release snapshot (owner, 2026-11-19).** A board z-score is put on the shipped scale by
      the board's own drift, measured on the declared panel: drift = the median, over the panel members the board lists
      in both the release snapshot and this fetch, of (raw in this fetch - raw in the snapshot); `n` is how many members
@@ -254,8 +265,8 @@ Every per-model fact is reference data under `references/`; adding a model or a 
      reason, stops the run before anything is written (exit 3; a run that writes exits with the staleness status 0, 1
      or 2).
    - It then validates the catalog (`reference_provenance.validate_accounts_provenance`) and rebuilds
-     `five-axis-scores.json` and `model-capabilities.{json,md}`. Values fitted over all measured models (the tier fits,
-     the fleet effort steps and ratios) still move for other models; the run prints how many moved, by field. A model in
+     `five-axis-scores.json` and `model-capabilities.{json,md}`, and prints how many values of other models moved (none,
+     by the rule above). A model in
      `calibration_panel` (or the anchor) is refused: it changes the scale, so it needs the full refresh (`agentcompass
      data refresh`, or `--no-fetch` from cached downloads), which rebuilds every row. Then publish and push (Publishing a model
      between releases).

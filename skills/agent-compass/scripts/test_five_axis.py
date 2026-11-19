@@ -3176,7 +3176,7 @@ class CrossSizeAndEdgeRuleTests(unittest.TestCase):
         s.acc = acc or {'accounts': {}, 'dispatch_efforts': {}}
         s.size_of, s.size_steps, s.steps = size_of or {}, size_steps or {}, steps or {}
         s.same, s.speed, s.fill_refused, s.points = {}, {}, [], {}
-        s.meas, s.links, s.distrust = {'sources': {}}, {}, set()
+        s.meas, s.links, s.distrust, s.entries = {'sources': {}}, {}, set(), frozenset()
         return s
 
     def board(self, sc, key, src, pairs, scale=1.0):

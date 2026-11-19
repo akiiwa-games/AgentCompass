@@ -723,6 +723,14 @@ class Builder:
                       'tiers.py: Artificial Analysis Intelligence Index at High interpolated onto the continuous '
                       'arena.ai Overall High scale through the models listed at High on both boards',
                       len(fitter.aa))
+        # the release's tier scale and map, so a model entry's tier is put on them (refresh.merge_model_rows, item 8)
+        self.source_rows['tier.arena_overall']['tier_scale'] = {'anchor': self.anchor_name,
+                                                                'anchor_raw': round(fitter.anchor_raw, 6),
+                                                                'sd': round(fitter.sd, 6)}
+        aa_map = fitter.maps.get('aa.index')
+        if aa_map is not None:
+            self.source_rows['tier.aa_index']['tier_map'] = {
+                'points': [[round(x, 6), round(y, 6), name] for (x, y), name in zip(aa_map.raw, aa_map.names)]}
         arena, aa = Matcher(overall), Matcher(fitter.aa)
         release_rec = {sources.base_name(r['name']): r for r in self.aa_records if 'page' in r}
         for model in self.models:
@@ -733,7 +741,7 @@ class Builder:
                 t = fitter.arena_overall_tier(found)
                 self.add(model, 'tier', 'tier.arena_overall', round(t, 4),
                          tiers.basis_arena(row, t, fitter.anchor_raw, fitter.sd, fitter.anchor_name),
-                         listed_as=row[3], arena_value=round(row[0], 1))
+                         listed_as=row[3], arena_value=round(row[0], 1), raw=round(float(row[0]), 6))
             else:
                 explicit = tiers.listed_as(self.models, model, 'aa')
                 aa_found = aa.find(model, explicit) or (aa.find(model) if explicit else None)

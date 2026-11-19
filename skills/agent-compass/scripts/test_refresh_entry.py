@@ -590,7 +590,9 @@ class RefreshEntryTests(unittest.TestCase):
 def _measurements(scale, models, conflicts=(), checks=(), tier_sha='aaaa'):
     """A minimal measurements document: one scaled board `b.code`, one scale-free source `s.price`, the tier source."""
     return {'generated_at': '2026-11-01T00:00:00+00:00', 'panel': {'models': ['anchor-m', 'panel-m']},
-            'sources': {'b.code': {'scale': scale}, 's.price': {}, 'tier.arena_overall': {'sha256': tier_sha}},
+            'sources': {'b.code': {'scale': scale}, 's.price': {},
+                        'tier.arena_overall': {'sha256': tier_sha,
+                                               'tier_scale': {'anchor': 'anchor-m', 'anchor_raw': 1200.0, 'sd': 50.0}}},
             'conflicts': list(conflicts), 'checks': list(checks), 'models': models}
 
 
@@ -608,8 +610,9 @@ def _board_entry(raw, scale, raw_by_effort=None, as_of='2026-11-12'):
 class ModelRowMergeTests(unittest.TestCase):
     """Rule (calibration/refresh.py, --model): only the named rows, conflicts and checks change; every entry the full
     refresh writes for the model is kept, a board z on the shipped source scale (z = (raw - anchor_raw) / sd_panel), the
-    tier as built; an entry is left out only when its anchor reading moved or it is a z-score whose source has no shipped
-    scale; a panel model, the anchor or a model no board lists is refused."""
+    tier on the release snapshot's tier scale or map (round 6 item 8); an entry is left out only when its anchor reading
+    moved or it is a z-score whose source has no shipped scale; a panel model, the anchor or a model no board lists is
+    refused."""
     SHIPPED_SCALE = {'anchor': 'anchor-m', 'anchor_raw': 50.0, 'sd_panel': 10.0, 'n_panel': 12}
     FRESH_SCALE = {'anchor': 'anchor-m', 'anchor_raw': 50.0, 'sd_panel': 8.0, 'n_panel': 11}   # the panel shrank
 
@@ -629,7 +632,9 @@ class ModelRowMergeTests(unittest.TestCase):
             'old-m': {'coding': [_board_entry(47.0, scale)]},
             'new-m': {'coding': [_board_entry(62.0, scale, {'low': 55.0, 'high': 62.0})],
                       'price': [{'source': 's.price', 'value': {'input': 1.0}, 'as_of': '2026-11-13'}],
-                      'tier': [{'source': 'tier.arena_overall', 'value': 0.3}]}},
+                      'tier': [{'source': 'tier.arena_overall', 'value': 0.3, 'raw': 1215.0,
+                                'method': 'arena.ai Overall 1215.0 at High standardized against anchor-m (1200.0, sd 50.00): '
+                                          'tier 0.3000'}]}},
             conflicts=[{'model': 'new-m', 'field': 'image_input'}, {'model': 'old-m', 'field': 'x'}],
             checks=[{'model': 'old-m', 'check': 'c1'}, {'model': 'new-m', 'check': 'high_outside_adjacent_efforts'},
                     {'source': 'b.code', 'check': 'board-level'}],
@@ -661,14 +666,47 @@ class ModelRowMergeTests(unittest.TestCase):
         self.assertEqual(row['price'], self.fresh()['models']['new-m']['price'])
         self.assertTrue(any(refresh.ROUNDED_SCALE_NOTE in note for note in notes))
 
-    def test_on_an_unchanged_scale_and_for_the_tier_the_entry_is_kept_as_built(self):
+    def test_on_an_unchanged_scale_the_entry_is_kept_as_built(self):
         fresh = self.fresh(self.SHIPPED_SCALE)
         merged, left_out, notes = refresh.merge_model_rows(self.shipped(), fresh, ['new-m'])
         self.assertEqual(merged['models']['new-m'], fresh['models']['new-m'])
         self.assertEqual((left_out, notes), ([], []))
+        self.assertEqual(merged['model_entries'], ['new-m'])
         _, _, notes = refresh.merge_model_rows(self.shipped(), self.fresh(self.SHIPPED_SCALE, tier_sha='bbbb'), ['new-m'])
         self.assertEqual(len(notes), 1)
         self.assertIn('tier.arena_overall', notes[0])
+
+    def test_the_tier_is_put_on_the_release_snapshots_tier_scale_whatever_the_fresh_fetch_standardized(self):
+        """Rule (refresh._tier_on_release_scale, round 6 item 8): an arena.ai Overall reading is standardized with the
+        release snapshot's anchor rating and sd (tier = (raw - anchor_raw) / sd), not the fresh fetch's; without a
+        recorded tier scale the merge stops."""
+        shipped, fresh = self.shipped(), self.fresh(self.SHIPPED_SCALE)
+        shipped['sources']['tier.arena_overall']['tier_scale'] = {'anchor': 'anchor-m', 'anchor_raw': 1190.0, 'sd': 40.0}
+        merged, _, _ = refresh.merge_model_rows(shipped, fresh, ['new-m'])
+        tier = merged['models']['new-m']['tier'][0]
+        self.assertEqual(tier['value'], round((1215.0 - 1190.0) / 40.0, 4))
+        self.assertTrue(tier['method'].endswith('standardized against anchor-m (1190.0, sd 40.00): tier 0.6250'), tier)
+        del shipped['sources']['tier.arena_overall']['tier_scale']
+        with self.assertRaisesRegex(refresh.Refused, 'no tier scale'):
+            refresh.merge_model_rows(shipped, fresh, ['new-m'])
+
+    def test_an_index_tier_is_read_through_the_release_snapshots_map_after_the_index_boards_drift(self):
+        """Rule (refresh._tier_on_release_scale, round 6 item 8): an Artificial Analysis Intelligence Index reading goes
+        through the release snapshot's index -> tier map (`tier_map`), the index board's common shift taken off first."""
+        shipped, fresh = self.shipped(), self.fresh(self.SHIPPED_SCALE)
+        shipped['sources']['tier.aa_index'] = {'tier_map': {'points': [[40.0, -1.0, 'a'], [50.0, 0.0, 'b'], [60.0, 1.0, 'c']]}}
+        fresh['sources']['tier.aa_index'] = {}
+        fresh['models']['new-m']['tier'] = [{'source': 'tier.aa_index', 'value': 9.9, 'board_value': 57.0, 'method': 'x'}]
+        drift = {**dict.fromkeys(refresh.DRIFT_FIELDS), 'moved': True, 'n': 3, 'drift': 2.0, 'common_shift': True,
+                 'spread': {'min': 1.5, 'max': 2.5, 'mad': 0.5}, 'snapshot_as_of': '2026-11-01', 'fetched_as_of': '2026-11-12'}
+        still = {**dict.fromkeys(refresh.DRIFT_FIELDS), 'moved': False}
+        with patch.object(refresh, 'board_drift', side_effect=lambda board, *_: drift if board == 'aa.index' else still):
+            merged, _, _ = refresh.merge_model_rows(shipped, fresh, ['new-m'])
+        tier = merged['models']['new-m']['tier'][0]
+        self.assertEqual((tier['value'], tier['board_value'], tier['n']), (0.5, 55.0, 3))
+        self.assertEqual(tier['neighbours'], {'below': {'x': 50.0, 'tier': 0.0, 'models': ['b']},
+                                              'above': {'x': 60.0, 'tier': 1.0, 'models': ['c']}})
+        self.assertEqual(tier['drift_correction']['drift'], 2.0)
 
     def test_a_moved_anchor_reading_or_an_unshipped_scale_leaves_the_entry_out_with_the_reason(self):
         moved = dict(self.FRESH_SCALE, anchor_raw=51.0)
@@ -714,10 +752,9 @@ class ModelRowMergeTests(unittest.TestCase):
         self.assertNotIn(code, refresh.LEVEL.values())
         self.assertIn('full refresh', err.getvalue())
 
-    def test_adding_a_non_panel_model_keeps_the_scale_targets_and_panel_record_and_a_ceiling_moves_only_to_it(self):
-        """End to end over synthetic boards and the five-axis-scores/3 file: the shipped panel, sd_panel, panel_change
-        and level 1..3 targets stay; a level-3 ceiling (highest measured model, any catalogued model) stays unless the
-        added model now sets it."""
+    def test_adding_a_non_panel_model_keeps_the_scale_targets_ceilings_and_panel_record(self):
+        """End to end over synthetic boards: the shipped panel, sd_panel, panel_change, level 1..3 targets and level-3
+        ceilings stay (round 6 item 8: a model entry never enters a target or a ceiling)."""
         root = Path(tempfile.mkdtemp(prefix='refresh-model-e2e-'))
         self.addCleanup(shutil.rmtree, root, True)
         now = datetime.now(timezone.utc).replace(microsecond=0)
@@ -743,25 +780,13 @@ class ModelRowMergeTests(unittest.TestCase):
                     yield from walk(value, (*path, key))
             else:
                 yield path, node
-        strip = lambda targets: {p: v for p, v in walk(targets) if 'ceiling' not in p}
-        self.assertEqual(strip(scores_after['anchor']['targets']), strip(scores_before['anchor']['targets']))
-
-        def ceilings(targets):
-            out = {}
-            for path, value in walk(targets):
-                if 'ceiling' in path and path[-1] in ('value', 'model'):
-                    out.setdefault(path[:path.index('ceiling')], {})[path[-1]] = value
-            return out
-        before, after = ceilings(scores_before['anchor']['targets']), ceilings(scores_after['anchor']['targets'])
-        self.assertEqual(set(after), set(before))
-        for where, cap in after.items():
-            if cap != before[where]:
-                self.assertEqual(cap['model'], added, where)
-                self.assertGreaterEqual(cap['value'], before[where]['value'], where)
+        self.assertTrue(any('ceiling' in path for path, _ in walk(scores_after['anchor']['targets'])))
+        self.assertEqual(scores_after['anchor']['targets'], scores_before['anchor']['targets'])
 
     def test_with_an_unchanged_panel_the_model_row_and_scores_equal_a_full_refresh(self):
-        """Rule: for a named non-panel model, --model gives the same measurement row, checks and five-axis block as a
-        full refresh over the same boards, for a model arena.ai lists and for one listed only on the index board."""
+        """Rule: for a named non-panel model, --model gives the same measurement row and checks as a full refresh over
+        the same boards, for a model arena.ai lists and for one listed only on the index board; its five-axis block is
+        the full refresh's measurements scored with the model as a model entry (round 6 item 8: the release's fits)."""
         cases = (('gemini-3.9-flash-high', 'gemini-3.8-flash-high', ('Gemini 3.9 Flash', 'Google'), 'arena'),
                  ('grok-4.9', 'grok-4.7', ('Grok 4.9', 'xAI'), 'aa'))
         now = datetime.now(timezone.utc).replace(microsecond=0)
@@ -793,7 +818,10 @@ class ModelRowMergeTests(unittest.TestCase):
                 self.assertEqual(merged_meas['models'][added], full_meas['models'][added])
                 self.assertEqual(merged_meas['checks'], full_meas['checks'])
                 self.assertEqual(merged_meas['conflicts'], full_meas['conflicts'])
-                self.assertEqual(merged_scores['models'][added], full_scores['models'][added])
+                self.assertEqual(merged_meas['model_entries'], [added])
+                as_entry = five_axis.build({**full_meas, 'model_entries': [added]}, acc,
+                                           json.loads((refs / 'plan-templates.json').read_text(encoding='utf-8')), now=now)
+                self.assertEqual(merged_scores['models'][added], as_entry['models'][added])
 
     def test_the_blast_radius_counts_only_other_models_values(self):
         before = {'models': {'a': {'x': 1.0, 'y': {'z': 2}}, 'new-m': {'x': 0}}}
@@ -854,6 +882,30 @@ class ModelEntryTests(unittest.TestCase):
         self.assertTrue(doc['fetched_at'])
         self.assertEqual(sources.manifest(entry), sources.manifest(self.pages))
         self.assertEqual(sorted(p.name for p in (self.cache / refresh.MODEL_ENTRIES).iterdir()), [self.ADDED])
+
+    def test_adding_a_model_changes_no_other_row_fit_step_link_target_or_panel(self):
+        """Rule (owner 2026-11-19, round 6 item 8): fleet fits are frozen per release; a model entry's rows never enter
+        a fit, a step, a link, a correlation, a target, a ceiling or the panel. Adding one leaves every other row and
+        every top-level quantity of five-axis-scores.json byte-identical; only the added model's own row, its records in
+        the per-model lists, the tier-source counts, measurements_sha256 and generated_at may differ."""
+        read = lambda: json.loads((self.refs / 'five-axis-scores.json').read_text(encoding='utf-8'))
+        before = read()
+        _, doc = refresh.rebuild(self.cache, now=self.now, references=self.refs, models=[self.ADDED], pages=self.pages)
+        after = read()
+        self.assertEqual(doc['_model_merge']['blast_radius'], 'no value of another model moved')
+        self.assertTrue(after['models'][self.ADDED])
+        self.assertEqual({m: r for m, r in after['models'].items() if m != self.ADDED},
+                         {m: r for m, r in before['models'].items() if m != self.ADDED})
+        others = lambda doc, key: [e for e in doc[key] if e.get('model') != self.ADDED]
+        for key in sorted(set(before) | set(after)):
+            if key in ('models', 'generated_at', 'measurements_sha256', 'tier_sources'):
+                continue
+            with self.subTest(key=key):
+                if isinstance(after.get(key), list) and any(isinstance(e, dict) and 'model' in e for e in after[key]):
+                    self.assertEqual(others(after, key), others(before, key))
+                else:
+                    self.assertEqual(after.get(key), before.get(key))
+        self.assertEqual(sum(after['tier_sources'].values()), sum(before['tier_sources'].values()))
 
     def test_model_never_changes_another_rows_measured_value(self):
         shipped = json.loads((self.refs / 'public-measurements.json').read_text(encoding='utf-8'))

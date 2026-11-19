@@ -1,6 +1,6 @@
 {
  "schema": "agent-compass.public-measurements/1",
- "generated_at": "2026-11-19T02:18:24+00:00",
+ "generated_at": "2026-11-19T02:41:46+00:00",
  "conversion": "z = (x - x_anchor) / sd_panel per board, anchor claude-opus-5-5; see calibration/measurements.py",
  "panel": {
   "models": [
@@ -172,7 +172,12 @@
    "as_of_kind": "data date",
    "method": "tiers.py: arena.ai Overall (Text, style control) at High standardized relative to Claude Opus 5.5 (anchor = 0, continuous z-score)",
    "models_listed": 354,
-   "kind": "benchmark"
+   "kind": "benchmark",
+   "tier_scale": {
+    "anchor": "Claude Opus 5.5",
+    "anchor_raw": 1506.784917,
+    "sd": 122.511547
+   }
   },
   "tier.aa_index": {
    "file": "aa-models.html",
@@ -470,6 +475,120 @@
      "fetched_at": "2026-11-18T16:46:55+00:00",
      "sha256": "8dccdd5cff4e35ed440cc0d30c2153590ff4242950dacc0f7011292c7a36575b"
     }
+   },
+   "tier_map": {
+    "points": [
+     [
+      3.819812,
+      -1.265201,
+      "gpt-oss-120b"
+     ],
+     [
+      4.384383,
+      -0.448611,
+      "Gemma 4 31B"
+     ],
+     [
+      4.645088,
+      -0.656411,
+      "Mistral Medium 3.5"
+     ],
+     [
+      4.722687,
+      -1.777941,
+      "Granite 4.2 3B"
+     ],
+     [
+      5.098265,
+      -1.77532,
+      "Granite 4.2 8B"
+     ],
+     [
+      6.341287,
+      -0.670547,
+      "Muse Glimmer"
+     ],
+     [
+      11.031648,
+      -0.524739,
+      "Inkling"
+     ],
+     [
+      11.656346,
+      -0.423586,
+      "Gemini 3.5 Flash-Lite"
+     ],
+     [
+      14.158944,
+      -0.974058,
+      "Solar Pro 4"
+     ],
+     [
+      18.878908,
+      -0.579699,
+      "MiniMax-M3"
+     ],
+     [
+      26.124995,
+      -0.704791,
+      "Mistral Large 4"
+     ],
+     [
+      26.727698,
+      -0.476606,
+      "MiMo-V2.6-Flash"
+     ],
+     [
+      27.803889,
+      -0.257329,
+      "GLM-5.3-Flash"
+     ],
+     [
+      28.528309,
+      -0.47535,
+      "Step 5 Preview"
+     ],
+     [
+      29.874315,
+      -0.698842,
+      "Claude Haiku 5.5"
+     ],
+     [
+      29.889783,
+      -0.219491,
+      "MiMo-V2.6-Pro"
+     ],
+     [
+      30.628678,
+      -0.775466,
+      "Inkling 2 Small"
+     ],
+     [
+      30.846812,
+      -0.082607,
+      "Gemini 3.8 Flash"
+     ],
+     [
+      50.412194,
+      0.121689,
+      "Gemini 4 Argon"
+     ],
+     [
+      50.787083,
+      -0.133517,
+      "Gemini 4 Hydrogen"
+     ],
+     [
+      51.835996,
+      0.0,
+      "Claude Opus 5.5"
+     ],
+     [
+      60.025739,
+      0.158329,
+      "Gemini 4 Carbon"
+     ]
+    ]
    }
   },
   "lmarena.creative_writing": {
@@ -7355,7 +7474,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Opus 5.5 (High) 1506.8 [1500.8,1512.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier 0.0000",
      "listed_as": "Claude Opus 5.5 (High)",
-     "arena_value": 1506.8
+     "arena_value": 1506.8,
+     "raw": 1506.784917
     }
    ],
    "creativity": [
@@ -9945,7 +10065,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 4 Argon (High) 1521.7 [1516.3,1527.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier 0.1217",
      "listed_as": "Gemini 4 Argon (High)",
-     "arena_value": 1521.7
+     "arena_value": 1521.7,
+     "raw": 1521.693253
     }
    ],
    "creativity": [
@@ -10333,7 +10454,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 4 Hydrogen (High) 1490.4 [1481.4,1499.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1335",
      "listed_as": "Gemini 4 Hydrogen (High)",
-     "arena_value": 1490.4
+     "arena_value": 1490.4,
+     "raw": 1490.427506
     }
    ],
    "creativity": [
@@ -11803,7 +11925,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 3.8 Flash (High) 1496.7 [1492.5,1500.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.0826",
      "listed_as": "Gemini 3.8 Flash (High)",
-     "arena_value": 1496.7
+     "arena_value": 1496.7,
+     "raw": 1496.664651
     }
    ],
    "creativity": [
@@ -12306,7 +12429,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Haiku 5.5 (High) 1421.2 [1415.0,1427.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.6988",
      "listed_as": "Claude Haiku 5.5 (High)",
-     "arena_value": 1421.2
+     "arena_value": 1421.2,
+     "raw": 1421.168669
     }
    ],
    "creativity": [
@@ -16112,7 +16236,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 DeepSeek-V4-Pro 1457.9 [1454.0,1461.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3992",
      "listed_as": "DeepSeek-V4-Pro",
-     "arena_value": 1457.9
+     "arena_value": 1457.9,
+     "raw": 1457.879838
     }
    ],
    "creativity": [
@@ -16554,7 +16679,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-5.3-Flash 1475.3 [1470.8,1479.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2573",
      "listed_as": "GLM-5.3-Flash",
-     "arena_value": 1475.3
+     "arena_value": 1475.3,
+     "raw": 1475.259134
     }
    ],
    "creativity": [
@@ -17009,7 +17135,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Qwen3.8-Max 1484.1 [1479.5,1488.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1851",
      "listed_as": "Qwen3.8-Max",
-     "arena_value": 1484.1
+     "arena_value": 1484.1,
+     "raw": 1484.108565
     }
    ],
    "creativity": [
@@ -18022,7 +18149,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 MiniMax-M3 1435.8 [1432.1,1439.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5797",
      "listed_as": "MiniMax-M3",
-     "arena_value": 1435.8
+     "arena_value": 1435.8,
+     "raw": 1435.765073
     }
    ],
    "creativity": [
@@ -18727,7 +18855,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 MiMo-V2.6-Pro 1479.9 [1470.4,1489.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2195",
      "listed_as": "MiMo-V2.6-Pro",
-     "arena_value": 1479.9
+     "arena_value": 1479.9,
+     "raw": 1479.894718
     }
    ],
    "creativity": [
@@ -19056,7 +19185,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 MiMo-V2.6-Flash 1448.4 [1443.2,1453.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4766",
      "listed_as": "MiMo-V2.6-Flash",
-     "arena_value": 1448.4
+     "arena_value": 1448.4,
+     "raw": 1448.395237
     }
    ],
    "creativity": [
@@ -20051,7 +20181,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Mistral Large 4 1420.4 [1412.0,1428.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.7048",
      "listed_as": "Mistral Large 4",
-     "arena_value": 1420.4
+     "arena_value": 1420.4,
+     "raw": 1420.439837
     }
    ],
    "creativity": [
@@ -20743,7 +20874,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Beam 1.0 501B A23B 1434.4 [1424.8,1444.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5907",
      "listed_as": "Beam 1.0 501B A23B",
-     "arena_value": 1434.4
+     "arena_value": 1434.4,
+     "raw": 1434.418549
     }
    ],
    "creativity": [
@@ -20842,7 +20974,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Haiku 4.5 (20251001) 1414.0 [1411.6,1416.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.7574",
      "listed_as": "Claude Haiku 4.5 (20251001)",
-     "arena_value": 1414.0
+     "arena_value": 1414.0,
+     "raw": 1413.991152
     }
    ],
    "creativity": [
@@ -20958,7 +21091,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Opus 4.6 (High) 1502.8 [1499.6,1506.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.0323",
      "listed_as": "Claude Opus 4.6 (High)",
-     "arena_value": 1502.8
+     "arena_value": 1502.8,
+     "raw": 1502.829538
     }
    ],
    "creativity": [
@@ -21239,7 +21373,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Sonnet 4.6 1472.1 [1468.6,1475.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2831",
      "listed_as": "Claude Sonnet 4.6",
-     "arena_value": 1472.1
+     "arena_value": 1472.1,
+     "raw": 1472.105728
     }
    ],
    "creativity": [
@@ -21812,7 +21947,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 gpt-oss-120b 1351.8 [1347.4,1356.2] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.2652",
      "listed_as": "gpt-oss-120b",
-     "arena_value": 1351.8
+     "arena_value": 1351.8,
+     "raw": 1351.783129
     }
    ],
    "creativity": [
@@ -22477,7 +22613,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Qwen3.6-Plus 1442.8 [1438.6,1446.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5225",
      "listed_as": "Qwen3.6-Plus",
-     "arena_value": 1442.8
+     "arena_value": 1442.8,
+     "raw": 1442.768665
     }
    ],
    "creativity": [
@@ -22707,7 +22844,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Opus 4.7 (High) 1501.1 [1497.4,1504.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.0461",
      "listed_as": "Claude Opus 4.7 (High)",
-     "arena_value": 1501.1
+     "arena_value": 1501.1,
+     "raw": 1501.133102
     }
    ],
    "creativity": [
@@ -22958,7 +23096,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Opus 4.8 (High) 1481.9 [1478.0,1485.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2033",
      "listed_as": "Claude Opus 4.8 (High)",
-     "arena_value": 1481.9
+     "arena_value": 1481.9,
+     "raw": 1481.878844
     }
    ],
    "creativity": [
@@ -23221,7 +23360,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Grok 4.5 1465.8 [1461.4,1470.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3348",
      "listed_as": "Grok 4.5",
-     "arena_value": 1465.8
+     "arena_value": 1465.8,
+     "raw": 1465.764193
     }
    ],
    "creativity": [
@@ -23499,7 +23639,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Grok 4.6 (High) 1456.7 [1452.0,1461.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4091",
      "listed_as": "Grok 4.6 (High)",
-     "arena_value": 1456.7
+     "arena_value": 1456.7,
+     "raw": 1456.659975
     }
    ],
    "creativity": [
@@ -23956,7 +24097,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 3.1 Pro Preview 1486.8 [1483.9,1489.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1632",
      "listed_as": "Gemini 3.1 Pro Preview",
-     "arena_value": 1486.8
+     "arena_value": 1486.8,
+     "raw": 1486.796492
     }
    ],
    "creativity": [
@@ -24279,7 +24421,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 3.7 Flash (High) 1489.3 [1484.6,1494.0] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1429",
      "listed_as": "Gemini 3.7 Flash (High)",
-     "arena_value": 1489.3
+     "arena_value": 1489.3,
+     "raw": 1489.278854
     }
    ],
    "creativity": [
@@ -24553,7 +24696,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Kimi K2.6 1460.9 [1456.4,1465.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3748",
      "listed_as": "Kimi K2.6",
-     "arena_value": 1460.9
+     "arena_value": 1460.9,
+     "raw": 1460.863791
     }
    ],
    "creativity": [
@@ -25067,7 +25211,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 4 Carbon (High) 1526.2 [1516.6,1535.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier 0.1583",
      "listed_as": "Gemini 4 Carbon (High)",
-     "arena_value": 1526.2
+     "arena_value": 1526.2,
+     "raw": 1526.182037
     }
    ],
    "creativity": [
@@ -25487,14 +25632,14 @@
      "board_value": 59.6189441875232,
      "neighbours": {
       "below": {
-       "x": 51.8359958227294,
+       "x": 51.835996,
        "tier": 0.0,
        "models": [
         "Claude Opus 5.5"
        ]
       },
       "above": {
-       "x": 60.025738829526,
+       "x": 60.025739,
        "tier": 0.1583,
        "models": [
         "Gemini 4 Carbon"
@@ -25836,7 +25981,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Step 5 Preview 1448.5 [1442.3,1454.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4753",
      "listed_as": "Step 5 Preview",
-     "arena_value": 1448.5
+     "arena_value": 1448.5,
+     "raw": 1448.549091
     }
    ],
    "creativity": [
@@ -26162,7 +26308,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Hy3 1454.0 [1448.3,1459.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4310",
      "listed_as": "Hy3",
-     "arena_value": 1454.0
+     "arena_value": 1454.0,
+     "raw": 1453.987811
     }
    ],
    "creativity": [
@@ -27944,7 +28091,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Qwen3.8-27B 1433.8 [1429.2,1438.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5960",
      "listed_as": "Qwen3.8-27B",
-     "arena_value": 1433.8
+     "arena_value": 1433.8,
+     "raw": 1433.769898
     }
    ],
    "creativity": [
@@ -28700,7 +28848,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 3.6 Flash (High) 1482.6 [1478.2,1487.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1972",
      "listed_as": "Gemini 3.6 Flash (High)",
-     "arena_value": 1482.6
+     "arena_value": 1482.6,
+     "raw": 1482.629559
     }
    ],
    "creativity": [
@@ -28978,7 +29127,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GPT-5.2 (High) 1437.2 [1433.7,1440.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5677",
      "listed_as": "GPT-5.2 (High)",
-     "arena_value": 1437.2
+     "arena_value": 1437.2,
+     "raw": 1437.236036
     }
    ],
    "creativity": [
@@ -29351,7 +29501,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GPT-5.4 (High) 1475.1 [1471.3,1478.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2585",
      "listed_as": "GPT-5.4 (High)",
-     "arena_value": 1475.1
+     "arena_value": 1475.1,
+     "raw": 1475.12175
     }
    ],
    "creativity": [
@@ -29690,7 +29841,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GPT-5.4 mini (High) 1447.3 [1443.6,1451.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4853",
      "listed_as": "GPT-5.4 mini (High)",
-     "arena_value": 1447.3
+     "arena_value": 1447.3,
+     "raw": 1447.334649
     }
    ],
    "creativity": [
@@ -30046,7 +30198,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GPT-5.5 (High) 1481.3 [1477.5,1485.0] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2082",
      "listed_as": "GPT-5.5 (High)",
-     "arena_value": 1481.3
+     "arena_value": 1481.3,
+     "raw": 1481.279689
     }
    ],
    "creativity": [
@@ -30497,7 +30650,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 gpt-oss-20b 1317.5 [1311.1,1323.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.5448",
      "listed_as": "gpt-oss-20b",
-     "arena_value": 1317.5
+     "arena_value": 1317.5,
+     "raw": 1317.524567
     }
    ],
    "creativity": [
@@ -30647,7 +30801,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Opus 4.5 (High, 32K, 20251101) 1473.7 [1469.8,1477.5] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2704",
      "listed_as": "Claude Opus 4.5 (High, 32K, 20251101)",
-     "arena_value": 1473.7
+     "arena_value": 1473.7,
+     "raw": 1473.653904
     }
    ],
    "creativity": [
@@ -31076,7 +31231,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 3 Flash 1473.0 [1468.7,1477.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2756",
      "listed_as": "Gemini 3 Flash",
-     "arena_value": 1473.0
+     "arena_value": 1473.0,
+     "raw": 1473.018142
     }
    ],
    "creativity": [
@@ -31368,7 +31524,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 3.5 Flash-Lite 1454.9 [1450.4,1459.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4236",
      "listed_as": "Gemini 3.5 Flash-Lite",
-     "arena_value": 1454.9
+     "arena_value": 1454.9,
+     "raw": 1454.890722
     }
    ],
    "creativity": [
@@ -31640,7 +31797,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemma 4 26B A4B 1437.4 [1430.0,1444.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5660",
      "listed_as": "Gemma 4 26B A4B",
-     "arena_value": 1437.4
+     "arena_value": 1437.4,
+     "raw": 1437.437535
     }
    ],
    "creativity": [
@@ -31891,7 +32049,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemma 4 31B 1451.8 [1444.4,1459.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4486",
      "listed_as": "Gemma 4 31B",
-     "arena_value": 1451.8
+     "arena_value": 1451.8,
+     "raw": 1451.824856
     }
    ],
    "creativity": [
@@ -32177,7 +32336,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-4.5 1411.0 [1406.0,1415.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.7822",
      "listed_as": "GLM-4.5",
-     "arena_value": 1411.0
+     "arena_value": 1411.0,
+     "raw": 1410.961823
     }
    ],
    "creativity": [
@@ -32274,7 +32434,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-4.5-Air 1373.0 [1368.7,1377.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.0920",
      "listed_as": "GLM-4.5-Air",
-     "arena_value": 1373.0
+     "arena_value": 1373.0,
+     "raw": 1372.997671
     }
    ],
    "creativity": [
@@ -32421,7 +32582,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-4.5V 1352.2 [1343.8,1360.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.2616",
      "listed_as": "GLM-4.5V",
-     "arena_value": 1352.2
+     "arena_value": 1352.2,
+     "raw": 1352.22903
     }
    ],
    "creativity": [
@@ -32652,7 +32814,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-4.6 1424.5 [1420.6,1428.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.6718",
      "listed_as": "GLM-4.6",
-     "arena_value": 1424.5
+     "arena_value": 1424.5,
+     "raw": 1424.479996
     }
    ],
    "creativity": [
@@ -32874,7 +33037,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-4.6V 1378.3 [1367.1,1389.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.0484",
      "listed_as": "GLM-4.6V",
-     "arena_value": 1378.3
+     "arena_value": 1378.3,
+     "raw": 1378.347161
     }
    ],
    "creativity": [
@@ -33107,7 +33271,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-4.7 1441.4 [1435.3,1447.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5340",
      "listed_as": "GLM-4.7",
-     "arena_value": 1441.4
+     "arena_value": 1441.4,
+     "raw": 1441.357839
     }
    ],
    "creativity": [
@@ -33329,7 +33494,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-4.7-Flash 1364.5 [1358.8,1370.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -1.1611",
      "listed_as": "GLM-4.7-Flash",
-     "arena_value": 1364.5
+     "arena_value": 1364.5,
+     "raw": 1364.532889
     }
    ],
    "creativity": [
@@ -33534,7 +33700,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-5 1457.3 [1453.1,1461.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4036",
      "listed_as": "GLM-5",
-     "arena_value": 1457.3
+     "arena_value": 1457.3,
+     "raw": 1457.344111
     }
    ],
    "creativity": [
@@ -33756,7 +33923,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-5.1 1465.0 [1461.4,1468.5] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3413",
      "listed_as": "GLM-5.1",
-     "arena_value": 1465.0
+     "arena_value": 1465.0,
+     "raw": 1464.967349
     }
    ],
    "creativity": [
@@ -34208,7 +34376,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Qwen3.5-122B-A10B 1416.4 [1412.1,1420.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.7377",
      "listed_as": "Qwen3.5-122B-A10B",
-     "arena_value": 1416.4
+     "arena_value": 1416.4,
+     "raw": 1416.413
     }
    ],
    "creativity": [
@@ -34435,7 +34604,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Qwen3.5-27B 1408.5 [1404.1,1412.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.8026",
      "listed_as": "Qwen3.5-27B",
-     "arena_value": 1408.5
+     "arena_value": 1408.5,
+     "raw": 1408.452632
     }
    ],
    "creativity": [
@@ -34642,7 +34812,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Qwen3.5-35B-A3B 1393.9 [1389.7,1398.2] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.9211",
      "listed_as": "Qwen3.5-35B-A3B",
-     "arena_value": 1393.9
+     "arena_value": 1393.9,
+     "raw": 1393.935251
     }
    ],
    "creativity": [
@@ -34823,7 +34994,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Qwen3.5-397B-A17B 1441.4 [1438.3,1444.4] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5338",
      "listed_as": "Qwen3.5-397B-A17B",
-     "arena_value": 1441.4
+     "arena_value": 1441.4,
+     "raw": 1441.385411
     }
    ],
    "creativity": [
@@ -35081,7 +35253,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Qwen3.5-Flash 1396.0 [1392.3,1399.6] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.9046",
      "listed_as": "Qwen3.5-Flash",
-     "arena_value": 1396.0
+     "arena_value": 1396.0,
+     "raw": 1395.96287
     }
    ],
    "creativity": [
@@ -35503,7 +35676,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Qwen3.7-Plus 1455.3 [1451.0,1459.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.4200",
      "listed_as": "Qwen3.7-Plus",
-     "arena_value": 1455.3
+     "arena_value": 1455.3,
+     "raw": 1455.33185
     }
    ],
    "creativity": [
@@ -36357,7 +36531,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Grok 4.3 1441.7 [1438.0,1445.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5315",
      "listed_as": "Grok 4.3",
-     "arena_value": 1441.7
+     "arena_value": 1441.7,
+     "raw": 1441.665513
     }
    ],
    "creativity": [
@@ -36786,7 +36961,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Step-3.5-Flash 1392.6 [1389.0,1396.1] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.9321",
      "listed_as": "Step-3.5-Flash",
-     "arena_value": 1392.6
+     "arena_value": 1392.6,
+     "raw": 1392.588825
     }
    ],
    "creativity": [
@@ -37152,7 +37328,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 MiMo-V2.5 1433.6 [1429.3,1437.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5978",
      "listed_as": "MiMo-V2.5",
-     "arena_value": 1433.6
+     "arena_value": 1433.6,
+     "raw": 1433.550213
     }
    ],
    "creativity": [
@@ -37375,7 +37552,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 MiMo-V2.5-Pro 1466.4 [1462.9,1469.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3298",
      "listed_as": "MiMo-V2.5-Pro",
-     "arena_value": 1466.4
+     "arena_value": 1466.4,
+     "raw": 1466.37513
     }
    ],
    "creativity": [
@@ -37528,7 +37706,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Fable 5 (High) 1504.0 [1499.8,1508.2] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.0229",
      "listed_as": "Claude Fable 5 (High)",
-     "arena_value": 1504.0
+     "arena_value": 1504.0,
+     "raw": 1503.979704
     }
    ],
    "creativity": [
@@ -37821,7 +38000,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Opus 5 (High) 1489.7 [1486.1,1493.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.1396",
      "listed_as": "Claude Opus 5 (High)",
-     "arena_value": 1489.7
+     "arena_value": 1489.7,
+     "raw": 1489.676466
     }
    ],
    "creativity": [
@@ -38368,7 +38548,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Claude Sonnet 5 (High) 1460.8 [1456.8,1464.9] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.3752",
      "listed_as": "Claude Sonnet 5 (High)",
-     "arena_value": 1460.8
+     "arena_value": 1460.8,
+     "raw": 1460.816583
     }
    ],
    "creativity": [
@@ -38910,7 +39091,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 DeepSeek-V4-Flash 1435.8 [1431.7,1439.8] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.5797",
      "listed_as": "DeepSeek-V4-Flash",
-     "arena_value": 1435.8
+     "arena_value": 1435.8,
+     "raw": 1435.771024
     }
    ],
    "creativity": [
@@ -40041,7 +40223,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 Gemini 3.5 Flash (High) 1478.4 [1474.5,1482.3] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2318",
      "listed_as": "Gemini 3.5 Flash (High)",
-     "arena_value": 1478.4
+     "arena_value": 1478.4,
+     "raw": 1478.387203
     }
    ],
    "creativity": [
@@ -40421,7 +40604,8 @@
      "url": "https://huggingface.co/datasets/lmarena-ai/leaderboard-dataset/resolve/main/text_style_control/latest-00000-of-00001.parquet",
      "method": "arena.ai Overall 2026-11-11 GLM-5.3-Flash 1475.3 [1470.8,1479.7] at High standardized against Claude Opus 5.5 (1506.8, sd 122.51): tier -0.2573",
      "listed_as": "GLM-5.3-Flash",
-     "arena_value": 1475.3
+     "arena_value": 1475.3,
+     "raw": 1475.259134
     }
    ],
    "creativity": [
@@ -40777,5 +40961,8 @@
     }
    ]
   }
- }
+ },
+ "model_entries": [
+  "gemini-4-neon"
+ ]
 }

@@ -11,21 +11,22 @@ fetched_at and sha256 per file, and `entry.json` naming the model and the fetch 
 (the pages at the top of `DIR`), which it does not touch. Step 2 then builds the measurements from the release snapshot
 and takes each model that has an entry, in catalog order, from its own entry's pages (merge_model_rows), so a later
 `--no-fetch` rebuild, which does the same, writes byte for byte the same files (on the same day: the source ages count
-days). Rule: with the panel scale unchanged, the model's row and its five-axis block equal those of a full refresh over
-the same boards. A board z-score is put on the snapshot's scale by the board's own drift (board_drift: the median,
+days). Rule: with the panel scale unchanged, the model's measurement row equals that of a full refresh over the same
+boards. A board z-score is put on the snapshot's scale by the board's own drift (board_drift: the median,
 over the panel members the board lists in both fetches, of the change of their raw readings; at least two members, else
 the entry is left out on a board that moved), z = (raw - drift - anchor_raw) / sd_panel, applied only where the members
 show a common shift (|drift| larger than their median absolute deviation around it; otherwise shift 0), and states it in
 `drift_correction` (calibration/README.md, To add a model); on a board that did not move this is the plain merge. The
-`tier` is standardized over the entry's board itself (tiers.py) and is kept as built. Otherwise an entry is left out
+`tier` is the entry's board reading put on the release snapshot's tier scale or through its index map
+(_tier_on_release_scale), after the same drift. Otherwise an entry is left out
 only when its source has no scale in the snapshot, or, on a board that did not move, its anchor reading moved; anything
 else that cannot be merged, or a model no board lists, stops the run before anything is written. `--model` never changes another row's measured value: when the release
 snapshot and the other entries do not give every other row and the panel exactly as shipped (a cache that is not this
 release's, or a catalog edit that moved another row), the run stops with nothing written and no entry stored. A panel
-model or the anchor is refused: it changes the scale and needs the full refresh. Steps 3..6 run as usual: the panel,
-sd_panel, targets and `anchor.panel_change` stay as shipped, a level-3 ceiling moves only when the added model sets it,
-and values fitted over all measured models (tier fits, fleet effort ratios) still move for other models; the run prints
-how many did, by field. The full refresh (a new release snapshot) reads every row from the boards and retires the model
+model or the anchor is refused: it changes the scale and needs the full refresh. Fleet fits are frozen per release
+(owner, 2026-11-19): the merged document lists the entries' models in `model_entries`, and steps 3..6 fit, step, link,
+target, cap and anchor on the release snapshot's rows only, scoring an entry's rows by those fits, so every other row and
+every fitted quantity stays as shipped; the run prints how many values of other models moved (none). The full refresh (a new release snapshot) reads every row from the boards and retires the model
 entries; without a release snapshot in `DIR` (no `fetch-manifest.json`), `--model` merges into the shipped measurements.
 
 Topological chain:
@@ -73,6 +74,7 @@ import five_axis  # noqa: E402
 import measurements  # noqa: E402
 import reference_provenance  # noqa: E402
 import sources  # noqa: E402
+import tiers  # noqa: E402
 import user_scores  # noqa: E402
 
 LEVEL = {'ok': 0, 'unused': 0, 'stale': 1, 'missing': 2}   # unused: fetched, left out by design (METR)
@@ -231,7 +233,7 @@ def _on_shipped_scale(field, entry, shipped_sources, fresh_sources, drift=None):
     written."""
     src = entry.get('source')
     if field in DOWNLOAD_SCALE_FIELDS:
-        return entry, 'as built', None
+        return _tier_on_release_scale(entry, shipped_sources, drift)
     fresh_scale = (fresh_sources.get(src) or {}).get('scale')
     if not fresh_scale or not any(key in entry for key in ('raw', 'raw_by_effort', 'z')):
         return entry, 'as built', None      # a scale-free reading: price, time, modality, the index value itself
@@ -282,6 +284,50 @@ def _on_shipped_scale(field, entry, shipped_sources, fresh_sources, drift=None):
     return out, 'rescaled', None
 
 
+_TIER_TEXT = re.compile(r'standardized against (?P<anchor>.+?) \(\S+, sd \S+\): tier \S+$')
+
+
+def _tier_on_release_scale(entry, shipped_sources, drift):
+    """(entry as merged, how, None) or (None, None, why) for a model entry's tier (owner 2026-11-19, round 6 item 8: a
+    model entry is scored by the release's fits): an arena.ai Overall reading standardized with the release snapshot's
+    anchor rating and sd (`tier_scale`), an Artificial Analysis Intelligence Index reading put through the release
+    snapshot's map onto that scale (`tier_map`), each after the board's drift where its panel members show a common shift
+    (`drift`: board_drift of arena Overall, or of `aa.index` for the index), as for every board."""
+    src = entry.get('source')
+    row = shipped_sources.get(src) or {}
+    moved = bool(drift and drift['moved'])
+    if moved and drift['n'] < MIN_DRIFT_MEMBERS:
+        return None, None, (f"the board moved since the release snapshot and {drift['n']} panel member(s) are listed in "
+                            f'both, fewer than {MIN_DRIFT_MEMBERS}, so its drift is not measured')
+    shift = drift['drift'] if moved and drift['common_shift'] else 0.0
+    out = dict(entry)
+    if src == 'tier.arena_overall':
+        scale = row.get('tier_scale')
+        if not scale or 'raw' not in entry:
+            raise Refused(f'{src}: the release snapshot records no tier scale (rebuild it with this code); nothing written')
+        out['value'] = round((entry['raw'] - shift - scale['anchor_raw']) / scale['sd'], 4)
+        out['method'] = _TIER_TEXT.sub(lambda m: (f"standardized against {m['anchor']} ({scale['anchor_raw']:.1f}, sd "
+                                                  f"{scale['sd']:.2f}): tier {out['value']:.4f}"), entry['method'])
+    elif src == 'tier.aa_index':
+        pts = (row.get('tier_map') or {}).get('points')
+        if not pts:
+            raise Refused(f'{src}: the release snapshot records no tier map (rebuild it with this code); nothing written')
+        fit = tiers.Interpolation([p[0] for p in pts], [p[1] for p in pts], [p[2] for p in pts])
+        x = entry['board_value'] - shift
+        low, high = fit.neighbours(x)
+        out.update({'value': round(float(fit(x)), 4), 'board_value': x, 'neighbours': {'below': low, 'above': high},
+                    'n': fit.n, **fit.spread(),
+                    'method': (f"{tiers.OVERALL_BOARDS['aa.index'][0]} {x:g} at High "
+                               f"interpolated onto the arena.ai Overall High scale between {low['models']} and "
+                               f"{high['models']} of the {fit.n} models listed at High on both boards")})
+    else:
+        raise Refused(f'{src}: a tier source this merge cannot put on the release scale; nothing written')
+    if moved:
+        out['drift_correction'] = {k: drift[k] for k in DRIFT_FIELDS}
+        return out, ('drift corrected' if drift['common_shift'] else 'no common shift'), None
+    return out, 'release scale', None
+
+
 def merge_model_rows(shipped, fresh, names, now=None):
     """(measurements, left_out, notes): the shipped document with only the named models' rows, conflicts and checks
     taken from `fresh`, board z-scores on the shipped scale; every other row, the panel and the scales stay as shipped.
@@ -299,9 +345,10 @@ def merge_model_rows(shipped, fresh, names, now=None):
         for field, items in entries.items():
             for entry in items:
                 src = entry.get('source')
-                if src not in drifts:
-                    drifts[src] = board_drift(src, shipped, fresh)
-                kept, how, reason = _on_shipped_scale(field, entry, shipped_sources, fresh_sources, drifts[src])
+                board = 'aa.index' if src == 'tier.aa_index' else src     # the index's tier moves with the index board
+                if board not in drifts:
+                    drifts[board] = board_drift(board, shipped, fresh)
+                kept, how, reason = _on_shipped_scale(field, entry, shipped_sources, fresh_sources, drifts[board])
                 if kept is None:
                     left_out.append((name, field, entry.get('source'), reason))
                     continue
@@ -333,8 +380,10 @@ def merge_model_rows(shipped, fresh, names, now=None):
                      + ('corrected before the conversion to the shipped scale' if d['common_shift'] else
                         'not corrected: the members show no common shift (|drift| not above the median absolute deviation)'))
     for src in sorted(tier_boards):
-        notes.append(f'the tier from {src} is computed on the fetched board, a different file from the shipped fetch; '
-                     "the other models' tiers stay on the shipped one")
+        notes.append(f"the tier from {src} is read on the fetched board, a different file from the shipped fetch, and put "
+                     "on the release snapshot's tier scale; the other models' tiers stay as shipped")
+    # the rows a model entry gave: five_axis scores them by the release's fits and never fits over them (item 8)
+    merged['model_entries'] = sorted({*(shipped.get('model_entries') or ()), *names})
     merged['generated_at'] = (now or datetime.now(timezone.utc)).isoformat(timespec='seconds')
     return merged, left_out, notes
 
@@ -397,8 +446,8 @@ def blast_radius(before, after, names):
     if not moved:
         return 'no value of another model moved'
     by_field = ', '.join(f'{field} {count}' for field, count in sorted(fields.items(), key=lambda kv: (-kv[1], kv[0])))
-    return (f'{moved} values of {len(models)} other models moved, by field: {by_field} (values fitted over all measured '
-            f'models); largest change {largest[0]:.4g} at {largest[1]}')
+    return (f'{moved} values of {len(models)} other models moved, by field: {by_field} (a model entry reached a fleet '
+            f'fit, which the release freezes); largest change {largest[0]:.4g} at {largest[1]}')
 
 
 def fetch_sources(target, references=None):

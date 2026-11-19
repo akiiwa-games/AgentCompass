@@ -163,7 +163,8 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # `age_days`, no `stale` status, no `stale_source` errors and no `capacity_stale_days`; age and staleness are the
 # reader's (scripts/data_age.py). Within /12 before its first release (round 6): every effort read on every board, edge
 # steps from the boards' listings (`sample`, `boards`; method `other_facets_median`), speed variants, relatives by maker,
-# line and size. Levels unchanged.
+# line and size, fleet fits frozen per release (a model entry's rows, `public-measurements.json` `model_entries`, scored by
+# the release's fits and in none). Levels unchanged.
 SCHEMA = 'agent-compass.five-axis-scores/12'
 AXES = measurements.AXES
 EFFORTS = user_scores.MEASURED_EFFORTS                   # the efforts boards measure and the panel steps reach
@@ -422,10 +423,28 @@ def pick_price(entries):
     return None
 
 
+def without_entries(groups, entries):
+    """`groups` ({row: [relative, ...]}) with every model-entry row taken out of the relative lists (owner 2026-11-19,
+    round 6 item 8): a row rests only on the release snapshot's rows, so adding a model changes no other row."""
+    return {k: [j for j in v if j not in entries] for k, v in groups.items()}
+
+
+def release_same_model(acc, entries):
+    """The valid `same_model` declarations whose declared model is a release snapshot row (round 6 item 8)."""
+    return {k: v for k, v in series.same_model(acc).items() if valid_public_declaration(v) and v.get('model') not in entries}
+
+
+def release_tier_up(acc, entries):
+    """series.tier_up without a larger model that is a model-entry row (round 6 item 8)."""
+    return {m: r for m, r in series.tier_up(acc).items() if r['model'] not in entries}
+
+
 class Scorer:
     def __init__(self, meas, acc, distrust=()):
         self.meas, self.acc = meas, acc
         self.distrust = set(distrust)
+        # the rows a model entry gave (refresh --model, merge_model_rows): scored by the release's fits, never in one
+        self.entries = frozenset(meas.get('model_entries') or ())
         self.readings = effort_readings(acc)
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
         self.points = operating_points(acc)
@@ -449,7 +468,8 @@ class Scorer:
                 out[m] = {'value': round(float(np.mean([e['value'] for e in chosen])), 4), 'method': method, 'sources': cite,
                           **({'status': 'estimated'} if method == 'other_overall' else {})}
         direct_tier = {m: t['value'] for m, t in out.items()}
-        sibs, same = series.groups(self.acc, 'ability'), series.same_model(self.acc)
+        sibs = without_entries(series.groups(self.acc, 'ability'), self.entries)
+        same = release_same_model(self.acc, self.entries)
         for m in rows:
             if m in out:
                 continue
@@ -608,6 +628,8 @@ class Scorer:
         non-AA board by Pearson r over the panel (full-panel AA boards preferred over partial-panel subsets)."""
         non_aa = {}
         for m, r in rows.items():
+            if m in self.entries:
+                continue        # a fleet quantity: the release snapshot's rows only (round 6 item 8)
             for (a, f), srcs in r['boards'].items():
                 for src, e in srcs.items():
                     if not src.startswith('aa.') and isinstance(e.get('value'), (int, float)):
@@ -1123,10 +1145,10 @@ class Scorer:
             fields = self.meas['models'].get(m) or {}
             rows[m] = {'fields': fields, 'boards': self.board_entries(fields)}
         raw_same = series.same_model(self.acc)
-        self.same = {k: v for k, v in raw_same.items() if valid_public_declaration(v)}
+        self.same = {k: v for k, v in raw_same.items() if valid_public_declaration(v) and v.get('model') not in self.entries}
         self.speed = {m: sp for m, e in self.same.items() if (sp := speed_declaration(e)) is not None}
-        self.sibs = series.groups({**self.acc, 'same_model': self.same}, 'ability')
-        self.line_sibs = series.groups({**self.acc, 'same_model': self.same}, 'line')
+        self.sibs = without_entries(series.groups({**self.acc, 'same_model': self.same}, 'ability'), self.entries)
+        self.line_sibs = without_entries(series.groups({**self.acc, 'same_model': self.same}, 'line'), self.entries)
         self.versions, self.small, self.line_of = series.versions(self.acc), series.small_rows(self.acc), series.lines(self.acc)
         self.order = estimation_order(self.acc)
         tier = self.tier_records(rows)
@@ -1152,7 +1174,7 @@ class Scorer:
         for key in keys:
             pts = [(self.direct_tier[m], facets[m][key]['value']) for m in rows
                    if key in facets[m] and facets[m][key].get('value') is not None and m in self.direct_tier
-                   and facets[m][key]['status'] != 'estimated']
+                   and facets[m][key]['status'] != 'estimated' and m not in self.entries]
             fits[key], why = self.fit(pts, require_skill=True)
             if why:
                 rejected[f'{key[0]}.{key[1]}~tier'] = why
@@ -1193,7 +1215,7 @@ class Scorer:
                         est['value'] = est['by_effort'].get('high')
                         est['measured_efforts'] = ['none']
         self.copy_same_model(facets, declared)
-        self.size_of = {m: rel for m, rel in series.tier_up(self.acc).items()
+        self.size_of = {m: rel for m, rel in release_tier_up(self.acc, self.entries).items()
                         if m in rows and rel['model'] in rows and m not in declared}
         self.complete(facets, keys, rows, declared)
         for m, r in rows.items():
@@ -1400,7 +1422,8 @@ class Scorer:
                 return None
             return {'small': small, 'large': large, 'facets': ['.'.join(k) for k, _ in got],
                     'differences': [round(d, 4) for _, d in got], 'value': float(np.mean([d for _, d in got]))}
-        same = sorted((m, rel['model']) for m, rel in self.size_of.items() if rel['version'] == 'same')
+        same = sorted((m, rel['model']) for m, rel in self.size_of.items() if rel['version'] == 'same'
+                      and m not in self.entries)
         ability = [k for k in keys if rises(k)]
         out = {}
         for key in keys:
@@ -1536,7 +1559,7 @@ class Scorer:
             """The level-3 cap: the highest measured High value among every catalogued model (not only the panel), the
             model that sets it and its status; the same row kinds the panel targets read, so no estimate sets it."""
             found = [(v, m, pick(rows[m]['axes'])['status']) for m in sorted(rows)
-                     if (v := measured(pick(rows[m]['axes']))) is not None]
+                     if m not in self.entries and (v := measured(pick(rows[m]['axes']))) is not None]
             if not found:
                 return None
             v, m, status = max(found, key=lambda t: t[0])
@@ -1684,7 +1707,10 @@ def durations(scorer, rows, acc):
     for t in arena.values():
         t.pop('none', None)
     pairs = []
+    fleet_aa = {m: t for m, t in aa.items() if m not in scorer.entries}   # fleet quantities: snapshot rows (item 8)
     for m in rows:
+        if m in scorer.entries:
+            continue
         shared = next((e for e in PAIR_EFFORTS if e in aa[m] and e in arena[m]), None)
         if shared:
             pairs.append((arena[m][shared]['time_per_task_min'], aa[m][shared]['time_per_task_min']))
@@ -1704,7 +1730,7 @@ def durations(scorer, rows, acc):
                 minutes[m][e] = round(Scorer.predict(fit, x), 3)
                 basis[m][e] = {'method': 'arena_fit', 'source': ARENA_TIME, 'arena_minutes': x, **fit_rec,
                                'listed_as': row.get('listed_as'), 'as_of': row.get('as_of'), 'url': row.get('url')}
-    same = {k: v for k, v in series.same_model(acc).items() if valid_public_declaration(v)}
+    same = release_same_model(acc, scorer.entries)
     for m, entry in same.items():
         base = entry.get('model')
         if m in rows and 'duration' in (entry.get('carries') or ()) and base in rows:
@@ -1714,7 +1740,8 @@ def durations(scorer, rows, acc):
                     basis[m][e] = {'method': 'same_model', 'base_model': base, 'kind': entry.get('kind'),
                                    'url': entry.get('url'), 'as_of': entry.get('as_of'),
                                    'statement': entry.get('statement')}
-    sibs = series.groups({**acc, 'same_model': same}, 'line')       # Time/Task is a speed quantity: its own line only
+    declared = series.groups({**acc, 'same_model': same}, 'line')     # Time/Task is a speed quantity: its own line only
+    sibs = without_entries(declared, scorer.entries)
     line_of = series.lines(acc)
     measured = {m for m in rows if minutes[m]}
     speed = {m: sp for m, e in same.items() if m in rows and (sp := speed_declaration(e)) is not None}
@@ -1730,7 +1757,7 @@ def durations(scorer, rows, acc):
                 minutes[m][e] = round(float(np.median([minutes[b][e] for b in group])), 3)
                 basis[m][e] = {'method': 'series', 'base_model': group[0] if len(group) == 1 else group,
                                'version_distance': d, 'source': basis[group[0]][e].get('source'),
-                               'base_method': basis[group[0]][e]['method'], 'series': sorted([m, *sibs.get(m, ())])}
+                               'base_method': basis[group[0]][e]['method'], 'series': sorted([m, *declared.get(m, ())])}
     for m, sp in sorted(speed.items()):
         base = same[m]['model']
         if minutes[m] or base not in rows:
@@ -1748,7 +1775,7 @@ def durations(scorer, rows, acc):
     def fleet_ratio(e, e0):
         """(median, n, q1, q3) of AA time[e] / time[e0] over the models that list both, or None under 3 models."""
         if (e, e0) not in fleet:
-            xs = [t[e]['time_per_task_min'] / t[e0]['time_per_task_min'] for t in aa.values() if e in t and e0 in t]
+            xs = [t[e]['time_per_task_min'] / t[e0]['time_per_task_min'] for t in fleet_aa.values() if e in t and e0 in t]
             fleet[(e, e0)] = None if len(xs) < MIN_FLEET_RATIO_N else (
                 float(np.median(xs)), len(xs), float(np.percentile(xs, 25)), float(np.percentile(xs, 75)))
         return fleet[(e, e0)]
@@ -1759,7 +1786,7 @@ def durations(scorer, rows, acc):
         (and a lo that differs from up), or None under 3 models."""
         if (e, lo, up) not in fleet:
             ps = []
-            for t in aa.values():
+            for t in fleet_aa.values():
                 if e in t and lo in t and up in t:
                     span = float(np.log(t[up]['time_per_task_min'] / t[lo]['time_per_task_min']))
                     if span != 0.0:
@@ -1840,8 +1867,9 @@ def durations(scorer, rows, acc):
             minutes[m].update({e: t for e, t in known.items() if e not in direct})
     # Size step (module docstring): a small row with no time of its own takes its larger model's (same or nearest version)
     # times the size step, the pairs' median ratio at High where they agree, else 1.
-    rel = {m: r for m, r in series.tier_up(acc).items() if m in rows and r['model'] in rows and m not in same}
-    listed = {m: minutes[m]['high'] for m in rows if (basis[m].get('high') or {}).get('method') == 'aa'}
+    rel = {m: r for m, r in release_tier_up(acc, scorer.entries).items() if m in rows and r['model'] in rows and m not in same}
+    listed = {m: minutes[m]['high'] for m in rows if (basis[m].get('high') or {}).get('method') == 'aa'
+              and m not in scorer.entries}
     scorer.time_size_step = time_size_step(listed, rel)
     apply_time_size_step(minutes, basis, rel, scorer.time_size_step)
     for m in rows:
@@ -1869,14 +1897,14 @@ def durations(scorer, rows, acc):
         basis[m]['none'] = {'method': 'aa', 'source': AA_TIME, 'listed_as': row.get('listed_as'), 'as_of': row.get('as_of'),
                             'url': row.get('url'), **({'bounded_from': t} if round(float(held), 3) != round(t, 3) else {})}
     scorer.time_steps = {}
-    measured_range = [t['time_per_task_min'] for m in aa for t in [*aa[m].values(), *([off[m]] if m in off else [])]]
+    measured_range = [t['time_per_task_min'] for m in fleet_aa for t in [*aa[m].values(), *([off[m]] if m in off else [])]]
     lo_t, hi_t = (min(measured_range), max(measured_range)) if measured_range else (None, None)
     for edge, (near, (end, nxt)) in EDGES.items():
         if edge_method(edge) == 'fleet_off_step':
             # reasoning off: the fleet's own Time/Task at none against its lowest measured effort, a ratio from the
             # measured pairs as the size step (pair_agreement on the log ratios: n >= MIN_SIZE_PAIRS, one direction); with
             # no fleet model measured at none and at a reasoning effort there is no step (as for the ability facets)
-            xs = [off[m]['time_per_task_min'] / aa[m][lo]['time_per_task_min'] for m in off
+            xs = [off[m]['time_per_task_min'] / aa[m][lo]['time_per_task_min'] for m in off if m not in scorer.entries
                   for lo in [next((e for e in LADDER[1:] if e in aa.get(m, {})), None)] if lo is not None]
             if not xs:
                 continue
@@ -1885,7 +1913,7 @@ def durations(scorer, rows, acc):
                 'ratio': round(float(np.exp(agree['step'])), 4), 'n': agree['n'], 'agree': agree['agree'],
                 **({'reason': agree['reason']} if 'reason' in agree else {}), 'sample': 'fleet', 'method': edge_method(edge)}
             continue
-        xs = [t[end]['time_per_task_min'] / t[nxt]['time_per_task_min'] for t in aa.values() if end in t and nxt in t]
+        xs = [t[end]['time_per_task_min'] / t[nxt]['time_per_task_min'] for t in fleet_aa.values() if end in t and nxt in t]
         if len(xs) >= MIN_FLEET_RATIO_N:
             scorer.time_steps.setdefault(near, {})[edge] = {'ratio': round(float(np.median(xs)), 4), 'n': len(xs),
                                                             'sample': 'fleet', 'method': edge_method(edge)}
@@ -2156,11 +2184,11 @@ def convert_usd(usd, rows, scorer, meas, acc):
     the full community token mix; one with no such sibling takes, the same way, its larger model's (series.tier_up,
     `relation: size`) when that has a direct value."""
     direct = {m for m, u in usd.items() if u.get('value') is not None and u.get('kind') not in ('derived', 'converted')}
-    same = {k: v for k, v in series.same_model(acc).items() if valid_public_declaration(v)}
-    sibs = series.groups({**acc, 'same_model': same}, 'line')       # cost per hour is a speed and price quantity
+    same = release_same_model(acc, scorer.entries)
+    sibs = without_entries(series.groups({**acc, 'same_model': same}, 'line'), scorer.entries)   # a speed and price quantity
     line_of = series.lines(acc)
     mix = token_mix(meas)
-    larger = series.tier_up(acc)
+    larger = release_tier_up(acc, scorer.entries)
     for m in rows:
         if m in direct:
             continue
@@ -2230,6 +2258,8 @@ def scale_fallback_usd(usd, rows, scorer):
     fallback's own value and states the ratio with its n and spread (`on_primary_scale`), marked estimated."""
     pairs = {}
     for m, r in rows.items():
+        if m in scorer.entries:
+            continue        # a fleet quantity: the release snapshot's rows only (round 6 item 8)
         by_src = {}
         for e in scorer.trusted(r['fields'].get('usd_per_hour') or ()):
             by_src.setdefault(e['source'], []).append(e)
