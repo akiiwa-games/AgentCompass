@@ -12,8 +12,8 @@
    "closes_when": "a board lists any model on the facet at that effort (for none: a non-reasoning listing) beside a reasoning listing, giving the fleet step its pairs"
   },
   "no_time_reading_in_series": {
-   "missing": "an Artificial Analysis Time/Task of the model at some effort, of its larger model of the same version, or of a relative of the same maker and size (its own line, or another line within the declared version distance) read on a board: a same-series sibling gives only the ratio between efforts, never the time itself, and a relative's estimated time is never another row's basis",
-   "closes_when": "Artificial Analysis publishes a Time/Task for the model, for its larger model of the same version, or for a relative within the declared version distance"
+   "missing": "a reading of speed: an Artificial Analysis Time/Task (for responsiveness its measured time to first answer) of the model at some effort, of its larger model of the same version, or of a relative of the same maker and size (its own line, or another line within the declared version distance) read on a board: a same-series sibling gives only the ratio between efforts, never the time itself, and a relative's estimated time or responsiveness is never another row's basis",
+   "closes_when": "Artificial Analysis publishes a Time/Task (or a time to first answer) for the model, for its larger model of the same version, or for a relative within the declared version distance"
   },
   "no_relative_statement": {
    "missing": "a row for the name: no public statement says which scored row it is (alias) or that it is the same model as one (same_model), and no board lists it",
@@ -86,8 +86,8 @@
     "xhigh"
    ],
    "row": "gpt-5.2-pro",
-   "kind": "no_public_measurement",
-   "detail": "gpt-5.2-pro: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
+   "kind": "no_time_reading_in_series",
+   "detail": "gpt-5.2-pro: no Artificial Analysis board lists it (OpenRouter gives its price and modality only), it has no larger model, and no relative of another GPT line within version distance 1 has a time read on a board (gpt-5.2 and gpt-5.4 have none; gpt-5.4-pro's is missing) or a measured responsiveness (gpt-5.2's and gpt-5.4's are interpolated), so Time/Task and responsiveness are missing; its ability facets are estimated"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -126,8 +126,8 @@
     "xhigh"
    ],
    "row": "gpt-5.4-pro",
-   "kind": "no_public_measurement",
-   "detail": "gpt-5.4-pro: no cached board lists it and no tier reading reaches it or a row of its series, so no facet is measured or estimated"
+   "kind": "no_time_reading_in_series",
+   "detail": "gpt-5.4-pro: Artificial Analysis lists it (GPT-5.4 Pro (Xhigh)) for its price only, without a Time/Task; it has no larger model, and no relative of another GPT line within version distance 1 has a time read on a board (gpt-5.4 has none, gpt-5.5's is itself a cross-line estimate), so Time/Task is missing; its facets are estimated"
   },
   {
    "catalog": "magpie-0.1.4470",
@@ -156,8 +156,8 @@
     "default"
    ],
    "row": "qwen3-coder-flash",
-   "kind": "no_public_measurement",
-   "detail": "qwen3-coder-flash: no cached board lists it with time_per_task, tool_operation.responsiveness"
+   "kind": "no_time_reading_in_series",
+   "detail": "qwen3-coder-flash: no Artificial Analysis board lists it (OpenRouter gives its price and modality only), it declares no larger model, and the times of its line (qwen3.5-flash, qwen3.6-flash) are themselves size-step estimates, never a basis, and no small row of another Qwen line within version distance 1 has a time read on a board, so Time/Task is missing; its facets are estimated"
   },
   {
    "catalog": "magpie-0.1.4470",

@@ -73,23 +73,47 @@ class CheckRuleTests(unittest.TestCase):
         return {'catalog': catalog, 'provider': 'h', 'model': model, 'effort': effort, 'resolves_to': model,
                 'source': 'exact', 'missing': list(missing), 'ungated': ungated}
 
+    ALL = [f'{c}.{f}' for c, f in gc.FACETS] + ['time_per_task']
+
     def gaps(self, *entries):
-        return {'entries': [{'catalog': 'c', 'model': m, 'efforts': list(e), 'row': m, 'kind': gc.GAP_KINDS[0], 'detail': 'd'}
-                            for m, e in entries]}
+        """Entries (model, efforts[, kind]); the kind defaults to no_public_measurement, which every cell missing matches."""
+        return {'entries': [{'catalog': 'c', 'model': m, 'efforts': list(e), 'row': m,
+                             'kind': (rest or (gc.GAP_KINDS[0],))[0], 'detail': 'd'} for m, e, *rest in entries]}
 
     def test_an_uncovered_pair_off_the_list_a_covered_listed_pair_and_a_listed_pair_never_offered_all_fail(self):
-        found = [self.pair('a', 'high'), self.pair('b', 'high', ['time_per_task']), self.pair('c', 'low', ['x'])]
-        violations, counts = gc.check(found, self.gaps(('b', ['high']), ('c', ['low'])))
+        found = [self.pair('a', 'high'), self.pair('b', 'high', ['time_per_task']), self.pair('c', 'low', self.ALL)]
+        violations, counts = gc.check(found, self.gaps(('b', ['high'], 'no_time_reading_in_series'), ('c', ['low'])))
         self.assertEqual((violations, counts['covered'], counts['known_gap']), ([], 1, 2))
-        violations, _ = gc.check(found, self.gaps(('b', ['high'])))
+        violations, _ = gc.check(found, self.gaps(('b', ['high'], 'no_time_reading_in_series')))
         self.assertEqual(len(violations), 1)
         self.assertIn('uncovered, not on the known-gap list', violations[0])
-        violations, _ = gc.check(found, self.gaps(('a', ['high']), ('b', ['high']), ('c', ['low'])))
+        violations, _ = gc.check(found, self.gaps(('a', ['high']), ('b', ['high'], 'no_time_reading_in_series'), ('c', ['low'])))
         self.assertEqual(len(violations), 1)
         self.assertIn('covered', violations[0])
-        violations, _ = gc.check(found, self.gaps(('b', ['high']), ('c', ['low']), ('d', ['max'])))
+        violations, _ = gc.check(found, self.gaps(('b', ['high'], 'no_time_reading_in_series'), ('c', ['low']), ('d', ['max'])))
         self.assertEqual(len(violations), 1)
         self.assertIn('offered by no saved catalog', violations[0])
+
+    def test_a_known_gaps_kind_matches_the_cells_its_pairs_miss(self):
+        """Rule (`gap_kinds`, round 7): no row -> no_relative_statement; every facet and the time -> no_public_measurement
+        (or anchor_reading_moved); only the speed cells -> no_time_reading_in_series; some facets -> no_fleet_reading_at_effort
+        (or anchor_reading_moved, and the time kind when the time is missing too); an unknown cell matches no kind. A listed
+        entry whose kind does not match fails."""
+        speed = ['tool_operation.responsiveness', 'time_per_task']
+        self.assertEqual(gc.gap_kinds(['no row (family)']), {'no_relative_statement'})
+        self.assertEqual(gc.gap_kinds(self.ALL), {'no_public_measurement', 'anchor_reading_moved'})
+        self.assertEqual(gc.gap_kinds(speed), {'no_time_reading_in_series'})
+        self.assertEqual(gc.gap_kinds(['time_per_task']), {'no_time_reading_in_series'})
+        self.assertEqual(gc.gap_kinds(['coding.execution']), {'no_fleet_reading_at_effort', 'anchor_reading_moved'})
+        self.assertEqual(gc.gap_kinds(['coding.execution', 'time_per_task']),
+                         {'no_fleet_reading_at_effort', 'anchor_reading_moved', 'no_time_reading_in_series'})
+        self.assertEqual(gc.gap_kinds(['x']), set())
+        found = [self.pair('a', 'high', speed)]
+        self.assertEqual(gc.check(found, self.gaps(('a', ['high'], 'no_time_reading_in_series')))[0], [])
+        violations, _ = gc.check(found, self.gaps(('a', ['high'], 'no_public_measurement')))
+        self.assertEqual(len(violations), 1)
+        self.assertIn('listed as no_public_measurement but what is missing is tool_operation.responsiveness, time_per_task',
+                      violations[0])
 
     def test_an_ungated_pair_is_reported_never_a_failure_and_never_a_known_gap(self):
         """Rule (owner 2026-11-18, round 4): a pair outside the gate or on the out-of-scope list is a report; listing it as a

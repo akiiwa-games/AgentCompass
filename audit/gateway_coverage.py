@@ -42,7 +42,7 @@ maker does not offer for chat) is reported, not gated, in every catalog. The rul
 - or the pair is on the declared known-gap list (`audit/gateway-coverage-known-gaps.json`, each entry `{catalog, model,
   efforts, row, kind, detail}`: `kind` is one of the closed set `GAP_KINDS`, the input that is missing, which the file's
   `kinds` table states with what would close the gap; `detail` says it for this model: no declared method gives the
-  value without it);
+  value without it), and the kind matches the cells the pair misses (`gap_kinds`, round 7);
 - and no entry of that list is covered, ungated or names a pair no saved catalog offers (the list only shrinks), and no
   out-of-scope entry names a model no saved catalog offers.
 
@@ -271,6 +271,29 @@ def pairs(accounts, catalogs, five_axis, public_scores, out_of_scope=None, names
     return out
 
 
+SPEED_CELLS = {'time_per_task', 'tool_operation.responsiveness'}
+
+
+def gap_kinds(missing):
+    """The known-gap kinds the missing cells of one pair (`pairs` `missing`, the provider identity left out) can be
+    (round 7): no row for the name -> `no_relative_statement`; every facet and the time -> `no_public_measurement` or
+    `anchor_reading_moved`; only Time/Task and responsiveness, the readings of speed -> `no_time_reading_in_series`; some
+    facets -> `no_fleet_reading_at_effort` or `anchor_reading_moved`, with `no_time_reading_in_series` when the time is
+    missing too. A cell the audit does not know matches no kind."""
+    cells = set(missing)
+    if any(c.startswith(('no row (', 'not in dispatch_efforts[')) for c in cells):
+        return {'no_relative_statement'}
+    known = {f'{c}.{f}' for c, f in FACETS} | {'time_per_task'}
+    if not cells or not cells <= known:
+        return set()
+    if cells == known:
+        return {'no_public_measurement', 'anchor_reading_moved'}
+    if cells <= SPEED_CELLS:
+        return {'no_time_reading_in_series'}
+    return {'no_fleet_reading_at_effort', 'anchor_reading_moved'} | (
+        {'no_time_reading_in_series'} if 'time_per_task' in cells else set())
+
+
 def check(found, gaps, out_of_scope=None):
     """(violations, counts): a gated uncovered pair not on the known-gap list, a listed pair that is covered, ungated or
     offered by no catalog, and an out-of-scope entry no catalog offers."""
@@ -295,6 +318,14 @@ def check(found, gaps, out_of_scope=None):
         elif k in listed and listed[k]['kind'] == IDENTITY_KIND and not conflicts:
             violations.append(f"listed as {IDENTITY_KIND} but no provider's listing identifies other weights: "
                               f"{k[0]} {k[1]} @ {k[2]}")
+        if k in listed and listed[k]['kind'] != IDENTITY_KIND:
+            for p in uncovered:
+                cells = [c for c in p['missing'] if not c.startswith('other weights on ')]
+                if listed[k]['kind'] not in gap_kinds(cells):
+                    violations.append(f"listed as {listed[k]['kind']} but what is missing is {', '.join(cells)}: "
+                                      f"{k[0]} {k[1]} @ {k[2]} (kinds that match: "
+                                      f"{', '.join(sorted(gap_kinds(cells))) or 'none'})")
+                    break
         if k in listed and not uncovered:
             violations.append(f"on the known-gap list but {'covered' if gated else 'not gated'}: {k[0]} {k[1]} @ {k[2]}")
     for k in sorted(set(listed) - set(offered)):
