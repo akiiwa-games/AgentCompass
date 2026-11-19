@@ -29,6 +29,10 @@ import reference_provenance  # noqa: E402
 import refresh  # noqa: E402
 import sources  # noqa: E402
 
+# accounts.json's effort_readings declaration, and as sources.effort_readings reads it
+ACCOUNT_READINGS = {'effort_readings': {'labels': {'non-reasoning': 'none', 'reasoning': 'default'}, 'reads': {'default': 'high'}}}
+READINGS = sources.effort_readings(ACCOUNT_READINGS)
+
 
 def setUpModule():
     """No test downloads: a code path that reaches the network fails the test at once (and is recorded as a failed fetch)."""
@@ -870,7 +874,7 @@ class AaReleasePageTests(unittest.TestCase):
         data, _ = self.fixture(aa_deprecated=self.DEPRECATED)
         on_leaderboard = self.build(self.fixture()[0])
         on_pages = self.build(data)
-        read = [r for r in measurements.aa_records_read(data, self.catalogue(data))[0] if 'page' in r]
+        read = [r for r in measurements.aa_records_read(data, self.catalogue(data), READINGS)[0] if 'page' in r]
         self.assertTrue(read)
         self.assertEqual({sources.base_name(r['name']) for r in read}, {'GPT-6 Astra', 'GPT-6.1 Sol'})
         self.assertNotIn(1.0, [r['intelligenceIndex'] for r in read])      # a comparison record or a table row was read
@@ -935,9 +939,9 @@ class AaReleasePageTests(unittest.TestCase):
                 self.assertTrue(five_axis.source_ages(built, self.now)[page]['missing'])
                 self.assertEqual(row['reason'], {'fetch failed': 'URLError: offline',
                                                  'never fetched': 'not fetched; run `agentcompass data refresh`',
-                                                 'no record of its release': 'the page carries no reading of its release for '
+                                                 'no record of its release': 'the page carries no record of its release for '
                                                                              'gpt-6-astra (no record of the planned base name '
-                                                                             'that the matcher finds for it, or none with a figure)'}[case])
+                                                                             'that the matcher finds for it)'}[case])
                 readings = [e for fields in built['models']['gpt-6-astra'].values() for e in fields
                             if e['source'].startswith(('aa.', 'tier.aa', 'derived.community_mix'))]
                 self.assertEqual(readings, [])
@@ -951,7 +955,7 @@ class AaReleasePageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
             (target / 'aa-models.html').write_text(rsc_page([*leaderboard, *releases]), encoding='utf-8')
-            return measurements.aa_release_plan(target, catalogue)
+            return measurements.aa_release_plan(target, catalogue, READINGS)
 
     def test_the_releases_to_read_are_the_deprecated_ones_a_catalogue_model_is_listed_under(self):
         release = self.release
@@ -974,13 +978,14 @@ class AaReleasePageTests(unittest.TestCase):
         plan, ambiguous = self.plan(releases, catalogue, leaderboard)
         self.assertEqual(ambiguous, {})
         # model-a, model-h, model-g are on the leaderboard (by id, by declared name, by id with another declared name): not read
-        # from a deprecated release; model-b is the only release of its base; a declared listing is a base name, so model-c,
-        # model-c-free and model-f read the most recently released release of their base name; model-d, model-e, retired:
-        # no deprecated release.
-        self.assertEqual(plan, {'model-b': ('model-b', 'Model B'), 'model-c': ('model-c-new', 'Model C'),
-                                'model-c-free': ('model-c-new', 'Model C'), 'model-f': ('model-f-new', 'Model F')})
+        # from a deprecated release; model-b is the only release of its base; a dated release name ("Model C (0902)") is
+        # another snapshot with a base name of its own (sources.base_name keeps the date, round 5 review A), so model-c,
+        # model-c-free and model-f read the undated release of their base name; model-d, model-e, retired: no deprecated
+        # release.
+        self.assertEqual(plan, {'model-b': ('model-b', 'Model B'), 'model-c': ('model-c-old', 'Model C'),
+                                'model-c-free': ('model-c-old', 'Model C'), 'model-f': ('model-f-old', 'Model F')})
         self.assertEqual(measurements.aa_release_files(plan),
-                         {f'aa-release-{s}.html': sources.AA_RELEASE_URL.format(s) for s in ('model-b', 'model-c-new', 'model-f-new')})
+                         {f'aa-release-{s}.html': sources.AA_RELEASE_URL.format(s) for s in ('model-b', 'model-c-old', 'model-f-old')})
 
     def test_the_release_pages_are_listed_in_slug_order_whatever_the_hash_seed(self):
         """The file written from the plan (`release_pages` in public-measurements.json) must not depend on the order a set
@@ -1003,9 +1008,10 @@ class AaReleasePageTests(unittest.TestCase):
 
     def test_releases_of_a_base_name_whose_newest_cannot_be_told_are_ambiguous_not_chosen(self):
         release = self.release
-        releases = [release('x-new', 'Model X', True, [], '2026-09-02'), release('x-old', 'Model X (0803)', True, [], None),
-                    release('y-1', 'Model Y', True, [], '2026-09-02'), release('y-2', 'Model Y (0902)', True, [], '2026-09-02'),
-                    release('z-only', 'Model Z', True, [], None)]           # one release: nothing to choose
+        releases = [release('x-new', 'Model X', True, [], '2026-09-02'), release('x-old', 'Model X', True, [], None),
+                    release('y-1', 'Model Y', True, [], '2026-09-02'), release('y-2', 'Model Y', True, [], '2026-09-02'),
+                    release('z-only', 'Model Z', True, [], None),           # one release: nothing to choose
+                    release('z-dated', 'Model Z (0902)', True, [], '2026-09-02')]     # a dated name: another base name
         plan, ambiguous = self.plan(releases, {'model-x': {}, 'model-y': {}, 'model-z': {}})
         self.assertEqual(plan, {'model-z': ('z-only', 'Model Z')})
         self.assertEqual(set(ambiguous), {'model-x', 'model-y'})
@@ -1027,7 +1033,7 @@ class AaReleasePageTests(unittest.TestCase):
             target, refs = Path(tmp) / 'data', Path(tmp) / 'refs'
             target.mkdir()
             refs.mkdir()
-            (refs / 'accounts.json').write_text(json.dumps({'models': {'model-b': {}}}), encoding='utf-8')
+            (refs / 'accounts.json').write_text(json.dumps({'models': {'model-b': {}}, **ACCOUNT_READINGS}), encoding='utf-8')
             (target / 'aa-models.html').write_text(rsc_page([self.release('model-b', 'Model B', True, [], '2026-09-01')]),
                                                    encoding='utf-8')
             with patch.object(sources, 'fetch') as fetch, patch.object(sources, 'fetch_releases') as fetch_releases:
@@ -1106,10 +1112,13 @@ class AaReleasePageTests(unittest.TestCase):
         # a chosen page's record of a base name the plan did not choose it for (here one the leaderboard carries) is not read
         board = sources.aa_records(data)
         self.rewrite_page(data, 'gpt-6-astra', lambda r: r.update(name=board[0]['name'], intelligenceIndex=1.0))
-        records = measurements.aa_records_read(data, self.catalogue(data))[0]
+        records = measurements.aa_records_read(data, self.catalogue(data), READINGS)[0]
         self.assertEqual([r for r in records if r['name'] == board[0]['name']], [board[0]])
 
-    def test_a_page_with_no_figure_for_its_model_is_surfaced_and_one_with_some_is_not(self):
+    def test_a_page_with_no_figure_for_its_model_is_reported_not_used_and_one_with_some_is_not(self):
+        """Rule (measurements.Builder.release_gaps, round 5): a page that lists the release without any figure is a source
+        not used (its scores come from the declared estimation methods), not a missing one; a page with some figures is
+        read for what it has."""
         data, _ = self.fixture(aa_deprecated=('gpt-6-astra', 'gpt-6.1-sol'))
 
         def emptied(record):
@@ -1125,7 +1134,9 @@ class AaReleasePageTests(unittest.TestCase):
         self.rewrite_page(data, 'gpt-6.1-sol', no_index)
         built = self.build(data)
         empty, partial = (sources.AA_RELEASE_FILE.format(release_slug(m)) for m in ('gpt-6-astra', 'gpt-6.1-sol'))
-        self.assertIn('no reading of its release for gpt-6-astra', built['missing_sources'][empty]['reason'])
+        self.assertEqual(built['missing_sources'][empty]['reason'],
+                         'not used: the page lists the release of gpt-6-astra without a figure; its scores come from the '
+                         'declared estimation methods')
         self.assertNotIn(partial, built['missing_sources'])
         read = lambda model: {e['source'] for fields in built['models'][model].values() for e in fields
                               if e['source'].startswith(('aa.', 'tier.aa'))}
@@ -1207,7 +1218,7 @@ class AaReleasePageTests(unittest.TestCase):
         same release; a release page's records of a base name the plan chose another release for are not read."""
         data, _ = self.fixture(aa_deprecated=('gpt-6-astra',))
         catalogue = {**self.catalogue(data), 'gpt-6-astra-free': {}}
-        plan = measurements.aa_records_read(data, catalogue)[1]
+        plan = measurements.aa_records_read(data, catalogue, READINGS)[1]
         self.assertEqual(plan['gpt-6-astra'], plan['gpt-6-astra-free'])
         built = self.build_with(data, catalogue)
         read = lambda model: {(e['source'], e['listed_as'], e['url']) for fields in built['models'][model].values() for e in fields
@@ -1228,7 +1239,7 @@ class AaReleasePageTests(unittest.TestCase):
                 (target / f'aa-release-{slug}.html').write_text(rsc_page({'models': records}), encoding='utf-8')
                 files[f'aa-release-{slug}.html'] = {'url': 'u', 'fetched_at': '2026-11-18T00:00:00+00:00', 'status': 'ok'}
             (target / sources.MANIFEST).write_text(json.dumps({'files': files}), encoding='utf-8')
-            records, plan, _, _ = measurements.aa_records_read(target, {'b': {}, 'b2': {}})
+            records, plan, _, _ = measurements.aa_records_read(target, {'b': {}, 'b2': {}}, READINGS)
         self.assertEqual(plan, {'b': ('old', 'B'), 'b2': ('new', 'B2')})
         self.assertEqual({(r['name'], r['page']) for r in records if 'page' in r},
                          {('B (High)', 'aa-release-old.html'), ('B2 (High)', 'aa-release-new.html')})
@@ -1257,7 +1268,7 @@ class AaReleasePageTests(unittest.TestCase):
             target, refs = Path(tmp) / 'data', Path(tmp) / 'refs'
             target.mkdir()
             refs.mkdir()
-            (refs / 'accounts.json').write_text(json.dumps({'models': {'new': {}}}), encoding='utf-8')
+            (refs / 'accounts.json').write_text(json.dumps({'models': {'new': {}}, **ACCOUNT_READINGS}), encoding='utf-8')
             (target / old).write_text('an earlier release page', encoding='utf-8')
             (target / 'aa-release-notes.html').write_text('not a page the manifest records', encoding='utf-8')
             row = {'url': 'u', 'fetched_at': '2026-11-01T00:00:00+00:00', 'status': 'ok'}
@@ -1360,7 +1371,7 @@ class AaReleasePageTests(unittest.TestCase):
             (target / 'aa-release-old.html').write_text(rsc_page({'models': records}), encoding='utf-8')
             (target / sources.MANIFEST).write_text(json.dumps({'files': {'aa-release-old.html': {
                 'url': 'u', 'fetched_at': '2026-11-18T00:00:00+00:00', 'status': 'ok'}}}), encoding='utf-8')
-            read, plan, _, _ = measurements.aa_records_read(target, {'b': {}, 'b2': {}})
+            read, plan, _, _ = measurements.aa_records_read(target, {'b': {}, 'b2': {}}, READINGS)
         self.assertEqual(plan, {'b': ('old', 'B'), 'b2': ('old', 'B2')})
         self.assertEqual(sorted(r['name'] for r in read if 'page' in r), ['B (High)', 'B2 (High)'])        # not 'Other'
 

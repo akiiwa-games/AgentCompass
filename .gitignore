@@ -34,6 +34,8 @@
 !/audit/*.py
 !/audit/gateway-coverage-known-gaps.json
 !/audit/gateway-out-of-scope.json
+!/audit/magpie-makers.json
+!/audit/models-dev-names.json
 !/audit/gateway-catalogs/
 !/audit/gateway-catalogs/*.json
 !/audit/calibrate/

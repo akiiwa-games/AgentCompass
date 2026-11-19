@@ -75,7 +75,7 @@ def load_five_axis(path=None):
     return json.loads(target.read_text(encoding='utf-8'))
 
 
-FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/10'
+FIVE_AXIS_SCHEMA = 'agent-compass.five-axis-scores/11'
 
 
 def require_current_schema(data):

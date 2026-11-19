@@ -131,7 +131,7 @@ ARENA_FILE = {**{src: f'{board}.parquet' for src, (board, _) in LMARENA.items()}
               **dict.fromkeys([*AA_SCORE, AA_TTFA], 'aa-models.html')}
 EFFORT_RANK = {e: i for i, e in enumerate(('low', 'medium', 'high', 'xhigh', 'max'))}
 EFFORT_TAG = re.compile(
-    r'^(max|xhigh|high|medium|low|minimal|non-reasoning|none|default|default fallback|with fallback|'
+    r'^(max|xhigh|high|medium|low|minimal|non-reasoning|none|default|[a-z0-9. ]+ fallback|'
     r'thinking|non-thinking|reasoning|instant|thinking\s+\d+k|\d+k|\d{2,4}|\d{6}|\d{8}|'
     r'\d{2,4}-\d{2}(?:-\d{2})?|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4})$'
 )  # an effort, thinking mode, or release date
@@ -150,9 +150,37 @@ def candidates(model):
     return [key(m) for m in out]
 
 
+IDENTITY_KINDS = ('vendor', 'community', 'benchmark')
+
+
+def listed_as_identity(models):
+    """Refuse a `listed_as` name a row is not listed under by its own spelling (`candidates`: its id, without an effort,
+    free-listing, preview or `-1.0` suffix) unless `listed_as_source[board]` cites the public statement that the listed
+    name is that model (an identity statement as for an alias: kind vendor, community or benchmark, https url, as_of,
+    statement). A dated maintainer declaration is no statement of identity (round 5 review A)."""
+    bad = []
+    for m, row in sorted(models.items()):
+        for board, name in sorted((row.get('listed_as') or {}).items()):
+            if key(sources.base_name(name)) in candidates(m):
+                continue
+            cite = (row.get('listed_as_source') or {}).get(board) or {}
+            if not (cite.get('kind') in IDENTITY_KINDS and str(cite.get('url') or '').startswith('https://')
+                    and re.match(r'^\d{4}-\d{2}-\d{2}$', str(cite.get('as_of') or ''))
+                    and str(cite.get('statement') or '').strip()):
+                bad.append(f'{m} ({board}: {name!r})')
+        extra = sorted(set(row.get('listed_as_source') or {}) - set(row.get('listed_as') or {}))
+        if extra:
+            bad.append(f'{m} (listed_as_source for {", ".join(extra)} without a listed_as)')
+    if bad:
+        raise ValueError('accounts.json listed_as under another name needs listed_as_source with the public statement '
+                         'that the listed name is that model: ' + '; '.join(bad))
+
+
 class Matcher:
     def __init__(self, names, strip=None):
-        self.by_key, dated = {}, {}
+        # A dated listing is found only under its own name with the date (sources.base_name keeps a date tag), never
+        # under the name without it: a row never reads a snapshot it does not name (round 5 review A).
+        self.by_key = {}
         for n in names:
             base = sources.base_name(n)
             s = strip(base) if strip else base
@@ -160,13 +188,6 @@ class Matcher:
                 k = key(raw)
                 if k:
                     self.by_key.setdefault(k, n)
-            m = re.match(r'^(.*?)[-\s]+(\d{8}|\d{4})$', str(s).strip())
-            if m:
-                dk = key(m.group(1))
-                if dk and (dk not in dated or m.group(2) > dated[dk][0]):
-                    dated[dk] = (m.group(2), n)
-        for dk, (_, n) in dated.items():
-            self.by_key.setdefault(dk, n)
 
     def find(self, model, explicit=None):
         if explicit:
@@ -174,42 +195,55 @@ class Matcher:
         return next((self.by_key[k] for k in candidates(model) if k in self.by_key), None)
 
 
-def aa_variants(records):
-    """{base name: {effort: record}} for AA listings whose variant tag is an effort or a date only."""
-    out = {}
+def aa_variants(records, readings):
+    """{base name: {effort: record}} for AA listings whose variant tag is an effort, a reasoning label (read as
+    `readings`, accounts.json effort_readings, declares: sources.aa_effort) or a date only; of several listings read at one
+    effort, the one `sources.listing_rank` prefers (the later on a tie)."""
+    out, rank = {}, {}
     for rec in records:
         tag = sources.variant(rec['name'])
         parts = [p.strip().lower() for p in tag.split(',') if p.strip()]
-        allowed = all(p in sources.EFFORT_WORDS or p in ('default fallback', 'with fallback') or re.fullmatch(r'\d{4}', p)
-                      for p in parts)
-        if not allowed:
+        # A part ending in "fallback" is AA's note of the model its harness falls back to on a refusal (a serving
+        # configuration of the release it measured), not an effort.
+        allowed = all(p in sources.EFFORT_WORDS or p in readings['labels'] or p.endswith(' fallback')
+                      or re.fullmatch(r'\d{4}', p) for p in parts)
+        r = sources.listing_rank(rec['name'], readings) if allowed else None
+        if r is None:
             continue
-        out.setdefault(sources.base_name(rec['name']), {})[sources.aa_effort(rec['name'])] = rec
+        at = (sources.base_name(rec['name']), sources.aa_effort(rec['name'], readings))
+        if at in rank and rank[at] < r:
+            continue
+        rank[at] = r
+        out.setdefault(at[0], {})[at[1]] = rec
     return out
 
 
-def aa_release_plan(target, models):
+def aa_release_plan(target, models, readings):
     """({model: (release slug, base name)}, {model: why no release can be chosen}): the Artificial Analysis release each
     catalogue model is read from. The leaderboard page embeds records only for releases AA does not mark deprecated, and
     names a deprecated release without records. A catalogue model that no leaderboard record matches, but that a
     deprecated release is listed under, is read from that release's own page: the same matcher and `listed_as` as every
-    board, over the base names of the release's listings (`modelNames`, else its name; a listing's variant tag, such as
-    a date, is not part of its base name, so a declared `listed_as` is a base name). When several deprecated releases
+    board, over the base names of the release's listings (`modelNames`, else its name; an effort tag is not part of a
+    base name, a date tag is: sources.base_name, another snapshot). When several deprecated releases
     list a base name, the most recently released one is chosen: the choice depends on the base name alone, so every
     model of a base name reads the same release. Releases without a `releaseDate`, or sharing the newest one, leave the
     choice ambiguous: the model is returned in the second dict and has no release."""
-    on_page = Matcher(aa_variants(sources.aa_records(target)))
+    on_page = Matcher(aa_variants(sources.aa_records(target), readings))
     listed = {}     # base name -> {slug: releaseDate}
     for release in sources.aa_releases(target):
         if release.get('deprecated') is True:
             for listing in release.get('modelNames') or [release['name']]:
                 listed.setdefault(sources.base_name(listing), {})[release['slug']] = release.get('releaseDate')
     off_page = Matcher(listed)
+    exact = {key(b) for b in listed}
     models = {m: row for m, row in models.items() if isinstance(row, dict)}     # accounts.json `models` holds notes too
     plan, ambiguous = {}, {}
     for model in models:
         exp = tiers.listed_as(models, model, 'aa')
-        if on_page.find(model, exp) or (exp and on_page.find(model)):
+        found = on_page.find(model, exp) or (exp and on_page.find(model))
+        # A declared listing a deprecated release names exactly is that release, not a dated listing of another release
+        # the date fallback of the leaderboard's names reaches (DeepSeek V4.1 Flash beside DeepSeek V4.1 Flash 1017).
+        if found and not (exp and key(exp) in exact and key(sources.base_name(found)) != key(exp)):
             continue
         base = off_page.find(model, exp) or (off_page.find(model) if exp else None)
         if not base:
@@ -232,13 +266,13 @@ def aa_release_files(plan):
             for slug in sorted({slug for slug, _ in plan.values()})}
 
 
-def aa_records_read(target, models):
+def aa_records_read(target, models, readings):
     """(records, plan, ambiguous, errors) of the Artificial Analysis records the pipeline reads: the leaderboard page's,
     then those of the release pages `aa_release_plan` chose and the manifest lists as fetched, in every mode (a page
     the plan does not choose is never read, whatever the data directory holds). Of a page only the records of the base
     names the plan chose that release for are kept, so a base name has the records of one release. `errors` is
     `sources.aa_release_records`'."""
-    plan, ambiguous = aa_release_plan(target, models)
+    plan, ambiguous = aa_release_plan(target, models, readings)
     pages, errors = sources.aa_release_records(target, aa_release_files(plan))
     chosen = {}
     for slug, base in plan.values():
@@ -251,6 +285,7 @@ class Builder:
     def __init__(self, target, acc, now=None):
         self.target, self.acc, self.now = target, acc, now
         self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
+        listed_as_identity(self.models)
         anchor, self.panel_ids, self.anchor_name = tiers.panel(acc)
         self.members = list(acc['calibration_panel']['members'])
         if anchor != ANCHOR:
@@ -260,7 +295,9 @@ class Builder:
         self.source_rows, self.out, self.names = {}, {m: {} for m in self.models}, {m: {} for m in self.models}
         self.missing = {}
         self.checks = []
-        self.aa_records, self.release_plan, self.release_ambiguous, self.release_errors = aa_records_read(target, self.models)
+        self.readings = sources.effort_readings(acc)
+        self.aa_records, self.release_plan, self.release_ambiguous, self.release_errors = aa_records_read(
+            target, self.models, self.readings)
         self.release_files = aa_release_files(self.release_plan)
 
     def ok(self, filename):
@@ -311,8 +348,8 @@ class Builder:
         is a missing manifest row, surfaced with its error by `build`."""
         for model, why in self.release_ambiguous.items():
             self.miss(f'aa.release/{model}', 'aa-models.html', why)
-        variants = aa_variants(self.aa_records)
-        found, empty, wrong = Matcher(variants), {}, {}
+        variants = aa_variants(self.aa_records, self.readings)
+        found, empty, bare, wrong = Matcher(variants), {}, {}, {}
         for model, (slug, planned) in self.release_plan.items():
             name, url = sources.AA_RELEASE_FILE.format(slug), sources.AA_RELEASE_URL.format(slug)
             row = self.manifest.get(name)
@@ -326,17 +363,23 @@ class Builder:
                 if base and base != planned:
                     wrong.setdefault((name, url), []).append(f'{model} resolves to {base!r}, not {planned!r}, the base name '
                                                              'the plan chose it for on this page')
-                elif not base or not any(sources.aa_has_figure(r) for r in variants[base].values()):
+                elif not base:
                     empty.setdefault((name, url), []).append(model)
+                elif not any(sources.aa_has_figure(r) for r in variants[base].values()):
+                    bare.setdefault((name, url), []).append(model)
+        for key_, ms in sorted(bare.items()):
+            if key_ not in empty and key_ not in wrong:     # the board lists the release and publishes no figure for it
+                self.miss(key_[0], key_[0], f'not used: the page lists the release of {", ".join(ms)} without a figure; '
+                          'its scores come from the declared estimation methods', key_[1])
         for key_ in sorted({*empty, *wrong}, key=lambda page: page[0]):   # a set's order differs between runs
             reasons = [*wrong.get(key_, ())]
             if key_ in empty:
-                reasons.append(f'the page carries no reading of its release for {", ".join(empty[key_])} (no record of the '
-                               'planned base name that the matcher finds for it, or none with a figure)')
+                reasons.append(f'the page carries no record of its release for {", ".join(empty[key_])} (no record of the '
+                               'planned base name that the matcher finds for it)')
             self.miss(key_[0], key_[0], '; '.join(reasons), key_[1])
 
     @staticmethod
-    def select_variants(items):
+    def select_variants(items, readings):
         """Group `(listed_name, value, extra)` rows by base model name; select the model's own High row (never xHigh/Max
         when High is listed; else an effort-less listing; else the effort nearest High) and keep multi-effort maps."""
         grouped = {}
@@ -356,7 +399,7 @@ class Builder:
                 continue
             vals = {}
             for ln, val, ext in valid:
-                eff = sources.aa_effort(ln) or 'default'
+                eff = sources.aa_effort(ln, readings) or 'default'
                 tag = sources.variant(ln)
                 date_m = re.search(r'(\d{8}|\d{6}|\d{4}-\d{2}-\d{2}|\d{4})', tag)
                 date_key = date_m.group(1).replace('-', '') if date_m else ''
@@ -386,9 +429,8 @@ class Builder:
             if not self.ok(ARENA_FILE[src]):
                 self.miss(src, ARENA_FILE[src], 'not fetched'); continue
             rows = sources.arena_rows(t, board, cat)
-            brd, lst, ext, by_eff = self.select_variants(
-                (r[3], r[0], {'ci': [round(r[1], 1), round(r[2], 1)]}) for r in rows
-            )
+            brd, lst, ext, by_eff = self.select_variants((
+                (r[3], r[0], {'ci': [round(r[1], 1), round(r[2], 1)]}) for r in rows), self.readings)
             out[src] = {'board': brd, 'as_of': rows[0][4] if rows else None,
                         'method': f'LMArena {board}/{cat} rating, High row (else effort-less or nearest effort)',
                         'strip': None, 'listed': lst, 'extra': ext,
@@ -400,9 +442,8 @@ class Builder:
                 self.miss(src, arena_capture.FILES[kind], f'not captured: transcribe {arena_capture.URLS[kind]}'
                           + (f' ({category})' if category else '') + ' in the browser and run arena_capture.py import')
                 continue
-            brd, lst, ext, by_eff = self.select_variants(
-                (r['name'], value(r), {}) for r in page['rows'] if r.get('name')
-            )
+            brd, lst, ext, by_eff = self.select_variants((
+                (r['name'], value(r), {}) for r in page['rows'] if r.get('name')), self.readings)
             out[src] = {'board': brd, 'as_of': page['as_of'],
                         'method': f'{method}; transcribed {(doc or {}).get("captured_at", "")[:10]} by {(doc or {}).get("transcribed_by")}'
                                   + (f'; {page["sign_rule"]}' if page.get('sign_rule') else ''),
@@ -414,9 +455,8 @@ class Builder:
             rows = sources.designarena(t, filename)
             if not rows:
                 self.miss(src, filename, 'the page carries no main board rows'); continue
-            brd, lst, ext, by_eff = self.select_variants(
-                (r['name'], r['rating'], {'battles': r['battles'], 'designarena_id': mid}) for mid, r in rows.items()
-            )
+            brd, lst, ext, by_eff = self.select_variants((
+                (r['name'], r['rating'], {'battles': r['battles'], 'designarena_id': mid}) for mid, r in rows.items()), self.readings)
             out[src] = {'board': brd, 'as_of': None,
                         'method': (f'Design Arena {sources.DESIGN_ARENA[filename][1]} board (main public board): Bradley-Terry '
                                    'rating of blind human pairwise votes, High row (else nearest effort); no standard error published'),
@@ -464,7 +504,7 @@ class Builder:
 
     def aa_variants(self):
         """{base name: {effort: record}} for AA listings whose variant tag is an effort or a date only."""
-        return aa_variants(self.aa_records)
+        return aa_variants(self.aa_records, self.readings)
 
     def capabilities(self):
         boards, raw, names = self.boards(), {}, {}
@@ -500,7 +540,7 @@ class Builder:
                     extra['z_by_effort'] = {e: round((v - sc['anchor_raw']) / sc['sd'], 4) for e, v in b['by_effort'][name].items()}
                     extra['raw_by_effort'] = b['by_effort'][name]
                 if not src.startswith('aa.'):
-                    extra['listed_effort'] = sources.aa_effort(listed) or None
+                    extra['listed_effort'] = sources.aa_effort(listed, self.readings) or None
                 self.names[model][src] = name
                 self.add(model, axis, src, round((x - sc['anchor_raw']) / sc['sd'], 4), f"{b['method']}; {how}",
                          facet=facet, listed_as=listed, raw=round(x, 6), **extra)
@@ -642,7 +682,7 @@ class Builder:
     # --- tier -------------------------------------------------------------------------------------
     def tier(self):
         """The tier entries (module docstring): arena.ai Overall at High, else AA Intelligence Index at High."""
-        fitter = tiers.Fitter(self.target, self.anchor_name, self.aa_records)
+        fitter = tiers.Fitter(self.target, self.anchor_name, self.aa_records, self.readings)
         overall = fitter.overall
         as_of = max(r[4] for r in overall.values())
         self.register('tier.arena_overall', 'text_style_control.parquet', as_of,
@@ -673,6 +713,7 @@ class Builder:
                                  f"between {r['neighbours']['below']['models']} and {r['neighbours']['above']['models']} "
                                  f"of the {r['n']} models listed at High on both boards",
                                  listed_as=r['listed_as'], board_value=r['value'], neighbours=r['neighbours'], n=r['n'],
+                                 fit=r['fit'], residual_sd=r['residual_sd'], loo_rmse=r['loo_rmse'], status=r['status'],
                                  **self.cite(release_rec.get(aa_found, {})))
 
     # --- price and usd per hour ------------------------------------------------------------------
@@ -783,7 +824,7 @@ class Builder:
                 t = r.get('time_per_task_min')
                 tok = r.get('output_tokens_per_task')
                 if isinstance(t, (int, float)) and t > 0:
-                    eff = sources.aa_effort(r['name']) or 'default'
+                    eff = sources.aa_effort(r['name'], self.readings) or 'default'
                     self.add(model, 'throughput', 'arena.agent_sessions', round(t, 2),
                              'arena.ai Agent / Overall: Time/Task (P50) min and Output Tokens/Task (P50)',
                              effort=eff, listed_as=r['name'], time_per_task_min=round(t, 2),
@@ -800,7 +841,7 @@ class Builder:
             for r in priced[base]:
                 c, t = r['cost_per_task_usd'], r['time_per_task_min']
                 tok = r.get('output_tokens_per_task')
-                eff = sources.aa_effort(r['name']) or 'default'
+                eff = sources.aa_effort(r['name'], self.readings) or 'default'
                 self.add(model, 'usd_per_hour', 'arena.agent_sessions', round(c * 60.0 / t, 3),
                          'arena.ai Agent / Overall: Cost/Task (P50) / Time/Task (P50) x 60',
                          effort=eff, listed_as=r['name'], cost_per_task_usd=round(c, 4),

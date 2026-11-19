@@ -310,7 +310,7 @@ def fetch_sources(target, references=None):
     ref_dir = Path(references) if references is not None else (sources.REPO / 'references')
     acc = json.loads((ref_dir / 'accounts.json').read_text(encoding='utf-8-sig'))
     sources.fetch(target)
-    sources.fetch_releases(target, measurements.aa_release_files(measurements.aa_release_plan(target, acc['models'])[0]))
+    sources.fetch_releases(target, measurements.aa_release_files(measurements.aa_release_plan(target, acc['models'], sources.effort_readings(acc))[0]))
 
 
 def rebuild(target, now=None, references=None, distrust=(), meas_out=None, scores_out=None, accept_panel_change=False,

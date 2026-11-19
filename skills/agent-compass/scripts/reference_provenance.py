@@ -102,6 +102,16 @@ def _validate_cited_tables(doc):
         'dispatch_efforts_sources': {f'{h}/{m}': (e, m in (launch.get(h) or {}))
                                      for h, per in rows('dispatch_efforts_sources').items() for m, e in per.items()},
     }
+    # A dated maintainer declaration is no statement of identity: it stands only for a shorthand, the maintainer's short
+    # name for a row (`shorthand: true`, "short name for <row>"); an identity alias cites a public page (round 5 review A).
+    aliases = doc.get('aliases') or {}
+    wrong = sorted(k for k, e in rows('alias_sources').items() if isinstance(e, dict) and k in aliases and (
+        (e.get('kind') == 'maintainer') != (e.get('shorthand') is True)
+        or (e.get('shorthand') is True and f'short name for {aliases[k]}' not in str(e.get('statement') or ''))
+        or (e.get('shorthand') is not True and not str(e.get('url') or '').startswith('https://'))))
+    if wrong:
+        raise ValueError('accounts.json alias_sources: a maintainer row is a shorthand (shorthand: true, "short name for '
+                         f'<row>") and every other alias cites a public https page: {", ".join(wrong)}')
     uncited = sorted(set(doc.get('aliases') or {}) - set(rows('alias_sources')))
     if uncited:
         raise ValueError('accounts.json aliases need their public statement in alias_sources (a vendor statement, a cited '

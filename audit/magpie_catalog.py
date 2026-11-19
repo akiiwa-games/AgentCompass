@@ -26,10 +26,18 @@ at a maker (`KinEfforts`), else the same without a proxy's level or speed suffix
 Magpie also matches other spellings (`SameModel`, renames, user statements); those are not mirrored, so such a row may read
 null here where Magpie lists efforts.
 
-`gate.providers` (the coverage check gates only these rows; the rest of the catalog is a report) is Magpie's own set of
-makers, `makerCatalogs` in `internal/provider/models.go`: the presets of `Kind: KindVendor` ("the model's own maker") that
-are not `Hosts` ("a vendor serving other makers' models as well as its own ... whose list is no maker's word on theirs"),
-and the accounts whose list the source fixes (`account:claude`, `account:gemini-cli`, `account:antigravity`).
+The gate is decided per pair (review 2026-11-19): a row is gated when its model's maker is its provider's maker, and is a
+report otherwise. A model's maker (`maker` on the row) is read from the bundled models.dev snapshot: the namespace of the
+listing's `canonical_model_id` (`anthropic/claude-...` -> `anthropic`); a listing without one, on a models.dev provider
+whose id is itself such a namespace, is that provider's own model; a row no listing gives a maker for takes the one maker
+the snapshot's listings of the same id (then of the same bare id) agree on, else none (`null`, a report). A provider's
+maker (`gate.makers`) is declared in `audit/magpie-makers.json`, each entry with the Magpie source line it reads (a vendor
+preset's `Name`, the accounts' lists); a relay, local or remote preset has none.
+
+It also writes `audit/models-dev-names.json` (schema `agent-compass.models-dev-names/1`): for every alias name and alias
+target of the shipped `accounts.json`, each listing of that exact id in the bundled snapshot as `[provider, canonical id,
+input price, output price]` (the canonical id is the listing's `canonical_model_id`, else `<provider>/<id>` on a provider
+whose id is a maker namespace, else null). audit/gateway_coverage.py checks the aliases against it.
 """
 from __future__ import annotations
 
@@ -42,9 +50,13 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-SCHEMA = 'agent-compass.gateway-catalog/2'
-ACCOUNTS = ('account:antigravity', 'account:claude', 'account:gemini-cli')
+SCHEMA = 'agent-compass.gateway-catalog/3'
+MAKERS_SCHEMA = 'agent-compass.magpie-makers/1'
+NAMES_SCHEMA = 'agent-compass.models-dev-names/1'
 OUT_DIR = Path(__file__).resolve().parent / 'gateway-catalogs'
+MAKERS = Path(__file__).resolve().parent / 'magpie-makers.json'
+NAMES = Path(__file__).resolve().parent / 'models-dev-names.json'
+ACCOUNTS = Path(__file__).resolve().parents[1] / 'skills' / 'agent-compass' / 'references' / 'accounts.json'
 
 
 def line_of(text, idx):
@@ -215,9 +227,35 @@ class Snapshot:
         self.most = {k: min(v.items(), key=lambda kv: (-kv[1], kv[0].count(','), kv[0]))[0].split(',')
                      for k, v in votes.items()}
 
+        # the maker namespaces: the part of every canonical id before its slash
+        self.namespaces = {m['canonical_model_id'].split('/')[0] for p in self.all.values()
+                           for m in p.get('models', {}).values() if m.get('canonical_model_id')}
+        self.makers_by = {}     # {('id' | 'bare', name): {maker}} over the listings whose maker is known
+        for pid in sorted(self.all):
+            for mid, m in self.all[pid].get('models', {}).items():
+                k = self.listing_maker(pid, m)
+                if k:
+                    self.makers_by.setdefault(('id', mid), set()).add(k)
+                    self.makers_by.setdefault(('bare', self.bare(mid)), set()).add(k)
+
     @staticmethod
     def bare(mid):
         return mid.lower().rsplit('/', 1)[-1]
+
+    def listing_maker(self, pid, m):
+        """The maker of one models.dev listing: its canonical id's namespace, else the provider when the provider's id is
+        itself a namespace (the maker's own listing), else None."""
+        if m.get('canonical_model_id'):
+            return m['canonical_model_id'].split('/')[0]
+        return pid if pid in self.namespaces else None
+
+    def maker_of(self, mid):
+        """The one maker the snapshot's listings of `mid` (then of its bare id) agree on, else None."""
+        for k in (('id', mid), ('bare', self.bare(mid))):
+            found = self.makers_by.get(k) or set()
+            if found:
+                return next(iter(found)) if len(found) == 1 else None
+        return None
 
     def efforts(self, m, pid=''):
         out, toggle = [], False
@@ -265,7 +303,8 @@ class Snapshot:
 
     def provider(self, pid):
         p = self.all.get(pid) or {}
-        return sorted((m['id'], self.levels(pid, m)) for m in p.get('models', {}).values() if self.text_model(m))
+        return sorted((m['id'], self.levels(pid, m), self.listing_maker(pid, m) or self.maker_of(m['id']))
+                      for m in p.get('models', {}).values() if self.text_model(m))
 
     def listed_by(self, makers, mid):
         b = self.bare(mid)
@@ -330,30 +369,45 @@ class Snapshot:
         return []
 
 
-def build(src, version, commit):
+def provider_makers(path, offered, vendors):
+    """{provider: maker} from the declared makers file: every vendor preset and account that offers rows has an entry
+    {maker, source, reads} naming the Magpie source line it reads; a maker is a namespace or null."""
+    doc = json.loads(Path(path).read_text(encoding='utf-8'))
+    if doc.get('schema') != MAKERS_SCHEMA or not isinstance(doc.get('makers'), dict):
+        raise SystemExit(f'{path}: not a {MAKERS_SCHEMA} document with makers')
+    need_ = sorted(p for p in offered if p in vendors or p.startswith('account:'))
+    lacking = [p for p in need_ if p not in doc['makers']]
+    bad = [p for p, e in doc['makers'].items() if not isinstance(e, dict) or set(e) != {'maker', 'source', 'reads'}
+           or not re.match(r'^internal/[\w/]+\.go:\d+$', str(e.get('source')))]
+    if lacking or bad:
+        raise SystemExit(f'{path}: no entry for {lacking}; entries without {{maker, source, reads}}: {bad}')
+    return {p: doc['makers'][p]['maker'] for p in need_}
+
+
+def build(src, version, commit, makers_path=MAKERS):
     rules = Rules(src)
     snap = Snapshot(src, rules)
     ps = presets(src)
     makers = list(dict.fromkeys(c for p in ps if p['kind'] == 'vendor' and not p['hosts'] for c in p['catalogs']))
-    rows = {}
+    rows, maker = {}, {}
 
-    def add(provider, model, efforts):
+    def add(provider, model, efforts, by):
         rows.setdefault((provider, model), efforts or None)
+        if maker.get((provider, model)) is None:
+            maker[(provider, model)] = by
 
     for p in ps:
         for mid, _ in p['models']:
-            add(p['id'], mid, snap.borrowed(makers, mid))
+            add(p['id'], mid, snap.borrowed(makers, mid), snap.maker_of(mid))
         for c in p['catalogs']:
-            for mid, e in snap.provider(c):
-                add(p['id'], mid, e)
-    for mid, e in snap.provider('anthropic'):
-        add('account:claude', mid, e)
+            for mid, e, by in snap.provider(c):
+                add(p['id'], mid, e, by)
+    for mid, e, by in snap.provider('anthropic'):
+        add('account:claude', mid, e, by)
     for var, account in (('geminiModels', 'account:gemini-cli'), ('antigravityModels', 'account:antigravity')):
         for mid in go_list(src, 'internal/provider/google.go', var):
-            add(account, mid, snap.borrowed(makers, mid))
-    present = {p for p, _ in rows}
-    gate = sorted({p['id'] for p in ps if p['kind'] == 'vendor' and not p['hosts']} & present) + \
-        [a for a in ACCOUNTS if a in present]
+            add(account, mid, snap.borrowed(makers, mid), snap.maker_of(mid))
+    gate = provider_makers(makers_path, {p for p, _ in rows}, {p['id'] for p in ps if p['kind'] == 'vendor'})
     bundled = need(r'bundledAt = time\.Date\(([^)]*)\)', (src / 'internal/catalog/bundled.go').read_text(encoding='utf-8'),
                    'bundled.go').group(1)
     return {
@@ -366,12 +420,43 @@ def build(src, version, commit):
                       "Claude and Google accounts), reduced to provider, model and the efforts Magpie offers; built by "
                       "audit/magpie_catalog.py, nothing of an install is kept"),
         'provider_kind': 'magpie_preset',
-        'gate': {'providers': gate,
-                 'statement': ("Magpie's own makers (internal/provider/models.go makerCatalogs: presets of Kind vendor, "
-                               "\"the model's own maker\", without Hosts) and the accounts whose list the source fixes; "
-                               "owner 2026-11-18: only this first-party tier is gated, the rest is a report")},
-        'rows': [{'provider': p, 'model': m, 'efforts': e} for (p, m), e in sorted(rows.items())],
+        'gate': {'makers': gate,
+                 'statement': ("a (provider, model) pair is gated when the model's maker (`maker`: the models.dev "
+                               "canonical_model_id namespace) is the provider's maker (`makers`, declared with its Magpie "
+                               "source line in audit/magpie-makers.json); every other pair is a report (owner 2026-11-18: "
+                               "only first-party is gated; per pair, review 2026-11-19)")},
+        'rows': [{'provider': p, 'model': m, 'efforts': e, 'maker': maker[(p, m)]} for (p, m), e in sorted(rows.items())],
     }
+
+
+def names(src, version, commit, accounts):
+    """The models.dev listings of every alias name and target of `accounts` (see the module text)."""
+    snap = Snapshot(src, Rules(src))
+    aliases = accounts.get('aliases') or {}
+    out = {n: [] for n in sorted(set(aliases) | set(aliases.values()))}
+    for pid in sorted(snap.all):
+        for mid, m in sorted(snap.all[pid].get('models', {}).items()):
+            if mid in out:
+                cost = m.get('cost') or {}
+                canon = m.get('canonical_model_id') or (f'{pid}/{mid}' if pid in snap.namespaces else None)
+                out[mid].append([pid, canon, cost.get('input'), cost.get('output')])
+    bundled = need(r'bundledAt = time\.Date\(([^)]*)\)', (src / 'internal/catalog/bundled.go').read_text(encoding='utf-8'),
+                   'bundled.go').group(1)
+    return {'schema': NAMES_SCHEMA,
+            'source': {'repository': 'https://github.com/yetone/magpie', 'version': version, 'commit': commit,
+                       'models_dev_bundled_at': re.sub(r'\s+', ' ', bundled)},
+            'statement': ("every listing of each alias name and alias target of accounts.json in the models.dev snapshot "
+                          "Magpie bundles, as [provider, canonical id, input price, output price]; built by "
+                          "audit/magpie_catalog.py, read by audit/gateway_coverage.py's alias check"),
+            'names': out}
+
+
+def dumps_names(doc):
+    """The names document with one name per line: stable bytes for a stable input."""
+    head = {k: v for k, v in doc.items() if k != 'names'}
+    text = json.dumps(head, indent=1, ensure_ascii=False)[:-2]
+    rows = ',\n'.join(f'  {json.dumps(k, ensure_ascii=False)}: {json.dumps(v, ensure_ascii=False)}' for k, v in doc['names'].items())
+    return f'{text},\n "names": {{\n{rows}\n }}\n}}\n'
 
 
 def dumps(doc):
@@ -392,15 +477,21 @@ def main(argv=None):
     ap.add_argument('--version', help='default: the checkout\'s tag without its leading v')
     ap.add_argument('--commit', help='default: the checkout\'s HEAD')
     ap.add_argument('--out', help='default: audit/gateway-catalogs/magpie-<version>.json')
+    ap.add_argument('--names-out', default=str(NAMES), help='default: audit/models-dev-names.json')
+    ap.add_argument('--makers', default=str(MAKERS), help='default: audit/magpie-makers.json')
     args = ap.parse_args(argv)
     src = Path(args.checkout)
     version = args.version or git(src, 'describe', '--tags', '--exact-match').removeprefix('v')
     commit = args.commit or git(src, 'rev-parse', 'HEAD')
-    doc = build(src, version, commit)
+    doc = build(src, version, commit, args.makers)
     out = Path(args.out) if args.out else OUT_DIR / f'magpie-{version}.json'
     out.write_text(dumps(doc), encoding='utf-8', newline='\n')
+    listed = names(src, version, commit, json.loads(ACCOUNTS.read_text(encoding='utf-8')))
+    Path(args.names_out).write_text(dumps_names(listed), encoding='utf-8', newline='\n')
+    print(f"{args.names_out}: {len(listed['names'])} alias names and targets, "
+          f"{sum(1 for v in listed['names'].values() if v)} listed by models.dev")
     print(f"{out}: {len(doc['rows'])} rows, {sum(1 for r in doc['rows'] if r['efforts'])} with efforts, "
-          f"{len(doc['gate']['providers'])} gated providers")
+          f"{sum(1 for r in doc['rows'] if r['maker'] and doc['gate']['makers'].get(r['provider']) == r['maker'])} gated")
     return 0
 
 

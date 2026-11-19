@@ -23,11 +23,11 @@ url): the declared model is that row's base before any other sibling, and the ro
 categories the row lists under `carries`; a category it does not list is the channel's own and stays missing (a
 property of the channel, not of the model behind it).
 
-The base for a score is the sibling that carries a direct value for it, nearest on a public reading both rows actually
-have: the AA Intelligence Index when both have it; else the cited board readings both have on the five-axis component
-dimensions (public-measurements `axes`; every such value is on the one anchor-relative scale, `conversion`), by the
-mean absolute difference over those shared boards; only when the two share no reading at all, nearest on the tier
-(tiers.py, the arena.ai Overall position). The key breaks ties.
+The base for a score is the sibling that carries a direct value for it, nearest by the declared version distance
+(accounts.json `series_versions`: how many distinct declared versions of the series lie between the two, 0 the same
+version; a row without a declared version ranks after every declared distance), then by size equality (the `families`
+size class); relatives still tied form one group whose estimates the caller takes the median of. A name never decides
+(round 5 review D: an alphabetical tie-break moved estimates by whole levels when a row was added).
 """
 import sys
 
@@ -117,22 +117,28 @@ def boards(meas):
     return out
 
 
-def nearest(target, candidates, index, board, tier, same=None):
-    """`candidates` in base order (see the module docstring). `index`/`tier`: {key: value}; `board`: `boards(meas)`;
-    `same`: `same_model(acc)`, whose declared model for `target` comes first."""
-    own = board.get(target) or {}
-    declared = ((same or {}).get(target) or {}).get('model')
+def versions(acc):
+    """{row: declared version number} (accounts.json `series_versions`)."""
+    return dict(((acc.get('series_versions') or {}).get('versions') or {}))
 
-    def key(c):
-        if c == declared:
-            return -1, 0.0, c
-        if index.get(target) is not None and index.get(c) is not None:
-            return 0, abs(index[target] - index[c]), c
-        theirs = board.get(c) or {}
-        shared = sorted(set(own) & set(theirs))
-        if shared:
-            return 1, sum(abs(own[s] - theirs[s]) for s in shared) / len(shared), c
-        if isinstance(tier.get(target), (int, float)) and isinstance(tier.get(c), (int, float)):
-            return 2, abs(tier[target] - tier[c]), c
-        return 3, 0.0, c
-    return sorted(candidates, key=key)
+
+def distance(target, other, series_rows, declared):
+    """The version distance of `other` from `target` within the series `series_rows` (target's siblings): the steps
+    between their ranks among the series' distinct declared versions; None when either has no declared version."""
+    if target not in declared or other not in declared:
+        return None
+    ladder = sorted({declared[x] for x in (target, *series_rows) if x in declared})
+    return abs(ladder.index(declared[target]) - ladder.index(declared[other]))
+
+
+def nearest(target, candidates, series_rows, declared, small, same=None):
+    """[(version distance, [tied candidates])], nearest first (see the module docstring). `series_rows`: the target's
+    siblings; `declared`: `versions(acc)`; `small`: `small_rows(acc)`; `same`: `same_model(acc)`, whose declared model
+    for `target` comes first, alone. Candidates with one key form one group, in no order a name decides."""
+    model = ((same or {}).get(target) or {}).get('model')
+    groups = {}
+    for c in candidates:
+        d = distance(target, c, series_rows, declared)
+        k = (-1, 0, 0) if c == model else (0 if d is not None else 1, d or 0, int((c in small) != (target in small)))
+        groups.setdefault(k, []).append(c)
+    return [(None if k[0] > 0 else 0 if k[0] < 0 else k[1], sorted(v)) for k, v in sorted(groups.items())]

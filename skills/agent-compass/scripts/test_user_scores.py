@@ -308,7 +308,10 @@ class FixRoundRegressionTests(unittest.TestCase):
         }
         rows, _, _, _, _, _ = fa.Scorer({'panel': {'models': panel}, 'models': models},
                                         {'models': {m: {} for m in models}, 'families': {'rows': []},
-                                         'effort_readings': {'reads': {'default': 'high'}}}).score()
+                                         'effort_readings': {'reads': {'default': 'high'}},
+                                         'estimation_order': {'order': list(fa.ESTIMATION_ORDER),
+                                                              'sibling_first_up_to_distance': 1,
+                                                              'evidence': 'synthetic'}}).score()
         self.assertIsNone(rows['partial_coder']['axes']['coding']['value'])
         self.assertEqual(rows['partial_coder']['axes']['coding']['missing_facets'], ['faithfulness'])
         self.assertEqual(rows['partial_coder']['axes']['tool_operation']['by_level']['2']['by_effort']['high'], 0.2)
@@ -352,7 +355,9 @@ class FixRoundRegressionTests(unittest.TestCase):
             ('GPT-6 Astra (Low)', 42.0, {}),
             ('Claude Opus 5.5 (High)', 56.0, {}),
         ]
-        high, names, _, variants = ms.Builder.select_variants(items)
+        readings = cal['sources'].effort_readings({'effort_readings': {
+            'labels': {'non-reasoning': 'none', 'reasoning': 'default'}, 'reads': {'default': 'high'}}})
+        high, names, _, variants = ms.Builder.select_variants(items, readings)
         self.assertEqual(high['GPT-6 Astra'], 55.0)
         self.assertEqual(names['GPT-6 Astra'], 'GPT-6 Astra (High)')
         self.assertEqual(variants['GPT-6 Astra']['xhigh'], 59.0)
@@ -364,12 +369,14 @@ class FixRoundRegressionTests(unittest.TestCase):
         self.assertGreater(corrs['lmarena.creative_writing']['r'], 0.5)
         opus_div = scores['models']['claude-opus-5-5']['axes']['creativity']['by_effort']
         self.assertGreater(opus_div['high'], opus_div['low'])
-        # F4: every full-panel board has sd_panel == 1.0 on High rows, and partial-panel secondary boards carry scale != 1.0
+        # F4 (five_axis link): every full-panel board has sd 1.0 on the panel's High rows; a facet with no full-panel board
+        # leaves each board on its own panel scale (scale 1, offset 0 before the anchor centring), whatever boards it has
         for facet_key, link in scores['links'].items():
             for src in link['full_panel_boards']:
                 self.assertEqual(link['sd_at_high'][src], 1.0, (facet_key, src))
-        self.assertNotEqual(scores['links']['tool_operation.image_recognition']['scales']['aa.mmmu_pro'], 1.0)
-        self.assertNotEqual(scores['links']['aesthetics.design']['scales']['designarena.svg'], 1.0)
+            if not link['full_panel_boards']:
+                self.assertEqual(set(link['scales'].values()), {1.0}, facet_key)
+                self.assertEqual(len(set(link['offsets'].values())), 1, facet_key)
 
     def test_f3_economy_cost_is_inside_net_score_without_score_rounding(self):
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
@@ -796,8 +803,8 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         cx['gpt6_sol_high'] = {**cx['sol_high'], 'model': 'gpt-6-sol', 'effort': 'high'}
         cx['gpt6_sol_max'] = {**cx['sol_high'], 'model': 'gpt-6-sol', 'effort': 'max'}
         cx['gpt56_sol_high'] = {**cx['sol_high'], 'model': 'gpt-5.6-sol', 'effort': 'high'}
-        cx['ds_v4_high'] = {**cx['sol_high'], 'model': 'deepseek-v4-pro', 'effort': 'high'}
-        cx['ds_v4_max'] = {**cx['sol_high'], 'model': 'deepseek-v4-pro', 'effort': 'max'}
+        cx['ds_v4_high'] = {**cx['sol_high'], 'model': 'glm-5.3', 'effort': 'high'}
+        cx['ds_v4_max'] = {**cx['sol_high'], 'model': 'glm-5.3', 'effort': 'max'}
         usage = usage_windows(self.now, {'codex': [('usage', 90, 84)]})
 
         code_task = {
@@ -814,10 +821,10 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
         empty_pub = {'schema_version': user_scores.SCHEMA_VERSION, 'scores': {}}
 
         # The precondition is set here, not read from the shipped coverage: gpt-6-sol has no faithfulness at Max and
-        # deepseek-v4-pro none at all.
+        # glm-5.3 none at all.
         five = keep_efforts(copy.deepcopy(axis_scores.load_five_axis()), 'gpt-6-sol', 'coding', 'faithfulness',
                             ('low', 'medium', 'high', 'xhigh'))
-        five = drop_facet(five, 'deepseek-v4-pro', 'coding', 'faithfulness')
+        five = drop_facet(five, 'glm-5.3', 'coding', 'faithfulness')
 
         def excluded():
             with patch.object(user_scores, 'load_public', return_value=empty_pub), \
@@ -827,7 +834,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             return {c['id']: c['excluded'] for c in d['ranking']}
 
         # High filled from one-sided effort data (five_axis.fill_high) routes gpt-6-sol and gpt-5.6-sol at High; Max of
-        # gpt-6-sol (no faithfulness at Max) and deepseek-v4-pro (no faithfulness at all) stay in Mode B with the hint.
+        # gpt-6-sol (no faithfulness at Max) and glm-5.3 (no faithfulness at all) stay in Mode B with the hint.
         before = excluded()
         self.assertEqual((before['gpt6_sol_high'], before['gpt56_sol_high']), ([], []))
         for bid in ('gpt6_sol_max', 'ds_v4_high', 'ds_v4_max'):
@@ -835,8 +842,8 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
 
         user_scores.set_score('gpt-6-sol', 'coding.faithfulness', 3.0, public=False, accounts=accounts)
         user_scores.set_score('gpt-6-sol', 'coding.execution', 2.4, public=False, accounts=accounts)
-        user_scores.set_score('deepseek-v4-pro', 'coding.faithfulness', 2.5, public=False, accounts=accounts)
-        user_scores.set_score('deepseek-v4-pro', 'coding.execution', 2.2, public=False, accounts=accounts)
+        user_scores.set_score('glm-5.3', 'coding.faithfulness', 2.5, public=False, accounts=accounts)
+        user_scores.set_score('glm-5.3', 'coding.execution', 2.2, public=False, accounts=accounts)
         after = excluded()
         self.assertEqual((after['gpt6_sol_high'], after['ds_v4_high']), ([], []))
         # Rule (owner 2026-11-18, `_manual_by_effort`): an effort the facet has no value at takes the manual High plus the
@@ -846,7 +853,7 @@ class TaxonomyR2Round2FixTests(unittest.TestCase):
             self.assertFalse(any('no trusted data' in e for e in after[bid]), after[bid])
         with patch.object(axis_scores, 'load_five_axis', return_value=copy.deepcopy(five)):
             ov = axis_scores.five_axis_overlay(copy.deepcopy(accounts), read_local_state=True, public_scores=empty_pub)
-        for model in ('gpt-6-sol', 'deepseek-v4-pro'):
+        for model in ('gpt-6-sol', 'glm-5.3'):
             faith = ov['models'][model]['five_axis']['categories']['coding']['facets']['faithfulness']
             # bounded by the effort below it (`bound_along_effort`): never under Xhigh
             self.assertAlmostEqual(faith['by_effort']['max'],
@@ -1131,11 +1138,15 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
         self.assertEqual(user_scores._manual_by_effort(0.5, None, False, None,
                                                        {'low': {'minimal': {'step': -0.7, 'n': 12}},
                                                         'high': {'low': {'step': 0.9, 'n': 3}}})[0]['minimal'], 1.4)
-        # `none` (reasoning off) is one more step below `minimal`: `minimal` plus effort_steps.<facet>.minimal.none, the same
-        # fleet step (round 4); without `minimal` there is no `none`
-        off = {**below, 'minimal': {'none': {'step': -0.7, 'n': 12}}}
-        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, off)[0]['none'], -1.9)
-        self.assertNotIn('none', user_scores._manual_by_effort(0.5, None, True, None, {**steps, 'minimal': off['minimal']})[0])
+        # `none` (reasoning off) is the lowest measured reasoning effort, else High, plus the fleet's own off step
+        # (effort_steps.<facet>.lowest_reasoning.none, round 5 review B), bounded in the facet's direction; without the step
+        # there is no `none`
+        L = user_scores.LOWEST_REASONING
+        off = {**below, L: {'none': {'step': -2.0, 'n': 7}}}
+        self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, off)[0]['none'], -1.5)        # from High
+        own = {'by_effort': {'low': -0.3, 'high': 0.0}, 'status': 'measured', 'measured_efforts': ['low', 'high']}
+        self.assertEqual(user_scores._manual_by_effort(0.5, own, True, None, off)[0]['none'], -2.3)         # from Low
+        self.assertNotIn('none', user_scores._manual_by_effort(0.5, None, True, None, below)[0])
         # `ultra` is Max plus the fleet's step above Max (effort_steps.<facet>.max.ultra), bounded the same way
         above = {**steps, 'max': {'ultra': {'step': 0.25, 'n': 5}}}
         self.assertEqual(user_scores._manual_by_effort(0.5, None, True, None, above)[0]['ultra'], 0.95)   # Max 0.7 held at XHigh 0.8 after
@@ -1144,8 +1155,8 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
 
     def test_a_hand_written_score_wins_over_a_derived_value(self):
         """Rule (calibration/README.md, order of methods): a hand-written score wins over every estimate, the downward
-        derivation (`tier_down`) and the size step (`size_step`) included, and fills `minimal` from Low and `none` from
-        `minimal`."""
+        derivation (`tier_down`) and the size step (`size_step`) included, and fills `minimal` from Low and `none` from the
+        lowest measured reasoning effort (else High)."""
         five = axis_scores.load_five_axis()
         derived = [(m, a, f) for m, r in five['models'].items() for a, ax in r['axes'].items()
                    for f, c in (ax.get('facets') or {}).items()
@@ -1164,22 +1175,35 @@ class EffortBoundAndManualFillTests(unittest.TestCase):
             z = round(user_scores.level_to_z(1.5, *user_scores.target_triad(five['anchor']['targets'], a, f)), 4)
             self.assertEqual((cell['status'], cell['value'], cell['by_effort']['high']), ('maintainer', z, z), (m, a, f))
             self.assertNotIn(f'{a}.{f}', ov['models'][m]['five_axis']['estimates'])
-            below = five['effort_steps'][f'{a}.{f}']['low']['minimal']['step']
+            steps = five['effort_steps'][f'{a}.{f}']
+            below = steps['low']['minimal']['step']
             low, minimal = cell['by_effort']['low'], cell['by_effort']['minimal']
             self.assertEqual(minimal, round(min(low + below, low) if user_scores.rises_with_effort(a, f)
                                             else max(low + below, low), 4), (m, a, f))
-            off = five['effort_steps'][f'{a}.{f}']['minimal']['none']['step']
-            self.assertEqual(cell['by_effort']['none'], round(min(minimal + off, minimal) if user_scores.rises_with_effort(a, f)
-                                                              else max(minimal + off, minimal), 4), (m, a, f))
+            off = (steps.get(user_scores.LOWEST_REASONING) or {}).get('none')
+            if off is None:         # no fleet reading at none for this facet: none stays empty
+                self.assertNotIn('none', cell['by_effort'], (m, a, f))
+                continue
+            near = user_scores.edge_anchor('none', cell['by_effort'], cell.get('measured_efforts') or ['high'])
+            v, lowest = cell['by_effort'][near] + off['step'], min(cell['by_effort'][e] for e in cell['by_effort'] if e != 'none')
+            self.assertEqual(cell['by_effort']['none'], round(min(v, lowest) if user_scores.rises_with_effort(a, f)
+                                                              else max(v, lowest), 4), (m, a, f))
 
-    def test_the_effort_order_puts_none_one_step_below_minimal_and_the_edges_nearest_first(self):
-        """Rule (round 4, vendor documents): `none` is reasoning switched off, below `minimal`; every effort beyond the
-        measured ones names its neighbour toward them and the measured end whose step it takes, nearest first."""
+    def test_the_effort_order_puts_none_below_minimal_and_none_is_filled_from_the_lowest_reasoning_effort(self):
+        """Rule (round 4, vendor documents; round 5 review B): `none` is reasoning switched off, below `minimal`; `minimal`
+        and `ultra` take their neighbour plus the fleet's step at that end; `none` takes the lowest measured reasoning
+        effort (else High) plus the fleet's own (none - lowest reasoning) step."""
+        L = user_scores.LOWEST_REASONING
         self.assertEqual(user_scores.EFFORTS, ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'))
         self.assertEqual(user_scores.MEASURED_EFFORTS, ('low', 'medium', 'high', 'xhigh', 'max'))
-        self.assertEqual(list(user_scores.EDGES.items()), [('minimal', ('low', ('low', 'medium'))),
-                                                           ('none', ('minimal', ('low', 'medium'))),
-                                                           ('ultra', ('max', ('max', 'xhigh')))])
+        self.assertEqual(user_scores.EDGES, {'minimal': ('low', ('low', 'medium')), 'ultra': ('max', ('max', 'xhigh')),
+                                             'none': (L, ('none', L))})
+        anchor = user_scores.edge_anchor
+        self.assertEqual(anchor('none', {'low': 0, 'medium': 0, 'high': 0}, ['medium', 'high']), 'medium')
+        self.assertEqual(anchor('none', {'low': 0, 'high': 0}, []), 'high')         # nothing measured below: High
+        self.assertIsNone(anchor('none', {'max': 0}, []))                           # no High to fall back on
+        self.assertEqual(anchor('minimal', {'low': 0}, []), 'low')
+        self.assertIsNone(anchor('ultra', {'high': 0}, ['high']))
 
 
 class EffectiveSourceTests(unittest.TestCase):
@@ -1221,6 +1245,19 @@ class EffectiveSourceTests(unittest.TestCase):
             self.assertEqual(small['follows']['base_model'], 'big')
             self.assertEqual(got['small']['by_effort']['high'],
                              min(small['by_effort']['high'], got['small']['facets']['execution']['by_effort']['high']))
+
+    def test_a_local_score_keyed_by_an_alias_or_a_provider_path_applies_to_the_canonical_row(self):
+        """Rule (apply_overlay `_canonical`): a score written under an alias (accounts.json `aliases`) or under a
+        provider-qualified id reaches the row the alias names; it never creates a row of the alias's name."""
+        entry = {'coding.faithfulness': {'level': 1.0, 'as_of': '2026-11-18', 'kind': 'user'}}
+        direct = self.overlay({'big': entry})['big']['facets']['faithfulness']['by_effort']
+        for key in ('big-alias', 'provider/big-alias', 'provider/big'):
+            models = self.table()
+            user_scores.apply_overlay(models, self.targets, aliases={'big-alias': 'big'},
+                                      local_scores={'schema_version': user_scores.SCHEMA_VERSION, 'scores': {key: entry}})
+            self.assertEqual(set(models), {'big', 'small'}, key)
+            self.assertEqual(models['big']['five_axis']['categories']['coding']['facets']['faithfulness']['by_effort'],
+                             direct, key)
 
     def test_a_hand_written_score_on_the_derived_model_itself_wins(self):
         got = self.overlay({'big': {'coding.faithfulness': {'level': 1.0, 'as_of': '2026-11-18', 'kind': 'user'}},

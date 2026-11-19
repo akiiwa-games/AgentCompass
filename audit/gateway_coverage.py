@@ -3,7 +3,7 @@
 `python -X utf8 audit/gateway_coverage.py [--references DIR] [--catalogs DIR] [--known-gaps PATH] [--out-of-scope PATH] [--list]`
 
 A gateway (Cindy, Magpie, ...) lists the (provider, model, efforts) it can launch. A saved catalog
-(`audit/gateway-catalogs/<host>-<version>.json`, schema `agent-compass.gateway-catalog/2`) keeps only that: no account,
+(`audit/gateway-catalogs/<host>-<version>.json`, schema `agent-compass.gateway-catalog/3`) keeps only that: no account,
 id or credential. Its `provider_kind` says what `provider` names:
 
 - `harness`: an AgentCompass harness (Cindy's live catalog); a row that lists no efforts (`efforts: null`) is offered at the
@@ -14,10 +14,12 @@ id or credential. Its `provider_kind` says what `provider` names:
 The model name resolves the way the router and the Magpie port resolve a candidate (model_resolution.resolve_model: exact,
 alias, then family pattern); only an `exact` or `alias` match names a row.
 
-A catalog may declare `gate` (`{providers, statement}`): only its rows whose provider is listed are gated, the others are
-reported, never a failure. A row whose model is on the out-of-scope list (`audit/gateway-out-of-scope.json`, each entry
-with its maker's notice: retired or deprecated with the date, absent from the maker's own current list on the date read, or a
-special-purpose model the maker does not offer for chat) is reported, not gated, in every catalog. The rule asserted, a data-completeness rule and no routing outcome:
+A catalog may declare `gate` (`{makers, statement}`): its rows then carry `maker`, the model's maker, and only a row whose
+maker is its provider's (`gate.makers[provider]`) is gated; the others are reported (`not first-party`, or `maker unknown`
+when the row has none), never a failure. A row whose model is on the out-of-scope list (`audit/gateway-out-of-scope.json`, each entry
+with its maker's notice: retired, deprecated with the vendor's shutdown date, absent from a maker page that enumerates the
+callable model ids, a moving `-latest` pointer with no dated vendor statement of its target, or a special-purpose model the
+maker does not offer for chat) is reported, not gated, in every catalog. The rule asserted, a data-completeness rule and no routing outcome:
 
 - every gated (model, effort) pair of every saved catalog is **covered**: the name resolves to a catalog row whose every
   facet (creativity, coding execution and faithfulness, aesthetics design, tool_operation responsiveness and image
@@ -25,8 +27,14 @@ special-purpose model the maker does not offer for chat) is reported, not gated,
   local state); an effort off the scale is read where the data declares (axis_scores.reading_effort: `default` reads High);
 - the same for every (row, effort) the shipped launch table offers (catalog id `shipped-launch-table`: each
   `dispatch_efforts[harness][row]` entry, and each account bundle at its effort, an effort-less bundle at `default`);
+- every alias of the shipped `accounts.json` names one model (round 5 review A): where models.dev (the snapshot Magpie
+  bundles, saved by audit/magpie_catalog.py as `audit/models-dev-names.json`) lists both names, they share a canonical id
+  (unless the alias cites the maker's own statement that they are one model) and, at a provider listing both, the list
+  prices; every alias name and target is in that file (else it is rebuilt);
+  and a shorthand (`alias_sources` `shorthand: true`) is not a name a saved catalog offers or a shipped row;
 - or the pair is on the declared known-gap list (`audit/gateway-coverage-known-gaps.json`, each entry `{catalog, model,
-  efforts, row, reason}` whose reason names the input that is missing, `Missing input: ...`: no declared method gives the
+  efforts, row, kind, detail}`: `kind` is one of the closed set `GAP_KINDS`, the input that is missing, which the file's
+  `kinds` table states with what would close the gap; `detail` says it for this model: no declared method gives the
   value without it);
 - and no entry of that list is covered, ungated or names a pair no saved catalog offers (the list only shrinks), and no
   out-of-scope entry names a model no saved catalog offers.
@@ -50,21 +58,25 @@ import axis_scores  # noqa: E402
 import model_resolution  # noqa: E402
 import user_scores  # noqa: E402
 
-CATALOG_SCHEMA = 'agent-compass.gateway-catalog/2'
-GAPS_SCHEMA = 'agent-compass.gateway-coverage-known-gaps/1'
-OUT_OF_SCOPE_SCHEMA = 'agent-compass.gateway-out-of-scope/1'
+CATALOG_SCHEMA = 'agent-compass.gateway-catalog/3'
+GAPS_SCHEMA = 'agent-compass.gateway-coverage-known-gaps/2'
+OUT_OF_SCOPE_SCHEMA = 'agent-compass.gateway-out-of-scope/2'
 CATALOGS = Path(__file__).resolve().parent / 'gateway-catalogs'
 KNOWN_GAPS = Path(__file__).resolve().parent / 'gateway-coverage-known-gaps.json'
+NAMES = Path(__file__).resolve().parent / 'models-dev-names.json'
+NAMES_SCHEMA = 'agent-compass.models-dev-names/1'
 OUT_OF_SCOPE = Path(__file__).resolve().parent / 'gateway-out-of-scope.json'
 REFERENCES = ROOT / 'skills' / 'agent-compass' / 'references'
 LAUNCH_TABLE = 'shipped-launch-table'
 PROVIDER_KINDS = ('harness', 'magpie_preset')
-# unlisted: absent from the maker's own current list, as read; special_purpose: a model the maker offers for music, speech,
-# translation, OCR or role-play, not for chat
-OUT_OF_SCOPE_STATUSES = ('retired', 'deprecated', 'unlisted', 'special_purpose')
+# unlisted: absent from a maker page that enumerates the callable model ids (the file's `id_lists`), as read; moving_alias:
+# a `-latest` pointer with no dated vendor statement of its target; special_purpose: a model the maker offers for music,
+# speech, translation, OCR or role-play, not for chat
+OUT_OF_SCOPE_STATUSES = ('retired', 'deprecated', 'unlisted', 'moving_alias', 'special_purpose')
 ROW_KEYS = {'provider', 'model', 'efforts'}
-GAP_KEYS = {'catalog', 'model', 'efforts', 'row', 'reason'}
-MISSING_INPUT = 'Missing input: '
+GAP_KEYS = {'catalog', 'model', 'efforts', 'row', 'kind', 'detail'}
+# The closed set of missing inputs a known gap may name (round 5 review G); the gaps file states for each what closes it.
+GAP_KINDS = ('no_public_measurement', 'no_fleet_reading_at_effort', 'no_time_reading_in_series', 'no_relative_statement')
 ISO_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 FACETS = (('creativity', 'creative_writing'), ('coding', 'execution'), ('coding', 'faithfulness'),
           ('aesthetics', 'design'), ('tool_operation', 'responsiveness'), ('tool_operation', 'image_recognition'))
@@ -83,13 +95,14 @@ def load_catalogs(directory=CATALOGS):
             raise ValueError(f'{path.name}: not a {CATALOG_SCHEMA} document with rows')
         if doc.get('provider_kind') not in PROVIDER_KINDS:
             raise ValueError(f'{path.name}: provider_kind must be one of {", ".join(PROVIDER_KINDS)}')
-        bad = [r for r in doc['rows'] if not isinstance(r, dict) or set(r) != ROW_KEYS]
-        if bad:
-            raise ValueError(f'{path.name}: every row is {{provider, model, efforts}} ({len(bad)} are not)')
         gate = doc.get('gate')
-        if gate is not None and (not isinstance(gate, dict) or not isinstance(gate.get('providers'), list)
-                                 or not gate['providers'] or not str(gate.get('statement') or '').strip()):
-            raise ValueError(f'{path.name}: gate must be {{providers, statement}} with at least one provider')
+        keys = ROW_KEYS | ({'maker'} if gate is not None else set())
+        bad = [r for r in doc['rows'] if not isinstance(r, dict) or set(r) != keys]
+        if bad:
+            raise ValueError(f'{path.name}: every row is {{{", ".join(sorted(keys))}}} ({len(bad)} are not)')
+        if gate is not None and (not isinstance(gate, dict) or not isinstance(gate.get('makers'), dict)
+                                 or not any(gate['makers'].values()) or not str(gate.get('statement') or '').strip()):
+            raise ValueError(f'{path.name}: gate must be {{makers, statement}} with at least one provider maker')
         out[path.stem] = doc
     return out
 
@@ -101,20 +114,34 @@ def _cited(entry, kinds):
 
 def load_out_of_scope(path=OUT_OF_SCOPE):
     """{offered model name: entry} of the declared out-of-scope list. Each entry carries its maker's notice (`notice`: kind
-    vendor, https url, as_of, statement), a status (OUT_OF_SCOPE_STATUSES; `retired` and `deprecated` with the notice's `date`),
-    and, when the offered name is another provider's spelling of the maker's model (`model`), the public statement that it
-    is that model (`same_as`, e.g. models.dev's canonical id). A list without them is refused."""
+    vendor, https url, as_of, statement), a status (OUT_OF_SCOPE_STATUSES), the notice's `date` when the page gives one, and,
+    when the offered name is another provider's spelling of the maker's model (`model`), the public statement that it is
+    that model (`same_as`, e.g. models.dev's canonical id). A `deprecated` entry carries the vendor's `shutdown` date (null
+    when the page states none); an `unlisted` entry's notice is a page of the file's `id_lists`, the maker pages that
+    enumerate the callable model ids (absence from a page that does not is no evidence). A list without them is refused."""
     doc = read_json(path)
     if doc.get('schema') != OUT_OF_SCOPE_SCHEMA or not isinstance(doc.get('entries'), dict):
         raise ValueError(f'{path}: not a {OUT_OF_SCOPE_SCHEMA} document with entries')
+    id_lists = doc.get('id_lists')
+    if not isinstance(id_lists, dict) or not all(
+            str(url).startswith('https://') and isinstance(v, dict) and ISO_DATE.match(str(v.get('as_of') or ''))
+            and str(v.get('statement') or '').strip() for url, v in id_lists.items()):
+        raise ValueError(f'{path}: id_lists must map each https page to {{as_of, statement}} of how it enumerates model ids')
     for name, e in doc['entries'].items():
         why = None
         if not isinstance(e, dict) or e.get('status') not in OUT_OF_SCOPE_STATUSES:
             why = f'status must be one of {", ".join(OUT_OF_SCOPE_STATUSES)}'
         elif not _cited(e.get('notice'), ('vendor',)):
             why = "needs the maker's notice {kind: vendor, url, as_of, statement}"
-        elif e['status'] in ('retired', 'deprecated') and not ISO_DATE.match(str(e.get('date') or '')):
-            why = 'a retired or deprecated entry needs the date of its notice'
+        elif 'date' in e and not ISO_DATE.match(str(e['date'] or '')):
+            why = 'the date of the notice is an ISO date'
+        elif e['status'] == 'deprecated' and ('shutdown' not in e or (
+                e['shutdown'] is not None and not ISO_DATE.match(str(e['shutdown'])))):
+            why = "a deprecated entry carries the vendor's shutdown date (null when the page states none)"
+        elif e['status'] != 'deprecated' and 'shutdown' in e:
+            why = 'only a deprecated entry carries a shutdown date'
+        elif e['status'] == 'unlisted' and e['notice']['url'] not in id_lists:
+            why = 'unlisted needs a notice page that enumerates the callable model ids (id_lists)'
         elif e.get('model', name) != name and not _cited(e.get('same_as'), ('vendor', 'community')):
             why = 'another spelling of the maker\'s model needs the public statement that it is that model (same_as)'
         if why:
@@ -154,8 +181,12 @@ def ungated_reason(doc, row, out_of_scope):
     if entry is not None:
         return f"{entry['status']} ({entry.get('model', row['model'])})"
     gate = doc.get('gate')
-    if gate is not None and row['provider'] not in gate['providers']:
-        return 'outside the gate'
+    if gate is None:
+        return None
+    if not row.get('maker'):
+        return 'maker unknown'
+    if gate['makers'].get(row['provider']) != row['maker']:
+        return f"not first-party ({row['maker']} on {row['provider']})"
     return None
 
 
@@ -235,7 +266,7 @@ def report(found):
             r['gated'] += 1
             r['gated_covered'] += not p['missing']
         else:
-            why = p['ungated'].split(' ')[0]
+            why = p['ungated'].split(' (')[0]
             r['ungated'][why] = r['ungated'].get(why, 0) + 1
         k = (p['resolves_to'] or p['model'].rsplit('/', 1)[-1].lower(), p['effort'])
         r['_distinct'][k] = r['_distinct'].get(k, True) and not p['missing']
@@ -245,30 +276,77 @@ def report(found):
     return out
 
 
+def alias_violations(accounts, listed, catalogs):
+    """Why an alias of `accounts` does not name one model, as violation lines: `listed` is the models.dev names document
+    (models-dev-names.json); `catalogs` {id: document} the saved catalogs."""
+    if listed.get('schema') != NAMES_SCHEMA or not isinstance(listed.get('names'), dict):
+        return [f'the models.dev names file is not a {NAMES_SCHEMA} document']
+    names = listed['names']
+    aliases = accounts.get('aliases') or {}
+    sources = (accounts.get('alias_sources') or {}).get('rows') or {}
+    out = []
+    for name, target in sorted(aliases.items()):
+        lacking = [n for n in (name, target) if n not in names]
+        if lacking:
+            out.append(f'alias {name} -> {target}: {", ".join(lacking)} not in the models.dev names file '
+                       f'(rebuild it with audit/magpie_catalog.py)')
+            continue
+        a, b = names[name], names[target]
+        ca, cb = {x[1] for x in a if x[1]}, {x[1] for x in b if x[1]}
+        # the maker's own statement that the two names are one model outweighs the aggregator's separate entries
+        maker_says = (sources.get(name) or {}).get('kind') == 'vendor'
+        if ca and cb and not ca & cb and not maker_says:
+            out.append(f'alias {name} -> {target}: models.dev gives different canonical ids ({", ".join(sorted(ca))} '
+                       f'against {", ".join(sorted(cb))})')
+        pa, pb = {x[0]: tuple(x[2:]) for x in a}, {x[0]: tuple(x[2:]) for x in b}
+        differ = [f'{p}: {pa[p]} against {pb[p]}' for p in sorted(set(pa) & set(pb)) if pa[p] != pb[p]]
+        if differ:
+            out.append(f'alias {name} -> {target}: models.dev lists different prices ({"; ".join(differ[:3])})')
+    shorthands = [k for k, e in sources.items() if isinstance(e, dict) and e.get('shorthand') is True]
+    offered = {}
+    for cid, doc in catalogs.items():
+        for r in doc.get('rows') or ():
+            offered.setdefault(r['model'], cid)
+            offered.setdefault(r['model'].rsplit('/', 1)[-1], cid)
+    for s in sorted(shorthands):
+        if s in (accounts.get('models') or {}):
+            out.append(f'shorthand {s} is a shipped row')
+        if s in offered:
+            out.append(f'shorthand {s} is a name the saved catalog {offered[s]} offers')
+    return out
+
+
 def load_gaps(path=KNOWN_GAPS):
-    """The declared known-gap list; every entry is {catalog, model, efforts, row, reason} and its reason names the input that
-    is missing (`Missing input: ...`). A list without them is refused."""
+    """The declared known-gap list: a `kinds` table stating, for exactly the kinds of `GAP_KINDS`, the missing input and
+    what would close the gap (`{missing, closes_when}`), and entries {catalog, model, efforts, row, kind, detail} whose kind
+    is one of them and whose detail says it for the model. A list without them is refused."""
     gaps = read_json(path)
     if gaps.get('schema') != GAPS_SCHEMA or not isinstance(gaps.get('entries'), list):
         raise ValueError(f'{path}: not a {GAPS_SCHEMA} document with entries')
+    kinds = gaps.get('kinds')
+    if (not isinstance(kinds, dict) or set(kinds) != set(GAP_KINDS)
+            or not all(isinstance(v, dict) and set(v) == {'missing', 'closes_when'} and all(str(x).strip() for x in v.values())
+                       for v in kinds.values())):
+        raise ValueError(f'{path}: kinds must state {{missing, closes_when}} for exactly {", ".join(GAP_KINDS)}')
     for e in gaps['entries']:
-        if (not isinstance(e, dict) or set(e) != GAP_KEYS or not e['efforts']
-                or not str(e['reason'] or '').startswith(MISSING_INPUT) or not e['reason'][len(MISSING_INPUT):].strip()):
-            raise ValueError(f'{path}: every entry is {{{", ".join(sorted(GAP_KEYS))}}} with efforts and a reason that '
-                             f'begins {MISSING_INPUT!r} and names the input: {e!r}'[:400])
+        if (not isinstance(e, dict) or set(e) != GAP_KEYS or not e['efforts'] or e['kind'] not in GAP_KINDS
+                or not str(e['detail'] or '').strip()):
+            raise ValueError(f'{path}: every entry is {{{", ".join(sorted(GAP_KEYS))}}} with efforts, a kind of '
+                             f'{", ".join(GAP_KINDS)} and its detail: {e!r}'[:400])
     return gaps
 
 
-def run(references=REFERENCES, catalogs=CATALOGS, known_gaps=KNOWN_GAPS, out_of_scope_path=OUT_OF_SCOPE):
+def run(references=REFERENCES, catalogs=CATALOGS, known_gaps=KNOWN_GAPS, out_of_scope_path=OUT_OF_SCOPE, names=NAMES):
     references = Path(references)
     gaps = load_gaps(known_gaps)
     out_of_scope = load_out_of_scope(out_of_scope_path)
     accounts = read_json(references / 'accounts.json')
-    found = pairs(accounts, {**load_catalogs(catalogs), LAUNCH_TABLE: {'provider_kind': 'harness',
-                                                                       'rows': launch_rows(accounts)}},
+    saved = load_catalogs(catalogs)
+    found = pairs(accounts, {**saved, LAUNCH_TABLE: {'provider_kind': 'harness', 'rows': launch_rows(accounts)}},
                   read_json(references / 'five-axis-scores.json'),
                   user_scores.load_public(references / 'user-scores.json'), out_of_scope)
     violations, counts = check(found, gaps, out_of_scope)
+    violations += alias_violations(accounts, read_json(names), saved)
     return found, violations, counts
 
 
@@ -278,9 +356,10 @@ def main(argv=None):
     ap.add_argument('--catalogs', default=str(CATALOGS))
     ap.add_argument('--known-gaps', default=str(KNOWN_GAPS))
     ap.add_argument('--out-of-scope', default=str(OUT_OF_SCOPE))
+    ap.add_argument('--names', default=str(NAMES), help='the models.dev names file audit/magpie_catalog.py writes')
     ap.add_argument('--list', action='store_true', help='print every uncovered pair, gated or not')
     args = ap.parse_args(argv)
-    found, violations, counts = run(args.references, args.catalogs, args.known_gaps, args.out_of_scope)
+    found, violations, counts = run(args.references, args.catalogs, args.known_gaps, args.out_of_scope, args.names)
     if args.list:
         for p in found:
             if p['missing']:

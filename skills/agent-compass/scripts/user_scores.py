@@ -63,24 +63,30 @@ CATEGORY_FACETS = {
     'tool_operation': ('responsiveness', 'image_recognition'),
 }
 TOOL_LEVEL_FACETS = {1: (), 2: ('responsiveness',), 3: ('responsiveness', 'image_recognition')}
-# The effort order, its one owner (owner 2026-11-18): every effort a curve carries and a launch can name on the scale, lowest
-# first. `none`, `minimal` and `ultra` lie beyond what boards measure (MEASURED_EFFORTS, Low .. Max) and are filled from the
-# fleet's edge step (EDGES). `none` is reasoning switched off, one step below `minimal` (round 4, from the vendors' documents:
-# OpenAI's reasoning guide gives `none` for "tasks that do not benefit from any reasoning", MiniMax refuses `effort: "none"`
-# together with `thinking: {"type": "disabled"}` on a model whose thinking cannot be switched off, and Magpie offers `none`
-# for a model with a thinking switch only, as its off level; Google's thinking guide calls `minimal` "a near-off setting",
-# a reasoning level above off). An effort name off the scale (`default`) reads the effort five-axis-scores.json
+# The effort order, its one owner: every effort a curve carries and a launch can name on the scale, lowest first. `none` is
+# reasoning switched off (its evidence: accounts.json `effort_readings`); `minimal` and `ultra` lie beyond what boards
+# measure (MEASURED_EFFORTS, Low .. Max). An effort name off the scale (`default`) reads the effort five-axis-scores.json
 # `effort_readings` names.
 EFFORTS = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
-MEASURED_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')     # the efforts boards measure
-# {effort beyond the measured ones: (its neighbour toward them, (the measured end, the next measured effort))}, nearest
-# first: such an effort is its neighbour plus the fleet's step at that end of the measured efforts (owner 2026-11-18;
-# calibration/five_axis.py fill_edge, _manual_by_effort): `minimal` Low plus value(low) - value(medium), `none` one more
-# such step below `minimal`, `ultra` Max plus value(max) - value(xhigh).
-EDGES = {**{EFFORTS[i]: (EFFORTS[i + 1], MEASURED_EFFORTS[:2])
-            for i in range(EFFORTS.index(MEASURED_EFFORTS[0]) - 1, -1, -1)},
-         **{EFFORTS[i]: (EFFORTS[i - 1], MEASURED_EFFORTS[:-3:-1])
-            for i in range(EFFORTS.index(MEASURED_EFFORTS[-1]) + 1, len(EFFORTS))}}
+MEASURED_EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')     # the efforts boards measure at a reasoning level
+# The anchor of `none`: a model's lowest measured reasoning effort, else High (`edge_anchor`).
+LOWEST_REASONING = 'lowest_reasoning'
+# {effort a model may lack: (the effort it is filled from, (the pair of efforts whose fleet difference is the step))}, in fill
+# order (calibration/five_axis.py fill_edge, _manual_by_effort): `minimal` Low plus value(low) - value(medium), `ultra` Max
+# plus value(max) - value(xhigh), `none` the model's lowest measured reasoning effort plus the fleet's value(none) -
+# value(lowest measured reasoning effort) over the models with a reasoning-off reading (round 5 review: the fleet's own
+# readings at none, not a borrowed step).
+EDGES = {'minimal': ('low', ('low', 'medium')), 'ultra': ('max', ('max', 'xhigh')),
+         'none': (LOWEST_REASONING, ('none', LOWEST_REASONING))}
+
+
+def edge_anchor(edge: str, values, measured) -> str | None:
+    """The effort edge effort `edge` is filled from (EDGES): its neighbour, or for `none` the lowest reasoning effort among
+    `measured` that `values` holds, else High when `values` holds it; None when there is none."""
+    near = EDGES[edge][0]
+    if near != LOWEST_REASONING:
+        return near if near in values else None
+    return next((e for e in EFFORTS[1:] if e in measured and e in values), 'high' if 'high' in values else None)
 SUGGEST_DEFAULT_THRESHOLD = 0.4
 MEASURED_DATA_STATUSES = ('measured', 'measured_partial', 'interpolated')
 VALID_TARGETS = tuple(
@@ -690,9 +696,9 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
     the facet measured keep their values; its other efforts follow the facet's own curve moved to `z_val` at High; an effort
     the facet has no value at takes `z_val` plus the panel's median own step from High to it (`steps`: the facet's entry of
     five-axis-scores.json `effort_steps`; owner 2026-11-18, every effort gets a value, also after a hand-written score) and
-    stays missing only where the panel gives no step; an edge effort is its neighbour plus the fleet's edge step (EDGES;
-    `minimal`: Low plus `effort_steps.<facet>.low.minimal`; `none`: `minimal` plus `effort_steps.<facet>.minimal.none`;
-    `ultra`: Max plus `effort_steps.<facet>.max.ultra`). The curve is then bounded in the facet's direction
+    stays missing only where the panel gives no step; an edge effort is its anchor plus the fleet's edge step (EDGES;
+    `minimal`: Low plus `effort_steps.<facet>.low.minimal`; `ultra`: Max plus `effort_steps.<facet>.max.ultra`; `none`: the
+    lowest measured reasoning effort, else High, plus `effort_steps.<facet>.lowest_reasoning.none`). The curve is then bounded in the facet's direction
     (`rises_with_effort`, `bound_along_effort`): first the measured efforts with the set efforts pinned at `z_val` (a measured
     effort that bound moves is no longer listed as measured), then the other efforts with those pinned, so a followed or
     filled value never moves a measured one."""
@@ -706,9 +712,10 @@ def _manual_by_effort(z_val: float, own_cell: dict | None, rises: bool,
     for e, step in ((steps or {}).get('high') or {}).items():
         if e in EFFORTS and e not in out and isinstance(step, dict) and step.get('step') is not None:
             out[e] = z_val + float(step['step'])
-    for edge, (near, _) in EDGES.items():
-        step = ((steps or {}).get(near) or {}).get(edge)
-        if edge not in out and near in out and isinstance(step, dict) and step.get('step') is not None:
+    for edge, (key, _) in EDGES.items():
+        near = edge_anchor(edge, out, [*measured, *pinned])
+        step = ((steps or {}).get(key) or {}).get(edge)
+        if edge not in out and near is not None and isinstance(step, dict) and step.get('step') is not None:
             out[edge] = out[near] + float(step['step'])
     held = bound_along_effort({e: out[e] for e in EFFORTS if e in out and (e in pinned or e in measured)}, rises, pinned)
     out = bound_along_effort({e: held.get(e, out[e]) for e in EFFORTS if e in out}, rises, held)
@@ -919,8 +926,9 @@ def _facet_curves(info: dict) -> dict:
 def _follow_effective_sources(models_table: dict, shipped: dict) -> None:
     """Derived cells follow the effective source (owner 2026-11-18): a facet five_axis derived from a larger model
     (`DERIVED_FROM_LARGER`) whose source facet a hand-written score (shipped or local) changed moves by the source's change
-    at each effort, derived(e) + effective(e) - shipped(e); an ability facet is then never above the effective source
-    (no inversion across size), and the curve is bounded along effort. A hand-written score on the derived model's own
+    at each effort, derived(e) + effective(e) - shipped(e), and the curve is bounded along effort. No cap at the effective
+    source is needed: five_axis's `bound_across_size` ships every such ability cell at or below its source at each effort,
+    so derived + change stays at or below the effective source (no inversion across size). A hand-written score on the derived model's own
     facet wins: the cell it writes carries no estimate, so it is left alone. The category is recomputed from its facets."""
     for name, info in (models_table or {}).items():
         state = (info or {}).get('five_axis') if isinstance(info, dict) else None
@@ -937,8 +945,6 @@ def _follow_effective_sources(models_table: dict, shipped: dict) -> None:
                     continue
                 rises = rises_with_effort(cat, facet)
                 by = {e: v + now[e] - was[e] for e, v in (cell.get('by_effort') or {}).items() if e in now and e in was}
-                if rises:
-                    by = {e: min(v, now[e]) for e, v in by.items()}
                 by = {e: round(float(v), 4) for e, v in bound_along_effort(by, rises).items()} if by else {}
                 cell.update(by_effort=by, value=by.get('high'), follows={'base_model': base, 'base_status': (
                     ((models_table[base]['five_axis']['categories'].get(cat) or {}).get('facets') or {}).get(facet) or {}).get('status')})

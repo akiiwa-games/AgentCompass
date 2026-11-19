@@ -8,10 +8,15 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'calibration'))
 
 import five_axis as fa  # noqa: E402
+import measurements  # noqa: E402
 import series  # noqa: E402
+import sources  # noqa: E402
 import tiers  # noqa: E402
 
-READINGS = {'effort_readings': {'reads': {'default': 'high'}}}   # accounts.json's declaration (five_axis.effort_readings)
+# accounts.json's declarations the build reads (sources.effort_readings, five_axis.estimation_order)
+READINGS = {'effort_readings': {'labels': {'non-reasoning': 'none', 'reasoning': 'default'}, 'reads': {'default': 'high'}},
+            'estimation_order': {'order': list(fa.ESTIMATION_ORDER), 'sibling_first_up_to_distance': 1,
+                                 'evidence': 'synthetic'}}
 
 
 class SeriesTests(unittest.TestCase):
@@ -47,21 +52,40 @@ class SeriesTests(unittest.TestCase):
         self.assertEqual(series.boards(meas), {'m': {'a.x': 0.5, 'b.y': 0.3}, 'n': {}})
         self.assertEqual(series.boards({}), {})
 
-    def test_nearest_orders_by_the_declared_model_then_index_then_boards_then_tier(self):
+    def test_nearest_orders_by_the_declared_model_then_version_distance_then_size(self):
+        """Rule (series.py, round 5 review D): the declared same_model first, then the declared version distance, then
+        size equality; a candidate without a declared version ranks after every declared distance."""
         same = {'t': {'model': 'declared'}}
-        index = {'t': 50.0, 'near': 51.0, 'far': 70.0, 'declared': 10.0}
-        board = {'t': {'s1': 0.5}, 'b_near': {'s1': 0.52}, 'b_far': {'s1': 0.9}}
-        tier = {'t': 4.0, 't_near': 4.1, 't_far': 2.0}
-        # the declared model first, however far its index; then index distance; then the shared boards; then the tier; then none
-        order = series.nearest('t', ['far', 'near', 'declared', 'b_far', 'b_near', 't_far', 't_near', 'blank'],
-                               index, board, tier, same)
-        self.assertEqual(order, ['declared', 'near', 'far', 'b_near', 'b_far', 't_near', 't_far', 'blank'])
-        # without the declaration its index is just far
-        self.assertEqual(series.nearest('t', ['far', 'declared'], index, board, tier)[0], 'far')
+        versions = {'t': 3.0, 'declared': 1.0, 'v2': 2.0, 'v2-mini': 2.0, 'v1': 1.0, 'v3': 3.0}
+        series_rows = ['declared', 'v2', 'v2-mini', 'v1', 'v3', 'blank']
+        small = {'v2-mini'}
+        order = series.nearest('t', ['v1', 'blank', 'v2-mini', 'v2', 'declared', 'v3'], series_rows, versions, small, same)
+        self.assertEqual(order, [(0, ['declared']), (0, ['v3']), (1, ['v2']), (1, ['v2-mini']), (2, ['v1']),
+                                 (None, ['blank'])])
+        # without the declaration the declared model is one more relative at its version distance
+        self.assertEqual(series.nearest('t', ['declared', 'v1'], series_rows, versions, small)[0], (2, ['declared', 'v1']))
 
-    def test_the_key_breaks_ties(self):
-        index = {'t': 50.0, 'b': 51.0, 'a': 49.0}
-        self.assertEqual(series.nearest('t', ['b', 'a'], index, {}, {}), ['a', 'b'])
+    def test_tied_relatives_form_one_group_and_no_name_breaks_the_tie(self):
+        """Rule (series.py): relatives at one distance and one size are one group (the caller takes their median);
+        their names never order them."""
+        versions = {'t': 2.0, 'a': 1.0, 'b': 3.0}
+        for candidates in (['a', 'b'], ['b', 'a']):
+            self.assertEqual(series.nearest('t', candidates, ['a', 'b'], versions, set()), [(1, ['a', 'b'])])
+
+    def test_a_row_that_is_not_the_nearest_relative_changes_no_estimate(self):
+        """Stability (round 5 review D): adding a row that is not the nearest relative of X by the declared distance
+        leaves X's nearest group as it was."""
+        versions = {'x': 5.0, 'near': 4.0, 'old': 2.0}
+        before = series.nearest('x', ['near', 'old'], ['near', 'old'], versions, set())[0]
+        for added, version in (('older', 1.0), ('zzz', 3.0), ('aaa', 3.0)):
+            v = {**versions, added: version}
+            rows = ['near', 'old', added]
+            self.assertEqual(series.nearest('x', ['near', 'old', added], rows, v, set())[0], before, added)
+
+    def test_the_version_distance_counts_distinct_declared_versions_between_the_two(self):
+        versions = {'t': 3.0, 'a': 3.0, 'b': 2.0, 'c': 2.0, 'd': 1.0}
+        rows = ['a', 'b', 'c', 'd', 'e']
+        self.assertEqual([series.distance('t', x, rows, versions) for x in rows], [0, 1, 1, 2, None])
 
 
 class PooledAndInterpolationTests(unittest.TestCase):
@@ -98,6 +122,22 @@ class PooledAndInterpolationTests(unittest.TestCase):
         self.assertEqual((low['models'], high['models']), (['b'], ['c']))        # beyond the top: the end segment
         low, high = f.neighbours(1)
         self.assertEqual((low['models'], high['models']), (['a'], ['b']))
+
+    def test_spread_is_the_rms_around_the_map_in_sample_and_leaving_each_model_out(self):
+        """Rule (tiers.Interpolation.spread): residual_sd is the root mean square of the shared models' tiers around the
+        map, loo_rmse the same with each model left out of the map that predicts it."""
+        f = tiers.Interpolation([10, 20, 30, 40], [1.0, 3.0, 2.0, 4.0])
+        res = [y - f(x) for x, y in f.raw]
+        loo = []
+        for i, (x, y) in enumerate(f.raw):
+            rest = f.raw[:i] + f.raw[i + 1:]
+            loo.append(y - tiers.Interpolation([p[0] for p in rest], [p[1] for p in rest])(x))
+        rms = lambda v: round(sum(e * e for e in v) / len(v), 12) ** 0.5     # noqa: E731
+        got = f.spread()
+        self.assertAlmostEqual(got['residual_sd'], rms(res), places=4)
+        self.assertAlmostEqual(got['loo_rmse'], rms(loo), places=4)
+        self.assertGreater(got['loo_rmse'], got['residual_sd'])
+        self.assertEqual(tiers.Interpolation([10, 20], [1.0, 2.0]).spread()['loo_rmse'], None)    # one point left: no map
 
     def test_norm_keeps_letters_and_digits_only(self):
         self.assertEqual(tiers.norm('Claude Opus-5.5 (high)'), 'claudeopus55high')
@@ -149,7 +189,7 @@ class FitterTests(unittest.TestCase):
             (1525.0, 1520.0, 1530.0, 'Claude Opus 5.5 (Max)', '2026-11-09'),
             (1430.0, 1425.0, 1435.0, 'Single Config Model', '2026-11-09'),
         ]
-        picked = tiers.arena_high_rows(rows)
+        picked = tiers.arena_high_rows(rows, sources.effort_readings(READINGS))
         self.assertNotIn('GPT-6 Sol', picked)
         self.assertEqual(picked['Claude Opus 5.5'][0], 1495.0)
         self.assertEqual(picked['Single Config Model'][0], 1430.0)
@@ -202,7 +242,7 @@ class UsdConversionTests(unittest.TestCase):
         acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
         scorer = fa.Scorer(meas, acc)
-        fa.convert_usd(usd, rows, scorer, meas, acc, {m: {'value': None, 'method': 'none'} for m in rows})
+        fa.convert_usd(usd, rows, scorer, meas, acc)
         got = usd['gpt-6-luna']
         self.assertEqual((got['value'], got['kind'], got['sources']['base']['model'], got['sources']['ratio']),
                          (8.0, 'converted', 'gpt-5.6-luna', 2.0))
@@ -215,7 +255,7 @@ class UsdConversionTests(unittest.TestCase):
                'gpt-6-luna': {'value': None, 'status': 'missing', 'kind': 'none'}}
         acc = {**READINGS, 'models': {m: {} for m in rows}, 'aliases': {}, 'families': {'rows': []}, 'superseded': {'gpt-5.6-luna': {'by': 'gpt-6-luna'}}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
-        fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc, {m: {'value': None} for m in rows})
+        fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc)
         self.assertIsNone(usd['gpt-6-luna']['value'])
 
     def test_tier_up_older_gives_an_older_row_its_declared_larger_model_and_nothing_else_does(self):
@@ -245,7 +285,7 @@ class UsdConversionTests(unittest.TestCase):
                                       'tier_up': '^fam', 'tier_up_version': 'same'},
                                      {'pattern': '^fam', 'models': ['fam-big'], 'size': 'full'}]}}
         meas = {'capacity': {'token_mix': {'input': 0.5, 'output': 0.5}}, 'models': {m: {} for m in rows}}
-        fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc, {m: {'value': None, 'method': 'none'} for m in rows})
+        fa.convert_usd(usd, rows, fa.Scorer(meas, acc), meas, acc)
         got = usd['fam-big-flash']
         self.assertEqual((got['value'], got['relation'], got['sources']['base']['model'], got['sources']['ratio']),
                          (2.5, 'size', 'fam-big', 0.25))                     # openrouter on both: 1 / 4, not 1 / 8
@@ -255,3 +295,63 @@ class UsdConversionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ListingIdentityTests(unittest.TestCase):
+    """Round 5 review A: a listing names one snapshot and one model; a row reads another name only on a cited statement."""
+    LABELS = sources.effort_readings(READINGS)
+
+    def test_a_date_tag_stays_part_of_the_base_name_and_an_effort_tag_does_not(self):
+        self.assertEqual(sources.base_name('Qwen-Max (0919)'), 'Qwen-Max 0919')
+        self.assertEqual(sources.base_name('DeepSeek-V4-Pro (High, 20260813)'), 'DeepSeek-V4-Pro 20260813')
+        self.assertEqual(sources.base_name('GPT-6 Astra (xhigh)'), 'GPT-6 Astra')
+        self.assertEqual(sources.base_name('GPT-6 Astra high'), 'GPT-6 Astra')
+        self.assertEqual(sources.base_name('Qwen3 Max'), 'Qwen3 Max')          # "Max" in a Qwen name is the name
+
+    def test_a_reasoning_label_reads_as_declared(self):
+        """Rule (accounts.json effort_readings): `non-reasoning` is reasoning off whatever else the tag names; `reasoning`
+        is a listing without an effort unless the tag names one; a declaration naming an effort word as a label stops."""
+        effort = lambda n: sources.aa_effort(n, self.LABELS)      # noqa: E731
+        self.assertEqual([effort('M (Non-reasoning)'), effort('M (Non-reasoning, High)'), effort('M (Reasoning)'),
+                          effort('M (Reasoning, Low)'), effort('M')], ['none', 'none', '', 'low', ''])
+        with self.assertRaises(ValueError):
+            sources.effort_readings({'effort_readings': {'labels': {'high': 'none'}, 'reads': {'default': 'high'}}})
+        with self.assertRaises(ValueError):
+            sources.effort_readings({'effort_readings': {'labels': {'reasoning': 'max'}, 'reads': {'default': 'high'}}})
+
+    def test_a_fallback_part_is_a_serving_note_not_an_effort(self):
+        """Rule (measurements.aa_variants): a tag part ending in `fallback` is AA's note of the model its harness falls back
+        to; the listing is read at the effort the rest of the tag names."""
+        recs = [{'name': 'M (High, Opus 4.8 Fallback)', 'v': 1}, {'name': 'M (Low)', 'v': 2}, {'name': 'M (Preview build)', 'v': 3}]
+        got = measurements.aa_variants(recs, self.LABELS)
+        self.assertEqual({e: r['v'] for e, r in got['M'].items()}, {'high': 1, 'low': 2})
+        self.assertTrue(measurements.EFFORT_TAG.match('default fallback'))
+
+    def test_a_listed_as_under_another_name_needs_a_cited_identity_statement(self):
+        """Rule (measurements.listed_as_identity): a row's own spellings need no citation; another name needs
+        listed_as_source with kind vendor, community or benchmark, an https url, as_of and statement; a dated maintainer
+        declaration is refused, as is a listed_as_source without its listed_as."""
+        cite = {'kind': 'vendor', 'url': 'https://example.test/m', 'as_of': '2026-11-18', 'statement': 'X is m-1'}
+        measurements.listed_as_identity({'m-1-high': {'listed_as': {'aa': 'M-1 (High)'}}})
+        measurements.listed_as_identity({'m-1': {'listed_as': {'aa': 'X'}, 'listed_as_source': {'aa': cite}}})
+        for bad in ({'m-1': {'listed_as': {'aa': 'X'}}},
+                    {'m-1': {'listed_as': {'aa': 'X'}, 'listed_as_source': {'aa': {**cite, 'kind': 'maintainer'}}}},
+                    {'m-1': {'listed_as': {'aa': 'X'}, 'listed_as_source': {'aa': {**cite, 'url': 'http://example.test'}}}},
+                    {'m-1': {'listed_as': {'aa': 'X'}, 'listed_as_source': {'aa': {**cite, 'statement': ' '}}}},
+                    {'m-1': {'listed_as_source': {'aa': cite}}}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                measurements.listed_as_identity(bad)
+        with self.assertRaises(ValueError):          # a dated listing is another snapshot, not the row's own spelling
+            measurements.listed_as_identity({'m-1': {'listed_as': {'aa': 'M-1 (0919)'}}})
+
+
+class EstimationOrderTests(unittest.TestCase):
+    def test_the_declared_order_must_be_the_codes_order_with_a_distance_and_its_evidence(self):
+        """Rule (five_axis.estimation_order): the data declares the order the code applies; another order, a missing
+        distance or missing evidence stops the build."""
+        doc = READINGS['estimation_order']
+        self.assertEqual(fa.estimation_order({'estimation_order': doc})['sibling_first_up_to_distance'], 1)
+        for bad in ({**doc, 'order': list(reversed(doc['order']))}, {**doc, 'sibling_first_up_to_distance': '1'},
+                    {**doc, 'evidence': ''}, {k: v for k, v in doc.items() if k != 'evidence'}, None):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                fa.estimation_order({'estimation_order': bad})

@@ -139,11 +139,17 @@ def accounts():
     return json.loads(ACCOUNTS.read_text(encoding='utf-8'))
 
 
+# A date in a listing's variant tag ("Qwen-Max (0919)", "DeepSeek-V4-Pro (High, 20260813)") names a snapshot: it stays part
+# of the base name, so a row reads that listing only when its own name carries the date or its `listed_as` names the
+# listing with a cited identity statement (round 5 review A).
+SNAPSHOT_TAG = re.compile(r'^(\d{8}|\d{6}|\d{4}|\d{4}-\d{2}(?:-\d{2})?)$')
+
+
 def base_name(name):
     s = re.sub(r'\s*\(.*\)\s*$', '', str(name)).strip()
     if not re.search(r'\bqwen[\d.-]*\s+max$', s, re.I):
         s = re.sub(r'\s+(xhigh|high|medium|low|max)$', '', s, flags=re.I).strip()
-    return s
+    return ' '.join([s, *(p.strip() for p in variant(name).split(',') if SNAPSHOT_TAG.match(p.strip()))])
 
 
 def variant(name):
@@ -167,7 +173,20 @@ def _text(raw):
 
 
 EFFORT_WORDS = {'max': 'max', 'xhigh': 'xhigh', 'high': 'high', 'medium': 'medium', 'low': 'low',
-                'minimal': 'minimal', 'non-reasoning': 'none', 'none': 'none'}
+                'minimal': 'minimal', 'none': 'none'}
+
+
+def effort_readings(acc):
+    """accounts.json `effort_readings` ({'labels', 'reads'}): how a board's reasoning label reads, one rule for every
+    model (`labels`: label -> `none`, reasoning switched off, or `default`, a listing without an effort), and the measured
+    effort `default` reads (`reads`). A build without the declaration stops."""
+    er = (acc or {}).get('effort_readings') or {}
+    labels, reads = er.get('labels'), er.get('reads')
+    if (not isinstance(labels, dict) or not labels or not set(labels.values()) <= {'none', 'default'}
+            or set(labels) & set(EFFORT_WORDS) or not isinstance(reads, dict) or 'default' not in reads):
+        raise ValueError('accounts.json effort_readings must map each reasoning label a board writes (`labels`) to none '
+                         'or default, and name the measured effort `default` reads (`reads`)')
+    return {'labels': {str(k).lower(): v for k, v in labels.items()}, 'reads': dict(reads)}
 
 
 AA_RSC_PUSH = re.compile(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)', re.S)   # Next.js RSC push chunks
@@ -310,10 +329,19 @@ def aa_release_records(target, names):
     return out, errors
 
 
-def aa_effort(name):
-    """Effort a listed variant runs at ('' when the listing names none)."""
-    tag = variant(name).lower()
-    for part in (p.strip() for p in tag.split(',')):
+def _tag_parts(name):
+    return [p.strip() for p in variant(name).lower().split(',') if p.strip()]
+
+
+def aa_effort(name, readings):
+    """Effort a listed variant runs at ('' when the listing names none: the model's one configuration). A reasoning label
+    reads as `readings['labels']` (accounts.json effort_readings, `effort_readings`) declares: a `none` label is reasoning
+    switched off, whatever effort the tag names besides; a `default` label is a listing without an effort, unless the tag
+    names one, which then wins."""
+    parts = _tag_parts(name)
+    if any(readings['labels'].get(p) == 'none' for p in parts):
+        return 'none'
+    for part in parts:
         if part in EFFORT_WORDS:
             return EFFORT_WORDS[part]
     bare = re.sub(r'\s*\(.*\)\s*$', '', str(name)).strip()
@@ -322,6 +350,18 @@ def aa_effort(name):
         if m:
             return EFFORT_WORDS[m.group(1).lower()]
     return ''
+
+
+def listing_rank(name, readings):
+    """Preference among one base name's listings read at the same effort (lower first), or None for a listing not read:
+    a listing without a reasoning label before one with it (an effort label wins over a bare reasoning label at that
+    effort); of the reasoning-off listings the bare one, then the one at the effort `default` reads
+    (`readings['reads']`); another reasoning-off listing at a named effort is not read."""
+    parts = _tag_parts(name)
+    named = next((EFFORT_WORDS[p] for p in parts if p in EFFORT_WORDS), None)
+    if aa_effort(name, readings) == 'none':
+        return 0 if named in (None, 'none') else 1 if named == readings['reads']['default'] else None
+    return int(any(p in readings['labels'] for p in parts))
 
 
 def openrouter(target):

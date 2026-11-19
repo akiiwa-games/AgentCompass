@@ -146,6 +146,28 @@ class ProvenanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'x-alias'):
             reference_provenance.validate_accounts_provenance(doc)
 
+    def test_a_maintainer_alias_is_only_a_shorthand_and_an_identity_alias_cites_a_public_page(self):
+        """Rule (round 5 review A): a dated maintainer declaration stands only for a shorthand (`shorthand: true`, "short
+        name for <row>"); every other alias cites an https page; a shorthand flag on a cited row is refused."""
+        accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        row = next(k for k, v in accounts['models'].items() if isinstance(v, dict))
+        short = {'kind': 'maintainer', 'as_of': '2026-11-18', 'shorthand': True, 'statement': f'short name for {row}'}
+        cited = {'kind': 'vendor', 'url': 'https://example.test/x', 'as_of': '2026-11-18', 'statement': f'x is {row}'}
+
+        def check(entry):
+            doc = {**accounts, 'aliases': {**accounts['aliases'], 'x-alias': row},
+                   'alias_sources': {**accounts['alias_sources'], 'rows': {**accounts['alias_sources']['rows'], 'x-alias': entry}}}
+            reference_provenance.validate_accounts_provenance(doc)
+        check(short)
+        check(cited)
+        for bad in ({**short, 'shorthand': False}, {k: v for k, v in short.items() if k != 'shorthand'},
+                    {**short, 'statement': 'short name for another-row'}, {**cited, 'shorthand': True},
+                    {**cited, 'url': 'http://example.test/x'},
+                    {**short, 'shorthand': False, 'url': 'https://example.test/x'},     # a maintainer row with a page
+                    {**cited, 'shorthand': True, 'statement': f'short name for {row}'}):  # a cited row as a shorthand
+            with self.subTest(bad=bad), self.assertRaisesRegex(ValueError, 'x-alias'):
+                check(bad)
+
     def test_accounts_provenance_accepts_dated_maintainer_and_rejects_uncited_or_hard_coded_declarations(self):
         reference_provenance.validate_references(self.folder)
         accounts = json.loads((self.folder / 'accounts.json').read_text(encoding='utf-8'))
