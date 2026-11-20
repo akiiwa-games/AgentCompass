@@ -98,7 +98,9 @@ def build_task(args, text, parent, said=None):
     if hours is not None and not (isinstance(hours, (int, float)) and not isinstance(hours, bool) and hours > 0 and hours != float('inf')):
         raise ValueError('--hours must be a positive number of expected active hours.')
     task = {'objective': text,  # the classifier and the worker both get the whole text
-            'task_id': args.task_id or 'roll-' + hashlib.sha256(text.encode()).hexdigest()[:16]}
+            'task_id': args.task_id or 'roll-' + hashlib.sha256(text.encode()).hexdigest()[:16],
+            # Where a new worker runs: an account's cwd_regex is about that directory (host_placement.worker_directory).
+            'cwd': host_placement.worker_directory(getattr(args, 'workspace', None))}
     if hours is None:
         # No extra model call: the allocator budgets the classifier's own expected_hours.
         task['hours_source'] = 'classifier_estimate'
@@ -728,11 +730,6 @@ def task_access(args, read_only_review=None):
     return 'read_only' if read_only_review is True else 'write'
 
 
-def parent_cwd():
-    # Paseo starts a worker without --workspace in its parent's cwd, which Paseo gives its agents here.
-    return os.environ.get('PASEO_AGENT_CWD') or os.getcwd()
-
-
 def same_cwd_warning(out, cwd, parent):
     """Without `--workspace`, parallel workers commonly start in one checkout and create their own worktrees, so
     other unsettled writers in `cwd` are reported as a warning and block nothing."""
@@ -859,7 +856,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             }
             return workspace_blocked(out, workspace, remaining_holders, dispatch_mode='paseo', resumable_ids=resumable_ids)
     # A resumed worker without --workspace stays where it lives, whatever the parent's directory.
-    default_cwd = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or parent_cwd()
+    default_cwd = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or host_placement.parent_cwd()
     placed = host_placement.place('paseo', workspace, default_cwd=default_cwd, paseo_probe=probe)
     if not placed['ok']:
         return placement_refused(out, 'paseo', placed)
@@ -1188,7 +1185,7 @@ def cli_command(family, provider):
 def cli(args, out, bundle, text):
     """No Paseo here: run the routed bundle through its own CLI, on the account its provider definition selects."""
     workspace = host_placement.canonical_dir(getattr(args, 'workspace', None))
-    placed = host_placement.place('cli', workspace, default_cwd=str(Path.cwd()))
+    placed = host_placement.place('cli', workspace, default_cwd=host_placement.parent_cwd())
     cwd = placed['cwd']
     family, provider_env = provider_definition(bundle['provider'], bundle=bundle)
     ws_note = f' in directory `{workspace}`' if workspace else ''
@@ -1373,6 +1370,15 @@ def run_batch(args, judge):
         one._exclude_agents = set(batch_used_agents)
         try:
             result, code = run(one, judge)
+        except KeyboardInterrupt:
+            # What the batch has goes out before the interrupt does: a worker launched before it is in this answer.
+            print(json.dumps({'status': 'batch', 'results': results, 'interrupted': str(one.brief),
+                              'not_started': [str(rest.brief) for rest in each[index + 1:]],
+                              'next_action': (f'Interrupted during brief {one.brief}: whether it launched is not known; '
+                                              'roll it again (a task that already has a dispatch comes back as that worker, '
+                                              'pending), and roll the briefs in not_started.')},
+                             ensure_ascii=False, default=str), flush=True)
+            raise
         except Exception as exc:
             # OSError, ValueError, RuntimeError: a refusal or a failure of this brief alone, and the batch goes on.
             unexpected = not isinstance(exc, (OSError, ValueError, RuntimeError))
@@ -1629,7 +1635,7 @@ def _run(args, judge):
     if use_paseo:
         return paseo(args, out, decision, task, text, parent, usage_reading.usage_snapshot(args.usage_cache), judge=judge)
     surface = 'herdr' if parent_host == 'herdr' else parent_host if parent_host in NATIVE_HOSTS else 'cli'
-    placed = host_placement.place(surface, canonical_ws, default_cwd=str(Path.cwd()),
+    placed = host_placement.place(surface, canonical_ws, default_cwd=host_placement.parent_cwd(),
                                   bundle=bundle, address=parent_address)
     if not placed['ok']:
         return placement_refused(out, surface, placed)

@@ -216,8 +216,7 @@ class HerdrParent(Base):
         self.assertEqual(set(before), set(after))
         gained = 0
         for bid, c in after.items():
-            why = host_herdr.cannot_run(c['bundle'], c['bundle'].get('harness') or account_fleet.bundle_harness(
-                c['bundle'], c['bundle'].get('account'), bid))
+            why = host_herdr.cannot_run(c['bundle'])
             extra = [r for r in c['excluded'] if r not in before[bid]['excluded']]
             self.assertEqual(extra, [why] if why else [], bid)
             gained += bool(why)
@@ -338,24 +337,207 @@ class CodeOnly(Base):
                 self.assertTrue(host_placement.place(surface, None, default_cwd='D:/work')['ok'])
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
-
 class HerdrNamedRoute(Base):
     def test_a_named_route_herdr_cannot_launch_says_the_harness_and_exits_2(self):
         # Rule (host_herdr._launch): a route the user named on a harness Herdr does not run is refused before any terminal,
         # exit 2, naming the harness; the way out is a route Herdr runs, never "roll again".
         import shutil
         bundle = next(b for b in account_fleet.bundles(self.accounts).values()
-                      if host_herdr.cannot_run(b, b.get('harness')) and not b.get('disabled')
+                      if host_herdr.cannot_run(b) and not b.get('disabled')
                       and b['account'] in ('claude-lab', 'codex', 'antigravity'))
-        with patch.object(host_herdr, 'hc', lambda *a, **k: {'terminal': {'state': 'live'}}),                 patch.object(shutil, 'which', return_value='hc'):
+        with patch.object(host_herdr, 'hc', lambda *a, **k: {'terminal': {'state': 'live'}}), \
+                patch.object(shutil, 'which', return_value='hc'):
             res, code = self.run_roll(env={'PASEO_AGENT_ID': '', 'HC_TERMINAL_ID': 'term-1'}, parent_host='herdr',
                                       provider=bundle['provider'], account=bundle['account'], model=bundle['model'],
                                       basis='the user named it', task_id='t-named', accounts=None, specialty=None,
                                       no_score=True, keep_whole=None, reason_category=None, input=None)
         self.assertEqual((code, res['status']), (2, 'blocked'))
-        self.assertIn(f"cannot run the {bundle['harness']} harness", res['cause'])
+        self.assertIn(host_herdr.cannot_run(bundle), res['cause'])
         self.assertNotIn('roll again', res['next_action'])
+
+
+class NotTheUsersCheckbox(Base):
+    """Review finding 1: a row off by default in the shipped data, or one discovery no longer sees, is not the user's setting."""
+
+    def test_off_by_default_says_the_shipped_data_and_naming_and_is_not_a_local_setting(self):
+        # Rule (auto_bundles: disabled_by_default is public data, reached by naming the model; router-internals.md).
+        import auto_bundles
+        import roll
+        for spec in self.accounts['accounts'].values():
+            for bundle in (spec.get('bundles') or {}).values():
+                bundle.update(disabled=True, disabled_by_default=True)
+        plan = self.plan(task_with_profile(), host_policy_config=None)
+        self.assertNotIn(host_policy.NOT_CHOSEN, plan['decision']['reason'])
+        self.assertIsNone(plan['decision'].get('local_settings'))
+        self.assertNotIn("user's choice", roll.none_next(plan))
+        seen = 0
+        for c in plan['ranking']:
+            if candidate_eval.UNCHECKED in c['excluded']:
+                seen += 1
+                self.assertIn(auto_bundles.off_by_default(c['bundle']['account'], c['bundle']['model']),
+                              candidate_eval.said_exclusions(c))
+        self.assertGreater(seen, 0)
+
+    def test_a_row_discovery_no_longer_sees_is_said_by_discovery_alone(self):
+        # Rule (auto_bundles: an expired row is disabled and carries discovery_unavailable): one fact, its own words.
+        for spec in self.accounts['accounts'].values():
+            for bundle in (spec.get('bundles') or {}).values():
+                bundle.update(disabled=True, discovery_unavailable=True)
+        plan = self.plan(task_with_profile(), host_policy_config=None)
+        self.assertNotIn(host_policy.NOT_CHOSEN, plan['decision']['reason'])
+        self.assertIsNone(plan['decision'].get('local_settings'))
+        for c in plan['ranking']:
+            if candidate_eval.UNCHECKED in c['excluded']:
+                said = candidate_eval.said_exclusions(c)
+                self.assertIn('model not detected by discovery for 7+ days', said)
+                self.assertFalse(any('unchecked' in r for r in said), said)
+
+
+class WorkerDirectory(Base):
+    """Review finding 2: an account's cwd_regex is matched against the directory the worker runs in."""
+
+    def restrict(self, account, directory):
+        import re
+        self.accounts['accounts'][account]['cwd_regex'] = '^' + re.escape(cwd_policy.normalized(directory)) + '$'
+
+    def rows(self, plan, account):
+        return [c for c in plan['ranking'] if c['bundle']['account'] == account]
+
+    def build(self, **over):
+        import roll
+        return tra.with_profile(roll.build_task(self.args(self.brief_file(), **over), '# Task\n', 'parent-a', []))
+
+    def test_run_a_an_account_restricted_to_the_workspace_is_not_refused_from_elsewhere(self):
+        ws = self.root / 'allowed-ws'
+        ws.mkdir()
+        self.restrict('claude-lab', host_placement.canonical_dir(str(ws)))
+        plan = self.plan(self.build(workspace=str(ws)), host_policy_config=None)
+        self.assertTrue(self.rows(plan, 'claude-lab'))
+        for c in self.rows(plan, 'claude-lab'):
+            self.assertFalse(any('cwd_regex' in r for r in c['excluded']), c['excluded'])
+
+    def test_run_b_an_account_restricted_to_the_process_directory_is_refused_for_another_workspace(self):
+        ws = self.root / 'other-ws'
+        ws.mkdir()
+        self.restrict('claude-lab', os.getcwd())
+        plan = self.plan(self.build(workspace=str(ws)), host_policy_config=None)
+        canon = cwd_policy.normalized(host_placement.canonical_dir(str(ws)))
+        for c in self.rows(plan, 'claude-lab'):
+            self.assertTrue(any('cwd_regex' in r and canon in r for r in c['excluded']), c['excluded'])
+
+    def test_without_workspace_the_parent_directory_is_matched_and_the_launch_lands_there(self):
+        # Rule (host_placement.worker_directory): no --workspace -> the parent's directory (PASEO_AGENT_CWD, else the
+        # process directory), which the launch gives the worker too.
+        there = self.root / 'parent-dir'
+        there.mkdir()
+        with patch.dict(os.environ, {'PASEO_AGENT_CWD': str(there)}):
+            task = self.build()
+            self.assertEqual(task['cwd'], host_placement.worker_directory(None))
+        self.assertEqual(cwd_policy.normalized(task['cwd']), cwd_policy.normalized(there))
+        for name in self.accounts['accounts']:
+            self.restrict(name, there)
+        res, _ = self.run_roll(env={'PASEO_AGENT_CWD': str(there)}, task_id='t-parent-dir')
+        self.assertEqual(res['status'], 'launched', res)
+        import dispatch_registry
+        row = dispatch_registry.inspect(tra.full(res)['worker']['dispatch_id'])
+        self.assertEqual(cwd_policy.normalized(row['cwd']), cwd_policy.normalized(there))   # where the launch placed it
+
+    def test_a_surface_other_than_paseo_places_the_worker_in_the_same_directory(self):
+        # Rule (host_placement.worker_directory): the launch reads the directory the plan matched, on every surface.
+        there = self.root / 'parent-dir'
+        there.mkdir()
+        seen = []
+
+        def launch(out, bundle, prompt_file, task_id, *, cwd=None, dispatch_id=None):
+            seen.append(cwd)
+            return dict(out, launched=True, dispatch_mode='herdr', next='x'), 0
+        with patch.object(host_herdr, 'launch', launch):
+            res, _ = self.run_roll(env={'PASEO_AGENT_ID': '', 'HC_TERMINAL_ID': 'term-1', 'PASEO_AGENT_CWD': str(there)},
+                                   parent_host='herdr', task_id='t-herdr-dir')
+        self.assertEqual([cwd_policy.normalized(c) for c in seen], [cwd_policy.normalized(there)], res)
+
+    def test_a_roll_whose_worker_runs_in_the_process_directory_plans_as_before(self):
+        # Refactor equivalence: the process directory matched by name or by default reads the same plan.
+        self.restrict('codex', os.getcwd())
+        self.restrict('claude-lab', 'D:/elsewhere')
+        before = self.plan(task_with_profile(), host_policy_config=None)
+        after = self.plan(task_with_profile(cwd=os.getcwd()), host_policy_config=None)
+        self.assertEqual([(c['id'], c['excluded'], c['score']) for c in after['ranking']],
+                         [(c['id'], [r.replace("this process's working directory", "the worker's directory") for r in c['excluded']],
+                           c['score']) for c in before['ranking']])
+
+
+class LocalOnlyByIsValidated(Base):
+    """Review finding 3: needs.local_only_by is checked where task input is, and a caller's document cannot name a flag."""
+
+    def test_a_value_outside_the_vocabulary_is_refused_with_the_vocabulary(self):
+        import task_intake
+        with self.assertRaises(ValueError) as refused:
+            task_intake.check_caller_task({'needs': {'local_only': True, 'local_only_by': 'bogus'}})
+        for token in task_intake.LOCAL_ONLY_BY:
+            self.assertIn(token, str(refused.exception))
+
+    def test_a_plan_input_document_reads_as_the_callers_own_mark(self):
+        import task_intake
+        for by in task_intake.LOCAL_ONLY_BY:
+            with self.subTest(by=by):
+                document = {'task': dict(TASK, needs={'local_only': True, 'local_only_by': by})}
+                task = route_judge._plan_input_task(document, argparse.Namespace(stage='plan', hours=None, can_wait_hours=None))
+                said = remote_exclusions(self.plan(task_with_profile(needs=task['needs'])))
+                self.assertTrue(said)
+                self.assertTrue(all(r.startswith('the caller marked') for r in said), said)
+
+    def test_roll_keeps_the_flag_it_read(self):
+        import roll
+        ws = self.root / 'ws'
+        ws.mkdir()
+        task = roll.build_task(self.args(self.brief_file(), workspace=str(ws)), '# Task\n', 'parent-a', [])
+        kept = route_judge._plan_input_task({'task': task}, argparse.Namespace(stage='roll', hours=None, can_wait_hours=None))
+        self.assertEqual(kept['needs']['local_only_by'], '--workspace')
+
+
+class HerdrOneHarness(Base):
+    """Review finding 5: the plan and the launch read the harness that runs a bundle from one function."""
+
+    def test_a_row_on_a_provider_that_extends_opencode_is_refused_in_the_plan_as_at_the_launch(self):
+        config = self.root / '.paseo' / 'config.json'
+        doc = json.loads(config.read_text())
+        doc['agents']['providers']['oc-claude'] = {'extends': 'opencode', 'enabled': True}
+        config.write_text(json.dumps(doc))
+        bundle = {'provider': 'oc-claude', 'model': 'claude-sonnet-5-5', 'id': 'oc_sonnet'}
+        why = host_herdr.cannot_run(bundle)
+        self.assertIsNotNone(why)
+        res, code = host_herdr.launch({'parent_id': 'parent-a', 'parent_address': 'term-1'}, bundle, self.brief_file(), 't-oc')
+        self.assertEqual(code, 2)
+        self.assertEqual(res['error'], f'{why}; reroute, do not substitute.')
+
+
+class BatchInterrupted(Base):
+    """Review finding 6: an interrupt after a launch prints what the batch has, then goes on."""
+
+    def test_keyboard_interrupt_prints_the_results_so_far_and_is_not_swallowed(self):
+        import contextlib
+        import io
+        import roll
+        calls = {'n': 0}
+
+        def run(args, judge):
+            calls['n'] += 1
+            if calls['n'] == 1:
+                return {'status': 'launched', 'worker': {'agent_id': 'agent-first'}}, 0
+            raise KeyboardInterrupt
+        briefs = [self.brief_file(f'k{i}.md', f'# Interrupted brief {i}\n') for i in range(3)]
+        _, _, judge, _ = self._setup_paseo_env()
+        printed = io.StringIO()
+        with patch.object(roll, 'run', run), patch.object(roll.scorer_client, 'prefetch_scores', lambda *a, **k: None), \
+                contextlib.redirect_stdout(printed), self.assertRaises(KeyboardInterrupt):
+            roll.run_batch(self.args(briefs, hours=None, score_timeout=120), judge)
+        answer = json.loads(printed.getvalue())
+        self.assertEqual(answer['status'], 'batch')
+        self.assertEqual(answer['results'][0]['worker']['agent_id'], 'agent-first')
+        self.assertEqual(answer['interrupted'], str(briefs[1]))
+        self.assertEqual(answer['not_started'], [str(briefs[2])])
+
+
+if __name__ == '__main__':
+    unittest.main()

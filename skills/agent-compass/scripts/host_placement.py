@@ -14,6 +14,20 @@ import launch_values
 REMOTE_SURFACES = ('dot', 'chatgpt-web', 'grok-bot')
 
 
+def parent_cwd():
+    """The parent's directory: a local worker without `--workspace` starts here (Paseo gives its agents this directory
+    in PASEO_AGENT_CWD), whatever surface launches it."""
+    return os.environ.get('PASEO_AGENT_CWD') or os.getcwd()
+
+
+def worker_directory(workspace):
+    """The one answer to where a new local worker runs: the canonical `--workspace` when given, else `parent_cwd()`.
+    roll puts it in the task (`task['cwd']`), so the plan, `record` and a named roll match an account's `cwd_regex`
+    against it, and every launch surface places the worker there (`place`). A worker roll resumes runs in its own
+    directory, which the plan does not match."""
+    return canonical_dir(workspace) or parent_cwd()
+
+
 class InvalidWorkspace(ValueError):
     """`--workspace` was given a value that is not an existing directory."""
 

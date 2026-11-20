@@ -67,11 +67,19 @@ def hc(*args, timeout=25):
     return data
 
 
-def cannot_run(bundle, family):
-    """Why Herdr cannot launch `bundle` on the harness `family`, one sentence per fact; None when it can. A runner that
-    works remotely (host_placement.REMOTE_SURFACES) never goes through Herdr."""
+def launch_family(bundle):
+    """The one answer to which harness runs `bundle` here: the CLI family its provider's definition launches
+    (`roll.provider_definition`), read by the plan (candidate_eval, through `cannot_run`) and by the launch alike."""
+    import roll
+    return roll.provider_definition(bundle['provider'], bundle=bundle)[0]
+
+
+def cannot_run(bundle):
+    """Why Herdr cannot launch `bundle`, one sentence per fact; None when it can. A runner that works remotely
+    (host_placement.REMOTE_SURFACES) never goes through Herdr."""
     if bundle.get('provider') in host_placement.REMOTE_SURFACES:
         return None
+    family = launch_family(bundle)
     if family not in PERMISSION_MODES:
         return f"Herdr cannot run the {family} harness (it launches only {', '.join(PERMISSION_MODES)})"
     mode = bundle.get('modeId')
@@ -86,9 +94,9 @@ def cannot_run(bundle, family):
 def interactive(bundle):
     """Only mappings we can reproduce exactly; account selection uses the existing provider adapter."""
     import roll
-    family, provider_env = roll.provider_definition(bundle['provider'], bundle=bundle)
-    if why := cannot_run(bundle, family):
+    if why := cannot_run(bundle):
         raise ValueError(f'{why}; reroute, do not substitute.')
+    family, provider_env = roll.provider_definition(bundle['provider'], bundle=bundle)
     if bundle.get('fast'):
         import account_fleet
         from fast_modes import validate

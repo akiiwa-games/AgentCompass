@@ -46,12 +46,15 @@ def said_exclusions(candidate):
     """What a caller reads for each exclusion of `candidate`: the two routing preferences in their owner's words
     (`host_policy.outside_routing`, `unchecked_routing`), naming the account or model and the setting, and that it is
     the user's own setting on this machine; every other exclusion as written. `excluded` keeps the two constants:
-    `dispatch_registry.prepare` lifts them by value."""
+    `dispatch_registry.prepare` lifts them by value. A row `disabled` other than by the user's checkbox (`unchecked_by`)
+    says its own fact: off by default in the shipped data (`auto_bundles.off_by_default`), or not seen by discovery,
+    which its discovery exclusion already says."""
     bundle = candidate.get('bundle') or {}
-    said = {OUT_OF_AUTOMATIC_ROUTING: lambda: host_policy.outside_routing(bundle.get('account')),
-            UNCHECKED: lambda: host_policy.unchecked_routing(bundle.get('account'), bundle.get('model'))}
-    return [f'{said[reason]()}: {host_policy.NOT_CHOSEN}' if reason in said else reason
-            for reason in candidate.get('excluded') or ()]
+    account, model = bundle.get('account'), bundle.get('model')
+    said = {OUT_OF_AUTOMATIC_ROUTING: f'{host_policy.outside_routing(account)}: {host_policy.NOT_CHOSEN}',
+            UNCHECKED: {'default': auto_bundles.off_by_default(account, model), 'discovery': None}.get(
+                candidate.get('unchecked_by'), f'{host_policy.unchecked_routing(account, model)}: {host_policy.NOT_CHOSEN}')}
+    return [said.get(reason, reason) for reason in candidate.get('excluded') or () if said.get(reason, reason) is not None]
 
 
 def local_settings(candidate):
@@ -249,7 +252,13 @@ def evaluate_bundle(bundle, task, ctx):
     # Off by default (superseded in public data) is not the user's checkbox: naming the model still reaches it.
     if (not user_named and bundle.get('disabled')
             and not (bundle.get('disabled_by_default') and (exact_hit or pin_hit))):
-        setting_exclude('checkbox', UNCHECKED)
+        # `excluded` holds UNCHECKED for all three (dispatch_registry.prepare lifts it by value); only the user's
+        # checkbox is the user's setting.
+        if bundle.get('discovery_unavailable') or bundle.get('disabled_by_default'):
+            exclude(UNCHECKED)
+            result['unchecked_by'] = 'discovery' if bundle.get('discovery_unavailable') else 'default'
+        else:
+            setting_exclude('checkbox', UNCHECKED)
     if bundle.get('discovery_unavailable'):
         exclude(bundle['discovery_unavailable'] if isinstance(bundle['discovery_unavailable'], str)
                 else 'model not detected by discovery for 7+ days')
@@ -292,7 +301,7 @@ def evaluate_bundle(bundle, task, ctx):
         task_exclude('the parent disallowed outbound work; this worker runs remotely')
     # Harness input limits apply to every bundle on the harness, manual or auto (HARNESS_CAPABILITIES).
     harness = bundle.get('harness') or account_fleet.bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
-    if task.get('parent_host') == 'herdr' and (herdr_cannot := host_herdr.cannot_run(bundle, harness)):
+    if task.get('parent_host') == 'herdr' and (herdr_cannot := host_herdr.cannot_run(bundle)):
         task_exclude(herdr_cannot)
     if (info.get('text_only') or not account_fleet.harness_transfers_files(harness)) and task.get('file_transfer'):
         task_exclude('this text-only runner cannot transfer or apply local files' if info.get('text_only')

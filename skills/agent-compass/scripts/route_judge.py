@@ -802,6 +802,8 @@ def _plan_input_task(document, args):
         raise ValueError('Input requires task.')
     import task_intake
     task_intake.check_caller_task(task)
+    if getattr(args, 'stage', None) != 'roll':      # roll.build_task wrote its own token from the flag it read
+        task = task_intake.own_local_only_mark(task)
     if getattr(args, 'hours', None) is not None and task.get('expected_hours') is None:
         task = {**task, 'expected_hours': args.hours}
     if getattr(args, 'can_wait_hours', None) is not None and task.get('can_wait_hours') is None:

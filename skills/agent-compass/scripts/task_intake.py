@@ -435,11 +435,25 @@ def router_fields(task):
     return [k for k in NOT_CALLER_INPUT if k in task] + [f'needs.{k}' for k in ('force_fast',) if k in needs]
 
 
+def own_local_only_mark(task):
+    """A caller's document (plan --input) that marks local-only marks it as the caller, whatever its local_only_by says:
+    the tokens that name a flag are set only by the code that read the flag (roll.build_task), the classifier's by
+    route_judge.plan_stage."""
+    needs = task.get('needs') if isinstance(task.get('needs'), dict) else None
+    if not needs or 'local_only_by' not in needs:
+        return task
+    return {**task, 'needs': {k: v for k, v in needs.items() if k != 'local_only_by'}}
+
+
 def check_caller_task(task):
     """Refuse a caller's task that carries a field only AgentCompass sets (router_fields), by name; never drop it.
     Called where a caller's task enters (route_judge: plan --input, record), not on a task AgentCompass stored: a stored
     decision in an earlier version's shape is dispatch_registry.earlier_version's."""
     task = task if isinstance(task, dict) else {}
+    by = (task.get('needs') or {}).get('local_only_by') if isinstance(task.get('needs'), dict) else None
+    if by is not None and by not in LOCAL_ONLY_BY:
+        raise ValueError(f"invalid_task_input: needs.local_only_by is {by!r}; it is one of {', '.join(LOCAL_ONLY_BY)}, "
+                         'set by AgentCompass where it reads the flag (or the classifier); leave it out of a task you write.')
     found = router_fields(task)
     if found:
         raise ValueError(
