@@ -117,6 +117,8 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         decision.setdefault('warnings', []).append(
             f"{name}: priced from its last good usage reading, taken at {at} in the current reset period "
             f"(the latest read failed); a provider hold on a model or pool still wins over this reading")
+    if (sync := accounts.get('_host_policy_sync') or {}).get('mode') == 'error':
+        decision.setdefault('warnings', []).append(host_policy.sync_failed(sync.get('error')))
     state_policy = (host_policy.load_policy() if read_local_state else {'allowed_accounts': list((accounts.get('accounts') or {}).keys())}) if host_policy_config is None else host_policy_config
     state_warnings = account_state.warnings(accounts.get('_discovery'), accounts['accounts'],
                                             lambda name: host_policy.account_allowed(state_policy, name))
@@ -163,7 +165,13 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
         named_block = named_pin_block(task, candidates)
         decision.update({'action': 'none', 'needs_user_decision': True,
                          'reason': 'No eligible bundle. Closest: ' + ' | '.join(
-                             f"{c['id']}: {'; '.join(c['excluded'])}" for c in closest)})
+                             f"{c['id']}: {'; '.join(candidate_eval.said_exclusions(c))}" for c in closest)})
+        kinds = [candidate_eval.local_settings(c) for c in closest]
+        if closest and all(kinds):
+            # Nothing but the user's own settings on this machine keeps the closest candidates out (roll.none_next).
+            decision['local_settings'] = {
+                'exclusions': [f"{c['id']}: {said}" for c in closest for said in candidate_eval.said_exclusions(c)],
+                'named_route_reaches': all(set(k) <= set(candidate_eval.LIFTED_BY_NAMING) for k in kinds)}
         # When a bundle is held back only by quota, say when that quota returns, so the parent can wait.
         waits = sorted((wait[0], wait[1], c['id'], c['bundle']['account']) for c in candidates if c['excluded']
                        and (wait := quota_pools.quota_wait(c, usage)) is not None)
@@ -220,7 +228,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                          'resume_blocked_by': resume['excluded'],
                          'wait_hours': (advised_hours(resume['wait_until_hours']) if isinstance(resume.get('wait_until_hours'), (int, float))
                                         and math.isfinite(resume['wait_until_hours']) else None),
-                         'reason': (f"The chain owner {resume['id']} cannot continue now ({'; '.join(resume['excluded'])})"
+                         'reason': (f"The chain owner {resume['id']} cannot continue now ({'; '.join(candidate_eval.said_exclusions(resume))})"
                                     + (f"; it can continue in {advised_hours(resume['wait_until_hours'])}h" if isinstance(resume.get('wait_until_hours'), (int, float)) and resume['wait_until_hours'] != float('inf') else '')
                                     + '. Waiting keeps one owner; switching delivers sooner with handoff and drift risk.')})
     # The judge weighs models, not efforts, harnesses or accounts of one model: the margin is to the best other model.

@@ -555,15 +555,6 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None, no
     return results
 
 
-def paseo_placement_probe(directory, parent_id, host=None):
-    """Query Paseo's adapter for whether canonical `directory` can be placed for `parent_id`."""
-    host = host or host_call
-    response = host({'operation': 'workspace_agents', 'cwd': directory, 'parent_id': parent_id})
-    if not response.get('ok'):
-        return None
-    return {k: response[k] for k in ('placeable', 'error', 'enclosing_directories') if k in response} or None
-
-
 def workspace_holders(directory, parent_id, host=None, path=None):
     """Writers in canonical `directory`: open write dispatches across all hosts, plus router-launched Paseo agents
     running in `directory` whatever their last dispatch says (a worker can be sent a follow-up after it completed).

@@ -16,6 +16,7 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import account_state
 import caller_input
+import cwd_policy
 import antigravity_plan
 import decision_ledger
 import dispatch_flow
@@ -221,10 +222,8 @@ def record_constraint(args, task=None, classified=None):
     inherited = {k: sibling[k] for k in NAMED_ROW_FIELDS if k in sibling}
     acc_spec = (accounts.get('accounts') or {}).get(args.account) or {}
     if not account_fleet.account_cwd_allowed(acc_spec, (task or {}).get('cwd')):
-        raise ValueError(
-            f"Account {args.account!r} is restricted to cwd_regex {acc_spec.get('cwd_regex')!r} "
-            f"and cannot be dispatched from the current working directory."
-        )
+        raise ValueError(cwd_policy.refusal(args.account, acc_spec.get('cwd_regex'), (task or {}).get('cwd'))
+                         + '; a named route does not reach past it. Tell the user; do not substitute another account.')
     # External runners dispatch directly after record; apply the same registered
     # window protection used by prepared dispatches.
     base_b = account_fleet.bundles(accounts).get(chosen) or {}
@@ -675,7 +674,7 @@ def classify_task(task, needs, capabilities, policy, timeout, use_model=True):
         # still lets the classifier win over a caller-supplied difficulty.
     if profile['local_only'] and needs.get('local_only') is None:
         # Trust the classifier; explicit caller needs still take precedence.
-        needs = {**needs, 'local_only': True,
+        needs = {**needs, 'local_only': True, 'local_only_by': 'classifier',
                  'local_only_reason': profile.get('reason') or 'Task profile requires execution on this machine.'}
         task = {**task, 'needs': needs}
         alerts.append({
@@ -894,6 +893,8 @@ def _plan_input_task(document, args):
         raise ValueError('Input requires task.')
     import task_intake
     task_intake.check_caller_task(task)
+    if getattr(args, 'stage', None) != 'roll':      # roll.build_task wrote its own token from the flag it read
+        task = task_intake.own_local_only_mark(task)
     if getattr(args, 'hours', None) is not None and task.get('expected_hours') is None:
         task = {**task, 'expected_hours': args.hours}
     if getattr(args, 'can_wait_hours', None) is not None and task.get('can_wait_hours') is None:
@@ -994,7 +995,7 @@ def build_parser():
     parser.add_argument('--fast', action='store_true', help='roll/plan/record: prefer fast mode when quota is plentiful or during a pre-reset sprint; a result that did not apply it says why.')
     parser.add_argument('--verbose', action='store_true', help='roll: print the full result instead of the short one (status, next_action, pointers). The full result is saved to disk either way.')
     parser.add_argument('--title', help='roll: worker title (default: first line of the brief).')
-    parser.add_argument('--workspace', help='roll: existing directory this worker writes in and claims exclusively (default: parent cwd, warning only).')
+    parser.add_argument('--workspace', help='roll: existing directory this worker writes in and claims exclusively (default: parent cwd, warning only). It makes the work local-only, so remote runners are not considered (the answer says so).')
     parser.add_argument('--task-id', help='roll: stable id for this task (default: derived from the brief).')
     parser.add_argument('--resume', metavar='AGENT_ID', help='roll: resume this specific idle worker owned by the parent session, on its own route and in its own directory; when it cannot take the turn, nothing else is started.')
     parser.add_argument('--new-worker', action='store_true', help='roll: always create a new dispatch and worker: no resume, and no handing back an open dispatch of the same brief.')

@@ -90,13 +90,19 @@ def read_task_text(args):
     return args.task
 
 
-def build_task(args, text, parent):
+def build_task(args, text, parent, said=None):
+    """The task `roll` routes. `said` (a list) receives what the caller's own flags decided that the caller would not
+    otherwise read: the assumptions of the answer."""
     # Same brief, same parent -> same task_id, so a repeated roll cannot open a second live dispatch.
     hours = getattr(args, 'hours', None)
     if hours is not None and not (isinstance(hours, (int, float)) and not isinstance(hours, bool) and hours > 0 and hours != float('inf')):
         raise ValueError('--hours must be a positive number of expected active hours.')
     task = {'objective': text,  # the classifier and the worker both get the whole text
-            'task_id': args.task_id or 'roll-' + hashlib.sha256(text.encode()).hexdigest()[:16]}
+            'task_id': args.task_id or 'roll-' + hashlib.sha256(text.encode()).hexdigest()[:16],
+            # Where a new worker runs: an account's cwd_regex is about that directory (host_placement.worker_directory).
+            # A worker roll resumes runs in its own, which _run puts here once the registry names the worker
+            # (resumed_directory).
+            'cwd': host_placement.worker_directory(getattr(args, 'workspace', None))}
     if hours is None:
         # No extra model call: the allocator budgets the classifier's own expected_hours.
         task['hours_source'] = 'classifier_estimate'
@@ -113,11 +119,16 @@ def build_task(args, text, parent):
         local_only_reason = str(args.local_only).strip()
         if not local_only_reason:
             raise ValueError('--local-only requires a non-empty reason.')
-        task['needs'] = {'local_only': True, 'local_only_reason': local_only_reason}
+        task['needs'] = {'local_only': True, 'local_only_reason': local_only_reason, 'local_only_by': '--local-only'}
     elif getattr(args, 'workspace', None):
         ws = host_placement.canonical_dir(args.workspace)
         if ws:
-            task['needs'] = {'local_only': True, 'local_only_reason': f'inferred from --workspace {ws}'}
+            task['needs'] = {'local_only': True, 'local_only_reason': f'inferred from --workspace {ws}',
+                             'local_only_by': '--workspace'}
+            if said is not None:
+                said.append(f'--workspace {ws} places this work on this machine, so it is local-only: remote runners '
+                            '(which work on a computer of their own) were not considered. Roll without --workspace if a '
+                            'remote runner may take it.')
     if getattr(args, 'file', None) or getattr(args, 'apply_to', None):
         task.setdefault('needs', {})['file_transfer'] = True
     if getattr(args, 'fast', False):
@@ -273,17 +284,60 @@ def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
         return text if text == 'worker_not_resolvable' else GATE_CHECK_FAILED + text
 
 
+def worker_cwd_spec(worker, accounts):
+    """The account a resumed worker's turn runs on, as candidate_eval reads its cwd_regex, and that account's spec."""
+    import accounts_override
+    bundle = _resolve_worker_bundle(worker, accounts)
+    if bundle is None:
+        return None, {}
+    account = accounts_override.preference_account(bundle, bundle['account'], accounts)
+    return account, accounts['accounts'].get(account) or {}
+
+
+def resumed_directory(task, workspace, worker, said):
+    """Put the directory the explicitly resumed `worker` runs in into `task['cwd']` (host_placement.worker_directory),
+    or return the refusal when it is not known and the worker's account has a cwd_regex: that is the user's own
+    boundary, which neither a named route nor a named worker reaches past (as _auto_resumable refuses the same state).
+    Unknown on an unrestricted account, nothing is lifted: the task says so (`cwd_unread`) and so does `said`."""
+    own = host_placement.worker_directory(workspace, worker)
+    if own:
+        task['cwd'] = own
+        return None
+    import account_fleet
+    account, spec = worker_cwd_spec(worker, account_fleet.load_accounts())
+    agent_id = worker.get('agent_id')
+    if spec.get('cwd_regex'):
+        return (f'Nothing was launched: the directory of worker {agent_id!r} is not known on this machine (neither its '
+                f'Paseo record nor its dispatches name one), and account {account} is restricted to directories matching '
+                f"its cwd_regex {spec['cwd_regex']!r} (the user's own account setting on this machine), which neither a "
+                'named route nor a named worker reaches past. Omit --resume to start a fresh worker.')
+    task.pop('cwd', None)
+    task['cwd_unread'] = True
+    said.append(f'The directory of worker {agent_id!r} is not known on this machine (neither its Paseo record nor its '
+                f'dispatches name one); account {account} has no cwd_regex, so no directory was matched for this turn: '
+                'the worker resumes in its own directory.')
+    return None
+
+
 def _auto_resumable(worker, policy, usage_cache_path=None, accounts=None):
     """Whether roll may resume `worker` without being told to. Resuming is then the router's choice, so the two
     preference switches apply as they do to a plan: the account takes part in automatic routing on this host
     (`host_policy.account_allowed`) and the worker's model is not unchecked in model management. The gate must admit
-    the turn too. An explicit `--resume` is the caller's choice and reads only the gate (`_worker_gate_refusal`)."""
+    the turn too. The plan matched the account's `cwd_regex` against the directory a new worker would get, and the
+    worker resumed instead runs in its own (host_placement.worker_directory), which the restriction must admit too: one
+    that cannot be read is not resumed automatically. An explicit `--resume` is the caller's choice and reads only the
+    gate (`_worker_gate_refusal`); its plan is matched against the worker's own directory (resumed_directory)."""
     import account_fleet
     if accounts is None:
         accounts = account_fleet.load_accounts()
     bundle = _resolve_worker_bundle(worker, accounts)
     if bundle is None or not host_policy.account_allowed(policy, bundle.get('account')):
         return False
+    _, cwd_spec = worker_cwd_spec(worker, accounts)
+    if cwd_spec.get('cwd_regex'):
+        own = host_placement.worker_directory(None, worker)
+        if not own or not account_fleet.account_cwd_allowed(cwd_spec, own):
+            return False
     rows = [r for r in account_fleet.bundle_rows(accounts, bundle.get('bundle_id') or bundle.get('id'))
             if r['account'] == bundle.get('account')]
     if host_policy.disabled_cause(bundle['account'], rows, accounts):
@@ -464,6 +518,15 @@ def none_next(decision):
         return (f"Nothing can start now: {reset['bundle']} is held back by {reset['account']}'s {reset['window']} quota, which "
                 f"returns in {reset['hours']}h (at {reset['at']}). Wait that long and roll again, or do the task yourself, "
                 'or ask the user.')
+    settings = (decision.get('decision') or {}).get('local_settings')
+    if settings:
+        way = ("To use one on the user's word, name it with --provider, --account, --model and --basis (the user's own "
+               'words): a named route reaches past allowed_accounts and the model-management checkbox.'
+               if settings['named_route_reaches'] else
+               "An account's cwd_regex holds for a named route too.")
+        return ("No worker fits: only the user's own settings on this machine keep the closest candidates out ("
+                + '; '.join(settings['exclusions']) + f"). They are the user's choice, not a fault. {way} Otherwise do the "
+                'task yourself or ask the user.')
     return ('No worker fits this brief (route.reason lists the closest candidates and why each is excluded); do it yourself '
             'or ask the user.')
 
@@ -712,11 +775,6 @@ def task_access(args, read_only_review=None):
     return 'read_only' if read_only_review is True else 'write'
 
 
-def parent_cwd():
-    # Paseo starts a worker without --workspace in its parent's cwd, which Paseo gives its agents here.
-    return os.environ.get('PASEO_AGENT_CWD') or os.getcwd()
-
-
 def same_cwd_warning(out, cwd, parent):
     """Without `--workspace`, parallel workers commonly start in one checkout and create their own worktrees, so
     other unsettled writers in `cwd` are reported as a warning and block nothing."""
@@ -768,10 +826,16 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                 out = dict(out, assumptions=[*out.get('assumptions', []),
                                              f'Running agents in workspace {workspace} could not be read ({unavailable}); only recorded dispatches were checked.'])
         else:
-            probe = dispatch_flow.paseo_placement_probe(workspace, parent)
+            # A reader holds no claim on the directory: only the placement is read (the holders are not its conflict).
+            _, unavailable, probe = dispatch_flow.workspace_holders(workspace, parent)
             if probe and probe.get('placeable') is False:
                 return placement_refused(out, 'paseo', host_placement.place('paseo', workspace, paseo_probe=probe))
+            if unavailable:
+                out = dict(out, assumptions=[*out.get('assumptions', []),
+                                             f'Paseo could not be read for workspace {workspace} ({unavailable}); the '
+                                             'placement there was not verified, and the worker is started with that cwd.'])
     resume_agent_id = None
+    resumed_worker = None
     resume_bundle = None
     explicit_id = (getattr(args, 'resume', None) or '').strip()
     if explicit_id and getattr(args, 'new_worker', False):
@@ -811,7 +875,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             warn = (f'Resuming worker {explicit_id!r} on its existing bundle {worker_bid!r} as requested (--resume); '
                     f'the router would otherwise have chosen {routed_id!r}.')
             out = dict(out, warnings=[*out.get('warnings', ()), warn])
-        resume_agent_id = explicit_id
+        resume_agent_id, resumed_worker = explicit_id, explicit_worker
         resume_bundle = _resolve_worker_bundle(explicit_worker, fleet)
     elif not getattr(args, 'new_worker', False) and (decision.get('decision') or {}).get('action') != 'rotate':
         selected_bundle = decision.get('selected_bundle') or {}
@@ -823,12 +887,9 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             compatible = independent_reviewers(compatible)
         chain_worker_id = (((task.get('chain') or {}).get('worker') or {}).get('agent_id')
                            if isinstance(task.get('chain'), dict) else None)
-        if chain_worker_id and any(w['agent_id'] == chain_worker_id for w in compatible):
-            resume_agent_id = chain_worker_id
-        elif compatible:
-            matched = match_reusable_worker(args, task, text, parent, workers=compatible)
-            if matched:
-                resume_agent_id = matched['agent_id']
+        chained = next((w for w in compatible if chain_worker_id and w['agent_id'] == chain_worker_id), None)
+        resumed_worker = chained or (compatible and match_reusable_worker(args, task, text, parent, workers=compatible)) or None
+        resume_agent_id = resumed_worker['agent_id'] if resumed_worker else None
     if workspace and access == 'write':
         remaining_holders = [h for h in holders if not (resume_agent_id and h.get('agent_id') == resume_agent_id)]
         if remaining_holders:
@@ -837,8 +898,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                 if not w.get('worn') and not _worker_gate_refusal(w, usage_cache_path=usage_cache_path, accounts=fleet)
             }
             return workspace_blocked(out, workspace, remaining_holders, dispatch_mode='paseo', resumable_ids=resumable_ids)
-    # A resumed worker without --workspace stays where it lives, whatever the parent's directory.
-    default_cwd = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or parent_cwd()
+    # A resumed worker without --workspace stays where it lives, whatever the parent's directory (None: not read).
+    default_cwd = host_placement.worker_directory(None, resumed_worker)
     placed = host_placement.place('paseo', workspace, default_cwd=default_cwd, paseo_probe=probe)
     if not placed['ok']:
         return placement_refused(out, 'paseo', placed)
@@ -1167,7 +1228,7 @@ def cli_command(family, provider):
 def cli(args, out, bundle, text):
     """No Paseo here: run the routed bundle through its own CLI, on the account its provider definition selects."""
     workspace = host_placement.canonical_dir(getattr(args, 'workspace', None))
-    placed = host_placement.place('cli', workspace, default_cwd=str(Path.cwd()))
+    placed = host_placement.place('cli', workspace, default_cwd=host_placement.parent_cwd())
     cwd = placed['cwd']
     family, provider_env = provider_definition(bundle['provider'], bundle=bundle)
     ws_note = f' in directory `{workspace}`' if workspace else ''
@@ -1291,8 +1352,15 @@ def compact(result, status, detail_path):
         cause = result.get('error') or worker.get('cause') or worker.get('error') or worker.get('read_error')
     if cause and status in ('error', 'blocked', 'pending'):
         out['cause'] = str(cause)[:300]
-    if (result.get('route') or {}).get('warnings'):
-        out['warnings'] = result['route']['warnings'][:4]
+    route_warnings = (result.get('route') or {}).get('warnings') or []
+    if route_warnings:
+        # The first four, and how many more the details file holds: none is dropped without a word.
+        more = len(route_warnings) - 4
+        if detail_path is None:     # a dry run writes no details file: nothing holds the rest, so nothing is cut
+            out['warnings'] = list(route_warnings)
+        else:
+            out['warnings'] = route_warnings[:4] + ([f"{more} more {'warning is' if more == 1 else 'warnings are'} in "
+                                                     f'route.warnings of the details file ({detail_path}).'] if more > 0 else [])
     if argv and (status == 'pending' or (status == 'launched' and 'next_argv' in (nxt or ''))):
         out['next_argv'] = argv
     if status == 'launched' and result.get('dispatch_mode') == 'cli':
@@ -1348,13 +1416,36 @@ def run_batch(args, judge):
         scorer_client.prefetch_scores([build_task(one, read_task_text(one), None) for one in each], args.score_timeout)
     results, codes = [], []
     batch_used_agents = set()
-    for one in each:
+    for index, one in enumerate(each):
         one._exclude_agents = set(batch_used_agents)
         try:
             result, code = run(one, judge)
-        except (OSError, ValueError, RuntimeError) as exc:
-            result, code = {'status': 'error', 'cause': str(exc)[:300],
+        except KeyboardInterrupt:
+            # What the batch has goes out before the interrupt does: a worker launched before it is in this answer.
+            print(json.dumps({'status': 'batch', 'results': results, 'interrupted': str(one.brief),
+                              'not_started': [str(rest.brief) for rest in each[index + 1:]],
+                              'next_action': (f'Interrupted during brief {one.brief}: whether it launched is not known; '
+                                              'roll it again (a task that already has a dispatch comes back as that worker, '
+                                              'pending), and roll the briefs in not_started.')},
+                             ensure_ascii=False, default=str), flush=True)
+            raise
+        except Exception as exc:
+            # OSError, ValueError, RuntimeError: a refusal or a failure of this brief alone, and the batch goes on.
+            unexpected = not isinstance(exc, (OSError, ValueError, RuntimeError))
+            if unexpected and not results and public_data.is_data_error(exc):
+                raise   # nothing done yet: the run falls back to the shipped reference set as a whole (with_fallback)
+            failed = judge.failure_answer(exc, 'roll')     # its error class and text, nothing of a host's free text
+            result, code = {'status': 'error', 'error_type': failed['error_type'], 'cause': failed['cause'],
                             'next_action': 'Fix the cause, then roll this brief again on its own.'}, 1
+            if unexpected:
+                # The briefs after it are not started, and the ones before keep their results.
+                not_started = [str(rest.brief) for rest in each[index + 1:]]
+                results.append({'brief': str(one.brief), **result})
+                return {'status': 'batch', 'results': results, 'not_started': not_started,
+                        'next_action': (f'Brief {one.brief} failed with an unexpected error (its result says which), and '
+                                        f'{len(not_started)} brief(s) after it were not started (not_started). Handle each '
+                                        'result on its own; fix the cause, then roll the failed brief and the ones not '
+                                        'started again.')}, 1
         used_id = (result.get('worker') or {}).get('agent_id') if isinstance(result, dict) else None
         if isinstance(used_id, str) and used_id:
             batch_used_agents.add(used_id)
@@ -1420,7 +1511,8 @@ def _run(args, judge):
         parent, parent_host, parent_address = None, None, None
     else:
         parent, parent_host, parent_address = resolve_parent(args)
-    task = build_task(args, text, parent)
+    said = []
+    task = build_task(args, text, parent, said)
     task.update(parent_host=parent_host, parent_address=parent_address)
     host_session = harness_session(parent) if parent else ''
     if host_session:
@@ -1468,12 +1560,14 @@ def _run(args, judge):
             if gate_reason := _worker_gate_refusal(explicit_worker, usage_cache_path=usage_cache_path):
                 return _resume_refusal(base_out, explicit_id, 'resume_worker_gated',
                                        gate_refusal_text(explicit_id, gate_reason))
-            own_dir = host_placement.canonical_dir(explicit_worker.get('cwd') or explicit_worker.get('workspace'))
+            own_dir = host_placement.canonical_dir(host_placement.worker_directory(None, explicit_worker))
             if canonical_ws and own_dir and own_dir != canonical_ws:
                 # A worker does not move: the host resumes it only in its own directory (the bridge's
                 # `worker_workspace_mismatch`), and a new worker in --workspace would not hold its context.
                 return _resume_refusal(base_out, explicit_id, 'resume_workspace_mismatch', workspace_mismatch_text(
                     explicit_id, own_dir, canonical_ws))
+            if refused := resumed_directory(task, canonical_ws, explicit_worker, said):
+                return _resume_refusal(base_out, explicit_id, 'resume_worker_directory_unknown', refused)
             if named_route_given(args) or getattr(args, 'fast', False):
                 conflict = named_route_conflict(args, _resolve_worker_bundle(explicit_worker) or {})
                 if conflict:
@@ -1538,8 +1632,10 @@ def _run(args, judge):
         out['route']['reason'] = decision.get('reason')
         return dict(out, launched=False, dispatch_mode='split', caller_action='roll_each_line',
                     task_count=decision['task_count'], next=decision['next']), 2
-    if (said := hours_assumption(args, decision)) is not None:
-        out['assumptions'] = [said]
+    if (hours := hours_assumption(args, decision)) is not None:
+        said.insert(0, hours)
+    if said:
+        out['assumptions'] = said
     if decision.get('error') == 'scorer_unavailable':
         out['route']['reason'] = decision.get('reason') or 'scorer_unavailable'
         return dict(out, launched=False, dispatch_mode='scorer_unavailable',
@@ -1591,7 +1687,7 @@ def _run(args, judge):
     if use_paseo:
         return paseo(args, out, decision, task, text, parent, usage_reading.usage_snapshot(args.usage_cache), judge=judge)
     surface = 'herdr' if parent_host == 'herdr' else parent_host if parent_host in NATIVE_HOSTS else 'cli'
-    placed = host_placement.place(surface, canonical_ws, default_cwd=str(Path.cwd()),
+    placed = host_placement.place(surface, canonical_ws, default_cwd=host_placement.parent_cwd(),
                                   bundle=bundle, address=parent_address)
     if not placed['ok']:
         return placement_refused(out, surface, placed)

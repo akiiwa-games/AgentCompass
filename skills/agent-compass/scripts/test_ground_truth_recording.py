@@ -1401,7 +1401,8 @@ class GroundTruthRecordingTests(unittest.TestCase):
             )
             return dict(flow.public(observed), completion_notification={'status': 'watching'})
 
-        with patch.dict(os.environ, {'PASEO_AGENT_CWD': str(repo)}), \
+        # The Paseo parent's directory (host_placement.parent_cwd reads PASEO_AGENT_CWD under PASEO_AGENT_ID only).
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-gt', 'PASEO_AGENT_CWD': str(repo)}), \
                 patch.object(registry, 'utcnow', return_value=self.now), \
                 patch.object(flow, 'reconcile', return_value=[]), \
                 patch.object(flow, 'launch', side_effect=fake_launch):

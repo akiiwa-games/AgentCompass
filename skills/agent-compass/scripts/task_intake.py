@@ -435,11 +435,30 @@ def router_fields(task):
     return [k for k in NOT_CALLER_INPUT if k in task] + [f'needs.{k}' for k in ('force_fast',) if k in needs]
 
 
+def own_local_only_mark(task):
+    """A caller's document (plan --input) that marks local-only marks it as the caller, whatever its local_only_by says:
+    the tokens that name a flag are set only by the code that read the flag (roll.build_task), the classifier's by
+    route_judge.plan_stage."""
+    needs = task.get('needs') if isinstance(task.get('needs'), dict) else None
+    if not needs or 'local_only_by' not in needs:
+        return task
+    return {**task, 'needs': {k: v for k, v in needs.items() if k != 'local_only_by'}}
+
+
 def check_caller_task(task):
     """Refuse a caller's task that carries a field only AgentCompass sets (router_fields), by name; never drop it.
     Called where a caller's task enters (route_judge: plan --input, record), not on a task AgentCompass stored: a stored
     decision in an earlier version's shape is dispatch_registry.earlier_version's."""
     task = task if isinstance(task, dict) else {}
+    by = (task.get('needs') or {}).get('local_only_by') if isinstance(task.get('needs'), dict) else None
+    if by is not None and by not in LOCAL_ONLY_BY:
+        raise ValueError(f"invalid_task_input: needs.local_only_by is {by!r}; it is one of {', '.join(LOCAL_ONLY_BY)}, "
+                         'set by AgentCompass where it reads the flag (or the classifier); leave it out of a task you write.')
+    if 'cwd_unread' in task:
+        # roll.build_task's mark of a resumed worker whose directory it could not read; it lifts an account's cwd_regex
+        # (candidate_eval). The task AgentCompass stores keeps it, so it is not a router field (earlier_version).
+        raise ValueError('invalid_task_input: cwd_unread is set only by roll for a worker it resumes; leave it out of a '
+                         'task you write and give the directory the worker runs in as cwd.')
     found = router_fields(task)
     if found:
         raise ValueError(
@@ -450,6 +469,12 @@ def check_caller_task(task):
 
 
 COUPLINGS = ('low', 'medium', 'high')       # chain.coupling; high is a related task that continues its worker
+# The inputs that mark work local-only (`needs.local_only_by`, written where each sets `needs.local_only`: roll.build_task,
+# route_judge.plan_stage), in the words the exclusion of a remote runner says them (candidate_eval). A fixed set, never the
+# reason's text: the plan reads no free text of the task. Unset: the caller's own needs.local_only.
+LOCAL_ONLY_BY = {'--local-only': 'the parent marked this work local-only (--local-only)',
+                 '--workspace': '--workspace places this work on this machine, so it is local-only',
+                 'classifier': 'the classifier judged this work local-only (its profile)'}
 
 
 def normalize_task(raw, policy, capabilities, accounts, route=None):
@@ -549,10 +574,14 @@ def normalize_task(raw, policy, capabilities, accounts, route=None):
             'chain_hours': float(chain.get('total_hours') or hours), 'coupling': coupling, 'worker': worker,
             'handoff_ready': bool(chain.get('handoff_ready')), 'needs_visual': needs['visual'],
             'local_only': bool(needs.get('local_only')),
+            # Which input marked the work local (LOCAL_ONLY_BY): the exclusion of a remote runner says it.
+            'local_only_by': needs.get('local_only_by') if needs.get('local_only_by') in LOCAL_ONLY_BY else None,
             'file_transfer': bool(needs.get('file_transfer')), 'outbound_ok': needs.get('outbound_ok'),
             'constraint_bundle': constraints.get('bundle') if isinstance(constraints.get('bundle'), str) else None,
             'constraint_raw_model': constraint_raw_model,
             'constraint_model': constraint_model, 'constraint_effort': constraint_effort,
             'metered_ok': bool(task.get('metered_ok')),
             'can_wait_hours': float(task.get('can_wait_hours') or 0), 'chain_id': chain.get('id'),
-            'cwd': task.get('cwd')}
+            'cwd': task.get('cwd'), 'cwd_unread': bool(task.get('cwd_unread')),
+            # The host the parent runs on (roll): a candidate it cannot launch is excluded (host_herdr.cannot_run).
+            'parent_host': task.get('parent_host')}

@@ -170,6 +170,13 @@ def superseded_by(raw_model, accounts, providers=()):
     return None
 
 
+def off_by_default(account, model):
+    """The one wording of a row off by default in the shipped data (`disabled_by_default`: public data names a newer
+    model, `superseded_by`). Not the user's checkbox: naming the model reaches it."""
+    return (f'{account}/{model} is off by default in the shipped data (a newer model supersedes it), so automatic routing '
+            'does not choose it; naming the model (--model) uses it')
+
+
 def default_profile(raw_model, accounts, providers=()):
     """How a model name resolves, with its source: {'model', 'source', 'target', 'basis'}. Never mutates accounts.
 

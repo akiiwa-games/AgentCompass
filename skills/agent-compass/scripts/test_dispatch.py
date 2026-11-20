@@ -1880,7 +1880,7 @@ class RollTests(unittest.TestCase):
         self.assertIn('--spec', result['next'])
         with self.assertRaisesRegex(ValueError, '--parent-address'):
             self.roll(decision, parent='', parent_host='native', parent_id='coordinator-session')
-        with self.assertRaisesRegex(ValueError, 'actual PASEO_AGENT_ID'):
+        with self.assertRaisesRegex(ValueError, '--parent-id another-session differs from PASEO_AGENT_ID'):
             self.roll(decision, parent_id='another-session')
         with self.assertRaisesRegex(ValueError, 'message address must equal'):
             self.roll(decision, parent_address='another-session')
@@ -3420,13 +3420,13 @@ class RollLifecycleTests(unittest.TestCase):
 
     def resuming(self, cwd):
         import roll
-        worker = {'agent_id': 'worker-x'}
+        # The registry's answer for the worker carries its directory (dispatch_registry.reusable_workers).
+        worker = {'agent_id': 'worker-x', **({'cwd': cwd} if cwd else {})}
         self.enterContext(patch.object(roll, '_worker_gate_refusal', return_value=None))
         self.enterContext(patch.object(roll, '_auto_resumable', return_value=True))
         return (patch.object(registry, 'reusable_workers', return_value=[worker]),
                 patch.object(roll, '_bundle_matches_worker', return_value=True),
-                patch.object(roll, 'match_reusable_worker', return_value=worker),
-                patch.object(registry, 'paseo_agent_record', return_value={'cwd': cwd} if cwd else None))
+                patch.object(roll, 'match_reusable_worker', return_value=worker))
 
     def test_a_resume_with_no_workspace_warns_about_where_the_worker_lives_not_the_parent(self):
         dir_y = self.ws_dir('work-Y')
@@ -3435,8 +3435,8 @@ class RollLifecycleTests(unittest.TestCase):
             there = self.go(task_id='writer-there')['worker']['dispatch_id']
         with self.in_cwd(dir_p):
             here = self.go(task_id='writer-here')['worker']['dispatch_id']
-            workers, matches, match, record = self.resuming(dir_y)
-            with workers, matches, match, record:
+            workers, matches, match = self.resuming(dir_y)
+            with workers, matches, match:
                 resumed = self.go(task_id='follow-up')
         row = registry.inspect(resumed['worker']['dispatch_id'])
         self.assertEqual(row['operation'], 'resume')
@@ -3445,15 +3445,19 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertTrue(any(there in note for note in resumed['warnings']))
         self.assertFalse(any(here in note for note in resumed['warnings']))
 
-    def test_a_resumed_worker_of_unknown_directory_is_taken_to_be_in_the_parents(self):
+    def test_a_resumed_worker_of_unknown_directory_is_not_said_to_write_in_the_parents(self):
+        # Rule (host_placement.worker_directory): a resumed worker runs in its own directory; when that cannot be read,
+        # no directory is named for it, the parent's included.
         dir_p = self.ws_dir('work-P2')
         with self.in_cwd(dir_p):
             here = self.go(task_id='writer-here')['worker']['dispatch_id']
-            workers, matches, match, record = self.resuming(None)
-            with workers, matches, match, record:
+            workers, matches, match = self.resuming(None)
+            with workers, matches, match:
                 resumed = self.go(task_id='follow-up')
-        self.assertEqual(registry.inspect(resumed['worker']['dispatch_id'])['operation'], 'resume')
-        self.assertTrue(any(here in note for note in resumed['warnings']))
+        row = registry.inspect(resumed['worker']['dispatch_id'])
+        self.assertEqual(row['operation'], 'resume')
+        self.assertFalse(any(here in note for note in resumed.get('warnings', [])), resumed.get('warnings'))
+        self.assertIsNone(row.get('cwd'))
 
     def test_no_warning_elsewhere_for_a_reader_or_once_the_writer_has_ended(self):
         dir_a = self.ws_dir('warn-A')
@@ -3635,10 +3639,11 @@ class RollLifecycleTests(unittest.TestCase):
                                file=[], provider=None, account=None, model=None, effort=None, basis=None,
                                fast=False, can_wait_hours=None)
         task = roll.build_task(args, 'implement feature', 'parent-a')
-        self.assertEqual(task['needs'], {'local_only': True, 'local_only_reason': f'inferred from --workspace {canon}'})
+        self.assertEqual(task['needs'], {'local_only': True, 'local_only_reason': f'inferred from --workspace {canon}',
+                                         'local_only_by': '--workspace'})
         explicit = SimpleNamespace(**{**vars(args), 'local_only': 'needs local DB'})
         self.assertEqual(roll.build_task(explicit, 'implement feature', 'parent-a')['needs'],
-                         {'local_only': True, 'local_only_reason': 'needs local DB'})
+                         {'local_only': True, 'local_only_reason': 'needs local DB', 'local_only_by': '--local-only'})
 
     def test_exit_status_of_a_settled_create_separates_candidate_from_request_refusal(self):
         import roll

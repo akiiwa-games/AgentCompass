@@ -14,6 +14,31 @@ import launch_values
 REMOTE_SURFACES = ('dot', 'chatgpt-web', 'grok-bot')
 
 
+def parent_cwd():
+    """The parent's directory: a local worker without `--workspace` starts here, whatever surface launches it. Paseo
+    gives the agent PASEO_AGENT_ID names its directory in PASEO_AGENT_CWD; without that id the variable is no parent's
+    of this roll (a Herdr, native or cli launch run outside the Paseo session inherits it), and the worker starts where
+    the command runs."""
+    if (os.environ.get('PASEO_AGENT_ID') or '').strip() and os.environ.get('PASEO_AGENT_CWD'):
+        return os.environ['PASEO_AGENT_CWD']
+    return os.getcwd()
+
+
+def worker_directory(workspace, worker=None):
+    """The one answer to where a local worker runs: the canonical `--workspace` when given (a resumed worker too: the
+    host resumes a worker only in its own directory); else, for a worker roll resumes (`worker`, the registry's answer
+    for it, `dispatch_registry.reusable_workers`: its Paseo record's cwd, else its latest row's, else the request's,
+    then its recorded workspace), that directory, None when the registry knows none; else `parent_cwd()`. roll puts it
+    in the task (`task['cwd']`), so the plan, its re-plan at the launch, `record` and a named roll match an account's
+    `cwd_regex` against it, and every launch surface places the worker there (`place`)."""
+    if ws := canonical_dir(workspace):
+        return ws
+    if worker is not None:
+        own = worker.get('cwd') or worker.get('workspace')
+        return own if isinstance(own, str) and own.strip() else None
+    return parent_cwd()
+
+
 class InvalidWorkspace(ValueError):
     """`--workspace` was given a value that is not an existing directory."""
 
@@ -87,7 +112,8 @@ def native_next(host, bundle, address, workspace=None):
 
 
 def place(surface, workspace, *, default_cwd=None, bundle=None, address=None, paseo_probe=None):
-    """Map canonical `workspace` (or None) to host-native placement for `surface`."""
+    """Map canonical `workspace` (or None) to host-native placement for `surface`: a remote runner
+    (REMOTE_SURFACES), `paseo`, `herdr`, `cli` or a native host (worker_context.NATIVE_HOSTS), the surfaces roll builds."""
     if surface in REMOTE_SURFACES:
         if workspace:
             return {
@@ -135,20 +161,12 @@ def place(surface, workspace, *, default_cwd=None, bundle=None, address=None, pa
     if surface in ('herdr', 'cli'):
         landing = workspace or default_cwd or str(Path.cwd())
         return {'ok': True, 'surface': surface, 'workspace': workspace, 'cwd': landing}
-    if surface in ('orca', 't3', 'native'):
-        landing = workspace or default_cwd or str(Path.cwd())
-        return {
-            'ok': True,
-            'surface': surface,
-            'workspace': workspace,
-            'cwd': landing,
-            'next': native_next(surface, bundle or {}, address, workspace=workspace),
-        }
+    # A native host (worker_context.NATIVE_HOSTS): roll builds no other surface.
+    landing = workspace or default_cwd or str(Path.cwd())
     return {
-        'ok': False,
+        'ok': True,
         'surface': surface,
         'workspace': workspace,
-        'error': 'unsupported_host_surface',
-        'caller_action': 'check_error',
-        'next': f'Nothing was launched: unsupported host surface {surface!r}.',
+        'cwd': landing,
+        'next': native_next(surface, bundle or {}, address, workspace=workspace),
     }

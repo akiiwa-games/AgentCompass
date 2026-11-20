@@ -127,6 +127,17 @@ def unchecked_routing(account, model):
     return f'{account}/{model} is out of automatic routing on this host (unchecked in model management)'
 
 
+# What an automatic plan adds to `outside_routing` / `unchecked_routing`: whose setting it is, and what it does.
+NOT_CHOSEN = "the user's own setting on this machine, so the router does not choose it"
+
+
+def sync_failed(error):
+    """The one wording of a `sync_discovered` that could not run (`account_fleet.load_accounts` keeps the error)."""
+    return (f'host-policy.json could not be updated with newly discovered accounts ({error}); an account discovered since '
+            'it was last written is not in its allowed_accounts, so it stays out of automatic routing until the file can '
+            'be written')
+
+
 def model_unchecked(bundle, accounts):
     """Whether the bundle is unchecked in model management (`disabled`, the user's checkbox or off by default): its own
     row when it has one, else every row of its model on its account (a level with no row of its own)."""

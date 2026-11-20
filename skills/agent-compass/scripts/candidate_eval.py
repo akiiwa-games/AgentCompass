@@ -1,7 +1,9 @@
 """Candidate evaluation: one bundle against one task, its gates, exclusions (rule B) and breakdown."""
 
 
+import cwd_policy
 import fast_modes
+import host_herdr
 import host_policy
 import launch_failures
 import live_models
@@ -15,6 +17,7 @@ import axis_scores
 import quota_economy
 import quota_overrides
 import quota_pools
+import task_intake
 import worker_sessions
 from model_resolution import model_pin_problem, split_model_effort
 
@@ -33,6 +36,31 @@ QUOTA_DATA_ERRORS = (QUOTA_READING_UNAVAILABLE, QUOTA_LONG_UNREAD, QUOTA_NO_LONG
 # existing worker lifts both, since continuing a worker is not choosing its account or model (dispatch_registry.prepare).
 OUT_OF_AUTOMATIC_ROUTING = 'excluded by host policy'
 UNCHECKED = 'unchecked in model management'
+# The user's local settings that exclude a candidate, by kind (`local_settings`): host policy's allowed_accounts, the
+# model-management checkbox, and the account's cwd_regex. Only the first two are lifted by a route the user names
+# (route_judge.record_constraint refuses a named route outside cwd_regex).
+LIFTED_BY_NAMING = ('allowed_accounts', 'checkbox')
+
+
+def said_exclusions(candidate):
+    """What a caller reads for each exclusion of `candidate`: the two routing preferences in their owner's words
+    (`host_policy.outside_routing`, `unchecked_routing`), naming the account or model and the setting, and that it is
+    the user's own setting on this machine; every other exclusion as written. `excluded` keeps the two constants:
+    `dispatch_registry.prepare` lifts them by value. A row `disabled` other than by the user's checkbox (`unchecked_by`)
+    says its own fact: off by default in the shipped data (`auto_bundles.off_by_default`), or not seen by discovery,
+    which its discovery exclusion already says."""
+    bundle = candidate.get('bundle') or {}
+    account, model = bundle.get('account'), bundle.get('model')
+    said = {OUT_OF_AUTOMATIC_ROUTING: f'{host_policy.outside_routing(account)}: {host_policy.NOT_CHOSEN}',
+            UNCHECKED: {'default': auto_bundles.off_by_default(account, model), 'discovery': None}.get(
+                candidate.get('unchecked_by'), f'{host_policy.unchecked_routing(account, model)}: {host_policy.NOT_CHOSEN}')}
+    return [said.get(reason, reason) for reason in candidate.get('excluded') or () if said.get(reason, reason) is not None]
+
+
+def local_settings(candidate):
+    """The kinds of the user's local settings that exclude `candidate` when they are all that excludes it, else None."""
+    kinds = candidate.get('local_settings') or []
+    return kinds if kinds and len(kinds) == len(candidate.get('excluded') or ()) else None
 
 
 def binding_wait(available_at, waiting_on, hours, window):
@@ -173,6 +201,11 @@ def evaluate_bundle(bundle, task, ctx):
     def exclude(reason):
         result['excluded'].append(reason)
 
+    def setting_exclude(kind, reason):
+        """An exclusion by one of the user's local settings (LIFTED_BY_NAMING, cwd_regex)."""
+        exclude(reason)
+        result.setdefault('local_settings', []).append(kind)
+
     def task_exclude(reason):
         """An exclusion that belongs to the current task, not to the account: the ranking keeps it, the pool does not."""
         if not pool:
@@ -194,8 +227,9 @@ def evaluate_bundle(bundle, task, ctx):
     cwd_spec = accounts['accounts'].get(execution_account) or spec
     if spec.get('_legacy_disabled_flag') or cwd_spec.get('_legacy_disabled_flag'):
         exclude('legacy disabled flag remains; toggle the account in the tray or rerun agentcompass setup')
-    if not account_fleet.account_cwd_allowed(cwd_spec, task.get('cwd')):
-        exclude(f"outside account cwd restriction ({cwd_spec['cwd_regex']})")
+    # A resumed worker whose directory could not be read (roll.build_task) is matched against no directory.
+    if not task.get('cwd_unread') and not account_fleet.account_cwd_allowed(cwd_spec, task.get('cwd')):
+        setting_exclude('cwd_regex', cwd_policy.refusal(execution_account, cwd_spec['cwd_regex'], task.get('cwd')))
 
     # The bundle a recorded user_override or an explicit resume launches is the user's naming, which the two routing
     # preferences do not govern. Only dispatch_registry.prepare passes it, as a route field from the decision's own
@@ -215,11 +249,17 @@ def evaluate_bundle(bundle, task, ctx):
         or (bool(task.get('constraint_effort')) and pin_hit)
     )
     if not user_named and not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
-        exclude(OUT_OF_AUTOMATIC_ROUTING)
+        setting_exclude('allowed_accounts', OUT_OF_AUTOMATIC_ROUTING)
     # Off by default (superseded in public data) is not the user's checkbox: naming the model still reaches it.
     if (not user_named and bundle.get('disabled')
             and not (bundle.get('disabled_by_default') and (exact_hit or pin_hit))):
-        exclude(UNCHECKED)
+        # `excluded` holds UNCHECKED for all three (dispatch_registry.prepare lifts it by value); only the user's
+        # checkbox is the user's setting.
+        if bundle.get('discovery_unavailable') or bundle.get('disabled_by_default'):
+            exclude(UNCHECKED)
+            result['unchecked_by'] = 'discovery' if bundle.get('discovery_unavailable') else 'default'
+        else:
+            setting_exclude('checkbox', UNCHECKED)
     if bundle.get('discovery_unavailable'):
         exclude(bundle['discovery_unavailable'] if isinstance(bundle['discovery_unavailable'], str)
                 else 'model not detected by discovery for 7+ days')
@@ -255,11 +295,15 @@ def evaluate_bundle(bundle, task, ctx):
         exclude('advisor only; cannot execute')
     account_out = bool(result['excluded'])      # out by the host, the checkbox, a hold or billing: not by this task
     if info.get('excluded_when') == 'local_only' and task['local_only']:
-        task_exclude("the parent marked this work local-only (it must run on this machine: in-place edits, local tools, secrets or live accounts); this worker runs remotely")
+        by = task_intake.LOCAL_ONLY_BY.get(task.get('local_only_by'), "the caller marked this work local-only (needs.local_only)")
+        task_exclude(f'{by}: it must run on this machine (in-place edits, local tools, secrets or live accounts), and this '
+                     'worker runs remotely')
     if info.get('excluded_when') == 'local_only' and task.get('outbound_ok') is False:
         task_exclude('the parent disallowed outbound work; this worker runs remotely')
     # Harness input limits apply to every bundle on the harness, manual or auto (HARNESS_CAPABILITIES).
     harness = bundle.get('harness') or account_fleet.bundle_harness(bundle, bundle.get('account'), bundle.get('id'))
+    if task.get('parent_host') == 'herdr' and (herdr_cannot := host_herdr.cannot_run(bundle)):
+        task_exclude(herdr_cannot)
     if (info.get('text_only') or not account_fleet.harness_transfers_files(harness)) and task.get('file_transfer'):
         task_exclude('this text-only runner cannot transfer or apply local files' if info.get('text_only')
                      else 'this runner cannot transfer or apply local files')

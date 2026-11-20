@@ -18,8 +18,13 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import entry
+import host_placement
 import launch_values
 import public_data
+
+# The harness families Herdr launches, each in the one permission mode it reproduces exactly (`interactive`). The plan
+# excludes a candidate a Herdr parent cannot launch by this table (`cannot_run`, read by candidate_eval).
+PERMISSION_MODES = {'claude': 'bypassPermissions', 'codex': 'full-access', 'pi': 'full-access'}
 
 
 def runs_dir():
@@ -62,14 +67,41 @@ def hc(*args, timeout=25):
     return data
 
 
+def launch_family(bundle):
+    """The one answer to which harness runs `bundle` here: the CLI family its provider's definition launches
+    (`roll.provider_definition`), read by the plan (candidate_eval, through `cannot_run`) and by the launch alike."""
+    import roll
+    return roll.provider_definition(bundle['provider'], bundle=bundle)[0]
+
+
+def cannot_run(bundle):
+    """Why Herdr cannot launch `bundle`, one sentence per fact; None when it can. A runner that works remotely
+    (host_placement.REMOTE_SURFACES) never goes through Herdr."""
+    if bundle.get('provider') in host_placement.REMOTE_SURFACES:
+        return None
+    import account_fleet
+    family = launch_family(bundle)
+    # provider_definition answers with the provider's own name when nothing defines it, which names no harness.
+    if family not in (*account_fleet.LAUNCH_FAMILIES, *account_fleet.LAUNCH_HARNESSES):
+        return (f"Herdr cannot tell which harness runs provider {bundle.get('provider')!r}: neither a Paseo provider "
+                f"definition nor discovery names a CLI family for it (Herdr launches only {', '.join(PERMISSION_MODES)})")
+    if family not in PERMISSION_MODES:
+        return f"Herdr cannot run the {family} harness (it launches only {', '.join(PERMISSION_MODES)})"
+    mode = bundle.get('modeId')
+    if mode not in (None, PERMISSION_MODES[family]):
+        return (f'Herdr cannot reproduce permission mode {mode!r} of the {family} harness (it launches {family} only in '
+                f'{PERMISSION_MODES[family]!r})')
+    if family == 'pi' and bundle.get('fast'):
+        return 'Herdr cannot reproduce fast mode of the pi harness'
+    return None
+
+
 def interactive(bundle):
     """Only mappings we can reproduce exactly; account selection uses the existing provider adapter."""
     import roll
+    if why := cannot_run(bundle):
+        raise ValueError(f'{why}; reroute, do not substitute.')
     family, provider_env = roll.provider_definition(bundle['provider'], bundle=bundle)
-    mode = bundle.get('modeId')
-    expected = {'claude': 'bypassPermissions', 'codex': 'full-access', 'pi': 'full-access'}
-    if family not in expected or mode not in (None, expected[family]):
-        raise ValueError(f'Herdr cannot reproduce {family!r} permission mode {mode!r}; reroute, do not substitute.')
     if bundle.get('fast'):
         import account_fleet
         from fast_modes import validate
@@ -89,8 +121,6 @@ def interactive(bundle):
                  '-c', 'features.fast_mode=' + str(bool(bundle.get('fast'))).lower(),
                  '-c', 'service_tier="priority"' if bundle.get('fast') else 'service_tier="default"']
     else:
-        if bundle.get('fast'):
-            raise ValueError('Herdr Pi adapter cannot reproduce fast mode; reroute.')
         flags = ['--model', model if '/' in model else f'openai-codex/{model}',
                  *(['--thinking', effort] if effort else [])]
     return [*command, *flags], provider_env
@@ -120,13 +150,21 @@ def launch(out, bundle, prompt_file, task_id, *, cwd=None, dispatch_id=None):
 def _launch(out, bundle, prompt_file, task_id, *, cwd=None, dispatch_id=None):
     try:
         interactive(bundle)  # validate before a terminal or durable launch intent exists
+    except ValueError as exc:
+        # The routed bundle itself: an automatic plan for a Herdr parent excludes what `cannot_run` names, so this is a
+        # route the user named, or a provider whose launch family differs from its declared harness.
+        return dict(out, launched=False, dispatch_mode='herdr', error=str(exc),
+                    next=('Nothing was launched: Herdr cannot launch the routed bundle (cause says why). Name a route on a '
+                          f"harness Herdr runs ({', '.join(PERMISSION_MODES)}) with --provider --account --model --basis, "
+                          'or do the task yourself; do not substitute.')), 2
+    try:
         hc('server', 'status', '--json')  # non-starting on Windows; upstream may autostart on Unix
         observed = terminal_from(hc('get', out['parent_address'], '--json'))
         if not isinstance(observed, dict) or observed.get('state') != 'live':
             raise ValueError('Herdr parent terminal is not live; nothing launched.')
     except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
         return dict(out, launched=False, dispatch_mode='herdr', error=str(exc),
-                    next='Resolve the Herdr availability or routed bundle error, then roll again.'), 2
+                    next='Nothing was launched: resolve the Herdr availability error named in cause, then roll again.'), 2
     public_data.effect('herdr worker launch')   # validated; marked before any receipt or terminal: never repeated
     identity = '\0'.join([os.environ.get('HC_SESSION', 'default'), out['parent_id'], task_id])
     key = hashlib.sha256(identity.encode()).hexdigest()[:24]

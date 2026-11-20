@@ -48,4 +48,5 @@ def test_plan_explains_regex_exclusion():
                           {'accounts': {}}, datetime(2026, 10, 28, tzinfo=timezone.utc),
                           accounts=accounts, capabilities={'routes': {'code_implementation': {}, 'other_or_mixed': {}}}, overrides=[], host_policy_config={'allowed_accounts': list(accounts['accounts'])})
     row = next(row for row in plan['ranking'] if row['id'] == 'fixture-bundle')
-    assert 'outside account cwd restriction (^E:/P4(/|$))' in row['excluded']
+    # Rule (cwd_policy.refusal): the exclusion names the account, the pattern and the directory it was matched against.
+    assert cwd_policy.refusal('fixture-account', '^E:/P4(/|$)', 'D:/work/AgentCompass') in row['excluded']
