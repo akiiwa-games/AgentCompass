@@ -341,10 +341,36 @@ def _prefixed_bundle_matches(text, spelled, prefix, bundle, accounts):
 
 
 def _unrecognized_prefix_matches(text, items, accounts):
-    """Clause 3 (isolated so it can be changed alone): when a pin's `P/` prefix names nothing in `items` (no bundle id,
-    no advertised spelling, and no account, provider or serving provider with id `P`), `P/` is part of how the model is
-    written (a maker's or repository's conventional prefix) and matches by identity (`pin_matches_identity`)."""
-    return [b for b in items if pin_matches_identity(text, b, accounts)]
+    """Clause 3 (owner, 2026-11-20): when a pin's `P/` prefix names nothing in `items` (no bundle id, no advertised
+    spelling, and no account, provider, serving provider or preset id `P`), drop `P/` and read the rest as the pin from
+    the start."""
+    _, _, rest = text.partition('/')
+    return _read_pin(rest, items, accounts)
+
+
+def _read_pin(text, items, accounts):
+    from auto_bundles import split_id
+    if not items or split_id(text) is not None:
+        matched = [b for b in items if (b.get('id') or b.get('bundle_id')) == text] if items else []
+        return text, matched
+    spelled, _ = split_model_effort(text)
+    if '/' not in spelled:
+        return text, [b for b in items if pin_matches_identity(text, b, accounts)]
+    prefix, _ = spelled.split('/', 1)
+    prefix = prefix.lower()
+    named_by_prefix = [b for b in items if _prefixed_bundle_matches(text, spelled, prefix, b, accounts)]
+    if named_by_prefix or any(_bundle_has_prefix(b, prefix, accounts) for b in items):
+        return text, named_by_prefix
+    return _unrecognized_prefix_matches(text, items, accounts)
+
+
+def effective_pin(pin, pool, accounts):
+    """The pin as read on `pool` (owner, 2026-11-20): an `auto:...` bundle id or a bare name stays itself; for `P/rest`,
+    `P/` is kept when `P` names something in `pool` and dropped (`rest` read again from the start) when `pool` is
+    non-empty and `P` names nothing in `pool`."""
+    text = check_model_pin(pin, 'model')
+    items = [b for b in (pool or ()) if isinstance(b, dict)]
+    return _read_pin(text, items, accounts)[0]
 
 
 def pin_matching_bundles(pin, pool, accounts):
@@ -352,25 +378,14 @@ def pin_matching_bundles(pin, pool, accounts):
     - `auto:...` bundle id: that id only;
     - bare name (no `/` once effort is dropped): every bundle in `pool` matching by bundle id or `row_key` identity as
       that bundle reads names (`pin_matches_identity`); exact advertised spelling excludes nothing;
-    - prefixed name `P/name`: obeys `P` — bundles in `pool` that `P` names (`_prefixed_bundle_matches`), or, only when
-      `P` names no bundle, advertised spelling, account, provider or serving provider in `pool`, `_unrecognized_prefix_matches`."""
-    from auto_bundles import split_id
+    - prefixed name `P/rest`: obeys `P` — bundles in `pool` that `P` names (`_prefixed_bundle_matches`), or, only when
+      `P` names no bundle, advertised spelling, account, provider, serving provider or preset id in `pool`, drops `P/`
+      and reads `rest` from the start (`_unrecognized_prefix_matches`)."""
     if pin in (None, ''):
         return []
     text = check_model_pin(pin, 'model')
     items = [b for b in (pool or ()) if isinstance(b, dict)]
-    if not items:
-        return []
-    if split_id(text) is not None:
-        return [b for b in items if (b.get('id') or b.get('bundle_id')) == text]
-    spelled = split_model_effort(text)[0]
-    if '/' not in spelled:
-        return [b for b in items if pin_matches_identity(text, b, accounts)]
-    prefix = spelled.split('/', 1)[0].lower()
-    named_by_prefix = [b for b in items if _prefixed_bundle_matches(text, spelled, prefix, b, accounts)]
-    if named_by_prefix or any(_bundle_has_prefix(b, prefix, accounts) for b in items):
-        return named_by_prefix
-    return _unrecognized_prefix_matches(text, items, accounts)
+    return _read_pin(text, items, accounts)[1]
 
 
 def _same_provider(bundle_provider, provider):

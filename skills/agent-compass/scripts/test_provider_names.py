@@ -580,15 +580,25 @@ class PinIdentityMatchesBundle(unittest.TestCase):
             with self.subTest(pin=pin_constraints):
                 self.assert_pin_isolates(items, pin_constraints, mine, others, extra_rows=extra)
 
-        # Even when its own bundle is absent from the pool, neither a no-row pair nor a repository id ever falls back to
-        # the same name's other row:
+        # Owner Clause 3 (2026-11-20): when no bundle advertises the typed spelling and the prefix names no account,
+        # provider, serving provider or preset in the pool, the prefix is dropped and the rest is read as the pin from
+        # the start; when a bundle or account of that prefix IS in the pool (even disabled), Clause 2 obeys the prefix:
         only_other_row = self.subscription_fleet({'codex': ('codex', {
             'ds_flash': derived[id_of('deepseek/deepseek-v4-flash')],
             'bare_pro': derived[id_of('deepseek-v4-pro')],
         }, 'usage')})
-        for absent_pin in ('opencode/deepseek-v4-flash', 'deepseek-ai/DeepSeek-V4-Pro'):
-            with self.subTest(absent_pin=absent_pin):
-                self.assertEqual(self.plan_pin(only_other_row, model=absent_pin)['choice'], 'none')
+        self.assertEqual(self.plan_pin(only_other_row, model='opencode/deepseek-v4-flash')['choice'], 'ds_flash')
+        self.assertEqual(self.plan_pin(only_other_row, model='deepseek-ai/DeepSeek-V4-Pro')['choice'], 'bare_pro')
+        with_disabled_oc = self.subscription_fleet({
+            'opencode': ('codex', {'oc_dis': dict(derived[id_of('opencode/deepseek-v4-flash')], provider='opencode', disabled=True)}, 'balance'),
+            'codex': ('codex', {'ds_flash': derived[id_of('deepseek/deepseek-v4-flash')]}, 'usage'),
+        })
+        self.assertEqual(self.plan_pin(with_disabled_oc, model='opencode/deepseek-v4-flash')['choice'], 'none')
+        with_disabled_repo = self.subscription_fleet({'codex': ('codex', {
+            'repo_dis': dict(derived[id_of('deepseek-ai/DeepSeek-V4-Pro')], disabled=True),
+            'bare_pro': derived[id_of('deepseek-v4-pro')],
+        }, 'usage')})
+        self.assertEqual(self.plan_pin(with_disabled_repo, model='deepseek-ai/DeepSeek-V4-Pro')['choice'], 'none')
 
     def test_unscored_named_pair_dispatches_unscored_even_beside_scored_same_leaf_bundle(self):
         """candidate_ranking line 79 (R2-F7): a no-row pair pinned without --effort is not excluded by another provider's
@@ -616,10 +626,19 @@ class PinIdentityMatchesBundle(unittest.TestCase):
         bid = next(iter(derived))
         for pin, matches in (('deepseek-v4-flash', True), ('DeepSeek-V4-Flash:high', True),
                              ('deepseek-v4-flash-high', True), ('opencode/deepseek-v4-flash', True),
-                             ('deepseek/deepseek-v4-flash', False), ('deepseek-v4.1-flash-1017', False)):
+                             ('deepseek/deepseek-v4-flash', True), ('deepseek-v4.1-flash-1017', False)):
             with self.subTest(pin=pin):
                 planned = self.plan_pin(fleet, model=pin)
                 self.assertEqual(planned['choice'] == bid, matches, (pin, planned['choice']))
+        fleet_with_ds = copy.deepcopy(fleet)
+        fleet_with_ds['accounts']['deepseek'] = {
+            'billing': 'subscription', 'plan': 'pro', 'verified': True, 'family': 'codex',
+            'windows': {'balance': {'hours': 168}}, 'capacity_usd': {'balance': 100.0},
+            'capacity_source': {'balance': {'evidence': 'test'}},
+            'bundles': {'b_ds': {'provider': 'deepseek', 'harness': 'codex', 'model': 'deepseek-v4.1-flash-1017',
+                                 'launch_model': 'deepseek-v4-flash', 'effort': 'high', 'disabled': True, 'draws': ['balance']}},
+        }
+        self.assertEqual(self.plan_pin(fleet_with_ds, model='deepseek/deepseek-v4-flash')['choice'], 'none')
 
     def test_pin_by_bundle_id_never_selects_another_bundle_sharing_the_model_or_leaf(self):
         """Pinning by bundle id (`constraints.bundle` or an `auto:...` id in `constraints.model`) matches only that id."""
@@ -689,14 +708,21 @@ class PinIdentityMatchesBundle(unittest.TestCase):
                     if want_id.startswith('va_novel'):
                         self.assertFalse([c for c in planned['ranking'] if c['id'].startswith('vb_novel') and not c['excluded']])
 
-    def test_named_pin_block_reports_what_the_user_named_when_only_moved_target_exists(self):
-        """allocator.named_pin_block: naming `deepseek-ai/DeepSeek-V4-Pro` on a pool with only bare `deepseek-v4-pro` (`-0813`)
-        blocks and names `deepseek-ai/DeepSeek-V4-Pro`, never `deepseek-v4-pro`."""
-        fleet = self.subscription_fleet({'codex': ('codex', {
+    def test_named_pin_block_reports_what_the_user_named_and_clause_three_drops_unrecognized_prefix(self):
+        """allocator.named_pin_block + Clause 3: naming `deepseek-ai/DeepSeek-V4-Pro` on a pool with no `deepseek-ai`
+        drops `deepseek-ai/` (reaching bare `deepseek-v4-pro` when present, or reporting `deepseek-ai/DeepSeek-V4-Pro: no
+        configured bundle offers it` when no bundle of the row exists at all), while when `deepseek-ai/DeepSeek-V4-Pro`
+        exists and is disabled it blocks on that bundle."""
+        fleet_with_bare = self.subscription_fleet({'codex': ('codex', {
             'bare_pro': {'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-v4-pro-0813',
                          'launch_model': 'deepseek-v4-pro', 'effort': 'high', 'draws': ['usage']},
         }, 'usage')})
-        planned = self.plan_pin(fleet, model='deepseek-ai/DeepSeek-V4-Pro')
+        self.assertEqual(self.plan_pin(fleet_with_bare, model='deepseek-ai/DeepSeek-V4-Pro')['choice'], 'bare_pro')
+        fleet_no_pro = self.subscription_fleet({'codex': ('codex', {
+            'only_55': {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-5.5',
+                        'launch_model': 'gpt-5.5', 'effort': 'high', 'draws': ['usage']},
+        }, 'usage')})
+        planned = self.plan_pin(fleet_no_pro, model='deepseek-ai/DeepSeek-V4-Pro')
         self.assertEqual(planned['choice'], 'none')
         self.assertEqual(planned['decision']['blocked'], 'named_model_unavailable')
         self.assertIn('deepseek-ai/DeepSeek-V4-Pro: no configured bundle offers it', planned['decision']['reason'])
@@ -788,7 +814,9 @@ class PinIdentityMatchesBundle(unittest.TestCase):
         self.assertIsNone(roll.named_route_conflict(ns('openai/novel-gpt-9', p='codex', a='codex'), novel_bundle, fleet))
         self.assertIn('--model', roll.named_route_conflict(ns('vendor-a/novel-unmeasured', p='codex', a='codex'), vb_bundle, fleet) or '')
         self.assertIn('--model', roll.named_route_conflict(ns('vendor-a/novel-unmeasured', p=None, a=None), vb_bundle, fleet) or '')
-        self.assertIn('--model', roll.named_route_conflict(ns('deepseek/deepseek-v4-flash'), ep_bundle, fleet) or '')
+        self.assertIn('--model', roll.named_route_conflict(ns('deepseek/deepseek-v4-flash', p=None, a=None), ep_bundle, fleet) or '')
+        self.assertIsNone(roll.named_route_conflict(ns('deepseek/deepseek-v4-flash'), ep_bundle, fleet))
+        self.assertIn('--model', roll.named_route_conflict(ns('deepseek-v4.1-flash-1017'), ep_bundle, fleet) or '')
         self.assertIn('--model', roll.named_route_conflict(ns('deepseek-v4-flash-medium'), ep_bundle, fleet) or '')
 
     def test_pin_pool_includes_existing_bundles_before_preference_availability_modality_or_effort(self):
@@ -929,8 +957,9 @@ class PinIdentityMatchesBundle(unittest.TestCase):
            run, score decides; when none can run, named_model_unavailable lists every named bundle with its reason.
         2. Prefixed name `P/name`: obeys `P` (exact advertised spelling, or `P` as account/provider/bundle_providers), never
            substituting a bundle `P` does not name when `P`'s cannot run or when `P` is a pool account without that model.
-        3. Prefix naming nothing in the pool (`_unrecognized_prefix_matches`): read as part of the model's name by identity."""
+        3. Prefix naming nothing in the pool (`_unrecognized_prefix_matches`): dropped and the rest read from the start."""
         import argparse
+        from datetime import timedelta
         import os
         import tempfile
         from unittest.mock import patch
@@ -938,6 +967,7 @@ class PinIdentityMatchesBundle(unittest.TestCase):
         import dispatch_registry
         import live_models
         import provider_retry
+        import quota_overrides
         import roll
         import route_judge
         import usage_reading
@@ -1041,9 +1071,99 @@ class PinIdentityMatchesBundle(unittest.TestCase):
             self.assertEqual(p_no_gpt55_on_a['choice'], 'none')
             self.assertIn('no configured bundle offers it', p_no_gpt55_on_a['decision']['reason'])
 
-            # --- Clause 3: `openai/gpt-5.5` when nobody lists `openai/gpt-5.5` and no account/provider is `openai` ---
+            # --- Clause 3 (owner, 2026-11-20): a prefix naming nothing in the pool is dropped and the rest is read from
+            # the start (multi-slash recursion, declared no-row pairs on absent providers, repository ids, unmeasured,
+            # and `record` / `prepare` / `named_route_conflict` / `override` storing the pin as read) ---
             p_clause3 = self.plan_pin(acct_a_only_astra, model='openai/gpt-5.5', usage=usage_both)
             self.assertEqual(p_clause3['choice'], 'b_b')
+
+            # Multi-slash `google-vertex/deepseek-ai/DeepSeek-V4-Pro` and `opencode/deepseek-v4-flash` in both pool orders:
+            c3_fleet = two_acct_fleet(
+                {'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-v4.1-flash-1017',
+                 'launch_model': 'deepseek/deepseek-v4-flash', 'effort': 'high', 'draws': ['usage']},
+                {'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-v4-pro-0813',
+                 'launch_model': 'deepseek-v4-pro', 'effort': 'high', 'draws': ['usage']},
+            )
+            # Neither `google-vertex` nor `deepseek-ai` (nor `opencode`) in pool -> prefixes dropped step-by-step to bare:
+            self.assertEqual(self.plan_pin(c3_fleet, model='opencode/deepseek-v4-flash', usage=usage_both)['choice'], 'b_a')
+            self.assertEqual(self.plan_pin(c3_fleet, model='ghost/opencode/deepseek-v4-flash', usage=usage_both)['choice'], 'b_a')
+            self.assertEqual(self.plan_pin(c3_fleet, model='deepseek-ai/DeepSeek-V4-Pro', usage=usage_both)['choice'], 'b_b')
+            self.assertEqual(self.plan_pin(c3_fleet, model='google-vertex/deepseek-ai/DeepSeek-V4-Pro', usage=usage_both)['choice'], 'b_b')
+            # Outer `google-vertex` names nothing, inner `deepseek-ai` advertises a disabled bundle -> inner obeyed (blocks):
+            c3_inner_repo = copy.deepcopy(c3_fleet)
+            c3_inner_repo['accounts']['acct_a']['bundles']['b_repo_dis'] = {
+                'provider': 'acct_a', 'harness': 'codex', 'model': 'deepseek-v4-pro',
+                'launch_model': 'deepseek-ai/DeepSeek-V4-Pro', 'effort': 'high', 'disabled': True, 'draws': ['usage'],
+            }
+            self.assertEqual(self.plan_pin(c3_inner_repo, model='google-vertex/deepseek-ai/DeepSeek-V4-Pro', usage=usage_both)['choice'], 'none')
+            # Outer `google-vertex` names an account without that model -> outer obeyed (blocks):
+            c3_outer_gv = copy.deepcopy(c3_fleet)
+            c3_outer_gv['accounts']['google-vertex'] = {
+                'billing': 'subscription', 'plan': 'pro', 'verified': True, 'family': 'codex',
+                'windows': {'usage': {'hours': 168}}, 'capacity_usd': {'usage': 100.0},
+                'capacity_source': {'usage': {'evidence': 'test'}},
+                'bundles': {'b_gv': {'provider': 'google-vertex', 'harness': 'codex', 'model': 'gpt-5.5',
+                                     'launch_model': 'gpt-5.5', 'effort': 'high', 'draws': ['usage']}},
+            }
+            usage_gv = usage_windows(self.at, {'acct_a': [('usage', 90, 100)], 'codex': [('usage', 90, 100)],
+                                               'google-vertex': [('usage', 90, 100)]})
+            self.assertEqual(self.plan_pin(c3_outer_gv, model='google-vertex/deepseek-ai/DeepSeek-V4-Pro', usage=usage_gv)['choice'], 'none')
+            # Unmeasured `vendor-a/novel-unmeasured` when nobody advertises it and nobody is `vendor-a` -> bare `novel-unmeasured`:
+            only_vb_fleet = self.subscription_fleet({'codex': ('codex', {
+                'b_vb_only': {'provider': 'codex', 'harness': 'codex', 'model': 'vendor-b/novel-unmeasured',
+                              'launch_model': 'vendor-b/novel-unmeasured', 'effort': 'high', 'draws': ['usage']},
+            }, 'usage')})
+            self.assertEqual(self.plan_pin(only_vb_fleet, model='vendor-a/novel-unmeasured', usage=usage_both)['choice'], 'b_vb_only')
+
+            # `record` + `prepare`, `named_route_conflict`, and `override` agree with `plan` and store the pin as read
+            # (without the dropped `opencode/` prefix), so adding an `opencode` account later does not change what is named:
+            with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td_c3, \
+                    patch.dict(os.environ, {'ROUTER_DISPATCH_DB': os.path.join(td_c3, 'db.sqlite3'),
+                                            'ROUTER_LEDGER': os.path.join(td_c3, 'ledger.jsonl'),
+                                            'ROUTER_OVERRIDES': os.path.join(td_c3, 'router-overrides.json'),
+                                            'ROUTER_LIVE_MODELS': os.path.join(td_c3, 'live-models.json')}), \
+                    patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(c3_fleet)), \
+                    patch.object(usage_reading, 'usage_snapshot', return_value=copy.deepcopy(usage_both)), \
+                    patch.object(live_models, 'fetch_from_paseo', return_value={'ok': True, 'providers': {}}):
+                t_c3 = {'objective': 'x', 'profile': self.prof, 'expected_hours': 0.5, 'parent_agent_id': 'p1',
+                        'task_id': f'tc3-{reversed_order}'}
+                rec_c3 = route_judge.record_constraint(argparse.Namespace(
+                    basis='user asked', account='acct_a', provider='codex', model='opencode/deepseek-v4-flash',
+                    effort='high', input=None, usage_cache=None, accounts=None, constraint='user_override',
+                    specialty=None, reason_category=None, fast=False, parent_id='p1'), t_c3)
+                self.assertEqual(rec_c3['selected_bundle']['bundle_id'], 'b_a')
+                self.assertEqual(rec_c3['selected_bundle']['model'], 'deepseek-v4.1-flash-1017')
+                self.assertNotIn('opencode/', rec_c3['selected_bundle'].get('launch_model', ''))
+                fleet_later_with_oc = copy.deepcopy(c3_fleet)
+                fleet_later_with_oc['accounts']['opencode'] = {
+                    'billing': 'subscription', 'plan': 'pro', 'verified': True, 'family': 'codex',
+                    'windows': {'usage': {'hours': 168}}, 'capacity_usd': {'usage': 100.0},
+                    'capacity_source': {'usage': {'evidence': 'test'}},
+                    'bundles': {'b_oc': {'provider': 'opencode', 'harness': 'codex', 'model': 'opencode/deepseek-v4-flash',
+                                         'launch_model': 'opencode/deepseek-v4-flash', 'effort': 'high', 'draws': ['usage']}},
+                }
+                usage_with_oc = usage_windows(self.at, {'acct_a': [('usage', 90, 100)], 'codex': [('usage', 90, 100)],
+                                                        'opencode': [('usage', 90, 100)]})
+                pr_c3 = dispatch_registry.prepare(
+                    rec_c3['decision_id'], t_c3, {'title': 'x', 'initialPrompt': 'go'},
+                    copy.deepcopy(usage_with_oc), accounts=copy.deepcopy(fleet_later_with_oc), now=self.at,
+                )
+                self.assertEqual(pr_c3['request']['provider'], 'codex/deepseek/deepseek-v4-flash')
+                b_a_worker = dict(c3_fleet['accounts']['acct_a']['bundles']['b_a'], account='acct_a', id='b_a', bundle_id='b_a')
+                self.assertIsNone(roll.named_route_conflict(
+                    argparse.Namespace(provider=None, account=None, model='opencode/deepseek-v4-flash', effort=None, fast=False),
+                    b_a_worker, c3_fleet))
+                self.assertIn('--model', roll.named_route_conflict(
+                    argparse.Namespace(provider=None, account=None, model='opencode/deepseek-v4-flash', effort=None, fast=False),
+                    b_a_worker, fleet_later_with_oc) or '')
+                quota_overrides.manage_overrides(argparse.Namespace(
+                    list=False, clear=None, account='acct_a', model='opencode/deepseek-v4-flash', window=None, boost=0.25,
+                    resets_at=None, resets_in=None, expires_at=None, expires_in=None, until=None,
+                    stop_on_reset=False, reset_confirmation=None, rebaseline=False,
+                    basis='user asked', intent='c3-ov', usage_cache=None,
+                ), now=self.at)
+                saved_ov = json.loads(Path(td_c3, 'router-overrides.json').read_text(encoding='utf-8'))['overrides']
+                self.assertEqual([o['model'] for o in saved_ov], ['deepseek-v4.1-flash-1017'])
 
             # Bare `gpt-5.5:medium` when A advertises bare `gpt-5.5:high` (fixed) and B advertises `openai/gpt-5.5` (carrier):
             carrier_fleet = two_acct_fleet(

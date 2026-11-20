@@ -404,8 +404,11 @@ def named_pin(constraints, task, accounts):
         return None, effort
     field = 'constraints.model' if has_c_model else 'pinned_model'
     raw = check_model_pin(constraints['model'] if has_c_model else task['pinned_model'], field)
-    resolved = account_fleet.resolve_model(raw, accounts)
-    name = resolved['key'] if resolved['source'] in DIRECT_SOURCES else split_model_effort(raw)[0]
+    pool = (account_fleet.pin_pool(accounts)
+            if isinstance(accounts, dict) and isinstance(accounts.get('accounts'), dict) else ())
+    as_read = account_fleet.effective_pin(raw, pool, accounts) if pool else raw
+    resolved = account_fleet.resolve_model(as_read, accounts)
+    name = resolved['key'] if resolved['source'] in DIRECT_SOURCES else split_model_effort(as_read)[0]
     return name, effort or resolved['effort']
 
 

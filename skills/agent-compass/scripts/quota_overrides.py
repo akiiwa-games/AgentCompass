@@ -82,7 +82,9 @@ def override_depleted(override, usage, accounts):
         return False
     scoring = accounts.get('scoring') or {}
     margin, short = scoring.get('safety_margin_pct', 5), scoring.get('short_window_hours', 24)
-    model = account_fleet.stored_model(override['model'], accounts, account) if override.get('model') else None
+    as_read = (account_fleet.effective_pin(override['model'], account_fleet.pin_pool(accounts, account=account), accounts)
+               if override.get('model') else None)
+    model = account_fleet.stored_model(as_read, accounts, account) if as_read else None
     binding = {wid: wspec for wid, wspec, _ in quota_pools.applicable_windows(spec, model, {}, accounts=accounts)} if model else spec.get('windows', {})
     for window in row.get('windows') or ():
         if not isinstance(window, dict):
@@ -383,18 +385,24 @@ def _manage_overrides_locked(args, now=None):
         if args.model not in (None, ''):
             from model_resolution import check_model_pin
             check_model_pin(args.model, '--model')
-        model = account_fleet.stored_model(args.model, accounts, args.account) if args.model else None
-        stored = account_fleet.stored_form(args.model, accounts, args.account) if args.model else None
+        acct_pool = account_fleet.pin_pool(accounts, account=args.account)
+        as_read = account_fleet.effective_pin(args.model, acct_pool, accounts) if args.model else None
+        model = account_fleet.stored_model(as_read, accounts, args.account) if as_read else None
+        stored = account_fleet.stored_form(as_read, accounts, args.account) if as_read else None
         boost = 0.1 if args.boost is None else args.boost
         if not expires and override_depleted({'account': args.account, 'model': stored, 'window': args.window,
                                                         'boost': boost}, usage, accounts):
             raise ValueError(f'{args.account} is at or below the {accounts["scoring"]["safety_margin_pct"]}% safety margin; '
                              'the router dispatches no new work there, so a priority would be retired at once.')
         def _row_key(o):
-            stored_m = (
-                ('inert', o.get('id')) if _stored_model_inert(o)
-                else (account_fleet.stored_model(o.get('model'), accounts, o.get('account')) if o.get('model') else None)
-            )
+            if _stored_model_inert(o):
+                stored_m = ('inert', o.get('id'))
+            elif o.get('model'):
+                o_pool = account_fleet.pin_pool(accounts, account=o.get('account'))
+                stored_m = account_fleet.stored_model(account_fleet.effective_pin(o['model'], o_pool, accounts),
+                                                      accounts, o.get('account'))
+            else:
+                stored_m = None
             return (o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'), stored_m, o.get('window'))
 
         key = (intent, args.account, model, args.window)

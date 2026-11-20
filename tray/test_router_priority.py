@@ -371,6 +371,22 @@ class PriorityTests(unittest.TestCase):
                     unavailable_flag,
                 )
 
+                # Clause 3 (owner, 2026-11-20): when `vendor-a` names nothing on the account (no `b_va`), `vendor-a/`
+                # is dropped and `targets` resolves the rest (`novel-unmeasured`) as bare:
+                only_vb_accounts = json.loads(json.dumps(accounts))
+                only_vb_accounts['accounts']['codex']['bundles'] = {
+                    'b_vb': {'provider': 'codex', 'harness': 'codex', 'model': 'vendor-b/novel-unmeasured',
+                             'launch_model': 'vendor-b/novel-unmeasured', 'effort': 'high', 'draws': ['usage']},
+                }
+                only_vb_accounts['priority_targets'] = [
+                    {'account': 'codex', 'model': 'vendor-a/novel-unmeasured', 'label': 'Dropped Prefix Novel'},
+                ]
+                self.assertEqual(
+                    [(t['account'], t['model'], t['label']) for t in priority.targets(only_vb_accounts)],
+                    [('codex', 'novel-unmeasured', 'Dropped Prefix Novel')],
+                    unavailable_flag,
+                )
+
                 same_row_accounts = json.loads(json.dumps(accounts))
                 same_row_accounts['accounts']['codex']['bundles'] = {
                     'b_bare': {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-6-astra',

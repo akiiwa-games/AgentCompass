@@ -129,7 +129,8 @@ def overlaps(row, account, model, now, accounts):
         return True
     if model_resolution.model_pin_problem(row['model']) is not None:
         return False
-    return account_fleet.stored_model(row['model'], accounts, account) == model
+    as_read = account_fleet.effective_pin(row['model'], account_fleet.pin_pool(accounts, account=account), accounts)
+    return account_fleet.stored_model(as_read, accounts, account) == model
 
 
 def _is_launchable(bundle, accounts, policy):
@@ -175,10 +176,11 @@ def targets(accounts):
         if wanted not in (None, ''):
             model_resolution.check_model_pin(wanted, 'priority_targets.model')
         pool = account_fleet.pin_pool(accounts, account=account)
+        as_read = account_fleet.effective_pin(wanted, pool, accounts) if wanted else None
         named = account_fleet.pin_matching_bundles(wanted, pool, accounts) if wanted else []
         matched = next((b for b in named if _is_launchable(b, accounts, policy)), None)
         model = matched['model'] if matched is not None else None
-        if model and wanted and '/' not in model_resolution.split_model_effort(wanted)[0] and '/' in model:
+        if model and as_read and '/' not in model_resolution.split_model_effort(as_read)[0] and '/' in model:
             src = account_fleet.resolve_model(model, accounts)['source']
             if src not in model_resolution.PROVIDER_NAME_STATUSES:
                 model = (account_fleet.stored_form(model, accounts, account)

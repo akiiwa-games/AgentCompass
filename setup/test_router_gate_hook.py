@@ -2567,6 +2567,28 @@ def test_gate_matches_bundle_wire_launch_model_without_crossing_provider_identit
     assert gate.resolve_target({"model": "openai/gpt-5.5", "effort": "high"}, r4_accounts)[0] == "codex"
     assert gate.resolve_target({"model": "acct_a/gpt-6-astra", "effort": "high"}, r4_accounts) == (None, [])
 
+    # Clause 3 (owner, 2026-11-20): a prefix naming nothing in the pool is dropped and the rest read from the start:
+    c3_gate_accounts = json.loads(json.dumps(real_accounts))
+    c3_gate_accounts["accounts"] = {
+        "codex": {
+            "billing": "subscription", "family": "codex", "windows": {"usage": {"hours": 168}},
+            "bundles": {
+                "b_flash": {"provider": "codex", "model": "deepseek-v4.1-flash-1017",
+                            "launch_model": "deepseek/deepseek-v4-flash", "effort": "high"},
+                "b_pro": {"provider": "codex", "model": "deepseek-v4-pro-0813",
+                          "launch_model": "deepseek-v4-pro", "effort": "high"},
+            },
+        },
+    }
+    assert gate.resolve_target({"model": "opencode/deepseek-v4-flash", "effort": "high"}, c3_gate_accounts)[0] == "codex"
+    assert gate.resolve_target({"model": "google-vertex/deepseek-ai/DeepSeek-V4-Pro", "effort": "high"}, c3_gate_accounts)[0] == "codex"
+    c3_gate_with_oc = json.loads(json.dumps(c3_gate_accounts))
+    c3_gate_with_oc["accounts"]["opencode"] = {
+        "billing": "subscription", "family": "opencode", "windows": {"usage": {"hours": 168}},
+        "bundles": {"b_oc": {"provider": "opencode", "model": "gpt-5.5", "launch_model": "gpt-5.5", "effort": "high"}},
+    }
+    assert gate.resolve_target({"model": "opencode/deepseek-v4-flash", "effort": "high"}, c3_gate_with_oc) == (None, [])
+
     # Malformed `/` or `auto:` pins are refused at the gate boundary (`resolve_target` and `evaluate_payload`), and for
     # every `(0..4 colons) x (0..4 slashes)` string around empty and non-empty segments (with and without `auto:`) the
     # gate answers allow or block, never an exception:
