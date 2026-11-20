@@ -109,11 +109,6 @@ def stopping(account, usage=None, *, path=None, windows=None, now=None, read_onl
     return {ALL} if ALL in latched else latched & set(windows or ())
 
 
-def blocked(account, usage=None, *, path=None, windows=None, now=None, read_only=False):
-    """True when the latch covers the whole account, or any of `windows` (the ids a launch would draw)."""
-    return bool(stopping(account, usage, path=path, windows=windows, now=now, read_only=read_only))
-
-
 def clear(account, *, path=None, expected_observed_at=None):
     path = path or store_path()
     with override_store.locked(path):

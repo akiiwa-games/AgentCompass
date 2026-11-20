@@ -2,6 +2,7 @@ import datetime as dt
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -70,12 +71,17 @@ class RouterGateHookTests(unittest.TestCase):
             missing = Path(directory) / 'missing.json'
             exhaustion.record('worker', 'Individual quota reached', windows=['five_hour', 'weekly'])
             text = gate.check_account_quota_exhausted('worker', missing, T0, windows=['weekly', 'monthly'])
-            self.assertIn('worker', text)
-            self.assertIn('weekly', text)
-            self.assertNotIn('monthly', text)    # recorded windows only, and only those this launch draws
-            self.assertNotIn('five_hour', text)
             script = Path(exhaustion.__file__).resolve().as_posix()
-            self.assertIn(f'python -X utf8 "{script}" --clear worker', text)
+            clear = f'python -X utf8 "{script}" --clear worker'
+            self.assertIn(clear, text)
+            said = text.replace(clear, '')    # the account and windows are named by the refusal itself, not only by the command
+            self.assertIn('worker', said)
+            self.assertIn('weekly', said)
+            self.assertNotIn('monthly', said)    # recorded windows only, and only those this launch draws
+            self.assertNotIn('five_hour', said)
+            # What lifts a record is a newer successful reading (quota_exhaustion.py): time alone never does.
+            self.assertIn('newer successful usage reading', said)
+            self.assertIn('does not lift it', said)
             exhaustion.clear('worker')
             exhaustion.record('worker', 'Individual quota reached')
             text = gate.check_account_quota_exhausted('worker', missing, T0, windows=['weekly'])
@@ -102,16 +108,20 @@ class RouterGateHookTests(unittest.TestCase):
     }
 
     def assert_allow_with_word(self, host, raw, word, secrets=()):
-        """Each host reads its own allow shape; the word reaches it without becoming a deny: a `systemMessage` where the
-        host's hook protocol has one (Claude Code, Codex), stderr where it has none (Antigravity, Pi)."""
+        """Each host reads its own allow shape; the word reaches it without becoming a deny: a `systemMessage` for Claude
+        Code and Codex, the optional `reason` for Antigravity, stderr for Pi (whose extension shows it)."""
         code, out, err = self.run_main(raw)
         self.assertEqual(code, 0)
         doc = json.loads(out)
         if host == 'claude':
             self.assertEqual(list(doc), ['systemMessage'])
             said, other = doc['systemMessage'], err
-        else:
-            self.assertEqual(doc, {'decision': 'allow'} if host == 'antigravity' else {'block': False})
+        elif host == 'antigravity':    # the documented optional `reason` of a PreToolUse answer
+            self.assertEqual(list(doc), ['decision', 'reason'])
+            self.assertEqual(doc['decision'], 'allow')
+            said, other = doc['reason'], err
+        else:    # Pi: the generated extension reads stderr beside a `{block: false}`
+            self.assertEqual(doc, {'block': False})
             said, other = err, ''
         self.assertTrue(said.startswith('[Router Gate]'), said)
         self.assertIn(word, said)
@@ -143,6 +153,80 @@ class RouterGateHookTests(unittest.TestCase):
             self.assertIsNone(gate.check_account_quota_exhausted(
                 'claude', cache, T0, records=[], model='claude-opus-5-5'))
         self.assertEqual(gate.UNEVALUATED, ['quota window verdict (KeyError)'])
+
+    def test_a_clean_call_after_an_unevaluated_one_in_the_same_process_carries_no_word(self):
+        """evaluate_payload starts each decision with nothing unevaluated: a caller that evaluates payloads in one process."""
+        self.assertIn('systemMessage', gate.evaluate_payload(self.SHELL_PAYLOADS['claude']))
+        self.assertEqual(gate.evaluate_payload({'tool_name': 'Bash', 'tool_input': {'command': 'ls'}}), {})
+        self.assertEqual(gate.UNEVALUATED, [])
+
+    def test_only_a_shell_command_line_gets_the_notice_that_it_was_not_read(self):
+        """Contract: the notice is for text the tool's contract calls a shell command line (`command`, `cmd`,
+        `CommandLine`, the literal `cmd` of an exec_command call). The code of a code-mode tool is a program: read for
+        launches as before, but never said to be an unread shell command."""
+        programs = ("// don't forget\nconst x = 1; text(String(x));", 'const m = /it\'s/.test(s); text("it\'s");',
+                    "print('don\\'t')")
+        for program in programs:    # each is unreadable as a shell command line in both dialects
+            self.assertRaises(gate.ShellParseError, gate.simple_commands, program, gate.POSIX)
+            self.assertRaises(gate.ShellParseError, gate.simple_commands, program, gate.POWERSHELL)
+        for tool in ('exec', 'codemode', 'execute_code'):
+            for code in programs:
+                with self.subTest(tool=tool, code=code):
+                    gate.evaluate_payload({'tool_name': tool, 'tool_input': {'code': code}})
+                    self.assertEqual(gate.UNEVALUATED, [])
+        gate.evaluate_payload({'tool_name': 'exec', 'tool_input': {'code': 'await tools.exec_command({cmd: "echo \\"x"});'}})
+        self.assertEqual(gate.UNEVALUATED, ['reading a shell command for launches (ShellParseError)'])
+
+    DRIVER = """import ext from "./ext.mjs";
+let handler;
+ext({ on: (name, h) => { if (name === "tool_call") handler = h; } });
+const written = [];
+process.stderr.write = (text) => { written.push(String(text)); return true; };
+const out = {};
+for (const [name, tool, input, hasUI, worker] of JSON.parse(process.argv[2])) {
+  const shown = [];
+  written.length = 0;
+  if (worker) process.env.AGENTCOMPASS_WORKER = "1";
+  const ctx = { hasUI, ui: { notify: (message, level) => shown.push([level, message]) } };
+  const returned = await handler({ toolName: tool, input }, ctx);
+  out[name] = { returned: returned ?? null, shown: shown, stderr: [...written] };
+}
+process.stdout.write(JSON.stringify(out));
+"""
+
+    @unittest.skipUnless(shutil.which("node"), "node runs the generated Pi extension")
+    def test_the_generated_pi_extension_shows_the_word_the_gate_leaves_beside_an_allow(self):
+        """Contract (pi docs, extensions.md): a `tool_call` handler gets `(event, ctx)` and its return only controls
+        blocking; `ctx.hasUI` is true in the TUI and RPC modes, where `ctx.ui.notify(message, "warning")` shows a message,
+        and false in print and JSON mode, where UI methods are no-ops. So the stderr word is notified with a UI and
+        written to the process's stderr without one; a block still blocks and a clean allow says nothing."""
+        import re
+        import sync_host_globals as sg
+        argv = json.dumps(sg.ROUTER_HOOK_ARGV)
+        self.assertIn(argv, sg.PI_ROUTER_GATE_TS)
+        source = sg.PI_ROUTER_GATE_TS.replace(argv, json.dumps([sys.executable, "-X", "utf8", str(Path(gate.__file__).resolve())]))
+        scenarios = [["ui", "bash", {"command": self.UNPARSED}, True, False],
+                     ["headless", "bash", {"command": self.UNPARSED}, False, False],
+                     ["clean", "bash", {"command": "ls"}, True, False],
+                     ["block", "request_user_input", {}, True, True]]
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "ext.mjs").write_text(re.sub(r"(\w+): any\b", r"\1", source), encoding="utf-8", newline="\n")
+            (Path(directory) / "driver.mjs").write_text(self.DRIVER, encoding="utf-8", newline="\n")
+            done = subprocess.run(["node", "driver.mjs", json.dumps(scenarios)], cwd=directory, capture_output=True,
+                                  text=True, encoding="utf-8", timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        out = json.loads(done.stdout)
+        ui, headless = out["ui"], out["headless"]
+        self.assertIsNone(ui["returned"])
+        self.assertEqual([level for level, _ in ui["shown"]], ["warning"])
+        notice = ui["shown"][0][1]
+        self.assertTrue(notice.startswith("[Router Gate]") and "ShellParseError" in notice, notice)
+        self.assertEqual(ui["stderr"], [])
+        self.assertIsNone(headless["returned"])
+        self.assertEqual((headless["shown"], headless["stderr"]), ([], [notice + "\n"]))
+        self.assertEqual(out["clean"], {"returned": None, "shown": [], "stderr": []})
+        self.assertTrue(out["block"]["returned"]["block"])
+        self.assertEqual((out["block"]["shown"], out["block"]["stderr"]), ([], []))
 
     def test_unreadable_stdin_is_allowed_with_a_word_in_the_shape_of_an_unknown_host(self):
         for label, raw in (('empty', ''), ('blank', '  \n'), ('not json', '{oops'), ('a list', '[1]')):

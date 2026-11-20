@@ -223,14 +223,18 @@ def extract_tool_call(payload: dict) -> tuple[str, dict, str]:
     return name, args, "claude_or_codex"
 
 
-def extract_shell_commands(tool_input: dict) -> list[str]:
+def extract_shell_commands(tool_input: dict) -> list[tuple[str, bool]]:
+    """The texts of a call the gate reads for launches, each with whether the tool's own contract calls it a shell command
+    line: a `command` / `cmd` / `CommandLine` argument and the literal `cmd` of an `exec_command({cmd: ...})` inside code
+    are; the code itself (`code`, `_raw`: a JavaScript or Python program of a code-mode tool) is not, and is read as a
+    command line too only because a launcher may be spelled in it."""
     direct = (
         tool_input.get("command")
         or tool_input.get("cmd")
         or tool_input.get("CommandLine")
     )
     if direct:
-        return [str(direct)]
+        return [(str(direct), True)]
     raw = str(tool_input.get("_raw") or tool_input.get("code") or "")
     if not raw:
         return []
@@ -240,7 +244,7 @@ def extract_shell_commands(tool_input: dict) -> list[str]:
             extracted.append(json.loads(match.group(1)))
         except ValueError:
             extracted.append(match.group(1))
-    return extracted or [raw]
+    return [(command, True) for command in extracted] or [(raw, False)]
 
 
 def literal_call_args(tokens: list[str], start: int) -> dict:
@@ -912,7 +916,8 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
                 elif isinstance(value, str):
                     shell(value, depth + 1, POSIX)
 
-    def shell(command: str, depth: int, dialect: str):
+    def shell(command: str, depth: int, dialect: str, program: bool = False):
+        """Reads `command` for launches. `program`: it is a code-mode tool's code, not a shell command line."""
         if depth > 4:
             return
         # Also accepts a Python script supplied directly as a wrapper's code.
@@ -927,16 +932,18 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
                 continue    # read it in the other dialect before it counts as undecidable
             break
         if commands is None:
-            # Undecidable in both readings: not a launch (see the docstring), and the answer says it was not read.
-            note_unevaluated("reading a shell command for launches", failure)
+            # Undecidable in both readings: not a launch (see the docstring). The answer says so for a shell command
+            # line; a program that does not parse as one never was a shell command.
+            if not program:
+                note_unevaluated("reading a shell command for launches", failure)
             return
         if not commands:
             return
         for words, stdin in commands:
             argv(words, depth, stdin)
 
-    for command in extract_shell_commands(tool_input):
-        shell(command, 0, shell_dialect(tool_name, tool_input))
+    for command, line in extract_shell_commands(tool_input):
+        shell(command, 0, shell_dialect(tool_name, tool_input), program=not line)
     return targets
 
 
@@ -1368,8 +1375,8 @@ def check_account_quota_exhausted(
                  f'"{Path(script).resolve().as_posix()}" --clear {account}')
         return (
             f'[Router Gate] A confirmed quota failure is recorded for {drawn}, which this launch draws. The record '
-            'lifts when a newer usage reading shows the window under 100% or its reset time passes; to clear it by '
-            f'hand run: {clear}. While the owned worker is running, send a control message with completion '
+            'lifts when a newer successful usage reading shows the window under 100% used or past its reset time; the passing '
+            f'of time alone does not lift it. To clear it by hand run: {clear}. While the owned worker is running, send a control message with completion '
             f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
         )
     if records is None:
@@ -1645,14 +1652,17 @@ def check_schedule_plan(rows: list[dict], args: dict, context: dict, trigger: st
 
 def format_response(allowed: bool, harness_kind: str, reason: str = "") -> dict:
     """The answer in the shape of the host. An allow carries what this run could not check (`UNEVALUATED`) where the host
-    reads a message beside an allow: `systemMessage`, the field both Claude Code's and Codex's hook output has for every
-    hook, shown to the user and no decision. Antigravity (`decision`/`reason`) and Pi (the generated extension reads
-    only `block`/`reason`) have no such field: the notice goes to stderr, where a host that captures it shows it."""
+    reads a message beside an allow: `systemMessage`, a field of Claude Code's and Codex's hook output for every hook,
+    shown to the user and no decision; Antigravity's optional `reason` ("the explanation shown to the agent or to you for
+    the decision", antigravity.google/docs/hooks, PreToolUse). Pi's `tool_call` return only controls blocking, so the
+    notice goes to stderr, which the generated extension shows (`PI_ROUTER_GATE_TS`)."""
     notice = unevaluated_notice() if allowed else ""
-    if notice and harness_kind in ("antigravity", "pi"):
+    if notice and harness_kind == "pi":
         print(notice, file=sys.stderr)
     if harness_kind == "antigravity":
-        return {"decision": "allow"} if allowed else {"decision": "deny", "reason": reason}
+        if allowed:
+            return {"decision": "allow", "reason": notice} if notice else {"decision": "allow"}
+        return {"decision": "deny", "reason": reason}
     if harness_kind == "pi":
         return {"block": False} if allowed else {"block": True, "reason": reason}
     if allowed:
@@ -1719,7 +1729,7 @@ def decide(
     if calls[0][0] != tool_name:
         raw = str(tool_input.get("_raw") or tool_input.get("code") or "")
         if CODEX_EXEC_CMD_RE.search(raw):
-            calls.extend(("exec_command", {"cmd": command}) for command in extract_shell_commands(tool_input))
+            calls.extend(("exec_command", {"cmd": command}) for command, _ in extract_shell_commands(tool_input))
     executing = []
     for name, args in calls:
         if (name == "send_agent_prompt"
