@@ -318,22 +318,54 @@ export function finalReplyText(entries) {
   return '';
 }
 
+// A terminal whose end was a provider that became unavailable. New terminals carry `provider_unavailable`. One written
+// before that flag existed has it from its shape: `notificationEvents` ends a worker as `error` only for status `error`,
+// attention `error` or `providerUnavailable`, so an `error` terminal seen in neither of the first two was the third.
+// A terminal with no status recorded says nothing either way.
+export function providerUnavailableTerminal(terminal) {
+  if (terminal?.provider_unavailable === true) return true;
+  return terminal?.reason === 'error' && typeof terminal.status === 'string'
+    && terminal.status !== 'error' && terminal.attentionReason !== 'error';
+}
+
 // What ended the worker, for the notice body when it left no final reply. The `State:` header names the same event; the
-// sentence says what that event means, so a parent is never told a worker ended that did not (a superseded one runs on).
+// sentence says what that event means, so a parent is never told a worker ended that did not. `unknown` is a catch-up
+// for a receipt that holds no terminal: the registry has ended the dispatch, the watcher never saw how.
 const WITHOUT_REPLY = 'The worker ended without a final reply.\n';
-export function endingSentence(reason, terminal) {
-  if (reason === SUPERSEDED)
-    return "A later dispatch took this worker over and it is running that dispatch's turn: this dispatch's turn did not end here, and no reply of it is read.\n";
+export const END_UNKNOWN = 'unknown';
+export function endingSentence(reason, terminal, targetId) {
   if (reason === 'worker unavailable') return 'Paseo no longer lists this worker (it was removed or archived); it left no final reply.\n';
   if (reason === 'closed') return 'Paseo closed this worker; it left no final reply.\n';
-  if (reason === 'error')
-    return terminal?.provider_unavailable
-      ? "The worker's provider became unavailable; the worker left no final reply.\n"
+  if (reason === 'error') {
+    if (providerUnavailableTerminal(terminal)) return "The worker's provider became unavailable; the worker left no final reply.\n";
+    // The provider's message is printed above this sentence when the terminal has one.
+    return terminal?.failure_code === TURN_FAILED_CODE ? 'The worker left no final reply.\n'
       : "The worker's turn ended in an error and the provider gave no message; it left no final reply.\n";
+  }
   if (reason === 'finished') return 'The worker finished its turn without a final reply.\n';
   if (reason === WATCH_EXPIRED)
     return 'The notification watch expired before this worker was seen to end; check it with get_agent_status. It left no final reply that was read.\n';
+  if (reason === END_UNKNOWN)
+    return 'This dispatch ended, but the notification watch did not see how: whether it finished, failed or was canceled is not known here. ' +
+      `Check the worker with get_agent_status (agentId: ${targetId}).\n`;
   return WITHOUT_REPLY;
+}
+
+const TOOK_OVER = "A later dispatch took this worker over before this dispatch's end was seen.\n";
+
+// The reply of this dispatch's own turn in a worker a later dispatch took over. The relabel for a later dispatch is
+// made only when the worker is not running, so this dispatch's turn had ended; its reply is the last one before the next
+// turn's prompt. That is attributable only when this dispatch's own prompt is in the page (a user message carrying its
+// id as `messageId`, a resume's, or `clientMessageId`, a create's). Otherwise the last reply may be the later
+// dispatch's, and `null` says so.
+export function supersededReply(entries, dispatchId) {
+  const list = entries ?? [];
+  const own = list.findIndex(entry => entry?.item?.type === 'user_message'
+    && (entry.item.messageId === dispatchId || entry.item.clientMessageId === dispatchId));
+  if (own < 0) return null;
+  let end = list.findIndex((entry, i) => i > own && entry?.item?.type === 'user_message');
+  if (end < 0) end = list.length;
+  return finalReplyText(list.slice(own, end));
 }
 
 export function reportSection(dispatchId, text, whenEmpty = WITHOUT_REPLY) {
@@ -345,8 +377,8 @@ export function reportSection(dispatchId, text, whenEmpty = WITHOUT_REPLY) {
   return `Final reply is ${text.length} characters. Full text: ${file}\nSummary:\n${text.slice(0, REPORT_SUMMARY_LIMIT)}\n`;
 }
 
-async function loadFinalReply(client, agentId) {
-  if (!client || typeof client.fetchAgentTimeline !== 'function') return '';
+async function loadTimeline(client, agentId) {
+  if (!client || typeof client.fetchAgentTimeline !== 'function') return [];
   let page;
   try {
     page = await client.fetchAgentTimeline(agentId, {direction: 'tail', limit: RETRY_TIMELINE_LIMIT, projection: 'canonical'});
@@ -356,7 +388,11 @@ async function loadFinalReply(client, agentId) {
     unread.cause = error;
     throw unread;
   }
-  return finalReplyText(page?.entries);
+  return page?.entries ?? [];
+}
+
+async function loadFinalReply(client, agentId) {
+  return finalReplyText(await loadTimeline(client, agentId));
 }
 
 async function noticeBody(client, record, event) {
@@ -374,10 +410,17 @@ async function noticeBody(client, record, event) {
     ? `The worker's turn ended with this error: ${record.terminal.provider_message}\nAgentCompass's classifier ` +
       'reads it: when it is the provider refusing the model or the account, that is held out of dispatch; an ' +
       "error of the worker's own work or of this task's input holds nothing.\n" : '';
-  // A superseded worker runs another dispatch's turn: its latest reply is not this dispatch's, so none is read.
-  if (event.reason === SUPERSEDED) return endingSentence(SUPERSEDED);
+  if (event.reason === SUPERSEDED) {
+    // A later dispatch relabeled the worker, so its latest reply may be that dispatch's: read only the reply the timeline
+    // attributes to this one, and say where to read it when it cannot.
+    const reply = supersededReply(await loadTimeline(client, targetId), record.dispatch_id);
+    if (reply === null)
+      return TOOK_OVER + "This dispatch's reply cannot be told apart from the later dispatch's here: " +
+        `read it with get_agent_activity (agentId: ${targetId}).\n`;
+    return TOOK_OVER + reportSection(record.dispatch_id, reply, "This dispatch's turn left no final reply.\n");
+  }
   return classifier + reportSection(record.dispatch_id, await loadFinalReply(client, targetId),
-    endingSentence(event.reason, record.terminal));
+    endingSentence(event.reason, record.terminal, targetId));
 }
 
 // One text for the watcher's send and for a catch-up send. The final reply is in it; the parent is not sent to read it elsewhere.
@@ -647,7 +690,7 @@ export async function notifyEnd(client, input) {
   }
   const messageId = createHash('sha256').update(`router-finish:${record.dispatch_id}:terminal`).digest('hex');
   const pendingEnd = record.pending?.key === 'terminal' && typeof record.pending.text === 'string' ? record.pending.text : '';
-  const text = pendingEnd || await composeNotice(client, record, {key: 'terminal', reason: record.terminal?.reason || 'finished'});
+  const text = pendingEnd || await composeNotice(client, record, {key: 'terminal', reason: record.terminal?.reason || END_UNKNOWN});
   if (typeof text !== 'string') return {ok: false, error: 'timeline_unavailable'};
   await noteContinuation(client, record);
   if (record.continued) {
@@ -1205,7 +1248,8 @@ export async function execute(client, input, notify = ensureNotification) {
     ...(creation !== undefined ? {creation} : {}), completion_notification};
 }
 
-async function createClient() {
+// `credential.unreadable` is set when the local credential file cannot be read: the SDK reports that as a plain Error.
+export async function createClient(credential = {}) {
   const setup = path.dirname(fileURLToPath(import.meta.url));
   // A checkout installs beside this file; an installed wheel installs under the state directory, because an
   // upgrade replaces site-packages (sync_host_globals.ensure_paseo_bridge_dependencies).
@@ -1233,53 +1277,73 @@ async function createClient() {
   } catch {}
   return new DaemonClient({url: `ws://${listen}/ws`, clientId: randomUUID(),
     clientType: 'cli', appVersion: '0.11.2', connectTimeoutMs: 10000,
-    localCredential: () => fs.readFileSync(path.join(home, 'local-credential'), 'utf8').trim(),
+    localCredential: () => {
+      try { return fs.readFileSync(path.join(home, 'local-credential'), 'utf8').trim(); }
+      catch (error) { credential.unreadable = true; throw error; }
+    },
     webSocketFactory: (url, config) => new WebSocket(url, {headers: config?.headers, protocols: config?.protocols}),
     reconnect: {enabled: false}});
 }
 
 // The `condition` of a refusal code that merges several states: a token of a fixed vocabulary beside the unchanged
 // `error` code (the Python side reads the code; a caller that prints it reads the condition). Never the SDK's or the
-// host's text, a path, a token or an id: only what the bridge can tell apart from the error's class and code.
+// host's text, a path, a token or an id: the class comes from the error's own class and code, and from a message only
+// where the SDK or the network layer wrote that exact text, never where the daemon's text could be.
 //   worker_not_idle:       running | initializing | error | provider_unavailable | permission_pending (the first that holds)
 //   worker_not_found:      absent | archived
 //   host_connection_failed (the daemon was never connected):
-//                          refused | timeout | authentication | unreachable
+//                          refused | timeout | authentication | credential_unreadable | unreachable
 //   host_request_failed, host_resume_failed (connected, then a request failed):
 //                          timeout | connection_lost | daemon_error | invalid_response | authentication | bridge_error
-export function hostFailureClass(error, connected) {
+export function hostFailureClass(error, connected, credential = {}) {
   const message = typeof error?.message === 'string' ? error.message : '';
-  const codes = [error?.code, error?.cause?.code, ...(Array.isArray(error?.errors) ? error.errors.map(e => e?.code) : [])];
   if (error?.name === 'DaemonAuthenticationError') return 'authentication';
-  if (codes.includes('DAEMON_REQUEST_TIMEOUT') || /timed out/i.test(message)) return 'timeout';
-  if (!connected) return codes.includes('ECONNREFUSED') ? 'refused' : 'unreachable';
+  if (!connected) {
+    // The local credential is read by the bridge's own callback (`createClient`) when the SDK connects; the SDK
+    // turns that failure into a plain Error, so the callback's flag is the only sign of it.
+    if (credential.unreadable) return 'credential_unreadable';
+    // Only the SDK and the network layer speak before the connection is open, never the daemon.
+    // `Connection timed out`: @getpaseo/client 0.11.2 daemon-client.js:515, the connect timer. `connect ECONNREFUSED host:port`: Node's own
+    // system error, relayed by describeTransportError; the SDK keeps no code on it.
+    if (message === 'Connection timed out') return 'timeout';
+    return /\bECONNREFUSED\b/.test(message) ? 'refused' : 'unreachable';
+  }
+  // `DaemonConnectionError` (daemon-client.js) carries the SDK's own code for a request that waited too long.
+  if (error?.name === 'DaemonConnectionError') return error.code === 'DAEMON_REQUEST_TIMEOUT' ? 'timeout' : 'connection_lost';
   if (error?.name === 'DaemonProtocolError' || error?.code === 'invalid_response') return 'invalid_response';
   if (error?.name === 'DaemonRpcError') return 'daemon_error';
-  if (error?.name === 'DaemonConnectionError' || /closed|disposed|not connected|connection lost/i.test(message))
-    return 'connection_lost';
-  // The bridge's own code threw (a TypeError, a bad shape); any other Error is the SDK relaying the daemon's answer.
-  return error instanceof TypeError || error instanceof ReferenceError || error instanceof RangeError
-    || error instanceof SyntaxError ? 'bridge_error' : 'daemon_error';
+  // The SDK's own plain texts for a client that is not connected (0.11.2 daemon-client.js): `Daemon client closed`
+  // (:642), `Daemon client is closed` (:456) and `Daemon client is disposed` (:434, :452), `Transport not connected
+  // (status: ...)` (:836, :854, :1170).
+  // Anchored whole: the daemon's answers are also plain Errors, and its words ("session is closed") are not these.
+  if (/^(Daemon client (is )?(closed|disposed)|Transport not connected \(status: \w+\))$/.test(message)) return 'connection_lost';
+  // A request the SDK refused to send (its own validation, a ZodError) or the bridge's own code threw: nothing
+  // reached the daemon.
+  if (error?.name === 'ZodError' || error instanceof TypeError || error instanceof ReferenceError
+      || error instanceof RangeError || error instanceof SyntaxError) return 'bridge_error';
+  // Any other plain Error is `new Error(payload.error)`: the daemon answered, whatever its text says.
+  return 'daemon_error';
 }
 
-export function hostFailure(error, connected, input) {
+export function hostFailure(error, connected, input, credential = {}) {
   return {ok: false,
     sent: connected && (input?.operation === 'create' || input?.operation === 'resume'),
     error: connected ? 'host_request_failed' : 'host_connection_failed',
-    condition: hostFailureClass(error, connected)};
+    condition: hostFailureClass(error, connected, credential)};
 }
 
 async function main() {
   if (process.argv[2] === '--watch') return watch(process.argv[3], process.argv[4], process.argv[5], process.argv[6]);
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));
-  const client = await createClient();
+  const credential = {};
+  const client = await createClient(credential);
   let connected = false;
   try {
     await client.connect();
     connected = true;
     console.log(JSON.stringify(await execute(client, input)));
   } catch (error) {
-    console.log(JSON.stringify(hostFailure(error, connected, input)));
+    console.log(JSON.stringify(hostFailure(error, connected, input, credential)));
   } finally { await client.close(); }
 }
 

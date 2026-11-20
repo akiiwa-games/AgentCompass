@@ -5,12 +5,14 @@ import {pathToFileURL, fileURLToPath} from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import net from 'node:net';
+import {randomUUID} from 'node:crypto';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, normalizeProviderModels, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
   creationFailureClass, creationFailureCode, creationRecord, resolvePaseoPlacement, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
   workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE, fallbackArgv, runFallback,
   attemptsNote, notificationFile, agentResumed, settleArgv, settleBeforeExit,
-  finalReplyText, reportSection, composeNotice, notifyEnd, hostFailure, REPORT_INLINE_LIMIT, REPORT_SUMMARY_LIMIT} from './paseo_dispatch_bridge.mjs';
+  finalReplyText, reportSection, composeNotice, notifyEnd, hostFailure, createClient, continuationVerdict, REPORT_INLINE_LIMIT, REPORT_SUMMARY_LIMIT} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -1661,80 +1663,228 @@ test('a refused send after the relabel carries the class of the failure and no t
   }
 });
 
-test('a host failure of the bridge names its class of a fixed vocabulary and never the text', () => {
+// A class is read from what the real SDK raises, so these use its own classes and clients (the daemon is never needed).
+const sdkModule = await import(pathToFileURL(require.resolve('@getpaseo/client/internal/daemon-client')).href);
+const {WebSocket: SdkWebSocket} = require('ws');
+const sdkClient = (url, extra = {}) => new sdkModule.DaemonClient({url, clientId: randomUUID(), clientType: 'cli',
+  appVersion: '0.11.2', localCredential: () => 'x', reconnect: {enabled: false}, ...extra,
+  webSocketFactory: (target, config) => new SdkWebSocket(target, {headers: config?.headers, protocols: config?.protocols})});
+const closedPort = async () => {
+  const probe = net.createServer();
+  await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
+  const {port} = probe.address();
+  await new Promise(resolve => probe.close(resolve));
+  return port;
+};
+const connectFailure = async client => {
+  let failure;
+  try { await client.connect(); } catch (error) { failure = error; } finally { await client.close().catch(() => {}); }
+  assert.ok(failure, 'the connect did not fail');
+  return failure;
+};
+
+test('a connect failure is classed from the shape the real SDK gives, a missing credential apart from a daemon that is down', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-connect-'));
+  const old = process.env.PASEO_HOME;
+  process.env.PASEO_HOME = home;
+  const servers = [];
+  const serve = async handler => {
+    const server = net.createServer(handler);
+    servers.push(server);
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    return server.address().port;
+  };
+  const input = {operation: 'create'};
+  try {
+    fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({daemon: {listen: `127.0.0.1:${await closedPort()}`}}));
+    // the bridge's own client with no local credential file: the daemon may be up, this is not "unreachable"
+    const credential = {};
+    const unread = await connectFailure(await createClient(credential));
+    assert.equal(hostFailure(unread, false, input, credential).condition, 'credential_unreadable');
+    // the credential read, the port closed: the daemon is down
+    fs.writeFileSync(path.join(home, 'local-credential'), 'x');
+    const read = {};
+    const refused = await connectFailure(await createClient(read));
+    assert.equal(hostFailure(refused, false, input, read).condition, 'refused');
+    assert.equal(JSON.stringify(hostFailure(refused, false, input, read)).includes('127.0.0.1'), false);
+    // a server that never answers
+    const silent = await connectFailure(sdkClient(`ws://127.0.0.1:${await serve(() => {})}/ws`, {connectTimeoutMs: 300}));
+    assert.equal(hostFailure(silent, false, input, {}).condition, 'timeout');
+    // a server that drops the socket: reachable, but not answering
+    const dropped = await connectFailure(sdkClient(`ws://127.0.0.1:${await serve(socket => socket.destroy())}/ws`, {connectTimeoutMs: 2000}));
+    assert.equal(hostFailure(dropped, false, input, {}).condition, 'unreachable');
+    assert.equal(hostFailure(new sdkModule.DaemonAuthenticationError('password_required'), false, input, {}).condition, 'authentication');
+  } finally {
+    for (const server of servers) server.close();
+    if (old === undefined) delete process.env.PASEO_HOME; else process.env.PASEO_HOME = old;
+    fs.rmSync(home, {recursive: true, force: true});
+  }
+});
+
+test('a request failure is classed from what the real SDK raises; the daemon\'s own text never decides the class', async () => {
   const canary = 'secret-host-text-canary C:/secret/path';
-  const named = (name, code) => Object.assign(new Error(canary), {name, ...(code ? {code} : {})});
-  const connect = [
-    [named('Error', 'ECONNREFUSED'), 'refused'],
-    [Object.assign(new Error(canary), {cause: {code: 'ECONNREFUSED'}}), 'refused'],
-    [new Error('Connection timed out'), 'timeout'],
-    [named('DaemonAuthenticationError'), 'authentication'],
-    [new Error(canary), 'unreachable'],
+  const idle = sdkClient('ws://127.0.0.1:1/ws', {webSocketFactory: () => { throw new Error('no socket'); }});
+  const raised = async call => { try { await call(); } catch (error) { return error; } assert.fail('nothing was raised'); };
+  const classOf = error => hostFailure(error, true, {operation: 'resume'}, {}).condition;
+  try {
+    // what the SDK raises on its own: a request it refuses to send, a client that is not connected
+    const invalid = await raised(() => idle.sendMessage('w', undefined, {messageId: 'd'}));
+    assert.equal(invalid.name, 'ZodError');
+    assert.equal(classOf(invalid), 'bridge_error');
+    const labels = await raised(() => idle.updateAgent('w', {name: 't', labels: {a: 1}}));
+    assert.equal(labels.name, 'ZodError');
+    assert.equal(classOf(labels), 'bridge_error');
+    const notConnected = await raised(() => idle.sendMessage('w', 'p', {messageId: 'd'}));
+    assert.match(notConnected.message, /^Transport not connected/);
+    assert.equal(classOf(notConnected), 'connection_lost');
+    assert.equal(classOf(new Error('Daemon client closed')), 'connection_lost');
+    assert.equal(classOf(new sdkModule.DaemonConnectionError('Connection lost')), 'connection_lost');
+    assert.equal(classOf(new sdkModule.DaemonConnectionError('Timed out waiting', 'DAEMON_REQUEST_TIMEOUT')), 'timeout');
+    // the daemon's answer reaches the bridge as `new Error(payload.error)`: whatever it says, the connection is up
+    for (const text of ['codex session is closed', 'claude process is closed', 'Codex app-server request timed out for turn/start',
+      'ACP initialize timed out after 30000ms', 'Transport not connected to the provider', 'Daemon client closed by the provider', canary])
+      assert.equal(classOf(new Error(text)), 'daemon_error', text);
+    // the SDK's own typed errors, in the shape each has
+    assert.equal(classOf(Object.assign(new Error('x'), {name: 'DaemonRpcError', code: 'whatever'})), 'daemon_error');
+    assert.equal(classOf(Object.assign(new Error('x'), {name: 'DaemonProtocolError', code: 'invalid_response'})), 'invalid_response');
+    assert.equal(classOf(new sdkModule.DaemonAuthenticationError('incorrect_password')), 'authentication');
+    // the bridge's own code threw
+    assert.equal(classOf(new TypeError(canary)), 'bridge_error');
+    for (const error of [invalid, notConnected, new Error(canary), new TypeError(canary)])
+      assert.equal(JSON.stringify(hostFailure(error, true, {operation: 'create'}, {})).includes('canary'), false);
+    assert.equal(hostFailure(invalid, true, {operation: 'create'}, {}).sent, true);
+    assert.equal(hostFailure(invalid, true, {operation: 'observe'}, {}).sent, false);
+  } finally { await idle.close().catch(() => {}); }
+});
+
+// The notice, split at the continuation verdict into the header the parent parses and the body this change says.
+const noticeParts = async (client, record, event) => {
+  const text = await composeNotice(client, record, event);
+  const verdict = await continuationVerdict(record.agent_id ?? record.dispatch_id);
+  const at = text.indexOf(verdict);
+  assert.ok(at > 0, 'the notice has no continuation verdict');
+  return {header: text.slice(0, at), body: text.slice(at + verdict.length + 1)};
+};
+const noticeBase = {dispatch_id: 'd1', parent_id: 'p1', agent_id: 'a1', created_at: Date.now() - 1000, creation_deadline: Date.now() + 1e6};
+const timeline = entries => ({fetchAgentTimeline: async () => ({entries: entries.map(([type, text, ids]) => ({item: {type, text, ...(ids ?? {})}}))})});
+const SUPERSEDED_TEXT = 'superseded by a later dispatch';
+const TOOK_OVER = "A later dispatch took this worker over before this dispatch's end was seen.\n";
+
+test('each ending of a worker has its own sentence in the body, under the unchanged State header', async () => {
+  const none = timeline([]);
+  const expected = [
+    ['worker unavailable', {}, 'Paseo no longer lists this worker (it was removed or archived); it left no final reply.\n'],
+    ['closed', {}, 'Paseo closed this worker; it left no final reply.\n'],
+    ['finished', {}, 'The worker finished its turn without a final reply.\n'],
+    ['error', {terminal: {reason: 'error', status: 'error', attentionReason: null}},
+      "The worker's turn ended in an error and the provider gave no message; it left no final reply.\n"],
+    ['error', {terminal: {reason: 'error', status: 'idle', attentionReason: 'error'}},
+      "The worker's turn ended in an error and the provider gave no message; it left no final reply.\n"],
+    ['error', {terminal: {reason: 'error', provider_unavailable: true}},
+      "The worker's provider became unavailable; the worker left no final reply.\n"],
+    ['notification watch expired; check worker status', {},
+      'The notification watch expired before this worker was seen to end; check it with get_agent_status. It left no final reply that was read.\n'],
+    ['unknown', {}, 'This dispatch ended, but the notification watch did not see how: whether it finished, failed or was canceled is not known here. ' +
+      'Check the worker with get_agent_status (agentId: a1).\n'],
   ];
-  for (const [error, condition] of connect) {
-    const answer = hostFailure(error, false, {operation: 'create'});
-    assert.deepEqual([answer.ok, answer.sent, answer.error, answer.condition], [false, false, 'host_connection_failed', condition]);
-    assert.equal(JSON.stringify(answer).includes('canary'), false);
+  for (const [reason, extra, sentence] of expected) {
+    const {header, body} = await noticeParts(none, {...noticeBase, ...extra}, {key: 'terminal', reason});
+    assert.ok(header.includes(`State: ${reason}\n`), reason);
+    assert.equal(body, sentence, `${reason} ${JSON.stringify(extra)}`);
   }
-  const request = [
-    [named('DaemonConnectionError', 'DAEMON_REQUEST_TIMEOUT'), 'timeout'],
-    [new Error('Fetch agent timed out (30000ms)'), 'timeout'],
-    [named('DaemonConnectionError', 'DAEMON_CONNECTION_LOST'), 'connection_lost'],
-    [new Error('Daemon client closed'), 'connection_lost'],
-    [named('DaemonRpcError'), 'daemon_error'],
-    [named('DaemonProtocolError', 'invalid_response'), 'invalid_response'],
-    [new TypeError(canary), 'bridge_error'],
-    [new Error(canary), 'daemon_error'],
-  ];
-  for (const [error, condition] of request) {
-    const answer = hostFailure(error, true, {operation: 'resume'});
-    assert.deepEqual([answer.ok, answer.sent, answer.error, answer.condition], [false, true, 'host_request_failed', condition]);
-    assert.equal(JSON.stringify(answer).includes('canary'), false);
-    assert.equal(hostFailure(error, true, {operation: 'observe'}).sent, false);
+  // an error with the provider's message and no reply: the message is printed, so it is not said to be missing
+  const message = {terminal: {reason: 'error', failure_code: TURN_FAILED_CODE, provider_message: 'model gpt-x is not available on this plan',
+    status: 'error', attentionReason: null}};
+  const {body} = await noticeParts(none, {...noticeBase, ...message}, {key: 'terminal', reason: 'error'});
+  assert.match(body, /^The worker's turn ended with this error: model gpt-x is not available on this plan\n/);
+  assert.ok(body.endsWith('holds nothing.\nThe worker left no final reply.\n'), body);
+  assert.doesNotMatch(body, /gave no message/);
+  // a worker that ended with a reply still carries it, whatever ended it
+  const reply = timeline([['assistant_message', 'the report']]);
+  assert.equal((await noticeParts(reply, noticeBase, {key: 'terminal', reason: 'closed'})).body, 'Final reply:\nthe report\n');
+});
+
+test('a superseded notice says only what is known and reads a reply only when the timeline attributes it to this dispatch', async () => {
+  const event = {key: 'terminal', reason: SUPERSEDED_TEXT};
+  const read = 'This dispatch\'s reply cannot be told apart from the later dispatch\'s here: read it with get_agent_activity (agentId: a1).\n';
+  const parts = async entries => noticeParts(timeline(entries), noticeBase, event);
+  const mine = ['user_message', 'this dispatch prompt', {messageId: 'd1'}];
+  const later = ['user_message', 'later prompt', {messageId: 'later'}];
+  // this dispatch's turn is in the page and a later turn began after it: the reply between them is this dispatch's
+  let got = await parts([mine, ['assistant_message', 'first words'], ['assistant_message', 'this dispatch reply'], later,
+    ['assistant_message', 'the later dispatch reply']]);
+  assert.equal(got.body, `${TOOK_OVER}Final reply:\nthis dispatch reply\n`);
+  // the id may come as the create's client message id
+  got = await parts([['user_message', 'p', {clientMessageId: 'd1'}], ['assistant_message', 'created reply'], later, ['assistant_message', 'x']]);
+  assert.equal(got.body, `${TOOK_OVER}Final reply:\ncreated reply\n`);
+  // no later turn began: the last reply is this dispatch's (a send that failed gave the worker back)
+  got = await parts([mine, ['assistant_message', 'only reply']]);
+  assert.equal(got.body, `${TOOK_OVER}Final reply:\nonly reply\n`);
+  // this dispatch's turn is in the page and left no reply before the later one began
+  got = await parts([mine, later, ['assistant_message', 'the later dispatch reply']]);
+  assert.equal(got.body, `${TOOK_OVER}This dispatch's turn left no final reply.\n`);
+  // this dispatch's turn is not in the page, or carries no id: a reply there may be the later dispatch's, so none is printed
+  for (const entries of [[later, ['assistant_message', 'the later dispatch reply']], [['assistant_message', 'unattributed reply']],
+    [['user_message', 'no id'], ['assistant_message', 'unattributed reply']], []]) {
+    got = await parts(entries);
+    assert.equal(got.body, TOOK_OVER + read, JSON.stringify(entries));
+    assert.doesNotMatch(got.body, /reply\n$|unattributed|later dispatch reply/);
+  }
+  // no timeline method: the same
+  got = await noticeParts({}, noticeBase, event);
+  assert.equal(got.body, TOOK_OVER + read);
+  // the sentence claims neither that the worker runs nor that the turn did not end
+  assert.doesNotMatch(got.body, /running|did not end/);
+  assert.ok(got.header.includes(`State: ${SUPERSEDED_TEXT}\n`));
+});
+
+test('a catch-up for a receipt with no terminal invents no finish', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-notify-'));
+  const old = process.env.ROUTER_STATE_DIR;
+  process.env.ROUTER_STATE_DIR = root;
+  try {
+    const file = notificationFile('child');
+    fs.mkdirSync(path.dirname(file), {recursive: true});
+    const sent = [];
+    const client = {
+      fetchAgent: async id => ({agent: {id, status: 'error'}}),
+      fetchAgentTimeline: async () => ({entries: []}),
+      sendMessage: async (...args) => sent.push(args),
+    };
+    fs.writeFileSync(file, JSON.stringify({dispatch_id: 'child', parent_id: 'parent', status: 'watching', delivered: [], pending: null}));
+    assert.equal((await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})).sent, true);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0][1], /\nState: unknown\n/);
+    assert.doesNotMatch(sent[0][1], /State: finished|finished its turn/);
+    assert.match(sent[0][1], /whether it finished, failed or was canceled is not known here/);
+    // a receipt that has a terminal says what it carries
+    fs.writeFileSync(file, JSON.stringify({dispatch_id: 'child', parent_id: 'parent', status: 'watching', delivered: [], pending: null,
+      terminal: {reason: 'closed'}}));
+    assert.equal((await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})).sent, true);
+    assert.match(sent[1][1], /\nState: closed\n/);
+  } finally {
+    if (old === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = old;
+    fs.rmSync(root, {recursive: true, force: true});
   }
 });
 
-test('each ending of a worker gets its own true sentence in the notice, under the unchanged State header', async () => {
-  const base = {dispatch_id: 'd1', parent_id: 'p1', agent_id: 'a1', created_at: Date.now() - 1000, creation_deadline: Date.now() + 1e6};
-  const client = {fetchAgentTimeline: async () => ({entries: []})};
-  const bodies = new Map();
-  for (const [label, reason, extra] of [
-    ['superseded', 'superseded by a later dispatch', {}],
-    ['unavailable', 'worker unavailable', {}],
-    ['closed', 'closed', {}],
-    ['error', 'error', {terminal: {reason: 'error'}}],
-    ['provider', 'error', {terminal: {reason: 'error', provider_unavailable: true}}],
-    ['finished', 'finished', {}],
-    ['expired', 'notification watch expired; check worker status', {}],
-  ]) {
-    const text = await composeNotice(client, {...base, ...extra}, {key: 'terminal', reason});
-    assert.ok(text.includes(`State: ${reason}\n`), label);
-    bodies.set(label, text.slice(text.indexOf('\n\n') + 2));
-  }
-  assert.equal(new Set(bodies.values()).size, bodies.size, 'every ending has its own sentence');
-  assert.match(bodies.get('superseded'), /took this worker/);
-  assert.doesNotMatch(bodies.get('superseded'), /ended/);
-  assert.match(bodies.get('unavailable'), /no longer lists/);
-  assert.match(bodies.get('closed'), /closed/);
-  assert.match(bodies.get('error'), /error/);
-  assert.match(bodies.get('provider'), /provider became unavailable/);
-  assert.match(bodies.get('finished'), /finished/);
-  assert.match(bodies.get('expired'), /watch expired/);
-  // a worker that ended with a reply still carries it
-  const withReply = await composeNotice({fetchAgentTimeline: async () => ({entries: [{item: {type: 'assistant_message', text: 'the report'}}]})},
-    {...base}, {key: 'terminal', reason: 'closed'});
-  assert.match(withReply, /Final reply:\nthe report/);
-  // a superseded worker's latest reply belongs to the later dispatch: it is not read into this notice
-  const later = await composeNotice({fetchAgentTimeline: async () => ({entries: [{item: {type: 'assistant_message', text: 'the later dispatch report'}}]})},
-    {...base}, {key: 'terminal', reason: 'superseded by a later dispatch'});
-  assert.doesNotMatch(later, /later dispatch report/);
-  assert.match(later, /took this worker/);
-});
-
-test('the watcher records that a provider became unavailable on the terminal', async () => {
+test('the watcher records that a provider became unavailable, and a released watcher\'s terminal reads the same', async () => {
   const f = watchFixture();
   f.setAgent({status: 'running', providerUnavailable: true});
   assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
   assert.equal(f.record.terminal.provider_unavailable, true);
   assert.match(f.calls[0][1], /provider became unavailable/);
+  // a terminal written before the flag existed: an `error` end of a worker that was neither in status error nor in
+  // attention error can only have come from providerUnavailable (notificationEvents)
+  const provider = /provider became unavailable/, plain = /the provider gave no message/;
+  for (const [terminal, expect] of [
+    [{reason: 'error', status: 'running', attentionReason: null}, provider],
+    [{reason: 'error', status: 'idle', attentionReason: null}, provider],
+    [{reason: 'error', status: 'error', attentionReason: null}, plain],
+    [{reason: 'error', status: 'running', attentionReason: 'error'}, plain],
+    [{reason: 'error', status: null, attentionReason: null}, plain],
+  ]) {
+    const {body} = await noticeParts(timeline([]), {...noticeBase, terminal}, {key: 'terminal', reason: 'error'});
+    assert.match(body, expect, JSON.stringify(terminal));
+  }
 });
