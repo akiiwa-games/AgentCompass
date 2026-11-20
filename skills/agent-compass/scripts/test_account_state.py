@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -442,6 +444,39 @@ class StateTests(Machine):
             agy_spec = account_fleet.load_accounts()['accounts']['antigravity']
             self.assertFalse(agy_spec['verified'])
             self.assertTrue(all(b.get('discovery_unavailable') for b in agy_spec['bundles'].values()))
+
+    def test_an_antigravity_read_that_used_its_whole_time_is_not_run_again(self):
+        """Rule (usage_core.fetch_antigravity_usage): the retry is for the token gap, which answers at once; a run
+        that reached its time limit is waiting for a sign-in or a network, so it is reported and not repeated."""
+        def read(side_effect):
+            with (patch.object(usage_core, 'CACHE_PATH', self.state / 'usage-cache.json'),
+                  patch.object(usage_core, 'STATE_DIR', self.state),
+                  patch.object(usage_core, 'find_antigravity_cli', return_value='agy'),
+                  patch.object(usage_core, '_run_antigravity_cli', side_effect=side_effect) as run,
+                  patch.object(usage_core, 'ANTIGRAVITY_USAGE_RETRY_SECONDS', 0)):
+                result = usage_core.fetch_antigravity_usage()
+            return result, [call.args[1] for call in run.call_args_list]
+
+        usage = ['-p', '/usage', '--output-format', 'json']
+        result, runs = read(['1.1.12', subprocess.TimeoutExpired('agy', 60), AssertionError('run again')])
+        self.assertEqual((result.error, runs), ('更新失败', [['--version'], usage]))
+        result, runs = read(['1.1.12', ValueError('Antigravity CLI query failed'), ValueError('again')])
+        self.assertEqual((result.error, runs), ('更新失败', [['--version'], usage, usage]))
+
+    @unittest.skipUnless(os.name == 'nt', 'the job object is the Windows form of the rule')
+    def test_the_antigravity_read_cannot_start_another_program(self):
+        """Rule (usage_core._antigravity_windows_job): a background read never opens a sign-in page. agy opens it
+        by starting a program, so the program the read runs is refused every start of another one."""
+        attempt = '\n'.join((
+            'import subprocess, sys',
+            'try:',
+            '    subprocess.run([sys.executable, "-c", "pass"], check=True)',
+            '    print("started")',
+            'except OSError:',
+            '    print("refused")',
+        ))
+        self.assertEqual(usage_core._run_antigravity_cli(Path(sys.executable), ['-c', attempt], timeout=60).strip(),
+                         'refused')
 
     def test_shared_subscription_propagates_402_and_same_credential_401_without_shifting_quota_account(self):
         self.codex_login('plus', 'codex', 'acct-shared')
