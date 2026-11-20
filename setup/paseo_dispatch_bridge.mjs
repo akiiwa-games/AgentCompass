@@ -382,7 +382,7 @@ export function supersededReply(entries, record, laterId, complete) {
     return finalReplyText(list.slice(own, end));
   }
   const created = !record.agent_id || record.agent_id === record.dispatch_id;
-  if (!created || !complete || typeof laterId !== 'string' || !laterId || laterId === record.dispatch_id) return null;
+  if (!created || !complete || typeof laterId !== 'string' || !laterId) return null;
   const later = list.findIndex(entry => carries(entry, laterId));
   if (later < 0 || list.slice(0, later).some(isUser)) return null;
   return finalReplyText(list.slice(0, later));

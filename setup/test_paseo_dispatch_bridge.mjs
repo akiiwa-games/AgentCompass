@@ -1853,7 +1853,7 @@ test('a superseded notice says only what is known and reads a reply only when th
   const reply = text => ['assistant_message', text];
   const tool = ['tool_call', ''];
   const parts = async (record, entries, labelledFor = 'later', complete = true) => noticeParts({
-    fetchAgent: async () => ({agent: {labels: {'router.dispatch_id': labelledFor}}}),
+    fetchAgent: async () => ({agent: {labels: labelledFor === 'none' ? {} : {'router.dispatch_id': labelledFor}}}),
     fetchAgentTimeline: async () => ({hasOlder: !complete, entries: entries.map(([type, text, ids]) => ({item: {type, text, ...(ids ?? {})}}))}),
   }, record, event);
 
@@ -1881,7 +1881,9 @@ test('a superseded notice says only what is known and reads a reply only when th
   assert.equal(got.body, `${TOOK_OVER}This dispatch's turn left no final reply.\n`);
   // the later prompt has not landed, or the labels name another dispatch than the prompt in the page: not attributable
   for (const [entries, labelled] of [[[reply('created reply')], 'later'], [[reply('created reply'), prompt('other')], 'later'],
-    [[reply('created reply'), prompt('later')], 'a-third']]) {
+    [[reply('created reply'), prompt('later')], 'a-third'],
+    // the labels hold no dispatch: a user message without ids is not "the later prompt"
+    [[reply('created reply'), ['user_message', 'steer', {}]], 'none']]) {
     got = await parts(created, entries, labelled);
     assert.equal(got.body, TOOK_OVER + readFor('d1'), `${JSON.stringify(entries)} ${labelled}`);
   }
