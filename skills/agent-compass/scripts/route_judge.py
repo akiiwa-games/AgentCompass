@@ -894,13 +894,13 @@ def build_parser():
     parser.add_argument('--help-all', action='store_true', help='Show every option the script accepts.')
     parser.add_argument('--brief', type=Path, action='append', help='roll: a Markdown task file (use instead of --task). It is classified and sent to the worker unchanged. Repeat it to roll several one-line briefs: they are classified at the same time, then routed and launched one after another.')
     parser.add_argument('--task', help='roll: the task as inline text, or - to read it from stdin (any length, kept whole); use instead of --brief. --hours is then optional.')
-    parser.add_argument('--file', type=Path, action='append', default=[], help='roll: a file Dot needs (repeatable); ignored by local workers.')
+    parser.add_argument('--file', type=Path, action='append', default=[], help='roll: a file Dot needs (repeatable); a local worker does not receive it, and the result says so.')
     parser.add_argument('--apply-to', type=Path, help='roll: where returned Dot files land (default: cwd, only with --file).')
     parser.add_argument('--local-only', metavar='REASON', help='roll: keep the work on this machine when no --workspace is given, with the concrete local dependency.')
     parser.add_argument('--keep-whole', metavar='REASON', help='roll/plan: send a brief the classifier split into several lines of work to one worker anyway, with the concrete reason.')
     parser.add_argument('--hours', type=float, help='roll/plan: expected active worker-hours (positive number). Optional: when omitted, the classifier estimates it and says so under assumptions.')
     parser.add_argument('--can-wait-hours', type=float, metavar='HOURS', help='roll/plan: Optional. Hours this non-urgent task may wait for a stronger model\'s quota window to reset and, on roll, for a transient provider failure to clear before AgentCompass relaunches the brief on the next candidate (default 0: launch the best model available now).')
-    parser.add_argument('--fast', action='store_true', help='roll/plan/record: prefer fast mode when quota is plentiful or during a pre-reset sprint.')
+    parser.add_argument('--fast', action='store_true', help='roll/plan/record: prefer fast mode when quota is plentiful or during a pre-reset sprint; a result that did not apply it says why.')
     parser.add_argument('--verbose', action='store_true', help='roll: print the full result instead of the short one (status, next_action, pointers). The full result is saved to disk either way.')
     parser.add_argument('--title', help='roll: worker title (default: first line of the brief).')
     parser.add_argument('--workspace', help='roll: existing directory this worker writes in and claims exclusively (default: parent cwd, warning only).')
@@ -939,7 +939,7 @@ def build_parser():
     parser.add_argument('--demo', action='store_true', help='plan --dry-run: offline reference fleet and synthetic quotas; no local credentials needed.')
     parser.add_argument('--format', choices=('json', 'table'), help='Plan output (default: table for --demo, JSON otherwise).')
     parser.add_argument('--constraint', choices=CONSTRAINTS, help='record: why the route is forced (user_override, hard_constraint, dot_closed_loop).')
-    parser.add_argument('--basis', help='record: quote the user instruction or constraint that forces this route.')
+    parser.add_argument('--basis', help='record/roll: quote the user instruction or constraint that forces this route; roll needs it with --provider, --account, --model or --effort, and ignores it (with a warning) without them.')
     parser.add_argument('--reason-category', choices=REASON_CATEGORIES,
                         help='record: why the override departs from the router: ' + ', '.join(REASON_CATEGORIES) + '.')
     parser.add_argument('--provider')
@@ -1008,17 +1008,43 @@ def main():
     except (OSError, ValueError, RuntimeError, sqlite3.Error, *public_data.DATA_ERRORS) as exc:
         # Every failure, a data-class error (KeyError, TypeError, ...) included, is reported as the named error, never
         # as a traceback.
-        failure = {'error': 'Routing input or local runtime failed', 'error_type': type(exc).__name__}
-        if isinstance(exc, (ValueError, scorer_client.ScorerError)):
-            # Only fixed texts written in this repository (caller input rules, scorer limits); other errors may carry paths or bodies.
-            failure['detail'] = str(exc)[:400]
-        elif public_data.is_data_error(exc):
-            failure['error'] = 'Reference or local data could not be read'
-        failure['next'] = ('Fix the cause in detail, then roll again. A task that already has a Paseo dispatch comes back as that '
-                           'worker (pending), not as a second launch.' if args.stage == 'roll' else
-                           'Check reviewed input and usage cache; continue feasible parent work.')
-        print(json.dumps(failure, ensure_ascii=False))
+        print(json.dumps(failure_answer(exc, args.stage), ensure_ascii=False))
         return 1
+
+
+def failure_cause(exc):
+    """What a failed run says about its error: the text only where this repository wrote it or the system did (caller
+    input rules, scorer limits, the operating system's reason and the path that was asked for, a database's own message,
+    the name of a missing data field). A RuntimeError's text may carry the reply of a host, so only its type is named."""
+    kind = type(exc).__name__
+    if isinstance(exc, (ValueError, scorer_client.ScorerError)):
+        return str(exc)[:400]
+    if isinstance(exc, OSError):
+        named = f': {exc.filename}' if getattr(exc, 'filename', None) else ''
+        return f'{kind}: {exc.strerror or "operating system error"}{named}'[:400]
+    if isinstance(exc, sqlite3.Error):
+        return f'{kind}: {exc}'[:400]
+    if isinstance(exc, KeyError) and exc.args and isinstance(exc.args[0], str):
+        return f'{kind}: the field {exc.args[0][:80]!r} is missing from reference or local data'
+    return (f'{kind}: its text is not printed here (it may carry the reply of a host); run `agentcompass doctor` to check '
+            'the installation and local state')
+
+
+def failure_answer(exc, stage):
+    """The answer of a run that failed outside the result path, in the shape of every other answer: `status`, `cause`,
+    `next_action`, and the error class (`error`, `error_type`)."""
+    failure = {'status': 'error', 'error': 'Routing input or local runtime failed', 'error_type': type(exc).__name__,
+               'cause': failure_cause(exc)}
+    if isinstance(exc, (ValueError, scorer_client.ScorerError)):
+        failure['detail'] = failure['cause']        # the text of a rule written in this repository, as it always was
+    elif public_data.is_data_error(exc):
+        failure['error'] = 'Reference or local data could not be read'
+    failure['next_action'] = (
+        'Fix the cause named in cause (a missing or unreadable file, the local state, the installation), then roll '
+        'again. A task that already has a Paseo dispatch comes back as that worker (pending), not as a second launch.'
+        if stage == 'roll' else
+        'Fix the cause named in cause, check the reviewed input and the usage cache, and continue feasible parent work.')
+    return failure
 
 
 def _run_stage(args):

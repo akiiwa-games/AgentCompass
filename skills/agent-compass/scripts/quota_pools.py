@@ -346,20 +346,22 @@ def launch_blockers(bundle, accounts, usage, now, latched=None, records=None):
 QUOTA_REASON = re.compile(r'^([\w.-]+)(?::| has | is )')
 
 
-def quota_wait_hours(candidate, usage):
-    """Hours until every quota window that excludes a candidate has reset, or None when anything other than its own
-    account's quota windows (ability, policy, model management, route) excludes it."""
+def quota_wait(candidate, usage):
+    """`(hours, window)`: hours until every quota window that excludes a candidate has reset, and the window that sets
+    that wait (the last to return); None when anything other than its own account's quota windows (ability, policy,
+    model management, route) excludes it."""
     account = (candidate.get('bundle') or {}).get('account')
     windows = (((usage or {}).get('accounts') or {}).get(account) or {}).get('windows') or []
     resets = {str(w.get('id')): w.get('seconds_until_reset') for w in windows if isinstance(w, dict)}
-    hours = 0.0
+    hours, binding = 0.0, None
     for reason in candidate.get('excluded') or []:
         match = QUOTA_REASON.match(str(reason))
         seconds = resets.get(match.group(1)) if match else None
         if not isinstance(seconds, (int, float)) or isinstance(seconds, bool):
             return None
-        hours = max(hours, seconds / 3600)
-    return hours
+        if binding is None or seconds / 3600 >= hours:
+            hours, binding = seconds / 3600, match.group(1)
+    return hours, binding
 
 
 def pool_size(observed):

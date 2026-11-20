@@ -685,6 +685,50 @@ class AllocatorTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     worker_sessions.rotation_threshold({'rotate_after_carried_tokens': bad_val})
 
+    def test_a_wait_names_the_window_that_sets_it_and_a_blocked_owner_names_what_blocks_it(self):
+        """Rule (`candidate_eval.evaluate_bundle`, `allocator.plan`): `available_in_hours` is the reset of the window that
+        holds the candidate back, and the decision names that window (`wait_for`); a chain owner that cannot continue is
+        described by the exclusions the plan holds for it (`resume_blocked_by`) and the wait it computed (`wait_hours`)."""
+        usage = self.usage(claude=[('five_hour', 3, 1.0), ('seven_day', 60, 100), ('weekly_fable', 100, 100)], codex=[('usage', 1, 121)])
+        task = {'work_kind': 'visual_analysis', 'difficulty': 'routine', 'expected_hours': 1, 'needs': {'visual': True}}
+        no_argon = ['argon_high'] + [b for b in account_fleet.bundles(account_fleet.load_accounts()) if b.startswith(('agy_opus', 'agy_sonnet'))]
+        deferred = self.plan(dict(task, can_wait_hours=2), usage, unavailable=no_argon)
+        wait_for = deferred['decision']['wait_for']
+        window = next(w for w in usage['accounts'][wait_for['account']]['windows'] if w['id'] == wait_for['window'])
+        self.assertAlmostEqual(window['seconds_until_reset'] / 3600, deferred['decision']['start_after_hours'], delta=0.1)
+        long_wait = self.usage(claude=[('five_hour', 3, 4), ('seven_day', 60, 100), ('weekly_fable', 100, 100)], codex=[('usage', 1, 121)])
+        impatient = self.plan(dict(task, can_wait_hours=1), long_wait, unavailable=['flash_high'] + no_argon)
+        self.assertTrue(impatient['decision']['needs_user_decision'])
+        self.assertIn(impatient['decision']['wait_for']['window'], impatient['decision']['reason'])
+        self.assertIn(impatient['decision']['wait_for']['account'], impatient['decision']['reason'])
+        blocked = self.plan({'work_kind': 'code_implementation', 'difficulty': 'coupled', 'expected_hours': 2, 'chain': self.chain()},
+                            self.usage(codex=[('usage', 1, 121)]))
+        decision = blocked['decision']
+        for exclusion in decision['resume_blocked_by']:
+            self.assertIn(exclusion, decision['reason'])
+        self.assertIn(f"{decision['wait_hours']:.1f}h", decision['reason'])
+
+    def test_quota_wait_is_the_last_window_to_return_and_none_for_any_other_exclusion(self):
+        """Rule (`quota_pools.quota_wait`): a candidate excluded only by its account's quota windows returns when the last of
+        them resets, and the window that sets that is named; one excluded for anything else has no quota wait."""
+        usage = {'accounts': {'a': {'windows': [{'id': 'five_hour', 'seconds_until_reset': 3 * 3600},
+                                                {'id': 'seven_day', 'seconds_until_reset': 100 * 3600}]}}}
+        candidate = {'bundle': {'account': 'a'}, 'excluded': ['five_hour is empty for 3.0h', 'seven_day has 1% left']}
+        self.assertEqual(quota_pools.quota_wait(candidate, usage), (100.0, 'seven_day'))
+        self.assertEqual(quota_pools.quota_wait(dict(candidate, excluded=candidate['excluded'][:1]), usage), (3.0, 'five_hour'))
+        self.assertIsNone(quota_pools.quota_wait(dict(candidate, excluded=[*candidate['excluded'], 'excluded by host policy']), usage))
+
+    def test_fast_that_the_plan_did_not_apply_says_why(self):
+        """Rule (`allocator.plan`): a task that wants fast mode and is routed to a plain bundle carries the reason the plan
+        holds for it (`fast_not_applied`); one routed to a fast bundle carries none."""
+        for plan in (self.plan({'work_kind': 'code_implementation', 'difficulty': 'hard', 'expected_hours': 1, 'wants_fast': True}),
+                     self.plan({'work_kind': 'code_implementation', 'difficulty': 'hard', 'expected_hours': 1})):
+            decision = plan['decision']
+            if plan['decision']['task'].get('wants_fast') and not plan['selected_bundle'].get('fast'):
+                self.assertTrue(str(decision.get('fast_not_applied') or '').strip())
+            else:
+                self.assertNotIn('fast_not_applied', decision)
+
 
 class OverrideContractTests(unittest.TestCase):
     """Contract tests for temporary priority overrides, reset confirmation, receipts, and atomic store."""

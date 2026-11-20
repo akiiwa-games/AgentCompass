@@ -591,9 +591,9 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(named, ['agent-idle'])
         self.assertIsNone(registry.reuse_refusal('parent-a', 'agent-idle', now=stale))
         self.assertEqual(registry.reusable_workers('parent-a', now=stale, named='agent-closed'), [])
-        self.assertIn('closed', registry.reuse_refusal('parent-a', 'agent-closed', now=stale))
-        self.assertIn('no dispatch of this parent', registry.reuse_refusal('parent-a', 'agent-unknown', now=stale))
-        self.assertIn('no dispatch of this parent', registry.reuse_refusal('parent-b', 'agent-idle', now=stale))
+        self.assertIn('closed', registry.reuse_refusal('parent-a', 'agent-closed', now=stale).reason)
+        self.assertIn('no dispatch of this parent', registry.reuse_refusal('parent-a', 'agent-unknown', now=stale).reason)
+        self.assertIn('no dispatch of this parent', registry.reuse_refusal('parent-b', 'agent-idle', now=stale).reason)
 
     def test_reuse_needs_overlap_with_the_new_brief(self):
         import argparse

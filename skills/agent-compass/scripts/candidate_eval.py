@@ -401,6 +401,7 @@ def evaluate_bundle(bundle, task, ctx):
     step_usd = quota_economy.bundle_task_usd(spec, model, econ_hours, info, context_burn)
     chain_usd = quota_economy.bundle_task_usd(spec, model, econ_chain_hours, info, context_burn)
     available_at = None
+    waiting_on = None               # the window whose reset sets available_at
     five_window_states = {}
     long_applicable = False         # the bundle draws at least one long reset-period window (read or not)
     if spec.get('unlimited'):
@@ -497,7 +498,7 @@ def evaluate_bundle(bundle, task, ctx):
                         short_exclude(f'{wid} full capacity (100%) is short of the ~{post_period:.1f}% the work needs plus {margin_pct}% margin')
                     elif (not small_short and not state['stale'] and 0 < wait <= policy['defer_if_reset_within_hours']
                           and wait >= state.get('natural_reset_hours', wait)):
-                        available_at = max(available_at or 0, wait)
+                        available_at, waiting_on = (wait, wid) if wait >= (available_at or 0) else (available_at, waiting_on)
                         result['notes'].append(f'{wid} {what} for {wait:.1f}h; start after its reset')
                         renewed = quota_pools.after_reset(state, w_len)
                         if renewed is not None:
@@ -525,7 +526,8 @@ def evaluate_bundle(bundle, task, ctx):
                     renewed = None
                 if renewed is not None and 100.0 - min(req_hours, float(w_len)) * unit * context_burn >= policy['safety_margin_pct']:
                     state = renewed
-                    available_at = max(available_at or 0, renewed['deferred_hours'])
+                    available_at, waiting_on = ((renewed['deferred_hours'], wid) if renewed['deferred_hours'] >= (available_at or 0)
+                                                else (available_at, waiting_on))
                     result['_five_long_wait'] = True        # a long window must renew first: no absorber of other work now
                     need = min(req_hours, float(w_len)) * unit * context_burn
                     result['notes'].append(f'{wid} renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)')
@@ -601,7 +603,8 @@ def evaluate_bundle(bundle, task, ctx):
                     renewed = quota_pools.after_reset(state, wspec['hours'])
                     if renewed is not None:
                         state = renewed
-                        available_at = max(available_at or 0, renewed['deferred_hours'])
+                        available_at, waiting_on = ((renewed['deferred_hours'], 'cadence') if renewed['deferred_hours'] >= (available_at or 0)
+                                                    else (available_at, waiting_on))
                         result['_five_long_wait'] = True
                         result['notes'].append(
                             f'cadence renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)'
@@ -663,6 +666,8 @@ def evaluate_bundle(bundle, task, ctx):
                             break
             if task.get('force_fast') and not fast_ok:
                 exclude(f'fast mode ({f_price:g}x burn) exceeds remaining window safety margin')
+            elif not fast_ok:
+                result['fast_not_offered'] = f'fast mode ({f_price:g}x burn) exceeds the remaining window safety margin'
             elif fast_ok:
                 result['_five_fast_candidate'] = {
                     'price_multiplier': f_price, 'speed_multiplier': f_speed,
@@ -672,6 +677,10 @@ def evaluate_bundle(bundle, task, ctx):
         elif task.get('force_fast') and not fast_modes.supported(harness, model, info):
             # Whether the harness can launch this model fast is a fact (fast_modes), the same answer `record` gives.
             exclude(fast_modes.refusal(harness, model, info))
+        elif not fast_modes.supported(harness, model, info):
+            result['fast_not_offered'] = fast_modes.refusal(harness, model, info)
+        elif not task.get('force_fast'):
+            result['fast_not_offered'] = fast_modes.price_gap(model, info)
         elif task.get('force_fast'):
             err = fast_modes.price_gap(model, info)
             if named:
@@ -688,6 +697,10 @@ def evaluate_bundle(bundle, task, ctx):
             else:
                 result['notes'].append(f'data error: {err}; fast mode not enabled')
                 result.setdefault('data_errors', []).append(err)
+    if not result['excluded'] and not result.get('_five_fast_candidate') and 'fast_not_offered' not in result:
+        result['fast_not_offered'] = ('fast mode is switched off for this task' if task.get('disable_fast') else
+                                      'this candidate must wait for a window reset, and fast mode is offered only to one '
+                                      'that can start now' if available_at is not None else None)
     result['capacity'] = None           # the economy sets the priced window (apply_five_axis_economy)
     result['expected_hours'] = round(hours, 2)
     result['duration_hours'] = round(hours, 4)
@@ -697,6 +710,7 @@ def evaluate_bundle(bundle, task, ctx):
     result['expected_usd'] = None if billing == 'unknown' else round(step_usd, 2)
     result['chain_usd'] = None if billing == 'unknown' else round(chain_usd, 2)
     result['available_in_hours'] = available_at
+    result['waiting_on'] = waiting_on if available_at else None
     action = 'start'
     if worker:
         if worn:

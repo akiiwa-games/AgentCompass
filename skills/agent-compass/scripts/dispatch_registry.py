@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+from typing import NamedTuple
 import uuid
 from host_placement import canonical_dir
 import provider_inventory
@@ -999,49 +1000,84 @@ def _parent_histories(parent_id, now, path):
     return by_agent
 
 
+class Refusal(NamedTuple):
+    """Why a worker takes no new turn, and what the caller does about that."""
+    reason: str
+    remedy: str
+
+
+NOT_NAMED_BY_PARENT = Refusal('no dispatch of this parent names it',
+                              'Check the id (get_agent_status, `paseo ls`): only a worker this session started with roll can '
+                              'be resumed; roll without --resume to start a fresh worker.')
+
+
 def _reuse_refusal(agent_id, history, parent_id, now, paseo_home, named):
-    """Why the worker of `history` takes no new turn of `parent_id` now, and its Paseo record: `(reason, doc)`, the reason
-    None when it can. `named`: the caller names this worker, so the age of its last dispatch refuses nothing."""
+    """Why the worker of `history` takes no new turn of `parent_id` now, and its Paseo record: `(Refusal, doc)`, the
+    refusal None when it can. `named`: the caller names this worker, so the age of its last dispatch refuses nothing.
+    The remedy follows the reason: a fresh worker is offered only where it helps (it answers no permission, ends no
+    running turn, and has none of this worker's context)."""
     if any(r['state'] in ACTIVE or (r['state'] == 'expired' and r.get('launched_at') and parse(r['hard_until']) > now)
            for r in history):
-        return 'a dispatch to it is still open', None
+        return Refusal('a dispatch to it is still open',
+                       'Wait for that dispatch to finish (run its next_argv, or `agentcompass dispatch --dispatch-action '
+                       'reconcile`), then roll --resume again.'), None
     latest = history[-1]
     if latest.get('state') != 'completed':
-        return f"its last dispatch ended as {latest.get('state')}, not completed", None
+        return Refusal(f"its last dispatch ended as {latest.get('state')}, not completed",
+                       'Read how it ended (get_agent_activity on the worker) before resuming it; roll without --resume '
+                       'to start a fresh worker if its context is not needed.'), None
     last_seen = latest.get('updated_at') or latest.get('created_at')
     if not named and (not last_seen or now - parse(last_seen) > timedelta(hours=REUSE_MAX_IDLE_HOURS)):
-        return f'its last dispatch is more than {REUSE_MAX_IDLE_HOURS} hours old', None
+        return Refusal(f'its last dispatch is more than {REUSE_MAX_IDLE_HOURS} hours old',
+                       'Roll without --resume to start a fresh worker, or name the worker with --resume.'), None
     doc = paseo_agent_record(agent_id, paseo_home=paseo_home)
     if isinstance(doc, dict):
         labels = doc.get('labels') if isinstance(doc.get('labels'), dict) else {}
         owner = labels.get('router.parent_id') or labels.get('paseo.parent-agent-id')
         if owner and owner != parent_id:
-            return 'Paseo records another parent as its owner', doc
+            return Refusal('Paseo records another parent as its owner',
+                           'Only its owner session can resume it: roll from that session, or roll without --resume to '
+                           'start a fresh worker.'), doc
         status = doc.get('status') or doc.get('lastStatus')
         if doc.get('archivedAt'):
-            return 'it is archived', doc
+            return Refusal('it is archived',
+                           'Unarchive it in Paseo and roll --resume again, or roll without --resume to start a fresh '
+                           "worker (it has none of this worker's context)."), doc
         # `closed`: Paseo collected the idle runtime. A resume must cold-restore it from persistence first,
         # which outlasts the launch call (~25 s on Antigravity) and can land the turn on a new provider session.
         if status in ('running', 'initializing', 'error', 'closed'):
-            return f'Paseo shows it {status}', doc
+            remedy = {
+                'running': 'Wait until its turn ends (a new turn now would collide with it), then roll --resume again.',
+                'initializing': 'Wait until it is idle, then roll --resume again.',
+                'error': 'Read its error (get_agent_activity on the worker) and deal with it, then roll --resume again; '
+                         'roll without --resume to start a fresh worker if its context is not needed.',
+                'closed': 'Open it in Paseo so it is idle again, then roll --resume again; or roll without --resume to '
+                          'start a fresh worker.',
+            }[status]
+            return Refusal(f'Paseo shows it {status}', remedy), doc
         if doc.get('attentionReason') == 'error':
-            return 'its last turn ended in an error', doc
+            return Refusal('its last turn ended in an error',
+                           'Read its error (get_agent_activity on the worker) and deal with it, then roll --resume again; '
+                           'roll without --resume to start a fresh worker if its context is not needed.'), doc
         if doc.get('attentionReason') == 'permission' or doc.get('pendingPermissions'):
-            return 'it waits for a permission', doc
+            return Refusal('it waits for a permission',
+                           'Answer its pending permission (list_pending_permissions and respond_to_permission, or the '
+                           'Paseo app), then roll --resume again.'), doc
         if doc.get('providerUnavailable'):
-            return 'its provider is unavailable', doc
+            return Refusal('its provider is unavailable',
+                           'Wait until its provider answers again (the tray account list shows its state), then roll '
+                           '--resume again.'), doc
     return None, doc
 
 
 def reuse_refusal(parent_id, agent_id, now=None, path=None, paseo_home=None):
-    """Why `reusable_workers(parent_id, named=agent_id)` does not hold `agent_id`, as a clause of a message; None when
-    it does."""
+    """Why `reusable_workers(parent_id, named=agent_id)` does not hold `agent_id`, and the way out; None when it does."""
     if not isinstance(parent_id, str) or not parent_id.strip() or not Path(path or db_path()).exists():
-        return 'no dispatch of this parent names it'
+        return NOT_NAMED_BY_PARENT
     now = now or utcnow()
     history = _parent_histories(parent_id, now, path).get(agent_id)
     if not history:
-        return 'no dispatch of this parent names it'
+        return NOT_NAMED_BY_PARENT
     return _reuse_refusal(agent_id, history, parent_id, now, paseo_home, True)[0]
 
 
