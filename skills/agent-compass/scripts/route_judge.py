@@ -39,6 +39,10 @@ CONSTRAINTS = ('user_override', 'hard_constraint', 'dot_closed_loop')
 # classified wrongly, the router's pick is not good enough, it is stronger than needed, the chain should stay with
 # its owner, the pick cannot run, or something else (say what in --basis).
 REASON_CATEGORIES = ('misclassified', 'quality_insufficient', 'overqualified', 'continuity', 'unavailable', 'other')
+# The constraint of the one record the spawn gate accepts for a Workflow (setup/router_gate_hook.check_workflow_record
+# decides; `record` says it up front). Two holders of one rule: test_record_says_why drives the gate on the rows record
+# writes, so they cannot drift apart.
+WORKFLOW_TRIGGER, WORKFLOW_CONSTRAINT = 'workflow', 'user_override'
 
 
 def dot_unreachable(timeout=1.5):
@@ -123,10 +127,20 @@ def record_constraint(args, task=None, classified=None):
     basis = (args.basis or '').strip()
     if refusal := roll.named_route_refusal(args, require=True):      # roll owns what a named route needs
         raise ValueError(refusal)
+    if len(basis) > decision_ledger.BASIS_LIMIT:
+        # A cut quote is not the user's quote: the ledger keeps the words whole or not at all.
+        raise ValueError(f"--basis is {len(basis)} characters; a record keeps the user's words whole, up to "
+                         f'{decision_ledger.BASIS_LIMIT}. Quote the words that name this route within that limit.')
+    if getattr(args, 'trigger', None) == WORKFLOW_TRIGGER and args.constraint != WORKFLOW_CONSTRAINT:
+        raise ValueError(f'--trigger {WORKFLOW_TRIGGER} is accepted by the spawn gate only on a record with --constraint '
+                         f'{WORKFLOW_CONSTRAINT} (the user asked for the Workflow in this request, in their words in '
+                         f'--basis); a {args.constraint} record does not authorize it. Record it with --constraint '
+                         f'{WORKFLOW_CONSTRAINT} when the user asked for the Workflow, or drop --trigger.')
     import model_resolution
     model_resolution.check_model_pin(args.model, '--model')
     started = time.monotonic()
     task = _record_task(args, task)
+    no_task = classified is None and not (set(task) - {'parent_agent_id'})
     import account_fleet
     import auto_bundles
     import axis_scores
@@ -139,9 +153,12 @@ def record_constraint(args, task=None, classified=None):
     unavailable = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, args.account, args.provider)
     if unavailable:
         raise ValueError(unavailable)
+    if refusal := named_pair_refusal(accounts, args.account, args.provider):
+        raise ValueError(refusal)
     # `model:effort` and `model-effort` name an effort; --effort, when given too, wins.
     raw_spelled, raw_effort = model_resolution.split_model_effort(args.model)
     pin = copy.copy(args)
+    read_as = {}
 
     def _sync_pin_as_read(cat_doc):
         acct_pool = account_fleet.pin_pool(cat_doc, account=args.account, provider=args.provider)
@@ -149,6 +166,7 @@ def record_constraint(args, task=None, classified=None):
         pin.model, named_effort = model_resolution.split_model_effort(as_read)
         served = account_fleet.account_providers(cat_doc, args.account) if '/' not in pin.model else ()
         res = account_fleet.resolve_model(pin.model, cat_doc, served)
+        read_as.update(res)
         pin.effort = args.effort or named_effort or raw_effort or res['effort']
         return acct_pool, res['source'] in model_resolution.DIRECT_SOURCES
 
@@ -217,6 +235,7 @@ def record_constraint(args, task=None, classified=None):
         quota_bundle['id'] = chosen
         quota_bundle.setdefault('bundle_id', chosen)
     _check_record_launch(args, pin, quota_bundle, accounts, usage, now)
+    unobserved = quota_unobserved(accounts, usage, quota_bundle)
     # A model the user names on a held account or model is the probe that can lift the hold: it goes, with a warning.
     retrying = provider_retry.reason(quota_bundle, provider_retry.active(now=now))
     c_model = account_fleet.canonical(row_model, accounts)
@@ -225,6 +244,11 @@ def record_constraint(args, task=None, classified=None):
         fast_modes.validate(account_fleet.bundle_harness(discovered or sibling or {'provider': args.provider}, args.account),
                                       c_model, account_fleet.row_spec(accounts, c_model))
     warnings = []
+    if unobserved:
+        warnings.append(unobserved)
+    if args.effort and raw_effort and raw_effort != args.effort:
+        warnings.append(f'--effort {args.effort} and --model {args.model} name different efforts: {args.effort} was used '
+                        '(--effort wins over an effort spelled in --model).')
     effort = pin.effort or discovered.get('effort')
     reviewed_task = task
     if classified:
@@ -236,13 +260,20 @@ def record_constraint(args, task=None, classified=None):
               'effort': effort, **({'bundle_id': chosen} if chosen else {}), **({'fast': True} if fast_requested else {})}
     if not direct:
         bundle.setdefault('launch_model', pin.model)
+    if read_as.get('key') and read_as['key'] != read_as.get('bare'):
+        # A moving name, a preview name, an alias or a family guess: the row it read as is what launches.
+        by = f" of provider {read_as['provider']}" if read_as.get('provider') else ''
+        warnings.append(f"--model {raw_spelled} was read as the row {row_model} (model resolution: "
+                        f"{read_as['source']}{by}); that row is what launches.")
+    if no_task:
+        warnings.append(NO_TASK_COMPARED)
     bundle['harness'] = account_fleet.bundle_harness(bundle, args.account, chosen)
     if 'modeId' not in bundle and bundle['harness'] in auto_bundles.HARNESS_MODE:
         bundle['modeId'] = auto_bundles.HARNESS_MODE[bundle['harness']]
     if fast_requested and bundle['harness'] == 'claude':
         bundle['fast_billing'] = fast_modes.claude_billing(accounts['accounts'][args.account])
     result = {'stage': 'record', 'choice': 'constraint', 'source': 'constraint_record',
-              'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
+              'constraint': args.constraint, 'basis': basis, 'specialty': args.specialty,
               **({'trigger': args.trigger} if getattr(args, 'trigger', None) else {}),
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
@@ -267,8 +298,15 @@ def record_constraint(args, task=None, classified=None):
             'account': args.account, 'dispatch_allowed': False, 'policy_path': str(host_policy.policy_path()[0]),
             'reason': (f'{outside}; a {args.constraint} record does not override that, only a route the user named '
                        "in this request (--constraint user_override with the user's words in --basis)")}
+        # Written all the same: the spawn gate reads this row and refuses a launch on it (check_route_authority).
+        result.update(status='blocked', cause=outside, next_action=(
+            f"Dispatch on {args.account} is not allowed: {result['host_policy_violation']['reason']}. Do not launch on "
+            'it. If the user named this route in this request, record it again with --constraint user_override; '
+            'otherwise roll without naming a route, and the router chooses among the accounts in automatic routing.'))
     if warnings:
         result['warnings'] = warnings
+    if unobserved and not usage.get('read_ok'):
+        result['alerts'] = [{'code': 'no_usage_data', 'severity': 'warn', 'account': args.account, 'message': unobserved}]
     if classified:
         result['_allocation_task'] = task
         if classified.get('scorer') is not None:
@@ -278,7 +316,7 @@ def record_constraint(args, task=None, classified=None):
         if classified.get('hours_estimate'):
             result['hours_estimate'] = classified['hours_estimate']
         if classified.get('alerts'):
-            result['alerts'] = list(classified['alerts'])
+            result['alerts'] = [*result.get('alerts', []), *classified['alerts']]
     # What this record decides beyond the task: kept on the decision, passed to the plan as route fields
     # (task_intake.ROUTE_FIELDS), never written into a task.
     route = {**({'unclassified': classified['unclassified']} if (classified or {}).get('unclassified') else {}),
@@ -352,6 +390,59 @@ def unclassified_data_error(result, reason, hours):
 def _unchecked_refusal(args, model):
     return (f'{host_policy.unchecked_routing(args.account, model)}; a {args.constraint} record does not override that, '
             "only a route the user named in this request (--constraint user_override with the user's words in --basis)")
+
+
+NO_TASK_COMPARED = ("No task was given (record reads one only from --input), so the route was not compared with the "
+                    "router's own choice for it.")
+
+
+def named_pair_refusal(accounts, account, provider):
+    """Why `account` / `provider` names no route on this machine, before any model list is read; None when it does: an
+    account the fleet does not have, or a provider the account does not launch through (`auto_bundles.launch_providers`,
+    and the providers of its bundles)."""
+    import account_fleet
+    import auto_bundles
+    specs = accounts.get('accounts') or {}
+    spec = specs.get(account)
+    if not isinstance(spec, dict):
+        names = ', '.join(sorted(name for name, row in specs.items() if isinstance(row, dict)))
+        return (f'account {account} is not configured on this machine (its accounts: {names}). Ask the user which one '
+                'they meant; do not substitute another account.')
+    served = auto_bundles.launch_providers(account, spec)
+    if provider in served or account_fleet.pin_pool(accounts, account=account, provider=provider):
+        return None
+    return (f"account {account} does not launch through provider {provider} (it launches through {', '.join(served)}). "
+            'Name the provider it launches through; do not substitute another account.')
+
+
+def quota_unobserved(accounts, usage, bundle):
+    """Which quota windows of a named launch's account were not read before it, in a sentence; None when every window
+    that binds the bundle's model was read (or none binds it, or the account's allowance never blocks a launch). The
+    windows are those `quota_pools.applicable_windows` finds for the model (window_scope): one the account never
+    reports for that model is named, one that does not bind it is not. Not read is not exhausted: the launch goes ahead
+    and says so."""
+    import quota_pools
+    account = bundle['account']
+    spec = (accounts.get('accounts') or {}).get(account) or {}
+    if spec.get('unmetered') or spec.get('five_axis_free_pool'):
+        return None     # a purpose-limited channel or a free starter allowance never blocks a launch (launch_blockers)
+    row = (usage.get('accounts') or {}).get(account) or {}
+    fresh = bool(usage.get('read_ok')) and row.get('status') == 'fresh'
+    windows = quota_pools.applicable_windows(spec, bundle.get('model'), row if fresh else {}, bundle=bundle,
+                                             accounts=accounts)
+    unread = [wid for wid, _, observed in windows if observed is None]
+    if not unread:
+        return None
+    if not usage.get('read_ok'):
+        why = (f'no usage snapshot was read (the collector has not produced one; `{router_command()} setup` starts '
+               'it)')
+    elif not fresh:
+        why = f"{account} has no fresh usage reading ({', '.join(str(v) for v in (row.get('status') or 'no reading', row.get('reason')) if v)})"
+    else:
+        why = f'the fresh reading of {account} does not report {"it" if len(unread) == 1 else "them"}'
+    return (f"quota not observed: {account} window{'s' if len(unread) > 1 else ''} {', '.join(unread)} "
+            f"{'was' if len(unread) == 1 else 'were'} not read before this launch: {why}. Not read is not exhausted; "
+            f"the launch went ahead without checking {'it' if len(unread) == 1 else 'them'}.")
 
 
 def _record_task(args, task):
@@ -451,6 +542,8 @@ def router_command():
 
 
 ONBOARD_HINT = (f'Run `{router_command()} setup` to detect the CLIs you are signed in to and start usage collection.')
+NO_USAGE_DATA = ('No usage data is available (the collector has not produced a snapshot), so quota-aware ranking is '
+                 'running blind and the pick is a default, not a measured choice. ' + ONBOARD_HINT)
 
 
 def readiness_gap(accounts, usage):
@@ -476,9 +569,7 @@ def readiness_gap(accounts, usage):
         return {'code': 'no_ready_account', 'fatal': True,
                 'message': 'No provider account is ready on this machine (no signed-in CLI was found). ' + ONBOARD_HINT}
     if not usage.get('read_ok'):
-        return {'code': 'no_usage_data', 'fatal': False,
-                'message': 'No usage data is available (the collector has not produced a snapshot), so quota-aware '
-                           'ranking is running blind and the pick is a default, not a measured choice. ' + ONBOARD_HINT}
+        return {'code': 'no_usage_data', 'fatal': False, 'message': NO_USAGE_DATA}
     return None
 
 
@@ -909,11 +1000,11 @@ def build_parser():
     parser.add_argument('--new-worker', action='store_true', help='roll: always create a new dispatch and worker: no resume, and no handing back an open dispatch of the same brief.')
     parser.add_argument('--access', choices=('read-only', 'write'), help='roll: explicit override for whether this brief only reads or writes its workspace (default: classified by System-One, else write). Only a writer is held to one per --workspace.')
     parser.add_argument('--score', action='store_true',
-                        help='plan: profile the task first with the System-One scorer (default on plan when objective is present).')
+                        help='plan/roll: profile the task first with the System-One scorer (default when objective is present; with --dry-run only when given).')
     parser.add_argument('--no-score', action='store_true',
-                        help='plan: skip the System-One scorer model call and use only caller-supplied task fields/profile.')
+                        help='plan/roll: skip the System-One scorer model call and use only caller-supplied task fields/profile.')
     parser.add_argument('--score-timeout', type=int, default=scorer_client.SCORER_TIMEOUT_SECONDS,
-                        help='score/plan/scorer: scorer time limit in seconds (1-120); a CLI process tree is stopped on timeout.')
+                        help='score/plan/roll/scorer: scorer time limit in seconds (1-120); a CLI process tree is stopped on timeout.')
     parser.add_argument('--action', choices=('show', 'set', 'test'), default='show',
                         help='scorer: show the System-One scorer config (keys masked), set it, or test it live.')
     parser.add_argument('--type', dest='scorer_type', choices=tuple(scorer_client.SCORER_TYPES),
@@ -922,35 +1013,39 @@ def build_parser():
     parser.add_argument('--base-url', help='scorer set: API base URL for jev/gemini_decision/openai_compatible ("" clears it).')
     parser.add_argument('--fallback-to-agy', choices=('on', 'off'), help='scorer set: fall back to agy when the chosen scorer fails.')
     parser.add_argument('--objective', help='scorer test: the sample task to classify.')
-    parser.add_argument('--input', type=Path)
+    parser.add_argument('--input', type=Path, help='plan/score/delegate/select/dispatch prepare: the input JSON document. '
+                        'record: a task document ({"task": ...}), to compare the forced route with the router\'s own choice.')
     parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release', 'fallback', 'settle'), default='prepare')
     parser.add_argument('--dispatch-id')
-    parser.add_argument('--parent-id')
+    parser.add_argument('--parent-id', help='roll/record/launch/dispatch release: the parent session id (default for roll and '
+                        'record: detected from the host session).')
     parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native', 'orca', 't3', 'herdr'), help='roll: host owning the parent session (default: auto-detected from environment)')
     parser.add_argument('--parent-address', help='roll: native host coordinator inbox address')
     parser.add_argument('--watch-seconds', type=float, default=3600)
     parser.add_argument('--poll-seconds', type=float, default=5)
     parser.add_argument('--usage-cache', type=Path, help='Read only this usage cache file (overrides ROUTER_USAGE_CACHE and the default locations).')
     parser.add_argument('--show', action='store_true', help='usage: print the merged usage windows (this is what the stage does; the flag only tells `agentcompass usage` not to collect).')
-    parser.add_argument('--accounts', nargs='+', help='usage: exact account keys to inspect.')
+    parser.add_argument('--accounts', nargs='+', help='usage: exact account keys to inspect. record (and a roll that names its route): read usage of only these '
+                        'accounts; an account left out has no window read, and the result says so.')
     parser.add_argument('--judge', choices=('auto', 'sonnet', 'codex'), default='auto')
     parser.add_argument('--timeout', type=int, default=120, help='Bounded CLI timeout, in seconds.')
-    parser.add_argument('--dry-run', action='store_true', help='delegate/select: print the reviewed payload without a model call. plan/record: compute the result but write no ledger row.')
+    parser.add_argument('--dry-run', action='store_true', help='delegate/select: print the reviewed payload without a model call. plan/record: compute the result but write no ledger row. roll: record and launch nothing.')
     parser.add_argument('--demo', action='store_true', help='plan --dry-run: offline reference fleet and synthetic quotas; no local credentials needed.')
     parser.add_argument('--format', choices=('json', 'table'), help='Plan output (default: table for --demo, JSON otherwise).')
     parser.add_argument('--constraint', choices=CONSTRAINTS, help='record: why the route is forced (user_override, hard_constraint, dot_closed_loop).')
     parser.add_argument('--basis', help='record/roll: quote the user instruction or constraint that forces this route; roll needs it with --provider, --account, --model or --effort, and ignores it (with a warning) without them.')
     parser.add_argument('--reason-category', choices=REASON_CATEGORIES,
-                        help='record: why the override departs from the router: ' + ', '.join(REASON_CATEGORIES) + '.')
+                        help='record (and a roll that names its route): why the override departs from the router: ' + ', '.join(REASON_CATEGORIES) + '.')
     parser.add_argument('--provider')
     parser.add_argument('--account')
     parser.add_argument('--model')
     parser.add_argument('--effort')
-    parser.add_argument('--specialty')
-    parser.add_argument('--trigger', choices=('workflow',),
-                        help='record: the launch this record authorizes when it is not a worker roll starts; '
-                             'workflow = a Claude Code Workflow the user asked for in this session (the spawn gate '
-                             'accepts it only with --constraint user_override, from the same session).')
+    parser.add_argument('--specialty', help='record (and a roll that names its route): a free-text label kept on the decision and its ledger row.')
+    parser.add_argument('--trigger', choices=(WORKFLOW_TRIGGER,),
+                        help='record (and a roll that names its route, which records it): the launch this record '
+                             'authorizes when it is not a worker roll starts; workflow = a Claude Code Workflow the user '
+                             'asked for in this request (the spawn gate accepts it only on a record of the route the user '
+                             'named, from the same session).')
     parser.add_argument('--intent', help='override: stable intent key for idempotent updates (default: normalized user basis).')
     parser.add_argument('--window', help='override: window targeted by the reset expectation (default: weekly windows).')
     parser.add_argument('--resets-in', type=float, help='override: expected hours until reset; does not replace observed capacity.')
@@ -992,7 +1087,6 @@ def main():
     if args.help or args.stage is None:
         print(stage_help.stage_help(parser, args.stage) if args.stage else stage_help.overview())
         return 0 if args.help else 2
-    decision_ledger.LEDGER_WRITES = not (args.dry_run and args.stage in ('plan', 'record', 'roll'))
     if args.stage in ('roll', 'plan', 'providers', 'select') and not args.demo:
         # This run keeps the reference set it takes; a due check runs in its own process and applies to the next run.
         public_data.refresh_in_background()
@@ -1051,25 +1145,87 @@ def failure_answer(exc, stage):
     return failure
 
 
+ALWAYS_READ = ('stage', 'help', 'help_all')     # what every stage reads: which stage, and whether to show its help
+# What a roll reads only when it records a route (the flags `record_constraint` reads beside the route itself), and of
+# those, what `record_resume` reads for `--resume`: a roll that takes another path does nothing with them.
+ROUTE_RECORD_FLAGS = ('trigger', 'specialty', 'reason_category', 'accounts')
+RESUME_RECORD_FLAGS = ('accounts',)
+
+
+def given_flags(args):
+    """The parser actions of the flags the caller gave (a value other than the parser's default), in the parser's order."""
+    return [action for action in build_parser()._actions
+            if action.option_strings and getattr(args, action.dest, action.default) != action.default]
+
+
+def unread_flags(args):
+    """The flags the caller gave that `args.stage` does not read, as spelled on the command line, in the parser's order.
+    What a stage reads is its row of `stage_help.STAGES`."""
+    summary, usage, basic, extra = stage_help.STAGES[args.stage]
+    listed = {*basic, *extra, *ALWAYS_READ}
+    return [action.option_strings[0] for action in given_flags(args) if action.dest not in listed]
+
+
+def unread_flag_note(stage, flags):
+    """The note a result carries for flags its stage did not read (a note, not a refusal: the stage ran without them)."""
+    return (f"{', '.join(flags)} {'is' if len(flags) == 1 else 'are'} not read by {stage} and had no effect "
+            f'(`{router_command()} {stage} -h` lists what {stage} reads).')
+
+
+def roll_path_notes(args):
+    """What a roll that records no route did not do with the flags only a recorded route reads (ROUTE_RECORD_FLAGS),
+    from the path this roll takes: `--resume` records the worker's own route (`record_resume`), a named route records
+    it (`record_constraint`), any other roll is planned and records nothing of the kind. Read before the roll runs."""
+    if roll.named_route_given(args) and not (getattr(args, 'resume', None) or '').strip():
+        return []
+    reads = RESUME_RECORD_FLAGS if (getattr(args, 'resume', None) or '').strip() else ()
+    unused = [action for action in given_flags(args) if action.dest in ROUTE_RECORD_FLAGS and action.dest not in reads]
+    if not unused:
+        return []
+    path = "a roll with --resume records the worker's own route" if reads else 'this roll names no route'
+    note = (f"{', '.join(a.option_strings[0] for a in unused)} had no effect: roll reads "
+            f"{'it' if len(unused) == 1 else 'them'} only for a route it records (--provider, --account, --model and "
+            f'--basis), and {path}.')
+    if any(a.dest == 'trigger' for a in unused):
+        note += f' No record that authorizes a Workflow was written: --trigger {WORKFLOW_TRIGGER} needs `record`.'
+    return [note]
+
+
 def _run_stage(args):
-    """One stage, from freshly parsed arguments (a re-run gets its own)."""
-    import account_fleet
+    """One stage, from freshly parsed arguments (a re-run gets its own). The checks every stage shares come first; the
+    stage itself runs in `_stage_result`, and its answer gets here the notes of what it did not read, for every stage."""
+    notes = []
+    if args.stage in stage_help.STAGES:
+        if unread := unread_flags(args):
+            notes.append(unread_flag_note(args.stage, unread))
+        if args.stage == 'roll':
+            notes.extend(roll_path_notes(args))
     if args.demo and (args.stage != 'plan' or not args.dry_run):
         raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
     if not 1 <= args.timeout <= 600:
         raise ValueError('Timeout must be 1 to 600 seconds.')
     if not 1 <= args.score_timeout <= 120:
         raise ValueError('Score timeout must be 1 to 120 seconds.')
-    if args.stage == 'scorer':
-        result, code = scorer_cli(args)
-        print(render(result))
-        return code
-    if args.stage == 'score':
-        result, code = score_stage(args)
-        print(render(result))
-        return code
-    if args.can_wait_hours is not None and (not math.isfinite(args.can_wait_hours) or args.can_wait_hours < 0):
+    if (args.stage not in ('scorer', 'score') and args.can_wait_hours is not None
+            and (not math.isfinite(args.can_wait_hours) or args.can_wait_hours < 0)):
         raise ValueError('--can-wait-hours must be a non-negative number of hours.')
+    if args.stage in ('dispatch', 'launch') and args.dry_run:
+        raise ValueError('Dispatch/launch is a lifecycle operation; use an isolated fake host for tests')
+    result, code, table = _stage_result(args)
+    if notes and isinstance(result, dict):
+        result['warnings'] = [*(result.get('warnings') or []), *notes]
+    print(render(result, table=table))
+    return code
+
+
+def _stage_result(args):
+    """(result, exit code, whether to print it as the plan table) of the stage `args.stage`; prints nothing."""
+    import account_fleet
+    decision_ledger.LEDGER_WRITES = not (args.dry_run and args.stage in ('plan', 'record', 'roll'))
+    if args.stage == 'scorer':
+        return (*scorer_cli(args), False)
+    if args.stage == 'score':
+        return (*score_stage(args), False)
     if args.stage == 'roll':
         briefs = args.brief or []
         if bool(briefs) == (args.task is not None):
@@ -1080,8 +1236,6 @@ def _run_stage(args):
             args.brief = briefs[0] if briefs else None
             result, code = roll.run(args, sys.modules[__name__])
     elif args.stage in ('dispatch', 'launch'):
-        if args.dry_run:
-            raise ValueError('Dispatch/launch is a lifecycle operation; use an isolated fake host for tests')
         result = dispatch_flow.cli(args)
         code = 1 if result.get('state') in ('failed', 'create_failed') else 0
     elif args.stage == 'providers':
@@ -1100,7 +1254,9 @@ def _run_stage(args):
         if args.constraint is None:
             raise ValueError('record requires --constraint.')
         result = record_constraint(args)
-        code = 0
+        # A record the host's switches do not let launch is still written (the spawn gate reads it and refuses the
+        # launch); its answer says so, and the exit is not success.
+        code = 2 if result.get('status') == 'blocked' else 0
     elif args.stage == 'plan':
         if args.input is None and args.demo:
             from demo_plan import sample_document
@@ -1122,8 +1278,7 @@ def _run_stage(args):
             result = decision_ledger.finalize(subscription_judge.evaluate(payload, args.judge, args.timeout), payload, args.judge,
                               started, document.get('task'))
         code = 1 if result.get('source') == 'judge_unavailable' else 0
-    print(render(result, table=args.stage == 'plan' and (args.format == 'table' or (args.demo and args.format is None))))
-    return code
+    return result, code, args.stage == 'plan' and (args.format == 'table' or (args.demo and args.format is None))
 
 
 if __name__ == '__main__':

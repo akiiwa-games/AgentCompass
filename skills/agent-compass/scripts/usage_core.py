@@ -1639,17 +1639,10 @@ def codex_authorized_json(
     return status, payload
 
 
-def fetch_codex_usage(account: CodexAccount) -> ProviderUsage:
-    source_key = provider_credential_key(account.provider_id)
-    status, payload = codex_authorized_json(CODEX_USAGE_URL, home=account.home)
-    if source_key != provider_credential_key(account.provider_id):
-        return stale_provider_usage(account.provider_id, _tr('登录凭据已变化，等待下次更新', 'Login credentials changed; waiting for the next update'))
-    if status != 200 or not isinstance(payload, dict):
-        error = _tr("登录凭据需由 Codex 更新", 'Login credentials must be updated by Codex') if status in (401, 403) else "更新失败"
-        return stale_provider_usage(account.provider_id, error, status=status, code=provider_error_code(payload))
-
-    rate = payload.get("rate_limit") or {}
-    # Preserve both constraints for the router; primary is not always weekly.
+def rate_limit_windows(rate: dict) -> list[UsageWindow]:
+    """The windows of a ChatGPT usage answer's `rate_limit` (`CODEX_USAGE_URL`, read for Codex and for Pi), each named
+    by how long it is, not by its slot: `five_hour`, `usage` (7 days), else `usage-<minutes>m`. The slots carry both
+    constraints for the router, and `primary` is not always the short one. A slot without `used_percent` is not read."""
     windows = []
     for name, default_seconds in (("primary_window", 18000), ("secondary_window", 604800)):
         window = rate.get(name) or {}
@@ -1662,6 +1655,19 @@ def fetch_codex_usage(account: CodexAccount) -> ProviderUsage:
             id=wid, label='5h' if seconds == 18000 else '7d' if seconds == 604800 else wid,
             used_pct=float(used), resets_at=_iso_timestamp(window.get('reset_at')),
         ))
+    return windows
+
+
+def fetch_codex_usage(account: CodexAccount) -> ProviderUsage:
+    source_key = provider_credential_key(account.provider_id)
+    status, payload = codex_authorized_json(CODEX_USAGE_URL, home=account.home)
+    if source_key != provider_credential_key(account.provider_id):
+        return stale_provider_usage(account.provider_id, _tr('登录凭据已变化，等待下次更新', 'Login credentials changed; waiting for the next update'))
+    if status != 200 or not isinstance(payload, dict):
+        error = _tr("登录凭据需由 Codex 更新", 'Login credentials must be updated by Codex') if status in (401, 403) else "更新失败"
+        return stale_provider_usage(account.provider_id, error, status=status, code=provider_error_code(payload))
+
+    windows = rate_limit_windows(payload.get("rate_limit") or {})
     if not windows:
         return stale_provider_usage(account.provider_id, "更新失败", plan=str(payload.get("plan_type") or "") or None)
     result = ProviderUsage(
@@ -3041,28 +3047,7 @@ def fetch_pi_usage(provider_id: str = "pi") -> ProviderUsage:
     if status != 200 or not isinstance(data, dict):
         error = _tr("登录凭据需由 Pi 更新", "Login credentials must be updated by Pi") if status in (401, 403) else "更新失败"
         return stale_provider_usage(provider_id, error, status=status, code=provider_error_code(data))
-    rl = data.get("rate_limit") or {}
-    windows: list[UsageWindow] = []
-    if isinstance(rl.get("secondary_window"), dict):
-        w = rl["secondary_window"]
-        windows.append(
-            UsageWindow(
-                id="secondary",
-                label="7d",
-                used_pct=float(w.get("used_percent", 0)),
-                resets_at=_iso_timestamp(w.get("reset_at")),
-            )
-        )
-    if isinstance(rl.get("primary_window"), dict):
-        w = rl["primary_window"]
-        windows.append(
-            UsageWindow(
-                id="primary",
-                label="5h",
-                used_pct=float(w.get("used_percent", 0)),
-                resets_at=_iso_timestamp(w.get("reset_at")),
-            )
-        )
+    windows = rate_limit_windows(data.get("rate_limit") or {})
     if not windows:
         return stale_provider_usage(provider_id, "更新失败", plan=str(data.get("plan_type") or "") or None)
     result = ProviderUsage(

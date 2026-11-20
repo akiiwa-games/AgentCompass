@@ -48,7 +48,7 @@ Some launches must go through the host's own sub-agent tool, for example a revie
 agentcompass record --constraint hard_constraint --provider <p> --account <a> --model <m> --effort <e> --basis "<the project rule or user instruction that forces this route>"
 ```
 
-Use `--constraint user_override` when the user named the route; only that constraint launches on an account kept out of automatic routing on this host. `record` writes the current session ID, so the gate matches it even right after another `roll`. Project-specific instructions of this kind (which agent, which model) belong in that project's own `CLAUDE.md` / `AGENTS.md`.
+Use `--constraint user_override` when the user named the route; only that constraint launches on an account kept out of automatic routing on this host (any other answers `status: blocked`, exit 2, and its `next_action` says why). `record` says in `warnings` what it did not look at or read: each quota window of the named model that was not read, a flag the stage does not take, a name read as another row. `record` writes the current session ID, so the gate matches it even right after another `roll`. Project-specific instructions of this kind (which agent, which model) belong in that project's own `CLAUDE.md` / `AGENTS.md`.
 
 ## 7. Parent address and worker messages
 

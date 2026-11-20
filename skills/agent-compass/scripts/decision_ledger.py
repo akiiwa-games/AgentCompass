@@ -33,6 +33,7 @@ LEDGER_WRITES = True    # `plan --dry-run` turns this off so a trial run leaves 
 
 
 LAUNCH_STAGES = ('plan', 'select', 'record')
+BASIS_LIMIT = 400      # characters of a record's --basis a row keeps; `record` refuses a longer quote instead of cutting it
 
 
 def automatic_routing_marker(entry):
@@ -285,7 +286,7 @@ def finalize(result, payload, requested, started, task=None, records=None):
         # Who wrote the row (parent_id is only the parent link): the spawn gate binds Workflow and schedule
         # authorization to these, so a plan or record made in one session never authorizes another.
         **({'session_ids': ids} if (ids := own_session_ids()) else {}),
-        'constraint': result.get('constraint'), 'basis': (result.get('basis') or '')[:400] or None,
+        'constraint': result.get('constraint'), 'basis': (result.get('basis') or '')[:BASIS_LIMIT] or None,
         **({'trigger': result['trigger']} if result.get('trigger') else {}),
         **({'reason_category': result['reason_category']} if result.get('reason_category') else {}),
         **({'host_policy_violation': result['host_policy_violation']} if 'host_policy_violation' in result else {}),
