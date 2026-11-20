@@ -1,6 +1,8 @@
 import datetime as dt
+import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -60,6 +62,212 @@ class RouterGateHookTests(unittest.TestCase):
             self.assertIsNotNone(gate.check_account_quota_exhausted('worker', missing, T0))
             exhaustion.clear('worker')
             self.assertIsNone(gate.check_account_quota_exhausted('worker', missing, T0))
+
+    def test_the_latched_quota_deny_names_the_account_the_windows_and_the_way_to_clear_the_record(self):
+        """Contract (parent-address-gate.md): a recorded confirmed failure refuses a launch drawing a latched window,
+        and the deny says which account and windows are recorded and the command that clears the record."""
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {'ROUTER_STATE_DIR': directory}):
+            exhaustion = gate.router_module('quota_exhaustion')
+            missing = Path(directory) / 'missing.json'
+            exhaustion.record('lab-acct', 'Individual quota reached', windows=['five_hour', 'weekly'])
+            text = gate.check_account_quota_exhausted('lab-acct', missing, T0, windows=['weekly', 'monthly'])
+            script = Path(exhaustion.__file__).resolve().as_posix()
+            clear = f'python -X utf8 "{script}" --clear lab-acct'
+            self.assertIn(clear, text)
+            said = text.replace(clear, '')    # the account and windows are named by the refusal itself, not only by the command
+            self.assertIn('lab-acct', said)
+            self.assertIn('weekly', said)
+            self.assertNotIn('monthly', said)    # recorded windows only, and only those this launch draws
+            self.assertNotIn('five_hour', said)
+            # What lifts a record is a newer successful reading (quota_exhaustion.py): time alone never does.
+            self.assertIn('newer successful usage reading', said)
+            self.assertIn('does not lift it', said)
+            exhaustion.clear('lab-acct')
+            exhaustion.record('lab-acct', 'Individual quota reached')
+            text = gate.check_account_quota_exhausted('lab-acct', missing, T0, windows=['weekly'])
+            self.assertIn('every window of lab-acct', text)
+            with mock.patch.object(gate.sys, 'frozen', True, create=True):
+                self.assertIn(f'agentcompass -X utf8 "{script}" --clear lab-acct',
+                              gate.check_account_quota_exhausted('lab-acct', missing, T0, windows=['weekly']))
+
+    def run_main(self, raw):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, 'stdin', io.StringIO(raw)), mock.patch.object(sys, 'stdout', out), \
+                mock.patch.object(sys, 'stderr', err):
+            try:
+                code = gate.main()
+            except Exception as exc:    # the caller of a hook sees a traceback and exit 1
+                code = exc
+        return code, out.getvalue().strip(), err.getvalue().strip()
+
+    UNPARSED = 'echo "secret-token-xyz'    # an unterminated quote parses in neither dialect
+    SHELL_PAYLOADS = {
+        'claude': {'tool_name': 'Bash', 'tool_input': {'command': UNPARSED}},
+        'antigravity': {'toolCall': {'name': 'run_command', 'args': {'command': UNPARSED}}, 'workspaceRoots': []},
+        'pi': {'toolName': 'bash', 'input': {'command': UNPARSED}},
+    }
+
+    def assert_allow_with_word(self, host, raw, word, secrets=()):
+        """Each host reads its own allow shape; the word reaches it without becoming a deny: a `systemMessage` for Claude
+        Code and Codex, the optional `reason` for Antigravity, stderr for Pi (whose extension shows it)."""
+        code, out, err = self.run_main(raw)
+        self.assertEqual(code, 0)
+        doc = json.loads(out)
+        if host == 'claude':
+            self.assertEqual(list(doc), ['systemMessage'])
+            said, other = doc['systemMessage'], err
+        elif host == 'antigravity':    # the documented optional `reason` of a PreToolUse answer
+            self.assertEqual(list(doc), ['decision', 'reason'])
+            self.assertEqual(doc['decision'], 'allow')
+            said, other = doc['reason'], err
+        else:    # Pi: the generated extension reads stderr beside a `{block: false}`
+            self.assertEqual(doc, {'block': False})
+            said, other = err, ''
+        self.assertTrue(said.startswith('[Router Gate]'), said)
+        self.assertIn(word, said)
+        self.assertEqual(other, '')
+        for secret in secrets:
+            self.assertNotIn(secret, said)
+
+    def test_a_shell_command_read_in_neither_dialect_is_allowed_and_the_answer_says_it_was_not_read(self):
+        for host, payload in self.SHELL_PAYLOADS.items():
+            with self.subTest(host=host):
+                self.assert_allow_with_word(host, json.dumps(payload), 'ShellParseError', secrets=('secret-token-xyz',))
+
+    def test_an_exception_while_deciding_is_allowed_and_the_answer_says_which_type_not_its_text(self):
+        payload = {'tool_name': 'Agent', 'tool_input': {'subagent_type': 'general-purpose', 'prompt': 'task text'},
+                   'cwd': 'E:/x'}
+        with mock.patch.object(gate, 'recent_routes', side_effect=OSError('C:/secret/ledger path')):
+            self.assert_allow_with_word('claude', json.dumps(payload), 'OSError', secrets=('secret', 'task text'))
+
+    def test_a_check_that_throws_is_allowed_and_the_answer_names_the_check_and_the_error_type(self):
+        turn = {'tool_name': 'send_agent_prompt', 'tool_input': {'agentId': 'someone-else', 'prompt': 'hello'}}
+        with mock.patch.object(gate.router_module('account_fleet'), 'load_accounts',
+                               side_effect=RuntimeError('token=abc')):
+            self.assert_allow_with_word('claude', json.dumps(turn), 'account fleet (RuntimeError)', secrets=('abc',))
+        gate.UNEVALUATED.clear()
+        cache = self.quota_cache({'claude': {'windows': [self.window('five_hour', 10)]}})
+        self.assertIsNone(gate.check_account_quota_exhausted('claude', cache, T0, records=[], model='claude-opus-5-5'))
+        self.assertEqual(gate.UNEVALUATED, [])    # a check that ran says nothing
+        with mock.patch.object(gate.router_module('usage_reading'), 'usage_snapshot', side_effect=KeyError('k')):
+            self.assertIsNone(gate.check_account_quota_exhausted(
+                'claude', cache, T0, records=[], model='claude-opus-5-5'))
+        self.assertEqual(gate.UNEVALUATED, ['quota window verdict (KeyError)'])
+
+    def test_a_clean_call_after_an_unevaluated_one_in_the_same_process_carries_no_word(self):
+        """evaluate_payload starts each decision with nothing unevaluated: a caller that evaluates payloads in one process."""
+        self.assertIn('systemMessage', gate.evaluate_payload(self.SHELL_PAYLOADS['claude']))
+        self.assertEqual(gate.evaluate_payload({'tool_name': 'Bash', 'tool_input': {'command': 'ls'}}), {})
+        self.assertEqual(gate.UNEVALUATED, [])
+
+    def test_only_a_shell_command_line_gets_the_notice_that_it_was_not_read(self):
+        """Contract: the notice is for text the tool's contract calls a shell command line (`command`, `cmd`,
+        `CommandLine`, the literal `cmd` of an exec_command call). The code of a code-mode tool is a program: read for
+        launches as before, but never said to be an unread shell command."""
+        programs = ("// don't forget\nconst x = 1; text(String(x));", 'const m = /it\'s/.test(s); text("it\'s");',
+                    "print('don\\'t')")
+        for program in programs:    # each is unreadable as a shell command line in both dialects
+            self.assertRaises(gate.ShellParseError, gate.simple_commands, program, gate.POSIX)
+            self.assertRaises(gate.ShellParseError, gate.simple_commands, program, gate.POWERSHELL)
+        for tool in ('exec', 'codemode', 'execute_code'):
+            for code in programs:
+                with self.subTest(tool=tool, code=code):
+                    gate.evaluate_payload({'tool_name': tool, 'tool_input': {'code': code}})
+                    self.assertEqual(gate.UNEVALUATED, [])
+        gate.evaluate_payload({'tool_name': 'exec', 'tool_input': {'code': 'await tools.exec_command({cmd: "echo \\"x"});'}})
+        self.assertEqual(gate.UNEVALUATED, ['reading a shell command for launches (ShellParseError)'])
+
+    DRIVER = """const handlers = {};
+const written = [];
+process.stderr.write = (text) => { written.push(String(text)); return true; };
+const out = {};
+for (const [name, extension, tool, input, hasUI, worker, notifyThrows] of JSON.parse(process.argv[2])) {
+  if (!handlers[extension]) {
+    const loaded = await import(`./${extension}.mjs`);
+    loaded.default({ on: (event, h) => { if (event === "tool_call") handlers[extension] = h; } });
+  }
+  const shown = [];
+  written.length = 0;
+  if (worker) process.env.AGENTCOMPASS_WORKER = "1";
+  const ctx = { hasUI, ui: { notify: (message, level) => {
+    if (notifyThrows) throw new Error("notify failed");
+    shown.push([level, message]);
+  } } };
+  const returned = await handlers[extension]({ toolName: tool, input }, ctx);
+  out[name] = { returned: returned ?? null, shown: shown, stderr: [...written] };
+}
+process.stdout.write(JSON.stringify(out));
+"""
+
+    @unittest.skipUnless(shutil.which("node"), "node runs the generated Pi extension")
+    def test_the_generated_pi_extension_shows_the_word_the_gate_leaves_beside_an_allow(self):
+        """Contract (pi docs, extensions.md): a `tool_call` handler gets `(event, ctx)` and its return only controls
+        blocking; `ctx.hasUI` is true in the TUI and RPC modes, where `ctx.ui.notify(message, "warning")` shows a message,
+        and false in print and JSON mode, where UI methods are no-ops. So the stderr word is notified with a UI and
+        written to the process's stderr without one; a block still blocks and a clean allow says nothing. The verdict is
+        the gate's alone: showing the word, or text a failed gate left on stderr, never changes it."""
+        import re
+        import sync_host_globals as sg
+        argv = json.dumps(sg.ROUTER_HOOK_ARGV)
+        self.assertIn(argv, sg.PI_ROUTER_GATE_TS)
+        fakes = {   # gates that answer as told: stdout is the verdict, stderr is what it also wrote
+            "deny": "import sys; sys.stderr.write('[Router Gate] note\\\n'); print('{\"block\": true, \"reason\": \"deny\"}')",
+            "crash": "import sys; sys.stderr.write('Traceback: boom\\\n'); sys.exit(1)",
+        }
+        argvs = {"real": [sys.executable, "-X", "utf8", str(Path(gate.__file__).resolve())],
+                 **{name: [sys.executable, "-c", code] for name, code in fakes.items()}}
+        scenarios = [["ui", "real", "bash", {"command": self.UNPARSED}, True, False, False],
+                     ["headless", "real", "bash", {"command": self.UNPARSED}, False, False, False],
+                     ["clean", "real", "bash", {"command": "ls"}, True, False, False],
+                     ["block", "real", "request_user_input", {}, True, True, False],
+                     ["allow-notify-throws", "real", "bash", {"command": self.UNPARSED}, True, False, True],
+                     ["deny-with-stderr", "deny", "bash", {"command": "ls"}, True, False, False],
+                     ["deny-with-stderr-notify-throws", "deny", "bash", {"command": "ls"}, True, False, True],
+                     ["crash", "crash", "bash", {"command": "ls"}, True, False, False]]
+        with tempfile.TemporaryDirectory() as directory:
+            for name, hook in argvs.items():
+                source = sg.PI_ROUTER_GATE_TS.replace(argv, json.dumps(hook))
+                (Path(directory) / f"{name}.mjs").write_text(re.sub(r"(\w+): any\b", r"\1", source), encoding="utf-8", newline="\n")
+            (Path(directory) / "driver.mjs").write_text(self.DRIVER, encoding="utf-8", newline="\n")
+            done = subprocess.run(["node", "driver.mjs", json.dumps(scenarios)], cwd=directory, capture_output=True,
+                                  text=True, encoding="utf-8", timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        out = json.loads(done.stdout)
+        ui, headless = out["ui"], out["headless"]
+        self.assertIsNone(ui["returned"])
+        self.assertEqual([level for level, _ in ui["shown"]], ["warning"])
+        notice = ui["shown"][0][1]
+        self.assertTrue(notice.startswith("[Router Gate]") and "ShellParseError" in notice, notice)
+        self.assertEqual(ui["stderr"], [])
+        self.assertIsNone(headless["returned"])
+        self.assertEqual((headless["shown"], headless["stderr"]), ([], [notice + "\n"]))
+        self.assertEqual(out["clean"], {"returned": None, "shown": [], "stderr": []})
+        self.assertTrue(out["block"]["returned"]["block"])
+        self.assertEqual((out["block"]["shown"], out["block"]["stderr"]), ([], []))
+        self.assertIsNone(out["allow-notify-throws"]["returned"])
+        # A deny that also wrote stderr stays a deny whether or not showing the word works.
+        for name in ("deny-with-stderr", "deny-with-stderr-notify-throws"):
+            self.assertEqual(out[name]["returned"], {"block": True, "reason": "deny"}, name)
+        # A gate that crashed (exit 1) shows nothing: its stderr is a traceback, not the gate's word.
+        self.assertEqual(out["crash"], {"returned": None, "shown": [], "stderr": []})
+
+    def test_unreadable_stdin_is_allowed_with_a_word_in_the_shape_of_an_unknown_host(self):
+        for label, raw in (('empty', ''), ('blank', '  \n'), ('not json', '{oops'), ('a list', '[1]')):
+            with self.subTest(stdin=label):
+                self.assert_allow_with_word('claude', raw, 'stdin')
+
+    def test_an_answer_with_nothing_unevaluated_carries_no_word(self):
+        payloads = {'claude': ({}, {'tool_name': 'Bash', 'tool_input': {'command': 'ls'}}),
+                    'antigravity': ({'decision': 'allow'},
+                                    {'toolCall': {'name': 'run_command', 'args': {'command': 'ls'}}}),
+                    'pi': ({'block': False}, {'toolName': 'bash', 'input': {'command': 'ls'}})}
+        for host, (shape, payload) in payloads.items():
+            with self.subTest(host=host):
+                self.assertEqual(self.run_main(json.dumps(payload)), (0, json.dumps(shape), ''))
+
+    def test_a_bypassed_gate_does_not_report_what_it_did_not_read(self):
+        with mock.patch.dict(os.environ, {'ROUTER_GATE_BYPASS': '1'}):
+            self.assertEqual(self.run_main(json.dumps(self.SHELL_PAYLOADS['claude'])), (0, '{}', ''))
 
     def setUp(self):
         state = tempfile.TemporaryDirectory()
@@ -2410,7 +2618,7 @@ def test_the_gate_reads_its_configuration_from_the_shipped_set_when_the_fetched_
 
 def test_the_quota_verdict_is_decided_on_the_shipped_set_when_the_fetched_one_fails(monkeypatch):
     public_data = hold_broken_fetched_set(monkeypatch)
-    latched, without_own, window_refusal = gate.router_owner('turn_refusal', 'latched', 'without_own', 'window_refusal')
+    latched_windows, without_own, window_refusal = gate.router_owner('turn_refusal', 'latched_windows', 'without_own', 'window_refusal')
     decided = []
 
     def refusal(account, accounts, *args):
@@ -2418,7 +2626,7 @@ def test_the_quota_verdict_is_decided_on_the_shipped_set_when_the_fetched_one_fa
         return ('model', 'codex:weekly', 'used up')
     real_owner = gate.router_owner
     monkeypatch.setattr(gate, 'router_owner', lambda module, *names: (
-        (lambda *a: False), without_own, refusal) if module == 'turn_refusal' else real_owner(module, *names))
+        (lambda *a: set()), without_own, refusal) if module == 'turn_refusal' else real_owner(module, *names))
     reason = gate.check_account_quota_exhausted('codex', records=[])
     assert decided == [('bundled', True)]
     assert reason and 'codex:weekly' in reason

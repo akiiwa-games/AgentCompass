@@ -102,10 +102,11 @@ def exhausted_windows(account, usage=None, *, path=None, now=None, read_only=Fal
     return remaining
 
 
-def blocked(account, usage=None, *, path=None, windows=None, now=None, read_only=False):
-    """True when the latch covers the whole account, or any of `windows` (the ids a launch would draw)."""
+def stopping(account, usage=None, *, path=None, windows=None, now=None, read_only=False):
+    """The latched windows that stop a launch drawing `windows`: {ALL} when the latch covers the whole account, else
+    the latched ones among `windows` (none when `windows` is unknown); empty when the launch is free."""
     latched = exhausted_windows(account, usage, path=path, now=now, read_only=read_only)
-    return ALL in latched or bool(windows is not None and latched & set(windows))
+    return {ALL} if ALL in latched else latched & set(windows or ())
 
 
 def clear(account, *, path=None, expected_observed_at=None):

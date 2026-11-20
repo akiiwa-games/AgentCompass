@@ -78,7 +78,7 @@ const WORKER_QUESTION_TOOLS = new Set(__WORKER_QUESTION_TOOLS__);
 const HOOKED_TOOL = new RegExp(__TOOL_NAME_PATTERN__);
 
 export default function (pi: any) {
-  pi.on("tool_call", async (event: any) => {
+  pi.on("tool_call", async (event: any, ctx: any) => {
     const toolName = String(event?.toolName || "");
     const lastName = toolName.split(/__|\\./).pop() || "";
     if (!HOOKED_TOOL.test(toolName) && !WORKER_QUESTION_TOOLS.has(lastName)) {
@@ -96,6 +96,18 @@ export default function (pi: any) {
         timeout: 8000,
         windowsHide: true,
       });
+      // What the gate could not check comes beside an allow on stderr: a `tool_call` return only controls blocking.
+      // `ctx.hasUI` is true in the TUI and RPC modes, where `ctx.ui.notify` shows it; print and JSON mode have no UI
+      // methods, so it goes to this process's own stderr (pi docs, extensions.md: tool_call, ctx.hasUI, Mode Behavior).
+      const notice = res.status === 0 ? String(res.stderr || "").trim() : "";
+      if (notice) {
+        try {
+          if (ctx?.hasUI) ctx.ui.notify(notice, "warning");
+          else process.stderr.write(notice + "\\n");
+        } catch {
+          // Showing the word never changes the verdict below.
+        }
+      }
       if (res.status === 0 && res.stdout) {
         const parsed = JSON.parse(res.stdout.trim());
         if (parsed && parsed.block) {

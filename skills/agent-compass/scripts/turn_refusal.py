@@ -47,10 +47,15 @@ def usage_row(account, usage_cache_path, home):
     return row if isinstance(row, dict) else None
 
 
+def latched_windows(account, windows, usage_cache_path, home, read_only=False):
+    """The recorded confirmed failures that stop a launch drawing `windows` (`quota_exhaustion.stopping`)."""
+    return quota_exhaustion.stopping(account, usage_row(account, usage_cache_path, home), windows=windows,
+                                     read_only=read_only)
+
+
 def latched(account, windows, usage_cache_path, home, read_only=False):
     """True when a confirmed quota failure latches the whole account or any of `windows` (the ids a launch draws)."""
-    return quota_exhaustion.blocked(account, usage_row(account, usage_cache_path, home), windows=windows,
-                                    read_only=read_only)
+    return bool(latched_windows(account, windows, usage_cache_path, home, read_only))
 
 
 def without_own(records, dispatch_id=None, agent_id=None):
