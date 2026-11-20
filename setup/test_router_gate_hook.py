@@ -2547,3 +2547,22 @@ def test_gate_matches_bundle_wire_launch_model_without_crossing_provider_identit
             "tool_input": {"provider": "codex/vendor-a/novel-unmeasured", "settings": {"thinkingOptionId": "high"}},
         }, ledger_path=ledger_path, now=T0)
         assert (verdict == {}) is should_allow, (stage, extra, verdict)
+
+    # Round 4: bare model target names every bundle of the row across accounts, while `P/name` obeys `P` (and falls back
+    # only when `P` names nothing in the pool):
+    r4_accounts = json.loads(json.dumps(real_accounts))
+    r4_accounts["accounts"] = {
+        "acct_a": {
+            "billing": "subscription", "family": "codex", "windows": {"usage": {"hours": 168}},
+            "bundles": {"b_a": {"provider": "acct_a", "model": "gpt-5.5", "launch_model": "gpt-5.5", "effort": "high"}},
+        },
+        "codex": {
+            "billing": "subscription", "family": "codex", "windows": {"usage": {"hours": 168}},
+            "bundles": {"b_b": {"provider": "codex", "model": "gpt-5.5", "launch_model": "openai/gpt-5.5", "effort": "high"}},
+        },
+    }
+    acct_bare, found_bare = gate.resolve_target({"model": "gpt-5.5", "effort": "high"}, r4_accounts)
+    assert acct_bare is None  # spans both accounts (`b_a` and `b_b`)
+    assert gate.resolve_target({"model": "codex/gpt-5.5", "effort": "high"}, r4_accounts)[0] == "codex"
+    assert gate.resolve_target({"model": "openai/gpt-5.5", "effort": "high"}, r4_accounts)[0] == "codex"
+    assert gate.resolve_target({"model": "acct_a/gpt-6-astra", "effort": "high"}, r4_accounts) == (None, [])

@@ -405,12 +405,16 @@ def evaluate_bundle(bundle, task, ctx):
     long_applicable = False         # the bundle draws at least one long reset-period window (read or not)
     if spec.get('unlimited'):
         result['notes'].append('unlimited usage')
-    boost = sum(float(o.get('boost') or 0) for o in ctx.get('overrides', ())
-                if o['account'] == bundle['account'] and (not o.get('model') or account_fleet.stored_model(o['model'], accounts, o['account']) == model)
+    acct_overrides = [o for o in ctx.get('overrides', ()) if o['account'] == bundle['account']]
+    acct_pool = (account_fleet.pin_pool(accounts, account=bundle['account'],
+                                        source=(ctx.get('bundles') or {}).values(), extra=(bundle,))
+                 if acct_overrides else None)
+    boost = sum(float(o.get('boost') or 0) for o in acct_overrides
+                if (not o.get('model') or account_fleet.pin_names_bundle(o['model'], bundle, accounts, pool=acct_pool))
                 and (quota_overrides.expected_reset_time(o) is None or quota_overrides.expected_reset_time(o) <= now))
-    for intent in ctx.get('overrides', ()):
-        if (intent['account'] == bundle['account'] and intent.get('expected_reset_at')
-                and (not intent.get('model') or account_fleet.stored_model(intent['model'], accounts, bundle['account']) == model)):
+    for intent in acct_overrides:
+        if (intent.get('expected_reset_at')
+                and (not intent.get('model') or account_fleet.pin_names_bundle(intent['model'], bundle, accounts, pool=acct_pool))):
             result['notes'].append(f"expected reset {intent['expected_reset_at']}: {intent['reset_expectation_status']}; capacity requires a fresh observation")
     if boost:
         result['components']['boost'] = round(boost, 3)

@@ -50,10 +50,9 @@ def named_pin_block(task, candidates):
     eff_part = None if (eff and not colon_eff and spelled and spelled.lower().endswith('-' + eff)) else eff
     named = (task.get('pinned_bundle') or (task.get('constraint_bundle') if not raw else None)
              or ':'.join(x for x in (spelled, eff_part) if x))
-    rows = [c for c in rows if 'marked unavailable by the parent' not in c['excluded']] or rows
     if not rows:
         return [f'{named}: no configured bundle offers it']
-    return [f"{named} via {c['id']}: {'; '.join(c['excluded'])}" for c in rows if c['excluded']][:4]
+    return [f"{named} via {c['id']}: {'; '.join(c['excluded'])}" for c in rows if c['excluded']]
 
 
 def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None, capabilities=None, overrides=None,
@@ -165,7 +164,7 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
             # What the user named cannot run. Say why and stop; nothing else stands in for it.
             decision['blocked'] = 'named_model_unavailable'
             decision.setdefault('warnings', []).extend(named_block)
-            decision['reason'] = named_block[0]
+            decision['reason'] = ' | '.join(named_block)
             result['next'] = ('The model the user named cannot run now: ' + '; '.join(named_block)[:300]
                               + '. Tell the user; do not substitute another model.')
         result['choice'] = 'none'

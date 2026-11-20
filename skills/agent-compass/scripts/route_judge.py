@@ -90,9 +90,10 @@ def match_bundle(accounts, args, include_disabled=False):
     """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle.
 
     A name matches over every bundle existing on the addressed account/provider (account_fleet.pin_pool ->
-    pin_matching_bundles), before any disabled or effort filter: exact advertised spellings first, else identity; a
-    family guess matches its own rows, never the flagship's. Disabled and effort filters then apply to the named bundles
-    only. With no effort named, the model's default effort (else High) leads, not whichever row the document lists first."""
+    pin_matching_bundles), before any disabled or effort filter: a bare name matches every bundle of its row (`row_key`),
+    a prefixed `P/name` obeys `P` (falling back to identity only when `P` names nothing in the pool), and a family guess
+    matches its own rows, never the flagship's. Disabled and effort filters then apply to the named bundles only. With no
+    effort named, the model's default effort (else High) leads, not whichever row the document lists first."""
     import account_fleet
     pool = account_fleet.pin_pool(accounts, account=args.account, provider=args.provider)
     named = account_fleet.pin_matching_bundles(args.model, pool, accounts)
