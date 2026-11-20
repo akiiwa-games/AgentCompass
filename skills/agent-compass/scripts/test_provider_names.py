@@ -1085,6 +1085,15 @@ class PinIdentityMatchesBundle(unittest.TestCase):
             self.assertEqual(p_pref_ov['choice'], 'b_va')
             by_id = {c['id']: c['components'].get('boost', 0) for c in p_pref_ov['ranking']}
             self.assertEqual((by_id['b_va'], by_id['b_vb']), (0.25, 0))
+            p_bare_ov = allocator.plan(
+                {'objective': 'x', 'profile': self.prof, 'expected_hours': 0.5, 'constraints': {'model': 'novel-unmeasured'}},
+                copy.deepcopy(usage_both), self.at, accounts=copy.deepcopy(unm_fleet),
+                overrides=[{'id': 'o2', 'account': 'codex', 'model': 'novel-unmeasured', 'boost': 0.25,
+                            'until': '2026-11-21T00:00:00+00:00'}],
+                read_local_state=False,
+            )
+            by_id_bare = {c['id']: c['components'].get('boost', 0) for c in p_bare_ov['ranking']}
+            self.assertEqual((by_id_bare['b_va'], by_id_bare['b_vb']), (0.25, 0.25))
 
             # Same-account `record_constraint` + `prepare`: bare `gpt-5.5` skips unchecked `openai/gpt-5.5` to enabled `gpt-5.5`,
             # while prefixed `openai/gpt-5.5` refuses on `hard_constraint`:

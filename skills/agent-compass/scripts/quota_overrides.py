@@ -227,15 +227,19 @@ def expected_reset_time(override):
     return None
 
 
-def window_reset_expectation(overrides, account, model, wid, spec, accounts, now):
+def window_reset_expectation(overrides, account, model, wid, spec, accounts, now, bundle=None, pool=None):
     """Earliest active expectation for this model and its bound long window."""
     matches = []
     for rule in overrides:
         reset = expected_reset_time(rule)
         until = quota_pools.parse_time(rule.get('until'))
+        model_matches = (
+            account_fleet.pin_names_bundle(rule['model'], bundle, accounts, pool=pool)
+            if bundle is not None else account_fleet.stored_model(rule['model'], accounts, account) == model
+        ) if rule.get('model') else True
         if (rule.get('account') != account or reset is None or reset <= now
                 or (until is not None and until <= now)
-                or (rule.get('model') and account_fleet.stored_model(rule['model'], accounts, account) != model)):
+                or not model_matches):
             continue
         if rule.get('window'):
             if quota_pools.canonical_window_id(spec, rule['window']) != wid:

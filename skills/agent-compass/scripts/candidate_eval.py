@@ -435,7 +435,10 @@ def evaluate_bundle(bundle, task, ctx):
             refusal = quota_pools.window_refusal(wid, wspec, observed, acct_usage, now, latched)
             if refusal:
                 (short_exclude if quota_pools.window_is_short(wspec, policy) else exclude)(refusal)
-            expected = quota_overrides.window_reset_expectation(ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now)
+            expected = quota_overrides.window_reset_expectation(
+                ctx.get('overrides', ()), bundle['account'], model, wid, spec, accounts, now,
+                bundle=bundle, pool=acct_pool,
+            )
             state = quota_pools.window_state(wid, wspec, observed, spec, now, policy['short_window_hours'],
                                  account_stale=acct_stale, expected_reset_at=expected)
             unit = quota_economy.unit_rate(spec, wid, model, info)
