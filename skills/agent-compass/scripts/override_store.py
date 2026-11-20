@@ -12,11 +12,9 @@ import time
 def locked(path, timeout=10):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    # The lock is on byte 0 whether or not the file holds one: nothing is written, since a write of that byte from a
+    # second handle is refused while the first holds the lock.
     with open(str(path) + '.lock', 'a+b') as handle:
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write(b'\0')
-            handle.flush()
         deadline = time.monotonic() + timeout
         while True:
             try:
