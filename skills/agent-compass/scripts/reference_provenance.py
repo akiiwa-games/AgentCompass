@@ -111,7 +111,7 @@ def _validate_between(doc):
     its planner and its implementer. Each declaration is a row of the catalog, cites the relation (https url or dated
     maintainer, with its statement), names two other rows that are not themselves `between` rows, and gives `share` in
     (0, 1) with its own dated declaration (`share_declaration`); an `id_declaration` (the id is the product the citation
-    names) is a dated declaration too. No other key."""
+    names) is a dated declaration too. No other key. A between row is no one's base: no `same_model` row names one."""
     table = doc.get('between')
     if table is None:
         return
@@ -142,6 +142,9 @@ def _validate_between(doc):
         ]
         if problems:
             raise ValueError(f'{where}: ' + '; '.join(problems))
+    copies = sorted(r for r, e in (doc.get('same_model') or {}).items() if isinstance(e, dict) and e.get('model') in table)
+    if copies:
+        raise ValueError(f'same_model rows {", ".join(copies)} name a between row: a between row is no one\'s base')
 
 
 PROVIDER_NAME_KEYS = {'model', 'status', 'canonical_id', 'kind', 'url', 'as_of', 'statement'}

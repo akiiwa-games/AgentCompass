@@ -215,8 +215,13 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   position on the log scale, `exp(ln p + share * (ln i - ln p))` (`Scorer.interpolate_between`, `between_minutes`,
   `between_usd`; status `estimated`, method `between`, both bases with their value, status and method and the share on
   the cell; the category is the minimum of its facets as for every row). A quantity a base lacks stays missing and is
-  surfaced as a data error, never the other base alone; a reading of the row's own stands. The row is no one's base:
-  it takes no identity in `families` whatever pattern its name matches (`series.identity`), is never a relative, and is
+  surfaced as a data error, never the other base alone; a reading of the row's own stands. At run time each facet
+  follows its bases as they are effective (local user > maintainer > measured > estimated): it is recomputed at the
+  share from the two effective curves at High and held at every effort (`user_scores._follow_effective_bases`), so a
+  hand-written score on a base moves the option and one on the option itself wins. The tier, Time/Task and cost per
+  hour have no hand-written layer and stay as built. The row is no one's base:
+  it takes no identity in `families` whatever pattern its name matches (`series.identity`), is never a relative (a
+  `same_model` or `between` declaration naming it as its model or a base is refused), and is
   outside every fit, step, link, target, ceiling and the panel (`Scorer.entries`), a row of the release or not; so a base
   may be a model entry (the Neon option rests on `gemini-4-neon`), and adding the row changes no other row. It is computed
   last, from the bases' final values. Facts the vendor does not state for the option (image input, context window) are

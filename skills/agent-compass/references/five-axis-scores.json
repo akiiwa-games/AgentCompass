@@ -12811,11 +12811,7 @@
      ],
      "tool_operation": []
     },
-    "aa_only": false,
-    "bases": [
-     "gemini-4-carbon",
-     "gemini-4-hydrogen-high"
-    ]
+    "aa_only": false
    },
    "data_errors": [
     {
@@ -13527,11 +13523,7 @@
      ],
      "tool_operation": []
     },
-    "aa_only": false,
-    "bases": [
-     "gemini-4-argon-high",
-     "gemini-4-hydrogen-high"
-    ]
+    "aa_only": false
    },
    "data_errors": [
     {
@@ -14241,11 +14233,7 @@
      ],
      "tool_operation": []
     },
-    "aa_only": false,
-    "bases": [
-     "gemini-4-neon",
-     "gemini-4-hydrogen-high"
-    ]
+    "aa_only": false
    },
    "data_errors": [
     {
@@ -17398,12 +17386,22 @@
    },
    "evidence": {
     "independent_sources": {
-     "creativity": [],
-     "coding": [],
-     "aesthetics": [],
+     "creativity": [
+      "lmarena.creative_writing"
+     ],
+     "coding": [
+      "arena.agent_alignment",
+      "arena.agent_code"
+     ],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.svg",
+      "designarena.website",
+      "lmarena.webdev"
+     ],
      "tool_operation": []
     },
-    "aa_only": true
+    "aa_only": false
    },
    "data_errors": [
     {
@@ -17412,13 +17410,6 @@
      "reason": "no_trusted_source",
      "level": "red_if_demanded",
      "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"
-    },
-    {
-     "model": "grok-bot",
-     "field": "axes",
-     "reason": "aa_only",
-     "level": "yellow",
-     "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
     }
    ]
   },
@@ -17821,12 +17812,22 @@
    },
    "evidence": {
     "independent_sources": {
-     "creativity": [],
-     "coding": [],
-     "aesthetics": [],
+     "creativity": [
+      "lmarena.creative_writing"
+     ],
+     "coding": [
+      "arena.agent_alignment",
+      "arena.agent_code"
+     ],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.svg",
+      "designarena.website",
+      "lmarena.webdev"
+     ],
      "tool_operation": []
     },
-    "aa_only": true
+    "aa_only": false
    },
    "data_errors": [
     {
@@ -17842,13 +17843,6 @@
      "reason": "no_trusted_source",
      "level": "red_if_demanded",
      "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"
-    },
-    {
-     "model": "dot",
-     "field": "axes",
-     "reason": "aa_only",
-     "level": "yellow",
-     "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
     }
    ]
   },
@@ -18487,12 +18481,24 @@
    },
    "evidence": {
     "independent_sources": {
-     "creativity": [],
-     "coding": [],
-     "aesthetics": [],
-     "tool_operation": []
+     "creativity": [
+      "lmarena.creative_writing"
+     ],
+     "coding": [
+      "arena.agent_alignment",
+      "arena.agent_code"
+     ],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.svg",
+      "designarena.website",
+      "lmarena.webdev"
+     ],
+     "tool_operation": [
+      "lmarena.vision"
+     ]
     },
-    "aa_only": true
+    "aa_only": false
    },
    "data_errors": [
     {
@@ -18501,13 +18507,6 @@
      "reason": "no_cited_source",
      "level": "red_if_metered",
      "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-    },
-    {
-     "model": "gpt-6-pro",
-     "field": "axes",
-     "reason": "aa_only",
-     "level": "yellow",
-     "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
     }
    ]
   },
@@ -25140,12 +25139,22 @@
    },
    "evidence": {
     "independent_sources": {
-     "creativity": [],
-     "coding": [],
-     "aesthetics": [],
+     "creativity": [
+      "lmarena.creative_writing"
+     ],
+     "coding": [
+      "arena.agent_alignment",
+      "arena.agent_code"
+     ],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.svg",
+      "designarena.website",
+      "lmarena.webdev"
+     ],
      "tool_operation": []
     },
-    "aa_only": true
+    "aa_only": false
    },
    "data_errors": [
     {
@@ -25161,13 +25170,6 @@
      "reason": "no_cited_source",
      "level": "red_if_vision_demanded",
      "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-    },
-    {
-     "model": "grok-4.7-build-fast",
-     "field": "axes",
-     "reason": "aa_only",
-     "level": "yellow",
-     "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
     }
    ]
   },
@@ -94277,10 +94279,15 @@
     "independent_sources": {
      "creativity": [],
      "coding": [],
-     "aesthetics": [],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.svg",
+      "designarena.website",
+      "lmarena.webdev"
+     ],
      "tool_operation": []
     },
-    "aa_only": true
+    "aa_only": false
    },
    "data_errors": [
     {
@@ -94296,13 +94303,6 @@
      "reason": "no_cited_source",
      "level": "red_if_vision_demanded",
      "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-    },
-    {
-     "model": "kimi-for-coding-highspeed",
-     "field": "axes",
-     "reason": "aa_only",
-     "level": "yellow",
-     "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
     }
    ]
   },
@@ -129882,11 +129882,18 @@
    "evidence": {
     "independent_sources": {
      "creativity": [],
-     "coding": [],
-     "aesthetics": [],
+     "coding": [
+      "arena.agent_code"
+     ],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.svg",
+      "designarena.website",
+      "lmarena.webdev"
+     ],
      "tool_operation": []
     },
-    "aa_only": true
+    "aa_only": false
    },
    "data_errors": [
     {
@@ -129902,13 +129909,6 @@
      "reason": "no_cited_source",
      "level": "red_if_vision_demanded",
      "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-    },
-    {
-     "model": "kimi-k3.1-pro-highspeed",
-     "field": "axes",
-     "reason": "aa_only",
-     "level": "yellow",
-     "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
     }
    ]
   },
@@ -130662,22 +130662,25 @@
    },
    "evidence": {
     "independent_sources": {
-     "creativity": [],
-     "coding": [],
-     "aesthetics": [],
-     "tool_operation": []
+     "creativity": [
+      "lmarena.creative_writing"
+     ],
+     "coding": [
+      "arena.agent_alignment",
+      "arena.agent_code"
+     ],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.svg",
+      "lmarena.webdev"
+     ],
+     "tool_operation": [
+      "lmarena.vision"
+     ]
     },
-    "aa_only": true
+    "aa_only": false
    },
-   "data_errors": [
-    {
-     "model": "mimo-v2.6-pro-ultraspeed",
-     "field": "axes",
-     "reason": "aa_only",
-     "level": "yellow",
-     "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
-    }
-   ]
+   "data_errors": []
   }
  },
  "data_errors": [
@@ -130738,13 +130741,6 @@
    "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"
   },
   {
-   "model": "grok-bot",
-   "field": "axes",
-   "reason": "aa_only",
-   "level": "yellow",
-   "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
-  },
-  {
    "model": "dot",
    "field": "usd_per_hour",
    "reason": "no_cited_source",
@@ -130759,25 +130755,11 @@
    "effect": "no value: a task that demands this category leaves automatic routing for the model (mode B)"
   },
   {
-   "model": "dot",
-   "field": "axes",
-   "reason": "aa_only",
-   "level": "yellow",
-   "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
-  },
-  {
    "model": "gpt-6-pro",
    "field": "usd_per_hour",
    "reason": "no_cited_source",
    "level": "red_if_metered",
    "effect": "out of automatic routing on any quota-pool or metered account; a named dispatch runs with its cost unpriced"
-  },
-  {
-   "model": "gpt-6-pro",
-   "field": "axes",
-   "reason": "aa_only",
-   "level": "yellow",
-   "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
   },
   {
    "model": "gpt-6.1-terra",
@@ -130813,13 +130795,6 @@
    "reason": "no_cited_source",
    "level": "red_if_vision_demanded",
    "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-  },
-  {
-   "model": "grok-4.7-build-fast",
-   "field": "axes",
-   "reason": "aa_only",
-   "level": "yellow",
-   "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
   },
   {
    "model": "deepseek-v4-pro",
@@ -131366,13 +131341,6 @@
    "reason": "no_cited_source",
    "level": "red_if_vision_demanded",
    "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-  },
-  {
-   "model": "kimi-for-coding-highspeed",
-   "field": "axes",
-   "reason": "aa_only",
-   "level": "yellow",
-   "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
   },
   {
    "model": "qwen-max",
@@ -132045,20 +132013,6 @@
    "reason": "no_cited_source",
    "level": "red_if_vision_demanded",
    "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
-  },
-  {
-   "model": "kimi-k3.1-pro-highspeed",
-   "field": "axes",
-   "reason": "aa_only",
-   "level": "yellow",
-   "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
-  },
-  {
-   "model": "mimo-v2.6-pro-ultraspeed",
-   "field": "axes",
-   "reason": "aa_only",
-   "level": "yellow",
-   "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
   }
  ]
 }

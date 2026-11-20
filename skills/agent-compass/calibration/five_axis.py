@@ -171,10 +171,11 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # steps from the boards' listings (`sample`, `boards`; method `other_facets_median`), speed variants, relatives by maker,
 # line and size, fleet fits frozen per release (a model entry's rows, `public-measurements.json` `model_entries`, scored by
 # the release's fits and in none), speed without a reading (methods `declared_response_floor`, `cross_line_extrapolation`,
-# `cross_line_median`; `estimation_order.speed_cross_line_before_fit`). Levels unchanged. After v0.7.3 (2026-11-20, kept
-# /12 pending the owner's call): the `between` estimate (cells, Time/Task basis, usd_per_hour and tier with method
-# `between`) and an evidence block's `bases`.
-SCHEMA ='agent-compass.five-axis-scores/12'
+# `cross_line_median`; `estimation_order.speed_cross_line_before_fit`). Levels unchanged. Within /12 after v0.7.3
+# (2026-11-20): the `between` estimate (method `between` on facet cells, the Time/Task basis, usd_per_hour and the tier).
+# The schema stays /12 because a released reader of /12 reads every number of these rows as it reads any estimated row:
+# the method name and the keys it adds are labels that reader does not interpret.
+SCHEMA = 'agent-compass.five-axis-scores/12'
 AXES = measurements.AXES
 EFFORTS = user_scores.MEASURED_EFFORTS                   # the efforts boards measure and the panel steps reach
 LADDER = user_scores.EFFORTS                              # every effort a curve carries: the edge efforts too (fill_edge)
@@ -379,12 +380,19 @@ def between_declaration(row, entry, models):
 
 
 def between_rows(acc, models):
-    """{row: between_declaration} for the `between` rows of the catalog. A base that is itself a `between` row stops the
-    build: a declared row is no one's base."""
-    out = {m: between_declaration(m, e, models) for m, e in series.between(acc).items() if m in models}
+    """{row: between_declaration} for the `between` rows of the catalog. A declaration that names no row, or whose base
+    is itself a `between` row, stops the build (a declared row is no one's base), as does a `same_model` declaration
+    whose model is a `between` row."""
+    ghosts = sorted(m for m in series.between(acc) if m not in models)
+    if ghosts:
+        raise ValueError(f"between declarations name no row of models: {', '.join(ghosts)}")
+    out = {m: between_declaration(m, e, models) for m, e in series.between(acc).items()}
     nested = sorted(m for m, d in out.items() if d['planner'] in out or d['implementer'] in out)
     if nested:
         raise ValueError(f"between rows {', '.join(nested)} rest on another between row: a declared row is no one's base")
+    copies = sorted(m for m, e in series.same_model(acc).items() if e.get('model') in out)
+    if copies:
+        raise ValueError(f"same_model rows {', '.join(copies)} name a between row: a declared row is no one's base")
     return out
 
 
@@ -2598,11 +2606,33 @@ def usd_community_mix(scorer, rows, meas):
     return out
 
 
-def axis_evidence(axes):
+def copied_from(cell):
+    """The rows a facet cell is read from as they stand: a `same_model` copy its model, a `between` cell its planner and
+    implementer; [] for a measurement or any other estimate."""
+    est = (cell or {}).get('estimate') or {}
+    if est.get('method') == 'same_model':
+        return [est.get('base_model')]
+    if est.get('method') == 'between':
+        return [(est.get(k) or {}).get('model') for k in ('planner', 'implementer')]
+    return []
+
+
+def axis_evidence(axes, rows=None):
     """Round 058 review F5: per axis, the measured sources that are not Artificial Analysis (the AA boards are one
-    source); `aa_only` when no axis has any, though some axis has a value."""
-    indep = {a: sorted({s for c in (ax.get('facets') or {}).values() if str(c.get('status', '')).startswith('measured')
-                        for s in (c.get('sources') or {}) if not s.startswith('aa.')}) for a, ax in axes.items()}
+    source); `aa_only` when no axis has any, though some axis has a value. A cell read from other rows as they stand
+    (`copied_from`: a `same_model` copy, a `between` cell) carries the measured sources of those rows' same facet in
+    `rows`, since its value is theirs; an estimate from a relative carries none."""
+    def sources(cell, a, f, seen):
+        if str(cell.get('status', '')).startswith('measured'):
+            return {s for s in (cell.get('sources') or {}) if not s.startswith('aa.')}
+        got = set()
+        for b in copied_from(cell):
+            base = ((((rows or {}).get(b) or {}).get('axes') or {}).get(a) or {}).get('facets', {}).get(f)
+            if base and b not in seen:
+                got |= sources(base, a, f, seen | {b})
+        return got
+    indep = {a: sorted({s for f, c in (ax.get('facets') or {}).items() for s in sources(c, a, f, frozenset())})
+             for a, ax in axes.items()}
     valued = any(ax.get('status') in ('measured', 'measured_partial', 'interpolated', 'partial', 'estimated')
                  for ax in axes.values())
     return {'independent_sources': indep, 'aa_only': valued and not any(indep.values())}
@@ -2897,13 +2927,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
                 model_errors.append({'model': m, 'field': a, 'reason': 'no_high_measurement', 'level': 'yellow',
                                      'effect': 'measured only at non-High or disjoint efforts across facets: excluded under mode B '
                                                'at unmeasured efforts until filled via user-scores.json'})
-        evidence = axis_evidence(r['axes'])
-        if m in scorer.between:     # its values rest on its two bases: their measured sources are its evidence
-            bases = [scorer.between[m][k] for k in ('planner', 'implementer')]
-            got = [axis_evidence(rows[b]['axes'])['independent_sources'] for b in bases]
-            indep = {a: sorted({s for g in got for s in g.get(a, ())}) for a in r['axes']}
-            evidence = {'independent_sources': indep, 'aa_only': evidence['aa_only'] and not any(indep.values()),
-                        'bases': bases}
+        evidence = axis_evidence(r['axes'], rows)
         if evidence['aa_only']:
             model_errors.append({'model': m, 'field': 'axes', 'reason': 'aa_only', 'level': 'yellow',
                                  'effect': 'every axis value comes from Artificial Analysis (the Intelligence Index and AA '
