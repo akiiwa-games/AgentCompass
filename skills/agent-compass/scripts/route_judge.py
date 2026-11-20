@@ -447,13 +447,16 @@ def quota_unobserved(accounts, usage, bundle):
 def _record_task(args, task):
     """The task a record is for: the caller's, else the --input document's; parented to this host session when it
     names no parent."""
+    import task_intake
     if task is None:
         task = {}
-    if not task and args.input is not None:
+    document = not task and args.input is not None
+    if document:
         loaded = json.loads(caller_input.read_text(args, args.input))
         task = loaded.get('task') if isinstance(loaded, dict) and isinstance(loaded.get('task'), dict) else {}
-    import task_intake
     task_intake.check_caller_task(task)
+    if document:        # as plan --input: a document's local-only mark is the caller's, whatever flag it names
+        task = task_intake.own_local_only_mark(task)
     if not task.get('parent_agent_id'):
         # The gate matches same-session rows first; a record without the session ID loses to any
         # roll this session made inside the window. Only real host IDs, never the ppid fallback.

@@ -520,6 +520,21 @@ class LocalOnlyByIsValidated(Base):
         kept = route_judge._plan_input_task({'task': task}, argparse.Namespace(stage='roll', hours=None, can_wait_hours=None))
         self.assertEqual(kept['needs']['local_only_by'], '--workspace')
 
+    def test_a_record_input_document_reads_as_the_callers_own_mark_and_rolls_task_keeps_its_flag(self):
+        # Rule (task_intake.own_local_only_mark): a token that names a flag is set only by the code that read the flag.
+        import json
+        import task_intake
+        args = argparse.Namespace(stage='record', input='task.json', parent_id=None)
+        for by in task_intake.LOCAL_ONLY_BY:
+            with self.subTest(by=by):
+                needs = {'local_only': True, 'local_only_by': by}
+                document = {'task': dict(TASK, parent_agent_id='parent-a', needs=needs)}
+                with patch.object(route_judge.caller_input, 'read_text', return_value=json.dumps(document)):
+                    read = route_judge._record_task(args, None)
+                self.assertEqual(read['needs'], {'local_only': True})
+                kept = route_judge._record_task(args, dict(TASK, parent_agent_id='parent-a', needs=needs))
+                self.assertEqual(kept['needs']['local_only_by'], by)
+
 
 class HerdrOneHarness(Base):
     """Review finding 5: the plan and the launch read the harness that runs a bundle from one function."""
@@ -575,9 +590,10 @@ class ResumedWorkerDirectory(Base):
         parent.mkdir()
         return home, parent
 
-    def resume(self, parent, **over):
+    def resume(self, parent, env_over=None, **over):
         with patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
-            return self.run_roll(self.brief_file('r.md'), resume='agent-r', env={'PASEO_AGENT_CWD': str(parent)},
+            return self.run_roll(self.brief_file('r.md'), resume='agent-r',
+                                 env={'PASEO_AGENT_CWD': str(parent), **(env_over or {})},
                                  verbose=True, **{'task_id': 't-r', **over})
 
     def test_d6_a_turn_inside_the_restriction_is_placed(self):
@@ -609,6 +625,22 @@ class ResumedWorkerDirectory(Base):
         self.restrict('claude-lab', canon)
         res, code = self.resume(parent, workspace=str(ws), access='write')
         self.assertEqual((res['status'], code), ('launched', 0), res.get('next_action'))
+
+    def test_a_dry_run_of_a_named_worker_answers_that_it_reads_no_dispatch_state(self):
+        # Rule: a named worker's turn is decided by its state in the registry, which a dry run does not read; the
+        # combination is refused with that fact (it raised UnboundLocalError), with and without a parent in reach.
+        home, parent = self.dirs()
+        self.make_worker('agent-r', doc={'cwd': str(home)})
+
+        def no_host(*_args, **_kwargs):
+            raise AssertionError('a dry run reached the host')
+
+        for label, env in (('under a parent', {}), ('no parent', {'PASEO_AGENT_ID': ''})):
+            with self.subTest(label):
+                res, code = self.resume(parent, dry_run=True, env_over=env, host=no_host)
+                self.assertEqual((res['status'], code, res['error']), ('error', 1, 'conflicting_flags'), res)
+                for fact in ('agent-r', 'dry run reads no dispatch state', 'without --dry-run', 'without --resume'):
+                    self.assertIn(fact, res['next_action'])
 
     def named(self):
         return dict(provider='claude-lab', account='claude-lab', model='claude-sonnet-5-5', basis='User asked for this worker')

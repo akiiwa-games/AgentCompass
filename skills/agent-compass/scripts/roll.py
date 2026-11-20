@@ -1506,6 +1506,13 @@ def _run(args, judge):
     if explicit_id and getattr(args, 'new_worker', False):
         return _resume_refusal({'stage': 'roll'}, explicit_id, 'conflicting_flags',
                                'Cannot combine --resume and --new-worker; pass one or the other.', code=1)
+    if explicit_id and args.dry_run:
+        # A named worker's turn is decided by its own state in the registry (idle, worn, gated, its directory), which a
+        # dry run does not read.
+        return _resume_refusal({'stage': 'roll'}, explicit_id, 'conflicting_flags',
+                               'Nothing was planned: a dry run reads no dispatch state, so it cannot say what a turn of '
+                               f'worker {explicit_id!r} would get. Roll --resume without --dry-run to continue that worker, '
+                               'or --dry-run without --resume to see the route a fresh worker would get.', code=1)
     # Resolve before classification/ledger writes: never launch an orphan as a fallback.
     if args.dry_run and not (os.environ.get('PASEO_AGENT_ID', '').strip() or args.parent_id):
         parent, parent_host, parent_address = None, None, None
