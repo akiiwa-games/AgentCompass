@@ -15,7 +15,7 @@ import provider_inventory
 import public_data
 import accounts_override
 import cwd_policy
-from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, resolve_in, split_model_effort
+from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, check_model_pin, resolve_in, split_model_effort
 
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
@@ -355,9 +355,11 @@ def pin_matching_bundles(pin, pool, accounts):
     - prefixed name `P/name`: obeys `P` — bundles in `pool` that `P` names (`_prefixed_bundle_matches`), or, only when
       `P` names no bundle, advertised spelling, account, provider or serving provider in `pool`, `_unrecognized_prefix_matches`."""
     from auto_bundles import split_id
-    text = str(pin or '').strip()
+    if pin in (None, ''):
+        return []
+    text = check_model_pin(pin, 'model')
     items = [b for b in (pool or ()) if isinstance(b, dict)]
-    if not text or not items:
+    if not items:
         return []
     if split_id(text) is not None:
         return [b for b in items if (b.get('id') or b.get('bundle_id')) == text]
@@ -372,8 +374,8 @@ def pin_matching_bundles(pin, pool, accounts):
 
 
 def _same_provider(bundle_provider, provider):
-    if not provider:
-        return True
+    if not provider or not bundle_provider:
+        return False
     aliases = {'antigravity', 'antigravity-resilient'}
     if provider in aliases and bundle_provider in aliases:
         return True
@@ -399,7 +401,7 @@ def pin_pool(accounts, *, account=None, provider=None, bundle_id=None, source=No
     return [
         b for b in base
         if (not account or b.get('account') == account)
-        and _same_provider(b.get('provider') or b.get('account'), provider)
+        and (not provider or _same_provider(b.get('provider') or b.get('account'), provider))
         and (not bundle_id or (b.get('id') or b.get('bundle_id')) == bundle_id)
     ]
 

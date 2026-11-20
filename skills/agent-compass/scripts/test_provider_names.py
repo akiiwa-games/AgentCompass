@@ -1119,6 +1119,59 @@ class PinIdentityMatchesBundle(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'unchecked in model management'):
                     route_judge.record_constraint(mk('openai/gpt-5.5', 'hard_constraint'), dict(t_bare, task_id=f'tp-{reversed_order}'))
 
+        # Malformed model pins (leading `/`, trailing `/`, empty `/` segment, bare `:effort`) are refused at every caller
+        # boundary (`task_intake.named_pin` / `allocator.plan`, `route_judge.record_constraint` / `match_bundle`,
+        # `roll.named_route_conflict` / `roll._run`, `quota_overrides`, `state_upgrade.check_router_overrides`, and
+        # `account_fleet.pin_matching_bundles`), and `_same_provider` never matches an empty provider id:
+        import quota_overrides
+        import state_upgrade
+        import task_intake
+        self.assertFalse(account_fleet._same_provider('codex', ''))
+        self.assertFalse(account_fleet._same_provider('codex', None))
+        malformed_fleet = self.subscription_fleet({'codex': ('codex', {
+            'b_cx': {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-5.5', 'launch_model': 'gpt-5.5',
+                     'effort': 'high', 'draws': ['usage']},
+        }, 'usage')})
+        for bad_pin in ('/gpt-5.5', '/gpt-5.5:high', '/', 'openai/', 'openai//gpt-5.5', ':high', 'gpt-5.5:', '   '):
+            with self.subTest(bad_pin=bad_pin):
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    task_intake.named_pin({'model': bad_pin}, {}, SHIPPED)
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    task_intake.named_pin({}, {'pinned_model': bad_pin}, SHIPPED)
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    allocator.plan(
+                        {'objective': 'x', 'profile': self.prof, 'expected_hours': 0.5, 'constraints': {'model': bad_pin}},
+                        copy.deepcopy(usage_both), self.at, accounts=copy.deepcopy(malformed_fleet),
+                        overrides=[], read_local_state=False,
+                    )
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    route_judge.match_bundle(malformed_fleet, argparse.Namespace(
+                        account='codex', provider='codex', model=bad_pin, effort='high', fast=False))
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    route_judge.record_constraint(argparse.Namespace(
+                        basis='user asked', account='codex', provider='codex', model=bad_pin, effort='high',
+                        input=None, usage_cache=None, accounts=None, constraint='user_override',
+                        specialty=None, reason_category=None, fast=False, parent_id='p1'))
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    roll.named_route_conflict(
+                        argparse.Namespace(provider=None, account=None, model=bad_pin, effort=None, fast=False),
+                        {'account': 'codex', 'provider': 'codex', 'model': 'gpt-5.5', 'effort': 'high'}, malformed_fleet)
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    roll._run(argparse.Namespace(task='do work', brief=None, model=bad_pin), route_judge)
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    quota_overrides.apply_overrides(
+                        [{'id': 'o1', 'account': 'codex', 'model': bad_pin, 'boost': 0.1,
+                          'until': '2026-11-21T00:00:00+00:00'}],
+                        copy.deepcopy(usage_both), copy.deepcopy(malformed_fleet), self.at,
+                    )
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    account_fleet.pin_matching_bundles(bad_pin, account_fleet.pin_pool(malformed_fleet), malformed_fleet)
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            ov_path = Path(td) / 'router-overrides.json'
+            ov_path.write_text(json.dumps({'v': 1, 'overrides': [{'id': 'o1', 'account': 'codex', 'model': '/gpt-5.5'}]}),
+                               encoding='utf-8')
+            self.assertIn('invalid_model_pin', state_upgrade.check_router_overrides(ov_path) or '')
+
     def test_slash_suffixes_apply_uniformly_across_declaration_default_exact_and_alias(self):
         """Rule (model_resolution.slash_suffixes): declaration, default, exact row and alias all try the full id, then
         what follows each `/` in turn, then the last segment—both undecorated and after stripping decorations/dash effort."""

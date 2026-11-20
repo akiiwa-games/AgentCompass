@@ -166,6 +166,8 @@ def targets(accounts):
     pairs = []
     for target in configured:
         account, wanted = target.get('account'), target.get('model')
+        if wanted not in (None, ''):
+            model_resolution.check_model_pin(wanted, 'priority_targets.model')
         pool = account_fleet.pin_pool(accounts, account=account)
         named = account_fleet.pin_matching_bundles(wanted, pool, accounts) if wanted else []
         matched = next((b for b in named if _is_launchable(b, accounts, policy)), None)
@@ -226,9 +228,11 @@ def enable(account, model, window, hours, now=None):
         raise ValueError(_tr('请选择菜单中的预期重置时间'))
     modules()
     import account_fleet
+    import model_resolution
     import override_store
     import quota_overrides
     import usage_reading
+    model_resolution.check_model_pin(model, 'model')
     now = now or datetime.now(timezone.utc)
     accounts = account_fleet.load_accounts()
     target = next((t for t in targets(accounts)

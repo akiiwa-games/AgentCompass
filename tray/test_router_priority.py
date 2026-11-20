@@ -387,6 +387,15 @@ class PriorityTests(unittest.TestCase):
                     unavailable_flag,
                 )
 
+            # Malformed `/` model pins in `priority_targets` or `enable` are refused at the boundary:
+            for bad_target in ('/gpt-6-astra', 'openai/', 'openai//gpt-6-astra', ':high'):
+                bad_accounts = json.loads(json.dumps(accounts))
+                bad_accounts['priority_targets'] = [{'account': 'codex', 'model': bad_target, 'label': 'Bad'}]
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    priority.targets(bad_accounts)
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    priority.enable('codex', bad_target, 'usage', 24, self.now)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -207,6 +207,8 @@ def named_route_conflict(args, bundle, accounts=None):
     import model_resolution
     if accounts is None:
         accounts = account_fleet.load_accounts()
+    if args.model not in (None, ''):
+        model_resolution.check_model_pin(args.model, '--model')
     model, named_effort = model_resolution.split_model_effort(args.model) if args.model else (None, None)
     if model and not named_effort:
         providers = account_fleet.bundle_providers(bundle, accounts) if '/' not in model else ()
@@ -1232,6 +1234,9 @@ def _run(args, judge):
     text = read_task_text(args)
     if not text.strip():
         raise ValueError('The task is empty.')
+    if getattr(args, 'model', None) not in (None, ''):
+        import model_resolution
+        model_resolution.check_model_pin(args.model, '--model')
     try:
         canonical_ws = host_placement.validate_workspace(getattr(args, 'workspace', None))
     except host_placement.InvalidWorkspace as exc:

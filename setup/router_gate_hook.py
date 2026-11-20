@@ -1142,6 +1142,27 @@ def bundle_launch_model(bundle: dict, fallback_provider: str | None = None) -> s
     return normalize_launch({"provider": prov, "model": raw}).get("model")
 
 
+def launch_model_problem(spec: dict) -> str | None:
+    """Why a launch call's provider/model carries a malformed `/` pin (empty prefix or model segment), else None."""
+    settings = next((v for v in (spec.get("settings"), spec.get("config")) if isinstance(v, dict)), {})
+    raw_provider = str(spec.get("provider") or "").strip()
+    if raw_provider and raw_provider != UNKNOWN_CLI_VALUE and "/" in raw_provider:
+        head, _, tail = raw_provider.partition("/")
+        if not head.strip() or not tail.strip():
+            return (f"invalid_model_pin: provider {raw_provider!r} is malformed "
+                    "(empty provider or model segment around '/'); write <provider> or <provider>/<model>.")
+        problem = router_owner("model_resolution", "model_pin_problem")(tail, "provider")
+        if problem:
+            return problem
+    for field, raw_model in (("model", spec.get("model")), ("settings.model", settings.get("model"))):
+        if raw_model in (None, "", UNKNOWN_CLI_VALUE):
+            continue
+        problem = router_owner("model_resolution", "model_pin_problem")(raw_model, field)
+        if problem:
+            return problem
+    return None
+
+
 def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, list[dict]]:
     """Owning account and the bundles the target can be, by bundle_id or by model/effort/Pi harness."""
     table = (accounts or {}).get("accounts") or {}
@@ -1152,6 +1173,8 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
     if target.get("bundle_id") and table:
         candidates = router_owner("account_fleet", "bundle_rows")(accounts, target["bundle_id"])
     elif not target.get("bundle_id") and bool(target.get("model")):
+        if target["model"] != UNKNOWN_CLI_VALUE:
+            router_owner("model_resolution", "check_model_pin")(target["model"], "model")
         pin_pool, pin_matching_bundles = router_owner("account_fleet", "pin_pool", "pin_matching_bundles")
         pool = [
             dict(bundle, bundle_id=bundle["id"], launch_model=bundle_launch_model(bundle, bundle["account"]) or "")
@@ -1667,6 +1690,15 @@ def evaluate_payload(
     upward = caller_parent_ids(caller_id, paseo_agents_dir)
     for name, args, trigger in executing:
         if trigger:
+            try:
+                malformed = launch_model_problem(args)
+            except RouterTreeMismatch as exc:
+                return format_response(False, harness_kind,
+                    f"[Router Gate] 拦截：本钩子与已加载的 agent-compass 技能目录版本不一致（{exc}）。"
+                    "请运行 `agentcompass setup` 使钩子与技能目录来自同一次安装后重试。")
+            if malformed:
+                return format_response(False, harness_kind,
+                    f"[Router Gate] 拦截格式错误的模型参数 ({trigger})：{malformed}")
             targets = [launch_target(name, args, trigger)]
         else:
             # The gate governs dispatch, not communication. A turn is dispatch only when it hands more work to the
@@ -1717,6 +1749,11 @@ def evaluate_payload(
                 return format_response(False, harness_kind,
                     f"[Router Gate] 拦截：本钩子与已加载的 agent-compass 技能目录版本不一致（{exc}）。"
                     "请运行 `agentcompass setup` 使钩子与技能目录来自同一次安装后重试。")
+            except ValueError as exc:
+                if str(exc).startswith("invalid_model_pin:"):
+                    return format_response(False, harness_kind,
+                        f"[Router Gate] 拦截格式错误的模型参数 ({trigger or name})：{exc}")
+                raise
             if reason:
                 return format_response(False, harness_kind, reason)
         if not trigger:

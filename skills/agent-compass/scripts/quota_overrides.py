@@ -250,6 +250,10 @@ def apply_overrides(overrides, usage, accounts, now):
     """Apply priority/expiry intent without replacing observed reset or capacity facts."""
     if not overrides:
         return usage, accounts, []
+    from model_resolution import check_model_pin
+    for o in overrides:
+        if isinstance(o, dict) and o.get('model') not in (None, ''):
+            check_model_pin(o['model'], 'override.model')
     active, landed, depleted = [], {}, {}
     for o in overrides:
         until = quota_pools.parse_time(o.get('until')) or expected_reset_time(o)
@@ -362,6 +366,9 @@ def _manage_overrides_locked(args, now=None):
                 and not override_reset_landed(o, usage, accounts, now)
                 and not override_depleted(o, usage, accounts)]
         intent = (getattr(args, 'intent', None) or ' '.join(args.basis.split())).strip()
+        if args.model not in (None, ''):
+            from model_resolution import check_model_pin
+            check_model_pin(args.model, '--model')
         model = account_fleet.stored_model(args.model, accounts, args.account) if args.model else None
         stored = account_fleet.stored_form(args.model, accounts, args.account) if args.model else None
         boost = 0.1 if args.boost is None else args.boost

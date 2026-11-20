@@ -425,9 +425,12 @@ def check_router_overrides(path: Path) -> str | None:
     rows = doc.get('overrides')
     if rows is not None and not isinstance(rows, list):
         return format_issue(path, 'router overrides.overrides must be a JSON array', _overrides_fix(path))
+    from model_resolution import model_pin_problem
     for item in rows or ():
         if not isinstance(item, dict):
             return format_issue(path, 'router override entry must be a JSON object', _overrides_fix(path))
+        if item.get('model') not in (None, '') and (prob := model_pin_problem(item.get('model'), 'override.model')):
+            return format_issue(path, prob, _overrides_fix(path))
     return None
 
 

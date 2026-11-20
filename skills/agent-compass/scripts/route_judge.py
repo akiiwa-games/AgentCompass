@@ -95,6 +95,9 @@ def match_bundle(accounts, args, include_disabled=False):
     matches its own rows, never the flagship's. Disabled and effort filters then apply to the named bundles only. With no
     effort named, the model's default effort (else High) leads, not whichever row the document lists first."""
     import account_fleet
+    import model_resolution
+    if args.model not in (None, ''):
+        model_resolution.check_model_pin(args.model, '--model')
     pool = account_fleet.pin_pool(accounts, account=args.account, provider=args.provider)
     named = account_fleet.pin_matching_bundles(args.model, pool, accounts)
     matches = [
@@ -120,6 +123,8 @@ def record_constraint(args, task=None, classified=None):
     basis = (args.basis or '').strip()
     if not basis or not args.account or not args.provider or not args.model:
         raise ValueError('record requires --basis, --provider, --account and --model.')
+    import model_resolution
+    model_resolution.check_model_pin(args.model, '--model')
     started = time.monotonic()
     task = _record_task(args, task)
     import account_fleet

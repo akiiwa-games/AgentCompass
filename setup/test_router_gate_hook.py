@@ -2566,3 +2566,19 @@ def test_gate_matches_bundle_wire_launch_model_without_crossing_provider_identit
     assert gate.resolve_target({"model": "codex/gpt-5.5", "effort": "high"}, r4_accounts)[0] == "codex"
     assert gate.resolve_target({"model": "openai/gpt-5.5", "effort": "high"}, r4_accounts)[0] == "codex"
     assert gate.resolve_target({"model": "acct_a/gpt-6-astra", "effort": "high"}, r4_accounts) == (None, [])
+
+    # Malformed `/` pins (empty prefix or model segment) are refused at the gate boundary (`resolve_target` and `evaluate_payload`):
+    for bad_model in ("/gpt-5.5", "/", "openai/", "openai//gpt-5.5", ":high"):
+        with pytest.raises(ValueError, match="invalid_model_pin"):
+            gate.resolve_target({"model": bad_model, "effort": "high"}, r4_accounts)
+        denied_spawn = gate.evaluate_payload({
+            "tool_name": "spawn_agent",
+            "tool_input": {"model": bad_model},
+        }, ledger_path=ledger_path, now=T0)
+        assert "invalid_model_pin" in denied_spawn.get("reason", ""), (bad_model, denied_spawn)
+    for bad_provider in ("/gpt-5.5", "codex/", "codex//gpt-5.5"):
+        denied_prov = gate.evaluate_payload({
+            "tool_name": "delegate_task",
+            "tool_input": {"provider": bad_provider, "settings": {"thinkingOptionId": "high"}},
+        }, ledger_path=ledger_path, now=T0)
+        assert "invalid_model_pin" in denied_prov.get("reason", ""), (bad_provider, denied_prov)

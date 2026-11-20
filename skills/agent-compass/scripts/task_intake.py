@@ -5,7 +5,7 @@ import math
 import account_fleet
 import axis_scores
 import worker_sessions
-from model_resolution import DIRECT_SOURCES, split_model_effort
+from model_resolution import DIRECT_SOURCES, check_model_pin, split_model_effort
 
 
 WORK_KINDS = (
@@ -395,9 +395,15 @@ def named_pin(constraints, task, accounts):
     place stays itself: naming gemini-2.5-pro never launches the flagship the family folds to."""
     effort = constraints.get('effort') or task.get('pinned_effort')
     effort = effort.strip().lower() if isinstance(effort, str) and effort.strip() else None
-    raw = constraints.get('model') or task.get('pinned_model')
-    if not raw:
-        return constraints.get('bundle') or None, effort
+    has_c_model = 'model' in constraints and constraints.get('model') not in (None, '')
+    has_p_model = 'pinned_model' in task and task.get('pinned_model') not in (None, '')
+    if not has_c_model and not has_p_model:
+        bundle = constraints.get('bundle')
+        if bundle not in (None, ''):
+            return check_model_pin(bundle, 'constraints.bundle'), effort
+        return None, effort
+    field = 'constraints.model' if has_c_model else 'pinned_model'
+    raw = check_model_pin(constraints['model'] if has_c_model else task['pinned_model'], field)
     resolved = account_fleet.resolve_model(raw, accounts)
     name = resolved['key'] if resolved['source'] in DIRECT_SOURCES else split_model_effort(raw)[0]
     return name, effort or resolved['effort']

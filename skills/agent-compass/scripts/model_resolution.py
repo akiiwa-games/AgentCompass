@@ -171,6 +171,29 @@ def split_model_effort(raw):
     return (match['name'], match['effort'].lower()) if match else (name, None)
 
 
+def model_pin_problem(raw, field='model'):
+    """Why a model pin is malformed (blank, empty model name, or an empty prefix/model segment around `/`), else None."""
+    if not isinstance(raw, str) or not raw.strip():
+        return f'invalid_model_pin: {field} {raw!r} must be a non-empty model name.'
+    text = raw.strip()
+    if text.startswith('auto:') and text.count(':') >= 2:
+        spelled = text[len('auto:'):].split(':', 2)[2].partition('#')[0].partition('@')[0]
+    else:
+        spelled = split_model_effort(text)[0]
+    if not spelled or spelled.startswith(':') or spelled.endswith(':') or any(not part.strip() for part in spelled.split('/')):
+        return (f"invalid_model_pin: {field} {raw!r} is malformed (empty prefix or model segment around '/'); "
+                'write a bare model name (<model>) or <provider>/<model>.')
+    return None
+
+
+def check_model_pin(raw, field='model'):
+    """Return `raw.strip()` when `raw` is a well-formed model pin, else raise ValueError with `model_pin_problem`."""
+    problem = model_pin_problem(raw, field)
+    if problem is not None:
+        raise ValueError(problem)
+    return raw.strip()
+
+
 def bare_name(raw_model_name):
     """The undecorated lowercase name a family pattern is matched against: no provider prefix, no `:effort`, no vendor
     tag (date, -latest, -preview, ...)."""
