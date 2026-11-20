@@ -585,6 +585,15 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(ids, ['agent-idle'])
         stale = self.now + timedelta(hours=registry.REUSE_MAX_IDLE_HOURS, minutes=1)
         self.assertEqual(registry.reusable_workers('parent-a', now=stale), [])
+        # The age of a last dispatch keeps a worker from being matched; a worker the caller names is held whatever
+        # its age, and a fact about it (Paseo collected its runtime) still refuses it, with the reason said.
+        named = [w['agent_id'] for w in registry.reusable_workers('parent-a', now=stale, named='agent-idle')]
+        self.assertEqual(named, ['agent-idle'])
+        self.assertIsNone(registry.reuse_refusal('parent-a', 'agent-idle', now=stale))
+        self.assertEqual(registry.reusable_workers('parent-a', now=stale, named='agent-closed'), [])
+        self.assertIn('closed', registry.reuse_refusal('parent-a', 'agent-closed', now=stale))
+        self.assertIn('no dispatch of this parent', registry.reuse_refusal('parent-a', 'agent-unknown', now=stale))
+        self.assertIn('no dispatch of this parent', registry.reuse_refusal('parent-b', 'agent-idle', now=stale))
 
     def test_reuse_needs_overlap_with_the_new_brief(self):
         import argparse
@@ -4634,7 +4643,7 @@ class ContinuationRollTests(unittest.TestCase):
                 argparse.Namespace(brief=b2, workspace=None, **{**base_args, 'resume': 'no-such-agent'}), judge)
             self.assertEqual((code_missing, res_missing['status'], res_missing['cause']),
                              (2, 'blocked', 'resume_worker_unavailable'))
-            self.assertTrue(res_missing.get('next_action'))
+            self.assertIn('no dispatch of this parent names it', res_missing['next_action'])
 
     def test_explicit_resume_on_bundle_mismatch_resumes_with_warning(self):
         import argparse

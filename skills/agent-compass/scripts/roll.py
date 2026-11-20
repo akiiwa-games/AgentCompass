@@ -281,6 +281,14 @@ def workspace_mismatch_text(agent_id, own_dir, requested):
             f'--workspace to resume it where it works, or roll without --resume to start a worker in {requested}.')
 
 
+def _not_reusable_text(explicit_id, parent, excluded):
+    """What a caller reads when the worker it names is not one its parent can resume: the reason the registry gives."""
+    reason = ('an earlier attempt of this roll already tried it' if explicit_id in excluded
+              else registry.reuse_refusal(parent, explicit_id) or 'it is not an idle worker of this parent')
+    return (f'Nothing was launched: worker {explicit_id!r} cannot be resumed by parent {parent!r}: {reason}. '
+            'Omit --resume to start a fresh worker.')
+
+
 def _resume_refusal(out, explicit_id, error, next_text, code=2):
     return dict(out, launched=False, dispatch_mode='paseo', caller_action='roll_fresh_worker',
                 error=error, agent_id=explicit_id, next=next_text), code
@@ -297,7 +305,7 @@ def match_reusable_worker(args, task, text=None, parent=None, workers=None):
     if not parent or getattr(args, 'new_worker', False):
         return None
     excluded = set(getattr(args, '_exclude_agents', None) or ())
-    workers = [w for w in (registry.reusable_workers(parent) if workers is None else workers)
+    workers = [w for w in (registry.reusable_workers(parent, named=explicit_id or None) if workers is None else workers)
                if w.get('agent_id') not in excluded]
     if explicit_id:
         return next((w for w in workers if w.get('agent_id') == explicit_id), None)
@@ -614,7 +622,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         return _resume_refusal(out, explicit_id, 'conflicting_flags',
                                'Cannot combine --resume and --new-worker; pass one or the other.', code=1)
     excluded = set(getattr(args, '_exclude_agents', None) or ())
-    all_reusable = [w for w in registry.reusable_workers(parent) if w.get('agent_id') not in excluded]
+    all_reusable = [w for w in registry.reusable_workers(parent, named=explicit_id or None)
+                    if w.get('agent_id') not in excluded]
     import account_fleet
     fleet = account_fleet.load_accounts()
     same_model = model_comparison(fleet)
@@ -623,9 +632,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         explicit_worker = next((w for w in all_reusable if w.get('agent_id') == explicit_id), None)
         if explicit_worker is None:
             return _resume_refusal(
-                out, explicit_id, 'resume_worker_unavailable',
-                f'Nothing was launched: worker {explicit_id!r} is not an idle, reusable worker of parent {parent!r}. '
-                'Omit --resume to start a fresh worker.',
+                out, explicit_id, 'resume_worker_unavailable', _not_reusable_text(explicit_id, parent, excluded),
             )
         if is_ro_review and not independent_reviewers([explicit_worker]):
             return _resume_refusal(
@@ -1287,7 +1294,8 @@ def _run(args, judge):
                                  'it will not create a second worker.'), 0
         excluded = set(getattr(args, '_exclude_agents', None) or ())
         usage_cache_path = getattr(args, 'usage_cache', None)
-        all_reusable = [w for w in registry.reusable_workers(parent) if w.get('agent_id') not in excluded]
+        all_reusable = [w for w in registry.reusable_workers(parent, named=explicit_id or None)
+                        if w.get('agent_id') not in excluded]
         base_out = {'stage': 'roll', 'parent_id': parent, 'parent_host': parent_host, 'parent_address': parent_address,
                     **({'workspace': canonical_ws} if canonical_ws else {})}
         if explicit_id:
@@ -1295,8 +1303,7 @@ def _run(args, judge):
             if explicit_worker is None:
                 return _resume_refusal(
                     base_out, explicit_id, 'resume_worker_unavailable',
-                    f'Nothing was launched: worker {explicit_id!r} is not an idle, reusable worker of parent {parent!r}. '
-                    'Omit --resume to start a fresh worker.',
+                    _not_reusable_text(explicit_id, parent, excluded),
                 )
             if explicit_worker.get('worn'):
                 return _resume_refusal(

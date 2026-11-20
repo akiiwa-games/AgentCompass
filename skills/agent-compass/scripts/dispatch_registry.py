@@ -41,7 +41,8 @@ CREATE_DEADLINES = {'antigravity-resilient': 480}
 MAX_LIFETIME = 86400
 # A parent continuation is this event kind. The reason text is an audit note and is not read back.
 HOST_FOLLOWUP_KIND = 'host_followup'
-# A worker idle longer than this is not resumed: its runtime and prompt cache are gone.
+# A worker whose last dispatch is older than this is not matched to a new brief: its prompt cache is gone, and a turn sent
+# to it by message since then is not on its dispatch. A worker the caller names (`--resume`) is resumed whatever its age.
 REUSE_MAX_IDLE_HOURS = 24
 LABELS = ('router.decision_id', 'router.dispatch_id', 'router.parent_id',
           'router.task_id', 'router.account', 'router.bundle_id', 'router.request_hash')
@@ -981,13 +982,8 @@ def _record_pending_ground_truth(path, now):
             continue
 
 
-def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
-    """Completed, idle Paseo workers owned by parent_id, newest first, with compaction/context state."""
-    if not isinstance(parent_id, str) or not parent_id.strip() or not Path(path or db_path()).exists():
-        return []
-    import account_fleet
-    import worker_sessions
-    now = now or utcnow()
+def _parent_histories(parent_id, now, path):
+    """Every worker a dispatch of `parent_id` names, with its dispatches oldest first."""
     with transaction(path, upkeep=True) as connection:
         expire(connection, now)
         all_rows = rows(connection, 'dispatches')
@@ -998,6 +994,66 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
         agent_id = row.get('agent_id')
         if isinstance(agent_id, str) and agent_id.strip():
             by_agent.setdefault(agent_id.strip(), []).append(row)
+    for history in by_agent.values():
+        history.sort(key=lambda r: (r.get('created_at') or '', r.get('updated_at') or ''))
+    return by_agent
+
+
+def _reuse_refusal(agent_id, history, parent_id, now, paseo_home, named):
+    """Why the worker of `history` takes no new turn of `parent_id` now, and its Paseo record: `(reason, doc)`, the reason
+    None when it can. `named`: the caller names this worker, so the age of its last dispatch refuses nothing."""
+    if any(r['state'] in ACTIVE or (r['state'] == 'expired' and r.get('launched_at') and parse(r['hard_until']) > now)
+           for r in history):
+        return 'a dispatch to it is still open', None
+    latest = history[-1]
+    if latest.get('state') != 'completed':
+        return f"its last dispatch ended as {latest.get('state')}, not completed", None
+    last_seen = latest.get('updated_at') or latest.get('created_at')
+    if not named and (not last_seen or now - parse(last_seen) > timedelta(hours=REUSE_MAX_IDLE_HOURS)):
+        return f'its last dispatch is more than {REUSE_MAX_IDLE_HOURS} hours old', None
+    doc = paseo_agent_record(agent_id, paseo_home=paseo_home)
+    if isinstance(doc, dict):
+        labels = doc.get('labels') if isinstance(doc.get('labels'), dict) else {}
+        owner = labels.get('router.parent_id') or labels.get('paseo.parent-agent-id')
+        if owner and owner != parent_id:
+            return 'Paseo records another parent as its owner', doc
+        status = doc.get('status') or doc.get('lastStatus')
+        if doc.get('archivedAt'):
+            return 'it is archived', doc
+        # `closed`: Paseo collected the idle runtime. A resume must cold-restore it from persistence first,
+        # which outlasts the launch call (~25 s on Antigravity) and can land the turn on a new provider session.
+        if status in ('running', 'initializing', 'error', 'closed'):
+            return f'Paseo shows it {status}', doc
+        if doc.get('attentionReason') == 'error':
+            return 'its last turn ended in an error', doc
+        if doc.get('attentionReason') == 'permission' or doc.get('pendingPermissions'):
+            return 'it waits for a permission', doc
+        if doc.get('providerUnavailable'):
+            return 'its provider is unavailable', doc
+    return None, doc
+
+
+def reuse_refusal(parent_id, agent_id, now=None, path=None, paseo_home=None):
+    """Why `reusable_workers(parent_id, named=agent_id)` does not hold `agent_id`, as a clause of a message; None when
+    it does."""
+    if not isinstance(parent_id, str) or not parent_id.strip() or not Path(path or db_path()).exists():
+        return 'no dispatch of this parent names it'
+    now = now or utcnow()
+    history = _parent_histories(parent_id, now, path).get(agent_id)
+    if not history:
+        return 'no dispatch of this parent names it'
+    return _reuse_refusal(agent_id, history, parent_id, now, paseo_home, True)[0]
+
+
+def reusable_workers(parent_id, now=None, path=None, paseo_home=None, named=None):
+    """Completed, idle Paseo workers owned by parent_id, newest first, with compaction/context state. `named`: the worker
+    the caller names, held whatever the age of its last dispatch."""
+    if not isinstance(parent_id, str) or not parent_id.strip() or not Path(path or db_path()).exists():
+        return []
+    import account_fleet
+    import worker_sessions
+    now = now or utcnow()
+    by_agent = _parent_histories(parent_id, now, path)
     if not by_agent:
         return []
     p_home = Path(paseo_home or os.environ.get('PASEO_HOME') or Path.home() / '.paseo')
@@ -1005,29 +1061,10 @@ def reusable_workers(parent_id, now=None, path=None, paseo_home=None):
     max_tokens = worker_sessions.rotation_threshold(account_fleet.load_accounts())
     candidates = []
     for agent_id, history in by_agent.items():
-        history.sort(key=lambda r: (r.get('created_at') or '', r.get('updated_at') or ''))
-        if any(r['state'] in ACTIVE or (r['state'] == 'expired' and r.get('launched_at') and parse(r['hard_until']) > now)
-               for r in history):
+        reason, doc = _reuse_refusal(agent_id, history, parent_id, now, paseo_home, agent_id == named)
+        if reason:
             continue
         latest = history[-1]
-        if latest.get('state') != 'completed':
-            continue
-        last_seen = latest.get('updated_at') or latest.get('created_at')
-        if not last_seen or now - parse(last_seen) > timedelta(hours=REUSE_MAX_IDLE_HOURS):
-            continue
-        doc = paseo_agent_record(agent_id, paseo_home=paseo_home)
-        if isinstance(doc, dict):
-            labels = doc.get('labels') if isinstance(doc.get('labels'), dict) else {}
-            owner = labels.get('router.parent_id') or labels.get('paseo.parent-agent-id')
-            if owner and owner != parent_id:
-                continue
-            status = doc.get('status') or doc.get('lastStatus')
-            # `closed`: Paseo collected the idle runtime. A resume must cold-restore it from persistence first,
-            # which outlasts the launch call (~25 s on Antigravity) and can land the turn on a new provider session.
-            if (doc.get('archivedAt') or status in ('running', 'initializing', 'error', 'closed')
-                    or doc.get('attentionReason') in ('error', 'permission')
-                    or doc.get('providerUnavailable') or doc.get('pendingPermissions')):
-                continue
         state = worker_sessions.session_state(agent_id, home=home_dir)
         carried = worker_sessions.worker_historical_tokens(state)
         worn = bool(isinstance(carried, (int, float)) and carried >= max_tokens)
