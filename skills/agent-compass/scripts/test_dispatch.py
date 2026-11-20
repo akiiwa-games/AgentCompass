@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -1289,8 +1290,30 @@ except ValueError as e:
             self.assertEqual(notice['source'], 'catchup')
             self.assertEqual(notice['message_id'], registry.end_notice_message_id(watched_row['dispatch_id']))
             self.assertEqual(calls[0]['operation'], 'notify_end')
+            self.assertEqual(calls[0]['ended_as'], registry.inspect(watched_row['dispatch_id'])['state'])
             self.assertEqual(flow.deliver_end_notices(now=when + timedelta(seconds=1), host=host), [])
             self.assertEqual(len(calls), 1)
+
+    @unittest.skipUnless(shutil.which('node'), 'node reads the vocabulary the bridge exports')
+    def test_every_token_the_bridge_can_send_has_a_row_on_the_python_side(self):
+        """The bridge names a cause by a token (`CONDITIONS`) and Python holds what it means and what to do
+        (`HOST_CONDITIONS`, `WORKER_STATES`); a catch-up notice names the registry's state (`RECORDED_ENDS`). A token
+        on one side only is advice that presumes no cause, or a state the notice calls unknown."""
+        bridge = Path(__file__).resolve().parents[3] / 'setup' / 'paseo_dispatch_bridge.mjs'
+        script = (f"const bridge = await import({json.dumps(bridge.as_uri())});"
+                  'console.log(JSON.stringify({conditions: bridge.CONDITIONS, ends: bridge.RECORDED_ENDS}));')
+        done = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        exported = json.loads(done.stdout)
+        conditions = exported['conditions']
+        for code in ('worker_not_idle', 'worker_not_found'):
+            self.assertEqual(set(conditions[code]) - set(registry.WORKER_STATES), set(), code)
+        for code in ('host_connection_failed', 'host_request_failed', 'host_resume_failed'):
+            self.assertEqual(set(conditions[code]) - set(flow.HOST_CONDITIONS), set(), code)
+        sent = {token for code in ('host_connection_failed', 'host_request_failed', 'host_resume_failed')
+                for token in conditions[code]}
+        self.assertEqual(set(flow.HOST_CONDITIONS) - sent, set(), 'a row no token of the bridge reads')
+        self.assertEqual(set(exported['ends']), set(registry._END_NOTICE_STATES))
 
     def test_a_notice_without_delivery_evidence_stays_due(self):
         row = self.launched()

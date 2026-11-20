@@ -12,7 +12,8 @@ import {execute, project, normalizeProviderModels, notificationStep, notificatio
   creationFailureClass, creationFailureCode, creationRecord, resolvePaseoPlacement, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
   workedBeforeRetrying, endedOnReply, turnFailure, RETRY_STUCK_CODE, TURN_FAILED_CODE, fallbackArgv, runFallback,
   attemptsNote, notificationFile, agentResumed, settleArgv, settleBeforeExit,
-  finalReplyText, reportSection, composeNotice, notifyEnd, hostFailure, createClient, continuationVerdict, REPORT_INLINE_LIMIT, REPORT_SUMMARY_LIMIT} from './paseo_dispatch_bridge.mjs';
+  finalReplyText, reportSection, composeNotice, notifyEnd, hostFailure, hostFailureClass, CONDITIONS, RECORDED_ENDS,
+  BridgeError, createClient, continuationVerdict, REPORT_INLINE_LIMIT, REPORT_SUMMARY_LIMIT} from './paseo_dispatch_bridge.mjs';
 
 const notifier = async () => ({status: 'watching', pid: 123, state_file: 'fixture.json'});
 
@@ -1930,6 +1931,23 @@ test('a catch-up for a receipt with no terminal invents no finish', async () => 
       terminal: {reason: 'closed'}}));
     assert.equal((await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})).sent, true);
     assert.match(sent[1][1], /\nState: closed\n/);
+    // no terminal, and the registry says what it ended the dispatch as: the notice says that, as the registry's record
+    const bare = JSON.stringify({dispatch_id: 'child', parent_id: 'parent', status: 'watching', delivered: [], pending: null});
+    for (const state of RECORDED_ENDS) {
+      fs.writeFileSync(file, bare);
+      assert.equal((await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent', ended_as: state})).sent, true);
+      const text = sent.at(-1)[1];
+      assert.ok(text.includes(`\nState: recorded as ${state}; the notification watch did not see the end\n`), text);
+      assert.ok(text.includes(`The dispatch registry recorded this dispatch as ${state}, but the notification watch did not see the end`), text);
+      assert.doesNotMatch(text, /State: unknown|State: finished|finished its turn/);
+    }
+    // a value that is no state of the registry is not printed: the notice stays `unknown`
+    for (const other of ['finished', 'launched', 'completed\nState: finished', 7, null]) {
+      fs.writeFileSync(file, bare);
+      assert.equal((await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent', ended_as: other})).sent, true);
+      assert.match(sent.at(-1)[1], /\nState: unknown\n/);
+      assert.equal(sent.at(-1)[1].split('\nState: ').length, 2);
+    }
   } finally {
     if (old === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = old;
     fs.rmSync(root, {recursive: true, force: true});
@@ -2044,4 +2062,24 @@ test('a finished record that has a stop marker is returned to a create, not reti
     }
     fs.rmSync(root, {recursive: true, force: true});
   }
+});
+
+test('a host failure\'s condition is a token of its code\'s vocabulary, and the vocabulary lists no token that is never produced', () => {
+  const named = (name, message = 'x', extra = {}) => Object.assign(new Error(message), {name}, extra);
+  const errors = [named('DaemonAuthenticationError'), new BridgeError('refused input'),
+    named('DaemonConnectionError', 'x', {code: 'DAEMON_REQUEST_TIMEOUT'}), named('DaemonConnectionError'),
+    named('DaemonProtocolError'), Object.assign(new Error('x'), {code: 'invalid_response'}), named('DaemonRpcError'),
+    named('ZodError'), new TypeError('x'), new Error('Connection timed out'), new Error('connect ECONNREFUSED 127.0.0.1:1'),
+    new Error('Daemon client closed'), new Error('session is closed'), new Error(''), null];
+  const produced = {host_connection_failed: new Set(), host_request_failed: new Set()};
+  for (const error of errors) for (const connected of [false, true])
+    for (const credential of [{}, {unreadable: true}, {opened: true}]) {
+      const answer = hostFailure(error, connected, {operation: 'create'}, credential);
+      assert.equal(answer.error, connected ? 'host_request_failed' : 'host_connection_failed');
+      assert.equal(answer.condition, hostFailureClass(error, connected, credential));
+      assert.ok(CONDITIONS[answer.error].includes(answer.condition), `${answer.error}: ${answer.condition}`);
+      produced[answer.error].add(answer.condition);
+    }
+  for (const code of Object.keys(produced)) assert.deepEqual([...produced[code]].sort(), [...CONDITIONS[code]].sort());
+  assert.deepEqual(CONDITIONS.host_resume_failed, CONDITIONS.host_request_failed);
 });

@@ -778,7 +778,8 @@ def due_end_notices(path=None):
             if row.get('state') not in _END_NOTICE_STATES or not isinstance(notice, dict) or notice.get('state') != 'due':
                 continue
             found.append({'dispatch_id': row['dispatch_id'], 'parent_id': row.get('parent_id'),
-                          'agent_id': row.get('agent_id'), 'message_id': notice.get('message_id')})
+                          'agent_id': row.get('agent_id'), 'message_id': notice.get('message_id'),
+                          'ended_as': row['state']})
         return found
 
 

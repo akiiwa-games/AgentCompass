@@ -131,12 +131,11 @@ UNCONFIRMED_WHAT = {
 }
 # What the bridge's `condition` tokens mean: what failed, and what the caller does about that cause. The bridge sends a
 # token of a fixed vocabulary beside the error code it merges several states under; create and resume read this one
-# table, and what follows from it (roll again, run next_argv) is said by the answer that reads it.
-#   host_connection_failed (the daemon was never connected): refused | timeout | authentication | credential_unreadable |
-#                          rejected | unreachable
-#   host_request_failed (sent) and host_resume_failed (not sent), connected and then failed: timeout | connection_lost |
-#                          daemon_error | invalid_response | authentication | bridge_error
-#   worker_not_idle, worker_not_found: the states of dispatch_registry.WORKER_STATES.
+# table, and what follows from it (roll again, run next_argv) is said by the answer that reads it. The vocabulary per code
+# is the bridge's (`CONDITIONS` in setup/paseo_dispatch_bridge.mjs); a test reads it from there, so every token the
+# bridge can send for `host_connection_failed` (the daemon was never connected), `host_request_failed` (sent) and
+# `host_resume_failed` (not sent) has a row here and no row is left that the bridge never sends. The tokens of
+# `worker_not_idle` and `worker_not_found` are states of dispatch_registry.WORKER_STATES.
 HOST_CONDITIONS = {
     'refused': ('the daemon refused the connection (nothing listens on its port)',
                 'start the daemon (check it with `paseo ls`)'),
@@ -564,7 +563,7 @@ def deliver_end_notices(now=None, path=None, host=None):
     for notice in registry.due_end_notices(path):
         try:
             response = sender({'operation': 'notify_end', 'dispatch_id': notice['dispatch_id'],
-                               'parent_id': notice.get('parent_id')})
+                               'parent_id': notice.get('parent_id'), 'ended_as': notice['ended_as']})
         except Exception:
             continue
         if not isinstance(response, dict) or not response.get('ok'):

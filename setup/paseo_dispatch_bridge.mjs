@@ -343,7 +343,19 @@ export function providerUnavailableTerminal(terminal) {
 // for a receipt that holds no terminal: the registry has ended the dispatch, the watcher never saw how.
 const WITHOUT_REPLY = 'The worker ended without a final reply.\n';
 export const END_UNKNOWN = 'unknown';
+// What the dispatch registry ended a dispatch as (dispatch_registry._END_NOTICE_STATES; its test reads this constant).
+// The Python side sends it with `notify_end` as `ended_as`, so a catch-up for a receipt that holds no terminal says
+// what the registry recorded; anything else is `unknown`. It is the registry's record, not something the watch saw.
+export const RECORDED_ENDS = Object.freeze(['completed', 'failed', 'canceled', 'create_failed']);
+const recordedReason = state => `recorded as ${state}; the notification watch did not see the end`;
+export function recordedEnd(state) {
+  return RECORDED_ENDS.includes(state) ? recordedReason(state) : END_UNKNOWN;
+}
 export function endingSentence(reason, terminal, targetId) {
+  const recorded = RECORDED_ENDS.find(state => reason === recordedReason(state));
+  if (recorded)
+    return `The dispatch registry recorded this dispatch as ${recorded}, but the notification watch did not see the end, and no final ` +
+      `reply was read here. Check the worker with get_agent_status (agentId: ${targetId}).\n`;
   if (reason === 'worker unavailable') return 'Paseo no longer lists this worker (it was removed or archived); it left no final reply.\n';
   if (reason === 'closed') return 'Paseo closed this worker; it left no final reply.\n';
   if (reason === 'error') {
@@ -715,7 +727,7 @@ export async function notifyEnd(client, input) {
   }
   const messageId = createHash('sha256').update(`router-finish:${record.dispatch_id}:terminal`).digest('hex');
   const pendingEnd = record.pending?.key === 'terminal' && typeof record.pending.text === 'string' ? record.pending.text : '';
-  const text = pendingEnd || await composeNotice(client, record, {key: 'terminal', reason: record.terminal?.reason || END_UNKNOWN});
+  const text = pendingEnd || await composeNotice(client, record, {key: 'terminal', reason: record.terminal?.reason || recordedEnd(input.ended_as)});
   if (typeof text !== 'string') return {ok: false, error: 'timeline_unavailable'};
   await noteContinuation(client, record);
   if (record.continued) {
@@ -1326,12 +1338,20 @@ export async function createClient(credential = {}) {
 // host's text, a path, a token or an id: the class comes from the error's own class, code or type, from what the
 // bridge observed itself (`credential.unreadable`, `credential.opened`), and from a message only where the SDK or the
 // network layer wrote that exact text, never where the daemon's text could be.
-//   worker_not_idle:       running | initializing | error | provider_unavailable | permission_pending (the first that holds)
-//   worker_not_found:      absent | archived
-//   host_connection_failed (the daemon was never connected):
-//                          refused | timeout | authentication | credential_unreadable | rejected | unreachable
-//   host_request_failed, host_resume_failed (connected, then a request failed):
-//                          timeout | connection_lost | daemon_error | invalid_response | authentication | bridge_error
+// The vocabulary per code. The Python side holds what each token means and what to do about it
+// (dispatch_flow.HOST_CONDITIONS, dispatch_registry.WORKER_STATES); its test reads this constant, so a token added
+// here without a row there fails.
+const REQUEST_CONDITIONS = ['timeout', 'connection_lost', 'daemon_error', 'invalid_response', 'authentication', 'bridge_error'];
+export const CONDITIONS = Object.freeze({
+  // the first that holds, in this order
+  worker_not_idle: ['running', 'initializing', 'error', 'provider_unavailable', 'permission_pending'],
+  worker_not_found: ['absent', 'archived'],
+  // the daemon was never connected
+  host_connection_failed: ['refused', 'timeout', 'authentication', 'credential_unreadable', 'rejected', 'unreachable', 'bridge_error'],
+  // connected, then a request failed
+  host_request_failed: REQUEST_CONDITIONS,
+  host_resume_failed: REQUEST_CONDITIONS,
+});
 export function hostFailureClass(error, connected, credential = {}) {
   const message = typeof error?.message === 'string' ? error.message : '';
   if (error?.name === 'DaemonAuthenticationError') return 'authentication';
