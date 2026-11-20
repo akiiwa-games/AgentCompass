@@ -11,6 +11,7 @@ alternatives require positive fit above zero). The formula is defined in `docs/t
 lives in `references/accounts.json` or `references/five-axis-scores.json` and is returned in the per-candidate breakdown.
 """
 
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
@@ -34,6 +35,16 @@ import quota_pools
 import task_intake
 import user_scores
 import worker_sessions
+
+
+def advised_hours(hours):
+    """A wait the caller is told to wait or to allow (`--can-wait-hours`): `hours` rounded up to a tenth, so that waiting that
+    long finds the window reset and allowing it passes the `available_in_hours > can_wait` check. Rounding to nearest could
+    advise 4.0 for a 4.04h wait, which asks again."""
+    advised = math.ceil(hours * 10) / 10
+    while advised < hours:
+        advised += 0.1
+    return round(advised, 1)
 
 
 def named_pin_block(task, candidates):
@@ -154,12 +165,15 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                          'reason': 'No eligible bundle. Closest: ' + ' | '.join(
                              f"{c['id']}: {'; '.join(c['excluded'])}" for c in closest)})
         # When a bundle is held back only by quota, say when that quota returns, so the parent can wait.
-        waits = sorted((h, c['id']) for c in candidates if c['excluded'] and (h := quota_pools.quota_wait_hours(c, usage)) is not None)
+        waits = sorted((wait[0], wait[1], c['id'], c['bundle']['account']) for c in candidates if c['excluded']
+                       and (wait := quota_pools.quota_wait(c, usage)) is not None)
         if waits:
-            hours, bundle_id = waits[0]
-            decision['next_reset'] = {'bundle': bundle_id, 'hours': round(hours, 1),
+            hours, window, bundle_id, account = waits[0]
+            decision['next_reset'] = {'bundle': bundle_id, 'account': account, 'window': window, 'hours': advised_hours(hours),
                                       'at': (now + timedelta(hours=hours)).isoformat()}
-            decision['reason'] += f'. {bundle_id} is held back by quota that returns in {hours:.1f}h: wait, or decide otherwise.'
+            # First: the answer a caller reads is cut short, and this is the fact that says what to do.
+            decision['reason'] = (f"{bundle_id} is held back by {account}'s {window} quota, which returns in {advised_hours(hours)}h: "
+                                  f"wait, or decide otherwise. {decision['reason']}")
         if named_block:
             # What the user named cannot run. Say why and stop; nothing else stands in for it.
             decision['blocked'] = 'named_model_unavailable'
@@ -185,12 +199,16 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     decision.update({'action': top['action'], 'needs_user_decision': False,
                      'continuity': (f"{task['coupling']}-coupling chain stays with its owner"
                                     if (top is resume and top['action'] == 'resume' and not forced) else None)})
+    if top['available_in_hours']:
+        decision['wait_for'] = {'bundle': top['id'], 'account': top['bundle']['account'], 'window': top.get('waiting_on'),
+                                'hours': advised_hours(top['available_in_hours'])}
     if (top['available_in_hours'] or 0) > can_wait:
         # can_wait_hours is a limit, not a preference: say so instead of quietly starting later than allowed
-        decision.update({'needs_user_decision': True, 'wait_hours': round(top['available_in_hours'], 1),
-                         'reason': (f"The chain owner {top['id']} can resume in {top['available_in_hours']:.1f}h"
+        after = f" ({top['bundle']['account']}'s {top['waiting_on']} window resets then)" if top.get('waiting_on') else ''
+        decision.update({'needs_user_decision': True, 'wait_hours': advised_hours(top['available_in_hours']),
+                         'reason': (f"The chain owner {top['id']} can resume in {advised_hours(top['available_in_hours'])}h{after}"
                                     if top is resume and top['action'] == 'resume'
-                                    else f"Nothing eligible can start within {can_wait:g}h; the best, {top['id']}, can start in {top['available_in_hours']:.1f}h")
+                                    else f"Nothing eligible can start within {can_wait:g}h; the best, {top['id']}, can start in {advised_hours(top['available_in_hours'])}h{after}")
                          + '. Wait, allow a longer wait, or mark it unavailable and replan.'})
     # A worker held only by the old route gives way when the user names something else.
     pin_moved = resume is not None and (
@@ -200,8 +218,11 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
             and resume is not None and resume['excluded'] and not pin_moved):
         decision.update({'needs_user_decision': True, 'drift_risk': 'high',
                          'resume_blocked_by': resume['excluded'],
-                         'wait_hours': resume.get('wait_until_hours'),
-                         'reason': 'The chain owner cannot continue now. Waiting keeps one owner; switching delivers sooner with handoff and drift risk.'})
+                         'wait_hours': (advised_hours(resume['wait_until_hours']) if isinstance(resume.get('wait_until_hours'), (int, float))
+                                        and math.isfinite(resume['wait_until_hours']) else None),
+                         'reason': (f"The chain owner {resume['id']} cannot continue now ({'; '.join(resume['excluded'])})"
+                                    + (f"; it can continue in {advised_hours(resume['wait_until_hours'])}h" if isinstance(resume.get('wait_until_hours'), (int, float)) and resume['wait_until_hours'] != float('inf') else '')
+                                    + '. Waiting keeps one owner; switching delivers sooner with handoff and drift risk.')})
     # The judge weighs models, not efforts, harnesses or accounts of one model: the margin is to the best other model.
     rival = next((c for c in pool if c is not top
                   and account_fleet.row_key(c['bundle']['model'], accounts) != account_fleet.row_key(top['bundle']['model'], accounts)), None)
@@ -228,7 +249,10 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
     result['expected_hours'] = top.get('expected_hours')
     result['decision']['alternatives'] = list(dict.fromkeys(c['id'] for c in pool if c['id'] != top['id']))[:3]
     if top['available_in_hours']:
-        decision.update({'action': 'defer', 'start_after_hours': round(top['available_in_hours'], 1)})
+        decision.update({'action': 'defer', 'start_after_hours': advised_hours(top['available_in_hours'])})
+    if task.get('wants_fast') and not top['bundle'].get('fast'):
+        decision['fast_not_applied'] = (top.get('fast_not_offered')
+                                        or 'fast mode was priced as a candidate of its own and the plain mode ranked higher')
     return result
 
 

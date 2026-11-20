@@ -119,7 +119,7 @@ def line(attempt, following=None):
     head = f"attempt {attempt['attempt']}: {attempt.get('model')} on {attempt.get('account')}"
     if not attempt.get('failure'):
         return head + (' (current attempt)' if attempt.get('dispatch_id') else '')
-    text = f"{head} failed: {attempt['failure']}"
+    text = f"{head} failed: {attempt['failure']}" + (f" ({attempt['detail']})" if attempt.get('detail') else '')
     if following is None:
         return text
     if following.get('bundle_id') == attempt.get('bundle_id'):

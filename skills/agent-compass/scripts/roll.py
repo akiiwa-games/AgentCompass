@@ -237,6 +237,19 @@ def named_route_conflict(args, bundle, accounts=None):
             'without --resume to launch the named route.')
 
 
+GATE_CHECK_FAILED = 'the check itself failed: '
+
+
+def gate_refusal_text(explicit_id, reason):
+    """The refusal of a turn to the worker the caller named, in words that blame the worker only for a fact about it."""
+    if reason.startswith(GATE_CHECK_FAILED):
+        return (f'Nothing was launched: the quota and gate check for worker {explicit_id!r} could not be completed '
+                f'({reason[len(GATE_CHECK_FAILED):]}). That is a fault of the request or of the local data, not a state of '
+                'the worker: fix it and roll --resume again.')
+    return (f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({reason}). '
+            'Omit --resume to start a fresh worker.')
+
+
 def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
     """Gate-enforced refusal for continuing `worker`, or None when permitted. Fails closed if unresolvable."""
     if accounts is None:
@@ -254,7 +267,10 @@ def _worker_gate_refusal(worker, usage_cache_path=None, accounts=None):
             accounts=accounts,
         )
     except ValueError as exc:
-        return str(exc) or 'worker_not_resolvable'
+        # `worker_not_resolvable` is a fact about the worker (turn_refusal); any other ValueError is a fault of the request
+        # or of the local data met while checking it, and says nothing about the worker.
+        text = str(exc) or 'worker_not_resolvable'
+        return text if text == 'worker_not_resolvable' else GATE_CHECK_FAILED + text
 
 
 def _auto_resumable(worker, policy, usage_cache_path=None, accounts=None):
@@ -283,10 +299,13 @@ def workspace_mismatch_text(agent_id, own_dir, requested):
 
 def _not_reusable_text(explicit_id, parent, excluded):
     """What a caller reads when the worker it names is not one its parent can resume: the reason the registry gives."""
-    reason = ('an earlier attempt of this roll already tried it' if explicit_id in excluded
-              else registry.reuse_refusal(parent, explicit_id) or 'it is not an idle worker of this parent')
-    return (f'Nothing was launched: worker {explicit_id!r} cannot be resumed by parent {parent!r}: {reason}. '
-            'Omit --resume to start a fresh worker.')
+    refusal = (registry.Refusal('an earlier attempt of this roll already tried it',
+                                'It failed this roll: roll without --resume to start a fresh worker.')
+               if explicit_id in excluded
+               else registry.reuse_refusal(parent, explicit_id)
+               or registry.Refusal('it is not an idle worker of this parent', 'Roll without --resume to start a fresh worker.'))
+    return (f'Nothing was launched: worker {explicit_id!r} cannot be resumed by parent {parent!r}: {refusal.reason}. '
+            f'{refusal.remedy}')
 
 
 def _resume_refusal(out, explicit_id, error, next_text, code=2):
@@ -381,6 +400,121 @@ def summary(decision):
            'alerts': [a['message'] for a in decision.get('alerts') or [] if a.get('severity') == 'warn'],
            **({'warnings': warnings} if (warnings := decision.get('warnings') or (decision.get('decision') or {}).get('warnings')) else {})}
     return out
+
+
+NAMED_ROUTE_FLAGS = ('provider', 'account', 'model', 'effort')     # the flags that name a route (`--effort` is optional)
+
+
+def named_route_given(args):
+    """The flags the caller gave that name a route. A named route is a user override: `record_constraint` needs
+    `--provider`, `--account`, `--model` and `--basis` (the user's own words) for it."""
+    return [flag for flag in NAMED_ROUTE_FLAGS if getattr(args, flag, None)]
+
+
+def named_route_refusal(args, require=False):
+    """The one owner of what a named route needs (`route_judge.record_constraint` reads it). Why the flags the caller gave
+    do not make one, in one answer: what it needs, which of those were given and which are missing, and the other way out;
+    None when they do make one. With no route flag given it is None, unless `require`: the caller is recording a route."""
+    given = named_route_given(args)
+    if not given and not require:
+        return None
+    basis = bool((getattr(args, 'basis', None) or '').strip())
+    missing = [f'--{flag}' for flag in ('provider', 'account', 'model') if flag not in given]
+    if not basis:
+        missing.append('--basis')
+    if not missing:
+        return None
+    gave = [f'--{flag}' for flag in given] + (['--basis'] if basis else [])
+    way_out = (f'drop {", ".join(f"--{flag}" for flag in given)}{" and --basis" if basis else ""} and let the router choose'
+               if given or basis else 'leave the route to the router')
+    return ('A named route needs --provider, --account, --model and --basis (the user\'s own words); --effort is optional. '
+            f'This request gave {", ".join(gave) or "none of them"} and is missing {", ".join(missing)}. Add the missing '
+            f'flags, or {way_out}.')
+
+
+def ignored_flag_notes(args, decision, explicit_id):
+    """What the caller gave that did not take effect, each in a sentence (never dropped in silence). Files are handled at
+    the launch (`files_not_sent`), where the provider is known."""
+    notes = []
+    bundle = decision.get('selected_bundle') or {}
+    if getattr(args, 'basis', None) and not named_route_given(args) and not explicit_id:
+        notes.append('--basis names no route by itself and was ignored: it only quotes the user for --provider, --account, '
+                     '--model or --effort.')
+    if getattr(args, 'fast', False) and bundle and not bundle.get('fast'):
+        notes.append('--fast was not applied (it is a preference): '
+                     + ((decision.get('decision') or {}).get('fast_not_applied') or 'the chosen route runs in its plain mode') + '.')
+    return notes
+
+
+def files_not_sent(out, args, provider):
+    """--file / --apply-to name files for a remote runner; only Dot receives them. Any other route gets neither a copy nor
+    a mention of them."""
+    if provider == 'dot' or not (getattr(args, 'file', None) or getattr(args, 'apply_to', None)):
+        return out
+    return dict(out, warnings=[*out.get('warnings', []),
+                               f'--file/--apply-to files were not sent: only Dot receives them, and the {provider} route gets neither '
+                               'a copy nor a mention of them. Put what the worker needs from them in the brief.'])
+
+
+def none_next(decision):
+    """What a caller reads when no worker fits: when the plan found a candidate held back only by quota, which one, which
+    window and for how long, and the ways out; else where the closest candidates and their exclusions are."""
+    reset = (decision.get('decision') or {}).get('next_reset')
+    if reset:
+        return (f"Nothing can start now: {reset['bundle']} is held back by {reset['account']}'s {reset['window']} quota, which "
+                f"returns in {reset['hours']}h (at {reset['at']}). Wait that long and roll again, or do the task yourself, "
+                'or ask the user.')
+    return ('No worker fits this brief (route.reason lists the closest candidates and why each is excluded); do it yourself '
+            'or ask the user.')
+
+
+def user_decision_next(decision):
+    """What a caller reads when the router leaves the choice to the user: the plan's own reason, and the ways out that fit
+    the fact (a blocked chain owner, or a wait longer than --can-wait-hours allows)."""
+    plan = decision.get('decision') or {}
+    reason = plan.get('reason') or 'no reason was recorded'
+    wait = plan.get('wait_hours')
+    if plan.get('resume_blocked_by'):
+        wait_text = f'wait about {wait}h and roll again (keeps the one owner)' if wait is not None else 'wait and roll again (keeps the one owner)'
+        return (f'The router needs a user decision: {reason} Ask the user: {wait_text}, or roll with --new-worker to start a '
+                'fresh worker on another route now (handoff and drift risk).')
+    if wait is not None:
+        return (f'The router needs a user decision: {reason} Ask the user: wait {wait}h and roll again, allow a longer wait '
+                f'with --can-wait-hours {wait}, name a route (--provider --account --model --basis), or do the task yourself.')
+    return f'The router needs a user decision: {reason} Show this to the user.'
+
+
+def defer_next(decision, wait):
+    plan = decision.get('decision') or {}
+    bundle = decision.get('selected_bundle') or {}
+    wait_for = plan.get('wait_for') or {}
+    window = (f"{wait_for['account']}'s {wait_for['window']} window" if wait_for.get('account') and wait_for.get('window')
+              else 'its quota window')
+    return (f"Defer {bundle.get('bundle_id') or bundle.get('id') or decision.get('choice')} for {wait}h until {window} "
+            'resets; do not launch now. To launch sooner roll again without --can-wait-hours (the best model that can start '
+            'now), name a route with --provider --account --model --basis, or do the task yourself.')
+
+
+def paseo_choice(provider, parent_host, args):
+    """`(use_paseo, why_not)`: whether this launch goes through Paseo, and the first condition that says no. Dot, ChatGPT
+    web and Grok Bot return before a Paseo launch and never grow a completion watcher; reachability is not asked for
+    them, so a remote roll does not dial the daemon."""
+    if provider in ('dot', 'chatgpt-web', 'grok-bot'):
+        return False, None
+    if parent_host in ('herdr', *NATIVE_HOSTS):
+        return False, f'the parent runs on {parent_host}, not on Paseo'
+    if not can_launch_via_paseo(provider):
+        return False, f'no Paseo launcher fits the provider {provider!r}'
+    if not (os.environ.get('PASEO_AGENT_ID', '').strip() or getattr(args, 'parent_id', None)):
+        return False, 'there is no Paseo parent: neither PASEO_AGENT_ID nor --parent-id is set'
+    if not (os.environ.get('PASEO_AGENT_ID', '').strip() or dispatch_flow.paseo_reachable()):
+        return False, 'the Paseo daemon is not reachable'
+    return True, None
+
+
+def without_paseo(out, why):
+    return dict(out, warnings=[*out.get('warnings', []),
+                               f'Paseo was not used: {why}. This worker runs through its own CLI, and nothing calls back.'])
 
 
 def python(script, *argv):
@@ -478,12 +612,34 @@ def dot(args, out, prompt_file, *, task=None, decision=None):
                   caller_action='already_launched_do_not_respawn' if launched else 'check_error',
                   worker={'provider': 'dot', 'task_id': found.group(1) if found else None, 'exit': proc.returncode,
                           'reply': None, 'stderr': proc.stderr[-1500:] or None})
+    if not launched:
+        result.update(error=f'dot_runner_exit_{proc.returncode}', next=dot_failure_next(proc.returncode))
     if launched:
         result['next'] = ('Worker is ALREADY launched on Dot by roll. Do NOT call create_agent, Agent, '
                           'spawn_agent, or invoke_subagent; use continuation_argv or read worker.reply.')
     if found:
         result['continuation_argv'] = entry.argv('dot', 'status', '--task-id', found.group(1), '--wait', '120', *apply_to)
-    return result, 0 if proc.returncode in (0, 3) else 1
+    return result, 0 if launched and proc.returncode in (0, 3) else 1
+
+
+# What the Dot runner's exit codes mean, by the runner's own documentation (skills/dot-subagent/SKILL.md, Outcomes; its
+# EXIT_* constants): 0 completed or submitted, 1 failed, 2 usage or configuration, 3 still open.
+DOT_EXIT_MEANING = {
+    1: 'the runner reports the task, or its call to dot2api, as failed',
+    2: 'the runner refused its arguments or could not read its configuration',
+    3: 'the runner reports the task as still open but printed no task id',
+}
+
+
+def dot_failure_next(code):
+    """What a caller reads when the Dot runner started nothing: its exit code, what the runner means by it and where its
+    output is. The runner's own output is not repeated here: it can carry what the service answered, and a filter cannot
+    tell which lines are safe to show."""
+    meaning = DOT_EXIT_MEANING.get(code, 'the runner ended abnormally')
+    return (f'Nothing was launched on Dot: the runner exited {code} ({meaning}) without a task id, so there is no task to '
+            'observe. Its output is kept in the file `details` names (worker.stderr). Run the doctor command of the '
+            'dot-subagent skill (scripts/dot-subagent.cmd doctor) to check that dot2api is deployed and the credential is '
+            'accepted, then roll the brief again.')
 
 
 def consult(args, out, prompt_file):
@@ -647,11 +803,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                 'Write a handoff brief and omit --resume to start a fresh worker.',
             )
         if gate_reason := _worker_gate_refusal(explicit_worker, usage_cache_path=usage_cache_path, accounts=fleet):
-            return _resume_refusal(
-                out, explicit_id, 'resume_worker_gated',
-                f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({gate_reason}). '
-                'Omit --resume to start a fresh worker.',
-            )
+            return _resume_refusal(out, explicit_id, 'resume_worker_gated', gate_refusal_text(explicit_id, gate_reason))
         selected_bundle = decision.get('selected_bundle') or {}
         if not _bundle_matches_worker(selected_bundle, explicit_worker, same_model):
             routed_id = selected_bundle.get('bundle_id') or selected_bundle.get('id')
@@ -710,15 +862,12 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         return _resume_refusal(
             out, busy.agent_id, 'resume_worker_unavailable',
             f'Nothing was launched: worker {busy.agent_id!r} already has an active dispatch and is not idle. '
-            'Omit --resume to start a fresh worker.',
+            'Wait for that dispatch to finish (its next_argv, or `agentcompass dispatch --dispatch-action reconcile`), '
+            'then roll --resume again.',
         )
     except registry.CapacityChanged as refused:
         if explicit_id:
-            return _resume_refusal(
-                out, explicit_id, 'resume_worker_gated',
-                f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({refused}). '
-                'Omit --resume to start a fresh worker.',
-            )
+            return _resume_refusal(out, explicit_id, 'resume_worker_gated', gate_refusal_text(explicit_id, str(refused)))
         if not dispatch_fallback.enabled() or judge is None:
             raise
         # The routed bundle could no longer start (e.g. its live model list dropped it): the next candidate does.
@@ -729,12 +878,12 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
     except ValueError as refused:
         if not explicit_id:
             raise
-        # A fact about the named worker's own bundle (its row is gone from the configuration, the decision expired):
-        # a blocked result with its reason, never an uncaught exception.
+        # A blocked result with the refusal's own text, never an uncaught exception. What refused is the request or the
+        # local data (an expired decision, a configuration row that is gone, a missing profile), not a state of the worker.
         return _resume_refusal(
             out, explicit_id, 'resume_worker_unavailable',
-            f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({refused}). '
-            'Omit --resume to start a fresh worker.',
+            f'Nothing was launched: the turn for worker {explicit_id!r} could not be prepared: {refused}. That is a fault '
+            'of the request or of the local data, not a state of the worker: fix it and roll --resume again.',
         )
     receipt = dispatch_flow.launch(row['dispatch_id'], parent, watch_seconds=0)
     if explicit_id and receipt.get('state') in ('failed', 'create_failed'):
@@ -748,10 +897,12 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                 explicit_id, detail.get('worker') or 'an unknown directory', detail.get('requested') or landing))
         differs = (f": the worker has {detail.get('worker')}, this turn asked for {detail.get('requested')}"
                    if detail else '')
+        condition = receipt.get('refusal_condition')
         return _resume_refusal(
             worker_out, explicit_id, 'resume_worker_unavailable',
-            f'Worker {explicit_id!r} did not take this turn ({cause}{differs}); no other worker was started in its '
-            'place. Roll the brief without --resume to let the router choose, or name a route.')
+            f"Worker {explicit_id!r} did not take this turn ({cause}{' / ' + condition if condition else ''}{differs}); "
+            'no other worker was started in its place. '
+            + (receipt.get('next_action') or dispatch_flow.resume_refusal_next(cause, condition)))
     if (receipt.get('state') == 'create_failed' or (receipt.get('state') == 'failed' and receipt.get('agent_id'))) \
             and dispatch_fallback.enabled() and judge is not None:
         # Paseo confirms no worker runs this brief any more (none was created, or it ended in error while roll watched):
@@ -775,7 +926,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         # The Paseo parent was not on the host, so this launch has no completion watcher. Rebuild the unwatched contract.
         text, prompt_file = prepare_worker_prompt(text, parent, 'cli', out.get('parent_address'))
         out['worker_prompt_file'] = str(prompt_file)
-        res, code = cli(args, out, decision['selected_bundle'], text)
+        res, code = cli(args, without_paseo(out, 'Paseo does not know the parent agent (parent_agent_not_found)'),
+                        decision['selected_bundle'], text)
         if not res.get('launched'):
             registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
         return res, code
@@ -884,9 +1036,11 @@ def fallback_result(out, outcome, decision, parent, args):
                                 'launch', '--dispatch-id', root, '--parent-id', parent, '--watch-seconds', '120')}), 0
     # Declined (not a failure AgentCompass relaunches) or unsettled: the last attempt's own receipt says what to do.
     last = next((a.get('dispatch_id') for a in reversed(outcome.get('attempts') or []) if a.get('dispatch_id')), None)
-    receipt = dispatch_flow.public_chain(registry.inspect(last)) if last else {}
+    last_row = registry.inspect(last) if last else None
+    receipt = dispatch_flow.public_chain(last_row) if last_row else {}
+    cause = dispatch_flow.failure_cause(last_row) if last_row else None
     return dict(out, launched=False, dispatch_mode='paseo', caller_action='check_error', attempts=attempts,
-                error=receipt.get('state') or outcome.get('action'),
+                error=cause or receipt.get('state') or outcome.get('action'),
                 next=receipt.get('next_action') or outcome.get('text') or 'The relaunch could not be prepared; tell the user.',
                 worker=dict(receipt, provider=(decision.get('selected_bundle') or {}).get('provider'),
                             attempts=attempts)), 1
@@ -1312,18 +1466,15 @@ def _run(args, judge):
                     'Write a handoff brief and omit --resume to start a fresh worker.',
                 )
             if gate_reason := _worker_gate_refusal(explicit_worker, usage_cache_path=usage_cache_path):
-                return _resume_refusal(
-                    base_out, explicit_id, 'resume_worker_gated',
-                    f'Nothing was launched: worker {explicit_id!r} cannot take a new turn ({gate_reason}). '
-                    'Omit --resume to start a fresh worker.',
-                )
+                return _resume_refusal(base_out, explicit_id, 'resume_worker_gated',
+                                       gate_refusal_text(explicit_id, gate_reason))
             own_dir = host_placement.canonical_dir(explicit_worker.get('cwd') or explicit_worker.get('workspace'))
             if canonical_ws and own_dir and own_dir != canonical_ws:
                 # A worker does not move: the host resumes it only in its own directory (the bridge's
                 # `worker_workspace_mismatch`), and a new worker in --workspace would not hold its context.
                 return _resume_refusal(base_out, explicit_id, 'resume_workspace_mismatch', workspace_mismatch_text(
                     explicit_id, own_dir, canonical_ws))
-            if args.provider or args.model or args.effort or getattr(args, 'fast', False):
+            if named_route_given(args) or getattr(args, 'fast', False):
                 conflict = named_route_conflict(args, _resolve_worker_bundle(explicit_worker) or {})
                 if conflict:
                     raise ValueError(conflict)
@@ -1354,9 +1505,9 @@ def _run(args, judge):
             classified = judge.classify_pinned(task, args)
             decision = (classified['result'] if 'result' in classified else
                         judge.record_resume(args, task, classified, _resolve_worker_bundle(matched_worker), explicit_id))
-        elif args.provider or args.model or args.effort:
-            if not args.basis:
-                raise ValueError('Naming --provider/--model/--effort is a user override; quote the user with --basis.')
+        elif named_route_given(args):
+            if refusal := named_route_refusal(args):
+                raise ValueError(refusal)
             args.constraint = 'user_override'
             # Only the model is pinned: the task is classified exactly as an automatic roll's, and the pinned bundle
             # is priced and reserved from that profile.
@@ -1381,6 +1532,8 @@ def _run(args, judge):
     out = {'stage': 'roll', 'route': summary(decision), 'parent_id': parent,
            'parent_host': parent_host, 'parent_address': parent_address,
            **({'workspace': canonical_ws} if canonical_ws else {})}
+    if (notes := ignored_flag_notes(args, decision, explicit_id)):
+        out['warnings'] = notes
     if decision.get('choice') == 'split':
         out['route']['reason'] = decision.get('reason')
         return dict(out, launched=False, dispatch_mode='split', caller_action='roll_each_line',
@@ -1407,31 +1560,20 @@ def _run(args, judge):
                     next='Execute this task directly in the current session; do not spawn a subagent.'), 2
     if decision.get('choice') in (None, 'none') or not bundle:
         return dict(out, launched=False, dispatch_mode='none', caller_action='execute_self_or_ask_user',
-                    next=decision.get('next') or 'No worker fits this brief; do it yourself or ask the user.'), 2
+                    next=decision.get('next') or none_next(decision)), 2
     if (decision.get('decision') or {}).get('needs_user_decision') and not (explicit_id and bundle):
         return dict(out, launched=False, dispatch_mode='none', caller_action='ask_user',
-                    next='The router needs a user decision; show route.reason to the user.'), 2
+                    next=user_decision_next(decision)), 2
     if (decision.get('decision') or {}).get('action') == 'defer':
         wait = (decision.get('decision') or {}).get('start_after_hours') or (decision.get('decision') or {}).get('wait_hours')
         return dict(out, launched=False, dispatch_mode='defer', caller_action='wait_for_reset',
-                    start_after_hours=wait,
-                    next=f"Defer {bundle.get('id') or decision.get('choice')} for {wait}h until its quota window resets; do not launch now."), 2
+                    start_after_hours=wait, next=defer_next(decision, wait)), 2
     if provider in host_placement.REMOTE_SURFACES:
         placed = host_placement.place(provider, canonical_ws)
         if not placed['ok']:
             return placement_refused(out, provider, placed)
-    # Dot, ChatGPT web and Grok Bot return before a Paseo launch and never grow a completion watcher.
-    # Reachability is not asked for them, so a remote roll does not dial the daemon.
-    if provider in ('dot', 'chatgpt-web', 'grok-bot'):
-        use_paseo = False
-    else:
-        has_paseo_parent = bool(os.environ.get('PASEO_AGENT_ID', '').strip() or getattr(args, 'parent_id', None))
-        use_paseo = (
-            parent_host not in ('herdr', *NATIVE_HOSTS)
-            and can_launch_via_paseo(provider)
-            and has_paseo_parent
-            and (os.environ.get('PASEO_AGENT_ID', '').strip() or dispatch_flow.paseo_reachable())
-        )
+    out = files_not_sent(out, args, provider)
+    use_paseo, no_paseo_because = paseo_choice(provider, parent_host, args)
     text, prompt_file = prepare_worker_prompt(text, parent, parent_host, parent_address, watched=bool(use_paseo))
     out['worker_prompt_file'] = str(prompt_file)
     if provider == 'dot':
@@ -1479,7 +1621,7 @@ def _run(args, judge):
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     **({'dispatch_id': claim_row['dispatch_id']} if canonical_ws else {}),
                     next=placed['next']), 0
-    res, code = cli(args, out, bundle, text)
+    res, code = cli(args, without_paseo(out, no_paseo_because) if no_paseo_because else out, bundle, text)
     if not res.get('launched'):
         registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
     return res, code
