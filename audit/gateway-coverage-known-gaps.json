@@ -151,18 +151,6 @@
   },
   {
    "catalog": "magpie-0.1.4470",
-   "model": "hy3-preview",
-   "efforts": [
-    "low",
-    "medium",
-    "high"
-   ],
-   "row": null,
-   "kind": "no_relative_statement",
-   "detail": "hy3-preview on tencent-cloud (models.dev catalog tencent-tokenhub) resolves to no row (no row (other_weights)): tencent-tokenhub lists hy3-preview as tencent/hy3-preview (2026-04-20 preview weights, distinct from hy3 tencent/hy3), and no cached board lists hy3-preview"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
    "model": "mimo-v2.5-pro-ultraspeed",
    "efforts": [
     "default"

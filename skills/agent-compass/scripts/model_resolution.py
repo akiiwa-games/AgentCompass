@@ -23,7 +23,9 @@ import public_data
 EFFORT_SUFFIXES = ('none', 'minimal', 'default', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
 _COLON_EFFORT = re.compile(r'^(?P<name>.+):(?P<effort>' + '|'.join(EFFORT_SUFFIXES) + r')$', re.I)
 _DASH_EFFORT = re.compile(r'^(?P<name>.+)-(?P<effort>' + '|'.join(EFFORT_SUFFIXES) + r')$')
-_VENDOR_TAG = re.compile(r'(?:@\d{8}|-\d{8}|-\d{4}-\d{2}-\d{2}|:\w+|\[\w+\]|-(?:latest|preview))$')
+PREVIEW_TAG = '-preview'
+_PREVIEW_TAG = re.compile(re.escape(PREVIEW_TAG) + r'$', re.I)
+_VENDOR_TAG = re.compile(r'(?:@\d{8}|-\d{8}|-\d{4}-\d{2}-\d{2}|:\w+|\[\w+\]|-(?:latest|' + re.escape(PREVIEW_TAG[1:]) + r'))$')
 # How a name reached its directory row: `provider` is the row a serving provider's declaration names, `default` the row
 # the maker's declaration names (provider_names). `family`, the PROVIDER_NAME_STATUSES, `conflict` and `unknown` name no
 # row of their own.
@@ -139,6 +141,15 @@ def default_for(spelling, table):
         if isinstance(entry, dict):
             return entry
     return None
+
+
+def without_preview(spelling):
+    """`spelling` with trailing `-preview` tag(s) stripped (`_PREVIEW_TAG`), the same `-preview` tag `_VENDOR_TAG` strips
+    (owner, 2026-11-20: a `-preview` name is the released row of that name; `audit/gateway_coverage.py` reads this owner)."""
+    s = str(spelling or '')
+    while (stripped := _PREVIEW_TAG.sub('', s)) != s:
+        s = stripped
+    return s
 
 
 def undecorated(name):

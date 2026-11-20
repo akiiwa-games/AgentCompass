@@ -546,16 +546,6 @@
    }
   },
   "rows": {
-   "aihubmix": {
-    "hy3-preview": {
-     "model": null,
-     "status": "other_weights",
-     "kind": "community",
-     "url": "https://models.dev/api.json",
-     "as_of": "2026-11-10",
-     "statement": "models.dev lists hy3-preview on aihubmix with canonical_model_id tencent/hy3-preview (release_date 2026-04-20, max output 128000; read from internal/catalog/bundled/api.json.gz in https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/catalog/bundled/api.json.gz, dated 2026-11-10 by bundledAt in internal/catalog/bundled.go:34): that provider's listing identifies the name as earlier preview weights the catalog has no row for, not hy3 (tencent/hy3, release_date 2026-07-06, max output 128000 on tencent-tokenhub in the same 2026-11-10 snapshot)"
-    }
-   },
    "google": {
     "gemini-3.1-flash-lite-preview": {
      "model": null,
@@ -564,16 +554,6 @@
      "url": "https://ai.google.dev/gemini-api/docs/deprecations",
      "as_of": "2026-11-19",
      "statement": "Google shut gemini-3.1-flash-lite-preview down on 2026-05-25: the deprecations table lists it released 2026-03-03, shut down 2026-05-25, replacement gemini-3.1-flash-lite; its model page (https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite-preview) \"is deprecated and has been shut down on May 25, 2026\"; the changelog (https://ai.google.dev/gemini-api/docs/changelog), 2026-05-25: \"The gemini-3.1-flash-lite-preview model has been shut down. Use gemini-3.1-flash-lite instead.\" Google does not say whether the GA model has the preview's weights; models.dev (snapshot of 2026-11-10) still lists the name on google"
-    }
-   },
-   "kilo": {
-    "tencent/hy3-preview": {
-     "model": null,
-     "status": "other_weights",
-     "kind": "community",
-     "url": "https://models.dev/api.json",
-     "as_of": "2026-11-10",
-     "statement": "models.dev lists tencent/hy3-preview on kilo with canonical_model_id tencent/hy3-preview (release_date 2026-04-20, max output 235929; read from internal/catalog/bundled/api.json.gz in https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/catalog/bundled/api.json.gz, dated 2026-11-10 by bundledAt in internal/catalog/bundled.go:34): that provider's listing identifies the name as earlier preview weights the catalog has no row for, not hy3 (tencent/hy3, release_date 2026-07-06, max output 128000 on tencent-tokenhub in the same 2026-11-10 snapshot)"
     }
    },
    "mistral": {
@@ -610,34 +590,6 @@
      "url": "https://models.dev/api.json",
      "as_of": "2026-11-10",
      "statement": "models.dev lists deepseek-v4-flash on opencode with canonical_model_id deepseek/deepseek-v4-flash-0731 (the snapshot Magpie v0.1.4470 bundles, bundledAt 2026-11-10): that provider's listing identifies the name as weights the catalog has no row for, not deepseek-v4.1-flash-1017, the row DeepSeek now serves under the name"
-    },
-    "hy3-preview-free": {
-     "model": null,
-     "status": "other_weights",
-     "kind": "community",
-     "url": "https://models.dev/api.json",
-     "as_of": "2026-11-10",
-     "statement": "models.dev lists hy3-preview-free on opencode with canonical_model_id tencent/hy3-preview (release_date 2026-04-20, max output 64000; read from internal/catalog/bundled/api.json.gz in https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/catalog/bundled/api.json.gz, dated 2026-11-10 by bundledAt in internal/catalog/bundled.go:34): that provider's listing identifies the name as earlier preview weights the catalog has no row for, not hy3 (tencent/hy3, release_date 2026-07-06, max output 128000 on tencent-tokenhub in the same 2026-11-10 snapshot)"
-    }
-   },
-   "openrouter": {
-    "tencent/hy3-preview": {
-     "model": null,
-     "status": "other_weights",
-     "kind": "community",
-     "url": "https://models.dev/api.json",
-     "as_of": "2026-11-10",
-     "statement": "models.dev lists tencent/hy3-preview on openrouter with canonical_model_id tencent/hy3-preview (release_date 2026-04-20, max output 235929; read from internal/catalog/bundled/api.json.gz in https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/catalog/bundled/api.json.gz, dated 2026-11-10 by bundledAt in internal/catalog/bundled.go:34): that provider's listing identifies the name as earlier preview weights the catalog has no row for, not hy3 (tencent/hy3, release_date 2026-07-06, max output 128000 on tencent-tokenhub in the same 2026-11-10 snapshot)"
-    }
-   },
-   "tencent-tokenhub": {
-    "hy3-preview": {
-     "model": null,
-     "status": "other_weights",
-     "kind": "community",
-     "url": "https://models.dev/api.json",
-     "as_of": "2026-11-10",
-     "statement": "models.dev lists hy3-preview on tencent-tokenhub with canonical_model_id tencent/hy3-preview (release_date 2026-04-20, max output 64000; read from internal/catalog/bundled/api.json.gz in https://github.com/yetone/magpie/blob/9314999a4a771eccda4888d3fa7cde84e8bef855/internal/catalog/bundled/api.json.gz, dated 2026-11-10 by bundledAt in internal/catalog/bundled.go:34): that provider's listing identifies the name as earlier preview weights the catalog has no row for, not hy3 (tencent/hy3, release_date 2026-07-06, max output 128000 on tencent-tokenhub in the same 2026-11-10 snapshot)"
     }
    },
    "vivgrid": {

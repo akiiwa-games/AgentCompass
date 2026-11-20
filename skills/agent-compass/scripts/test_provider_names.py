@@ -961,18 +961,20 @@ class PinIdentityMatchesBundle(unittest.TestCase):
         self.assertEqual(model_resolution.resolve_in('other/decl-row', custom, ('gw',))['key'], 'glm-5.2')
         self.assertEqual(model_resolution.resolve_in('opencode/deepseek-v4-flash', custom, ('gw',))['source'], 'other_weights')
 
-    def test_host_provider_mapping_is_scoped_to_magpie_and_all_hy3_preview_listings_are_declared(self):
-        """Rule (R2-F1/F2: provider_names.host_providers['magpie'], model_resolution.expand_host_providers,
-        auto_bundles.endpoint_providers): Magpie's preset table applies only to Magpie preset ids (never to prefixes in
-        names or non-Magpie accounts whose provider id is `zai`, `minimax-cn`, `stepfun` or `xiaomi`); disagreeing
-        catalogs under one multi-catalog Magpie preset are a `conflict` on that preset only; and every models.dev
-        listing of `tencent/hy3-preview` is declared `other_weights`."""
+    def test_host_provider_mapping_is_scoped_to_magpie_and_preview_names_read_released_rows(self):
+        """Rule (R2-F1 & owner 2026-11-20: provider_names.host_providers['magpie'], model_resolution.without_preview):
+        Magpie's preset table applies only to Magpie preset ids (never to prefixes in names or non-Magpie accounts whose
+        provider id is `zai`, `minimax-cn`, `stepfun` or `xiaomi`); disagreeing catalogs under one multi-catalog Magpie
+        preset are a `conflict` on that preset only; a `-preview` name is the released row of that name (`hy3-preview` ->
+        `hy3` on every provider), while a provider that retired its preview endpoint (`google`'s
+        `gemini-3.1-flash-lite-preview`) stays `retired` there and reads the released row elsewhere."""
         import reference_provenance
         names_doc = json.loads((Path(__file__).resolve().parents[3] / 'audit' / 'models-dev-names.json').read_text(encoding='utf-8'))['names']
 
-        # F2: every (provider, name) listing in models-dev-names.json with canonical id `tencent/hy3-preview` resolves
-        # to `other_weights` on that provider (both as an endpoint and as a launcher prefix):
-        hy3_preview_pairs = [(p, n) for n, entries in sorted(names_doc.items()) for p, c, *_ in entries if c == 'tencent/hy3-preview']
+        # Owner 2026-11-20: every `-preview` listing of `tencent/hy3-preview` in models-dev-names.json resolves to `hy3`
+        # (`hy3-preview-free` ends in `-free`, not `-preview`, so it stays `family`, as in v0.7.2):
+        hy3_preview_pairs = [(p, n) for n, entries in sorted(names_doc.items()) if not n.endswith('-free')
+                             for p, c, *_ in entries if c == 'tencent/hy3-preview']
         self.assertTrue(hy3_preview_pairs)
         for provider, listed_name in hy3_preview_pairs:
             with self.subTest(provider=provider, listed_name=listed_name):
@@ -981,8 +983,16 @@ class PinIdentityMatchesBundle(unittest.TestCase):
                     listed_name if listed_name.lower().startswith(provider.lower() + '/') else f'{provider}/{listed_name}',
                     SHIPPED, (),
                 )
-                self.assertEqual((ep_res['key'], ep_res['source'], ep_res['provider']), (None, 'other_weights', provider.lower()))
-                self.assertEqual((pref_res['key'], pref_res['source'], pref_res['provider']), (None, 'other_weights', provider.lower()))
+                self.assertEqual((ep_res['key'], ep_res['source']), ('hy3', 'alias'))
+                self.assertEqual((pref_res['key'], pref_res['source']), ('hy3', 'alias'))
+        self.assertEqual(model_resolution.resolve_in('hy3-preview-free', SHIPPED, ('opencode',))['source'], 'family')
+
+        # `gemini-3.1-flash-lite-preview` stays `retired` on `google` (endpoint shut down) and reads `gemini-3.1-flash-lite` elsewhere:
+        self.assertEqual(model_resolution.resolve_in('gemini-3.1-flash-lite-preview', SHIPPED, ('google',))['source'], 'retired')
+        self.assertEqual(model_resolution.resolve_in('google/gemini-3.1-flash-lite-preview', SHIPPED, ())['source'], 'retired')
+        for relay in ('openrouter', 'vivgrid'):
+            self.assertEqual(model_resolution.resolve_in('gemini-3.1-flash-lite-preview', SHIPPED, (relay,))['key'],
+                             'gemini-3.1-flash-lite')
 
         # F1: non-Magpie prefixes and non-Magpie OpenAI-compatible accounts never read Magpie's preset table:
         self.assertEqual(model_resolution.resolve_in('opencode-zen/deepseek-v4-flash', SHIPPED, ())['source'], 'default')

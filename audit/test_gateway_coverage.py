@@ -434,6 +434,43 @@ class CheckRuleTests(unittest.TestCase):
         self.assertEqual(gc.row_providers(harness_doc, {'provider': 'zai', 'model': 'glm-5.2'}, accounts),
                          ('zai',))
 
+    def test_preview_tag_matches_released_row_in_both_directions_while_dated_snapshots_stay_distinct(self):
+        """Rule (owner, 2026-11-20; model_resolution.without_preview + audit/gateway_coverage.py): a listing whose
+        canonical id differs from the row's id only by the `-preview` tag the resolver strips is that row in both
+        directions (offered name carries `-preview` and canonical id does too against a released row without `-preview`,
+        and offered name has no `-preview` while canonical id carries `-preview`), whereas a dated snapshot (`-0731`)
+        remains other weights and fails `declaration_violations` when undeclared."""
+        accounts = json.loads((gc.REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        names = json.loads(gc.NAMES.read_text(encoding='utf-8'))
+
+        # Direction 1: `hy3-preview` (canonical `tencent/hy3-preview`) against released row `hy3` (`tencent/hy3`).
+        for served in ([('tencent-tokenhub', 'hy3-preview')], [('openrouter', 'tencent/hy3-preview')],
+                       [('opencode', 'hy3-preview-free')], [('aihubmix', 'hy3-preview')], [('kilo', 'tencent/hy3-preview')]):
+            self.assertIsNone(gc.identity_conflict(names, accounts, served, served[0][1], 'hy3'), served)
+
+        # Direction 2 (reverse): `alibaba/qwen3.8-max` / `qwen3.8-max` listed with canonical `alibaba/qwen3.8-max-preview`
+        # against released row `qwen3.8-max` (`alibaba/qwen3.8-max`).
+        self.assertIsNone(gc.identity_conflict(names, accounts, [('vercel', 'alibaba/qwen3.8-max')], 'alibaba/qwen3.8-max', 'qwen3.8-max'))
+        reverse_names = {'schema': gc.NAMES_SCHEMA, 'names': {
+            **names['names'],
+            'qwen3.8-max': [['vercel', 'alibaba/qwen3.8-max-preview', 2, 6], *names['names']['qwen3.8-max']],
+        }}
+        self.assertIsNone(gc.identity_conflict(reverse_names, accounts, [('vercel', 'qwen3.8-max')], 'qwen3.8-max', 'qwen3.8-max'))
+        default_preview_acc = json.loads(json.dumps(accounts))
+        default_preview_acc['provider_names']['defaults']['qwen3.8-max'] = {
+            'model': 'qwen3.8-max', 'kind': 'vendor', 'url': 'https://example.com/qwen', 'as_of': '2026-11-20', 'statement': 's',
+        }
+        self.assertEqual(gc.declaration_violations(default_preview_acc, reverse_names)[0], [])
+
+        # Dated snapshots (`deepseek/deepseek-v4-flash-0731` on `opencode` and `vivgrid`) stay distinct weights:
+        undeclared = json.loads(json.dumps(accounts))
+        del undeclared['provider_names']['rows']['opencode']['deepseek-v4-flash']
+        conflict = gc.identity_conflict(names, undeclared, [('opencode', 'deepseek-v4-flash')],
+                                        'deepseek-v4-flash', 'deepseek-v4.1-flash-1017')
+        self.assertEqual(conflict['listed'], ['deepseek/deepseek-v4-flash-0731'])
+        errs, _ = gc.declaration_violations(undeclared, names)
+        self.assertTrue(any('deepseek/deepseek-v4-flash-0731' in e for e in errs), errs)
+
 
 if __name__ == '__main__':
     unittest.main()
