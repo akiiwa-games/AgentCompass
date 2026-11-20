@@ -121,8 +121,8 @@ def record_constraint(args, task=None, classified=None):
     `classified` is classify_pinned's answer for a pinned roll: the allocator then plans the classified task, the
     pinned bundle carries that plan's price, and the launch is reserved from the same profile."""
     basis = (args.basis or '').strip()
-    if not basis or not args.account or not args.provider or not args.model:
-        raise ValueError('record requires --basis, --provider, --account and --model.')
+    if refusal := roll.named_route_refusal(args, require=True):      # roll owns what a named route needs
+        raise ValueError(refusal)
     import model_resolution
     model_resolution.check_model_pin(args.model, '--model')
     started = time.monotonic()

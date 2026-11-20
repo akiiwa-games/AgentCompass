@@ -411,11 +411,12 @@ def named_route_given(args):
     return [flag for flag in NAMED_ROUTE_FLAGS if getattr(args, flag, None)]
 
 
-def named_route_refusal(args):
-    """Why the flags the caller gave do not make a named route, in one answer: what it needs, which of those were given and
-    which are missing, and the other way out; None when they do make one (or none names a route)."""
+def named_route_refusal(args, require=False):
+    """The one owner of what a named route needs (`route_judge.record_constraint` reads it). Why the flags the caller gave
+    do not make one, in one answer: what it needs, which of those were given and which are missing, and the other way out;
+    None when they do make one. With no route flag given it is None, unless `require`: the caller is recording a route."""
     given = named_route_given(args)
-    if not given:
+    if not given and not require:
         return None
     basis = bool((getattr(args, 'basis', None) or '').strip())
     missing = [f'--{flag}' for flag in ('provider', 'account', 'model') if flag not in given]
@@ -424,9 +425,11 @@ def named_route_refusal(args):
     if not missing:
         return None
     gave = [f'--{flag}' for flag in given] + (['--basis'] if basis else [])
+    way_out = (f'drop {", ".join(f"--{flag}" for flag in given)}{" and --basis" if basis else ""} and let the router choose'
+               if given or basis else 'leave the route to the router')
     return ('A named route needs --provider, --account, --model and --basis (the user\'s own words); --effort is optional. '
-            f'This roll gave {", ".join(gave)} and is missing {", ".join(missing)}. Add the missing flags, or drop '
-            f'{", ".join(f"--{flag}" for flag in given)}{" and --basis" if basis else ""} and let the router choose.')
+            f'This request gave {", ".join(gave) or "none of them"} and is missing {", ".join(missing)}. Add the missing '
+            f'flags, or {way_out}.')
 
 
 def ignored_flag_notes(args, decision, explicit_id):

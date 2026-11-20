@@ -35,7 +35,7 @@ def with_profile(task):
 # What the bridge really answers (setup/paseo_dispatch_bridge.mjs: `main`, `hostFailure`, `execute`; dispatch_flow.host_call for
 # the two it makes itself): its `sent`, and the `condition` tokens it merges under a code. A create or a resume that failed
 # after the daemon was connected is `sent: true`; one that never reached the daemon is `sent: false`.
-CONNECT_CONDITIONS = ('refused', 'timeout', 'unreachable', 'authentication', 'credential_unreadable')
+CONNECT_CONDITIONS = ('refused', 'timeout', 'authentication', 'credential_unreadable', 'rejected', 'unreachable')
 REQUEST_CONDITIONS = ('timeout', 'connection_lost', 'daemon_error', 'invalid_response', 'authentication', 'bridge_error')
 SENT_CODES = ('host_request_failed', 'host_timeout', 'invalid_host_response', 'create_outcome_uncertain_reconcile_by_label',
               'resume_outcome_uncertain_reconcile_by_agent')
@@ -204,6 +204,45 @@ class FlagsAreNeverDropped(Plain):
         self.assertNotIn('this machine', out['warnings'][0])
 
 
+class ExitCodes(Plain):
+    """Finding 8: what `roll-reference.md` says about the exit code of each kind of answer is what the code does."""
+
+    def reference_bullet(self):
+        text = (Path(__file__).resolve().parents[1] / 'references' / 'roll-reference.md').read_text(encoding='utf-8')
+        start = text.index('- A Dot runner that launched nothing')
+        return text[start:text.index('\n', start)]
+
+    def test_each_kind_of_answer_exits_as_the_reference_says(self):
+        bullet = self.reference_bullet()
+        host = LaunchRefusedBeforeAnyWorker.host_answering
+        res, code = self.run_roll(host=host(self, bridge_answer('host_connection_failed', 'refused')), task_id='t-x1')
+        self.assertEqual((code, res['status']), (1, 'error'))            # refused before any worker existed
+        self.assertIn('exits 1', bullet)
+        self.setUp()
+        text = 'Account claude-lab five_hour is below its existing launch protection (5% remaining floor); refresh quota or replan'
+        with patch.object(registry, 'check_launch_quota', side_effect=ValueError(text)):
+            res, code = self.run_roll(task_id='t-x2')
+        self.assertEqual((code, res['status']), (2, 'blocked'))          # refused before any launch
+        self.setUp()
+        self.make_worker('agent-x')
+        res, code = self.run_roll(self.brief_file('x.md'), resume='agent-x', task_id='t-x3',
+                                  host=host(self, bridge_answer('worker_not_idle', 'running')))
+        self.assertEqual((code, res['status']), (2, 'blocked'))          # a resume the host refused
+        self.assertIn('`blocked` exits 2', bullet)
+        self.setUp()
+        res, code = self.run_roll(host=host(self, bridge_answer('host_timeout')), task_id='t-x4')
+        self.assertEqual((code, res['status']), (0, 'pending'))
+        self.assertIn('`pending` result exits 0', bullet)
+
+    def test_the_documents_say_the_plan_fields_are_rounded_up(self):
+        base = Path(__file__).resolve().parents[1]
+        for name in ('roll-reference.md', 'router-internals.md'):
+            text = (base / 'references' / name).read_text(encoding='utf-8')
+            at = text.index('decision.start_after_hours')
+            sentence = text[at:at + 300]
+            self.assertIn('rounded up', sentence, name)
+
+
 class NamedRouteRefusals(Plain):
     """Finding 4: flags that name a route without the rest are refused in one answer, in `roll`'s words."""
     REQUIRED = ('provider', 'account', 'model')
@@ -219,7 +258,7 @@ class NamedRouteRefusals(Plain):
                     text = str(caught.exception)
                     missing = [flag for flag in self.REQUIRED if flag not in given] + ([] if basis else ['basis'])
                     self.assertTrue(missing)
-                    gave_part, missing_part = text.split('This roll gave ', 1)[1].split(' and is missing ', 1)
+                    gave_part, missing_part = text.split('This request gave ', 1)[1].split(' and is missing ', 1)
                     for flag in given:
                         self.assertIn(f'--{flag}', gave_part)
                     self.assertEqual('--basis' in gave_part, bool(basis))
@@ -229,6 +268,16 @@ class NamedRouteRefusals(Plain):
                     self.assertIn('drop', text)                                        # the other way out: no named route
                     self.assertNotIn('record', text)                                   # `record` is a stage the caller never ran
                     self.setUp()
+
+    def test_record_reads_the_rule_roll_owns(self):
+        import roll
+        for given in ({}, {'account': 'a'}, {'provider': 'p', 'account': 'a', 'model': 'm'}, {'effort': 'high', 'basis': 'u'}):
+            with self.subTest(given=given):
+                args = argparse.Namespace(**{'provider': None, 'account': None, 'model': None, 'effort': None, 'basis': None, **given})
+                with self.assertRaises(ValueError) as caught:
+                    route_judge.record_constraint(args)
+                self.assertEqual(str(caught.exception), roll.named_route_refusal(args, require=True))
+        self.assertIsNone(roll.named_route_refusal(argparse.Namespace(provider=None, account=None, model=None, effort=None, basis=None)))
 
     def test_a_complete_named_route_is_not_refused_for_its_flags(self):
         import roll
@@ -351,6 +400,39 @@ class ConditionAdvice(Plain):
                 self.assertIn(fix.lower(), res['next_action'].lower())
                 self.assertEqual(starts_the_daemon(res['next_action']), token == 'refused')
                 self.setUp()
+
+    def test_a_daemon_that_closed_the_handshake_is_running_and_is_not_started_again(self):
+        # Rule: `rejected` is a daemon that accepted the connection, so it runs; the way out is its log and its version.
+        what, fix = flow.HOST_CONDITIONS['rejected']
+        self.assertIn('closed the handshake', what)
+        self.assertFalse(starts_the_daemon(fix))
+        self.assertIn('log', fix)
+        self.assertIn('version', fix)
+
+    def test_what_did_not_reach_the_daemon_is_not_said_to_have_reached_it(self):
+        # Rule (the bridge's `bridge_error`): its own code threw, nothing reached the daemon; every other request class is a
+        # daemon or connection failure after the bridge had connected. A text says each one as it is.
+        for token in REQUEST_CONDITIONS:
+            with self.subTest(token):
+                res, _ = self.run_roll(host=LaunchRefusedBeforeAnyWorker.host_answering(
+                    self, bridge_answer('host_request_failed', token)), task_id='t-reach-' + token)
+                says_reached = 'reached the daemon' in res['next_action'] and 'nothing of it reached' not in res['next_action']
+                self.assertFalse(says_reached)
+                self.assertEqual('nothing of it reached the daemon' in res['next_action'], token == 'bridge_error')
+                self.setUp()
+
+    def test_the_composed_texts_join_their_sentences(self):
+        # Rule: a fix is one clause with no semicolon, and the step that follows it starts a new sentence.
+        for token, (what, fix) in flow.HOST_CONDITIONS.items():
+            self.assertNotIn(';', fix, token)
+        for token in (*CONNECT_CONDITIONS, 'some_new_class'):
+            text = flow.not_sent_next('host_connection_failed', token)
+            self.assertNotRegex(text, r'[,;] then\b', token)
+            self.assertRegex(text, r'\. Then roll the brief again\.$', token)
+        for token in (*REQUEST_CONDITIONS, 'some_new_class'):
+            text = flow.resume_refusal_next('host_resume_failed', token)
+            self.assertNotRegex(text, r'[,;] then\b', token)
+            self.assertRegex(text, r'\. Then roll --resume again with the same id\.$', token)
 
     def test_a_named_resume_that_never_connected_reads_the_same_table(self):
         for token in CONNECT_CONDITIONS:

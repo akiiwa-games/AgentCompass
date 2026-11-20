@@ -127,13 +127,13 @@ UNCONFIRMED_WHAT = {
     'invalid_host_response': 'the bridge printed an answer that could not be read',
     'create_outcome_uncertain_reconcile_by_label': 'the bridge reports that the outcome of the create is uncertain',
     'resume_outcome_uncertain_reconcile_by_agent': 'the bridge reports that the outcome of the resume is uncertain',
-    'host_request_failed': 'the request reached the daemon and then failed',
+    'host_request_failed': 'the request failed after the bridge had connected to the daemon',
 }
 # What the bridge's `condition` tokens mean: what failed, and what the caller does about that cause. The bridge sends a
 # token of a fixed vocabulary beside the error code it merges several states under; create and resume read this one
 # table, and what follows from it (roll again, run next_argv) is said by the answer that reads it.
-#   host_connection_failed (the daemon was never connected): refused | timeout | unreachable | authentication |
-#                          credential_unreadable
+#   host_connection_failed (the daemon was never connected): refused | timeout | authentication | credential_unreadable |
+#                          rejected | unreachable
 #   host_request_failed (sent) and host_resume_failed (not sent), connected and then failed: timeout | connection_lost |
 #                          daemon_error | invalid_response | authentication | bridge_error
 #   worker_not_idle, worker_not_found: the states of dispatch_registry.WORKER_STATES.
@@ -149,16 +149,19 @@ HOST_CONDITIONS = {
                        'check that PASEO_HOME is the home of the daemon that is running (its `local-credential` file '
                        'is the credential)'),
     'credential_unreadable': ("the bridge could not read Paseo's local credential file",
-                              'check that `local-credential` exists and is readable under PASEO_HOME (default ~/.paseo); '
-                              'it is written when the daemon first starts'),
+                              'check that `local-credential` exists and is readable under PASEO_HOME (default ~/.paseo), '
+                              'where the daemon writes it when it first starts'),
+    'rejected': ('the daemon accepted the connection and closed the handshake',
+                 'read the daemon log (it is running, so starting it is not the way out) and check whether it refuses '
+                 'this client or differs in version from it (update Paseo)'),
     'connection_lost': ('the connection to the daemon dropped during the request',
                         'check that the daemon is still running (`paseo ls`)'),
     'daemon_error': ('the daemon answered the request with an error',
                      'check that the daemon is current and read its log'),
     'invalid_response': ("the daemon's answer could not be read",
-                         'the daemon and the bridge SDK may be of different versions: update Paseo'),
-    'bridge_error': ('the bridge could not build the request',
-                     'run `agentcompass doctor`; if it repeats, tell the user'),
+                         'update Paseo (the daemon and the bridge SDK may be of different versions)'),
+    'bridge_error': ("the bridge's own code failed before it sent the request, so nothing of it reached the daemon",
+                     'run `agentcompass doctor` and, if it repeats, tell the user'),
 }
 # A launch Paseo never received, whose cause is not a condition: what failed and the step that fixes it. Nothing exists to
 # collect from, and nothing was started in its place.
@@ -226,7 +229,7 @@ def not_sent_next(code, condition=None, setup_hint=None):
                 }.get(code) or NOT_SENT_OTHER.format(code=code)
         return f'{head} Check the daemon with `paseo ls`, then roll the brief again.'
     what, fix = facts
-    return f'{_sentence(what)}, so nothing was sent. {_sentence(fix)}, then roll the brief again.'
+    return f'{_sentence(what)}, so nothing was sent. {_sentence(fix)}. Then roll the brief again.'
 
 
 def resume_refusal_next(code, condition=None):
@@ -236,7 +239,7 @@ def resume_refusal_next(code, condition=None):
     facts = condition_facts(condition)
     if facts is not None:
         what, fix = facts
-        return f'{_sentence(what)}, so the worker was not asked. {_sentence(fix)}, then roll --resume again with the same id.'
+        return f'{_sentence(what)}, so the worker was not asked. {_sentence(fix)}. Then roll --resume again with the same id.'
     return RESUME_CODE_NEXT.get(code) or (f'The host refused it ({code}): read its state with get_agent_status, then roll '
                                           '--resume again with the same id, or roll without --resume.')
 
