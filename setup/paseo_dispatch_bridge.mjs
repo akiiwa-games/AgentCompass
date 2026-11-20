@@ -21,6 +21,7 @@ const CREATE_FAILED = 'creation failed';
 const WORKER_REMOVED = 'worker removed before it was observed';
 const AGENT_REMOVED_ERROR = 'Previously created agent no longer exists';
 const SUPERSEDED = 'superseded by a later dispatch';
+const WATCH_EXPIRED = 'notification watch expired; check worker status';
 const UNDELIVERED = 'turn not delivered';
 // dispatch_registry.RUN_LEASE: past it, a resume whose turn has not landed can be released.
 const RUN_LEASE_MS = 10 * 60 * 1000;
@@ -317,8 +318,26 @@ export function finalReplyText(entries) {
   return '';
 }
 
-export function reportSection(dispatchId, text) {
-  if (!text) return 'The worker ended without a final reply.\n';
+// What ended the worker, for the notice body when it left no final reply. The `State:` header names the same event; the
+// sentence says what that event means, so a parent is never told a worker ended that did not (a superseded one runs on).
+const WITHOUT_REPLY = 'The worker ended without a final reply.\n';
+export function endingSentence(reason, terminal) {
+  if (reason === SUPERSEDED)
+    return "A later dispatch took this worker over and it is running that dispatch's turn: this dispatch's turn did not end here, and no reply of it is read.\n";
+  if (reason === 'worker unavailable') return 'Paseo no longer lists this worker (it was removed or archived); it left no final reply.\n';
+  if (reason === 'closed') return 'Paseo closed this worker; it left no final reply.\n';
+  if (reason === 'error')
+    return terminal?.provider_unavailable
+      ? "The worker's provider became unavailable; the worker left no final reply.\n"
+      : "The worker's turn ended in an error and the provider gave no message; it left no final reply.\n";
+  if (reason === 'finished') return 'The worker finished its turn without a final reply.\n';
+  if (reason === WATCH_EXPIRED)
+    return 'The notification watch expired before this worker was seen to end; check it with get_agent_status. It left no final reply that was read.\n';
+  return WITHOUT_REPLY;
+}
+
+export function reportSection(dispatchId, text, whenEmpty = WITHOUT_REPLY) {
+  if (!text) return whenEmpty;
   if (text.length <= REPORT_INLINE_LIMIT) return `Final reply:\n${text}\n`;
   const file = path.join(path.dirname(notificationFile(dispatchId)), `${dispatchId}.report.txt`);
   fs.mkdirSync(path.dirname(file), {recursive: true});
@@ -355,7 +374,10 @@ async function noticeBody(client, record, event) {
     ? `The worker's turn ended with this error: ${record.terminal.provider_message}\nAgentCompass's classifier ` +
       'reads it: when it is the provider refusing the model or the account, that is held out of dispatch; an ' +
       "error of the worker's own work or of this task's input holds nothing.\n" : '';
-  return classifier + reportSection(record.dispatch_id, await loadFinalReply(client, targetId));
+  // A superseded worker runs another dispatch's turn: its latest reply is not this dispatch's, so none is read.
+  if (event.reason === SUPERSEDED) return endingSentence(SUPERSEDED);
+  return classifier + reportSection(record.dispatch_id, await loadFinalReply(client, targetId),
+    endingSentence(event.reason, record.terminal));
 }
 
 // One text for the watcher's send and for a catch-up send. The final reply is in it; the parent is not sent to read it elsewhere.
@@ -498,7 +520,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
     // Read the record, then the agent it names: a create that got this far between the two reads is not "removed".
     if (creation?.agent_id) agent = (await client.fetchAgent(creation.agent_id))?.agent;
     const events = expired
-      ? [{key: 'terminal', reason: 'notification watch expired; check worker status'}]
+      ? [{key: 'terminal', reason: WATCH_EXPIRED}]
       : notificationEvents(agent, record, now, creation);
     // A running worker bound to this dispatch whose provider keeps retrying without progress is stopped here: the
     // terminal is saved before the cancel, so the stop's idle state can never read as a finish.
@@ -522,6 +544,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
       record.terminal = {reason: event.reason, status: agent?.status ?? null,
         attentionReason: agent?.attentionReason ?? null, at: new Date(now).toISOString(),
         ...(event.reason === 'error' ? turnFailure(agent, record) : {}),
+        ...(event.reason === 'error' && agent?.providerUnavailable ? {provider_unavailable: true} : {}),
         ...(event.reason === 'finished' ? {replied: await turnReplied(client, targetId)} : {})};
     // A failed attempt goes to AgentCompass first: it retries or relaunches the brief, and only a final state reaches
     // the parent. The terminal is saved first, because the step reads it through the registry's observation.
@@ -1004,7 +1027,7 @@ export async function execute(client, input, notify = ensureNotification) {
     if (!parent?.agent) return {ok: false, sent: false, error: 'parent_agent_not_found'};
     const existing = (await client.fetchAgent(input.agent_id))?.agent;
     if (!existing || existing.archivedAt)
-      return {ok: false, sent: false, error: 'worker_not_found'};
+      return {ok: false, sent: false, error: 'worker_not_found', condition: existing ? 'archived' : 'absent'};
     const labels = existing.labels ?? {};
     const owner = labels['router.parent_id'] ?? labels['paseo.parent-agent-id'];
     // A refusal names what differs (directories, provider/model ids, effort ids: no prompt or credential text),
@@ -1029,10 +1052,13 @@ export async function execute(client, input, notify = ensureNotification) {
         return {ok: false, sent: false, error: 'worker_workspace_mismatch', detail: {worker: existingDir ?? null, requested: r.cwd}};
     }
     const alreadyBound = labels['router.dispatch_id'] === input.dispatch_id;
-    if (!alreadyBound && (existing.status === 'running' || existing.status === 'initializing'
-        || existing.status === 'error' || existing.attentionReason === 'error'
-        || existing.providerUnavailable || existing.pendingPermissions?.length))
-      return {ok: false, sent: false, error: 'worker_not_idle'};
+    const busy = alreadyBound ? null
+      : existing.status === 'running' ? 'running'
+      : existing.status === 'initializing' ? 'initializing'
+      : existing.status === 'error' || existing.attentionReason === 'error' ? 'error'
+      : existing.providerUnavailable ? 'provider_unavailable'
+      : existing.pendingPermissions?.length ? 'permission_pending' : null;
+    if (busy) return {ok: false, sent: false, error: 'worker_not_idle', condition: busy};
     let completion_notification;
     try { completion_notification = await notify({...input, agent_id: input.agent_id}); }
     catch { return {ok: false, sent: false, error: 'notification_start_failed'}; }
@@ -1056,7 +1082,7 @@ export async function execute(client, input, notify = ensureNotification) {
            labels: {...(fetched.labels ?? {}), ...mergedLabels}}
         : {...existing, status: 'running', attentionReason: undefined, updatedAt: nowIso, labels: mergedLabels};
       return {ok: true, sent: true, agent: project(fresh), completion_notification};
-    } catch {
+    } catch (error) {
       if (!sent) {
         // A definite send failure falls back to a fresh create with the same dispatch labels: give the old
         // worker its previous labels back so only one agent carries this dispatch.
@@ -1065,7 +1091,7 @@ export async function execute(client, input, notify = ensureNotification) {
           catch { return {ok: false, sent: true, error: 'resume_outcome_uncertain_reconcile_by_agent', completion_notification}; }
         }
         stopWatcher(input, 'host_resume_failed');
-        return {ok: false, sent: false, error: 'host_resume_failed',
+        return {ok: false, sent: false, error: 'host_resume_failed', condition: hostFailureClass(error, true),
           completion_notification: {...completion_notification, status: 'creation_failed'}};
       }
       return {ok: false, sent: true, error: 'resume_outcome_uncertain_reconcile_by_agent', completion_notification};
@@ -1212,6 +1238,37 @@ async function createClient() {
     reconnect: {enabled: false}});
 }
 
+// The `condition` of a refusal code that merges several states: a token of a fixed vocabulary beside the unchanged
+// `error` code (the Python side reads the code; a caller that prints it reads the condition). Never the SDK's or the
+// host's text, a path, a token or an id: only what the bridge can tell apart from the error's class and code.
+//   worker_not_idle:       running | initializing | error | provider_unavailable | permission_pending (the first that holds)
+//   worker_not_found:      absent | archived
+//   host_connection_failed (the daemon was never connected):
+//                          refused | timeout | authentication | unreachable
+//   host_request_failed, host_resume_failed (connected, then a request failed):
+//                          timeout | connection_lost | daemon_error | invalid_response | authentication | bridge_error
+export function hostFailureClass(error, connected) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const codes = [error?.code, error?.cause?.code, ...(Array.isArray(error?.errors) ? error.errors.map(e => e?.code) : [])];
+  if (error?.name === 'DaemonAuthenticationError') return 'authentication';
+  if (codes.includes('DAEMON_REQUEST_TIMEOUT') || /timed out/i.test(message)) return 'timeout';
+  if (!connected) return codes.includes('ECONNREFUSED') ? 'refused' : 'unreachable';
+  if (error?.name === 'DaemonProtocolError' || error?.code === 'invalid_response') return 'invalid_response';
+  if (error?.name === 'DaemonRpcError') return 'daemon_error';
+  if (error?.name === 'DaemonConnectionError' || /closed|disposed|not connected|connection lost/i.test(message))
+    return 'connection_lost';
+  // The bridge's own code threw (a TypeError, a bad shape); any other Error is the SDK relaying the daemon's answer.
+  return error instanceof TypeError || error instanceof ReferenceError || error instanceof RangeError
+    || error instanceof SyntaxError ? 'bridge_error' : 'daemon_error';
+}
+
+export function hostFailure(error, connected, input) {
+  return {ok: false,
+    sent: connected && (input?.operation === 'create' || input?.operation === 'resume'),
+    error: connected ? 'host_request_failed' : 'host_connection_failed',
+    condition: hostFailureClass(error, connected)};
+}
+
 async function main() {
   if (process.argv[2] === '--watch') return watch(process.argv[3], process.argv[4], process.argv[5], process.argv[6]);
   const input = JSON.parse(fs.readFileSync(0, 'utf8'));
@@ -1221,10 +1278,8 @@ async function main() {
     await client.connect();
     connected = true;
     console.log(JSON.stringify(await execute(client, input)));
-  } catch {
-    console.log(JSON.stringify({ok: false,
-      sent: connected && (input.operation === 'create' || input.operation === 'resume'),
-      error: connected ? 'host_request_failed' : 'host_connection_failed'}));
+  } catch (error) {
+    console.log(JSON.stringify(hostFailure(error, connected, input)));
   } finally { await client.close(); }
 }
 
