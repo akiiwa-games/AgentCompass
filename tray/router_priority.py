@@ -126,20 +126,21 @@ def overlaps(row, account, model, now, accounts):
             and (not row.get('model') or account_fleet.stored_model(row['model'], accounts, account) == model))
 
 
+def _is_launchable(bundle, accounts, policy):
+    import host_policy
+    account, model = bundle.get('account'), bundle.get('model')
+    spec = (accounts.get('accounts') or {}).get(account) or {}
+    return not (not account or not model or bundle.get('disabled') or bundle.get('discovery_unavailable')
+                or spec.get('verified') is False or spec.get('_legacy_disabled_flag')
+                or not host_policy.account_allowed(policy, account))
+
+
 def _candidates(accounts):
     """Enabled, launchable bundles on allowed accounts, in fleet order."""
     import account_fleet
     import host_policy
     policy = host_policy.load_policy()
-    rows = []
-    for bundle in account_fleet.bundles(accounts).values():
-        account, model = bundle.get('account'), bundle.get('model')
-        spec = (accounts.get('accounts') or {}).get(account) or {}
-        if (not account or not model or bundle.get('disabled') or bundle.get('discovery_unavailable')
-                or spec.get('verified') is False or spec.get('_legacy_disabled_flag') or not host_policy.account_allowed(policy, account)):
-            continue
-        rows.append(bundle)
-    return rows
+    return [b for b in account_fleet.bundles(accounts).values() if _is_launchable(b, accounts, policy)]
 
 
 def _weekly_window(accounts, account, model, bundle=None):
@@ -153,18 +154,19 @@ def _weekly_window(accounts, account, model, bundle=None):
 
 
 def targets(accounts):
-    """The configured targets with an enabled bundle. A target's model matches a bundle over that account's pool
-    (account_fleet.pin_matching_bundles), so a target stored under a name whose maker moved it to a newer dated snapshot
-    reaches the bundle that now runs that snapshot, and one stored under a name the account's provider declares reaches
-    that provider's bundle without crossing onto another provider's."""
+    """The configured targets with an enabled bundle. A target's model matches over every bundle existing on that
+    account first (account_fleet.pin_pool -> pin_matching_bundles), before filtering to enabled launchable bundles, so
+    an unchecked or discovery-unavailable target never re-targets onto another provider's same-leaf bundle."""
     import account_fleet
-    candidates = _candidates(accounts)
+    import host_policy
+    policy = host_policy.load_policy()
     configured = [t for t in accounts.get('priority_targets') or () if isinstance(t, dict)]
     pairs = []
     for target in configured:
         account, wanted = target.get('account'), target.get('model')
-        pool = [b for b in candidates if b['account'] == account]
-        matched = next(iter(account_fleet.pin_matching_bundles(wanted, pool, accounts)), None) if wanted else None
+        pool = account_fleet.pin_pool(accounts, account=account)
+        named = account_fleet.pin_matching_bundles(wanted, pool, accounts) if wanted else []
+        matched = next((b for b in named if _is_launchable(b, accounts, policy)), None)
         model = matched['model'] if matched is not None else None
         if model is not None and (account, model) not in [(a, m) for a, m, _, _ in pairs]:
             pairs.append((account, model, target.get('label'), matched))

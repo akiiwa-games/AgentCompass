@@ -2492,3 +2492,58 @@ def test_gate_matches_bundle_wire_launch_model_without_crossing_provider_identit
                     "tool_input": {"provider": f"codex/{wrong}", "settings": {"thinkingOptionId": "high"}},
                 }, ledger_path=ledger_path, now=T0)
                 assert "model:" in denied.get("reason", ""), (bid, stage, wrong, denied)
+
+    # M12c & R2-1 (A2) through `gate.evaluate_payload`: `resolve_target` matches over `account_fleet.pin_pool` BEFORE
+    # filtering by `effort` or `disabled`, so a missing effort on `vendor-a/novel-unmeasured` never falls back onto
+    # `vendor-b/novel-unmeasured@medium`, and an unchecked `vendor-a` is gated on its own checkbox (admitted only on
+    # `user_override`, never masked by an enabled `vendor-b`).
+    m12c_accounts = json.loads(json.dumps(accounts))
+    m12c_accounts["accounts"]["codex"]["bundles"] = {
+        "b_vb_med": {
+            "provider": "codex", "model": "vendor-b/novel-unmeasured", "launch_model": "vendor-b/novel-unmeasured",
+            "effort": "medium", "disabled": True,
+        },
+        "b_va_high": {
+            "provider": "codex", "model": "vendor-a/novel-unmeasured", "launch_model": "vendor-a/novel-unmeasured",
+            "effort": "high", "disabled": False,
+        },
+    }
+    monkeypatch.setattr(gate, "load_dispatch_accounts", lambda: m12c_accounts)
+    ledger_path.write_text(json.dumps({
+        "at": (T0 - dt.timedelta(minutes=1)).isoformat(), "stage": "plan", "choice": "b_va_high@medium",
+        "bundle": {"provider": "codex", "account": "codex", "model": "vendor-a/novel-unmeasured",
+                   "launch_model": "vendor-a/novel-unmeasured", "effort": "medium"},
+    }) + "\n", encoding="utf-8")
+    res_m12c = gate.evaluate_payload({
+        "tool_name": "delegate_task",
+        "tool_input": {"provider": "codex/vendor-a/novel-unmeasured", "settings": {"thinkingOptionId": "medium"}},
+    }, ledger_path=ledger_path, now=T0)
+    assert res_m12c == {}, res_m12c
+
+    a2_accounts = json.loads(json.dumps(accounts))
+    a2_accounts["accounts"]["codex"]["bundles"] = {
+        "b_vb_high": {
+            "provider": "codex", "model": "vendor-b/novel-unmeasured", "launch_model": "vendor-b/novel-unmeasured",
+            "effort": "high", "disabled": False,
+        },
+        "b_va_high": {
+            "provider": "codex", "model": "vendor-a/novel-unmeasured", "launch_model": "vendor-a/novel-unmeasured",
+            "effort": "high", "disabled": True,
+        },
+    }
+    monkeypatch.setattr(gate, "load_dispatch_accounts", lambda: a2_accounts)
+    for stage, extra, should_allow in (
+        ("plan", {}, False),
+        ("record", {"constraint": "hard_constraint"}, False),
+        ("record", {"constraint": "user_override"}, True),
+    ):
+        ledger_path.write_text(json.dumps({
+            "at": (T0 - dt.timedelta(minutes=1)).isoformat(), "stage": stage, "choice": "b_va_high", **extra,
+            "bundle": {"provider": "codex", "account": "codex", "model": "vendor-a/novel-unmeasured",
+                       "launch_model": "vendor-a/novel-unmeasured", "effort": "high"},
+        }) + "\n", encoding="utf-8")
+        verdict = gate.evaluate_payload({
+            "tool_name": "delegate_task",
+            "tool_input": {"provider": "codex/vendor-a/novel-unmeasured", "settings": {"thinkingOptionId": "high"}},
+        }, ledger_path=ledger_path, now=T0)
+        assert (verdict == {}) is should_allow, (stage, extra, verdict)

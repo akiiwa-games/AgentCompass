@@ -89,19 +89,17 @@ def recent_route_lock(task, records, now, bundle_id, window_seconds):
 def match_bundle(accounts, args, include_disabled=False):
     """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle.
 
-    A name matches over the account/provider/effort pool (account_fleet.pin_matching_bundles): exact advertised spellings
-    first, else identity; a family guess matches its own rows, never the flagship's. With no effort named, the model's
-    default effort (else High) leads, not whichever row the document lists first."""
+    A name matches over every bundle existing on the addressed account/provider (account_fleet.pin_pool ->
+    pin_matching_bundles), before any disabled or effort filter: exact advertised spellings first, else identity; a
+    family guess matches its own rows, never the flagship's. Disabled and effort filters then apply to the named bundles
+    only. With no effort named, the model's default effort (else High) leads, not whichever row the document lists first."""
     import account_fleet
-    pool = [
-        bundle for bundle in account_fleet.bundles(accounts).values()
-        if (include_disabled or not bundle.get('disabled'))
-        and bundle['account'] == args.account
-        and bundle['provider'] == args.provider
-    ]
+    pool = account_fleet.pin_pool(accounts, account=args.account, provider=args.provider)
+    named = account_fleet.pin_matching_bundles(args.model, pool, accounts)
     matches = [
-        b for b in account_fleet.pin_matching_bundles(args.model, pool, accounts)
-        if args.effort is None or b.get('effort') == args.effort
+        b for b in named
+        if (include_disabled or not b.get('disabled'))
+        and (args.effort is None or b.get('effort') == args.effort)
     ]
     if not matches:
         return None
@@ -144,8 +142,7 @@ def record_constraint(args, task=None, classified=None):
     direct = resolved['source'] in model_resolution.DIRECT_SOURCES
 
     def rows_of_model():
-        pool = [b for b in account_fleet.bundles(accounts).values()
-                if b['account'] == args.account and b['provider'] == args.provider]
+        pool = account_fleet.pin_pool(accounts, account=args.account, provider=args.provider)
         return account_fleet.pin_matching_bundles(args.model, pool, accounts)
     own_rows = rows_of_model()
     listed = None
@@ -213,7 +210,7 @@ def record_constraint(args, task=None, classified=None):
     fast_requested = bool(getattr(args, 'fast', False))
     if fast_requested:
         fast_modes.validate(account_fleet.bundle_harness(discovered or sibling or {'provider': args.provider}, args.account),
-                                      c_model, account_fleet.model_spec(accounts, row_model))
+                                      c_model, account_fleet.row_spec(accounts, c_model))
     warnings = []
     effort = pin.effort or discovered.get('effort')
     reviewed_task = task
@@ -277,7 +274,7 @@ def record_constraint(args, task=None, classified=None):
         result['_route'] = route
     if fast_requested:
         # A verified fast contract with no cited price launches (candidate_eval), carrying that data error.
-        fast_gap = fast_modes.price_gap(c_model, account_fleet.model_spec(overlaid_accounts, row_model))
+        fast_gap = fast_modes.price_gap(c_model, account_fleet.row_spec(overlaid_accounts, c_model))
         if fast_gap:
             result['data_errors'] = [*result.get('data_errors', []), fast_gap]
             result['warnings'] = [*result.get('warnings', []), f"data error: {fast_gap}; launched fast because the user "

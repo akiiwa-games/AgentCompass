@@ -343,6 +343,22 @@ class PriorityTests(unittest.TestCase):
             by_model = {g['model']: g['availability'] for g in decorated[0]['models']}
             self.assertEqual(by_model, {'deepseek-v4-pro': 'detected', 'deepseek-v4-pro-0813': 'missing'})
 
+            # R2-1 (A2b): when a target's exact-spelling bundle on the account is unchecked (`disabled`) or
+            # `discovery_unavailable`, `targets` omits that button rather than re-targeting to a same-leaf sibling.
+            for unavailable_flag in ({'disabled': True}, {'discovery_unavailable': 'not detected for 7+ days'}):
+                a2b_accounts = json.loads(json.dumps(accounts))
+                a2b_accounts['accounts']['codex']['bundles'] = {
+                    'b_vb': {'provider': 'codex', 'harness': 'codex', 'model': 'vendor-b/novel-unmeasured',
+                             'launch_model': 'vendor-b/novel-unmeasured', 'effort': 'high', 'draws': ['usage']},
+                    'b_va': {'provider': 'codex', 'harness': 'codex', 'model': 'vendor-a/novel-unmeasured',
+                             'launch_model': 'vendor-a/novel-unmeasured', 'effort': 'high', 'draws': ['usage'],
+                             **unavailable_flag},
+                }
+                a2b_accounts['priority_targets'] = [
+                    {'account': 'codex', 'model': 'vendor-a/novel-unmeasured', 'label': 'Vendor A Novel'},
+                ]
+                self.assertEqual(priority.targets(a2b_accounts), [], unavailable_flag)
+
 
 if __name__ == '__main__':
     unittest.main()

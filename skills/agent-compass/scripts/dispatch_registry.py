@@ -169,8 +169,7 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
     if bundle.get('fast'):
         fast_modes.validate(account_fleet.bundle_harness(bundle, bundle.get('account')), model,
                                       account_fleet.row_spec(accounts, model))
-    pool = [b for b in account_fleet.bundles(accounts).values()
-            if all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
+    pool = account_fleet.pin_pool(accounts, account=bundle.get('account'), provider=bundle.get('provider'))
     siblings = account_fleet.pin_matching_bundles(bundle.get('launch_model') or bundle.get('model') or '', pool, accounts)
     bid = bundle.get('bundle_id') or bundle.get('id')
     by_id = next((b for b in siblings if bid and b.get('id') == bid), None)

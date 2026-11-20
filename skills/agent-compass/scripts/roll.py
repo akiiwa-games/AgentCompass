@@ -212,11 +212,18 @@ def named_route_conflict(args, bundle, accounts=None):
         providers = account_fleet.bundle_providers(bundle, accounts) if '/' not in model else ()
         named_effort = account_fleet.resolve_model(model, accounts, providers)['effort']
     effort = args.effort or named_effort
+    same_owner = args.account in (None, bundle.get('account')) and args.provider in (None, bundle.get('provider'))
+    pool = account_fleet.pin_pool(
+        accounts,
+        account=args.account if same_owner else bundle.get('account'),
+        provider=args.provider if same_owner else bundle.get('provider'),
+        extra=(bundle,),
+    )
     # Each flag the caller gave that names another route than the worker's own; the error names only these.
     conflicting = [flag for flag, differs in (
         ('--provider', args.provider and args.provider != bundle.get('provider')),
         ('--account', args.account and args.account != bundle.get('account')),
-        ('--model', model and not account_fleet.pin_matching_bundles(args.model, (bundle,), accounts)),
+        ('--model', model and not account_fleet.pin_names_bundle(args.model, bundle, accounts, pool=pool)),
         ('--effort' if args.effort else '--model', effort and effort != bundle.get('effort')),
         ('--fast', getattr(args, 'fast', False) and not bundle.get('fast'))) if differs]
     if not conflicting:

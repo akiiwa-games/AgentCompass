@@ -36,17 +36,12 @@ UNCHECKED = 'unchecked in model management'
 
 
 def pin_matched_ids(task, ctx):
-    """Bundle ids in `ctx['bundles']` named by `task`'s model/bundle constraint over the pool left by
-    `constraint_bundle` and `ctx['unavailable']`, via `account_fleet.pin_matching_bundles` (effort is checked on its own
-    in `evaluate_bundle`, so a missing effort on an exact-spelling bundle never falls back to another provider's)."""
+    """Bundle ids in `ctx['bundles']` named by `task`'s model/bundle constraint over `account_fleet.pin_pool` (every bundle
+    existing on the addressed accounts, before any filter of preference, availability, discovery state, modality or effort,
+    which `evaluate_bundle` applies to the named bundles only)."""
     accounts = ctx['accounts']
-    unavailable = ctx.get('unavailable') or ()
     cb = task.get('constraint_bundle')
-    pool = [
-        b for b in (ctx.get('bundles') or {}).values()
-        if (b.get('id') or b.get('bundle_id')) not in unavailable
-        and (not cb or (b.get('id') or b.get('bundle_id')) == cb)
-    ]
+    pool = account_fleet.pin_pool(accounts, bundle_id=cb, source=(ctx.get('bundles') or {}).values())
     if cb and not task.get('constraint_raw_model'):
         return {(b.get('id') or b.get('bundle_id')) for b in pool if (b.get('id') or b.get('bundle_id')) == cb}
     pin = task.get('constraint_raw_model') or task.get('constraint_model')
@@ -57,14 +52,19 @@ def pin_matched_ids(task, ctx):
 
 def model_pin_matches(task, bundle, accounts, pool=None):
     """Does the task's named model (or bundle id) name this bundle in `pool`? Reads `account_fleet.pin_matching_bundles`."""
-    if task.get('constraint_bundle'):
+    cb = task.get('constraint_bundle')
+    if cb:
         bid = (bundle or {}).get('id') or (bundle or {}).get('bundle_id')
-        if bid != task['constraint_bundle']:
+        if bid != cb:
             return False
         if not task.get('constraint_raw_model'):
             return True
     pin = task.get('constraint_raw_model') or task.get('constraint_model')
-    return bool(pin) and account_fleet.pin_names_bundle(pin, bundle, accounts, pool=pool)
+    if not pin:
+        return False
+    if pool is None and isinstance(accounts, dict) and isinstance(accounts.get('accounts'), dict):
+        pool = account_fleet.pin_pool(accounts, bundle_id=cb, extra=(bundle,))
+    return account_fleet.pin_names_bundle(pin, bundle, accounts, pool=pool)
 
 
 def exact_pin(task, bundle, accounts, pool=None):
@@ -99,8 +99,8 @@ def named_effort_bundles(task, ctx):
         return {}
     accounts, groups = ctx['accounts'], {}
     pin = task.get('constraint_raw_model') or task.get('constraint_model')
-    source = (account_fleet.pin_matching_bundles(pin, ctx['bundles'].values(), accounts)
-              if pin else list(ctx['bundles'].values()))
+    full_pool = account_fleet.pin_pool(accounts, source=ctx['bundles'].values())
+    source = account_fleet.pin_matching_bundles(pin, full_pool, accounts) if pin else full_pool
     known = accounts.get('models') or {}
     for bundle in source:
         model = account_fleet.row_key(bundle['model'], accounts)
@@ -109,8 +109,9 @@ def named_effort_bundles(task, ctx):
     found = {}
     for (_, _, _, model), rows in groups.items():
         written = {str(quota_economy.scoring_effort(r, account_fleet.model_spec(accounts, r['model'])) or '').lower() for r in rows}
-        carriers = [r for r in rows if (not r.get('disabled') or r.get('disabled_by_default'))
-                    and not r.get('discovery_unavailable') and not has_fixed_effort(r, accounts)]
+        enabled = [r for r in rows if (not r.get('disabled') or r.get('disabled_by_default'))
+                   and not r.get('discovery_unavailable') and not has_fixed_effort(r, accounts)]
+        carriers = enabled or [r for r in rows if not has_fixed_effort(r, accounts)]
         # Each level goes to the first row that offers it, so the answer does not depend on the order of the rows.
         for carrier in carriers:
             allowed = account_fleet.dispatch_allowed_efforts(carrier, accounts, model)

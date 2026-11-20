@@ -315,11 +315,47 @@ def pin_matching_bundles(pin, pool, accounts):
     return [b for b in items if pin_matches_identity(text, b, accounts)]
 
 
+def _same_provider(bundle_provider, provider):
+    if not provider:
+        return True
+    aliases = {'antigravity', 'antigravity-resilient'}
+    if provider in aliases and bundle_provider in aliases:
+        return True
+    return bundle_provider == provider
+
+
+def pin_pool(accounts, *, account=None, provider=None, bundle_id=None, source=None, extra=()):
+    """Every bundle that exists on the accounts/providers the request addresses (`account` and `provider` when given,
+    all accounts when none; `bundle_id` when pinned by id), before any filter of preference (`host_policy`, `disabled`),
+    availability (`unavailable`, `discovery_unavailable`, holds, quota), modality or effort. Every call site of
+    `pin_matching_bundles` builds its pool through this function so no two sites see different pools for one request."""
+    base = list(bundles(accounts).values()) if source is None else [b for b in source if isinstance(b, dict)]
+    seen = {(b.get('id') or b.get('bundle_id')) for b in base if (b.get('id') or b.get('bundle_id'))}
+    for item in extra or ():
+        if not isinstance(item, dict):
+            continue
+        bid = item.get('id') or item.get('bundle_id')
+        if bid and bid in seen:
+            continue
+        if bid:
+            seen.add(bid)
+        base.append(item)
+    return [
+        b for b in base
+        if (not account or b.get('account') == account)
+        and _same_provider(b.get('provider') or b.get('account'), provider)
+        and (not bundle_id or (b.get('id') or b.get('bundle_id')) == bundle_id)
+    ]
+
+
 def pin_names_bundle(pin, bundle, accounts, pool=None):
-    """Whether `pin` names `bundle` in `pool` (or on its own when `pool` is omitted): reads `pin_matching_bundles`."""
+    """Whether `pin` names `bundle` in `pool` (defaulting to `pin_pool(accounts)` when `pool` is omitted): reads
+    `pin_matching_bundles`."""
     if not isinstance(bundle, dict):
         return False
-    items = (bundle,) if pool is None else pool
+    items = (pin_pool(accounts, extra=(bundle,))
+             if (pool is None and isinstance(accounts, dict) and isinstance(accounts.get('accounts'), dict))
+             else ((bundle,) if pool is None else pool))
     matched = pin_matching_bundles(pin, items, accounts)
     bid = bundle.get('id') or bundle.get('bundle_id')
     return any((m is bundle) or (bid and (m.get('id') or m.get('bundle_id')) == bid) for m in matched)
@@ -375,15 +411,21 @@ def bundle_rows(accounts, bundle_id):
 def bundles(accounts):
     """Flat list of launchable bundles with their account and execution harness attached."""
     out = {}
+    if not isinstance(accounts, dict) or not isinstance(accounts.get('accounts'), dict):
+        return out
     inventory = accounts.get('_discovery') or {}
     for account, spec in accounts['accounts'].items():
-        for bundle_id, bundle in spec.get('bundles', {}).items():
+        if not isinstance(spec, dict):
+            continue
+        for bundle_id, bundle in (spec.get('bundles') or {}).items():
+            if not isinstance(bundle, dict) or not (bundle.get('model') or bundle.get('launch_model')):
+                continue
             provider = bundle.get('provider', account)
             row = ((inventory.get('launchers') or {}).get(provider)
                    or (inventory.get('accounts') or {}).get(provider)
                    or ((accounts.get('accounts') or {}).get(provider) or {}))
             # `model:effort` is a fixed effort: the name is the model, the suffix the only level this row runs at.
-            model_name, fixed = split_model_effort(bundle['model'])
+            model_name, fixed = split_model_effort(bundle.get('model') or bundle.get('launch_model'))
             out[bundle_id] = {'id': bundle_id, 'account': account, 'provider': provider,
                               'harness': bundle_harness(bundle, account, bundle_id, family=row.get('family')),
                               'model': model_name, 'effort': bundle.get('effort') or fixed,
