@@ -24,17 +24,17 @@ def parent_cwd():
     return os.getcwd()
 
 
-def worker_directory(workspace, resume=None):
+def worker_directory(workspace, worker=None):
     """The one answer to where a local worker runs: the canonical `--workspace` when given (a resumed worker too: the
-    host resumes a worker only in its own directory); else, for a worker roll resumes (`resume`, its agent id), its own
-    directory from its Paseo record, None when that cannot be read; else `parent_cwd()`. roll puts it in the task
-    (`task['cwd']`), so the plan, its re-plan at the launch, `record` and a named roll match an account's `cwd_regex`
-    against it, and every launch surface places the worker there (`place`)."""
+    host resumes a worker only in its own directory); else, for a worker roll resumes (`worker`, the registry's answer
+    for it, `dispatch_registry.reusable_workers`: its Paseo record's cwd, else its latest row's, else the request's,
+    then its recorded workspace), that directory, None when the registry knows none; else `parent_cwd()`. roll puts it
+    in the task (`task['cwd']`), so the plan, its re-plan at the launch, `record` and a named roll match an account's
+    `cwd_regex` against it, and every launch surface places the worker there (`place`)."""
     if ws := canonical_dir(workspace):
         return ws
-    if resume:
-        import dispatch_registry    # imports this module
-        own = (dispatch_registry.paseo_agent_record(resume) or {}).get('cwd')
+    if worker is not None:
+        own = worker.get('cwd') or worker.get('workspace')
         return own if isinstance(own, str) and own.strip() else None
     return parent_cwd()
 

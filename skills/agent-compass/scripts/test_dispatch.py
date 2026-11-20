@@ -3418,13 +3418,13 @@ class RollLifecycleTests(unittest.TestCase):
 
     def resuming(self, cwd):
         import roll
-        worker = {'agent_id': 'worker-x'}
+        # The registry's answer for the worker carries its directory (dispatch_registry.reusable_workers).
+        worker = {'agent_id': 'worker-x', **({'cwd': cwd} if cwd else {})}
         self.enterContext(patch.object(roll, '_worker_gate_refusal', return_value=None))
         self.enterContext(patch.object(roll, '_auto_resumable', return_value=True))
         return (patch.object(registry, 'reusable_workers', return_value=[worker]),
                 patch.object(roll, '_bundle_matches_worker', return_value=True),
-                patch.object(roll, 'match_reusable_worker', return_value=worker),
-                patch.object(registry, 'paseo_agent_record', return_value={'cwd': cwd} if cwd else None))
+                patch.object(roll, 'match_reusable_worker', return_value=worker))
 
     def test_a_resume_with_no_workspace_warns_about_where_the_worker_lives_not_the_parent(self):
         dir_y = self.ws_dir('work-Y')
@@ -3433,8 +3433,8 @@ class RollLifecycleTests(unittest.TestCase):
             there = self.go(task_id='writer-there')['worker']['dispatch_id']
         with self.in_cwd(dir_p):
             here = self.go(task_id='writer-here')['worker']['dispatch_id']
-            workers, matches, match, record = self.resuming(dir_y)
-            with workers, matches, match, record:
+            workers, matches, match = self.resuming(dir_y)
+            with workers, matches, match:
                 resumed = self.go(task_id='follow-up')
         row = registry.inspect(resumed['worker']['dispatch_id'])
         self.assertEqual(row['operation'], 'resume')
@@ -3449,8 +3449,8 @@ class RollLifecycleTests(unittest.TestCase):
         dir_p = self.ws_dir('work-P2')
         with self.in_cwd(dir_p):
             here = self.go(task_id='writer-here')['worker']['dispatch_id']
-            workers, matches, match, record = self.resuming(None)
-            with workers, matches, match, record:
+            workers, matches, match = self.resuming(None)
+            with workers, matches, match:
                 resumed = self.go(task_id='follow-up')
         row = registry.inspect(resumed['worker']['dispatch_id'])
         self.assertEqual(row['operation'], 'resume')

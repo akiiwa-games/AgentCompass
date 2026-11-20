@@ -577,8 +577,8 @@ class ResumedWorkerDirectory(Base):
 
     def resume(self, parent, **over):
         with patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
-            return self.run_roll(self.brief_file('r.md'), resume='agent-r', task_id='t-r',
-                                 env={'PASEO_AGENT_CWD': str(parent)}, verbose=True, **over)
+            return self.run_roll(self.brief_file('r.md'), resume='agent-r', env={'PASEO_AGENT_CWD': str(parent)},
+                                 verbose=True, **{'task_id': 't-r', **over})
 
     def test_d6_a_turn_inside_the_restriction_is_placed(self):
         home, parent = self.dirs()
@@ -610,16 +610,63 @@ class ResumedWorkerDirectory(Base):
         res, code = self.resume(parent, workspace=str(ws), access='write')
         self.assertEqual((res['status'], code), ('launched', 0), res.get('next_action'))
 
-    def test_an_unread_worker_directory_is_said_and_matched_against_nothing(self):
+    def named(self):
+        return dict(provider='claude-lab', account='claude-lab', model='claude-sonnet-5-5', basis='User asked for this worker')
+
+    def test_an_unknown_worker_directory_on_a_restricted_account_is_refused_for_a_plain_and_a_named_resume(self):
+        # Rule: cwd_regex is the user's own boundary; neither a named route nor a named worker reaches past it, so a
+        # worker whose directory is not known on this machine is not resumed on a restricted account
+        # (roll._auto_resumable refuses the same state).
+        import dispatch_registry
+        for label, record, over in (('record names no cwd', True, {}), ('record gone', False, {}),
+                                    ('named route', True, self.named())):
+            with self.subTest(label):
+                self.setUp()
+                _, parent = self.dirs()
+                self.make_worker('agent-r')            # neither its Paseo record nor its registry rows name a directory
+                if not record:
+                    (self.root / '.paseo' / 'agents' / 'workspace' / 'agent-r.json').unlink()
+                self.restrict('claude-lab', 'D:/elsewhere')
+                res, code = self.resume(parent, **over)
+                with dispatch_registry.transaction() as connection:
+                    self.assertFalse([r for r in dispatch_registry.rows(connection, 'dispatches')
+                                      if r.get('operation') == 'resume'])
+                self.assertEqual((res['status'], code), ('blocked', 2), res.get('next_action'))
+                self.assertEqual(tra.full(res)['error'], 'resume_worker_directory_unknown')
+                for part in ("worker 'agent-r'", 'not known on this machine', 'claude-lab', 'cwd_regex', 'Omit --resume'):
+                    self.assertIn(part, res['next_action'])
+
+    def test_an_unknown_worker_directory_without_a_restriction_launches_with_the_assumption(self):
+        import dispatch_registry
         _, parent = self.dirs()
-        self.make_worker('agent-r')            # its Paseo record names no directory
-        self.restrict('claude-lab', 'D:/elsewhere')
+        self.make_worker('agent-r')
         res, code = self.resume(parent)
         self.assertEqual((res['status'], code), ('launched', 0), res.get('next_action'))
-        said = [a for a in tra.full(res).get('assumptions', []) if 'agent-r' in a and 'cwd_regex' in a]
+        said = [a for a in tra.full(res).get('assumptions', []) if 'agent-r' in a and 'not known' in a]
         self.assertTrue(said, tra.full(res).get('assumptions'))
-        for c in (tra.full(res).get('route') or {}).get('ranking', []):
-            self.assertFalse(any('cwd_regex' in r for r in c.get('excluded', [])), c)
+        self.assertIsNone(dispatch_registry.inspect(tra.full(res)['worker']['dispatch_id']).get('cwd'))
+
+    def test_the_registry_directory_of_a_worker_with_no_paseo_record_is_matched_and_carried(self):
+        # The directory is the registry's answer for the worker (dispatch_registry.reusable_workers: the Paseo record's
+        # cwd, else its latest row's, else the request's), the one roll names where it says the worker works.
+        import dispatch_registry
+        _, parent = self.dirs()
+        self.make_worker('agent-r')
+        (self.root / '.paseo' / 'agents' / 'workspace' / 'agent-r.json').unlink()
+        with dispatch_registry.transaction() as connection:
+            for row in dispatch_registry.rows(connection, 'dispatches'):
+                if row.get('agent_id') == 'agent-r':
+                    row['cwd'] = str(parent)
+                    dispatch_registry.save(connection, row)
+        self.restrict('claude-lab', parent)
+        res, code = self.resume(parent)
+        self.assertEqual((res['status'], code), ('launched', 0), res.get('next_action'))
+        row = dispatch_registry.inspect(tra.full(res)['worker']['dispatch_id'])
+        self.assertEqual(row.get('cwd') and cwd_policy.normalized(row['cwd']), cwd_policy.normalized(parent))
+        self.restrict('claude-lab', 'D:/elsewhere')
+        res, code = self.resume(parent, task_id='t-r2')
+        self.assertEqual((res['status'], code), ('blocked', 2), res.get('next_action'))
+        self.assertIn(f"the worker's directory {cwd_policy.normalized(parent)} does not match", res['next_action'])
 
     def test_a_caller_task_cannot_claim_an_unread_directory(self):
         import task_intake
@@ -664,6 +711,15 @@ class CompactWarnings(unittest.TestCase):
         self.assertIn('D:/work/details.json', out['warnings'][4])
         few = roll.compact({'route': {'warnings': warnings[:4]}}, 'launched', 'D:/work/details.json')
         self.assertEqual(few['warnings'], warnings[:4])
+        one = roll.compact({'route': {'warnings': warnings[:5]}}, 'launched', 'D:/work/details.json')
+        self.assertIn('1 more warning is in', one['warnings'][4])
+
+    def test_with_no_details_file_every_warning_is_given(self):
+        # A dry run writes no details file (roll.run): nothing holds the rest, so nothing is cut.
+        import roll
+        warnings = [f'warning {i}' for i in range(9)]
+        out = roll.compact({'route': {'warnings': warnings}}, 'dry_run', None)
+        self.assertEqual(out['warnings'], warnings)
 
 
 if __name__ == '__main__':
