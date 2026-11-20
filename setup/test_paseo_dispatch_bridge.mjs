@@ -1665,7 +1665,7 @@ test('a refused send after the relabel carries the class of the failure and no t
 
 // A class is read from what the real SDK raises, so these use its own classes and clients (the daemon is never needed).
 const sdkModule = await import(pathToFileURL(require.resolve('@getpaseo/client/internal/daemon-client')).href);
-const {WebSocket: SdkWebSocket} = require('ws');
+const {WebSocket: SdkWebSocket, WebSocketServer: SdkWebSocketServer} = require('ws');
 const sdkClient = (url, extra = {}) => new sdkModule.DaemonClient({url, clientId: randomUUID(), clientType: 'cli',
   appVersion: '0.11.2', localCredential: () => 'x', reconnect: {enabled: false}, ...extra,
   webSocketFactory: (target, config) => new SdkWebSocket(target, {headers: config?.headers, protocols: config?.protocols})});
@@ -1714,6 +1714,20 @@ test('a connect failure is classed from the shape the real SDK gives, a missing 
     const dropped = await connectFailure(sdkClient(`ws://127.0.0.1:${await serve(socket => socket.destroy())}/ws`, {connectTimeoutMs: 2000}));
     assert.equal(hostFailure(dropped, false, input, {}).condition, 'unreachable');
     assert.equal(hostFailure(new sdkModule.DaemonAuthenticationError('password_required'), false, input, {}).condition, 'authentication');
+    // a daemon that accepts the connection and closes the handshake with a reason (Paseo does: version, replaced
+    // connection, output limit): reached, so not "unreachable", and its words are not in the answer
+    const reachedServer = new SdkWebSocketServer({host: '127.0.0.1', port: 0});
+    servers.push({close: () => reachedServer.close()});
+    await new Promise(resolve => reachedServer.once('listening', resolve));
+    reachedServer.on('connection', socket => socket.close(1008, 'Unsupported client version secret-daemon-words'));
+    fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({daemon: {listen: `127.0.0.1:${reachedServer.address().port}`}}));
+    const reached = {};
+    const closedByDaemon = await connectFailure(await createClient(reached));
+    assert.equal(reached.opened, true);
+    assert.deepEqual(hostFailure(closedByDaemon, false, input, reached),
+      {ok: false, sent: false, error: 'host_connection_failed', condition: 'rejected'});
+    // the same refusal without the daemon having answered stays what it was
+    assert.equal(hostFailure(closedByDaemon, false, input, {}).condition, 'unreachable');
   } finally {
     for (const server of servers) server.close();
     if (old === undefined) delete process.env.PASEO_HOME; else process.env.PASEO_HOME = old;
@@ -1738,6 +1752,9 @@ test('a request failure is classed from what the real SDK raises; the daemon\'s 
     assert.match(notConnected.message, /^Transport not connected/);
     assert.equal(classOf(notConnected), 'connection_lost');
     assert.equal(classOf(new Error('Daemon client closed')), 'connection_lost');
+    // the WebSocket transport's own text, raised when the socket is closing while the client still reads connected
+    for (const state of [0, 2, 3]) assert.equal(classOf(new Error(`WebSocket not open (readyState=${state})`)), 'connection_lost');
+    assert.equal(classOf(new Error('The provider said WebSocket not open (readyState=2)')), 'daemon_error');
     assert.equal(classOf(new sdkModule.DaemonConnectionError('Connection lost')), 'connection_lost');
     assert.equal(classOf(new sdkModule.DaemonConnectionError('Timed out waiting', 'DAEMON_REQUEST_TIMEOUT')), 'timeout');
     // the daemon's answer reaches the bridge as `new Error(payload.error)`: whatever it says, the connection is up
@@ -1750,6 +1767,25 @@ test('a request failure is classed from what the real SDK raises; the daemon\'s 
     assert.equal(classOf(new sdkModule.DaemonAuthenticationError('incorrect_password')), 'authentication');
     // the bridge's own code threw
     assert.equal(classOf(new TypeError(canary)), 'bridge_error');
+    // the bridge's own thrown errors, as its code really throws them (marked by type, not read from words)
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-own-'));
+    const oldState = process.env.ROUTER_STATE_DIR;
+    process.env.ROUTER_STATE_DIR = root;
+    try {
+      const own = [
+        await raised(() => execute({}, {operation: 'no-such-operation'})),
+        await raised(() => notificationFile('not a valid id!')),
+        await raised(() => { const f = notificationFile('mismatch'); fs.mkdirSync(path.dirname(f), {recursive: true});
+          fs.writeFileSync(f, JSON.stringify({dispatch_id: 'mismatch', parent_id: 'someone-else', status: 'watching'}));
+          return ensureNotification({dispatch_id: 'mismatch', parent_id: 'parent'}); }),
+        await raised(() => { const f = notificationFile('isdir'); fs.mkdirSync(f, {recursive: true}); return notificationReceipt(f); }),
+      ];
+      for (const error of own) assert.equal(classOf(error), 'bridge_error', error.message);
+      assert.equal(own[3].cause.code, 'EISDIR');
+    } finally {
+      if (oldState === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = oldState;
+      fs.rmSync(root, {recursive: true, force: true});
+    }
     for (const error of [invalid, notConnected, new Error(canary), new TypeError(canary)])
       assert.equal(JSON.stringify(hostFailure(error, true, {operation: 'create'}, {})).includes('canary'), false);
     assert.equal(hostFailure(invalid, true, {operation: 'create'}, {}).sent, true);
@@ -1806,33 +1842,63 @@ test('each ending of a worker has its own sentence in the body, under the unchan
 
 test('a superseded notice says only what is known and reads a reply only when the timeline attributes it to this dispatch', async () => {
   const event = {key: 'terminal', reason: SUPERSEDED_TEXT};
-  const read = 'This dispatch\'s reply cannot be told apart from the later dispatch\'s here: read it with get_agent_activity (agentId: a1).\n';
-  const parts = async entries => noticeParts(timeline(entries), noticeBase, event);
-  const mine = ['user_message', 'this dispatch prompt', {messageId: 'd1'}];
-  const later = ['user_message', 'later prompt', {messageId: 'later'}];
-  // this dispatch's turn is in the page and a later turn began after it: the reply between them is this dispatch's
-  let got = await parts([mine, ['assistant_message', 'first words'], ['assistant_message', 'this dispatch reply'], later,
-    ['assistant_message', 'the later dispatch reply']]);
+  const readFor = id => `This dispatch's reply cannot be told apart from the later dispatch's here: read it with get_agent_activity (agentId: ${id}).
+`;
+  const read = readFor('a1');
+  // The shapes the live daemon stores (read from real timelines): a resume's prompt is a user message whose
+  // `clientMessageId` is the dispatch id; a create's prompt is not in the timeline at all.
+  const resumed = {...noticeBase};
+  const created = {...noticeBase, agent_id: 'd1'};
+  const prompt = id => ['user_message', `prompt of ${id}`, {clientMessageId: id}];
+  const reply = text => ['assistant_message', text];
+  const tool = ['tool_call', ''];
+  const parts = async (record, entries, labelledFor = 'later', complete = true) => noticeParts({
+    fetchAgent: async () => ({agent: {labels: {'router.dispatch_id': labelledFor}}}),
+    fetchAgentTimeline: async () => ({hasOlder: !complete, entries: entries.map(([type, text, ids]) => ({item: {type, text, ...(ids ?? {})}}))}),
+  }, record, event);
+
+  // a resumed worker: this dispatch's prompt is in the timeline, the reply between it and the next prompt is this dispatch's
+  let got = await parts(resumed, [prompt('d1'), reply('first words'), tool, reply('this dispatch reply'), prompt('later'), reply('the later dispatch reply')]);
   assert.equal(got.body, `${TOOK_OVER}Final reply:\nthis dispatch reply\n`);
-  // the id may come as the create's client message id
-  got = await parts([['user_message', 'p', {clientMessageId: 'd1'}], ['assistant_message', 'created reply'], later, ['assistant_message', 'x']]);
-  assert.equal(got.body, `${TOOK_OVER}Final reply:\ncreated reply\n`);
-  // no later turn began: the last reply is this dispatch's (a send that failed gave the worker back)
-  got = await parts([mine, ['assistant_message', 'only reply']]);
+  // no later prompt followed: the last reply is this dispatch's
+  got = await parts(resumed, [prompt('d1'), reply('only reply')]);
   assert.equal(got.body, `${TOOK_OVER}Final reply:\nonly reply\n`);
-  // this dispatch's turn is in the page and left no reply before the later one began
-  got = await parts([mine, later, ['assistant_message', 'the later dispatch reply']]);
+  // this dispatch's turn left no reply before the later one began
+  got = await parts(resumed, [prompt('d1'), prompt('later'), reply('the later dispatch reply')]);
   assert.equal(got.body, `${TOOK_OVER}This dispatch's turn left no final reply.\n`);
-  // this dispatch's turn is not in the page, or carries no id: a reply there may be the later dispatch's, so none is printed
-  for (const entries of [[later, ['assistant_message', 'the later dispatch reply']], [['assistant_message', 'unattributed reply']],
-    [['user_message', 'no id'], ['assistant_message', 'unattributed reply']], []]) {
-    got = await parts(entries);
+  // a resume whose prompt the timeline does not hold cannot be attributed, and a later dispatch's reply is never printed
+  for (const entries of [[prompt('later'), reply('the later dispatch reply')], [reply('unattributed reply')],
+    [['user_message', 'no id'], reply('unattributed reply')], []]) {
+    got = await parts(resumed, entries);
     assert.equal(got.body, TOOK_OVER + read, JSON.stringify(entries));
-    assert.doesNotMatch(got.body, /reply\n$|unattributed|later dispatch reply/);
   }
-  // no timeline method: the same
-  got = await noticeParts({}, noticeBase, event);
-  assert.equal(got.body, TOOK_OVER + read);
+
+  // a created worker: its prompt is not in the timeline. When the later dispatch's prompt (the id the worker's labels
+  // now hold) is there and no user message comes before it, everything before it is this dispatch's
+  got = await parts(created, [reply('first words'), tool, reply('created reply'), prompt('later'), reply('the later dispatch reply')]);
+  assert.equal(got.body, `${TOOK_OVER}Final reply:\ncreated reply\n`);
+  got = await parts(created, [tool, prompt('later'), reply('the later dispatch reply')]);
+  assert.equal(got.body, `${TOOK_OVER}This dispatch's turn left no final reply.\n`);
+  // the later prompt has not landed, or the labels name another dispatch than the prompt in the page: not attributable
+  for (const [entries, labelled] of [[[reply('created reply')], 'later'], [[reply('created reply'), prompt('other')], 'later'],
+    [[reply('created reply'), prompt('later')], 'a-third']]) {
+    got = await parts(created, entries, labelled);
+    assert.equal(got.body, TOOK_OVER + readFor('d1'), `${JSON.stringify(entries)} ${labelled}`);
+  }
+  // an earlier user message makes it ambiguous: it may have started another dispatch's turn, or be the parent's
+  got = await parts(created, [reply('old words'), prompt('between'), reply('between reply'), prompt('later'), reply('the later dispatch reply')]);
+  assert.equal(got.body, TOOK_OVER + readFor('d1'));
+  got = await parts(created, [['user_message', 'steer', {}], reply('created reply'), prompt('later')]);
+  assert.equal(got.body, TOOK_OVER + readFor('d1'));
+  // a page that does not reach the start of the timeline cannot rule an earlier user message out
+  got = await parts(created, [reply('created reply'), prompt('later')], 'later', false);
+  assert.equal(got.body, TOOK_OVER + readFor('d1'));
+  // no timeline method, or no way to read the labels: the same
+  got = await noticeParts({}, created, event);
+  assert.equal(got.body, TOOK_OVER + readFor('d1'));
+  got = await noticeParts({fetchAgentTimeline: async () => ({entries: [{item: {type: 'assistant_message', text: 'created reply'}},
+    {item: {type: 'user_message', text: 'p', clientMessageId: 'later'}}]})}, created, event);
+  assert.equal(got.body, TOOK_OVER + readFor('d1'));
   // the sentence claims neither that the worker runs nor that the turn did not end
   assert.doesNotMatch(got.body, /running|did not end/);
   assert.ok(got.header.includes(`State: ${SUPERSEDED_TEXT}\n`));
@@ -1943,6 +2009,37 @@ test('a poll\'s late save over the stop of a refused resume does not keep the cr
       if (oldEnv[name] === undefined) delete process.env[name]; else process.env[name] = oldEnv[name];
     }
     await until(() => [...pids].every(pid => !running(pid)));
+    fs.rmSync(root, {recursive: true, force: true});
+  }
+});
+
+test('a finished record that has a stop marker is returned to a create, not retired', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-notify-'));
+  const oldEnv = {...process.env};
+  try {
+    process.env.ROUTER_PASEO_SDK_ROOT = fakeNotifierSdk(root);
+    process.env.ROUTER_STATE_DIR = root;
+    process.env.PASEO_HOME = root;
+    for (const status of ['delivered', 'continued']) {
+      const id = `ended-${status}`;
+      const file = path.join(root, 'paseo-notifications', `${id}.json`);
+      fs.mkdirSync(path.dirname(file), {recursive: true});
+      const ended = {dispatch_id: id, parent_id: 'parent', agent_id: 'old-worker', status, delivered: ['terminal'], pid: 2147483647};
+      fs.writeFileSync(file, JSON.stringify(ended));
+      fs.writeFileSync(`${file}.creation-failed`, 'host_resume_failed');
+      const request = {provider: 'claude/m', title: 't', initialPrompt: 'p', labels: {'router.dispatch_id': id}};
+      const created = await execute({
+        fetchAgent: async () => ({agent: {cwd: '/fixture'}}),
+        createAgent: async options => ({id: options.agentId, provider: 'claude', model: 'm', status: 'running', labels: options.labels}),
+      }, {operation: 'create', dispatch_id: id, parent_id: 'parent', request, create_deadline: new Date(Date.now() + 60000).toISOString()});
+      assert.equal(created.completion_notification.status, status);
+      assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), ended);
+      assert.equal(fs.existsSync(`${file}.creation-failed`), true);
+    }
+  } finally {
+    for (const name of ['ROUTER_STATE_DIR', 'ROUTER_PASEO_SDK_ROOT', 'PASEO_HOME']) {
+      if (oldEnv[name] === undefined) delete process.env[name]; else process.env[name] = oldEnv[name];
+    }
     fs.rmSync(root, {recursive: true, force: true});
   }
 });

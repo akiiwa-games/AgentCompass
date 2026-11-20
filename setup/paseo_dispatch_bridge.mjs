@@ -16,6 +16,11 @@ const POLL_MS = 5000;
 // `resumed`: the parent resumed the failed worker itself; that turn's own completion is the notification.
 // `delivery_failed` only stops this process when the send window ends. It is not a delivery: the pending text and
 // its message id stay on the receipt, and a later notifyEnd sends them. The other statuses are a decision to stop.
+// An error the bridge's own code throws (a refused input, a local record it cannot read or write). It is marked by its
+// type so `hostFailureClass` never reads it as a daemon's answer, and never by its words.
+export class BridgeError extends Error {
+  constructor(message, options) { super(message, options); this.name = 'BridgeError'; }
+}
 const DONE = new Set(['delivered', 'parent_unavailable', 'delivery_failed', 'creation_failed', 'relaunched', 'canceled', 'resumed', 'continued']);
 const CREATE_FAILED = 'creation failed';
 const WORKER_REMOVED = 'worker removed before it was observed';
@@ -129,20 +134,25 @@ function fallbackRecord(outcome) {
 }
 
 export function notificationFile(dispatchId) {
-  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new Error('invalid_dispatch_id');
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(dispatchId)) throw new BridgeError('invalid_dispatch_id');
   return path.join(process.env.ROUTER_STATE_DIR ?? path.join(os.homedir(), '.agent-compass'),
     'paseo-notifications', `${dispatchId}.json`);
 }
 
 function readRecord(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw new BridgeError('record_unreadable', {cause: error});
+  }
 }
 
 function saveRecord(file, record) {
   const temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify(record), {mode: 0o600});
-  fs.renameSync(temp, file);
+  try {
+    fs.writeFileSync(temp, JSON.stringify(record), {mode: 0o600});
+    fs.renameSync(temp, file);
+  } catch (error) { throw new BridgeError('record_unwritable', {cause: error}); }
 }
 
 function alive(pid) {
@@ -164,7 +174,7 @@ export async function ensureNotification(input) {
   const file = notificationFile(input.dispatch_id);
   fs.mkdirSync(path.dirname(file), {recursive: true});
   const existing = readRecord(file);
-  if (existing && existing.parent_id !== input.parent_id) throw new Error('notification_parent_mismatch');
+  if (existing && existing.parent_id !== input.parent_id) throw new BridgeError('notification_parent_mismatch');
   if (existing && (DONE.has(existing.status) || alive(existing.pid))) return notificationReceipt(file);
   const args = [fileURLToPath(import.meta.url), '--watch', input.dispatch_id, input.parent_id,
     input.agent_id && input.agent_id !== input.dispatch_id ? input.agent_id : '', input.create_deadline ?? ''];
@@ -172,12 +182,12 @@ export async function ensureNotification(input) {
     stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env: process.env});
   try {
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('notification_start_timeout')), 10000);
+      const timer = setTimeout(() => reject(new BridgeError('notification_start_timeout')), 10000);
       child.once('error', error => {clearTimeout(timer); reject(error);});
-      child.once('exit', () => {clearTimeout(timer); reject(new Error('notification_start_failed'));});
+      child.once('exit', () => {clearTimeout(timer); reject(new BridgeError('notification_start_failed'));});
       child.once('message', value => {
         clearTimeout(timer);
-        if (value.ready) resolve(); else reject(new Error('notification_start_failed'));
+        if (value.ready) resolve(); else reject(new BridgeError('notification_start_failed'));
       });
     });
   } catch (error) {
@@ -194,7 +204,7 @@ export async function ensureNotification(input) {
     if (receipt.status === 'watching' || DONE.has(receipt.status)) return receipt;
     await pause(100);
   }
-  throw new Error('notification_not_ready');
+  throw new BridgeError('notification_not_ready');
 }
 
 // The first user-message time at or after this launch is this turn's own prompt. A later one is the parent
@@ -354,18 +364,28 @@ export function endingSentence(reason, terminal, targetId) {
 const TOOK_OVER = "A later dispatch took this worker over before this dispatch's end was seen.\n";
 
 // The reply of this dispatch's own turn in a worker a later dispatch took over. The relabel for a later dispatch is
-// made only when the worker is not running, so this dispatch's turn had ended; its reply is the last one before the next
-// turn's prompt. That is attributable only when this dispatch's own prompt is in the page (a user message carrying its
-// id as `messageId`, a resume's, or `clientMessageId`, a create's). Otherwise the last reply may be the later
-// dispatch's, and `null` says so.
-export function supersededReply(entries, dispatchId) {
+// made only when the worker is not running, so this dispatch's turn had ended. What the live daemon keeps in the
+// timeline (read from real timelines): a resume's prompt is a user message whose `clientMessageId` is the dispatch id
+// (`messageId` on a few), and a create's prompt is not in the timeline at all. So:
+//  - this dispatch's own prompt is there: its reply is the last one before the next user message;
+//  - this dispatch is the create and the later dispatch's prompt (the id the worker's labels now hold) is there, with
+//    no user message before it in a timeline read from its start: everything before that prompt is this dispatch's;
+//  - anything else: the last reply may be the later dispatch's, and `null` says so.
+export function supersededReply(entries, record, laterId, complete) {
   const list = entries ?? [];
-  const own = list.findIndex(entry => entry?.item?.type === 'user_message'
-    && (entry.item.messageId === dispatchId || entry.item.clientMessageId === dispatchId));
-  if (own < 0) return null;
-  let end = list.findIndex((entry, i) => i > own && entry?.item?.type === 'user_message');
-  if (end < 0) end = list.length;
-  return finalReplyText(list.slice(own, end));
+  const isUser = entry => entry?.item?.type === 'user_message';
+  const carries = (entry, id) => isUser(entry) && (entry.item.clientMessageId === id || entry.item.messageId === id);
+  const own = list.findIndex(entry => carries(entry, record.dispatch_id));
+  if (own >= 0) {
+    let end = list.findIndex((entry, i) => i > own && isUser(entry));
+    if (end < 0) end = list.length;
+    return finalReplyText(list.slice(own, end));
+  }
+  const created = !record.agent_id || record.agent_id === record.dispatch_id;
+  if (!created || !complete || typeof laterId !== 'string' || !laterId || laterId === record.dispatch_id) return null;
+  const later = list.findIndex(entry => carries(entry, laterId));
+  if (later < 0 || list.slice(0, later).some(isUser)) return null;
+  return finalReplyText(list.slice(0, later));
 }
 
 export function reportSection(dispatchId, text, whenEmpty = WITHOUT_REPLY) {
@@ -377,22 +397,23 @@ export function reportSection(dispatchId, text, whenEmpty = WITHOUT_REPLY) {
   return `Final reply is ${text.length} characters. Full text: ${file}\nSummary:\n${text.slice(0, REPORT_SUMMARY_LIMIT)}\n`;
 }
 
-async function loadTimeline(client, agentId) {
-  if (!client || typeof client.fetchAgentTimeline !== 'function') return [];
+// The tail of the worker's timeline, or all of it (`limit: 0`) when attribution needs its start.
+async function loadTimeline(client, agentId, {all = false} = {}) {
+  if (!client || typeof client.fetchAgentTimeline !== 'function') return {entries: [], hasOlder: false};
   let page;
   try {
-    page = await client.fetchAgentTimeline(agentId, {direction: 'tail', limit: RETRY_TIMELINE_LIMIT, projection: 'canonical'});
+    page = await client.fetchAgentTimeline(agentId, {direction: 'tail', limit: all ? 0 : RETRY_TIMELINE_LIMIT, projection: 'canonical'});
   } catch (error) {
     const unread = new Error('timeline_unavailable');
     unread.code = 'timeline_unavailable';
     unread.cause = error;
     throw unread;
   }
-  return page?.entries ?? [];
+  return {entries: page?.entries ?? [], hasOlder: page?.hasOlder === true};
 }
 
 async function loadFinalReply(client, agentId) {
-  return finalReplyText(await loadTimeline(client, agentId));
+  return finalReplyText((await loadTimeline(client, agentId)).entries);
 }
 
 async function noticeBody(client, record, event) {
@@ -413,7 +434,11 @@ async function noticeBody(client, record, event) {
   if (event.reason === SUPERSEDED) {
     // A later dispatch relabeled the worker, so its latest reply may be that dispatch's: read only the reply the timeline
     // attributes to this one, and say where to read it when it cannot.
-    const reply = supersededReply(await loadTimeline(client, targetId), record.dispatch_id);
+    const page = await loadTimeline(client, targetId, {all: true});
+    // The dispatch the worker's labels hold now: the one whose prompt closes this dispatch's turn.
+    const laterId = typeof client?.fetchAgent === 'function'
+      ? await client.fetchAgent(targetId).then(found => found?.agent?.labels?.['router.dispatch_id'], () => null) : null;
+    const reply = supersededReply(page.entries, record, laterId, !page.hasOlder);
     if (reply === null)
       return TOOK_OVER + "This dispatch's reply cannot be told apart from the later dispatch's here: " +
         `read it with get_agent_activity (agentId: ${targetId}).\n`;
@@ -742,7 +767,7 @@ async function watch(dispatchId, parentId, agentId, createDeadline) {
       creation_deadline: Date.parse(createDeadline) || Date.now() + CREATE_LIMIT_MS,
       status: 'watching', delivered: [], pending: null};
     if (agentId && agentId !== dispatchId && !record.agent_id) record.agent_id = agentId;
-    if (record.parent_id !== parentId) throw new Error('notification_parent_mismatch');
+    if (record.parent_id !== parentId) throw new BridgeError('notification_parent_mismatch');
     if (DONE.has(record.status)) {process.send?.({ready: true}); return;}
     record.pid = process.pid;
     // A poll's save must not write `watching` back over the creator's stop. That stop is what lets the
@@ -878,7 +903,7 @@ export async function creationRecord(client, key) {
     responseType: 'creation.subscribe.response', timeout: 10000});
   // The daemon reports a completed record whose agent is gone only as this error, never as phase `completed`.
   if (response.error === AGENT_REMOVED_ERROR) return {phase: 'completed', outcome_unknown: false, agent_id: null, agent_created: true};
-  if (response.error) throw new Error('creation_unobservable');
+  if (response.error) throw new BridgeError('creation_unobservable');
   const snapshot = response.snapshot;
   if (!snapshot) return null;
   return {phase: snapshot.phase, outcome_unknown: Boolean(snapshot.outcomeUnknown), agent_id: snapshot.agentId ?? null,
@@ -967,14 +992,15 @@ function stopWatcher(input, reason) {
 // own on the new one, and the old watcher must be gone first or its last save would overwrite the new record.
 // The stop is the marker file: `stopWatcher` writes it before it saves the record, and no save touches it. The record's
 // status is not the stop, because a poll that checked the marker before it was written saves `watching` after the
-// stop's own save.
+// stop's own save. Only `watching` is that race: a record already delivered, continued or otherwise ended is returned to
+// the create as it was before.
 async function retireRefusedResume(input) {
   const file = notificationFile(input.dispatch_id);
   const record = readRecord(file);
   if (record?.parent_id !== input.parent_id || !record.agent_id) return;
-  if (record.status !== 'creation_failed' && !fs.existsSync(`${file}.creation-failed`)) return;
+  if (record.status !== 'creation_failed' && !(record.status === 'watching' && fs.existsSync(`${file}.creation-failed`))) return;
   for (let waited = 0; alive(record.pid); waited += 100) {
-    if (waited >= WATCHER_STOP_MS) throw new Error('notification_start_failed');
+    if (waited >= WATCHER_STOP_MS) throw new BridgeError('notification_start_failed');
     await pause(100);
   }
   fs.rmSync(`${file}.creation-failed`, {force: true});
@@ -1229,7 +1255,7 @@ export async function execute(client, input, notify = ensureNotification) {
     return {ok: true, fetched_at: new Date().toISOString(), providers: Object.fromEntries(entries)};
   }
   if (input.operation === 'notify_end') return notifyEnd(client, input);
-  if (input.operation !== 'observe') throw new Error('unsupported_operation');
+  if (input.operation !== 'observe') throw new BridgeError('unsupported_operation');
   let agent = input.agent_id ? (await client.fetchAgent(input.agent_id))?.agent : null;
   if (!agent) {
     const page = await client.fetchAgents({filter: {labels: {'router.dispatch_id': input.dispatch_id},
@@ -1252,7 +1278,8 @@ export async function execute(client, input, notify = ensureNotification) {
     ...(creation !== undefined ? {creation} : {}), completion_notification};
 }
 
-// `credential.unreadable` is set when the local credential file cannot be read: the SDK reports that as a plain Error.
+// `credential.unreadable` is set when the local credential file cannot be read (the SDK reports that as a plain Error),
+// and `credential.opened` when the socket's upgrade completed (a daemon answered), for `hostFailureClass`.
 export async function createClient(credential = {}) {
   const setup = path.dirname(fileURLToPath(import.meta.url));
   // A checkout installs beside this file; an installed wheel installs under the state directory, because an
@@ -1285,42 +1312,57 @@ export async function createClient(credential = {}) {
       try { return fs.readFileSync(path.join(home, 'local-credential'), 'utf8').trim(); }
       catch (error) { credential.unreadable = true; throw error; }
     },
-    webSocketFactory: (url, config) => new WebSocket(url, {headers: config?.headers, protocols: config?.protocols}),
+    webSocketFactory: (url, config) => {
+      const socket = new WebSocket(url, {headers: config?.headers, protocols: config?.protocols});
+      // The upgrade completed: a daemon answered. What closes after this is the daemon's, not the network's.
+      socket.on('open', () => { credential.opened = true; });
+      return socket;
+    },
     reconnect: {enabled: false}});
 }
 
 // The `condition` of a refusal code that merges several states: a token of a fixed vocabulary beside the unchanged
 // `error` code (the Python side reads the code; a caller that prints it reads the condition). Never the SDK's or the
-// host's text, a path, a token or an id: the class comes from the error's own class and code, and from a message only
-// where the SDK or the network layer wrote that exact text, never where the daemon's text could be.
+// host's text, a path, a token or an id: the class comes from the error's own class, code or type, from what the
+// bridge observed itself (`credential.unreadable`, `credential.opened`), and from a message only where the SDK or the
+// network layer wrote that exact text, never where the daemon's text could be.
 //   worker_not_idle:       running | initializing | error | provider_unavailable | permission_pending (the first that holds)
 //   worker_not_found:      absent | archived
 //   host_connection_failed (the daemon was never connected):
-//                          refused | timeout | authentication | credential_unreadable | unreachable
+//                          refused | timeout | authentication | credential_unreadable | rejected | unreachable
 //   host_request_failed, host_resume_failed (connected, then a request failed):
 //                          timeout | connection_lost | daemon_error | invalid_response | authentication | bridge_error
 export function hostFailureClass(error, connected, credential = {}) {
   const message = typeof error?.message === 'string' ? error.message : '';
   if (error?.name === 'DaemonAuthenticationError') return 'authentication';
+  // The bridge's own code threw (a refused input, a record it cannot read): nothing reached the daemon.
+  if (error instanceof BridgeError) return 'bridge_error';
   if (!connected) {
     // The local credential is read by the bridge's own callback (`createClient`) when the SDK connects; the SDK
     // turns that failure into a plain Error, so the callback's flag is the only sign of it.
     if (credential.unreadable) return 'credential_unreadable';
-    // Only the SDK and the network layer speak before the connection is open, never the daemon.
-    // `Connection timed out`: @getpaseo/client 0.11.2 daemon-client.js:515, the connect timer. `connect ECONNREFUSED host:port`: Node's own
-    // system error, relayed by describeTransportError; the SDK keeps no code on it.
+    // `Connection timed out`: @getpaseo/client 0.11.2 daemon-client.js:515, the connect timer.
     if (message === 'Connection timed out') return 'timeout';
+    // A daemon can speak before the connection is open: it accepts the upgrade and closes the handshake with a reason
+    // (daemon-client-transport-utils.js describeTransportClose returns that reason as the error's message, with no
+    // code or class). Its words cannot be told from a network failure's, so the bridge watches the socket instead:
+    // `credential.opened` is set when the upgrade completed, and a connect that fails after it was refused by a daemon.
+    if (credential.opened) return 'rejected';
+    // Otherwise only the network layer spoke: `connect ECONNREFUSED host:port` is Node's own system error, relayed
+    // by describeTransportError; the SDK keeps no code on it.
     return /\bECONNREFUSED\b/.test(message) ? 'refused' : 'unreachable';
   }
   // `DaemonConnectionError` (daemon-client.js) carries the SDK's own code for a request that waited too long.
   if (error?.name === 'DaemonConnectionError') return error.code === 'DAEMON_REQUEST_TIMEOUT' ? 'timeout' : 'connection_lost';
   if (error?.name === 'DaemonProtocolError' || error?.code === 'invalid_response') return 'invalid_response';
   if (error?.name === 'DaemonRpcError') return 'daemon_error';
-  // The SDK's own plain texts for a client that is not connected (0.11.2 daemon-client.js): `Daemon client closed`
-  // (:642), `Daemon client is closed` (:456) and `Daemon client is disposed` (:434, :452), `Transport not connected
-  // (status: ...)` (:836, :854, :1170).
-  // Anchored whole: the daemon's answers are also plain Errors, and its words ("session is closed") are not these.
-  if (/^(Daemon client (is )?(closed|disposed)|Transport not connected \(status: \w+\))$/.test(message)) return 'connection_lost';
+  // The SDK's own plain texts for a client that is not connected (0.11.2): `Daemon client closed` (daemon-client.js:642),
+  // `Daemon client is closed` (:456), `Daemon client is disposed` (:434, :452), `Transport not connected (status: ...)`
+  // (:836, :854, :1170), and the WebSocket transport's `WebSocket not open (readyState=N)`
+  // (daemon-client-websocket-transport.js:35). Anchored whole: the daemon's answers are also plain Errors, and its
+  // words ("session is closed") are not these.
+  if (/^(Daemon client (is )?(closed|disposed)|Transport not connected \(status: \w+\)|WebSocket not open \(readyState=\d+\))$/.test(message))
+    return 'connection_lost';
   // A request the SDK refused to send (its own validation, a ZodError) or the bridge's own code threw: nothing
   // reached the daemon.
   if (error?.name === 'ZodError' || error instanceof TypeError || error instanceof ReferenceError
