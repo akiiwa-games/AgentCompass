@@ -1048,9 +1048,48 @@ def apply_overlay(models_table: dict, targets_table: dict, *, provider_names: di
             })
             _apply_one_layer(five_state, entries, targets_table, info.get('fixed_effort'), effort_steps)
     _follow_effective_sources(models_table, shipped)
+    _follow_effective_bases(models_table, shipped)
 
 
 DERIVED_FROM_LARGER = ('tier_down', 'size_step')     # calibration/five_axis.py: a small row's facet from its larger model
+BETWEEN = 'between'         # calibration/five_axis.py: a row read at a declared share between two rows (accounts.json)
+
+
+def _follow_effective_bases(models_table: dict, shipped: dict) -> None:
+    """A `between` cell follows its bases as they are effective (owner 2026-11-18: derived cells follow the effective
+    source; accounts.json `between`, owner 2026-11-20): the facet is recomputed as `planner + share * (implementer -
+    planner)` from the two bases' effective curves (local user > maintainer > measured > estimated, after every other
+    follow step) read at the cell's `at_effort`, and that one value is held at every effort the cell carries, as five_axis
+    computed it from the shipped bases. Recomputed from the effective bases, never a change added to the shipped cell,
+    so it is the same whichever base moved and in whatever order the rows are read (a base is never itself a `between`
+    row: five_axis refuses one). A cell whose base has no effective value at that effort stays as shipped; a hand-written
+    score on the row's own facet wins (its cell carries no estimate). Only facets have a hand-written layer: the tier,
+    Time/Task and usd_per_hour of the row stay as shipped. The category is recomputed from its facets."""
+    for name, info in (models_table or {}).items():
+        state = (info or {}).get('five_axis') if isinstance(info, dict) else None
+        for cat, cat_cell in ((state or {}).get('categories') or {}).items():
+            changed = False
+            for facet, cell in ((cat_cell or {}).get('facets') or {}).items():
+                est = (cell or {}).get('estimate') or {}
+                if est.get('method') != BETWEEN:
+                    continue
+                bases = [((est.get(k) or {}).get('model')) for k in ('planner', 'implementer')]
+                at, share = est.get('at_effort'), est.get('share')
+                vals = [(_facet_curves(models_table.get(b) or {}).get((cat, facet)) or {}).get(at) for b in bases]
+                if None in vals or not isinstance(share, (int, float)):
+                    continue
+                v = round(vals[0] + share * (vals[1] - vals[0]), 4)
+                was = [(shipped.get(b) or {}).get((cat, facet), {}).get(at) for b in bases]
+                if vals == was and cell.get('value') == v:
+                    continue
+                cell.update(by_effort=dict.fromkeys(cell.get('by_effort') or (at,), v), value=v, follows={
+                    k: {'model': b, 'value': x, 'status': ((((models_table[b]['five_axis']['categories'].get(cat) or {})
+                                                             .get('facets') or {}).get(facet) or {}).get('status'))}
+                    for k, b, x in zip(('planner', 'implementer'), bases, vals)})
+                changed = True
+            if changed:
+                state['categories'][cat] = _recompute_category_from_facets(cat, cat_cell, cat_cell.get('status') or 'estimated')
+                state.setdefault('scores', {})[cat] = state['categories'][cat].get('value')
 
 
 def _facet_curves(info: dict) -> dict:
