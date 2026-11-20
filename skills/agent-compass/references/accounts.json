@@ -1067,6 +1067,65 @@
    }
   }
  },
+ "between": {
+  "gemini-pro-orchestrator": {
+   "planner": "gemini-4-carbon",
+   "implementer": "gemini-4-hydrogen-high",
+   "share": 0.25,
+   "kind": "vendor",
+   "url": "https://antigravity.google/docs/models.md",
+   "as_of": "2026-11-20",
+   "statement": "Antigravity docs, \"Choose a model\": \"There are three Orchestrator options, and the one you select sets the planner:\"; \"Orchestrator is a model selector option that pairs two Gemini 4 models in a single conversation: a larger planner model does the planning and reviews, and the fast, lightweight Gemini 4 Hydrogen does the implementation work.\"; \"Each option always plans with the model in its name: Orchestrator (Neon) plans with Gemini 4 Neon, Orchestrator (Carbon) with Gemini 4 Carbon, and Orchestrator (Argon) with Gemini 4 Argon.\" (the page's bold left out); \"Orchestrator runs with a fixed configuration, so you can’t choose a thinking level for it.\"; \"Because Orchestrator has a fixed configuration, `--effort` and `/effort` don’t apply to it;\" (the page names no model id: \"Run `agy models` to list every model identifier available to your account.\"): so Orchestrator (Carbon) plans with Gemini 4 Carbon and implements with Gemini 4 Hydrogen. The rows read for them are gemini-4-carbon and gemini-4-hydrogen-high, each at High: the maintainer's reading rule (accounts.json effort_readings), since the page names no effort for the option and its configuration is fixed",
+   "id_declaration": {
+    "kind": "maintainer",
+    "as_of": "2026-11-20",
+    "statement": "maintainer: the Antigravity CLI model id gemini-pro-orchestrator (the id `agy models` lists through Paseo's model list of provider antigravity-resilient, labelled \"Orchestrator (Carbon)\") is the option the vendor page calls Orchestrator (Carbon); the page names no model id"
+   },
+   "share_declaration": {
+    "kind": "maintainer",
+    "as_of": "2026-11-20",
+    "statement": "maintainer (owner, 2026-11-20): an Orchestrator option is scored on its planner, \"按规划模型计分\", read a little below it, \"可以在规划模型往下一点插值算\": each quantity is the planner's moved `share` of the way toward the implementer's; the owner confirmed 0.25, \"你的比例ok\". The owner chose the position: no public source measures an Orchestrator option. Interpolated rather than carried, since carried values would tie each option with its planner on every quantity (\"如果不是插值 那不是有很多同分吗\")"
+   }
+  },
+  "gemini-pro-orchestrator-argon": {
+   "planner": "gemini-4-argon-high",
+   "implementer": "gemini-4-hydrogen-high",
+   "share": 0.25,
+   "kind": "vendor",
+   "url": "https://antigravity.google/docs/models.md",
+   "as_of": "2026-11-20",
+   "statement": "Antigravity docs, \"Choose a model\": \"There are three Orchestrator options, and the one you select sets the planner:\"; \"Orchestrator is a model selector option that pairs two Gemini 4 models in a single conversation: a larger planner model does the planning and reviews, and the fast, lightweight Gemini 4 Hydrogen does the implementation work.\"; \"Each option always plans with the model in its name: Orchestrator (Neon) plans with Gemini 4 Neon, Orchestrator (Carbon) with Gemini 4 Carbon, and Orchestrator (Argon) with Gemini 4 Argon.\" (the page's bold left out); \"Orchestrator runs with a fixed configuration, so you can’t choose a thinking level for it.\"; \"Because Orchestrator has a fixed configuration, `--effort` and `/effort` don’t apply to it;\" (the page names no model id: \"Run `agy models` to list every model identifier available to your account.\"): so Orchestrator (Argon) plans with Gemini 4 Argon and implements with Gemini 4 Hydrogen. The rows read for them are gemini-4-argon-high and gemini-4-hydrogen-high, each at High: the maintainer's reading rule (accounts.json effort_readings), since the page names no effort for the option and its configuration is fixed",
+   "id_declaration": {
+    "kind": "maintainer",
+    "as_of": "2026-11-20",
+    "statement": "maintainer: the Antigravity CLI model id gemini-pro-orchestrator-argon (the id `agy models` lists through Paseo's model list of provider antigravity-resilient, labelled \"Orchestrator (Argon)\") is the option the vendor page calls Orchestrator (Argon); the page names no model id"
+   },
+   "share_declaration": {
+    "kind": "maintainer",
+    "as_of": "2026-11-20",
+    "statement": "maintainer (owner, 2026-11-20): an Orchestrator option is scored on its planner, \"按规划模型计分\", read a little below it, \"可以在规划模型往下一点插值算\": each quantity is the planner's moved `share` of the way toward the implementer's; the owner confirmed 0.25, \"你的比例ok\". The owner chose the position: no public source measures an Orchestrator option. Interpolated rather than carried, since carried values would tie each option with its planner on every quantity (\"如果不是插值 那不是有很多同分吗\")"
+   }
+  },
+  "gemini-pro-orchestrator-neon": {
+   "planner": "gemini-4-neon",
+   "implementer": "gemini-4-hydrogen-high",
+   "share": 0.25,
+   "kind": "vendor",
+   "url": "https://antigravity.google/docs/models.md",
+   "as_of": "2026-11-20",
+   "statement": "Antigravity docs, \"Choose a model\": \"There are three Orchestrator options, and the one you select sets the planner:\"; \"Orchestrator is a model selector option that pairs two Gemini 4 models in a single conversation: a larger planner model does the planning and reviews, and the fast, lightweight Gemini 4 Hydrogen does the implementation work.\"; \"Each option always plans with the model in its name: Orchestrator (Neon) plans with Gemini 4 Neon, Orchestrator (Carbon) with Gemini 4 Carbon, and Orchestrator (Argon) with Gemini 4 Argon.\" (the page's bold left out); \"Orchestrator runs with a fixed configuration, so you can’t choose a thinking level for it.\"; \"Because Orchestrator has a fixed configuration, `--effort` and `/effort` don’t apply to it;\" (the page names no model id: \"Run `agy models` to list every model identifier available to your account.\"): so Orchestrator (Neon) plans with Gemini 4 Neon and implements with Gemini 4 Hydrogen. The rows read for them are gemini-4-neon and gemini-4-hydrogen-high, each at High: the maintainer's reading rule (accounts.json effort_readings), since the page names no effort for the option and its configuration is fixed",
+   "id_declaration": {
+    "kind": "maintainer",
+    "as_of": "2026-11-20",
+    "statement": "maintainer: the Antigravity CLI model id gemini-pro-orchestrator-neon (the id `agy models` lists through Paseo's model list of provider antigravity-resilient, labelled \"Orchestrator (Neon)\") is the option the vendor page calls Orchestrator (Neon); the page names no model id"
+   },
+   "share_declaration": {
+    "kind": "maintainer",
+    "as_of": "2026-11-20",
+    "statement": "maintainer (owner, 2026-11-20): an Orchestrator option is scored on its planner, \"按规划模型计分\", read a little below it, \"可以在规划模型往下一点插值算\": each quantity is the planner's moved `share` of the way toward the implementer's; the owner confirmed 0.25, \"你的比例ok\". The owner chose the position: no public source measures an Orchestrator option. Interpolated rather than carried, since carried values would tie each option with its planner on every quantity (\"如果不是插值 那不是有很多同分吗\")"
+   }
+  }
+ },
  "calibration_panel": {
   "anchor": "claude-opus-5-5",
   "models": [
@@ -2049,6 +2108,33 @@
    "label": "Hydrogen 4",
    "listed_as": {
     "aa": "Gemini 4 Hydrogen"
+   }
+  },
+  "gemini-pro-orchestrator": {
+   "label": "Orchestrator (Carbon)",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://antigravity.google/docs/models.md",
+    "as_of": "2026-11-20",
+    "statement": "Antigravity docs, \"Choose a model\": \"Orchestrator (Carbon)\" is a model selector option; \"Each option always plans with the model in its name\" and \"the fast, lightweight Gemini 4 Hydrogen does the implementation work.\"; the id gemini-pro-orchestrator is the Antigravity CLI's (maintainer, 2026-11-20, between id_declaration)"
+   }
+  },
+  "gemini-pro-orchestrator-argon": {
+   "label": "Orchestrator (Argon)",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://antigravity.google/docs/models.md",
+    "as_of": "2026-11-20",
+    "statement": "Antigravity docs, \"Choose a model\": \"Orchestrator (Argon)\" is a model selector option; \"Each option always plans with the model in its name\" and \"the fast, lightweight Gemini 4 Hydrogen does the implementation work.\"; the id gemini-pro-orchestrator-argon is the Antigravity CLI's (maintainer, 2026-11-20, between id_declaration)"
+   }
+  },
+  "gemini-pro-orchestrator-neon": {
+   "label": "Orchestrator (Neon)",
+   "model_source": {
+    "kind": "vendor",
+    "url": "https://antigravity.google/docs/models.md",
+    "as_of": "2026-11-20",
+    "statement": "Antigravity docs, \"Choose a model\": \"Orchestrator (Neon)\" is a model selector option; \"Each option always plans with the model in its name\" and \"the fast, lightweight Gemini 4 Hydrogen does the implementation work.\"; the id gemini-pro-orchestrator-neon is the Antigravity CLI's (maintainer, 2026-11-20, between id_declaration)"
    }
   },
   "claude-sonnet-5-5": {

@@ -104,8 +104,25 @@ class DnaDimensionTests(unittest.TestCase):
         notes = radar_chart.dna_estimated({"five_axis": {"estimates": estimates}})
         self.assertEqual(set(notes), {"creativity", "tool_operation"})
         self.assertIn("claude-opus-5-5", notes["creativity"])
-        self.assertIn("fit on tier 3.0", notes["tool_operation"])
+        self.assertTrue(all(x in notes["tool_operation"] for x in ("3", "0.8", "20")))
         self.assertEqual(radar_chart.dna_estimated({"five_axis": {"estimates": {}}}), {})
+
+    def test_an_estimate_note_is_read_from_the_cells_own_fields_and_never_prints_none(self):
+        """Rule (radar_chart.estimate_text): each method is described from the fields its own cell records; a between cell
+        names its planner, implementer and share; a field a cell lacks is left out, so no note over the shipped estimates
+        prints None."""
+        between = {"method": "between", "share": 0.25, "at_effort": "high", "planner": {"model": "plan-x", "value": 0.1},
+                   "implementer": {"model": "impl-y", "value": -1.0}}
+        note = radar_chart.estimate_note({"coding.faithfulness": between}, "coding")
+        self.assertTrue(all(x in note for x in ("plan-x", "impl-y", "0.25")), note)
+        for est in ({"method": "tier_fit", "tier": 3.0}, {"method": "sibling_shift", "base_model": "b"}, {"method": "x"}, {}):
+            self.assertNotIn("None", radar_chart.estimate_text(est), est)
+        rows = json.loads((account_fleet.REFERENCES / "five-axis-scores.json").read_text(encoding="utf-8-sig"))["models"]
+        estimates = [cell["estimate"] for r in rows.values() for ax in r["axes"].values()
+                     for cell in (ax.get("facets") or {}).values() if cell.get("estimate")]
+        self.assertTrue(estimates)
+        for est in estimates:
+            self.assertNotIn("None", radar_chart.estimate_text(est), est.get("method"))
 
     def test_axis_keys_are_the_four_categories_and_the_economy(self):
         expected = ["creativity", "coding", "aesthetics", "tool_operation", "economy"]

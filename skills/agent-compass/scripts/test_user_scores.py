@@ -1462,5 +1462,92 @@ class EffectiveSourceTests(unittest.TestCase):
         self.assertNotIn('follows', small)
 
 
+class EffectiveBasesTests(unittest.TestCase):
+    """Rule (user_scores._follow_effective_bases; accounts.json `between`, owner 2026-11-20, after the owner's 2026-11-18
+    rule that derived cells follow the effective source): a `between` facet is, on the routing scale, `planner + share *
+    (implementer - planner)` of its bases as they are effective (local user > maintainer > measured > estimated, after every
+    other follow step), both read at the cell's `at_effort` and held at every effort; recomputed, never the shipped cell
+    moved by a change; the same in any row order; a hand-written score on the row itself wins. The category is recomputed
+    from its facets as moved (the minimum of its facets at each effort, _recompute_category_from_facets) and `scores`
+    carries its value."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.targets = axis_scores.load_five_axis()['anchor']['targets']
+
+    @staticmethod
+    def cell(by, **extra):
+        return {'value': by['high'], 'by_effort': dict(by), 'status': 'estimated', 'measured_efforts': [], **extra}
+
+    def table(self, share, option_first=False):
+        """`big` -> `plan` (size_step) on faithfulness; `opt` between `plan` and `impl`, its shipped cell deliberately off
+        the rule (9.9), so only a recomputation from the effective bases gives the rule's value; every row has an
+        execution reading of its own above every faithfulness value, and `opt` a shipped category and score off the rule
+        too (9.9)."""
+        curve = {'low': -1.0, 'high': 0.0, 'max': 0.3}
+        rows = {'big': self.cell(curve),
+                'plan': self.cell({'low': -1.4, 'high': -0.4, 'max': -0.1},
+                                  estimate={'method': 'size_step', 'base_model': 'big', 'move': -0.4}),
+                'impl': self.cell({'low': -2.0, 'high': -1.2, 'max': -0.6}),
+                'opt': self.cell(dict.fromkeys(('low', 'high', 'max'), 9.9), estimate={
+                    'method': 'between', 'share': share, 'at_effort': 'high', 'planner': {'model': 'plan'},
+                    'implementer': {'model': 'impl'}})}
+        order = ['opt', 'big', 'plan', 'impl'] if option_first else ['big', 'plan', 'impl', 'opt']
+        execution = {'low': 4.0, 'high': 5.0, 'max': 6.0}
+        off = dict.fromkeys(('low', 'high', 'max'), 9.9)
+        return {m: {'five_axis': {'categories': {'coding': {
+            'facets': {'faithfulness': rows[m], 'execution': {**self.cell(execution), 'status': 'measured'}},
+            'value': 9.9 if m == 'opt' else None, 'by_effort': dict(off) if m == 'opt' else {}}},
+            'scores': {'coding': 9.9} if m == 'opt' else {}}} for m in order}
+
+    def overlay(self, share, public=None, local=None, option_first=False, whole=False):
+        models = self.table(share, option_first)
+        user_scores.apply_overlay(models, self.targets, provider_names=NO_DECLARATIONS,
+                                  public_scores={'scores': public or {}},
+                                  local_scores={'schema_version': user_scores.SCHEMA_VERSION, 'scores': local or {}})
+        if whole:
+            return models
+        return {m: models[m]['five_axis']['categories']['coding']['facets']['faithfulness'] for m in models}
+
+    @staticmethod
+    def score(level, kind):
+        return {'coding.faithfulness': {'level': level, 'as_of': '2026-11-20', 'kind': kind}}
+
+    def test_the_option_is_the_share_between_its_effective_bases_whichever_base_moved(self):
+        cases = ({'public': {'plan': self.score(2.5, 'maintainer')}},
+                 {'local': {'impl': self.score(1.2, 'user')}},
+                 {'public': {'plan': self.score(2.5, 'maintainer')}, 'local': {'plan': self.score(1.5, 'user'),
+                                                                              'impl': self.score(2.8, 'user')}},
+                 {'local': {'big': self.score(2.9, 'user')}})          # moves plan through the size step first
+        for share in (0.1, 0.25, 0.6):
+            for case in cases:
+                for first in (False, True):
+                    with self.subTest(share=share, case=case, option_first=first):
+                        got = self.overlay(share, option_first=first, **case)
+                        p, i = got['plan']['by_effort']['high'], got['impl']['by_effort']['high']
+                        self.assertEqual(set(got['opt']['by_effort'].values()), {round(p + share * (i - p), 4)})
+                        self.assertEqual(set(got['opt']['by_effort']), {'low', 'high', 'max'})
+                        self.assertEqual((got['opt']['follows']['planner']['model'],
+                                          got['opt']['follows']['implementer']['model']), ('plan', 'impl'))
+
+    def test_the_category_is_recomputed_from_the_moved_facets_and_scores_carries_it(self):
+        for case in ({'public': {'plan': self.score(2.5, 'maintainer')}}, {'local': {'impl': self.score(1.2, 'user')}}):
+            with self.subTest(case=case):
+                state = self.overlay(0.25, whole=True, **case)['opt']['five_axis']
+                coding = state['categories']['coding']
+                facets = coding['facets']
+                want = {e: round(min(facets['faithfulness']['by_effort'][e], facets['execution']['by_effort'][e]), 4)
+                        for e in ('low', 'high', 'max')}
+                self.assertEqual({e: coding['by_effort'][e] for e in want}, want)
+                self.assertEqual(coding['value'], want['high'])
+                self.assertEqual(state['scores']['coding'], coding['value'])
+
+    def test_a_hand_written_score_on_the_option_itself_wins(self):
+        got = self.overlay(0.25, public={'plan': self.score(2.5, 'maintainer')}, local={'opt': self.score(2.0, 'user')})
+        z = round(user_scores.level_to_z(2.0, *user_scores.target_triad(self.targets, 'coding', 'faithfulness')), 4)
+        self.assertEqual((got['opt']['status'], got['opt']['by_effort']['high']), ('user', z))
+        self.assertNotIn('follows', got['opt'])
+
+
 if __name__ == '__main__':
     unittest.main()

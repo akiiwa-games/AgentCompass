@@ -78,6 +78,7 @@ def validate_accounts_provenance(doc):
             raise ValueError(
                 f'same_model[{row!r}].capacity_rule requires dated kind="maintainer" (or https url) and family/window rule fields without plan or price literals'
             )
+    _validate_between(doc)
     for model, spec in (doc.get('models') or {}).items():
         if not isinstance(spec, dict):
             continue
@@ -99,6 +100,51 @@ def validate_accounts_provenance(doc):
     _validate_catalog_tables(doc)
     _validate_cited_tables(doc)
     _validate_provider_names(doc)
+
+
+BETWEEN_KEYS = {'planner', 'implementer', 'share', 'share_declaration', 'id_declaration', 'kind', 'url', 'as_of',
+                'statement'}
+
+
+def _validate_between(doc):
+    """`between` (calibration/five_axis.py between_declaration): a row read at a declared share between two other rows,
+    its planner and its implementer. Each declaration is a row of the catalog, cites the relation (https url or dated
+    maintainer, with its statement), names two other rows that are not themselves `between` rows, and gives `share` in
+    (0, 1) with its own dated declaration (`share_declaration`); an `id_declaration` (the id is the product the citation
+    names) is a dated declaration too. No other key. A between row is no one's base: no `same_model` row names one."""
+    table = doc.get('between')
+    if table is None:
+        return
+    if not isinstance(table, dict):
+        raise ValueError('accounts.json between maps a row to {planner, implementer, share, share_declaration, citation}')
+    models = {k for k, v in (doc.get('models') or {}).items() if isinstance(v, dict)}
+    for row, entry in table.items():
+        where = f'between[{row!r}]'
+        if not isinstance(entry, dict) or not set(entry) <= BETWEEN_KEYS:
+            raise ValueError(f'{where}: only {", ".join(sorted(BETWEEN_KEYS))}')
+        share = entry.get('share')
+        bases = [entry.get('planner'), entry.get('implementer')]
+        problems = [
+            *([] if row in models else ['is not a row of models']),
+            *([] if valid_public_declaration(entry) and str(entry.get('statement') or '').strip() else
+              ['needs a statement and an https url or dated kind="maintainer" (with as_of)']),
+            *([] if all(isinstance(b, str) and b in models and b != row and b not in table for b in bases)
+              and bases[0] != bases[1] else
+              ['planner and implementer must be two other rows of models, neither a between row']),
+            *([] if isinstance(share, (int, float)) and not isinstance(share, bool) and 0 < share < 1 else
+              ['share must be a number in (0, 1)']),
+            *([] if valid_public_declaration(entry.get('share_declaration'))
+              and str((entry.get('share_declaration') or {}).get('statement') or '').strip() else
+              ['share_declaration needs a statement and an https url or dated kind="maintainer"']),
+            *([] if 'id_declaration' not in entry or (valid_public_declaration(entry['id_declaration'])
+                                                      and str(entry['id_declaration'].get('statement') or '').strip()) else
+              ['id_declaration needs a statement and an https url or dated kind="maintainer"']),
+        ]
+        if problems:
+            raise ValueError(f'{where}: ' + '; '.join(problems))
+    copies = sorted(r for r, e in (doc.get('same_model') or {}).items() if isinstance(e, dict) and e.get('model') in table)
+    if copies:
+        raise ValueError(f'same_model rows {", ".join(copies)} name a between row: a between row is no one\'s base')
 
 
 PROVIDER_NAME_KEYS = {'model', 'status', 'canonical_id', 'kind', 'url', 'as_of', 'statement'}

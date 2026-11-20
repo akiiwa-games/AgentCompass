@@ -105,6 +105,12 @@ scores on the four categories and the quota economy together. Nothing else score
   estimated (method `same_model`), for the categories the row `carries`, plus its Time/Task (`duration`) and
   `usd_per_hour` when carried. One that also declares `speed` is a speed variant (`speed_declaration`,
   `speed_variants`): calibration/README.md.
+- A row that `accounts.json` `between` declares to be two models at once (a planner and an implementer, owner 2026-11-20)
+  is read at the declared `share` of the way from its planner toward its implementer, both at the effort `default`
+  reads, one value at every effort: facets and tier linearly on panel z, Time/Task and usd_per_hour on the log scale
+  (method `between`; `between_declaration`, `Scorer.interpolate_between`, `between_minutes`, `between_usd`). It is no
+  one's base and outside every fit (`Scorer.entries`; no identity, series.identity): calibration/README.md, Between two
+  rows.
 - usd_per_hour has one basis (rounds 8-9, user 2026-11-09 "全部都用arena"): `arena.agent_sessions` (arena.ai Agent / Overall
   real sessions, Cost/Task P50 / Time/Task P50 x 60, kind `community`), each source's value at High (else its effort-less
   listing, else the median of its listed efforts). For a model arena does not list with cost and time, the labelled
@@ -165,7 +171,10 @@ PLANS = sources.REPO / 'references' / 'plan-templates.json'
 # steps from the boards' listings (`sample`, `boards`; method `other_facets_median`), speed variants, relatives by maker,
 # line and size, fleet fits frozen per release (a model entry's rows, `public-measurements.json` `model_entries`, scored by
 # the release's fits and in none), speed without a reading (methods `declared_response_floor`, `cross_line_extrapolation`,
-# `cross_line_median`; `estimation_order.speed_cross_line_before_fit`). Levels unchanged.
+# `cross_line_median`; `estimation_order.speed_cross_line_before_fit`). Levels unchanged. Within /12 after v0.7.3
+# (2026-11-20): the `between` estimate (method `between` on facet cells, the Time/Task basis, usd_per_hour and the tier).
+# The schema stays /12 because a released reader of /12 reads every number of these rows as it reads any estimated row:
+# the method name and the keys it adds are labels that reader does not interpret.
 SCHEMA = 'agent-compass.five-axis-scores/12'
 AXES = measurements.AXES
 EFFORTS = user_scores.MEASURED_EFFORTS                   # the efforts boards measure and the panel steps reach
@@ -349,6 +358,62 @@ def speed_declaration(entry):
             **{k: sp[k] for k in ('kind', 'url', 'as_of', 'statement') if sp.get(k)}}
 
 
+def between_declaration(row, entry, models):
+    """A `between` row's declaration (accounts.json `between`; owner 2026-11-20): {'planner', 'implementer', 'share',
+    'declaration'}. The row is read at `share` of the way from its planner row toward its implementer row on every
+    quantity (`Scorer.interpolate_between`, `between_minutes`, `between_usd`). The two bases are other rows of the
+    catalog; the share is a number in (0, 1) with its dated declaration (`share_declaration`); the relation is cited
+    (https url or dated maintainer). A malformed one stops the build."""
+    share = (entry or {}).get('share') if isinstance(entry, dict) else None
+    bases = [entry.get(k) for k in ('planner', 'implementer')] if isinstance(entry, dict) else [None, None]
+    if (not isinstance(entry, dict) or not valid_public_declaration(entry)
+            or not valid_public_declaration(entry.get('share_declaration'))
+            or not all(isinstance(b, str) and b in models and b != row for b in bases) or bases[0] == bases[1]
+            or not isinstance(share, (int, float)) or isinstance(share, bool) or not 0 < share < 1):
+        raise ValueError(f'between[{row!r}] needs `planner` and `implementer` (two other rows of the catalog), `share` in '
+                         '(0, 1) with a dated `share_declaration`, and a citation (https url or dated maintainer)')
+    return {'planner': bases[0], 'implementer': bases[1], 'share': float(share),
+            'declaration': {'source': f'accounts.json between[{row!r}]',
+                            **{k: entry[k] for k in ('kind', 'url', 'as_of') if entry.get(k)},
+                            'share_declared': {k: entry['share_declaration'][k] for k in ('kind', 'url', 'as_of')
+                                               if entry['share_declaration'].get(k)}}}
+
+
+def between_rows(acc, models):
+    """{row: between_declaration} for the `between` rows of the catalog. A declaration that names no row, or whose base
+    is itself a `between` row, stops the build (a declared row is no one's base), as does a `same_model` declaration
+    whose model is a `between` row."""
+    ghosts = sorted(m for m in series.between(acc) if m not in models)
+    if ghosts:
+        raise ValueError(f"between declarations name no row of models: {', '.join(ghosts)}")
+    out = {m: between_declaration(m, e, models) for m, e in series.between(acc).items()}
+    nested = sorted(m for m, d in out.items() if d['planner'] in out or d['implementer'] in out)
+    if nested:
+        raise ValueError(f"between rows {', '.join(nested)} rest on another between row: a declared row is no one's base")
+    copies = sorted(m for m, e in series.same_model(acc).items() if e.get('model') in out)
+    if copies:
+        raise ValueError(f"same_model rows {', '.join(copies)} name a between row: a declared row is no one's base")
+    return out
+
+
+def between_point(base, value, rec, at):
+    """One base of a `between` row as its cell records it: the row, its value at the reading effort `at`, its status and
+    how that value was obtained there (measured, the filled effort's method, or the estimate's)."""
+    rec = rec or {}
+    how = ('measured' if at in (rec.get('measured_efforts') or ()) else
+           ((rec.get('filled_efforts') or {}).get(at) or {}).get('method') or (rec.get('estimate') or {}).get('method')
+           or rec.get('status'))
+    return {'model': base, 'value': value, 'status': rec.get('status'), 'method': how}
+
+
+def interpolate(planner, implementer, share, log=False):
+    """`planner + share * (implementer - planner)`; on the log scale when `log` (a ratio quantity: the geometric
+    position, exp(ln p + share * (ln i - ln p)))."""
+    if log:
+        return math.exp(math.log(planner) + share * (math.log(implementer) - math.log(planner)))
+    return planner + share * (implementer - planner)
+
+
 def valid_public_declaration(entry):
     """True when `entry` carries an https URL or is a dated `kind: "maintainer"` declaration."""
     if not isinstance(entry, dict):
@@ -484,10 +549,14 @@ class Scorer:
         # one and are never a relative's base (`entries`). A document without the record (a fixture built by hand) has
         # release rows only.
         rows = frozenset(meas.get('models') or ())
-        self.new_entries = rows - frozenset(meas['release_rows']) if 'release_rows' in meas else frozenset()
+        self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
+        # a `between` row (between_rows) is read off its two bases: by its declaration no one's base and in no fit, a row
+        # of the release or not
+        self.between = between_rows(acc, self.models)
+        self.new_entries = ((rows - frozenset(meas['release_rows']) if 'release_rows' in meas else frozenset())
+                            | frozenset(self.between))
         self.entries = frozenset(meas.get('model_entries') or ()) | self.new_entries
         self.readings = effort_readings(acc)
-        self.models = {k: v for k, v in acc['models'].items() if isinstance(v, dict)}
         # declared response floors (`response_time_source`): a row's one launch path, round 6
         self.measured_inversions = []      # bound_across_size: two measurements out of the size order
         self.response_floor = {m: spec['response_time_source'] for m, spec in self.models.items()
@@ -528,6 +597,13 @@ class Scorer:
                           'sources': []}
             else:
                 out[m] = {'value': None, 'method': 'none', 'sources': []}
+        for m, d in sorted(self.between.items()):       # the overall level at the declared share between its bases
+            vp, vi = ((out.get(d[k]) or {}).get('value') for k in ('planner', 'implementer'))
+            if m in rows and m not in direct_tier and vp is not None and vi is not None:
+                out[m] = {'value': round(interpolate(vp, vi, d['share']), 4), 'method': 'between', 'status': 'estimated',
+                          'share': d['share'],
+                          **{k: {'model': d[k], 'value': out[d[k]]['value'], 'method': out[d[k]]['method']}
+                             for k in ('planner', 'implementer')}, 'sources': []}
         return out
 
     @staticmethod
@@ -1270,7 +1346,7 @@ class Scorer:
                 rejected[f'{key[0]}.{key[1]}~tier'] = why
         declared = [m for m in rows if (self.same.get(m) or {}).get('model') in rows]
         for m in rows:
-            if tier[m]['value'] is None:
+            if tier[m]['value'] is None or m in self.between:     # a between row is read off its bases, last
                 continue
             for key in keys:
                 if m in declared and not self.own_estimated(m, key):
@@ -1387,7 +1463,7 @@ class Scorer:
         self.flatten_points(facets, rows)   # an operating point's one value, before the own median reads its facets
         self.bound_across_size(facets)
         for m in rows:
-            if m not in declared:
+            if m not in declared and m not in self.between:
                 self.own_ability_median(facets[m], keys)
         # the size step from the nearest version comes after the own ability median (estimation_order, review D)
         self.size_down(facets, keys, 'nearest')
@@ -1396,6 +1472,36 @@ class Scorer:
         self.flatten_points(facets, rows)
         self.copy_same_model(facets, declared)
         self.response_floors(facets)
+        self.interpolate_between(facets)
+
+    def interpolate_between(self, facets):
+        """A `between` row (between_declaration; owner 2026-11-20: an Orchestrator option is read between its planner and
+        its implementer, a little below the planner): every facet is `planner + share * (implementer - planner)`, both
+        bases read at the effort `default` reads (the option has one fixed configuration) and that one value held at
+        every effort, as an operating point's is. The facet scale is linear already: the ability facets are panel z, and
+        responsiveness is z of -ln(seconds), so its linear position is the geometric position in seconds, the one
+        `between_minutes` and `between_usd` take. Status `estimated`, method `between`, both bases with their value,
+        status and method and the share on the cell. A facet a base lacks at that effort stays missing, never the other
+        base alone; a facet the row has a reading of its own for stands. Runs last, after every method has given the
+        bases their final values."""
+        for m, d in sorted(self.between.items()):
+            if m not in facets:
+                continue
+            at, bases = self.readings['default'], (d['planner'], d['implementer'])
+            for key in sorted({k for b in bases for k in facets.get(b, {})}):
+                if key in facets[m]:
+                    continue        # its own reading stands
+                recs = [facets.get(b, {}).get(key) for b in bases]
+                vals = [((r or {}).get('by_effort') or {}).get(at) for r in recs]
+                if None in vals:
+                    continue        # a base without the facet: missing (a surfaced data error)
+                v = round(interpolate(vals[0], vals[1], d['share']), 4)
+                facets[m][key] = {'value': v, 'by_effort': dict.fromkeys(LADDER, v), 'sources': {}, 'status': 'estimated',
+                                  'measured_efforts': [],
+                                  'estimate': {'method': 'between', 'share': d['share'], 'at_effort': at,
+                                               'planner': between_point(bases[0], vals[0], recs[0], at),
+                                               'implementer': between_point(bases[1], vals[1], recs[1], at),
+                                               'declaration': d['declaration']}}
 
     def flatten_points(self, facets, rows):
         for m in self.points:
@@ -2260,12 +2366,61 @@ def durations(scorer, rows, acc):
                         **({'bounded_by': 'the time at a neighbouring effort (no inversion along effort)'} if e in moved else {}),
                         'bound': 'lower: a task takes at least one response of at least the declared time',
                         'declaration': {k: v for k, v in decl.items() if k != 'min_seconds'}} for e in LADDER}
+    between_minutes(scorer, rows, minutes, basis)
     for m in rows:
         out[m] = {'status': 'ok' if minutes[m] else 'missing', 'anchor_minutes': anchor,
                   'by_effort': {e: round(t / anchor, 4) for e, t in minutes[m].items()},
                   'minutes_by_effort': dict(minutes[m]), 'basis_by_effort': basis[m],
                   'efforts_without_time': [e for e in LADDER if e not in minutes[m]]}
     return out, fit_rec, why
+
+
+def between_minutes(scorer, rows, minutes, basis):
+    """Time/Task of a `between` row (Scorer.interpolate_between), after every step of its bases' times: the geometric
+    position at the declared share between them, exp(ln p + share * (ln i - ln p)), both read at the effort `default`
+    reads and held at every effort (one fixed configuration). Time/Task is a ratio quantity: this module combines times
+    only by ratios (the anchor multiple, the effort ratios and positions on the log-time scale, the size and line steps
+    as log ratios), and responsiveness, -ln(seconds), is placed linearly, which is this position in seconds. A base
+    without a time there leaves the row without one; a row with a reading of its own keeps it. `minutes` and `basis`
+    are updated in place."""
+    at = scorer.readings['default']
+    for m, d in sorted(scorer.between.items()):
+        if m not in rows or any(b.get('method') in ('aa', 'arena_fit') for b in basis[m].values()):
+            continue        # its own reading stands
+        bases = (d['planner'], d['implementer'])
+        times = [minutes.get(b, {}).get(at) for b in bases]
+        minutes[m], basis[m] = {}, {}
+        if None in times:
+            continue
+        t = round(interpolate(times[0], times[1], d['share'], log=True), 3)
+        how = {'method': 'between', 'share': d['share'], 'at_effort': at, 'scale': 'log',
+               **{k: {'model': b, 'minutes': tb, 'method': basis[b][at]['method']}
+                  for k, b, tb in zip(('planner', 'implementer'), bases, times)},
+               'source': AA_TIME, 'declaration': d['declaration']}
+        minutes[m], basis[m] = dict.fromkeys(LADDER, t), {e: dict(how) for e in LADDER}
+
+
+def between_usd(usd, scorer):
+    """usd_per_hour of a `between` row (Scorer.interpolate_between), after every step of its bases' values: the geometric
+    position at the declared share between them, exp(ln p + share * (ln i - ln p)). Cost per hour is a ratio quantity:
+    this module converts it only by ratios (list prices over the token mix, the fallback scale, a speed ratio). A base
+    without a value leaves the row unpriced; a row with a value of its own keeps it."""
+    for m, d in sorted(scorer.between.items()):
+        if m not in usd or usd[m].get('value') is not None:
+            continue
+        bases = (d['planner'], d['implementer'])
+        vals = [(usd.get(b) or {}).get('value') for b in bases]
+        if None in vals or min(vals) <= 0:
+            continue
+        v = round(interpolate(vals[0], vals[1], d['share'], log=True), 3)
+        usd[m] = {'value': v, 'status': 'ok', 'kind': 'estimated', 'method': 'between', 'estimated': True,
+                  'fallback': False, 'share': d['share'], 'scale': 'log', 'used': [],
+                  'merge': (f"between: {bases[0]} {vals[0]} moved {d['share']} of the way toward {bases[1]} {vals[1]} on "
+                            'the log scale'),
+                  'sources': {**{k: {'model': b, 'value': vb, 'kind': usd[b].get('kind'), 'method': usd[b].get('method'),
+                                     'estimated': bool(usd[b].get('estimated'))}
+                                 for k, b, vb in zip(('planner', 'implementer'), bases, vals)},
+                              'declaration': d['declaration']}}
 
 
 def cite(o, **extra):
@@ -2451,11 +2606,33 @@ def usd_community_mix(scorer, rows, meas):
     return out
 
 
-def axis_evidence(axes):
+def copied_from(cell):
+    """The rows a facet cell is read from as they stand: a `same_model` copy its model, a `between` cell its planner and
+    implementer; [] for a measurement or any other estimate."""
+    est = (cell or {}).get('estimate') or {}
+    if est.get('method') == 'same_model':
+        return [est.get('base_model')]
+    if est.get('method') == 'between':
+        return [(est.get(k) or {}).get('model') for k in ('planner', 'implementer')]
+    return []
+
+
+def axis_evidence(axes, rows=None):
     """Round 058 review F5: per axis, the measured sources that are not Artificial Analysis (the AA boards are one
-    source); `aa_only` when no axis has any, though some axis has a value."""
-    indep = {a: sorted({s for c in (ax.get('facets') or {}).values() if str(c.get('status', '')).startswith('measured')
-                        for s in (c.get('sources') or {}) if not s.startswith('aa.')}) for a, ax in axes.items()}
+    source); `aa_only` when no axis has any, though some axis has a value. A cell read from other rows as they stand
+    (`copied_from`: a `same_model` copy, a `between` cell) carries the measured sources of those rows' same facet in
+    `rows`, since its value is theirs; an estimate from a relative carries none."""
+    def sources(cell, a, f, seen):
+        if str(cell.get('status', '')).startswith('measured'):
+            return {s for s in (cell.get('sources') or {}) if not s.startswith('aa.')}
+        got = set()
+        for b in copied_from(cell):
+            base = ((((rows or {}).get(b) or {}).get('axes') or {}).get(a) or {}).get('facets', {}).get(f)
+            if base and b not in seen:
+                got |= sources(base, a, f, seen | {b})
+        return got
+    indep = {a: sorted({s for f, c in (ax.get('facets') or {}).items() for s in sources(c, a, f, frozenset())})
+             for a, ax in axes.items()}
     valued = any(ax.get('status') in ('measured', 'measured_partial', 'interpolated', 'partial', 'estimated')
                  for ax in axes.values())
     return {'independent_sources': indep, 'aa_only': valued and not any(indep.values())}
@@ -2707,6 +2884,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
     usd = usd_community_mix(scorer, rows, meas)
     convert_usd(usd, rows, scorer, meas, acc)
     scale_fallback_usd(usd, rows, scorer)
+    between_usd(usd, scorer)
     caps, cap_errors = capacity(meas, plans, usd)
     dur, dur_fit, dur_rejected = durations(scorer, rows, acc)
     models, errors = {}, []
@@ -2749,7 +2927,7 @@ def build(meas, acc, plans, distrust=(), meas_bytes=b'', now=None, previous=None
                 model_errors.append({'model': m, 'field': a, 'reason': 'no_high_measurement', 'level': 'yellow',
                                      'effect': 'measured only at non-High or disjoint efforts across facets: excluded under mode B '
                                                'at unmeasured efforts until filled via user-scores.json'})
-        evidence = axis_evidence(r['axes'])
+        evidence = axis_evidence(r['axes'], rows)
         if evidence['aa_only']:
             model_errors.append({'model': m, 'field': 'axes', 'reason': 'aa_only', 'level': 'yellow',
                                  'effect': 'every axis value comes from Artificial Analysis (the Intelligence Index and AA '

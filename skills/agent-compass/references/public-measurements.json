@@ -10860,6 +10860,9 @@
     }
    ]
   },
+  "gemini-pro-orchestrator": {},
+  "gemini-pro-orchestrator-argon": {},
+  "gemini-pro-orchestrator-neon": {},
   "claude-sonnet-5-5": {
    "tier": [
     {

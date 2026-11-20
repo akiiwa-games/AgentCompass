@@ -83,20 +83,53 @@ def score_raw(components: dict, headroom: dict | None = None) -> dict:
     return out
 
 
+def _shown(value) -> str:
+    """A recorded field as hover text: a number as written, a list of names joined."""
+    if isinstance(value, (list, tuple)):
+        return "/".join(_shown(v) for v in value)
+    return f"{value:g}" if isinstance(value, float) else str(value)
+
+
+def estimate_text(est: dict) -> str:
+    """What one estimated facet rests on, from the fields its own cell records (calibration/five_axis.py methods); a
+    field the cell does not carry is left out, never printed as None."""
+    est = est or {}
+    how, base = est.get("method"), est.get("base_model")
+
+    def model(key):
+        return (est.get(key) or {}).get("model") if isinstance(est.get(key), dict) else None
+    if how == "between" and model("planner") and model("implementer") and est.get("share") is not None:
+        return _tr("{0} 与 {1} 之间，自前者起 {2}").format(model("planner"), model("implementer"), _shown(est["share"]))
+    if how == "same_model" and base:
+        text = _tr("即 {0}").format(base)
+        return text + (_tr("（{0} 档）").format(est["at_effort"]) if est.get("at_effort") else "")
+    if how == "sibling_shift" and base:
+        shift = est.get("shift")
+        return (_tr("{0} 按档位平移 {1}").format(_shown(base), f"{shift:+g}") if isinstance(shift, (int, float))
+                else _tr("由 {0}").format(_shown(base)))
+    if how in ("cross_line_median", "cross_line_extrapolation") and base:
+        return _tr("其他产品线 {0}").format(_shown(base))
+    if how == "tier_fit" and all(est.get(k) is not None for k in ("tier", "r", "n")):
+        return _tr("档位拟合（档位 {0}，r {1}，n {2}）").format(_shown(est["tier"]), _shown(est["r"]), _shown(est["n"]))
+    if how in ("tier_down", "size_step") and base:
+        return _tr("由更大模型 {0}").format(base)
+    if how == "speed_ratio" and base and est.get("ratio") is not None:
+        return _tr("{0} 提速 {1} 倍").format(base, _shown(est["ratio"]))
+    if how == "speed_lower_bound" and base:
+        return _tr("不慢于 {0}").format(base)
+    if how == "panel_effort_step" and est.get("from_effort"):
+        return _tr("由 {0} 档按面板步长").format(est["from_effort"])
+    if how == "own_ability_median" and est.get("facets"):
+        return _tr("自身能力项中位数（{0}）").format(_shown(est["facets"]))
+    if how == "declared_response_floor" and est.get("min_seconds") is not None:
+        return _tr("声明的响应下限 {0} 秒").format(_shown(est["min_seconds"]))
+    return _tr("估算：{0}").format(how) if how else _tr("估算")
+
+
 def estimate_note(estimates: dict, axis: str) -> str:
     """The hover line for a category with estimated facets: `{'category.facet': provenance}` of the model's record."""
-    parts = []
-    for name, est in sorted((estimates or {}).items()):
-        if not name.startswith(axis + "."):
-            continue
-        how = est.get("method")
-        text = name.split(".", 1)[1]
-        if how == "sibling_shift":
-            text += f": {est.get('base_model')} {est.get('base_value')} + fit shift {est.get('shift', 0):+g} (tier {est.get('tier')} vs {est.get('base_tier')})"
-        else:
-            text += f": fit on tier {est.get('tier')} (r {est.get('r')}, n {est.get('n')})"
-        parts.append(text)
-    return "; ".join(parts)
+    return "; ".join(f"{name.split('.', 1)[1]}{tr('：', ': ')}{estimate_text(est)}"
+                     for name, est in sorted((estimates or {}).items()) if name.startswith(axis + "."))
 
 
 def dna_dimensions(info: dict, ceiling: float | None = None) -> dict:
@@ -123,7 +156,7 @@ def dna_raw(info: dict) -> dict:
 
 
 def dna_estimated(info: dict) -> dict:
-    """{category: provenance text} for the categories that contain an estimated facet (sibling or tier fit)."""
+    """{category: provenance text} for the categories that contain an estimated facet (estimate_text)."""
     five = (info or {}).get("five_axis") or {}
     estimates = five.get("estimates") or {}
     return {axis: estimate_note(estimates, axis) for axis in ABILITY_AXES if any(k.startswith(axis + ".") for k in estimates)}
@@ -611,7 +644,7 @@ class RadarChartCanvas:
             lines.append(f"{series['label']}{tr('：', ': ')}{'~' if estimated is not None else ''}{series['values'].get(key, 0):.2f}"
                          + (tr("（{0}）", " ({0})").format(detail) if detail else ""))
             if estimated is not None:
-                lines.append(tr("~ 含按档位估算的类型分：", "~ includes type scores estimated through the tier: ") + estimated)
+                lines.append(tr("~ 含估算的类型分：", "~ includes estimated type scores: ") + estimated)
         self.show_tip(event.x, event.y, "\n".join(lines))
 
     def show_tip(self, x: float, y: float, text: str) -> None:

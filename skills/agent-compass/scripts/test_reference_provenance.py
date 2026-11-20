@@ -164,6 +164,43 @@ class ProvenanceTests(unittest.TestCase):
         write_json(self.folder / 'accounts.json', accounts)
         self.assertRejected('accounts.json', 'capacity_rule')
 
+    def test_a_between_declaration_is_cited_names_two_other_rows_and_a_share_inside_zero_one(self):
+        """Rule (reference_provenance._validate_between, calibration/five_axis.py between_declaration): a `between` row is
+        a row of models, cites the relation (https url or dated maintainer, with its statement), names two other rows
+        that are not themselves between rows, and a share in (0, 1) with its dated share_declaration (with its statement); no
+        other key. No `same_model` declaration names a between row as its model."""
+        accounts = json.loads((REFERENCES / 'accounts.json').read_text(encoding='utf-8'))
+        planner, implementer = [m for m, v in accounts['models'].items() if isinstance(v, dict)][:2]
+        accounts['models']['x-option'] = {'label': 'X option'}
+        good = {'planner': planner, 'implementer': implementer, 'share': 0.3, 'kind': 'vendor',
+                'url': 'https://example.test/models', 'as_of': '2026-11-20', 'statement': 's',
+                'share_declaration': {'kind': 'maintainer', 'as_of': '2026-11-20', 'statement': 's'},
+                'id_declaration': {'kind': 'maintainer', 'as_of': '2026-11-20', 'statement': 's'}}
+        accounts['between'] = {'x-option': good}
+        reference_provenance.validate_accounts_provenance(accounts)
+        broken = [{**good, 'url': None, 'kind': 'vendor'}, {**good, 'statement': ''},
+                  {**good, 'share': 0}, {**good, 'share': 1}, {**good, 'share': 1.5}, {**good, 'share': True},
+                  {**good, 'share': '0.3'}, {k: v for k, v in good.items() if k != 'share_declaration'},
+                  {**good, 'share_declaration': {'kind': 'maintainer', 'statement': 's'}},
+                  {**good, 'share_declaration': {'kind': 'maintainer', 'as_of': '2026-11-20', 'statement': ' '}},
+                  {**good, 'id_declaration': {'kind': 'maintainer', 'statement': 's'}},
+                  {**good, 'planner': 'no-such-row'}, {**good, 'implementer': planner}, {**good, 'planner': 'x-option'},
+                  {**good, 'carries': ['coding']}]
+        for entry in broken:
+            with self.subTest(entry={k: v for k, v in entry.items() if k != 'statement'}), \
+                    self.assertRaisesRegex(ValueError, "between\\['x-option'\\]"):
+                reference_provenance.validate_accounts_provenance({**accounts, 'between': {'x-option': entry}})
+        with self.assertRaisesRegex(ValueError, "between\\['y-option'\\].*not a row"):
+            reference_provenance.validate_accounts_provenance({**accounts, 'between': {'y-option': good}})
+        accounts['models']['y-option'] = {'label': 'Y option'}       # a base that is itself a between row
+        with self.assertRaisesRegex(ValueError, "between\\['y-option'\\].*neither a between row"):
+            reference_provenance.validate_accounts_provenance(
+                {**accounts, 'between': {'x-option': good, 'y-option': {**good, 'planner': 'x-option'}}})
+        copy = {'model': 'x-option', 'kind': 'maintainer', 'as_of': '2026-11-20', 'statement': 's'}
+        with self.assertRaisesRegex(ValueError, 'same_model rows z-copy name a between row'):   # no one's base, as a copy's model
+            reference_provenance.validate_accounts_provenance(
+                {**accounts, 'same_model': {**(accounts.get('same_model') or {}), 'z-copy': copy}})
+
     def test_plan_templates_reject_a_non_https_vendor_price_source(self):
         templates = json.loads((self.folder / 'plan-templates.json').read_text(encoding='utf-8'))
         templates['grok']['premium']['price_source']['url'] = 'http://x.ai/insecure'

@@ -26,6 +26,10 @@ url): the declared model is that row's base before any other sibling, and the ro
 categories the row lists under `carries`; a category it does not list is the channel's own and stays missing (a
 property of the channel, not of the model behind it).
 
+A `between` row (accounts.json) is two models at once, a planner and an implementer (Antigravity's Orchestrator options):
+five_axis.py reads it at a declared share between them. It is no member of a line or a size, so it takes no identity
+(`identity` leaves it out, whatever family pattern its name matches): it has no relatives and is no one's relative.
+
 The base for a score is the relative that carries a direct value for it, nearest by the declared version distance
 (accounts.json `series_versions`: the rank difference among the distinct declared versions of the row and its relatives,
 0 the same version; a row without a declared version ranks after every declared distance), then the same line before
@@ -52,7 +56,8 @@ FAMILY_KEYS = ('maker', 'product', 'line', 'size')
 
 def identity(acc):
     """{row: {'maker', 'product', 'line', 'size'}} (module docstring): the declaration of the `families` row that decides
-    the row's name, or, for a `same_model` row, its declared model's; a row no `families` row decides is left out. A
+    the row's name, or, for a `same_model` row, its declared model's; a row no `families` row decides and a `between`
+    row are left out. A
     `families` row without a nonempty `maker`, `product` and `line` and a `size` of `small` or `full` stops the build."""
     models = {k: v for k, v in (acc.get('models') or {}).items() if isinstance(v, dict)}
     fams = model_resolution.family_patterns(acc)
@@ -61,8 +66,10 @@ def identity(acc):
                 and f.get('size') in model_resolution.FAMILY_SIZES):
             raise ValueError(f"accounts.json families row {f.get('pattern')!r} must declare maker, product, line and size "
                              '(small or full)')
-    out = {}
+    out, two = {}, set(between(acc))
     for k in models:
+        if k in two:
+            continue        # a `between` row is two models, of no one line or size (module docstring)
         row = model_resolution.family_row(k, fams)
         if row is not None:
             out[k] = {key: row[key] for key in FAMILY_KEYS}
@@ -114,6 +121,12 @@ def tier_up(acc):
 def same_model(acc):
     """{row key: {'model', 'carries', 'statement', 'url', 'as_of', ...}}: the `same_model` rows of accounts.json."""
     return {k: v for k, v in (acc.get('same_model') or {}).items() if isinstance(v, dict)}
+
+
+def between(acc):
+    """{row key: {'planner', 'implementer', 'share', ...}}: the `between` rows of accounts.json (five_axis.between_declaration
+    validates them)."""
+    return {k: v for k, v in (acc.get('between') or {}).items() if isinstance(v, dict)}
 
 
 def boards(meas):

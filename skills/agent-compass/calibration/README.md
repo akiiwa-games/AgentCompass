@@ -201,6 +201,31 @@ The router scores a model on **four capability categories** (`creativity`, `codi
   least as fast as its model). Cost per hour only at the row's own list price (converted from its model by the list price
   ratio and times `r`, as the row reads `r` times the model's tokens an hour), never the model's price: without its own
   price the row takes the unpriced path.
+- **Between two rows (owner, 2026-11-20).** A row `accounts.json` `between` declares to be two models at once, a planner
+  and an implementer (Antigravity's Orchestrator options: the planner in the option's name plans and reviews, Gemini 4
+  Hydrogen implements, one fixed configuration; the vendor page cited on the declaration, the CLI's id in its dated
+  `id_declaration`), is read at the declared `share` of the way from its planner row toward its implementer row (`share`
+  with its dated `share_declaration`, a number in (0, 1); changing it is that one field and `agentcompass data refresh
+  --no-fetch`). The share is the owner's (0.25, confirmed 2026-11-20): no public source measures an Orchestrator option.
+  It is interpolated rather than carried from the planner because carried values would tie each option with its planner
+  on every quantity (owner: "如果不是插值 那不是有很多同分吗"). Both bases are read at the effort `effort_readings.reads.default` names (High) and the one value is held
+  at every effort, as an operating point's. Every facet is `planner + share * (implementer - planner)` on the panel-z
+  scale (responsiveness is z of -ln(seconds), so its linear position is the geometric position in seconds), and so is
+  the tier; Time/Task and cost per hour, ratio quantities that this module combines only by ratios, take the same
+  position on the log scale, `exp(ln p + share * (ln i - ln p))` (`Scorer.interpolate_between`, `between_minutes`,
+  `between_usd`; status `estimated`, method `between`, both bases with their value, status and method and the share on
+  the cell; the category is the minimum of its facets as for every row). A quantity a base lacks stays missing and is
+  surfaced as a data error, never the other base alone; a reading of the row's own stands. At run time each facet
+  follows its bases as they are effective (local user > maintainer > measured > estimated): it is recomputed at the
+  share from the two effective curves at High and held at every effort (`user_scores._follow_effective_bases`), so a
+  hand-written score on a base moves the option and one on the option itself wins. The tier, Time/Task and cost per
+  hour have no hand-written layer and stay as built. The row is no one's base:
+  it takes no identity in `families` whatever pattern its name matches (`series.identity`), is never a relative (a
+  `same_model` or `between` declaration naming it as its model or a base is refused), and is
+  outside every fit, step, link, target, ceiling and the panel (`Scorer.entries`), a row of the release or not; so a base
+  may be a model entry (the Neon option rests on `gemini-4-neon`), and adding the row changes no other row. It is computed
+  last, from the bases' final values. Facts the vendor does not state for the option (image input, context window) are
+  not copied from its bases.
 - **Cost per hour from the fallback source (owner, 2026-11-19).** `usd_per_hour` is read from arena sessions
   (`arena.agent_sessions`); a row arena does not price takes option B (`derived.community_mix`: Artificial Analysis output
   speed priced at the community token mix), which runs high against arena sessions on the rows that have both. A row

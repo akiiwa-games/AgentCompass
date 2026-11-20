@@ -2136,7 +2136,7 @@ class DurationTests(unittest.TestCase):
                                                 'fleet_effort_position', 'same_model', 'effort_bound', 'size_step',
                                                 'fleet_lowest_step', 'fleet_highest_step', 'fleet_off_step',
                                                 'operating_point', 'speed_ratio', 'speed_lower_bound', 'declared_response_floor',
-                                                'cross_line_extrapolation', 'cross_line_median')
+                                                'cross_line_extrapolation', 'cross_line_median', 'between')
                                 for b in dur['basis_by_effort'].values()), name)
             self.assertNotIn('value', dur)
 
@@ -2973,6 +2973,197 @@ class SameModelPointTests(unittest.TestCase):
                 self.assertGreaterEqual(min(pro['minutes_by_effort'].values()), out['base']['minutes_by_effort']['max'])
 
 
+class BetweenRowTests(unittest.TestCase):
+    """Rule (accounts.json `between`, owner 2026-11-20; five_axis.between_declaration): a row declared between a planner and
+    an implementer reads each quantity at `share` of the way from the planner's value toward the implementer's, both read
+    at the effort `default` reads, one value at every effort: facets and the tier linearly (panel z; responsiveness is z of
+    -ln seconds), Time/Task and cost per hour on the log scale. A quantity one base lacks stays missing. The row is no
+    one's base, takes no place in the declared structure and moves no other row."""
+    DECL = {'kind': 'vendor', 'url': 'https://example.test/models', 'as_of': '2026-11-20', 'statement': 's',
+            'share_declaration': {'kind': 'maintainer', 'as_of': '2026-11-20', 'statement': 's'}}
+    SHARES = (0.1, 0.25, 0.6)
+
+    def setUp(self):
+        self.rel = AnchorRelativeTests('test_the_tier_is_read_only_from_the_overall_boards')
+        self.rel.ms = five_axis.measurements
+
+    def fleet(self, share, between=True, orch_reading=False):
+        """acme-p-1 (planner, line p) and beta-i-1 (implementer, its own maker) read on both coding facets (execution a
+        different value at every effort, so a base read at another effort than `default` gives another position),
+        creativity and responsiveness (the implementer none); acme-p-2, line p, one version on, unread on faithfulness; acme-p-orch, whose
+        name the line-p pattern matches, declared between the two (with a faithfulness reading of its own when
+        `orch_reading`: then no other row may rest on it)."""
+        def coding(f, e):
+            return [{'source': 'arena.agent_alignment', 'facet': 'faithfulness', 'value': f},
+                    {'source': 'aa.terminalbench_4', 'facet': 'execution', 'value': e,
+                     'z_by_effort': {n: round(e + (0.3 if f < -0.5 else 0.2) * (k - 2), 4) for k, n in enumerate(EFFORT_NAMES)}}]
+        resp = [{'source': 'aa.ttfa', 'facet': 'responsiveness', 'value': -1.5, 'z_by_effort': dict.fromkeys(EFFORT_NAMES, -1.5)}]
+        cre = [{'source': 'lmarena.creative_writing', 'facet': 'creative_writing', 'value': 0.2}]
+        extra = {'acme-p-1': self.rel.tiered(4.4, coding=coding(-0.3, 0.4), tool_operation=resp, creativity=cre),
+                 'beta-i-1': self.rel.tiered(3.6, coding=coding(-1.1, -0.6),
+                                             creativity=[{**cre[0], 'value': -0.9}]),
+                 'acme-p-2': self.rel.tiered(4.5, coding=coding(-0.2, 0.5)[1:])}
+        if between:
+            extra['acme-p-orch'] = ({'coding': [{'source': 'arena.agent_alignment', 'facet': 'faithfulness', 'value': 2.0}]}
+                                    if orch_reading else {})
+        meas = self.rel.calibration_set(extra)
+        fams = {'rows': [{'pattern': f'^{m}', 'models': [], 'maker': m, 'product': m, 'line': x, 'size': 'full'}
+                         for m, x in (('acme', 'p'), ('beta', 'i'))]}
+        versions = {'series_versions': {'versions': {'acme-p-1': 1, 'acme-p-2': 2, 'acme-p-orch': 2}}}
+        acc = {**READINGS, **versions, 'models': {m: {} for m in meas['models']}, 'families': fams}
+        if between:
+            acc['between'] = {'acme-p-orch': {**self.DECL, 'planner': 'acme-p-1', 'implementer': 'beta-i-1', 'share': share}}
+        return meas, acc
+
+    def test_every_facet_and_the_tier_lie_at_the_declared_share_held_at_every_effort(self):
+        at = READINGS['effort_readings']['reads']['default']
+        for share in self.SHARES:
+            with self.subTest(share=share):
+                rows, tier, _, _, _, _ = five_axis.Scorer(*self.fleet(share)).score()
+                facets = {(a, f): c for a, ax in rows['acme-p-orch']['axes'].items() for f, c in (ax.get('facets') or {}).items()}
+                self.assertTrue(facets)
+                for (a, f), cell in facets.items():
+                    p, i = (rows[m]['axes'][a]['facets'][f]['by_effort'][at] for m in ('acme-p-1', 'beta-i-1'))
+                    self.assertEqual(set(cell['by_effort'].values()), {round(p + share * (i - p), 4)}, (a, f))
+                    self.assertEqual(set(cell['by_effort']), set(five_axis.LADDER))
+                    self.assertEqual((cell['status'], cell['estimate']['method'], cell['estimate']['share']),
+                                     ('estimated', 'between', share))
+                    self.assertEqual((cell['estimate']['planner']['model'], cell['estimate']['implementer']['model']),
+                                     ('acme-p-1', 'beta-i-1'))
+                p, i = tier['acme-p-1']['value'], tier['beta-i-1']['value']
+                self.assertEqual((tier['acme-p-orch']['value'], tier['acme-p-orch']['method']),
+                                 (round(p + share * (i - p), 4), 'between'))
+
+    def test_a_facet_one_base_lacks_stays_missing(self):
+        rows, _, _, _, _, _ = five_axis.Scorer(*self.fleet(0.25)).score()
+        self.assertNotIn('responsiveness', rows['beta-i-1']['axes']['tool_operation'].get('facets') or {})
+        self.assertIn('responsiveness', rows['acme-p-1']['axes']['tool_operation']['facets'])
+        tool = rows['acme-p-orch']['axes']['tool_operation']
+        self.assertNotIn('responsiveness', tool.get('facets') or {})
+        self.assertIn('responsiveness', tool['missing_facets'])
+
+    def test_the_declared_row_is_no_ones_base_and_moves_no_other_row(self):
+        """Its own reading (above every other row's) is neither a relative's base nor a fit point nor a ceiling."""
+        rows, tier, fits, _, _, targets = five_axis.Scorer(*self.fleet(0.25, orch_reading=True)).score()
+        self.assertTrue(rows['acme-p-orch']['axes']['coding']['facets']['faithfulness']['status'].startswith('measured'))  # its own
+        faith = rows['acme-p-2']['axes']['coding']['facets']['faithfulness']['estimate']
+        self.assertNotIn('acme-p-orch', json.dumps(faith))          # the nearer declared version is not its base
+        self.assertNotIn('acme-p-orch', five_axis.series.identity(self.fleet(0.25)[1]))
+        without, tier0, fits0, _, _, targets0 = five_axis.Scorer(*self.fleet(0.25, between=False)).score()
+        self.assertEqual({m: r['axes'] for m, r in rows.items() if m != 'acme-p-orch'},
+                         {m: r['axes'] for m, r in without.items()})
+        self.assertEqual({m: t for m, t in tier.items() if m != 'acme-p-orch'}, tier0)
+        self.assertEqual((fits, targets), (fits0, targets0))
+
+    def test_time_and_cost_lie_at_the_declared_share_on_the_log_scale(self):
+        def tp(e, t):
+            return {'source': 'aa.cost_time', 'kind': 'benchmark', 'effort': e, 'time_per_task_min': t,
+                    'listed_as': f'x ({e})', 'as_of': '2026-11-20', 'url': 'https://example.test/aa'}
+        for share in self.SHARES:
+            with self.subTest(share=share):
+                fields = {five_axis.measurements.ANCHOR: [tp('high', 10.0)], 'plan': [tp('high', 40.0), tp('max', 90.0)],
+                          'impl': [tp('high', 5.0), tp('max', 3.0)], 'opt': [], 'gap': [], 'own': [tp('high', 7.0)],
+                          'zero': [], 'free': [], 'opt-less': []}
+                decl = {**self.DECL, 'planner': 'plan', 'implementer': 'impl', 'share': share}
+                acc = {**READINGS, 'models': {m: {} for m in fields}, 'aliases': {}, 'families': {'rows': []},
+                       'between': {'opt': decl, 'own': decl, 'gap': {**decl, 'implementer': 'opt-less'},
+                                   'zero': {**decl, 'implementer': 'free'}}}
+                rows = {m: {'fields': {'throughput': v}} for m, v in fields.items()}
+                scorer = five_axis.Scorer({'models': fields}, acc)
+                out, _, _ = five_axis.durations(scorer, rows, acc)
+                want = round(math.exp(math.log(40.0) + share * (math.log(5.0) - math.log(40.0))), 3)
+                self.assertEqual(set(out['opt']['minutes_by_effort'].values()), {want})
+                self.assertEqual(set(out['opt']['minutes_by_effort']), set(five_axis.LADDER))
+                self.assertEqual(out['opt']['basis_by_effort']['high']['method'], 'between')
+                self.assertEqual(out['gap']['status'], 'missing')          # a base without a time: no time
+                self.assertEqual(out['own']['minutes_by_effort']['high'], 7.0)   # a reading of its own stands
+                self.assertNotEqual(out['own']['basis_by_effort']['high']['method'], 'between')
+                usd = {'plan': {'value': 6.0, 'status': 'ok', 'kind': 'community'},
+                       'impl': {'value': 18.0, 'status': 'ok', 'kind': 'community'},
+                       'free': {'value': 0.0, 'status': 'ok', 'kind': 'community'},
+                       'own': {'value': 9.0, 'status': 'ok', 'kind': 'community'},
+                       **{m: {'value': None, 'status': 'missing'} for m in ('opt', 'gap', 'opt-less', 'zero')}}
+                five_axis.between_usd(usd, scorer)
+                self.assertEqual(usd['opt']['value'], round(math.exp(math.log(6.0) + share * (math.log(18.0) - math.log(6.0))), 3))
+                self.assertEqual((usd['opt']['method'], usd['opt']['share']), ('between', share))
+                self.assertIsNone(usd['gap']['value'])                    # a base without a value: unpriced
+                self.assertIsNone(usd['zero']['value'])     # no positive cost: no position on the log scale, unpriced
+                self.assertEqual((usd['own']['value'], usd['own'].get('method')), (9.0, None))   # its own value stands
+
+    def test_a_row_read_from_other_rows_carries_their_measured_sources_as_evidence(self):
+        """Rule (five_axis.axis_evidence, copied_from; round 058 review F5): `aa_only` holds when no axis has a measured
+        non-AA source; a cell read from other rows as they stand (a `between` cell from both bases, a `same_model` copy
+        from its model, transitively) carries those rows' measured non-AA sources of the same facet; an estimate from a
+        relative carries none, even when its cell records its base's sources (only a measured cell's sources count)."""
+        def cell(sources=(), estimate=None):
+            return ({'status': 'estimated', 'estimate': estimate, 'sources': dict.fromkeys(sources, 0.0)} if estimate else
+                    {'status': 'measured', 'sources': dict.fromkeys(sources, 0.0)})
+
+        def axes(c):
+            return {'coding': {'status': 'estimated', 'facets': {'faithfulness': c}}}
+        between = {'method': 'between', 'planner': {'model': 'p'}, 'implementer': {'model': 'i'}}
+        rows = {'p': {'axes': axes(cell(['aa.x']))}, 'i': {'axes': axes(cell(['arena.agent_alignment', 'aa.y']))},
+                'aa': {'axes': axes(cell(['aa.z']))},
+                'copy': {'axes': axes(cell(estimate={'method': 'same_model', 'base_model': 'i'}))},
+                'shift': {'axes': axes(cell(['arena.agent_alignment'], {'method': 'sibling_shift', 'base_model': 'i'}))}}
+        cases = [(between, False, ['arena.agent_alignment']),
+                 ({**between, 'implementer': {'model': 'aa'}}, True, []),
+                 ({'method': 'same_model', 'base_model': 'i'}, False, ['arena.agent_alignment']),
+                 ({'method': 'same_model', 'base_model': 'copy'}, False, ['arena.agent_alignment']),   # transitively
+                 ({'method': 'same_model', 'base_model': 'aa'}, True, []),
+                 ({'method': 'sibling_shift', 'base_model': 'i'}, True, []),
+                 ({'method': 'same_model', 'base_model': 'shift'}, True, [])]     # a copy of an estimate: none
+        for est, aa_only, indep in cases:
+            with self.subTest(estimate=est):
+                got = five_axis.axis_evidence(axes(cell(['arena.recorded'], est)), rows)
+                self.assertEqual((got['aa_only'], got['independent_sources']['coding']), (aa_only, indep))
+
+    def test_a_declaration_naming_no_row_or_a_copy_of_a_declared_row_stops_the_build(self):
+        """Rule (five_axis.between_rows): a `between` declaration whose row is not in models, and a `same_model`
+        declaration whose model is a `between` row (a declared row is no one's base), are refused, never ignored."""
+        models = {'a': {}, 'b': {}, 'x': {}, 'c': {}}
+        good = {**self.DECL, 'planner': 'a', 'implementer': 'b', 'share': 0.25}
+        self.assertEqual(set(five_axis.between_rows({'between': {'x': good}}, models)), {'x'})
+        with self.assertRaisesRegex(ValueError, 'name no row of models: ghost'):
+            five_axis.between_rows({'between': {'x': good, 'ghost': good}}, models)
+        with self.assertRaisesRegex(ValueError, 'same_model rows c name a between row'):
+            five_axis.between_rows({'between': {'x': good}, 'same_model': {'c': {'model': 'x'}}}, models)
+
+    def test_a_malformed_declaration_stops_the_build(self):
+        models = {'a': {}, 'b': {}, 'x': {}}
+        good = {**self.DECL, 'planner': 'a', 'implementer': 'b', 'share': 0.25}
+        self.assertEqual(five_axis.between_declaration('x', good, models)['share'], 0.25)
+        for bad in ({**good, 'share': 0}, {**good, 'share': 1}, {**good, 'share': True}, {**good, 'implementer': 'a'},
+                    {**good, 'planner': 'nope'}, {**good, 'planner': 'x'}, {**good, 'url': None},
+                    {k: v for k, v in good.items() if k != 'share_declaration'}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                five_axis.between_declaration('x', bad, models)
+        with self.assertRaisesRegex(ValueError, 'another between row'):
+            five_axis.between_rows({'between': {'x': good, 'y': {**good, 'planner': 'x'}}}, {**models, 'y': {}})
+
+    def test_the_shipped_between_rows_follow_the_rule(self):
+        refs = account_fleet.REFERENCES
+        acc = json.loads((refs / 'accounts.json').read_text(encoding='utf-8-sig'))
+        models = json.loads((refs / 'five-axis-scores.json').read_text(encoding='utf-8-sig'))['models']
+        at = acc['effort_readings']['reads']['default']
+        self.assertTrue(acc.get('between'))
+        for row, decl in acc['between'].items():
+            p, i, s = models[decl['planner']], models[decl['implementer']], decl['share']
+            with self.subTest(row=row):
+                for a, ax in models[row]['axes'].items():
+                    for f, cell in (ax.get('facets') or {}).items():
+                        if cell['status'].startswith('measured'):
+                            continue
+                        vp, vi = (m['axes'][a]['facets'][f]['by_effort'][at] for m in (p, i))
+                        self.assertEqual(set(cell['by_effort'].values()), {round(vp + s * (vi - vp), 4)}, (a, f))
+                tp, ti = (m['duration_multiplier']['minutes_by_effort'][at] for m in (p, i))
+                t = models[row]['duration_multiplier']['minutes_by_effort']
+                self.assertEqual(set(t.values()), {round(math.exp(math.log(tp) + s * (math.log(ti) - math.log(tp))), 3)})
+                up, ui = p['usd_per_hour']['value'], i['usd_per_hour']['value']
+                self.assertEqual(models[row]['usd_per_hour']['value'],
+                                 round(math.exp(math.log(up) + s * (math.log(ui) - math.log(up))), 3))
+
+
 class ReleasedEntryRowTests(unittest.TestCase):
     """Rule (five_axis.Scorer.new_entries, without_entries; round 8 item 4): a row the release had without readings keeps
     its place in the declared structure when a model entry gives it readings (it is in `release_rows`), so every other row
@@ -3545,7 +3736,7 @@ class CrossSizeAndEdgeRuleTests(unittest.TestCase):
         s = self.fa.Scorer.__new__(self.fa.Scorer)
         s.acc = acc or {'accounts': {}, 'dispatch_efforts': {}}
         s.size_of, s.size_steps, s.steps = size_of or {}, size_steps or {}, steps or {}
-        s.same, s.speed, s.fill_refused, s.points, s.response_floor = {}, {}, [], {}, {}
+        s.same, s.speed, s.fill_refused, s.points, s.response_floor, s.between = {}, {}, [], {}, {}, {}
         s.meas, s.links, s.distrust, s.entries = {'sources': {}}, {}, set(), frozenset()
         return s
 
