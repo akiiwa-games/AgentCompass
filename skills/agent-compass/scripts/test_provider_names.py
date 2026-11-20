@@ -1241,8 +1241,86 @@ class PinIdentityMatchesBundle(unittest.TestCase):
             b = next(iter(derived.values()))
             self.assertEqual((b['model'], b['score_source']), ('opencode/deepseek-v4-flash', 'other_weights'))
             self.assertIn('opencode', b['_served'])
+            self.assertIn('opencode-zen', b['_presets'])
             fleet = self.subscription_fleet({'my-zen': ('codex', derived, 'balance')})
             self.assertEqual(self.plan_pin(fleet, model='deepseek-v4-flash')['choice'], next(iter(derived)))
+            self.assertEqual(self.plan_pin(fleet, model='opencode-zen/deepseek-v4-flash')['choice'], next(iter(derived)))
+            self.assertEqual(self.plan_pin(fleet, model='opencode/deepseek-v4-flash')['choice'], next(iter(derived)))
+
+        # Rule (Magpie preset id as prefix): on a Magpie account, the preset id (`_presets`) and each catalog id it serves
+        # (`_served`) name that account's bundles of the row and no other account's, whether the bundle advertises the bare
+        # name or a prefixed one, without changing which `provider_names` declarations are read.
+        from router_test_support import usage_windows
+        for acct_name, preset_id, served_ids in (
+            ('my-zen', 'opencode-zen', ('opencode',)),
+            ('my-step', 'stepfun', ('stepfun-ai-step-plan', 'stepfun-ai')),
+        ):
+            for advertised in ('gpt-6-astra', f'{preset_id}/gpt-6-astra', f'{served_ids[0]}/gpt-6-astra'):
+                mdoc = copy.deepcopy(SHIPPED)
+                mdoc['accounts'] = {acct_name: {'billing': 'subscription', 'family': 'codex',
+                                                'windows': {'usage': {'hours': 168}}, 'bundles': {}}}
+                mdoc['_discovery'] = {'accounts': {acct_name: {'magpie_providers': [preset_id]}}}
+                m_derived = auto_bundles.derive(
+                    mdoc,
+                    {'providers': {acct_name: {'ok': True, 'type': 'openai_compatible', 'checked_at': NOW,
+                                               'models': [{'id': advertised}]}}},
+                    NOW,
+                )['bundles'][acct_name]
+                m_bid = next(iter(m_derived))
+                codex_bundles = {
+                    'b_codex_astra': {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-6-astra',
+                                      'launch_model': 'gpt-6-astra', 'effort': 'high', 'draws': ['usage']},
+                    'b_codex_gpt55': {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-5.5',
+                                      'launch_model': 'gpt-5.5', 'effort': 'high', 'draws': ['usage']},
+                }
+                u_mag = usage_windows(self.at, {acct_name: [('usage', 90, 100)], 'codex': [('usage', 90, 100)]})
+                for rev in (False, True):
+                    items = [(acct_name, ('codex', copy.deepcopy(m_derived), 'usage')),
+                             ('codex', ('codex', copy.deepcopy(codex_bundles), 'usage'))]
+                    if rev:
+                        items.reverse()
+                    fl = self.subscription_fleet(dict(items))
+                    pool = account_fleet.pin_pool(fl)
+                    for pfx in (acct_name, preset_id, *served_ids):
+                        with self.subTest(preset=preset_id, advertised=advertised, rev=rev, prefix=pfx):
+                            self.assertEqual(
+                                [x['id'] for x in account_fleet.pin_matching_bundles(f'{pfx}/gpt-6-astra', pool, fl)],
+                                [m_bid],
+                            )
+                            self.assertEqual(self.plan_pin(fl, model=f'{pfx}/gpt-6-astra', usage=u_mag)['choice'], m_bid)
+                            # Disabling the Magpie bundle blocks rather than falling onto Codex's `gpt-6-astra`:
+                            fl_dis = copy.deepcopy(fl)
+                            fl_dis['accounts'][acct_name]['bundles'][m_bid]['disabled'] = True
+                            p_dis = self.plan_pin(fl_dis, model=f'{pfx}/gpt-6-astra', usage=u_mag)
+                            self.assertEqual((p_dis['choice'], p_dis['decision']['blocked']), ('none', 'named_model_unavailable'))
+                            # Asking `<pfx>/gpt-5.5` (which only Codex holds) returns `none` rather than Clause 3:
+                            p_miss = self.plan_pin(fl, model=f'{pfx}/gpt-5.5', usage=u_mag)
+                            self.assertEqual(p_miss['choice'], 'none')
+                            self.assertIn('no configured bundle offers it', p_miss['decision']['reason'])
+                    # Bare `gpt-6-astra` still names both accounts' bundles:
+                    self.assertEqual(
+                        {x['id'] for x in account_fleet.pin_matching_bundles('gpt-6-astra', pool, fl)},
+                        {m_bid, 'b_codex_astra'},
+                    )
+
+        # `_presets` does not change which `provider_names` declarations are read: Magpie preset `zai` reads `zhipuai`'s
+        # `other_weights` declaration (never `rows['zai']`'s `glm-5.2`), while `zai/glm-test` and `zhipuai/glm-test` both name it:
+        zai_doc = copy.deepcopy(test_acc)
+        zai_doc['accounts'] = {'my-zai': {'billing': 'subscription', 'family': 'codex', 'windows': {'usage': {'hours': 168}}, 'bundles': {}}}
+        zai_doc['_discovery'] = {'accounts': {'my-zai': {'magpie_providers': ['zai']}}}
+        zai_derived = auto_bundles.derive(
+            zai_doc,
+            {'providers': {'my-zai': {'ok': True, 'type': 'openai_compatible', 'checked_at': NOW, 'models': [{'id': 'glm-test'}]}}},
+            NOW,
+        )['bundles']['my-zai']
+        zai_b = next(iter(zai_derived.values()))
+        self.assertEqual((zai_b['model'], zai_b['score_source']), ('zhipuai/glm-test', 'other_weights'))
+        zai_fl = self.subscription_fleet({'my-zai': ('codex', zai_derived, 'usage')})
+        for pfx in ('zai', 'zhipuai', 'my-zai'):
+            self.assertEqual(
+                [x['id'] for x in account_fleet.pin_matching_bundles(f'{pfx}/glm-test', account_fleet.pin_pool(zai_fl), zai_fl)],
+                [next(iter(zai_derived))],
+            )
 
         # Provenance validation checks `provider_names.host_providers` citations and rejects top-level `providers`:
         reference_provenance.validate_accounts_provenance(SHIPPED)

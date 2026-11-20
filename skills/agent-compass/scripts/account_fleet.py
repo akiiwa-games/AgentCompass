@@ -191,6 +191,26 @@ def bundle_providers(bundle, accounts=None):
     return account_providers(accounts, account) if accounts and account else ()
 
 
+def account_presets(accounts, account):
+    """The unexpanded endpoint/preset ids `auto_bundles.derive` read an account's bundles from (`_presets`, what
+    `auto_bundles.endpoint_providers` held before `expand_host_providers` replaced Magpie's preset ids; never passed to
+    `resolve_model`, so which declarations are read does not change)."""
+    spec = ((accounts or {}).get('accounts') or {}).get(account) or {}
+    return tuple(dict.fromkeys(p for b in (spec.get('bundles') or {}).values() if isinstance(b, dict)
+                               for p in b.get('_presets') or ()))
+
+
+def bundle_presets(bundle, accounts=None):
+    """The unexpanded endpoint/preset ids `bundle` was derived with (`_presets`), else the account's."""
+    presets = (bundle or {}).get('_presets')
+    if presets:
+        return tuple(dict.fromkeys(p for p in presets if p))
+    if (bundle or {}).get('auto') is False:
+        return ()
+    account = (bundle or {}).get('account')
+    return account_presets(accounts, account) if accounts and account else ()
+
+
 def advertised_model(bundle):
     """The model spelling `bundle` advertises on its provider (no `:effort` suffix)."""
     return split_model_effort((bundle or {}).get('launch_model') or (bundle or {}).get('model') or '')[0]
@@ -295,12 +315,14 @@ def pin_matches_identity(pin, bundle, accounts):
 
 
 def _bundle_has_prefix(bundle, prefix, accounts):
-    """Whether `prefix` (lowercase) is `bundle`'s account, provider (`_same_provider`), or one of `bundle_providers`."""
+    """Whether `prefix` (lowercase) is `bundle`'s account, provider (`_same_provider`), serving provider
+    (`bundle_providers`) or unexpanded endpoint/preset id (`bundle_presets`)."""
     acct = str(bundle.get('account') or '').lower()
     prov = str(bundle.get('provider') or acct).lower()
     if prefix == acct or _same_provider(prov, prefix):
         return True
-    return any(str(p).lower() == prefix for p in bundle_providers(bundle, accounts))
+    known = (*bundle_providers(bundle, accounts), *bundle_presets(bundle, accounts))
+    return any(str(p).lower() == prefix for p in known)
 
 
 def _prefixed_bundle_matches(text, spelled, prefix, bundle, accounts):
@@ -465,7 +487,7 @@ def bundles(accounts):
                               'model': model_name, 'effort': bundle.get('effort') or fixed,
                               **({'effort_fixed': True} if fixed else {}),
                               **{k: bundle[k] for k in ('modeId', 'disabled', 'disabled_by_default', 'efforts', 'launch_model',
-                                                        'discovery_unavailable', 'draws', '_served',
+                                                        'discovery_unavailable', 'draws', '_served', '_presets',
                                                         'auto', 'billing', 'score_source', 'score_basis',
                                                         'availability', 'compatibility', 'compatibility_reason') if k in bundle}}
     return out
