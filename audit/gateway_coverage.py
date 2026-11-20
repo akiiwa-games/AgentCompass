@@ -211,17 +211,29 @@ def ungated_reason(doc, row, out_of_scope):
     return None
 
 
-def row_providers(doc, row):
+def row_providers(doc, row, accounts=None):
     """The providers a gateway's own listing says serve the catalog row's name (owner, 2026-11-19, round 7): the row's
-    provider as the catalog names it, and the account's provider for a Magpie `account:<kind>` (its `gate.makers` entry).
-    model_resolution.serving_providers adds the provider part of a `provider/name` id."""
+    provider as the catalog names it, the account's provider for a Magpie `account:<kind>` (its `gate.makers` entry),
+    and—for a `magpie_preset` catalog—the declaration providers `provider_names.host_providers['magpie']` maps a Magpie
+    preset id to. model_resolution.serving_providers adds the provider part of a `provider/name` id."""
     account = ((doc.get('gate') or {}).get('makers') or {}).get(row['provider']) if row['provider'].startswith('account:') else None
-    return tuple(dict.fromkeys(p for p in (row['provider'], account) if p))
+    base = tuple(dict.fromkeys(p for p in (row['provider'], account) if p))
+    if accounts and doc.get('provider_kind') == 'magpie_preset':
+        return model_resolution.expand_host_providers(base, 'magpie', accounts)
+    return base
+
+
+def _preview_key(value):
+    """Canonical id / row id with the resolver's `-preview` tag stripped (`model_resolution.without_preview`, lowercase):
+    owner, 2026-11-20, a `-preview` name is the released row of that name."""
+    return model_resolution.without_preview(value).lower()
 
 
 def own_ids(listings, row):
-    """The canonical ids the names file gives the row itself (a listed id whose last segment is the row's id)."""
-    return {x[1] for x in listings.get(row) or () if x[1] and x[1].rsplit('/', 1)[-1] == row}
+    """The canonical ids the names file gives the row itself (a listed id whose last segment matches the row's id up to
+    the `-preview` tag `model_resolution.without_preview` strips)."""
+    target = _preview_key(row)
+    return {x[1] for x in listings.get(row) or () if x[1] and _preview_key(x[1].rsplit('/', 1)[-1]) == target}
 
 
 def row_ids(listings, accounts, row):
@@ -234,9 +246,10 @@ def row_ids(listings, accounts, row):
 
 def identity_conflict(names, accounts, served, model, row):
     """{provider, listed, row} for the first (provider, name) of `served` (model_resolution.serving_providers) the
-    models.dev names file identifies as other weights than `row` (both have a canonical id and they differ, the pair's
-    `provider_names` declaration giving no `canonical_id` the file lists, and `model` is not an alias citing the maker's
-    statement), else None: every provider the file knows for the pair is checked, not one of them."""
+    models.dev names file identifies as other weights than `row` (both have a canonical id and they differ after
+    `model_resolution.without_preview`, the pair's `provider_names` declaration giving no `canonical_id` the file lists,
+    and `model` is not an alias citing the maker's statement), else None: every provider the file knows for the pair is
+    checked, not one of them."""
     listings = (names or {}).get('names') or {}
     own = row_ids(listings, accounts, row)
     source = (((accounts.get('alias_sources') or {}).get('rows') or {}).get(model) or {})
@@ -247,7 +260,8 @@ def identity_conflict(names, accounts, served, model, row):
         listed = sorted({x[1] for x in listings.get(name) or () if x[0].lower() == provider.lower() and x[1]})
         declared = ((rows.get(provider.lower()) or {}).get(name.lower()) or {})
         accepted = own | ({declared['canonical_id']} if declared.get('model') == row and declared.get('canonical_id') else set())
-        if listed and not set(listed) & accepted:
+        accepted_keys = {_preview_key(cid) for cid in accepted}
+        if listed and not ({_preview_key(cid) for cid in listed} & accepted_keys):
             return {'provider': provider, 'listed': listed, 'row': sorted(accepted)}
     return None
 
@@ -283,12 +297,12 @@ def declaration_violations(accounts, listed):
             if d.get('model') is None:
                 if d.get('status') == 'retired' and d.get('kind') != 'vendor':
                     out.append(f"{where}: a retired declaration cites the maker's notice (kind vendor)")
-            elif ids and not ids & accepted(d):
+            elif ids and not ({_preview_key(cid) for cid in ids} & {_preview_key(cid) for cid in accepted(d)}):
                 out.append(f"{where}: declares row {d['model']} ({', '.join(sorted(accepted(d))) or 'no canonical id'}), "
                            f"the names file lists {', '.join(sorted(ids))} on {provider}: correct the declaration and "
                            'publish it (agentcompass data publish)')
             elif (d.get('kind') == 'community' and default is not None and default.get('model') != d['model'] and ids
-                  and ids <= row_ids(names, accounts, default['model'])):
+                  and {_preview_key(cid) for cid in ids} <= {_preview_key(cid) for cid in row_ids(names, accounts, default['model'])}):
                 out.append(f"{where}: declares row {d['model']} citing the names file, whose listing on {provider} "
                            f"({', '.join(sorted(ids))}) only repeats the name, which reads {default['model']}: the source "
                            'does not say what the declaration says (remove it, or declare it as the maker or the '
@@ -300,7 +314,7 @@ def declaration_violations(accounts, listed):
                 counts['provider'] += 1
             elif (d := model_resolution.maker_default(name, table)) is not None:
                 counts['default'] += 1
-                if canonical and canonical not in accepted(d):
+                if canonical and _preview_key(canonical) not in {_preview_key(cid) for cid in accepted(d)}:
                     out.append(f"provider_names defaults[{name}] is {d['model']}, and {provider} lists the name as "
                                f'{canonical}, another snapshot, with no declaration of its own: declare what it serves '
                                'there (provider_names rows) and publish it')
@@ -319,7 +333,7 @@ def pairs(accounts, catalogs, five_axis, public_scores, out_of_scope=None, names
         kind = doc['provider_kind']
         for row in doc['rows']:
             # A Magpie preset is an endpoint (its ids are in its own namespace); a harness row is a launcher's catalog.
-            providers = row_providers(doc, row) if kind == 'magpie_preset' else ()
+            providers = row_providers(doc, row, accounts) if kind == 'magpie_preset' else ()
             found = model_resolution.resolve_in(row['model'], accounts, providers)
             key = found['key'] if found['source'] in model_resolution.DIRECT_SOURCES else None
             efforts = row.get('efforts')
@@ -459,7 +473,7 @@ def alias_violations(accounts, listed, catalogs):
         ca, cb = {x[1] for x in a if x[1]}, {x[1] for x in b if x[1]}
         # the maker's own statement that the two names are one model outweighs the aggregator's separate entries
         maker_says = (sources.get(name) or {}).get('kind') == 'vendor'
-        if ca and cb and not ca & cb and not maker_says:
+        if ca and cb and not ({_preview_key(cid) for cid in ca} & {_preview_key(cid) for cid in cb}) and not maker_says:
             out.append(f'alias {name} -> {target}: models.dev gives different canonical ids ({", ".join(sorted(ca))} '
                        f'against {", ".join(sorted(cb))})')
         pa, pb = {x[0]: tuple(x[2:]) for x in a}, {x[0]: tuple(x[2:]) for x in b}

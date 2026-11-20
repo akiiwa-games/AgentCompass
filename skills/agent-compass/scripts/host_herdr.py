@@ -75,7 +75,7 @@ def interactive(bundle):
         from fast_modes import validate
         accounts = account_fleet.load_accounts()
         canonical = account_fleet.canonical(bundle['model'], accounts)
-        validate(family, canonical, account_fleet.model_spec(accounts, canonical))
+        validate(family, canonical, account_fleet.row_spec(accounts, canonical))
     model = launch_values.argument('model', bundle.get('launch_model') or bundle['model'])
     effort = bundle.get('effort') and launch_values.argument('effort', bundle['effort'])
     command = roll.cli_command(family, bundle['provider'])

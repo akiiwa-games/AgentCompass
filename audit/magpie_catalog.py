@@ -203,6 +203,26 @@ def presets(src):
     return out
 
 
+def preset_providers(src, commit, as_of='2026-11-19'):
+    """{preset id: {providers, kind, url, as_of, statement}} from presets.go for `provider_names.host_providers.magpie`:
+    each Magpie preset whose models.dev catalog list (`p['catalogs']`) differs from `[p['id']]` (except a hosting vendor
+    whose own id is already its models.dev catalog, such as Azure OpenAI)."""
+    out = {}
+    for p in presets(src):
+        if not p['catalogs'] or p['catalogs'] == [p['id']] or (p['hosts'] and p['id'] in p['catalogs']):
+            continue
+        cats = list(p['catalogs'])
+        out[p['id']] = {
+            'providers': cats,
+            'kind': 'vendor',
+            'url': f"https://github.com/yetone/magpie/blob/{commit}/internal/provider/presets.go#L{p['line']}",
+            'as_of': as_of,
+            'statement': (f"Magpie internal/provider/presets.go:{p['line']}: preset {p['id']!r} serves "
+                          f"models.dev catalog {', '.join(repr(c) for c in cats)}"),
+        }
+    return dict(sorted(out.items()))
+
+
 def go_list(src, rel, var):
     text = (src / rel).read_text(encoding='utf-8')
     m = need(r'var ' + var + r' = \[\]catalog\.Model\{', text, rel)

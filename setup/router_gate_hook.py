@@ -1133,6 +1133,15 @@ def launch_target(name: str, args: dict, trigger: str) -> dict[str, str]:
     return target
 
 
+def bundle_launch_model(bundle: dict, fallback_provider: str | None = None) -> str | None:
+    """Normalized wire model spelling a catalog bundle launches as (`launch_model`, else `model`)."""
+    raw = bundle.get("launch_model") or bundle.get("model")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    prov = str(bundle.get("provider") or fallback_provider or "").strip()
+    return normalize_launch({"provider": prov, "model": raw}).get("model")
+
+
 def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, list[dict]]:
     """Owning account and the bundles the target can be, by bundle_id or by model/effort/Pi harness."""
     table = (accounts or {}).get("accounts") or {}
@@ -1142,14 +1151,17 @@ def resolve_target(target: dict, accounts: dict | None) -> tuple[str | None, lis
     candidates = []
     if target.get("bundle_id") and table:
         candidates = router_owner("account_fleet", "bundle_rows")(accounts, target["bundle_id"])
-    elif not target.get("bundle_id"):
-        for name, spec in table.items():
-            for bundle_id, bundle in (spec.get("bundles") or {}).items():
-                if bool(target.get("model")) and account in (None, name) and (
-                        same_launch_value("model", target["model"], bundle.get("model"))
-                        and target.get("effort") in (None, bundle.get("effort"))
-                        and (not provider or (bundle.get("provider") == "pi") == (provider == "pi"))):
-                    candidates.append(dict(bundle, account=name, bundle_id=bundle_id))
+    elif not target.get("bundle_id") and bool(target.get("model")):
+        pin_pool, pin_matching_bundles = router_owner("account_fleet", "pin_pool", "pin_matching_bundles")
+        pool = [
+            dict(bundle, bundle_id=bundle["id"], launch_model=bundle_launch_model(bundle, bundle["account"]) or "")
+            for bundle in pin_pool(accounts, account=account, provider=provider)
+        ]
+        if target["model"] in CLAUDE_MODEL_FAMILIES:
+            matched = [c for c in pool if same_launch_value("model", target["model"], c.get("launch_model"))]
+        else:
+            matched = pin_matching_bundles(target["model"], pool, accounts)
+        candidates = [c for c in matched if target.get("effort") in (None, c.get("effort"))]
     if not account and len({c["account"] for c in candidates}) == 1:
         account = candidates[0]["account"]
     return account, [c for c in candidates if c["account"] == account]
@@ -1400,8 +1412,10 @@ def correlation_fields(*sources: dict) -> dict[str, str]:
     return result
 
 
-def route_spec(row: dict, accounts: dict | None = None) -> dict[str, str]:
-    choice = row.get("choice")
+def _merged_route_bundle(row: dict, accounts: dict | None = None) -> dict:
+    raw_bundle = row.get("bundle") or row.get("selected_bundle") or {}
+    raw_dict = raw_bundle if isinstance(raw_bundle, dict) else {}
+    choice = raw_dict.get("bundle_id") or row.get("choice")
     catalog_bundle = {}
     if isinstance(choice, str) and choice and isinstance(accounts, dict):
         acct, matches = resolve_target({"bundle_id": choice}, accounts)
@@ -1409,15 +1423,18 @@ def route_spec(row: dict, accounts: dict | None = None) -> dict[str, str]:
             catalog_bundle = dict(matches[0])
             if acct and not catalog_bundle.get("account"):
                 catalog_bundle["account"] = acct
-    raw_bundle = row.get("bundle") or row.get("selected_bundle") or {}
-    merged = {
-        **catalog_bundle,
-        **(raw_bundle if isinstance(raw_bundle, dict) else {}),
-    }
+    merged = {**catalog_bundle, **raw_dict}
     for key in ("provider", "account", "model", "effort"):
         val = row.get(key)
         if isinstance(val, str) and val and not merged.get(key):
             merged[key] = val
+    return merged
+
+
+def route_spec(row: dict, accounts: dict | None = None) -> dict[str, str]:
+    merged = _merged_route_bundle(row, accounts)
+    if isinstance(merged.get("launch_model"), str) and merged["launch_model"].strip():
+        merged = {**merged, "model": merged["launch_model"]}
     spec = normalize_launch(merged)
     if not spec.get("provider"):
         if is_dot_route(row):

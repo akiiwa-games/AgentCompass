@@ -168,10 +168,9 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
     model = account_fleet.canonical(bundle.get('model'), accounts)
     if bundle.get('fast'):
         fast_modes.validate(account_fleet.bundle_harness(bundle, bundle.get('account')), model,
-                                      account_fleet.model_spec(accounts, model))
-    own_model = account_fleet.row_key(bundle.get('model') or '', accounts)
-    siblings = [b for b in account_fleet.bundles(accounts).values()
-                if account_fleet.row_key(b.get('model') or '', accounts) == own_model and all(b.get(k) == bundle.get(k) for k in ('provider', 'account'))]
+                                      account_fleet.row_spec(accounts, model))
+    pool = account_fleet.pin_pool(accounts, account=bundle.get('account'), provider=bundle.get('provider'))
+    siblings = account_fleet.pin_matching_bundles(bundle.get('launch_model') or bundle.get('model') or '', pool, accounts)
     bid = bundle.get('bundle_id') or bundle.get('id')
     by_id = next((b for b in siblings if bid and b.get('id') == bid), None)
     carrier = next((b for b in siblings if bundle.get('pin_carrier') and b.get('id') == bundle['pin_carrier']), None)
@@ -203,7 +202,7 @@ def resolve_bundle(bundle, accounts, explicit_override=False):
             contract | {s.get('effort') for s in siblings}))
     base = next((b for b in siblings if not b.get('disabled')), siblings[0])
     identity = {k: bundle.get(k) for k in ('provider', 'account', 'effort')}
-    identity['model'] = own_model
+    identity['model'] = account_fleet.row_key(base.get('model') or '', accounts)
     key = 'user_override_' + digest(identity)[:24]
     mode = base.get('modeId') or auto_bundles.HARNESS_MODE.get(base.get('harness'))
     return dict(base, id=key, bundle_id=key, effort=bundle['effort'], **({'modeId': mode} if mode else {}),
@@ -228,7 +227,7 @@ def check_launch_quota(bundle, accounts, usage, now):
     if bundle.get('fast'):
         model = account_fleet.canonical(bundle['model'], accounts)
         fast_modes.validate(account_fleet.bundle_harness(bundle, bundle['account']), model,
-                                      account_fleet.model_spec(accounts, model))
+                                      account_fleet.row_spec(accounts, model))
     usage = provider_inventory.merge_usage(usage, accounts, now)
     spec = accounts['accounts'][bundle['account']]
     row = (usage.get('accounts') or {}).get(bundle['account']) or {}
@@ -352,8 +351,8 @@ def launch_request(bundle, launch):
         import account_fleet
         from fast_modes import validate
         accounts = account_fleet.load_accounts()
-        model = account_fleet.canonical(bundle['model'], accounts)
-        validate(family, model, account_fleet.model_spec(accounts, model))
+        c_model = account_fleet.canonical(bundle['model'], accounts)
+        validate(family, c_model, account_fleet.row_spec(accounts, c_model))
     if family == 'codex':
         settings['features'] = {'service_tier': 'priority' if bundle.get('fast') else 'default'}
     elif family == 'claude':

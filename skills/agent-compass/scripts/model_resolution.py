@@ -23,7 +23,9 @@ import public_data
 EFFORT_SUFFIXES = ('none', 'minimal', 'default', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
 _COLON_EFFORT = re.compile(r'^(?P<name>.+):(?P<effort>' + '|'.join(EFFORT_SUFFIXES) + r')$', re.I)
 _DASH_EFFORT = re.compile(r'^(?P<name>.+)-(?P<effort>' + '|'.join(EFFORT_SUFFIXES) + r')$')
-_VENDOR_TAG = re.compile(r'(?:@\d{8}|-\d{8}|-\d{4}-\d{2}-\d{2}|:\w+|\[\w+\]|-(?:latest|preview))$')
+PREVIEW_TAG = '-preview'
+_PREVIEW_TAG = re.compile(re.escape(PREVIEW_TAG) + r'$', re.I)
+_VENDOR_TAG = re.compile(r'(?:@\d{8}|-\d{8}|-\d{4}-\d{2}-\d{2}|:\w+|\[\w+\]|-(?:latest|' + re.escape(PREVIEW_TAG[1:]) + r'))$')
 # How a name reached its directory row: `provider` is the row a serving provider's declaration names, `default` the row
 # the maker's declaration names (provider_names). `family`, the PROVIDER_NAME_STATUSES, `conflict` and `unknown` name no
 # row of their own.
@@ -74,16 +76,55 @@ def serving_providers(raw_model_name, endpoints=()):
     return list(dict.fromkeys(out))
 
 
+def expand_host_providers(providers, host, accounts=None):
+    """`providers` with each preset/provider id of `host` replaced by the models.dev catalog ids
+    `provider_names.host_providers[host]` maps it to (ids not in that host's table stay themselves; order kept,
+    duplicates dropped). Only callers holding a `host` provider id call this, never `_declared_at`."""
+    if isinstance(accounts, dict) and 'rows' in accounts and 'defaults' in accounts:
+        hosts = accounts.get('host_providers') or {}
+    elif isinstance(accounts, dict) and isinstance(accounts.get('provider_names'), dict):
+        hosts = accounts['provider_names'].get('host_providers') or {}
+    else:
+        hosts = {}
+    mapping = hosts.get(str(host or '').lower()) if isinstance(hosts, dict) else None
+    out = []
+    for p in providers or ():
+        if not p:
+            continue
+        entry = mapping.get(str(p).lower()) if isinstance(mapping, dict) else None
+        targets = (entry.get('providers') if isinstance(entry, dict) else None) or ()
+        if targets:
+            out.extend(str(t) for t in targets if t)
+        else:
+            out.append(str(p))
+    return tuple(dict.fromkeys(out))
+
+
+def slash_suffixes(spelling):
+    """The spelling, then what follows each `/` in turn, ending at the last segment (`a/b/c` -> `('a/b/c', 'b/c', 'c')`)."""
+    parts = spelling.split('/')
+    return tuple('/'.join(parts[i:]) for i in range(len(parts)))
+
+
 def provider_declarations(raw_model_name, endpoints, table):
     """[(provider, declaration)] of `table` (provider_name_table) `rows` for the serving providers of the name; providers
-    and their names are looked up lowercase."""
-    return _declared_at(serving_providers(raw_model_name, endpoints), table)
+    and their names are looked up lowercase across slash_suffixes."""
+    return [(p, d) for p, _, d in _declared_at(serving_providers(raw_model_name, endpoints), table)]
 
 
 def _declared_at(pairs, table):
     rows = table['rows']
-    return [(p.lower(), rows[p.lower()][n.lower()]) for p, n in pairs
-            if isinstance(rows.get(p.lower()), dict) and isinstance(rows[p.lower()].get(n.lower()), dict)]
+    out = []
+    for p, n in pairs:
+        pid = p.lower()
+        prows = rows.get(pid)
+        if not isinstance(prows, dict):
+            continue
+        for cand in slash_suffixes(n.lower()):
+            if isinstance(prows.get(cand), dict):
+                out.append((pid, cand, prows[cand]))
+                break
+    return out
 
 
 def maker_default(raw_model_name, table):
@@ -92,16 +133,23 @@ def maker_default(raw_model_name, table):
 
 
 def default_for(spelling, table):
-    """The `defaults` declaration of a lowercase spelling, its full id read before its last segment: the spelling, then
-    what follows each `/` in turn (`siliconflow/deepseek-ai/deepseek-v4-pro`, `deepseek-ai/deepseek-v4-pro`,
-    `deepseek-v4-pro`); the first declared wins, or None. A declaration keyed by a full id (a maker's repository id)
-    thus says what that id is, whatever its last segment's default says."""
-    parts = spelling.split('/')
-    for i in range(len(parts)):
-        entry = table['defaults'].get('/'.join(parts[i:]))
+    """The `defaults` declaration of a lowercase spelling, read in slash_suffixes order: the full id, then what follows
+    each `/` in turn, then the last segment (`siliconflow/deepseek-ai/deepseek-v4-pro`, `deepseek-ai/deepseek-v4-pro`,
+    `deepseek-v4-pro`); the first declared wins, or None."""
+    for candidate in slash_suffixes(spelling):
+        entry = table['defaults'].get(candidate)
         if isinstance(entry, dict):
             return entry
     return None
+
+
+def without_preview(spelling):
+    """`spelling` with trailing `-preview` tag(s) stripped (`_PREVIEW_TAG`), the same `-preview` tag `_VENDOR_TAG` strips
+    (owner, 2026-11-20: a `-preview` name is the released row of that name; `audit/gateway_coverage.py` reads this owner)."""
+    s = str(spelling or '')
+    while (stripped := _PREVIEW_TAG.sub('', s)) != s:
+        s = stripped
+    return s
 
 
 def undecorated(name):
@@ -172,28 +220,30 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
     raw, effort = split_model_effort(raw_model_name)
     name = raw.rsplit('/', 1)[-1].lower()
 
-    def found(key, source, named_effort=None, provider=None):
-        return {'key': key, 'source': source, 'effort': effort or named_effort, 'bare': name, 'provider': provider}
+    def found(key, source, named_effort=None, provider=None, *, bare=None):
+        return {'key': key, 'source': source, 'effort': effort or named_effort,
+                'bare': name if bare is None else bare, 'provider': provider}
 
-    def declared_row(spelling, served, dash_effort):
+    def declared_row(full, spelling, served, dash_effort):
         """The `found` of the declarations of one spelling (served: [(provider, that provider's spelling)]), or None."""
         declared = _declared_at(served, provider_names)
-        if len({(d.get('model'), d.get('status')) for _, d in declared}) > 1:
-            return found(None, 'conflict')
+        if len({(d.get('model'), d.get('status')) for _, _, d in declared}) > 1:
+            return found(None, 'conflict', dash_effort, bare=spelling)
         if declared:
-            d, by = declared[0][1], min(p for p, _ in declared)
+            by, served_name = min((p, c) for p, c, _ in declared)
+            d = next(d for p, c, d in declared if (p, c) == (by, served_name))
             if d.get('model') is None:
-                return found(None, d.get('status'), dash_effort, provider=by)
+                return found(None, d.get('status'), dash_effort, provider=by, bare=served_name)
             if d['model'] not in known:
                 raise public_data.ReferenceDataError(f"provider_names rows[{by!r}] names row {d['model']!r}, which the "
                                                      'catalog does not have')
-            return found(d['model'], 'provider', dash_effort, provider=by)
-        default = default_for(spelling, provider_names)
+            return found(d['model'], 'provider', dash_effort, provider=by, bare=spelling)
+        default = default_for(full, provider_names)
         if isinstance(default, dict):
             if default.get('model') not in known:
-                raise public_data.ReferenceDataError(f"provider_names defaults[{spelling!r}] names row "
+                raise public_data.ReferenceDataError(f"provider_names defaults[{full!r}] names row "
                                                      f"{default.get('model')!r}, which the catalog does not have")
-            return found(default['model'], 'default', dash_effort)
+            return found(default['model'], 'default', dash_effort, bare=spelling)
         return None
 
     pairs = serving_providers(raw, providers)
@@ -204,16 +254,18 @@ def resolve_model(raw_model_name, known_models, aliases, families, provider_name
             name = spelling       # `bare`: the spelling reached so far (a dash effort is not stripped from it)
         served = [(p, steps[step][0]) for (p, _), steps in zip(pairs, served_steps) if step < len(steps)]
         full = full_steps[step][0] if step < len(full_steps) else spelling
-        if (hit := declared_row(full, served, dash_effort)) is not None:
+        if (hit := declared_row(full, spelling, served, dash_effort)) is not None:
             return hit
         if step == 0:
-            if match := exact(raw):
-                return found(match, 'exact' if match == raw else 'alias')
-            for candidate in (raw.rsplit('/', 1)[-1], raw.lower(), name):
+            for candidate in slash_suffixes(raw):
                 if match := exact(candidate):
+                    return found(match, 'exact' if candidate == raw and match == raw else 'alias')
+                if candidate.lower() != candidate and (match := exact(candidate.lower())):
                     return found(match, 'alias')
-        elif match := exact(spelling):
-            return found(match, 'alias', dash_effort)
+        else:
+            for candidate in slash_suffixes(full):
+                if match := exact(candidate):
+                    return found(match, 'alias', dash_effort, bare=spelling)
     row = next((f for f in families if re.search(f['pattern'], name)), None)
     if row is not None:
         target = next((t for t in row['models'] if t in known), None)

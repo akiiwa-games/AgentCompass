@@ -2,6 +2,12 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## Unreleased
+
+- A model you name matches over every bundle that exists on the addressed accounts before any filter of preference, availability, discovery state or effort (`account_fleet.pin_pool` -> `pin_matching_bundles`): exact bundle id or advertised spelling in that pool wins, and otherwise each bundle matches by `row_key` as it reads names, keeping unmeasured prefixed pins (`openai/novel-gpt-9` on `codex/novel-gpt-9`) while never crossing an unchecked, unavailable or effort-missing bundle, a no-row pair (`opencode/deepseek-v4-flash`), a repository id (`deepseek-ai/DeepSeek-V4-Pro`), or an already-resolved row key (`account_fleet.row_spec`, `quota_pools.applicable_windows`) onto another row across `plan`, `record`, `prepare`, `roll --resume`, quota overrides, the spawn gate and tray quick priority targets.
+- Every lookup of a model spelling (provider declaration, maker default, exact row and alias) reads the full id, then what follows each `/` in turn, then the last segment (`model_resolution.slash_suffixes`), so `<preset>/<publisher>/<model>` ids such as `google-vertex/deepseek-ai/deepseek-v4.1-flash-maas` reach their `<publisher>/<model>` alias.
+- Magpie preset ids whose own id differs from the models.dev catalog(s) they serve (`provider_names.host_providers.magpie`, built from Magpie's `presets.go`: e.g. `opencode-zen` -> `opencode`, `tencent-cloud` -> `tencent-tokenhub`) map to those catalog ids on Magpie accounts, the tray model list and `audit/gateway_coverage.py` without touching non-Magpie provider prefixes or accounts.
+
 ## v0.7.2 - 2026-11-19
 
 - A model name reads the row its provider really serves (`accounts.json` `provider_names`, cited declarations). A name whose maker moved it to a newer dated snapshot reads the new one on any provider and with no provider known: DeepSeek's `deepseek-v4-pro` reads `deepseek-v4-pro-0813`; `deepseek-v4-flash` and `deepseek-v4.1-flash` read `deepseek-v4.1-flash-1017`. A spelling with an effort, a date, `-latest` or `-preview` reads the same row.

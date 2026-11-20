@@ -182,6 +182,40 @@ class MagpieCatalogTests(unittest.TestCase):
         names = json.loads(mc.NAMES.read_text(encoding='utf-8'))
         self.assertEqual(mc.NAMES.read_text(encoding='utf-8'), mc.dumps_names(names))
 
+    def test_preset_providers_extracts_non_self_catalogs_and_excludes_hosting_self_catalogs(self):
+        """Rule (Addendum B + R2-F1/F5): preset_providers maps each Magpie preset whose models.dev catalog list differs
+        from `[preset_id]` (keeping all catalogs in source order, such as xiaomi's plan and pay-as-you-go catalogs),
+        while a hosting vendor whose own id is already in its catalogs (azure -> azure, openai) stays itself."""
+        custom_presets = '''package provider
+
+const AzurePreset = "azure"
+
+var presets = []PresetDef{
+	{ID: "opencode-zen", Kind: KindRelay, Catalog: "opencode"},
+	{ID: AzurePreset, Kind: KindVendor, Hosts: true, Catalog: "azure, openai"},
+	{ID: "tencent-cloud", Kind: KindVendor, Hosts: true, Catalog: "tencent-tokenhub"},
+	{ID: "stepfun", Kind: KindVendor, Catalog: "stepfun-ai-step-plan, stepfun-ai"},
+	{ID: "xiaomi", Kind: KindVendor, Catalog: "xiaomi-token-plan-cn, xiaomi"},
+	{ID: "google", Kind: KindVendor, Catalog: "google"},
+}
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            got = mc.preset_providers(tree(tmp, presets=custom_presets), 'deadbeef', as_of='2026-11-19')
+        self.assertEqual({k: v['providers'] for k, v in got.items()}, {
+            'opencode-zen': ['opencode'],
+            'stepfun': ['stepfun-ai-step-plan', 'stepfun-ai'],
+            'tencent-cloud': ['tencent-tokenhub'],
+            'xiaomi': ['xiaomi-token-plan-cn', 'xiaomi'],
+        })
+        for entry in got.values():
+            self.assertTrue(entry['url'].startswith('https://github.com/yetone/magpie/blob/deadbeef/internal/provider/presets.go#L'))
+        shipped_map = json.loads(mc.ACCOUNTS.read_text(encoding='utf-8'))['provider_names']['host_providers']['magpie']
+        self.assertEqual(shipped_map['opencode-zen']['providers'], ['opencode'])
+        self.assertIn('xiaomi', shipped_map['xiaomi']['providers'])
+        self.assertNotIn('azure', shipped_map)
+        for preset_id, entry in shipped_map.items():
+            self.assertNotEqual(entry['providers'], [preset_id])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -25,7 +25,7 @@ from pathlib import Path
 
 import public_data
 import released_names
-from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, resolve_in, split_model_effort
+from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, expand_host_providers, resolve_in, split_model_effort
 
 AUTO_PREFIX = 'auto:'
 STALE_LIMIT_SECONDS = 7 * 24 * 3600
@@ -114,11 +114,25 @@ def _name_candidates(raw_model, accounts):
     return base, (str(raw_model), base, name, stripped, aliases.get(stripped, stripped))
 
 
-def endpoint_providers(entry, provider, account):
+def endpoint_providers(entry, provider, account, accounts=None):
     """The serving providers (model_resolution.serving_providers `endpoints`) of the names a catalog entry lists for an
-    account: the entry's provider and the account when the entry is an endpoint (ENDPOINT_TYPES), whose ids are in its
-    own namespace; none for a launcher's list. Read by derive and by the tray's model list alike."""
-    return tuple(dict.fromkeys(p for p in (provider, account) if p)) if (entry or {}).get('type') in ENDPOINT_TYPES else ()
+    account: the entry's provider and the account for an endpoint account, plus—for a Magpie-bound account
+    (`endpoint_providers` / `_discovery.accounts[account].magpie_providers`)—its Magpie preset/provider ids mapped
+    through `provider_names.host_providers['magpie']`; none for a launcher's list. Non-Magpie accounts never read
+    Magpie's preset table. Read by derive and by the tray's model list alike."""
+    entry_eps = tuple((entry or {}).get('endpoint_providers') or ())
+    disc_eps = tuple((((accounts or {}).get('_discovery') or {}).get('accounts') or {}).get(account, {}).get('magpie_providers') or ())
+    magpie_eps = tuple(dict.fromkeys(p for p in (*entry_eps, *disc_eps) if p))
+    entry_type = (entry or {}).get('type')
+    if entry_type not in ENDPOINT_TYPES and not (magpie_eps and entry_type in (None, 'configured')):
+        return ()
+    base = tuple(dict.fromkeys(p for p in (provider, account) if p))
+    if not magpie_eps:
+        return base
+    src = accounts if isinstance(accounts, dict) and isinstance(accounts.get('provider_names'), dict) else _public_catalog()
+    preset_lower = {str(p).lower() for p in magpie_eps}
+    own = tuple(p for p in base if str(p).lower() not in preset_lower)
+    return tuple(dict.fromkeys((*own, *expand_host_providers(magpie_eps, 'magpie', src))))
 
 
 def superseded_by(raw_model, accounts, providers=()):
@@ -176,10 +190,9 @@ def default_profile(raw_model, accounts, providers=()):
         return {'model': model, 'source': 'calibrated', 'target': resolved['key'],
                 'basis': 'Calibrated row in accounts.models.'}
     if resolved['source'] in PROVIDER_NAME_STATUSES:
-        leaf = split_model_effort(raw_model)[0].rsplit('/', 1)[-1]
         why = ('no longer serves this name (retired)' if resolved['source'] == 'retired'
                else 'serves this name as weights the public data has no row for (other_weights)')
-        return {'model': f"{resolved['provider']}/{leaf}", 'source': resolved['source'], 'target': None,
+        return {'model': f"{resolved['provider']}/{resolved['bare']}", 'source': resolved['source'], 'target': None,
                 'basis': f"{resolved['provider']} {why}, by provider_names: no row, out of automatic routing; a route the "
                          'user names still launches.'}
     if resolved['source'] == 'conflict':
@@ -405,7 +418,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 if '[' in raw:  # context-window variants (claude-opus-4-6[1m]) are the same model
                     continue
                 base, id_effort = split_effort(raw, accounts)
-                served = endpoint_providers(entry, provider, account)
+                served = endpoint_providers(entry, provider, account, accounts)
                 profile = default_profile(raw, accounts, served)
                 harness = pair_harness if pair_harness != PER_MODEL else \
                     proxy_harness((account_families or {}).get(account) or spec.get('family'), profile['model'], accounts)

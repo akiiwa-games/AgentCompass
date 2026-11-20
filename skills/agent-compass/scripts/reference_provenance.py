@@ -149,6 +149,27 @@ def _validate_provider_names(doc):
             continue
         for name, d in sorted(names.items()):
             problems.append(check(f'rows/{provider}/{name}', name, d, False))
+    extra = sorted(set(table) - {'statement', 'defaults', 'rows', 'host_providers'})
+    if extra:
+        problems.append(f"provider_names unknown keys: {', '.join(extra)}")
+    if 'host_providers' in table:
+        if not isinstance(table['host_providers'], dict) or not table['host_providers']:
+            problems.append('host_providers: {host kind: {host provider id: {providers, kind, url, as_of, statement}}}')
+        else:
+            for host_kind, mapping in sorted(table['host_providers'].items()):
+                if not isinstance(host_kind, str) or not host_kind.strip() or host_kind != host_kind.lower() or '/' in host_kind or not isinstance(mapping, dict) or not mapping:
+                    problems.append(f'host_providers/{host_kind!r}: {{host provider id: {{providers, kind, url, as_of, statement}}}}')
+                    continue
+                for host_id, entry in sorted(mapping.items()):
+                    targets = entry.get('providers') if isinstance(entry, dict) else None
+                    if (not isinstance(host_id, str) or not host_id.strip() or host_id != host_id.lower() or '/' in host_id
+                            or not isinstance(entry, dict) or set(entry) != {'providers', 'kind', 'url', 'as_of', 'statement'}
+                            or entry.get('kind') not in PROVIDER_NAME_KINDS or not valid_public_declaration(entry)
+                            or not _ISO_DATE.match(str(entry.get('as_of') or '')) or not str(entry.get('statement') or '').strip()
+                            or not isinstance(targets, list) or not targets or targets == [host_id]
+                            or len(set(targets)) != len(targets)
+                            or any(not isinstance(t, str) or not t.strip() or t != t.lower() or '/' in t for t in targets)):
+                        problems.append(f'host_providers/{host_kind}/{host_id!r}: {{providers: [lowercase target id, ...], kind, url, as_of, statement}}')
     problems = [x for x in problems if x]
     for account, spec in sorted((doc.get('accounts') or {}).items()):
         for bid, b in sorted(((spec or {}).get('bundles') or {}).items()):

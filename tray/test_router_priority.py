@@ -176,11 +176,15 @@ class PriorityTests(unittest.TestCase):
     def test_a_target_stored_under_a_moved_name_reaches_the_bundle_of_its_row(self):
         """Rule (router_priority.targets): a target's model matches a bundle's as the same row (account_fleet.row_key),
         so a name whose maker moved it reaches the bundle that runs the row it means now."""
+        decl = lambda m: {'model': m, 'kind': 'vendor', 'url': 'https://example.com/x', 'as_of': '2026-11-19', 'statement': 's'}
         accounts = account_fleet.load_accounts()
+        accounts['models'] = {**accounts['models'], 'deepseek-v4-pro': {}, 'deepseek-v4-pro-0813': {}}
         accounts['provider_names'] = {**accounts['provider_names'], 'defaults': {
-            **accounts['provider_names']['defaults'], 'astra-moved-name': {
-                'model': 'gpt-6-astra', 'kind': 'vendor', 'url': 'https://example.com/x', 'as_of': '2026-11-19',
-                'statement': 's'}}}
+            **accounts['provider_names']['defaults'],
+            'deepseek-ai/deepseek-v4-pro': decl('deepseek-v4-pro'),
+            'deepseek-v4-pro': decl('deepseek-v4-pro-0813'),
+            'astra-moved-name': decl('gpt-6-astra'),
+        }}
         accounts['priority_targets'] = [{'account': 'codex', 'model': 'astra-moved-name', 'label': 'Moved'}]
         with patch.object(host_policy, 'load_policy', return_value=None):
             choices = priority.targets(accounts)
@@ -255,6 +259,105 @@ class PriorityTests(unittest.TestCase):
             messages = list(pool.map(lambda _: self.enable(), range(4)))
         self.assertEqual(len(self.rows()), 1)
         self.assertEqual(sum('已开启' in m for m in messages), 1)
+
+    def test_repository_id_and_moved_name_targets_keep_identity_selection_and_labels(self):
+        """Rule (router_priority + pin_names_bundle): a repository-id target matches only its own bundle beside the
+        moved bare spelling (-0813), stays selected and non-stacking across enable/snapshot, and a moved-name target
+        keeps its configured label in active entries."""
+        decl = lambda m: {'model': m, 'kind': 'vendor', 'url': 'https://example.com/x', 'as_of': '2026-11-19', 'statement': 's'}
+        accounts = account_fleet.load_accounts()
+        accounts['models'] = {**accounts['models'], 'deepseek-v4-pro': {}, 'deepseek-v4-pro-0813': {}}
+        accounts['provider_names'] = {**accounts['provider_names'], 'defaults': {
+            **accounts['provider_names']['defaults'],
+            'deepseek-ai/deepseek-v4-pro': decl('deepseek-v4-pro'),
+            'deepseek-v4-pro': decl('deepseek-v4-pro-0813'),
+            'astra-moved-name': decl('gpt-6-astra'),
+        }}
+        accounts['accounts']['codex']['bundles'] = {
+            **accounts['accounts']['codex']['bundles'],
+            'auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro': {
+                'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-ai/DeepSeek-V4-Pro',
+                'launch_model': 'deepseek-ai/DeepSeek-V4-Pro', 'effort': 'high', 'draws': ['usage']},
+            'auto:codex:codex:deepseek-v4-pro-0813': {
+                'provider': 'codex', 'harness': 'codex', 'model': 'deepseek-v4-pro-0813',
+                'launch_model': 'deepseek-v4-pro', 'effort': 'high', 'draws': ['usage']},
+        }
+        accounts['priority_targets'] = [
+            {'account': 'codex', 'model': 'deepseek-ai/DeepSeek-V4-Pro', 'label': 'Repo V4 Pro'},
+            {'account': 'codex', 'model': 'deepseek-v4-pro', 'label': 'Moved V4 Pro'},
+            {'account': 'codex', 'model': 'astra-moved-name', 'label': 'Moved Astra'},
+        ]
+        with patch.object(account_fleet, 'load_accounts', return_value=accounts):
+            choices = priority.targets(accounts)
+            self.assertEqual([(t['model'], t['label']) for t in choices], [
+                ('deepseek-ai/DeepSeek-V4-Pro', 'Repo V4 Pro'),
+                ('deepseek-v4-pro-0813', 'Moved V4 Pro'),
+                ('gpt-6-astra', 'Moved Astra'),
+            ])
+            self.assertIn('已开启', priority.enable('codex', 'deepseek-ai/DeepSeek-V4-Pro', 'usage', 24, self.now))
+            self.assertEqual([r['model'] for r in self.rows()], ['deepseek-ai/DeepSeek-V4-Pro'])
+            view = priority.snapshot(self.now)
+            by_label = {t['label']: t['selected'] for t in view['targets']}
+            self.assertEqual(by_label, {'Repo V4 Pro': True, 'Moved V4 Pro': False, 'Moved Astra': False})
+            self.assertTrue(view['entries'][0]['label'].startswith('Repo V4 Pro · '))
+            self.assertIn('未叠加', priority.enable('codex', 'deepseek-ai/DeepSeek-V4-Pro', 'usage', 24, self.now))
+            self.assertIn('已更新', priority.enable('codex', 'deepseek-ai/DeepSeek-V4-Pro', 'usage', 6, self.now))
+            self.assertEqual(len(self.rows()), 1)
+
+            self.assertIn('已开启', priority.enable('codex', 'gpt-6-astra', 'usage', 12, self.now))
+            self.assertEqual([r['model'] for r in self.rows()], ['gpt-6-astra'])
+            moved_view = priority.snapshot(self.now)
+            self.assertTrue(moved_view['entries'][0]['label'].startswith('Moved Astra · '))
+            self.assertEqual({t['label']: t['selected'] for t in moved_view['targets']},
+                             {'Repo V4 Pro': False, 'Moved V4 Pro': False, 'Moved Astra': True})
+
+            # Without explicit `draws`, model-scoped weekly windows bind `deepseek-ai/DeepSeek-V4-Pro` to `w_repo`
+            # (`deepseek-v4-pro`) and `deepseek-v4-pro` to `w_moved` (`deepseek-v4-pro-0813`) without double-resolving:
+            split_accounts = json.loads(json.dumps(accounts))
+            split_accounts['accounts']['codex']['windows'] = {
+                'w_repo': {'hours': 168, 'models_except': ['deepseek-v4-pro-0813']},
+                'w_moved': {'hours': 168, 'models': ['deepseek-v4-pro-0813']},
+            }
+            for bid in ('auto:codex:codex:deepseek-ai/DeepSeek-V4-Pro', 'auto:codex:codex:deepseek-v4-pro-0813'):
+                split_accounts['accounts']['codex']['bundles'][bid].pop('draws', None)
+            self.assertEqual([(t['label'], t['window']) for t in priority.targets(split_accounts)[:2]],
+                             [('Repo V4 Pro', 'w_repo'), ('Moved V4 Pro', 'w_moved')])
+
+            import router_data
+            rows = [{
+                'account': 'codex',
+                'providers': ['codex'],
+                'models': [
+                    {'model': 'deepseek-v4-pro', 'model_label': 'Repo V4 Pro', 'enabled': True, 'partial': False,
+                     'bundle_ids': ['b1'], 'bundle_refs': [], 'tags': [], 'auto': True, 'auto_stale': False,
+                     'efforts_on': ['high'], 'efforts_off': []},
+                    {'model': 'deepseek-v4-pro-0813', 'model_label': 'Moved V4 Pro', 'enabled': True, 'partial': False,
+                     'bundle_ids': ['b2'], 'bundle_refs': [], 'tags': [], 'auto': True, 'auto_stale': False,
+                     'efforts_on': ['high'], 'efforts_off': []},
+                ],
+            }]
+            decorated = router_data.decorate_model_rows(rows, split_accounts, {'providers': {
+                'codex': {'ok': True, 'type': 'paseo_provider', 'checked_at': 100.0,
+                          'models': ['deepseek-ai/DeepSeek-V4-Pro']}
+            }})
+            by_model = {g['model']: g['availability'] for g in decorated[0]['models']}
+            self.assertEqual(by_model, {'deepseek-v4-pro': 'detected', 'deepseek-v4-pro-0813': 'missing'})
+
+            # R2-1 (A2b): when a target's exact-spelling bundle on the account is unchecked (`disabled`) or
+            # `discovery_unavailable`, `targets` omits that button rather than re-targeting to a same-leaf sibling.
+            for unavailable_flag in ({'disabled': True}, {'discovery_unavailable': 'not detected for 7+ days'}):
+                a2b_accounts = json.loads(json.dumps(accounts))
+                a2b_accounts['accounts']['codex']['bundles'] = {
+                    'b_vb': {'provider': 'codex', 'harness': 'codex', 'model': 'vendor-b/novel-unmeasured',
+                             'launch_model': 'vendor-b/novel-unmeasured', 'effort': 'high', 'draws': ['usage']},
+                    'b_va': {'provider': 'codex', 'harness': 'codex', 'model': 'vendor-a/novel-unmeasured',
+                             'launch_model': 'vendor-a/novel-unmeasured', 'effort': 'high', 'draws': ['usage'],
+                             **unavailable_flag},
+                }
+                a2b_accounts['priority_targets'] = [
+                    {'account': 'codex', 'model': 'vendor-a/novel-unmeasured', 'label': 'Vendor A Novel'},
+                ]
+                self.assertEqual(priority.targets(a2b_accounts), [], unavailable_flag)
 
 
 if __name__ == '__main__':

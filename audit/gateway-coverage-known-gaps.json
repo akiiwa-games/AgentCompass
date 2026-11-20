@@ -65,6 +65,26 @@
   },
   {
    "catalog": "magpie-0.1.4470",
+   "model": "gemma-4-26b-a4b-it",
+   "efforts": [
+    "default"
+   ],
+   "row": "gemma-4-26b-a4b-it",
+   "kind": "no_time_reading_in_series",
+   "detail": "gemma-4-26b-a4b-it: no cached board lists it with a Time/Task, and the Gemma product has no other row with one (a Gemini row is another product of the maker, never its relative: round 7)"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
+   "model": "gemma-4-31b-it",
+   "efforts": [
+    "default"
+   ],
+   "row": "gemma-4-31b-it",
+   "kind": "no_time_reading_in_series",
+   "detail": "gemma-4-31b-it: no cached board lists it with a Time/Task, and the Gemma product has no other row with one (a Gemini row is another product of the maker, never its relative: round 7)"
+  },
+  {
+   "catalog": "magpie-0.1.4470",
    "model": "gpt-5.2",
    "efforts": [
     "none",
@@ -168,26 +188,6 @@
    "row": "qwen3-omni-flash",
    "kind": "no_time_reading_in_series",
    "detail": "qwen3-omni-flash: no cached board lists it with a Time/Task; it has no relative of its own line with one, and its relatives of another line of the same maker and size within version distance 1 (the qwen3.5 rows) have only estimated times, none read on a board (an estimate is never another row's basis)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gemma-4-26b-a4b-it",
-   "efforts": [
-    "default"
-   ],
-   "row": "gemma-4-26b-a4b-it",
-   "kind": "no_time_reading_in_series",
-   "detail": "gemma-4-26b-a4b-it: no cached board lists it with a Time/Task, and the Gemma product has no other row with one (a Gemini row is another product of the maker, never its relative: round 7)"
-  },
-  {
-   "catalog": "magpie-0.1.4470",
-   "model": "gemma-4-31b-it",
-   "efforts": [
-    "default"
-   ],
-   "row": "gemma-4-31b-it",
-   "kind": "no_time_reading_in_series",
-   "detail": "gemma-4-31b-it: no cached board lists it with a Time/Task, and the Gemma product has no other row with one (a Gemini row is another product of the maker, never its relative: round 7)"
   },
   {
    "catalog": "magpie-0.1.4470",

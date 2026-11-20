@@ -35,26 +35,50 @@ OUT_OF_AUTOMATIC_ROUTING = 'excluded by host policy'
 UNCHECKED = 'unchecked in model management'
 
 
-def model_pin_matches(task, bundle, model):
-    """Does the task's named model (or bundle id) name this bundle? Compares the resolved key and the raw spelling."""
-    named = task.get('constraint_model')
-    if not named:
+def pin_matched_ids(task, ctx):
+    """Bundle ids in `ctx['bundles']` named by `task`'s model/bundle constraint over `account_fleet.pin_pool` (every bundle
+    existing on the addressed accounts, before any filter of preference, availability, discovery state, modality or effort,
+    which `evaluate_bundle` applies to the named bundles only)."""
+    accounts = ctx['accounts']
+    cb = task.get('constraint_bundle')
+    pool = account_fleet.pin_pool(accounts, bundle_id=cb, source=(ctx.get('bundles') or {}).values())
+    if cb and not task.get('constraint_raw_model'):
+        return {(b.get('id') or b.get('bundle_id')) for b in pool if (b.get('id') or b.get('bundle_id')) == cb}
+    pin = task.get('constraint_raw_model') or task.get('constraint_model')
+    if not pin:
+        return set()
+    return {(b.get('id') or b.get('bundle_id')) for b in account_fleet.pin_matching_bundles(pin, pool, accounts)}
+
+
+def model_pin_matches(task, bundle, accounts, pool=None):
+    """Does the task's named model (or bundle id) name this bundle in `pool`? Reads `account_fleet.pin_matching_bundles`."""
+    cb = task.get('constraint_bundle')
+    if cb:
+        bid = (bundle or {}).get('id') or (bundle or {}).get('bundle_id')
+        if bid != cb:
+            return False
+        if not task.get('constraint_raw_model'):
+            return True
+    pin = task.get('constraint_raw_model') or task.get('constraint_model')
+    if not pin:
         return False
-    raw = str((bundle or {}).get('model') or '')
-    return (named in ((bundle or {}).get('id'), model, raw)
-            or account_fleet.model_leaf(named).lower() == account_fleet.model_leaf(raw).lower())
+    if pool is None and isinstance(accounts, dict) and isinstance(accounts.get('accounts'), dict):
+        pool = account_fleet.pin_pool(accounts, bundle_id=cb, extra=(bundle,))
+    return account_fleet.pin_names_bundle(pin, bundle, accounts, pool=pool)
 
 
-def exact_pin(task, bundle, model):
+def exact_pin(task, bundle, accounts, pool=None):
     """The user named this bundle, or its model and effort: it keeps that effort and is only warned about when slow."""
     bid = (bundle or {}).get('id')
-    if bid and bid in (task.get('pinned_bundle'), task.get('constraint_bundle'), task.get('constraint_model')):
+    if bid and bid in (task.get('pinned_bundle'), task.get('constraint_bundle')):
         return True
-    return bool(task.get('constraint_effort')) and model_pin_matches(task, bundle, model)
+    if bid and not task.get('constraint_bundle') and (task.get('constraint_raw_model') or task.get('constraint_model')) == bid:
+        return True
+    return bool(task.get('constraint_effort')) and model_pin_matches(task, bundle, accounts, pool=pool)
 
 
-def bundle_named(task, bundle, model):
-    return exact_pin(task, bundle, model) or model_pin_matches(task, bundle, model)
+def bundle_named(task, bundle, accounts, pool=None):
+    return exact_pin(task, bundle, accounts, pool=pool) or model_pin_matches(task, bundle, accounts, pool=pool)
 
 
 def has_fixed_effort(bundle, accounts):
@@ -74,16 +98,20 @@ def named_effort_bundles(task, ctx):
     if not effort or task.get('constraint_bundle'):
         return {}
     accounts, groups = ctx['accounts'], {}
-    for bundle in ctx['bundles'].values():
+    pin = task.get('constraint_raw_model') or task.get('constraint_model')
+    full_pool = account_fleet.pin_pool(accounts, source=ctx['bundles'].values())
+    source = account_fleet.pin_matching_bundles(pin, full_pool, accounts) if pin else full_pool
+    known = accounts.get('models') or {}
+    for bundle in source:
         model = account_fleet.row_key(bundle['model'], accounts)
-        if task.get('constraint_model') and not model_pin_matches(task, bundle, model):
-            continue
-        groups.setdefault((bundle['account'], bundle.get('harness'), model), []).append(bundle)
+        group_key = model if model in known else (account_fleet.advertised_model(bundle).lower() or model)
+        groups.setdefault((bundle['account'], bundle.get('harness'), group_key, model), []).append(bundle)
     found = {}
-    for (_, _, model), rows in groups.items():
+    for (_, _, _, model), rows in groups.items():
         written = {str(quota_economy.scoring_effort(r, account_fleet.model_spec(accounts, r['model'])) or '').lower() for r in rows}
-        carriers = [r for r in rows if (not r.get('disabled') or r.get('disabled_by_default'))
-                    and not r.get('discovery_unavailable') and not has_fixed_effort(r, accounts)]
+        enabled = [r for r in rows if (not r.get('disabled') or r.get('disabled_by_default'))
+                   and not r.get('discovery_unavailable') and not has_fixed_effort(r, accounts)]
+        carriers = enabled or [r for r in rows if not has_fixed_effort(r, accounts)]
         # Each level goes to the first row that offers it, so the answer does not depend on the order of the rows.
         for carrier in carriers:
             allowed = account_fleet.dispatch_allowed_efforts(carrier, accounts, model)
@@ -117,10 +145,8 @@ def cooling_reason(bundle, entries, accounts, now=None):
 def evaluate_bundle(bundle, task, ctx):
     policy, accounts = ctx['policy'], ctx['accounts']
     spec = accounts['accounts'][bundle['account']]
-    # Tables read by the name's own resolution. `model` is its key, for the matching that follows; `own_model` is which
-    # model the row runs, for what the user named.
+    # Tables read by the name's own resolution: `model` is its key, for the matching that follows.
     model = account_fleet.canonical(bundle['model'], accounts)
-    own_model = account_fleet.row_key(bundle['model'], accounts)
     info = account_fleet.model_spec(accounts, bundle['model'])
     kind = task['kind']
     base_hours = task['hours']
@@ -170,11 +196,23 @@ def evaluate_bundle(bundle, task, ctx):
     # constraint (task_intake.ROUTE_FIELDS); a caller's task cannot. Left in, the preferences kept it out of the
     # economy, so a named fast route had no fast variant to launch.
     user_named = bool(task.get('user_named_bundle')) and task['user_named_bundle'] == bundle['id']
+    matched_ids = None
+    if not pool and (task.get('constraint_model') or task.get('constraint_bundle')):
+        matched_ids = ctx.get('_pin_matched_ids')
+        if matched_ids is None:
+            matched_ids = pin_matched_ids(task, {**ctx, 'bundles': ctx.get('bundles') or {bundle['id']: bundle}})
+    pin_hit = bool(matched_ids is not None and bundle['id'] in matched_ids)
+    exact_hit = (
+        bool(bundle.get('id') and bundle['id'] in (task.get('pinned_bundle'), task.get('constraint_bundle')))
+        or bool(bundle.get('id') and not task.get('constraint_bundle')
+                and (task.get('constraint_raw_model') or task.get('constraint_model')) == bundle['id'])
+        or (bool(task.get('constraint_effort')) and pin_hit)
+    )
     if not user_named and not host_policy.account_allowed(ctx['host_policy'], bundle['account']):
         exclude(OUT_OF_AUTOMATIC_ROUTING)
     # Off by default (superseded in public data) is not the user's checkbox: naming the model still reaches it.
     if (not user_named and bundle.get('disabled')
-            and not (bundle.get('disabled_by_default') and bundle_named(task, bundle, own_model))):
+            and not (bundle.get('disabled_by_default') and (exact_hit or pin_hit))):
         exclude(UNCHECKED)
     if bundle.get('discovery_unavailable'):
         exclude(bundle['discovery_unavailable'] if isinstance(bundle['discovery_unavailable'], str)
@@ -198,7 +236,7 @@ def evaluate_bundle(bundle, task, ctx):
     # Unknown billing stays explicit selection only.
     billing = accounts_override.manual_only_billing(bundle['account'], accounts)
     if billing and not task['metered_ok'] and not (billing == 'metered' and task.get('metered_fallback')):
-        if (not model_pin_matches(task, bundle, own_model) and task.get('pinned_bundle') != bundle['id']
+        if (not pin_hit and task.get('pinned_bundle') != bundle['id']
                 and not any(o.get('account') == bundle['account'] for o in ctx['overrides'])):
             exclude(METERED_LAST_RESORT if billing == 'metered'
                     else f'{billing} billing: explicit selection only')
@@ -221,7 +259,7 @@ def evaluate_bundle(bundle, task, ctx):
                      else 'this runner cannot transfer or apply local files')
     if task['needs_visual'] and not account_fleet.harness_accepts_visual(harness, model):
         task_exclude(f'{harness} cannot accept image attachments for {model}, so it cannot take visual or GUI work')
-    if task['constraint_model'] and not model_pin_matches(task, bundle, own_model):
+    if (task['constraint_model'] or task.get('constraint_bundle')) and not pin_hit:
         task_exclude('explicit model constraint')
     if task.get('constraint_effort') and str(quota_economy.scoring_effort(bundle, info) or '').lower() != task['constraint_effort']:
         task_exclude('explicit effort constraint')
@@ -230,7 +268,7 @@ def evaluate_bundle(bundle, task, ctx):
     # bundle) still dispatches it, with the data error as a warning and its cost unpriced.
     state = info.get('five_axis') or {'missing': list(axis_scores.FIVE_AXES), 'usd_status': 'missing'}
     billed = not (spec.get('unmetered') or spec.get('unlimited'))
-    named = not pool and (model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id'])
+    named = not pool and (pin_hit or task.get('pinned_bundle') == bundle['id'])
     img_info = state.get('image_input') or {'status': 'missing'}
     # The task reads images when the classifier says so (needs_visual, which task intake also sets for needs_gui) or when
     # it demands tool_operation 3: a model that takes no image input cannot do either.
@@ -385,7 +423,7 @@ def evaluate_bundle(bundle, task, ctx):
         acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
         acct_stale = acct_usage.get('status') == 'stale' or acct_usage.get('stale') is True
         latched = quota_pools.latched_windows(accounts, bundle['account'])
-        named = not pool and (model_pin_matches(task, bundle, own_model) or task.get('pinned_bundle') == bundle['id'])
+        named = not pool and (pin_hit or task.get('pinned_bundle') == bundle['id'])
         for wid, wspec, observed in quota_pools.applicable_windows(spec, model, acct_usage, bundle, accounts):
             result.setdefault('_five_axis_windows', []).append(wid)
             long_applicable = long_applicable or not quota_pools.window_is_short(wspec, policy)

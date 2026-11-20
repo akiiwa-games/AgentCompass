@@ -38,13 +38,18 @@ import worker_sessions
 
 def named_pin_block(task, candidates):
     """Why what the user named cannot run, one line per row; [] when the task names nothing."""
-    if not (task.get('constraint_model') or task.get('constraint_effort') or task.get('pinned_bundle')):
+    if not (task.get('constraint_model') or task.get('constraint_bundle') or task.get('constraint_effort') or task.get('pinned_bundle')):
         return []
     off_pin = ('explicit model constraint', 'explicit effort constraint')
     pinned = task.get('pinned_bundle')
     rows = [c for c in candidates if (pinned and candidate_ranking.candidate_for_bundle([c], pinned, task.get('force_fast')) is c)
             or (not pinned and not any(r in off_pin for r in c['excluded']))]
-    named = task.get('pinned_bundle') or ':'.join(x for x in (task.get('constraint_model'), task.get('constraint_effort')) if x)
+    raw = task.get('constraint_raw_model')
+    spelled, colon_eff = task_intake.split_model_effort(raw) if raw else (task.get('constraint_model'), None)
+    eff = task.get('constraint_effort')
+    eff_part = None if (eff and not colon_eff and spelled and spelled.lower().endswith('-' + eff)) else eff
+    named = (task.get('pinned_bundle') or (task.get('constraint_bundle') if not raw else None)
+             or ':'.join(x for x in (spelled, eff_part) if x))
     rows = [c for c in rows if 'marked unavailable by the parent' not in c['excluded']] or rows
     if not rows:
         return [f'{named}: no configured bundle offers it']

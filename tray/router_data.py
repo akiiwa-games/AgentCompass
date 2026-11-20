@@ -1290,7 +1290,7 @@ def overrides(now: datetime | None = None) -> list[dict]:
                      "stop_on_reset": bool(row.get("stop_on_reset")), "intent": row.get("intent") or "",
                      **router_priority.countdown(row, now),
                      "label": f"{account_label(row.get('account'))}"
-                              + (f" / {model_label(row['model'])}" if row.get("model") else "")})
+                              + (f" / {router_priority.model_label(row['model'], accounts, row.get('account'))}" if row.get("model") else "")})
     return rows
 
 
@@ -2004,7 +2004,7 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
                 raw = model.get("id") if isinstance(model, dict) else model
                 if not isinstance(raw, str):
                     continue
-                served = auto_bundles.endpoint_providers(entry, provider, row.get("account"))
+                served = auto_bundles.endpoint_providers(entry, provider, row.get("account"), accounts)
                 key = raw if exact_catalog else canonical(raw, served)
                 label = (model.get("label") or model.get("model") or raw) if isinstance(model, dict) else raw
                 label = re.sub(r"\s*\((Low|Medium|High|XHigh|Max)\)$", "", label, flags=re.I)
@@ -2013,10 +2013,11 @@ def decorate_model_rows(rows: list[dict], accounts: dict, catalog: dict) -> list
         row["models_probe_failed"] = any(failures)
         configured = {}
         consumed = set()
+        models_map = accounts.get("models") or {}
         for group in row["models"]:
-            key = canonical(group["model"])
+            key = group["model"] if group["model"] in models_map else canonical(group["model"])
             configured[key] = group
-            matched = next((item for item in detected if (item == key or canonical(item) == key) and item not in consumed), None)
+            matched = next((item for item in detected if (item == key or (exact_catalog and canonical(item) == key)) and item not in consumed), None)
             if matched is not None:
                 consumed.add(matched)
             group["routed"] = True

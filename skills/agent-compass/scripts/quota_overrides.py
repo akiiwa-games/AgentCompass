@@ -365,7 +365,7 @@ def _manage_overrides_locked(args, now=None):
         model = account_fleet.stored_model(args.model, accounts, args.account) if args.model else None
         stored = account_fleet.stored_form(args.model, accounts, args.account) if args.model else None
         boost = 0.1 if args.boost is None else args.boost
-        if not expires and override_depleted({'account': args.account, 'model': model, 'window': args.window,
+        if not expires and override_depleted({'account': args.account, 'model': stored, 'window': args.window,
                                                         'boost': boost}, usage, accounts):
             raise ValueError(f'{args.account} is at or below the {accounts["scoring"]["safety_margin_pct"]}% safety margin; '
                              'the router dispatches no new work there, so a priority would be retired at once.')
