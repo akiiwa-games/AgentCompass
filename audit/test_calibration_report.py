@@ -218,6 +218,15 @@ class CalibrationReportTests(unittest.TestCase):
         self.assertEqual(cov["missing_active_time_reasons"], {"grok_session_telemetry_unsupported": 1})
         self.assertEqual(cov["completed_by_path"], {"paseo/codex": 1, "paseo/grok": 1})
 
+    def test_coverage_counts_a_failed_collection_by_its_reason(self):
+        failed = "collection_failed:TypeError"
+        write_state(self.root, [dispatch(1, active=None, active_seconds_reason=failed, ground_truth_reason=failed),
+                                dispatch(2)])
+        cov = build(self.root)["coverage"]
+        self.assertEqual(cov["ground_truth_failed_reasons"], {failed: 1})
+        self.assertEqual(cov["completed_without_ground_truth"], 0)   # a failed collection is recorded, with its reason
+        self.assertIn("ground truth collection failed: " + failed + " 1", report.render(build(self.root)))
+
     def test_the_summary_ranks_deviations_symmetrically_on_the_log_ratio(self):
         rows = [dispatch(i, kind="under", hours=5.0, active=3600.0) for i in range(5)]         # ratio 0.2
         rows += [dispatch(10 + i, kind="over", hours=1.0, active=7200.0) for i in range(5)]    # ratio 2.0

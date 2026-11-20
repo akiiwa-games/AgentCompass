@@ -68,7 +68,9 @@ def _is_int_num(value: object) -> bool:
 _HEX_OID_RE = re.compile(r'^[0-9a-fA-F]{40,64}$')
 
 
-def _git(cwd: str | Path, *args: str, timeout: float = 5.0) -> subprocess.CompletedProcess[str] | None:
+def _git(cwd: str | Path, *args: str, timeout: float = 5.0) -> subprocess.CompletedProcess[str] | str:
+    """git's answer, or why there is none: `git_timeout` when it did not finish within `timeout`, `git_unavailable`
+    when it could not be started. Every reader records that reason as it is."""
     env = {**os.environ, 'GIT_OPTIONAL_LOCKS': '0', 'LC_ALL': 'C'}
     kwargs: dict = {
         'stdin': subprocess.DEVNULL,
@@ -83,8 +85,10 @@ def _git(cwd: str | Path, *args: str, timeout: float = 5.0) -> subprocess.Comple
         kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
     try:
         return subprocess.run(['git', '-C', str(cwd), *args], **kwargs)
+    except subprocess.TimeoutExpired:
+        return 'git_timeout'
     except (OSError, subprocess.SubprocessError):
-        return None
+        return 'git_unavailable'
 
 
 def _locate_git_dirs(target: Path) -> tuple[Path, Path, Path] | None:
@@ -182,8 +186,8 @@ def _resolve_git_head_oid(target: Path, gitdir: Path, commondir: Path) -> tuple[
                 return packed, None
             if (gitdir / 'reftable').is_dir() or (commondir / 'reftable').is_dir():
                 head = _git(target, 'rev-parse', '--verify', 'HEAD^{commit}')
-                if head is None:
-                    return None, 'git_unavailable'
+                if isinstance(head, str):
+                    return None, head
                 if head.returncode != 0 or not head.stdout.strip():
                     return None, 'git_head_unborn'
                 return head.stdout.strip().lower(), None
@@ -236,7 +240,46 @@ def _null_git_changes(reason: str) -> dict[str, int | str | None]:
         'lines_changed': None,
         'git_diff_basis': None,
         'git_changes_reason': reason,
+        'untracked_files': None,
+        'untracked_files_reason': reason,
     }
+
+
+# What `git rev-parse` prints when the directory is in no repository. These are git's own fixed texts, from `die()` in
+# setup.c (setup_git_directory_gently: GIT_DIR_HIT_CEILING "not a git repository (or any of the parent directories):
+# %s", GIT_DIR_HIT_MOUNT_POINT "not a git repository (or any parent up to mount point %s)"; an invalid gitfile is
+# "not a git repository: %s"), printed as `fatal: ...` with exit 128. Exit 128 is every `die()`, so the text decides;
+# `_git` pins LC_ALL=C, so the text is not translated.
+_NO_REPOSITORY = 'fatal: not a git repository'
+# setup.c, GIT_DIR_INVALID_OWNERSHIP: "detected dubious ownership in repository at '%s'" (safe.directory).
+_DUBIOUS_OWNERSHIP = 'detected dubious ownership in repository at'
+# builtin/rev-parse.c, `--show-toplevel` with a repository but no working tree (a bare repository, or a directory
+# inside `.git`): `die(_("this operation must be run in a work tree"))`, the same text as setup.c's setup_work_tree().
+_NO_WORK_TREE = 'fatal: this operation must be run in a work tree'
+
+
+def _rev_parse_failure(result: subprocess.CompletedProcess[str]) -> str:
+    """The reason of a `rev-parse --show-toplevel` that printed no toplevel: `not_a_git_checkout` only when git says
+    there is no repository (or exits 0 with no toplevel, as a git older than 2.25 does in a bare repository),
+    `git_no_work_tree` when it says the repository has no working tree, otherwise `git_rev_parse_failed:<class>`."""
+    stderr = result.stderr or ''
+    if result.returncode == 0 or stderr.lstrip().startswith(_NO_REPOSITORY):
+        return 'not_a_git_checkout'
+    if stderr.lstrip().startswith(_NO_WORK_TREE):
+        return 'git_no_work_tree'
+    if _DUBIOUS_OWNERSHIP in stderr:
+        return 'git_rev_parse_failed:dubious_ownership'
+    return f'git_rev_parse_failed:exit_{result.returncode}'
+
+
+def _untracked_files(target: Path) -> tuple[int | None, str | None]:
+    """Untracked files that are not ignored, in the whole working tree (`:/`, as the diff covers it), when read."""
+    listed = _git(target, 'ls-files', '--others', '--exclude-standard', '-z', '--', ':/', timeout=10.0)
+    if isinstance(listed, str):
+        return None, listed
+    if listed.returncode != 0:
+        return None, 'git_ls_files_failed'
+    return sum(1 for name in listed.stdout.split('\0') if name), None
 
 
 def collect_git_changes(row: dict) -> dict[str, int | str | None]:
@@ -244,7 +287,10 @@ def collect_git_changes(row: dict) -> dict[str, int | str | None]:
 
     Uses `git diff --no-ext-diff --numstat <launch_commit> --` against the worker's
     working tree so committed, staged and unstaged tracked changes since launch are
-    included while pre-existing untracked files in shared directories are ignored.
+    counted. Untracked files are not in that count, since one in a shared directory
+    cannot be attributed to the worker: `untracked_files` counts them apart (the
+    working tree at the end, ignored files left out), with `untracked_files_reason`
+    when they could not be read.
     """
     cwd = row.get('cwd')
     external = row.get('dispatch_mode') in ('grok-bot', 'dot')
@@ -255,21 +301,23 @@ def collect_git_changes(row: dict) -> dict[str, int | str | None]:
     if not target.is_dir():
         return _null_git_changes('worker_cwd_missing')
     top = _git(target, 'rev-parse', '--show-toplevel')
-    if top is None:
-        return _null_git_changes('git_unavailable')
+    if isinstance(top, str):
+        return _null_git_changes(top)
     if top.returncode != 0 or not top.stdout.strip():
-        return _null_git_changes('not_a_git_checkout')
+        return _null_git_changes(_rev_parse_failure(top))
     launch_commit = row.get('launch_commit')
     if not isinstance(launch_commit, str) or not launch_commit.strip():
         return _null_git_changes(row.get('launch_commit_reason') or 'launch_commit_not_recorded')
     commit = launch_commit.strip()
     verified = _git(target, 'cat-file', '-e', f'{commit}^{{commit}}')
-    if verified is None:
-        return _null_git_changes('git_unavailable')
+    if isinstance(verified, str):
+        return _null_git_changes(verified)
     if verified.returncode != 0:
         return _null_git_changes('launch_commit_unreachable_in_cwd')
     diff = _git(target, '-c', 'core.quotepath=false', 'diff', '--no-ext-diff', '--numstat', commit, '--', timeout=10.0)
-    if diff is None or diff.returncode != 0:
+    if isinstance(diff, str):
+        return _null_git_changes(diff)
+    if diff.returncode != 0:
         return _null_git_changes('git_diff_failed')
     files_changed = 0
     lines_added = 0
@@ -291,6 +339,7 @@ def collect_git_changes(row: dict) -> dict[str, int | str | None]:
                 lines_deleted += int(parts[1])
             except ValueError:
                 return _null_git_changes('git_diff_parse_error')
+    untracked, untracked_reason = _untracked_files(target)
     return {
         'files_changed': files_changed,
         'lines_added': lines_added,
@@ -298,6 +347,8 @@ def collect_git_changes(row: dict) -> dict[str, int | str | None]:
         'lines_changed': lines_added + lines_deleted,
         'git_diff_basis': 'working_tree_vs_launch_commit',
         'git_changes_reason': None,
+        'untracked_files': untracked,
+        'untracked_files_reason': untracked_reason,
     }
 
 
@@ -477,7 +528,9 @@ def _locate_transcript(
     session_id: str | None,
     dispatch_id: str | None,
     launched_at: str | None,
-) -> tuple[Path | None, str | None]:
+) -> tuple[Path | None, str | None, bool]:
+    """The transcript of this dispatch, its session id, and whether a candidate file could not be read. With one
+    unread, the transcript was not shown to be absent: it may be the file that could not be opened."""
     if session_id:
         patterns = (
             (f'projects/*/{session_id}.jsonl',)
@@ -488,10 +541,10 @@ def _locate_transcript(
             for pattern in patterns:
                 found = next(root.glob(pattern), None)
                 if found and found.is_file():
-                    return found, session_id
+                    return found, session_id, False
 
     if not isinstance(dispatch_id, str) or not dispatch_id.strip():
-        return None, session_id
+        return None, session_id, False
     did = dispatch_id.strip()
     launched_epoch, _ = _parse_iso(launched_at)
     min_mtime = (launched_epoch - 120.0) if launched_epoch is not None else None
@@ -502,12 +555,16 @@ def _locate_transcript(
         else ('sessions/**/rollout-*.jsonl', 'archived_sessions/rollout-*.jsonl')
     )
     candidates: list[tuple[float, Path]] = []
+    unreadable = False
     for root in roots:
         for pattern in scan_patterns:
             for path in root.glob(pattern):
                 try:
                     st = path.stat()
+                except FileNotFoundError:
+                    continue   # gone since the search listed it: it cannot be this dispatch's transcript
                 except OSError:
+                    unreadable = True
                     continue
                 candidates.append((st.st_mtime, path))
     candidates.sort(key=lambda item: item[0], reverse=True)
@@ -533,10 +590,13 @@ def _locate_transcript(
                             continue
                         if did in _extract_obj_paseo_ids(harness, obj):
                             inferred = _infer_session_id(harness, path)
-                            return path, session_id or inferred
-            except OSError:
+                            return path, session_id or inferred, False
+            except FileNotFoundError:
                 continue
-    return None, session_id
+            except OSError:
+                unreadable = True
+                continue
+    return None, session_id, unreadable
 
 
 def _infer_session_id(harness: str, path: Path) -> str:
@@ -936,7 +996,7 @@ def collect_session_telemetry(
     if not roots:
         return _null_session_telemetry(harness, 'provider_home_not_found', session_id=persisted_sid)
 
-    transcript_path, matched_sid = _locate_transcript(
+    transcript_path, matched_sid, unreadable = _locate_transcript(
         harness,
         roots,
         persisted_sid,
@@ -944,7 +1004,8 @@ def collect_session_telemetry(
         row.get('launched_at'),
     )
     if transcript_path is None:
-        return _null_session_telemetry(harness, 'session_transcript_not_found', session_id=matched_sid)
+        reason = 'session_transcript_unreadable' if unreadable else 'session_transcript_not_found'
+        return _null_session_telemetry(harness, reason, session_id=matched_sid)
 
     try:
         events = _parse_claude_transcript(transcript_path) if harness == 'claude' else _parse_codex_transcript(transcript_path)
@@ -1055,4 +1116,16 @@ def collect_ground_truth(
         'ground_truth_recorded_at': recorded_at,
         **session_fields,
         **git_fields,
+    }
+
+
+def failed_ground_truth(*, recorded_at: str, exc: BaseException) -> dict:
+    """The record of a collection that raised: every field `null`, its reason `collection_failed:<class>`, and
+    `ground_truth_reason` the same. The exception's text is not kept."""
+    reason = f'collection_failed:{type(exc).__name__}'
+    return {
+        'ground_truth_recorded_at': recorded_at,
+        'ground_truth_reason': reason,
+        **_null_session_telemetry(None, reason),
+        **_null_git_changes(reason),
     }

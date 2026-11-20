@@ -56,6 +56,14 @@ TRANSIENT = 'transient'
 NOT_COVERED_SCOPES = ('none', 'task_input')
 
 
+# The sentence beside `disabled` and `unsettled`, for a person who runs the action: the watcher branches on `action`
+# alone and the bridge keeps no other key of these two.
+DISABLED_MEANING = ('Automatic retry and relaunch of a failed attempt is off on this machine (AGENTCOMPASS_ROLL_FALLBACK=off), '
+                    'so nothing was retried or relaunched; the parent is told of the failure as it is.')
+UNSETTLED_MEANING = ('This dispatch has not ended (state {state}), and only an attempt that ended in a failure is retried or '
+                     'relaunched, so nothing was done. Observe it with --dispatch-action reconcile.')
+
+
 def enabled():
     return os.environ.get('AGENTCOMPASS_ROLL_FALLBACK', '').strip().lower() != 'off'
 
@@ -621,14 +629,14 @@ def handle(dispatch_id, *, judge=None, host=None):
     `retry_at` on `scheduled`, looks again on `pending`, and sends one notification otherwise. Called again for a
     failure whose scheduled retry is due, it starts that retry."""
     if not enabled():
-        return {'action': 'disabled'}
+        return {'action': 'disabled', 'meaning': DISABLED_MEANING}
     import dispatch_flow
     row = registry.inspect(dispatch_id)
     if row['state'] not in registry.TERMINAL or row['state'] == 'expired':
         dispatch_flow.reconcile(dispatch_id, host=host)
         row = registry.inspect(dispatch_id)
     if row['state'] not in registry.TERMINAL or row['state'] == 'expired':
-        return {'action': 'unsettled', 'state': row['state']}
+        return {'action': 'unsettled', 'state': row['state'], 'meaning': UNSETTLED_MEANING.format(state=row['state'])}
     root_id = registry.chain_root(row)
     root = row if root_id == dispatch_id else registry.inspect(root_id)
     if registry.fallback_guard(root, registry.utcnow()):

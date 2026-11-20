@@ -2892,7 +2892,9 @@ class CreateLifecycleTests(unittest.TestCase):
         args = SimpleNamespace(stage='dispatch', dispatch_action='release', dispatch_id=row['dispatch_id'],
                                parent_id='parent-a', basis='cancel')
         with patch.object(flow, 'host_call', self.observe_only({'phase': 'failed', 'failure_class': 'unknown'})):
-            self.assertEqual(flow.cli(args)['state'], 'create_failed')
+            answer = flow.cli(args)
+        self.assertEqual((answer['state'], answer['released']), ('create_failed', False))
+        self.assertEqual(answer['note'], flow.OBSERVED_OVER.format(state='create_failed'))
 
 
 class ReleaseTests(unittest.TestCase):
